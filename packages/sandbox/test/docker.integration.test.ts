@@ -54,6 +54,8 @@ describe.if(enabled)("sandbox host on real Docker", () => {
     const ipB = (await host.exec(b.id, ["sh", "-c", "hostname -I | awk '{print $1}'"])).stdout.trim();
     await host.exec(b.id, ["sh", "-c", "nohup python3 -m http.server 8000 >/dev/null 2>&1 &"]);
     expect((await host.exec(a.id, ["sh", "-c", `curl -s -m 3 http://${ipB}:8000/ >/dev/null`])).exitCode).not.toBe(0);
+    await host.destroy(a.id, { quest: "it-3" });
+    await host.destroy(b.id, { quest: "it-3" });
   }, 120_000);
 
   test("destroying a persistent sandbox asks; your approval goes through", async () => {
@@ -68,7 +70,10 @@ describe.if(enabled)("sandbox host on real Docker", () => {
     const short = await host.create({ ...base, network: "isolated", ttlMinutes: 1, quest: "it-5" });
     const kept = await host.create({ ...base, network: "isolated", persistent: true, quest: "it-5" });
     const later = new SandboxHost({ node, tokens, ledger: () => {}, maxCpus: 4, maxMemoryGb: 4, now: () => Date.now() + 3_600_000 });
-    expect(await later.reap()).toEqual([short.name]);
+    const reaped = await later.reap();
+    expect(reaped).toContain(short.name);
+    expect(reaped).not.toContain(kept.name);
+    expect(await host.get(short.id)).toBeNull();
     expect(await host.get(kept.id)).not.toBeNull();
   }, 120_000);
 });

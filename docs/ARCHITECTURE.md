@@ -207,6 +207,22 @@ Standing orders that you sign can pre-approve a narrow class, for example `git.p
 - Transports stay thin and orchestration stays pure.
 - The core is event-sourced. 🔜 Outward actions will go through a **transactional outbox**: the intent is recorded atomically with its events and executed afterwards with an idempotency key and a receipt, so a retry never sends twice.
 
+## 8½. Sandbox hosts ✅
+
+Any node with Docker is a **sandbox host**; ultra is the first. A sandbox is where a squire works: one hardened container per task, created in seconds and discarded afterwards.
+
+| Property | How |
+|---|---|
+| **Unprivileged** | uid 1000, `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`, its own workspace volume. No host mounts and no Docker socket. |
+| **Bounded** | CPU, memory (no swap) and process limits. Every command runs under an in-container `timeout --signal=KILL`, so a stuck task can't outlive its deadline. |
+| **Networked by intent** | `isolated`: no network. **`gateway`** (the default): a Docker `--internal` network whose only reachable host service is a sandbox-only model gateway on the bridge IP. UFW allows exactly one port on `galahad0`. `online`: egress plus the gateway. Sandboxes can't reach each other: inter-container traffic is disabled on both networks. |
+| **Keys stay home** | A sandbox that may use models gets a gateway token scoped to the providers you chose. It expires with the sandbox and is revoked on destroy. The sandbox never holds a provider key. |
+| **Accountable** | Every create, exec and destroy is a signed `ledger.recorded` event in the mind, readable from any device (`galahad ledger`). |
+| **Oath-gated cleanup** | The TTL reaper may destroy *ephemeral* sandboxes on behalf of the quest that created them. Destroying a *persistent* sandbox asks first. A request from you counts as the approval. |
+| **Fleet-wide** | `galahad sandbox run -- …` on any device is placed on the best sandbox host, or pinned with `--on ultra`. It's forwarded as a signed node-to-node request. A forwarded request always runs where it lands, so work can never bounce between nodes. |
+
+Network reachability was verified on ultra before it was built. From an internal-network container, the gateway port is reachable only once the UFW rule exists. The internet, Coolify (8080) and Galahad's local port (7777) all stay blocked. 🔜 Next: KVM microVMs for code we have no reason to trust, per-sandbox disk quotas, and an egress allowlist for `online`.
+
 ## 9. Growth & scale 🔜
 
 Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**

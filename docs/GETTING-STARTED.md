@@ -183,6 +183,21 @@ bun galahad place --interactive            # → laptop: you are here
 bun galahad place --docker --mem 64
 ```
 
+## 9. Run work in a sandbox
+
+A server deployed with `scripts/deploy.sh` is a sandbox host: the deploy builds `galahad/sandbox:1` and opens only the sandbox gateway port. From any device:
+
+```sh
+bun galahad sandbox run -- sh -c 'id; uname -a'               # placed on the best host, destroyed afterwards
+bun galahad sandbox run --net online -- git clone https://github.com/amiriteorg/galahad
+bun galahad sandbox run --providers deepseek -- sh -c 'echo $OPENAI_BASE_URL'   # models via a scoped token
+bun galahad sandbox run --keep --cpus 8 --mem 16 --ttl 240 -- true             # keep a workspace around
+bun galahad sandbox exec <id> -- bun test
+bun galahad sandbox ls --on ultra
+bun galahad sandbox rm <id>
+bun galahad ledger                                              # every action, with the oath's verdict
+```
+
 ## Troubleshooting
 
 | Symptom | Try |
