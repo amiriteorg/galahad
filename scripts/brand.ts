@@ -30,8 +30,8 @@ const svgs: Record<string, SvgNode> = {
   "assets/galahad-mark.svg": flatMark(),
   "apps/web/src/icon-maskable.svg": maskableIcon(),
   "apps/site/public/icon.svg": appIcon(),
-  "apps/site/public/paragon-white.svg": emblemFile(INK_ON_DARK),
-  "apps/site/public/paragon-black.svg": emblemFile(INK_ON_LIGHT),
+  "apps/site/public/crest-white.svg": emblemFile(INK_ON_DARK),
+  "apps/site/public/crest-black.svg": emblemFile(INK_ON_LIGHT),
 };
 
 for (const [path, tree] of Object.entries(svgs)) {
@@ -51,7 +51,7 @@ async function renderPngs(): Promise<void> {
       ["apps/web/src/icon-512.png", appIcon(), 512, "transparent"],
       ["apps/web/src/icon-maskable-512.png", maskableIcon(), 512, "#050506"],
       // iOS rounds the corners itself, so the touch icon is full bleed with a larger emblem.
-      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.84), 180, "#050506"],
+      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.7), 180, "#050506"],
     ];
     for (const [path, tree, size, background] of pngs) {
       const out = join(work, `${size}-${pngs.findIndex((p) => p[0] === path)}.png`);

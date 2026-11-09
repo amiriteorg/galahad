@@ -13,11 +13,16 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ## Brand
 
-### The emblem: Paragon
+### The emblem: Crest
 
-An **eight-point north star above ascending chevrons**, the chevrons clipped to a rounded square. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned). The star and chevrons carry **very faint faceting**: each ray has a lit and a shaded face, and each half of the chevrons has its own gradient, so the mark has depth without effects. `assets/paragon.svg` is the reference drawing.
+A **lodestar above two blade-cut chevrons**. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned). It is drawn to be bold and quiet at once:
 
-There is one definition: the geometry and the SVG tree in `apps/web/src/brand.ts`. Everything else is generated from it, and a test fails if a committed file drifts.
+- **One rhythm.** The gap from the star's south tip to the first apex is the gap between the chevrons, so the three parts read as one mark.
+- **Blade ends.** Each chevron arm is cut square to its own direction, not to the page: the ends lean forward.
+- **A compass lodestar.** A long north ray, shorter east, west and south rays, short diagonals and heavy valleys, so it holds its shape at 16 px.
+- **Very faint faceting.** Each ray has a lit and a shaded side; each chevron is a ridge, its left face lit and its right face shaded. Light falls from the star. Depth without effects.
+
+The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, slope, reach, apex, the star's rays). Everything is generated from that one definition, tests pin the rhythm and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
 
 | File | Use |
 |---|---|
@@ -25,7 +30,7 @@ There is one definition: the geometry and the SVG tree in `apps/web/src/brand.ts
 | `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the emblem sits inside the central safe circle |
 | `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG |
 | `assets/galahad-mark.svg` | The flat mark in `currentColor`, for anywhere one ink is wanted |
-| `apps/site/public/paragon-{white,black}.svg` | The faceted emblem on a transparent ground, for the site (dark and light) |
+| `apps/site/public/crest-{white,black}.svg` | The faceted emblem on a transparent ground, for the site (dark and light) |
 | `ui/emblem.ts` → `emblem()` | The emblem inline in the PWA, painted with the `--em-*` tokens so it follows the theme |
 | `icon("mark")` | The north star alone on the 24 px grid, for avatars (Galahad's voice: chat, requests, trust) |
 

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="159 72 706 880.4" fill="none">
+  <title>Galahad</title>
+  <g>
+    <defs>
+      <clipPath id="em-chevrons">
+        <path d="M214.6 786.4 167 707 512 500 857 707 809.4 786.4 512 608Z"/>
+        <path d="M214.6 944.4 167 865 512 658 857 865 809.4 944.4 512 766Z"/>
+      </clipPath>
+      <linearGradient id="em-left" gradientUnits="userSpaceOnUse" x1="167" y1="500" x2="512" y2="944.4">
+        <stop offset="0" stop-color="#333333"/>
+        <stop offset="0.5" stop-color="#191919"/>
+        <stop offset="1" stop-color="#000000"/>
+      </linearGradient>
+      <linearGradient id="em-right" gradientUnits="userSpaceOnUse" x1="512" y1="500" x2="857" y2="944.4">
+        <stop offset="0" stop-color="#242424"/>
+        <stop offset="0.5" stop-color="#101010"/>
+        <stop offset="1" stop-color="#000000"/>
+      </linearGradient>
+      <linearGradient id="em-lit" gradientUnits="userSpaceOnUse" x1="320" y1="80" x2="608" y2="450">
+        <stop offset="0" stop-color="#333333"/>
+        <stop offset="0.5" stop-color="#191919"/>
+        <stop offset="1" stop-color="#000000"/>
+      </linearGradient>
+      <linearGradient id="em-shade" gradientUnits="userSpaceOnUse" x1="512" y1="80" x2="704" y2="450">
+        <stop offset="0" stop-color="#242424"/>
+        <stop offset="0.5" stop-color="#101010"/>
+        <stop offset="1" stop-color="#000000"/>
+      </linearGradient>
+    </defs>
+    <g clip-path="url(#em-chevrons)">
+      <rect x="512" y="499" height="446.4" width="346" fill="url(#em-right)"/>
+      <rect x="166" y="499" height="446.4" width="347" fill="url(#em-left)"/>
+    </g>
+    <path d="M512 80 535 259.6 592.6 234.4 567.4 292 704 315 567.4 338 592.6 395.6 535 370.4 512 450 489 370.4 431.4 395.6 456.6 338 320 315 456.6 292 431.4 234.4 489 259.6Z" fill="#080808"/>
+    <path d="M512 315 512 80 535 259.6Z" fill="url(#em-lit)"/>
+    <path d="M512 315 535 259.6 592.6 234.4Z" fill="url(#em-shade)"/>
+    <path d="M512 315 592.6 234.4 567.4 292Z" fill="url(#em-lit)"/>
+    <path d="M512 315 567.4 292 704 315Z" fill="url(#em-shade)"/>
+    <path d="M512 315 704 315 567.4 338Z" fill="url(#em-lit)"/>
+    <path d="M512 315 567.4 338 592.6 395.6Z" fill="url(#em-shade)"/>
+    <path d="M512 315 592.6 395.6 535 370.4Z" fill="url(#em-lit)"/>
+    <path d="M512 315 535 370.4 512 450Z" fill="url(#em-shade)"/>
+    <path d="M512 315 512 450 489 370.4Z" fill="url(#em-lit)"/>
+    <path d="M512 315 489 370.4 431.4 395.6Z" fill="url(#em-shade)"/>
+    <path d="M512 315 431.4 395.6 456.6 338Z" fill="url(#em-lit)"/>
+    <path d="M512 315 456.6 338 320 315Z" fill="url(#em-shade)"/>
+    <path d="M512 315 320 315 456.6 292Z" fill="url(#em-lit)"/>
+    <path d="M512 315 456.6 292 431.4 234.4Z" fill="url(#em-shade)"/>
+    <path d="M512 315 431.4 234.4 489 259.6Z" fill="url(#em-lit)"/>
+    <path d="M512 315 489 259.6 512 80Z" fill="url(#em-shade)"/>
+  </g>
+</svg>

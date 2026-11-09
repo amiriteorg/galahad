@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { appIcon, emblemTree, flatMark, INK_ON_DARK, INK_TOKENS, maskableIcon, STAR, STAR_FACETS, starOnGrid, toSvg, type SvgNode } from "./brand.ts";
+import { appIcon, CHEVRONS, CREST, EMBLEM_BOX, emblemTree, flatMark, INK_ON_DARK, INK_TOKENS, maskableIcon, STAR, STAR_FACETS, starOnGrid, toSvg, type SvgNode } from "./brand.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 
@@ -11,7 +11,22 @@ const walk = (node: SvgNode, out: SvgNode[] = []): SvgNode[] => {
   return out;
 };
 
-describe("Paragon, the emblem", () => {
+describe("Crest, the emblem", () => {
+  test("one rhythm: star tip to apex is the gap between the chevrons", () => {
+    const south = STAR[8]!;
+    expect(south[0]).toBe(512);
+    expect(CREST.apex - south[1]).toBe(CREST.gap);
+    const apexes = CHEVRONS.map((d) => Number(d.match(/ 512 (\d+(?:\.\d+)?) /)![1]));
+    expect(apexes).toEqual([CREST.apex, CREST.apex + CREST.band + CREST.gap]);
+  });
+
+  test("the mark is symmetric and sits on the 1024 grid", () => {
+    for (const [x] of STAR) expect(STAR.some(([mx]) => Math.abs(mx - (1024 - x)) < 0.11)).toBe(true);
+    expect(EMBLEM_BOX.x + EMBLEM_BOX.width / 2).toBe(512);
+    expect(EMBLEM_BOX.y).toBeGreaterThan(0);
+    expect(EMBLEM_BOX.y + EMBLEM_BOX.height).toBeLessThan(1024);
+  });
+
   test("the star is faceted into sixteen triangles that alternate lit and shaded", () => {
     expect(STAR).toHaveLength(16);
     expect(STAR_FACETS).toHaveLength(16);
@@ -23,8 +38,7 @@ describe("Paragon, the emblem", () => {
     const ids = walk(emblemTree("abc", INK_TOKENS))
       .map((n) => n.attrs.id)
       .filter((id): id is string => typeof id === "string");
-    expect(ids.length).toBeGreaterThan(5);
-    for (const id of ids) expect(id.startsWith("abc-")).toBe(true);
+    expect(ids.sort()).toEqual(["abc-chevrons", "abc-left", "abc-lit", "abc-right", "abc-shade"]);
   });
 
   test("theme ink is applied as a style (presentation attributes can't take var())", () => {

@@ -1,34 +1,82 @@
 /*
- * Paragon: Galahad's emblem. An eight-point north star above ascending
- * chevrons, on a 1024 grid, with very faint faceting (assets/paragon.svg is
- * the reference drawing). Pure data and a tiny SVG tree, no DOM: the PWA turns
- * the tree into elements (ui/emblem.ts), scripts/brand.ts serialises it into
- * the icon files, so every surface draws the same mark.
+ * Crest: Galahad's emblem. A lodestar above two blade-cut chevrons, on a 1024
+ * grid, with very faint faceting. One rhythm holds it together: the gap from
+ * the star's south tip to the first apex is the gap between the chevrons.
+ * (assets/paragon-v1.svg is the first drawing it grew from.)
+ *
+ * Pure data and a tiny SVG tree, no DOM: the PWA turns the tree into elements
+ * (ui/emblem.ts), scripts/brand.ts serialises it into the icon files, so every
+ * surface draws the same mark.
  */
 
 export type Point = readonly [number, number];
 
+const round = (n: number): number => Math.round(n * 10) / 10;
+
+/** The proportions. Change these, run `bun scripts/brand.ts --png`, and every surface follows. */
+export const CREST = {
+  /** The rhythm: star tip to apex, and chevron to chevron. */
+  gap: 50,
+  /** Each chevron's vertical thickness. */
+  band: 108,
+  /** Rise over run of the chevron arms. */
+  slope: 0.6,
+  /** Half the chevrons' span. */
+  reach: 345,
+  /** The first chevron's apex. */
+  apex: 500,
+  /** The lodestar: a long north ray, a shorter south one, short diagonals, heavy valleys. */
+  star: { north: 235, east: 192, south: 135, diagonal: 114, valley: 60 },
+} as const;
+
+const CX = 512;
+
+function compassStar(cx: number, cy: number, r: typeof CREST.star): Point[] {
+  const points: Point[] = [];
+  for (let k = 0; k < 16; k++) {
+    const angle = (k * Math.PI) / 8;
+    const radius = k % 2 === 1 ? r.valley : k === 0 ? r.north : k === 8 ? r.south : k % 4 === 0 ? r.east : r.diagonal;
+    points.push([round(cx + radius * Math.sin(angle)), round(cy - radius * Math.cos(angle))]);
+  }
+  return points;
+}
+
+/** An upward chevron whose arm ends are cut square to the arm, like a blade. */
+function bladeChevron(apex: number): Point[] {
+  const { band, slope, reach } = CREST;
+  const k = band / (1 + slope * slope);
+  const drop = reach * slope;
+  return [
+    [round(CX - reach + k * slope), round(apex + drop + k)],
+    [CX - reach, round(apex + drop)],
+    [CX, apex],
+    [CX + reach, round(apex + drop)],
+    [round(CX + reach - k * slope), round(apex + drop + k)],
+    [CX, apex + band],
+  ];
+}
+
+export const STAR_CENTER: Point = [CX, CREST.apex - CREST.gap - CREST.star.south];
+
 /** The star's outline, clockwise from the north point. */
-export const STAR: readonly Point[] = [
-  [512, 176], [531, 330], [650, 230], [544, 348], [694, 362], [544, 376], [620, 456], [531, 394],
-  [512, 486], [493, 394], [404, 456], [480, 376], [330, 362], [480, 348], [374, 230], [493, 330],
-];
-export const STAR_CENTER: Point = [512, 362];
+export const STAR: readonly Point[] = compassStar(STAR_CENTER[0], STAR_CENTER[1], CREST.star);
 
-/** The rounded square every chevron is clipped to (and the app icon's tile). */
-export const BOUNDARY = { x: 128, y: 136, width: 768, height: 736, rx: 190 } as const;
-
-export const CHEVRONS: readonly string[] = [
-  "M128 650 380 440 377 468 128 678Z M896 650 644 440 647 468 896 678Z",
-  "M128 758 476 453 476 489 128 794Z M896 758 548 453 548 489 896 794Z",
-  "M128 875 512 500 896 875 896 957 512 582 128 957Z",
-  "M274 872 512 630 750 872 675 872 512 726 349 872Z",
-];
-
-/** What the emblem covers: star tip to the boundary's floor. */
-export const EMBLEM_BOX = { x: 128, y: 176, width: 768, height: 696 } as const;
+const CHEVRON_POINTS: readonly Point[][] = [bladeChevron(CREST.apex), bladeChevron(CREST.apex + CREST.band + CREST.gap)];
 
 const pathOf = (points: readonly Point[]): string => `M${points.map(([x, y]) => `${x} ${y}`).join(" ")}Z`;
+
+export const CHEVRONS: readonly string[] = CHEVRON_POINTS.map(pathOf);
+
+/** What the emblem covers, star tip to the lowest blade corner. */
+export const EMBLEM_BOX = (() => {
+  const all = [...STAR, ...CHEVRON_POINTS.flat()];
+  const xs = all.map(([x]) => x);
+  const ys = all.map(([, y]) => y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: round(Math.max(...xs) - x), height: round(Math.max(...ys) - y) };
+})();
+
 export const STAR_PATH = pathOf(STAR);
 
 /** The star's facets: a triangle from the centre to each pair of neighbouring points. Even facets are lit, odd ones shaded. */
@@ -98,42 +146,32 @@ function gradient(id: string, [x1, y1, x2, y2]: readonly [number, number, number
  * flat; an EmblemPaint draws the faceted mark.
  */
 export function emblemTree(id: string, ink: EmblemPaint | string): SvgNode {
-  const { x, y, width, height, rx } = BOUNDARY;
-  const defs = n(
-    "defs",
-    {},
-    n("clipPath", { id: `${id}-boundary` }, n("rect", { x, y, width, height, rx })),
-    n("clipPath", { id: `${id}-chevrons` }, ...CHEVRONS.map((d) => n("path", { d }))),
-  );
-  if (typeof ink === "string") {
-    return n(
-      "g",
-      fillOf(ink),
-      defs,
-      n("path", { d: STAR_PATH }),
-      n("g", { "clip-path": `url(#${id}-boundary)` }, n("g", { "clip-path": `url(#${id}-chevrons)` }, n("rect", { x, y: 430, width, height: 550 }))),
-    );
-  }
+  if (typeof ink === "string") return n("g", fillOf(ink), n("path", { d: STAR_PATH }), ...CHEVRONS.map((d) => n("path", { d })));
+  const defs = n("defs", {}, n("clipPath", { id: `${id}-chevrons` }, ...CHEVRONS.map((d) => n("path", { d }))));
+
+  // Light falls from the star: each chevron is a ridge (its left face lit, its
+  // right face shaded) and each ray of the star has a lit and a shaded side.
+  const box = EMBLEM_BOX;
+  const floor = box.y + box.height;
+  const [sx, sy] = STAR_CENTER;
+  const { north, east, south } = CREST.star;
   defs.children!.push(
-    gradient(`${id}-left`, [128, 440, 512, 872], ink.lit),
-    gradient(`${id}-right`, [512, 440, 896, 872], ink.shade),
-    gradient(`${id}-lit`, [374, 176, 620, 486], ink.lit),
-    gradient(`${id}-shade`, [512, 176, 694, 486], ink.shade),
+    gradient(`${id}-left`, [box.x, CREST.apex, CX, floor], ink.lit),
+    gradient(`${id}-right`, [CX, CREST.apex, box.x + box.width, floor], ink.shade),
+    gradient(`${id}-lit`, [sx - east, sy - north, sx + east / 2, sy + south], ink.lit),
+    gradient(`${id}-shade`, [sx, sy - north, sx + east, sy + south], ink.shade),
   );
+  const half = { y: CREST.apex - 1, height: round(floor - CREST.apex + 2) };
   return n(
     "g",
     {},
     defs,
     n(
       "g",
-      { "clip-path": `url(#${id}-boundary)` },
-      n(
-        "g",
-        { "clip-path": `url(#${id}-chevrons)` },
-        // The left half overlaps the right by a unit so the apex shows no seam.
-        n("rect", { x: 512, y: 430, width: 384, height: 550, fill: `url(#${id}-right)` }),
-        n("rect", { x: 128, y: 430, width: 385, height: 550, fill: `url(#${id}-left)` }),
-      ),
+      { "clip-path": `url(#${id}-chevrons)` },
+      // The left face overlaps the right by a unit so the ridge shows no seam.
+      n("rect", { x: CX, ...half, width: round(box.x + box.width - CX + 1), fill: `url(#${id}-right)` }),
+      n("rect", { x: box.x - 1, ...half, width: round(CX - box.x + 2), fill: `url(#${id}-left)` }),
     ),
     n("path", { d: STAR_PATH, ...fillOf(ink.base) }),
     ...STAR_FACETS.map((d, i) => n("path", { d, fill: `url(#${id}-${i % 2 === 0 ? "lit" : "shade"})` })),
@@ -160,16 +198,30 @@ function starlight(id: string, cx: number, cy: number, r: number, opacity: numbe
 const root = (viewBox: string, title: string, ...children: SvgNode[]): SvgNode =>
   n("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox, fill: "none" }, n("title", {}, { tag: "#text", attrs: { text: title } }), ...children);
 
+/** The emblem scaled about its centre and placed at (cx, cy) on the 1024 grid. */
+function placed(id: string, ink: EmblemPaint | string, scale: number, cx = 512, cy = 512): { node: SvgNode; starY: number } {
+  const ex = EMBLEM_BOX.x + EMBLEM_BOX.width / 2;
+  const ey = EMBLEM_BOX.y + EMBLEM_BOX.height / 2;
+  return {
+    node: n("g", { transform: `translate(${cx} ${cy}) scale(${scale}) translate(${-ex} ${-ey})` }, emblemTree(id, ink)),
+    starY: round(cy + (STAR_CENTER[1] - ey) * scale),
+  };
+}
+
+/** The app tile: a rounded square of night on the 1024 grid. */
+export const TILE = { x: 64, y: 64, width: 896, height: 896, rx: 214 } as const;
+
 /** The app icon: a night tile, a breath of starlight, the emblem in white ink. Transparent corners. */
 export function appIcon(): SvgNode {
-  const { x, y, width, height, rx } = BOUNDARY;
+  const { x, y, width, height, rx } = TILE;
+  const emblem = placed("em", INK_ON_DARK, 0.7);
   return root(
-    "112 104 800 800",
+    "48 48 928 928",
     "Galahad",
-    n("defs", {}, night("night", y, y + height), starlight("starlight", 512, 340, 250, 0.2)),
+    n("defs", {}, night("night", y, y + height), starlight("starlight", 512, emblem.starY, 300, 0.2)),
     n("rect", { x, y, width, height, rx, fill: "url(#night)" }),
     n("rect", { x, y, width, height, rx, fill: "url(#starlight)" }),
-    emblemTree("em", INK_ON_DARK),
+    emblem.node,
     n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#ffffff", "stroke-opacity": 0.12, "stroke-width": 2 }),
   );
 }
@@ -178,22 +230,23 @@ export function appIcon(): SvgNode {
  * Full bleed for platform masks (Android adaptive icons, iOS): the emblem is
  * scaled into the centre so it survives any mask shape.
  */
-export function maskableIcon(scale = 0.74): SvgNode {
-  const cy = EMBLEM_BOX.y + EMBLEM_BOX.height / 2;
-  const starY = 512 + (STAR_CENTER[1] - cy) * scale;
+export function maskableIcon(scale = 0.6): SvgNode {
+  const emblem = placed("em", INK_ON_DARK, scale);
   return root(
     "0 0 1024 1024",
     "Galahad",
-    n("defs", {}, night("night", 0, 1024), starlight("starlight", 512, Math.round(starY), Math.round(420 * scale), 0.2)),
+    n("defs", {}, night("night", 0, 1024), starlight("starlight", 512, emblem.starY, round(560 * scale), 0.2)),
     n("rect", { width: 1024, height: 1024, fill: "url(#night)" }),
     n("rect", { width: 1024, height: 1024, fill: "url(#starlight)" }),
-    n("g", { transform: `translate(512 512) scale(${scale}) translate(-512 -${cy})` }, emblemTree("em", INK_ON_DARK)),
+    emblem.node,
   );
 }
 
 /** The flat, single-colour mark (currentColor): for embedding wherever one ink is wanted. */
 export function flatMark(): SvgNode {
-  return root("112 104 800 800", "Galahad", emblemTree("mark", "currentColor"));
+  const pad = 24;
+  const { x, y, width, height } = EMBLEM_BOX;
+  return root(`${round(x - pad)} ${round(y - pad)} ${round(width + 2 * pad)} ${round(height + 2 * pad)}`, "Galahad", emblemTree("mark", "currentColor"));
 }
 
 const escapeAttr = (value: string | number): string => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

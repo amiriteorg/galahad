@@ -2,7 +2,7 @@ import { EMBLEM_BOX, emblemTree, INK_TOKENS, type SvgNode } from "../brand.ts";
 import { svg } from "./dom.ts";
 
 /*
- * Paragon, inline: the faceted emblem in theme ink (the --em-* tokens), built
+ * Crest, inline: the faceted emblem in theme ink (the --em-* tokens), built
  * with createElementNS from constant geometry. Each instance gets its own
  * definition ids so gradients never resolve against another copy.
  */
@@ -40,6 +40,6 @@ export function emblem(options: EmblemOptions = {}): SVGSVGElement {
     focusable: "false",
     ...(options.label ? { role: "img", "aria-label": options.label } : { "aria-hidden": "true" }),
   });
-  el.appendChild(build(emblemTree(`paragon-${++instances}`, INK_TOKENS)));
+  el.appendChild(build(emblemTree(`crest-${++instances}`, INK_TOKENS)));
   return el;
 }

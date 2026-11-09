@@ -11,7 +11,7 @@ const circle = (cx: number, cy: number, r: number): string => `M${cx - r} ${cy}a
 const rect = (x: number, y: number, w: number, hgt: number, r: number): string =>
   `M${x + r} ${y}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${hgt - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(w - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(hgt - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z`;
 
-/** The mark: Paragon's north star, filled, on the icon grid (the full emblem lives in ./emblem.ts). */
+/** The mark: the Crest's lodestar, filled, on the icon grid (the full emblem lives in ./emblem.ts). */
 export const MARK_PATH = starOnGrid(24, 2);
 
 const ICONS = {
