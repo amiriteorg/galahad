@@ -1,0 +1,14 @@
+{
+  "name": "@galahad/brain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@galahad/core": "workspace:*",
+    "@galahad/mind": "workspace:*"
+  }
+}
