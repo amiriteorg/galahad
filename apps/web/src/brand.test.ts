@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { appIcon, CHEVRONS, CREST, EMBLEM_BOX, emblemTree, flatMark, INK_ON_DARK, INK_TOKENS, maskableIcon, STAR, STAR_FACETS, starOnGrid, toSvg, type SvgNode } from "./brand.ts";
+import { appIcon, CHEVRONS, CREST, EMBLEM_BOX, emblemTree, flatMark, INK_ON_DARK, INK_TOKENS, markOnGrid, maskableIcon, SOUTH, STAR, STAR_CENTER, STAR_FACETS, toSvg, type SvgNode } from "./brand.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 
@@ -12,12 +12,38 @@ const walk = (node: SvgNode, out: SvgNode[] = []): SvgNode[] => {
 };
 
 describe("Crest, the emblem", () => {
-  test("one rhythm: star tip to apex is the gap between the chevrons", () => {
-    const south = STAR[8]!;
-    expect(south[0]).toBe(512);
-    expect(CREST.apex - south[1]).toBe(CREST.gap);
-    const apexes = CHEVRONS.map((d) => Number(d.match(/ 512 (\d+(?:\.\d+)?) /)![1]));
-    expect(apexes).toEqual([CREST.apex, CREST.apex + CREST.band + CREST.gap]);
+  const points = (d: string): [number, number][] => [...d.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  /** Distance from point p to the line through a and b. */
+  const toLine = ([px, py]: [number, number], [ax, ay]: [number, number], [bx, by]: [number, number]): number =>
+    Math.abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / Math.hypot(bx - ax, by - ay);
+
+  test("the chevrons run on the star's diagonals", () => {
+    const [left, right, second] = CHEVRONS.map(points);
+    for (const shape of [left!, right!]) {
+      // the blade's long edges are at 45°, like the star's diagonal rays
+      const [a, b] = [shape[0]!, shape[1]!];
+      expect(Math.abs(Math.abs(b[1] - a[1]) - Math.abs(b[0] - a[0]))).toBeLessThan(0.15);
+    }
+    // the lower diagonal rays point straight down each blade's centre line
+    const [southEast, southWest] = [STAR[6]!, STAR[10]!]; // k = 6 points down-right, k = 10 down-left
+    const mid = (shape: [number, number][]): [number, number] => [(shape[0]![0] + shape[3]![0]) / 2, (shape[0]![1] + shape[3]![1]) / 2];
+    expect(toLine([...southEast], [...STAR_CENTER], mid(right!))).toBeLessThan(0.2);
+    expect(toLine([...southWest], [...STAR_CENTER], mid(left!))).toBeLessThan(0.2);
+    expect(second).toHaveLength(6);
+  });
+
+  test("one gap: every star tip that faces a chevron stops one gap short, and the chevrons are one gap apart", () => {
+    const [left, right, second] = CHEVRONS.map(points);
+    const gap = CREST.gap;
+    // lower ray tips to the blades' square inner ends
+    expect(toLine(STAR[6] as [number, number], right![0]!, right![3]!)).toBeCloseTo(gap, 0);
+    expect(toLine(STAR[10] as [number, number], left![0]!, left![3]!)).toBeCloseTo(gap, 0);
+    // blade to second chevron, across the arm
+    expect(toLine(right![3]!, second![0]!, second![1]!)).toBeCloseTo(gap, 0);
+    // south tip to the second chevron's peak
+    expect(STAR[8]![0]).toBe(512);
+    expect(STAR[8]![1]).toBeCloseTo(STAR_CENTER[1] + SOUTH, 1);
+    expect(second![0]![1] - STAR[8]![1]).toBeCloseTo(gap, 0);
   });
 
   test("the mark is symmetric and sits on the 1024 grid", () => {
@@ -50,10 +76,12 @@ describe("Crest, the emblem", () => {
     }
   });
 
-  test("the small mark fits the 24px icon grid", () => {
-    const numbers = starOnGrid(24, 2).match(/-?\d+(\.\d+)?/g)!.map(Number);
-    expect(Math.min(...numbers)).toBeGreaterThanOrEqual(2);
-    expect(Math.max(...numbers)).toBeLessThanOrEqual(22);
+  test("the small mark is the whole crest, inside the 24px icon grid", () => {
+    const d = markOnGrid(24);
+    expect(d.match(/M/g)).toHaveLength(1 + CHEVRONS.length);
+    const numbers = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+    expect(Math.min(...numbers)).toBeGreaterThanOrEqual(1.5);
+    expect(Math.max(...numbers)).toBeLessThanOrEqual(22.5);
   });
 
   test("the committed brand files match the definition (run `bun scripts/brand.ts`)", () => {

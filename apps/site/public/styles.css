@@ -155,7 +155,7 @@ code {
 
 .brand img {
   display: block;
-  width: 20px;
+  width: 22px;
   height: auto;
 }
 
@@ -319,7 +319,7 @@ h1 .soft {
 
 .crest img {
   display: block;
-  width: clamp(52px, 6vw, 64px);
+  width: clamp(58px, 7vw, 72px);
   height: auto;
 }
 

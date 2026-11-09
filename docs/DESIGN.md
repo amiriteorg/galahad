@@ -15,14 +15,15 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ### The emblem: Crest
 
-A **lodestar above two blade-cut chevrons**. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned). It is drawn to be bold and quiet at once:
+A **lodestar set into two blade-cut chevrons**. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned). The star doesn't sit on top of the climb, it sits inside it:
 
-- **One rhythm.** The gap from the star's south tip to the first apex is the gap between the chevrons, so the three parts read as one mark.
-- **Blade ends.** Each chevron arm is cut square to its own direction, not to the page: the ends lean forward.
-- **A compass lodestar.** A long north ray, shorter east, west and south rays, short diagonals and heavy valleys, so it holds its shape at 16 px.
-- **Very faint faceting.** Each ray has a lit and a shaded side; each chevron is a ridge, its left face lit and its right face shaded. Light falls from the star. Depth without effects.
+- **One geometry.** The chevrons run at 45°, on the star's own diagonals. The first chevron gives its peak to the star: its two blades carry on from the star's lower diagonal rays, so star and chevrons read as one mark rather than an object on a base.
+- **One gap.** Every star tip that faces a chevron stops exactly one gap short of it (the lower rays at the blades, the south ray at the second peak), and the chevrons are one gap apart.
+- **Blade ends.** Every end is cut square to its arm, and all the outer ends lie on one line.
+- **A compass lodestar.** A long north ray, then east and west, short upper diagonals, long lower diagonals that reach for the blades, heavy valleys. The south ray is set by the gap.
+- **Very faint faceting.** Each ray has a lit and a shaded side; each chevron is a ridge, its left face lit and its right face shaded. Light falls from the star, the brightest thing in the mark. Depth without effects.
 
-The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, slope, reach, apex, the star's rays). Everything is generated from that one definition, tests pin the rhythm and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
+The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, reach, the star's centre and rays). Everything is generated from that one definition, tests pin the rhythm and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
 
 | File | Use |
 |---|---|
@@ -32,12 +33,12 @@ The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, slop
 | `assets/galahad-mark.svg` | The flat mark in `currentColor`, for anywhere one ink is wanted |
 | `apps/site/public/crest-{white,black}.svg` | The faceted emblem on a transparent ground, for the site (dark and light) |
 | `ui/emblem.ts` → `emblem()` | The emblem inline in the PWA, painted with the `--em-*` tokens so it follows the theme |
-| `icon("mark")` | The north star alone on the 24 px grid, for avatars (Galahad's voice: chat, requests, trust) |
+| `icon("mark")` | The whole crest, flat, on the 24 px grid, for avatars and menus (Galahad's voice: chat, requests, trust) |
 
 Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium).
 
 - Faceting is lit from the star above: on dark grounds the top of each face is white and falls to `#d4d4d9`; on light grounds it runs from `#333` to black.
-- Keep clear space of at least a quarter of the emblem's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the star alone.
+- Keep clear space of at least a quarter of the emblem's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the flat mark.
 
 ### Wordmark
 

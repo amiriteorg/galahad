@@ -1,8 +1,11 @@
 /*
- * Crest: Galahad's emblem. A lodestar above two blade-cut chevrons, on a 1024
- * grid, with very faint faceting. One rhythm holds it together: the gap from
- * the star's south tip to the first apex is the gap between the chevrons.
- * (assets/paragon-v1.svg is the first drawing it grew from.)
+ * Crest: Galahad's emblem, on a 1024 grid with very faint faceting. A lodestar
+ * set into two 45° chevrons: the chevrons run on the star's own diagonals, so
+ * its two lower rays lead straight into the first chevron's blades, and the
+ * star sits inside the climb instead of on top of it. One gap holds it
+ * together: every star tip that faces a chevron stops exactly one gap short of
+ * it, and the chevrons are one gap apart. (assets/paragon-v1.svg is the first
+ * drawing it grew from.)
  *
  * Pure data and a tiny SVG tree, no DOM: the PWA turns the tree into elements
  * (ui/emblem.ts), scripts/brand.ts serialises it into the icon files, so every
@@ -15,59 +18,80 @@ const round = (n: number): number => Math.round(n * 10) / 10;
 
 /** The proportions. Change these, run `bun scripts/brand.ts --png`, and every surface follows. */
 export const CREST = {
-  /** The rhythm: star tip to apex, and chevron to chevron. */
-  gap: 50,
-  /** Each chevron's vertical thickness. */
-  band: 108,
-  /** Rise over run of the chevron arms. */
-  slope: 0.6,
-  /** Half the chevrons' span. */
-  reach: 345,
-  /** The first chevron's apex. */
-  apex: 500,
-  /** The lodestar: a long north ray, a shorter south one, short diagonals, heavy valleys. */
-  star: { north: 235, east: 192, south: 135, diagonal: 114, valley: 60 },
+  /** The one gap: lower ray tip to blade, chevron to chevron, south tip to the second peak. */
+  gap: 32,
+  /** Each chevron's thickness, measured across the arm. */
+  band: 88,
+  /** How far the arms run from the star's centre along the diagonals; every end is cut square here. */
+  reach: 480,
+  /** The star's centre on the grid (this centres the mark vertically). */
+  centre: 430,
+  /**
+   * The lodestar: a long north ray, east and west, short upper diagonals,
+   * long lower diagonals that lead into the blades, and heavy valleys. The
+   * south ray isn't free: it stops one gap above the second chevron.
+   */
+  star: { north: 290, east: 176, diagonal: 106, lower: 150, valley: 50 },
 } as const;
 
 const CX = 512;
+const HALF = CREST.band / 2;
 
-function compassStar(cx: number, cy: number, r: typeof CREST.star): Point[] {
+/**
+ * A point on an arm: `a` runs from the star's centre down the 45° diagonal,
+ * `e` runs across it (positive is up and out). Side 1 is the right arm, -1 its mirror.
+ */
+function onArm(a: number, e: number, side: 1 | -1): Point {
+  return [round(CX + (side * (a + e)) / Math.SQRT2), round(CREST.centre + (a - e) / Math.SQRT2)];
+}
+
+/** The second chevron's top edge, across the arm, and its peak's distance below the star's centre. */
+const SECOND_TOP = -(CREST.gap + HALF);
+const SECOND_PEAK = -SECOND_TOP * Math.SQRT2;
+
+/** The south ray: one gap short of the second chevron's peak. */
+export const SOUTH = round(SECOND_PEAK - CREST.gap);
+
+function compassStar(cx: number, cy: number): Point[] {
+  const r = CREST.star;
   const points: Point[] = [];
   for (let k = 0; k < 16; k++) {
     const angle = (k * Math.PI) / 8;
-    const radius = k % 2 === 1 ? r.valley : k === 0 ? r.north : k === 8 ? r.south : k % 4 === 0 ? r.east : r.diagonal;
+    const radius = k % 2 === 1 ? r.valley : k === 0 ? r.north : k === 8 ? SOUTH : k === 4 || k === 12 ? r.east : k === 6 || k === 10 ? r.lower : r.diagonal;
     points.push([round(cx + radius * Math.sin(angle)), round(cy - radius * Math.cos(angle))]);
   }
   return points;
 }
 
-/** An upward chevron whose arm ends are cut square to the arm, like a blade. */
-function bladeChevron(apex: number): Point[] {
-  const { band, slope, reach } = CREST;
-  const k = band / (1 + slope * slope);
-  const drop = reach * slope;
-  return [
-    [round(CX - reach + k * slope), round(apex + drop + k)],
-    [CX - reach, round(apex + drop)],
-    [CX, apex],
-    [CX + reach, round(apex + drop)],
-    [round(CX + reach - k * slope), round(apex + drop + k)],
-    [CX, apex + band],
-  ];
-}
-
-export const STAR_CENTER: Point = [CX, CREST.apex - CREST.gap - CREST.star.south];
+export const STAR_CENTER: Point = [CX, CREST.centre];
 
 /** The star's outline, clockwise from the north point. */
-export const STAR: readonly Point[] = compassStar(STAR_CENTER[0], STAR_CENTER[1], CREST.star);
+export const STAR: readonly Point[] = compassStar(STAR_CENTER[0], STAR_CENTER[1]);
 
-const CHEVRON_POINTS: readonly Point[][] = [bladeChevron(CREST.apex), bladeChevron(CREST.apex + CREST.band + CREST.gap)];
+/** The first chevron gives its peak to the star: two blades, starting one gap past the lower ray tips. */
+function blade(side: 1 | -1): Point[] {
+  const from = CREST.star.lower + CREST.gap;
+  return [onArm(from, HALF, side), onArm(CREST.reach, HALF, side), onArm(CREST.reach, -HALF, side), onArm(from, -HALF, side)];
+}
+
+/** The second chevron, whole: its edges meet on the centre line (where a = -e). */
+function chevron(): Point[] {
+  const top = SECOND_TOP;
+  const bottom = top - CREST.band;
+  return [onArm(-top, top, 1), onArm(CREST.reach, top, 1), onArm(CREST.reach, bottom, 1), onArm(-bottom, bottom, 1), onArm(CREST.reach, bottom, -1), onArm(CREST.reach, top, -1)];
+}
+
+const CHEVRON_POINTS: readonly Point[][] = [blade(-1), blade(1), chevron()];
 
 const pathOf = (points: readonly Point[]): string => `M${points.map(([x, y]) => `${x} ${y}`).join(" ")}Z`;
 
+/** The chevrons' shapes: the first chevron's two blades (left, right), then the second chevron. */
 export const CHEVRONS: readonly string[] = CHEVRON_POINTS.map(pathOf);
 
-/** What the emblem covers, star tip to the lowest blade corner. */
+/** Where the chevrons start: the blades' inner top corners. */
+const CHEVRON_TOP = Math.min(...CHEVRON_POINTS.flat().map(([, y]) => y));
+
+/** What the emblem covers, north tip to the lowest blade corner. */
 export const EMBLEM_BOX = (() => {
   const all = [...STAR, ...CHEVRON_POINTS.flat()];
   const xs = all.map(([x]) => x);
@@ -82,16 +106,17 @@ export const STAR_PATH = pathOf(STAR);
 /** The star's facets: a triangle from the centre to each pair of neighbouring points. Even facets are lit, odd ones shaded. */
 export const STAR_FACETS: readonly string[] = STAR.map((p, i) => pathOf([STAR_CENTER, p, STAR[(i + 1) % STAR.length]!]));
 
-/** The north star alone, fitted to a 24px icon grid (for avatars and small marks). */
-export function starOnGrid(size = 24, inset = 2.5): string {
-  const xs = STAR.map(([x]) => x);
-  const ys = STAR.map(([, y]) => y);
-  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  const scale = (size - 2 * inset) / Math.max(maxX - minX, maxY - minY);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const round = (n: number): number => Math.round(n * 100) / 100;
-  return pathOf(STAR.map(([x, y]) => [round(size / 2 + (x - cx) * scale), round(size / 2 + (y - cy) * scale)] as const));
+/**
+ * The whole mark as one filled path on a small icon grid (avatars, menus),
+ * fitted inside `inset`. Same shapes as the emblem, flat.
+ */
+export function markOnGrid(size = 24, inset = 1.5): string {
+  const { x, y, width, height } = EMBLEM_BOX;
+  const scale = (size - 2 * inset) / Math.max(width, height);
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const fine = (n: number): number => Math.round(n * 100) / 100;
+  return [STAR, ...CHEVRON_POINTS].map((shape) => pathOf(shape.map(([px, py]) => [fine(size / 2 + (px - cx) * scale), fine(size / 2 + (py - cy) * scale)] as const))).join("");
 }
 
 /* ---------- the tree ---------- */
@@ -154,14 +179,15 @@ export function emblemTree(id: string, ink: EmblemPaint | string): SvgNode {
   const box = EMBLEM_BOX;
   const floor = box.y + box.height;
   const [sx, sy] = STAR_CENTER;
-  const { north, east, south } = CREST.star;
+  // The star's light spans its body, so the long north ray burns white at the tip.
+  const { east, lower } = CREST.star;
   defs.children!.push(
-    gradient(`${id}-left`, [box.x, CREST.apex, CX, floor], ink.lit),
-    gradient(`${id}-right`, [CX, CREST.apex, box.x + box.width, floor], ink.shade),
-    gradient(`${id}-lit`, [sx - east, sy - north, sx + east / 2, sy + south], ink.lit),
-    gradient(`${id}-shade`, [sx, sy - north, sx + east, sy + south], ink.shade),
+    gradient(`${id}-left`, [box.x, CHEVRON_TOP, CX, floor], ink.lit),
+    gradient(`${id}-right`, [CX, CHEVRON_TOP, box.x + box.width, floor], ink.shade),
+    gradient(`${id}-lit`, [sx - east, sy - east, sx + east / 2, sy + lower], ink.lit),
+    gradient(`${id}-shade`, [sx, sy - east, sx + east, sy + lower], ink.shade),
   );
-  const half = { y: CREST.apex - 1, height: round(floor - CREST.apex + 2) };
+  const half = { y: CHEVRON_TOP - 1, height: round(floor - CHEVRON_TOP + 2) };
   return n(
     "g",
     {},
