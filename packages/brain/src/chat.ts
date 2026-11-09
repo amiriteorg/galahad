@@ -1,7 +1,7 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { streamAnthropic, streamOpenAICompatible } from "./adapters.ts";
-import { GALAHAD_SYSTEM } from "./persona.ts";
+import { GALAHAD_SYSTEM, runtimeContext } from "./persona.ts";
 import { listModels, resolveProvider } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
 
@@ -47,8 +47,9 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
   const candidates = req.model ? [req.model] : await expand(ctx, roleModels(ctx.store, req.role ?? "planner"));
-  const system = req.context ? `${GALAHAD_SYSTEM}\n\n${req.context}` : GALAHAD_SYSTEM;
   for (const ref of candidates) {
+    // Stable persona first (cacheable), then what changes: the model, then recalled memories.
+    const system = [GALAHAD_SYSTEM, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
     let parsed: { provider: string; model: string };
     try {
       parsed = parseRef(ref);
