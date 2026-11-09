@@ -33,8 +33,11 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
   const files = new Map<string, Asset>();
   const src = join(webDir, "src");
   try {
+    // Each entrypoint is self-contained (no shared chunks), so the service worker can cache the
+    // shell by fixed names: app.js (the app), boot.js (theme before first paint), sw.js, and
+    // pair.js (the pairing flow with the invite schema, fetched only when a #pair= link opens).
     const result = await Bun.build({
-      entrypoints: [join(src, "app.ts"), join(src, "sw.ts")],
+      entrypoints: [join(src, "app.ts"), join(src, "boot.ts"), join(src, "pair.ts"), join(src, "sw.ts")],
       target: "browser",
       minify: true,
       naming: "[name].[ext]",
@@ -51,6 +54,7 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
       type: "application/manifest+json",
     });
     files.set("/icon.svg", { body: readFileSync(join(REPO_ROOT, "assets/icon.svg")), type: "image/svg+xml" });
+    files.set("/icon-maskable.svg", { body: readFileSync(join(src, "icon-maskable.svg")), type: "image/svg+xml" });
   } catch (error) {
     const message = String((error as Error).message ?? error).replace(/[<>&]/g, "");
     files.set("/", { body: `<!doctype html><title>Galahad</title><p>The PWA failed to build: ${message}</p>`, type: "text/html" });

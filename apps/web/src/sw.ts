@@ -3,11 +3,12 @@
  * Shell assets are served from cache and refreshed in the background
  * (stale-while-revalidate), so a new build is picked up on the next load.
  * Anything under /api, /link or /gw is never cached: those are signed,
- * live requests and always go to the network.
+ * live requests and always go to the network. The pairing bundle (/pair.js)
+ * is not cached either: pairing needs the network anyway.
  */
 
-const VERSION = "galahad-shell-v1";
-const SHELL = ["/", "/app.js", "/manifest.webmanifest", "/icon.svg"];
+const VERSION = "galahad-shell-v2";
+const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 
 interface ExtendableEventLike extends Event {
@@ -24,7 +25,7 @@ interface ServiceWorkerScope {
   addEventListener(type: "install" | "activate", listener: (event: ExtendableEventLike) => void): void;
   addEventListener(type: "fetch", listener: (event: FetchEventLike) => void): void;
   skipWaiting(): Promise<void>;
-  clients: { claim(): Promise<void> };
+  clients: { claim(): Promise<void>; matchAll(options: { type: "window" }): Promise<{ postMessage(message: unknown): void }[]> };
 }
 
 const sw = self as unknown as ServiceWorkerScope;
@@ -47,15 +48,25 @@ sw.addEventListener("activate", (event) => {
   );
 });
 
-async function fromShell(request: Request, key: string): Promise<Response> {
+/** Tell open pages that a newer app has been fetched, so they can offer a reload. */
+async function announceUpdate(): Promise<void> {
+  for (const client of await sw.clients.matchAll({ type: "window" })) client.postMessage({ type: "galahad:updated" });
+}
+
+async function fromShell(event: FetchEventLike, key: string): Promise<Response> {
   const cache = await caches.open(VERSION);
   const cached = await cache.match(key);
-  const refresh = fetch(request)
+  const before = key === "/app.js" ? cached?.clone() : undefined;
+  const refresh = fetch(event.request)
     .then(async (response) => {
-      if (response.ok) await cache.put(key, response.clone());
+      if (response.ok) {
+        if (before && (await before.text()) !== (await response.clone().text())) await announceUpdate();
+        await cache.put(key, response.clone());
+      }
       return response;
     })
     .catch(() => null);
+  event.waitUntil(refresh);
   if (cached) return cached;
   const fresh = await refresh;
   return fresh ?? new Response("Galahad is offline and this page is not cached yet.", { status: 503 });
@@ -68,8 +79,8 @@ sw.addEventListener("fetch", (event) => {
   if (url.origin !== sw.location.origin) return;
   if (NEVER_CACHE.some((prefix) => url.pathname.startsWith(prefix))) return;
   if (request.mode === "navigate") {
-    event.respondWith(fromShell(request, "/"));
+    event.respondWith(fromShell(event, "/"));
     return;
   }
-  if (SHELL.includes(url.pathname)) event.respondWith(fromShell(request, url.pathname));
+  if (SHELL.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
 });

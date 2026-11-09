@@ -1,18 +1,29 @@
 {
   "name": "Galahad",
   "short_name": "Galahad",
-  "description": "One mind, many bodies — your autonomous knight and engineer.",
-  "start_url": "/",
+  "description": "One mind, many bodies. Your autonomous knight and engineer.",
+  "start_url": "/#/overview",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#7c3aed",
-  "theme_color": "#7c3aed",
+  "background_color": "#0c0c0f",
+  "theme_color": "#0c0c0f",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    { "name": "Chat", "url": "/#/chat", "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }] },
+    { "name": "Inbox", "url": "/#/inbox", "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
   ]
 }
