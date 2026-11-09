@@ -7,8 +7,8 @@
  * is not cached either: pairing needs the network anyway.
  */
 
-const VERSION = "galahad-shell-v2";
-const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg"];
+const VERSION = "galahad-shell-v3";
+const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 
 interface ExtendableEventLike extends Event {

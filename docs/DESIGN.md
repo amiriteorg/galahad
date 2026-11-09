@@ -4,7 +4,7 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ## Principles
 
-1. **Calm by default; colour means something.** The canvas is neutral graphite. Violet belongs to the owner: the one primary action on a screen, focus, and what you approved. Green, amber and red only ever mean status, trust, verdict or risk. Nothing is coloured for decoration. ("Don't compete for attention you haven't earned.")
+1. **Monochrome; colour means something.** Galahad is black and white ink with slight gradients. Ink (white on dark, black on light) belongs to the owner: the one primary action on a screen, focus, and what you approved. Green, amber and red are the only colours, and they only ever mean status, trust, verdict or risk. Nothing is coloured for decoration. ("Don't compete for attention you haven't earned.")
 2. **Show the work.** An agent that acts on your behalf has to be legible: what it is doing now, what it decided and why, what it will do next. Spinners alone are not an answer.
 3. **Approvals scale with stakes.** Reading is free, a phone joins with one click after you compare codes, a machine asks once more because it receives the vault, and anything irreversible makes you type its name.
 4. **Safe by construction.** No HTML from strings, keys only in password fields, secrets stopped before they leave the page. The safety patterns below are not optional styling: they're the product.
@@ -13,23 +13,34 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ## Brand
 
-### The mark
+### The emblem: Paragon
 
-A **shield that is also a G**: a single monoline stroke traces a heater shield and turns inward at the waist to close the letter. It reads as protection (the oath, the vault) and as Galahad, without crests, swords or grails. It stays legible from 16 px to 512 px.
+An **eight-point north star above ascending chevrons**, the chevrons clipped to a rounded square. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned). The star and chevrons carry **very faint faceting**: each ray has a lit and a shaded face, and each half of the chevrons has its own gradient, so the mark has depth without effects. `assets/paragon.svg` is the reference drawing.
+
+There is one definition: the geometry and the SVG tree in `apps/web/src/brand.ts`. Everything else is generated from it, and a test fails if a committed file drifts.
 
 | File | Use |
 |---|---|
-| `assets/icon.svg` | App icon, favicon, in-app mark (rounded tile, `purpose: any`) |
-| `apps/web/src/icon-maskable.svg` | Full-bleed tile for platform masks (`purpose: maskable`); the mark sits inside the central safe circle |
-| `MARK_PATH` in `ui/icons.ts` | The mark on the 24 px icon grid, for avatars and inline use (`icon("mark")`) |
+| `assets/icon.svg` | App icon and favicon: a night tile (`#1e1e21` → `#050506`), a breath of starlight behind the star, the emblem in white ink |
+| `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the emblem sits inside the central safe circle |
+| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG |
+| `assets/galahad-mark.svg` | The flat mark in `currentColor`, for anywhere one ink is wanted |
+| `apps/site/public/paragon-{white,black}.svg` | The faceted emblem on a transparent ground, for the site (dark and light) |
+| `ui/emblem.ts` → `emblem()` | The emblem inline in the PWA, painted with the `--em-*` tokens so it follows the theme |
+| `icon("mark")` | The north star alone on the 24 px grid, for avatars (Galahad's voice: chat, requests, trust) |
 
-- The tile is a diagonal gradient from `#7c3aed` (violet-600) to `#4c1d95` (violet-900); the stroke is white, 4.5/64 wide, round caps and joins.
-- Keep clear space of at least a quarter of the tile's width. Don't recolour the stroke, add effects, or put the mark on a busy image.
-- In the app, Galahad's own voice (chat avatar, requests from him, his trust badge) uses the mark on `--accent-soft`.
+Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium).
+
+- Faceting is lit from the star above: on dark grounds the top of each face is white and falls to `#d4d4d9`; on light grounds it runs from `#333` to black.
+- Keep clear space of at least a quarter of the emblem's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the star alone.
 
 ### Wordmark
 
-"Galahad" in the system sans at 650 weight with −0.015em tracking, next to the 24 px tile. No custom lettering; it should look native everywhere.
+"GALAHAD" in the system sans: capitals at 650 weight, 0.2em tracking, 12–13 px, beside the emblem. No custom lettering; the spacing does the work.
+
+### Starlight
+
+The one decorative flourish, and it is barely there: a faint radial glow (`--glow`, `--glow-hero`) at the top of the canvas and behind the emblem on the welcome, pairing and empty-chat screens. Primary buttons and the active navigation item carry a slight top-to-bottom gradient.
 
 ### Voice
 
@@ -48,18 +59,19 @@ All colour tokens use `light-dark()`, so one list serves both themes. The theme 
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--bg` | `#fafafb` | `#0c0c0f` | Canvas |
-| `--sidebar` | `#f4f4f6` | `#0f0f13` | Sidebar |
-| `--surface` | `#ffffff` | `#141419` | Cards, dialogs |
-| `--surface-2` | `#f4f4f6` | `#1b1b21` | Inputs, chips, user bubbles |
-| `--surface-3` | `#ececf0` | `#23232a` | Hover, active |
-| `--bg-sunken` | `#f2f2f5` | `#08080b` | Code, card footers, copy fields |
-| `--border` / `--border-strong` | `#e6e6eb` / `#d4d4db` | `#24242b` / `#33333c` | Hairlines / controls |
-| `--text` | `#16161b` | `#ececf1` | Primary text |
-| `--text-2` | `#55555f` | `#a3a3ae` | Secondary text |
-| `--text-3` | `#676772` | `#8b8b97` | Meta, placeholders |
-| `--accent` | `#6d28d9` | `#a99bff` | Owner, focus, links |
-| `--accent-fill` | `#6d28d9` | `#7c3aed` | Primary button (white text) |
+| `--bg` | `#fafafa` | `#08080a` | Canvas |
+| `--sidebar` | `#f5f5f6` | `#0b0b0d` | Sidebar (falls to `--bg-sunken`) |
+| `--surface` | `#ffffff` | `#111113` | Cards, dialogs |
+| `--surface-2` | `#f4f4f5` | `#17171a` | Inputs, chips, user bubbles |
+| `--surface-3` | `#ebebed` | `#1f1f23` | Hover, active |
+| `--bg-sunken` | `#f3f3f4` | `#050506` | Code, card footers, copy fields |
+| `--border` / `--border-strong` | `#e6e6e8` / `#d4d4d8` | `#212125` / `#2e2e33` | Hairlines / controls |
+| `--text` | `#0a0a0b` | `#ededef` | Primary text |
+| `--text-2` | `#52525a` | `#a1a1a9` | Secondary text |
+| `--text-3` | `#696971` | `#8b8b94` | Meta, placeholders |
+| `--accent` | `#0a0a0b` | `#ffffff` | Ink: owner, focus, links |
+| `--accent-fill-top` → `--accent-fill` | `#3a3a3f` → `#0c0c0e` | `#ffffff` → `#e4e4e8` | Primary button gradient (`--on-accent` text: white on light, near-black on dark) |
+| `--em-lit` … `--em-deep` | `#333335` … `#000000` | `#ffffff` … `#d4d4d9` | The emblem's facets |
 
 ### Semantic tones
 
@@ -70,9 +82,9 @@ Components never pick colours; they take a tone through `data-tone="ok|warn|dang
 | `ok` | `#137a43` | `#4cc38a` | Online, allowed, isolated (safe), sealed |
 | `warn` | `#965a00` | `#f0b549` | Asks you, untrusted, on battery, internet-facing |
 | `danger` | `#c4281c` | `#ff7a7a` | Denied, revoked, destructive, possible interception |
-| `info` | `#1f5fd1` | `#6cb0ff` | Neutral facts, gateway (models only) |
-| `accent` | violet | violet | You: your memories, your approvals, this device |
-| `agent` | `#0e7490` | `#5ec8d8` | Written by Galahad |
+| `info` | `#3f3f46` | `#c8c8d0` | Neutral facts, gateway (models only) |
+| `accent` | ink | ink | You: your memories, your approvals, this device |
+| `agent` | `#27272a` | `#e4e4e8` | Written by Galahad (with the star) |
 | `neutral` | `--text-2` | `--text-2` | Everything else |
 
 | Concept | Mapping |
@@ -83,7 +95,7 @@ Components never pick colours; they take a tone through `data-tone="ok|warn|dang
 | **Network risk** (sandboxes) | isolated → `ok` · gateway → `info` (the default) · online → `warn` |
 | **Action class** (ledger) | read → neutral · create/modify → `info` · outward → `warn` · delete/forbidden → `danger` |
 
-**Contrast.** Every text token passes WCAG AA (4.5:1) on every surface in both themes. `--text-3` is the tightest: 5.1:1 on `--surface-2` and still 4.6:1 on `--surface-3`. Tone text on its own `--tone-soft` is at least 4.8:1 (light) and 6.6:1 (dark). White on `--accent-fill` is 7.1:1 (light) and 5.7:1 (dark); white on `--danger-fill` is 5.6:1 or better.
+**Contrast.** Every text token passes WCAG AA (4.5:1) on every surface in both themes. `--text-3` is the tightest: 4.9:1 on `--surface-2` in both themes, and 4.6:1 (light) and 4.9:1 (dark) on `--surface-3`. Tone text on its own `--tone-soft` is at least 4.8:1 (light) and 6.8:1 (dark). `--on-accent` on the primary gradient is at least 11:1 at either end; white on `--danger-fill` is 5.6:1 or better.
 
 ### Type
 
@@ -136,7 +148,7 @@ Rules:
 | Component | Where | Notes |
 |---|---|---|
 | Button | `ui/controls.ts` `button()` | `primary` (one per view), default, `ghost`, `danger` (text), `danger-solid` (only inside a confirmation). `busy()` swaps the icon for a spinner and disables it while work runs. |
-| Badge, dot, count, chip, tag | `controls.ts` | Badges carry a tone; dots show status; counts are the only violet fill outside buttons; chips show capabilities or act as toggles (`aria-pressed`). |
+| Badge, dot, count, chip, tag | `controls.ts` | Badges carry a tone; dots show status; counts are the only ink fill outside buttons; chips show capabilities or act as toggles (`aria-pressed`). |
 | Callout | `callout()` | Tone, icon, optional title and actions. `quiet` for neutral notes. |
 | Empty / error / skeleton | `empty()`, `errorState()`, `skeletonRows()` | Empty states say what will appear and offer the next step. Errors are courteous and offer Try again. Skeletons match the real layout's height. |
 | Segmented control | `segmented()` | A real `radiogroup` with arrow-key movement and a sliding thumb. Optional per-option tone (network risk). |

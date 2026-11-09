@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="112 104 800 800" fill="none">
+  <title>Galahad</title>
+  <g fill="currentColor">
+    <defs>
+      <clipPath id="mark-boundary">
+        <rect x="128" y="136" width="768" height="736" rx="190"/>
+      </clipPath>
+      <clipPath id="mark-chevrons">
+        <path d="M128 650 380 440 377 468 128 678Z M896 650 644 440 647 468 896 678Z"/>
+        <path d="M128 758 476 453 476 489 128 794Z M896 758 548 453 548 489 896 794Z"/>
+        <path d="M128 875 512 500 896 875 896 957 512 582 128 957Z"/>
+        <path d="M274 872 512 630 750 872 675 872 512 726 349 872Z"/>
+      </clipPath>
+    </defs>
+    <path d="M512 176 531 330 650 230 544 348 694 362 544 376 620 456 531 394 512 486 493 394 404 456 480 376 330 362 480 348 374 230 493 330Z"/>
+    <g clip-path="url(#mark-boundary)">
+      <g clip-path="url(#mark-chevrons)">
+        <rect x="128" y="430" width="768" height="550"/>
+      </g>
+    </g>
+  </g>
+</svg>

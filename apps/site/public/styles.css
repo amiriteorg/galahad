@@ -1,24 +1,27 @@
-/* galahad.bot: calm graphite canvas, violet reserved for meaning. No scripts, no webfonts. */
+/* galahad.bot: black and white ink, a breath of starlight, colour only where it means something. No scripts, no webfonts. */
 
 :root {
   color-scheme: dark light;
-  --bg: #0a0a0e;
-  --bg-elev: #111117;
-  --bg-soft: #16161e;
+  --bg: #08080a;
+  --bg-elev: #111113;
+  --bg-soft: #17171a;
   --line: rgb(255 255 255 / 0.07);
   --line-strong: rgb(255 255 255 / 0.13);
-  --text: #ededf2;
-  --text-dim: #a4a4b4;
-  --text-faint: #6f6f80;
-  --accent: #8b5cf6;
-  --accent-bright: #a78bfa;
-  --accent-soft: rgb(139 92 246 / 0.13);
-  --accent-line: rgb(139 92 246 / 0.35);
+  --text: #ededef;
+  --text-dim: #a1a1a9;
+  --text-faint: #6c6c75;
+  --accent: #e4e4e8;
+  --accent-top: #ffffff;
+  --accent-bright: #ffffff;
+  --accent-soft: rgb(255 255 255 / 0.06);
+  --accent-line: rgb(255 255 255 / 0.24);
+  --on-accent: #0a0a0b;
+  --glow: rgb(255 255 255 / 0.07);
   --ok: #34d399;
   --ask: #fbbf24;
   --deny: #f87171;
-  --term-bg: #0d0d13;
-  --term-text: #d9d9e3;
+  --term-bg: #060607;
+  --term-text: #dcdce0;
   --radius: 14px;
   --radius-sm: 9px;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 60px -30px rgb(0 0 0 / 0.8);
@@ -28,22 +31,25 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #fbfbfd;
+    --bg: #fafafa;
     --bg-elev: #ffffff;
-    --bg-soft: #f3f3f8;
-    --line: rgb(17 17 34 / 0.08);
-    --line-strong: rgb(17 17 34 / 0.14);
-    --text: #121219;
-    --text-dim: #545466;
-    --text-faint: #8a8a9a;
-    --accent: #6d28d9;
-    --accent-bright: #7c3aed;
-    --accent-soft: rgb(109 40 217 / 0.08);
-    --accent-line: rgb(109 40 217 / 0.28);
+    --bg-soft: #f3f3f4;
+    --line: rgb(10 10 12 / 0.08);
+    --line-strong: rgb(10 10 12 / 0.14);
+    --text: #0a0a0b;
+    --text-dim: #52525a;
+    --text-faint: #8c8c94;
+    --accent: #0c0c0e;
+    --accent-top: #3a3a3f;
+    --accent-bright: #000000;
+    --accent-soft: rgb(10 10 12 / 0.045);
+    --accent-line: rgb(10 10 12 / 0.24);
+    --on-accent: #ffffff;
+    --glow: rgb(10 10 12 / 0.05);
     --ok: #059669;
     --ask: #b45309;
     --deny: #dc2626;
-    --shadow: 0 1px 2px rgb(17 17 34 / 0.04), 0 24px 60px -36px rgb(17 17 34 / 0.25);
+    --shadow: 0 1px 2px rgb(10 10 12 / 0.04), 0 24px 60px -36px rgb(10 10 12 / 0.25);
   }
 }
 
@@ -144,15 +150,20 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
   text-decoration: none;
 }
 
 .brand img {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  display: block;
+  width: 24px;
+  height: auto;
+}
+
+.brand span {
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }
 
 .nav ul {
@@ -199,8 +210,8 @@ code {
   height: 720px;
   z-index: -1;
   background:
-    radial-gradient(48% 42% at 50% 38%, var(--accent-soft), transparent 70%),
-    radial-gradient(30% 30% at 72% 20%, rgb(56 189 248 / 0.06), transparent 70%);
+    radial-gradient(34% 40% at 30% 40%, var(--glow), transparent 70%),
+    radial-gradient(60% 50% at 50% 20%, var(--accent-soft), transparent 70%);
   pointer-events: none;
 }
 
@@ -289,14 +300,27 @@ h1 .soft {
 
 .button.primary {
   border-color: transparent;
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 8px 24px -10px var(--accent);
+  background: linear-gradient(180deg, var(--accent-top), var(--accent));
+  color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 10px 28px -16px color-mix(in oklab, var(--accent) 70%, transparent);
 }
 
 .button.primary:hover {
-  background: var(--accent-bright);
-  color: #fff;
+  background: linear-gradient(180deg, var(--accent-top), var(--accent-bright));
+  color: var(--on-accent);
+}
+
+/* ── crest: the emblem over the headline ───────────────────── */
+
+.crest {
+  display: block;
+  margin-bottom: 26px;
+}
+
+.crest img {
+  display: block;
+  width: clamp(60px, 7vw, 76px);
+  height: auto;
 }
 
 /* ── terminal ──────────────────────────────────────────────── */
@@ -318,7 +342,7 @@ h1 .soft {
   height: 38px;
   padding: 0 14px;
   border-bottom: 1px solid rgb(255 255 255 / 0.06);
-  color: #6f6f80;
+  color: #75757e;
   font: 500 0.75rem var(--mono);
 }
 
@@ -341,12 +365,12 @@ h1 .soft {
 }
 
 .terminal .p {
-  color: #8b5cf6;
+  color: #ffffff;
   user-select: none;
 }
 
 .terminal .c {
-  color: #6f6f80;
+  color: #75757e;
 }
 
 .terminal .o {
@@ -354,7 +378,7 @@ h1 .soft {
 }
 
 .terminal .w {
-  color: #a4a4b4;
+  color: #a1a1a9;
 }
 
 /* ── sections ──────────────────────────────────────────────── */

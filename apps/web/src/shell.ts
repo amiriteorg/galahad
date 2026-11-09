@@ -9,6 +9,7 @@ import type { AnyScope, WhoAmI } from "./types.ts";
 import { button, count, dot, kbd } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { cx, h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
+import { emblem } from "./ui/emblem.ts";
 import { icon, type IconName } from "./ui/icons.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
@@ -142,7 +143,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, h("a", { class: "wordmark grow", href: "#/overview", "aria-label": "Galahad, overview" }, h("img", { src: "/icon.svg", alt: "" }), h("span", {}, "Galahad")), collapse),
+    h("div", { class: "sidebar-head" }, h("a", { class: "wordmark grow", href: "#/overview", "aria-label": "Galahad, overview" }, emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
     h(
       "button",
       { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
@@ -159,7 +160,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topbar = h(
     "header",
     { class: "topbar" },
-    h("a", { class: "brand-mini", href: "#/overview", "aria-label": "Galahad, overview" }, h("img", { src: "/icon.svg", alt: "" })),
+    h("a", { class: "brand-mini", href: "#/overview", "aria-label": "Galahad, overview" }, emblem({ size: 24 })),
     topTitle,
     h(
       "div",

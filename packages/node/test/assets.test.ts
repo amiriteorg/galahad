@@ -35,6 +35,22 @@ describe("the PWA bundle", () => {
     for (const icon of manifest.icons as { src: string }[]) expect(assets.has(icon.src)).toBe(true);
   });
 
+  test("raster icons are real PNGs, and iOS gets one", async () => {
+    const assets = await buildAssets();
+    const html = await assets.serve("/").text();
+    expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
+    const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    for (const path of ["/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png"]) {
+      const response = assets.serve(path);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      expect([...bytes.slice(0, 8)]).toEqual(PNG);
+      // Width and height live in the IHDR chunk; a render that went wrong would not be square.
+      const view = new DataView(bytes.buffer);
+      expect(view.getUint32(16)).toBe(view.getUint32(20));
+    }
+  });
+
   test("every entry is self-contained, so the service worker can cache the shell by name", async () => {
     const assets = await buildAssets();
     for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js"]) {

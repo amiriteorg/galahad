@@ -7,6 +7,7 @@ import { lastRole, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { button, callout, copyText, segmented } from "../ui/controls.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
+import { emblem } from "../ui/emblem.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { signal } from "../ui/signal.ts";
@@ -323,7 +324,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "div",
       { class: "chat-hero" },
-      h("img", { src: "/icon.svg", alt: "" }),
+      h("div", { class: "hero-mark" }, emblem({ size: 52 })),
       h("h2", {}, "At your service."),
       h("p", {}, "Ask anything. Galahad recalls what your fleet remembers. Keys belong in the vault, never here."),
       canChat

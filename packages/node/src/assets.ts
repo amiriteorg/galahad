@@ -55,6 +55,11 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     });
     files.set("/icon.svg", { body: readFileSync(join(REPO_ROOT, "assets/icon.svg")), type: "image/svg+xml" });
     files.set("/icon-maskable.svg", { body: readFileSync(join(src, "icon-maskable.svg")), type: "image/svg+xml" });
+    // Raster icons for platforms that won't take SVG (iOS home screen, older Android launchers).
+    // Rendered from the one emblem definition by `bun scripts/brand.ts --png`.
+    for (const name of ["apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
+      files.set(`/${name}`, { body: new Uint8Array(readFileSync(join(src, name))), type: "image/png" });
+    }
   } catch (error) {
     const message = String((error as Error).message ?? error).replace(/[<>&]/g, "");
     files.set("/", { body: `<!doctype html><title>Galahad</title><p>The PWA failed to build: ${message}</p>`, type: "text/html" });

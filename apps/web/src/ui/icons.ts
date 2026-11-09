@@ -1,3 +1,4 @@
+import { starOnGrid } from "../brand.ts";
 import { svg } from "./dom.ts";
 
 /*
@@ -10,11 +11,11 @@ const circle = (cx: number, cy: number, r: number): string => `M${cx - r} ${cy}a
 const rect = (x: number, y: number, w: number, hgt: number, r: number): string =>
   `M${x + r} ${y}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${hgt - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(w - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(hgt - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z`;
 
-/** The mark (shield that is also a G), on the icon grid. */
-export const MARK_PATH = "M18.5 2.9H6.25A1.25 1.25 0 0 0 5 4.15v6.5c0 4.8 2.95 8.3 7 10.5 4.05-2.2 7-5.7 7-10.5v-.75h-6.75";
+/** The mark: Paragon's north star, filled, on the icon grid (the full emblem lives in ./emblem.ts). */
+export const MARK_PATH = starOnGrid(24, 2);
 
 const ICONS = {
-  mark: [MARK_PATH],
+  mark: [`!${MARK_PATH}`],
   overview: [rect(3.5, 3.5, 7, 7, 1.75), rect(13.5, 3.5, 7, 7, 1.75), rect(3.5, 13.5, 7, 7, 1.75), circle(17, 17, 3.5)],
   inbox: ["M3.5 13.5h4.25l1.5 2.5h5.5l1.5-2.5h4.25", "M6.6 5h10.8a1.5 1.5 0 0 1 1.45 1.1L20.5 13v5a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18v-5l1.65-6.9A1.5 1.5 0 0 1 6.6 5z"],
   chat: ["M5 4.5h14A1.5 1.5 0 0 1 20.5 6v9.5A1.5 1.5 0 0 1 19 17h-7.5l-4.25 3.25V17H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5z"],

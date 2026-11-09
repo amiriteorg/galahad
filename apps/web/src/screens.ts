@@ -3,6 +3,7 @@ import { shortId } from "./lib/text.ts";
 import { button, callout, copyField } from "./ui/controls.ts";
 import { confirmAction } from "./ui/dialog.ts";
 import { type Child, h, replace } from "./ui/dom.ts";
+import { emblem } from "./ui/emblem.ts";
 import { icon } from "./ui/icons.ts";
 import { type BrowserIdentity, forgetIdentity } from "./identity.ts";
 
@@ -16,7 +17,7 @@ export function solo(...children: Child[]): HTMLElement {
 }
 
 export function hero(title: string, lede: Child): HTMLElement {
-  return h("header", { class: "hero" }, h("img", { src: "/icon.svg", alt: "", width: 56, height: 56 }), h("h1", {}, title), h("p", {}, lede));
+  return h("header", { class: "hero" }, h("div", { class: "hero-mark" }, emblem({ size: 72 })), h("h1", {}, title), h("p", {}, lede));
 }
 
 export function trustStrip(): HTMLElement {
