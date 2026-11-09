@@ -52,7 +52,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
         }),
       );
     }
-    if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events, in sync", href: "#/memory" }));
+    if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events in the shared mind", href: "#/memory" }));
     replace(stats, ...tiles);
   }
 
