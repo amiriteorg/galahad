@@ -1,0 +1,89 @@
+# CI on your self-hosted runners.
+#
+#  check    every push and PR: typecheck, all tests, site gate (fast, any Linux runner)
+#  sandbox  real-Docker sandbox tests, on a runner with Docker; opt-in via repo
+#           variables SANDBOX_TESTS=true and (optionally) SANDBOX_RUNNER='["self-hosted","linux","docker"]'
+#  site     on main: deploy galahad.bot's site, when the CLOUDFLARE_API_TOKEN secret exists
+#
+# Hardening: read-only token, actions pinned to commit SHAs, no pull_request_target,
+# credentials not persisted in the checkout, superseded runs cancelled.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck & test
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+        env:
+          GALAHAD_KEYSTORE: file
+      - run: bun apps/site/scripts/check.ts
+
+  sandbox:
+    name: Sandbox (real Docker)
+    needs: check
+    if: vars.SANDBOX_TESTS == 'true'
+    runs-on: ${{ fromJSON(vars.SANDBOX_RUNNER || '["self-hosted","linux"]') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: docker build -q -t galahad/sandbox:1 sandbox/
+      - run: bun test packages/sandbox
+        env:
+          GALAHAD_DOCKER_TESTS: "1"
+
+  site:
+    name: Deploy galahad.bot
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    environment: site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Deploy (skipped until the CLOUDFLARE_API_TOKEN secret is set)
+        working-directory: apps/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the site deploy."
+            exit 0
+          fi
+          bun scripts/check.ts
+          ./node_modules/.bin/wrangler deploy

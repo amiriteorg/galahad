@@ -1,0 +1,14 @@
+{
+  "name": "@galahad/site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "bun scripts/check.ts",
+    "deploy": "bun scripts/check.ts && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  }
+}

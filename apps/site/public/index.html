@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galahad · One mind, every machine you own</title>
+    <meta
+      name="description"
+      content="Galahad is an autonomous, courteous engineer that lives across your laptops, servers and phones. One signed memory, any model, your keys never exposed, real work in sandboxes he cannot escape."
+    />
+    <meta name="theme-color" content="#0a0a0e" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)" />
+    <meta property="og:title" content="Galahad: one mind, every machine you own" />
+    <meta property="og:description" content="An autonomous, courteous engineer with one shared mind across all your devices, and safety built in." />
+    <meta property="og:url" content="https://galahad.bot/" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="/" aria-label="Galahad home"><img src="/icon.svg" alt="" width="26" height="26" />Galahad</a>
+        <nav aria-label="Sections">
+          <ul>
+            <li><a href="#how">How it works</a></li>
+            <li><a href="#security">Security</a></li>
+            <li class="keep"><a href="/oath/">The Oath</a></li>
+            <li><a href="#lineage">Lineage</a></li>
+            <li><a href="#status">Status</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="hero">
+        <div class="wrap">
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>In private development: the first milestones are running</span>
+          <h1>One mind.<br /><span class="soft">Every machine you own.</span></h1>
+          <p class="lede">
+            Galahad is an autonomous, courteous engineer who lives across your laptops, servers and phones. He shares one
+            signed memory, uses any model without ever seeing your keys, and does real work in sandboxes he can't escape.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="#how">How it works</a>
+            <a class="button" href="/oath/">Read the Oath</a>
+          </div>
+
+          <figure class="terminal" aria-label="Example session">
+            <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>galahad</span></div>
+            <pre><span class="p">$ </span>galahad remember "the build server has 192 GB of RAM and KVM"
+<span class="w">Remembered.</span>              <span class="c"># …and every other node knows it now</span>
+<span class="p">$ </span>galahad sandbox run --net online -- git clone https://github.com/oven-sh/bun
+<span class="c">[sandbox 73c997ed00 on forge · online · 4 cpu · 8 GB]</span>
+<span class="w">Cloning into 'bun'…</span>
+<span class="c">[exit 0 · 5744 ms]</span>          <span class="c"># sandbox destroyed, action recorded in the ledger</span>
+<span class="p">$ </span>galahad ask "Where should the nightly eval run?"
+<span class="o">On forge: it's always on, has the sandbox image ready, and the laptop is on battery.</span></pre>
+          </figure>
+        </div>
+      </div>
+
+      <section id="how">
+        <div class="wrap">
+          <p class="kicker">How it works</p>
+          <h2>One mind, many bodies.</h2>
+          <p class="intro">
+            Every Galahad instance is the same Galahad. Machines differ only in what their bodies can do: one has your
+            repos, another never sleeps, another has a GPU, your phone has you.
+          </p>
+
+          <div class="diagram" role="img" aria-label="Diagram: one shared mind replicated to a laptop, a server, a desktop and a phone, connected by an encrypted mesh.">
+            <svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect class="mind" x="250" y="24" width="500" height="92" rx="16" />
+              <text class="label" x="500" y="64" text-anchor="middle">The Mind</text>
+              <text class="sub" x="500" y="90" text-anchor="middle">signed · content-addressed · replicated · works offline</text>
+              <path class="link" d="M335 116 C 335 170, 130 170, 130 232" />
+              <path class="link" d="M445 116 C 445 180, 380 180, 380 232" />
+              <path class="link" d="M555 116 C 555 180, 620 180, 620 232" />
+              <path class="link" d="M665 116 C 665 170, 870 170, 870 232" />
+              <path class="mesh" d="M220 285 H 290 M470 285 H 530 M710 285 H 780" />
+              <rect class="box" x="40" y="232" width="180" height="104" rx="14" />
+              <text class="label" x="130" y="274" text-anchor="middle">Laptop</text>
+              <text class="sub" x="130" y="298" text-anchor="middle">repos · you are here</text>
+              <rect class="box" x="290" y="232" width="180" height="104" rx="14" />
+              <text class="label" x="380" y="274" text-anchor="middle">Server</text>
+              <text class="sub" x="380" y="298" text-anchor="middle">always on · sandboxes</text>
+              <rect class="box" x="530" y="232" width="180" height="104" rx="14" />
+              <text class="label" x="620" y="274" text-anchor="middle">Desktop</text>
+              <text class="sub" x="620" y="298" text-anchor="middle">GPU · local models</text>
+              <rect class="box" x="780" y="232" width="180" height="104" rx="14" />
+              <text class="label" x="870" y="274" text-anchor="middle">Phone</text>
+              <text class="sub" x="870" y="298" text-anchor="middle">chat · approvals</text>
+            </svg>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>The Mind</h3>
+              <p>
+                An append-only log of signed, content-addressed events. State is a pure function of the event set, so
+                every replica converges on the same state, whatever order events arrive in and however often they're
+                repeated. This is property-tested.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The Link</h3>
+              <p>
+                An encrypted mesh over Tailscale. Every request is signed by a device key. New devices pair with a
+                one-time invite and a 6-digit code shown on both screens. If an invite is used twice, it locks.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The Bodies</h3>
+              <p>
+                Each machine advertises what it can do. Work goes where it fits, and Galahad says why: long, untrusted jobs
+                to the always-on sandbox host; interactive work to the machine you're using.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="capabilities">
+        <div class="wrap">
+          <p class="kicker">What he can do</p>
+          <h2>Built to grow with every machine, model and key you give him.</h2>
+          <div class="grid">
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></div>
+              <h3>The Vault</h3>
+              <p>
+                Add an API key once and every full node can use it. It's sealed to each device's key, never stored in
+                plaintext, and rotated automatically when a device is revoked.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M12 4v16" /><circle cx="12" cy="12" r="9" /></svg></div>
+              <h3>Any model</h3>
+              <p>
+                Models are hired by role (planner, engineer, reviewer, swift) with fallback chains: Claude, DeepSeek,
+                OrcaRouter, OpenRouter, local Ollama and llama.cpp, and anything else that's OpenAI-compatible.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z" /><path d="m3 8 9 5 9-5M12 13v8" /></svg></div>
+              <h3>Sandboxes</h3>
+              <p>
+                Every task gets its own container: unprivileged, no Linux capabilities, a read-only root, resource
+                limits and a hard deadline. Network access is a deliberate choice: none, models only, or online.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a4 4 0 0 1 0 8h-3M9 17H6a4 4 0 0 1 0-8h3M8 12h8" /></svg></div>
+              <h3>Model gateway</h3>
+              <p>
+                Coding agents (OpenCode, Claude Code, Codex, Hermes) use your keys through scoped, capped, expiring
+                tokens: <code>galahad run -- opencode</code>. The real key never leaves the vault.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg></div>
+              <h3>The Ledger</h3>
+              <p>
+                Every gated action is a signed event: what, where, which quest, and the Oath's verdict. Read it from any
+                device.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg></div>
+              <h3>In your pocket</h3>
+              <p>
+                An installable app on your private network. Pair with a WebCrypto key that can never leave the device;
+                chat, recall, approve devices and answer key requests from your phone.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="security">
+        <div class="wrap">
+          <p class="kicker">Security</p>
+          <h2>Safe by construction, not by promise.</h2>
+          <p class="intro">
+            An autonomous agent with access to every device you own needs guardrails built into its foundations. Each
+            line below is enforced in code and covered by tests.
+          </p>
+          <ul class="guarantees">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Keys never go through chat.</strong><span>Anything that looks like a credential is refused at the chat and memory doors and redirected to the vault.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Agents never hold your keys.</strong><span>Tools and sandboxes get scoped tokens limited to chosen providers. They expire and are revoked when the work ends.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>He asks; he never sees.</strong><span>When Galahad needs a credential he files a request. You fill it in a password field; he only learns that it exists.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Untrusted content is data.</strong><span>Memories derived from the web or from other people are labeled untrusted. They can never become instructions or grant permissions.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Sandboxes he can't escape.</strong><span>uid 1000, zero capabilities, a read-only root, no access to the host or the Docker socket. Sandboxes can't reach each other. Verified against real Docker.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Creating is free; deleting asks.</strong><span>He can create what his work needs, but persistent things are never deleted without your approval. His own scratch work, he cleans up himself.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>Every request is signed.</strong><span>Device keys with replay protection and a scope for each route. Signing in to the API does not mean every method is allowed.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg><div><strong>He can't ship code to himself.</strong><span>Galahad may write his own improvements. Only releases you approve reach the fleet.</span></div></li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="oath">
+        <div class="wrap">
+          <p class="kicker">The Oath</p>
+          <h2>Character is part of the architecture.</h2>
+          <div class="oath">
+            <blockquote>
+              <p><b>Courteous</b> to you and to everyone he deals with on your behalf.</p>
+              <p><b>Candid.</b> He tells the truth plainly, including bad news, disagreement and his own mistakes.</p>
+              <p><b>Humble.</b> He says when he is uncertain, and never claims to have done what he hasn't.</p>
+              <p><b>Steady.</b> Never flattering, never condescending; brief when brevity serves, thorough when it matters.</p>
+            </blockquote>
+            <div>
+              <table class="classes">
+                <tbody>
+                  <tr><th>Read</th><td><span class="v allow">allow</span>search, read, recall, browse</td></tr>
+                  <tr><th>Create / modify</th><td><span class="v allow">allow</span>logged: buckets, branches, containers, credentials</td></tr>
+                  <tr><th>Delete</th><td><span class="v ask">ask</span>anything persistent (his own scratch work excepted)</td></tr>
+                  <tr><th>Outward / physical</th><td><span class="v ask">ask</span>push, send, deploy, spend, anything that moves</td></tr>
+                  <tr><th>Forbidden</th><td><span class="v deny">deny</span>anything that breaks a limit of the Oath</td></tr>
+                </tbody>
+              </table>
+              <p class="actions"><a class="button" href="/oath/">Read the full Oath</a></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="lineage">
+        <div class="wrap">
+          <p class="kicker">Lineage</p>
+          <h2>Standing on the shoulders of giants.</h2>
+          <p class="intro">Galahad composes the best open work rather than rewriting it, and credits the people whose ideas shaped him.</p>
+          <div class="lineage">
+            <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"><b>Andrej Karpathy</b><span>The LLM wiki and autoresearch: knowledge that compounds, and improvement that's measured.</span><em>→ the mind's compiled knowledge and the Trials</em></a>
+            <a href="https://github.com/poteto"><b>Lauren Tan (@poteto)</b><span>Dr. Eggbot's single-purpose bots, and "I did it" is not evidence.</span><em>→ squires with charters and must-nots; verification</em></a>
+            <a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/"><b>Simon Willison</b><span>The lethal trifecta: private data, untrusted content and a way to exfiltrate it.</span><em>→ untrusted-as-data; never all three in one place</em></a>
+            <a href="https://create.t3.gg/en/introduction"><b>Theo Browne &amp; T3</b><span>Solve problems. Bleed responsibly. Typesafety isn't optional.</span><em>→ contracts, per-method scopes, event-sourced core</em></a>
+            <a href="https://github.com/NousResearch/hermes-agent"><b>Nous Research · Hermes Agent</b><span>Skills, memory providers, a gateway to every messenger.</span><em>→ an arm, and a memory provider for the mind</em></a>
+            <a href="https://opencode.ai"><b>OpenCode</b><span>A coding agent built as a server with many clients.</span><em>→ an arm Galahad drives</em></a>
+            <a href="https://github.com/obra/superpowers"><b>Jesse Vincent · superpowers</b><span>Skills, worktrees, test-first development, two-stage review.</span><em>→ the Round Table's workflow</em></a>
+            <a href="https://github.com/humanlayer/12-factor-agents"><b>HumanLayer · 12-factor agents</b><span>Own your control flow; one event thread; contact humans through tools.</span><em>→ the log as the single source of truth</em></a>
+            <a href="https://github.com/ggml-org/llama.cpp"><b>Georgi Gerganov · llama.cpp</b><span>Local models on any hardware.</span><em>→ the swift role, local first</em></a>
+          </div>
+        </div>
+      </section>
+
+      <section id="status">
+        <div class="wrap">
+          <p class="kicker">Status</p>
+          <h2>Built in the open, milestone by milestone.</h2>
+          <ol class="roadmap">
+            <li class="done"><b><span class="m">M0</span>One mind, many bodies</b><p>Replicated signed log, pairing, vault, model gateway, any-model brain with fallbacks, placement, the Oath gate, secret scanning, CLI and phone app.</p></li>
+            <li class="done"><b><span class="m">M0½</span>Sandbox hosts</b><p>Hardened per-task containers on any Docker machine, models-only networking, scoped tokens, a signed ledger, oath-gated cleanup.</p></li>
+            <li class="now"><b><span class="m">M1</span>A mind for every arm</b><p>An MCP server so Claude Code, OpenCode, Codex and Hermes share one memory and one set of sandboxes, plus encrypted backups.</p></li>
+            <li><b><span class="m">M2</span>The Round Table</b><p>Quests as task graphs; parallel squires in isolated worktrees; independent review; approvals that follow you.</p></li>
+            <li><b><span class="m">M4</span>The Forge, Scout and Trials</b><p>Single-purpose squires with charters; new models tried against Galahad's own evals; measurable intelligence growth.</p></li>
+            <li><b><span class="m">M5</span>Secure self-improvement</b><p>Signed releases, canary rollout, automatic rollback. He can write his own improvements; only you can ship them.</p></li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>© 2026 Amirite · Galahad</span>
+        <span><a href="/oath/">The Oath</a></span>
+      </div>
+    </footer>
+  </body>
+</html>

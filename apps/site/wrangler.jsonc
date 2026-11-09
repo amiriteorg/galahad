@@ -1,0 +1,17 @@
+{
+  // galahad.bot: the project site. A Worker serving static assets only (no code runs).
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "galahad-site",
+  // The account that holds the galahad.bot zone.
+  "account_id": "0f555f1dabb5cf4e16b44d5843d2a8e5",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // The apex (galahad.bot) currently serves another app; the site lives on www until you decide otherwise.
+  "routes": [{ "pattern": "www.galahad.bot", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}
