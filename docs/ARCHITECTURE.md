@@ -2,7 +2,7 @@
 
 **One mind, many bodies.** Every Galahad instance (laptop, server, phone, a Pi in a closet) is *the same Galahad*. Each one shares the same memory, vault, roster, oath and devices, and they differ only in what their body can do.
 
-> **Status legend:** ✅ built and tested in M0 · 🔜 planned (see [Roadmap](#11-roadmap))
+> **Status legend:** ✅ built and tested · 🔜 planned (see [Roadmap](#13-roadmap))
 
 ## Principles
 
@@ -30,7 +30,7 @@
    ┌───────────┴──────────┐   ┌──────┴────────────────────────────┐
    │ CLI (admin token)    │   │ gateway /gw/* → providers (keys    │
    │ PWA via tailscale    │   │ injected; arms hold scoped tokens) │
-   │ serve (HTTPS)        │   │ sandboxes, local models, cron 🔜   │
+   │ serve (HTTPS)        │   │ sandboxes, local models, loops     │
    └──────────────────────┘   └────────────────────────────────────┘
 ```
 
@@ -77,6 +77,13 @@ Event kinds today:
 | `provider.set` / `provider.removed` | Provider config (LWW) |
 | `roster.set` | Role → ordered models (LWW) |
 | `memory.added` / `memory.forgotten` | Memories with provenance and trust |
+| `ledger.recorded` | Every gated action, its verdict and why |
+| `loop.set` / `loop.removed` / `loop.ran` | Loops (LWW by name) and each run, recorded by the node that ran it |
+| `notice.raised` / `notice.cleared` / `notice.dismissed` | What needs you (LWW by key) |
+| `connector.set` / `connector.removed` | Connector manifests (LWW by id) |
+| `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
+
+Open-ended parts of an event (a loop's task, a connector's manifest, a call's arguments) are loosely typed in the log and strictly validated by the API and the runner, so what a newer node writes never makes an older one refuse the event.
 
 **Sync:**
 
@@ -199,13 +206,13 @@ Live load (CPU, free memory, battery) travels with sync as *presence* and never 
 | delete | **ask**, except cleaning up *ephemeral* things the same quest created |
 | forbidden | **deny** |
 
-Standing orders that you sign can pre-approve a narrow class, for example `git.push` to `amiriteorg/*#feat/*` until a given date. The gate is implemented and tested; 🔜 wiring it into every arm, together with an approvals UI, is M2.
+Standing orders that you sign can pre-approve a narrow class, for example `git.push` to `amiriteorg/*#feat/*` until a given date. The gate decides every connector call (§10), and its questions wait for you in the inbox. 🔜 Signed standing orders in the mind, and the gate on git pushes made inside sandboxes, are M2.
 
 **Engineering shape, adopted from T3 Code:**
 
 - Contracts live in one package, and every input is validated with zod at the boundary.
 - Transports stay thin and orchestration stays pure.
-- The core is event-sourced. 🔜 Outward actions will go through a **transactional outbox**: the intent is recorded atomically with its events and executed afterwards with an idempotency key and a receipt, so a retry never sends twice.
+- The core is event-sourced. Outward actions go through a **transactional outbox** (§10): the intent is recorded in the mind before anything is sent, the send is marked locally before it goes out, and the receipt is recorded afterwards, so a retry never sends twice.
 
 ## 8½. Sandbox hosts ✅
 
@@ -253,9 +260,70 @@ Guarantees:
 - **Contained.** The default network is `isolated`; `--net gateway` or `--net online` is your explicit choice. The sandbox is destroyed afterwards unless `--keep`. Ctrl-C stops after the current step and still cleans up.
 - **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
 
-The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Next: quests started from the PWA and MCP, running on the node, with live progress.
+The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.
 
-## 9. Growth & scale 🔜
+## 9. Loops and the heartbeat ✅
+
+A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock) or a five-field cron line read in an IANA time zone (`0 7 * * 1-5` in `Europe/Copenhagen`). Loops live in the mind, so every device sees them and their history, and each names **exactly one node** that runs it, so a loop never runs twice.
+
+| Task | What a run does |
+|---|---|
+| `heartbeat` | Galahad's regular look around (below) |
+| `quest` | A quest in a fresh sandbox (§8⅞), through a short-lived **arm token**: its sandboxes are its own and ephemeral, its memories are `untrusted`, and it can't touch the vault, devices or the roster |
+| `call` | One connector tool (§10). A loop is Galahad acting on his own, never you, so an outward or delete tool files an approval request instead of running |
+
+| Guarantee | How |
+|---|---|
+| **At most once per slot** | A run is marked in node-local storage before it starts and recorded in the mind (`loop.ran`) when it ends. A crash in between is recorded as *interrupted* on the next start and never rerun. |
+| **No pile-ups** | A node that was away runs a missed loop once (looking back a week at most), not once per missed slot. At most two runs at once per node; a run past its deadline (2 h) is stopped. |
+| **Honest history** | Every run's status (`ok`, `attention`, `failed`, `interrupted`) and a redacted summary are signed events, readable from any device (`galahad loop runs`). |
+| **Bounded** | Defining, changing or running a loop needs `brain:write`, which arms never hold. Loop text is scanned for secrets before it's written. |
+
+**The heartbeat** is a built-in loop: the fleet's founding node creates it once (every 30 minutes, on an always-on node) and never again, so if you remove it, it stays removed. Its checks are cheap and deterministic, and a pure function of a snapshot (`assess` in `packages/node/src/heartbeat.ts`), so every rule is tested exactly:
+
+| Check | Severity |
+|---|---|
+| An always-on node silent for 10 minutes (laptops come and go and aren't flagged) | warn |
+| This node can't open the vault | alert |
+| A device signed two histories (equivocation: its key may be stolen) | alert |
+| A role with no usable model (no key, no running local runtime) | warn for planner, engineer, reviewer; info for others |
+| A sandbox the reaper missed; a loop that's orphaned or failed three times running | warn |
+| A connector whose key is missing or pinned elsewhere; a manifest that no longer validates | info / warn |
+| Low disk on this node | warn, alert under 3 % |
+
+Findings become **notices** in your inbox, keyed so the same problem never repeats. A notice clears itself when its cause goes away, a dismissed one stays quiet until it changes, and an unchanged finding writes nothing. Notices about one node's body (its disk, its vault) are only cleared by that node. Optionally, a **checklist** you write is read by the `swift` role each beat with the findings and recent activity (as data); it answers `HEARTBEAT_OK`, or two or three lines for you, which become a notice.
+
+## 10. Connectors and the approval outbox ✅
+
+A **connector** is how Galahad reaches a service you use. It's a **manifest, not code**: one pinned origin, the vault secret it authenticates with, and a set of tools, each one HTTP request template plus its oath class.
+
+```json
+{ "id": "github", "origin": "https://api.github.com", "auth": { "secret": "github", "scheme": "bearer", "optional": true },
+  "tools": { "issues": { "method": "GET", "path": "/repos/{owner}/{repo}/issues", "class": "read", "params": { … } },
+             "issue.create": { "method": "POST", "path": "/repos/{owner}/{repo}/issues", "class": "outward", "params": { … } } } }
+```
+
+| Property | How |
+|---|---|
+| **No connector code runs** | A tool call becomes exactly one request to the pinned origin. Arguments are typed and checked (enum, pattern, integer), fill their path segment URL-encoded (`..` refused), the query or a JSON body, and the built URL is checked against the origin again. |
+| **Keys stay home** | The node injects the key on the way out, and only if the vault pinned it to *this origin* and it was entered *for this connector*, so a manifest can't borrow another service's key. Redirects are never followed. Answers are capped at 512 KB and redacted of the key and anything secret-shaped. Arguments that look like keys are refused. |
+| **The method bounds the class** | GET reads (or is outward); DELETE deletes; POST/PUT/PATCH create, modify, are outward or delete. A manifest can never set `Authorization`, cookies or `Host`. |
+| **Asks for its key** | A call that needs a missing key files a secret request; you fill it from any device. |
+
+Every call goes through the oath gate and into the ledger:
+
+| Class | You ask | An agent asks (arm, loop, quest) |
+|---|---|---|
+| read, create, modify | runs | runs |
+| outward, delete | runs: your request *is* the approval | an **action request** in your inbox; nothing is sent |
+
+**The outbox.** An action request (`action.requested`) is recorded in the mind before anything is sent. You approve or decline from any device (`fleet:admin`; never a node or an agent on its own behalf), and **the first decision stands** on every replica. Only the node that filed the request sends it: it marks the send in local storage first, sends once, and records the receipt (`action.done`). If it dies mid-send it reports *outcome unknown* and never retries. No answer within 24 hours means no.
+
+Built in (`galahad connector add <id>`): **GitHub** (repos, issues, pulls, Actions runs, notifications; creating a branch is free, opening an issue or commenting asks), **Cloudflare** (accounts, zones, DNS, Workers, R2; creating a bucket is free, deleting one asks) and **Home Assistant** (at your address; reading state is free, calling any service asks every time). Your own connector is a JSON manifest: `galahad connector add --manifest my.json`.
+
+Coding agents use connectors through MCP (`connectors`, `connector_call`) with the new `connect` scope, which arm tokens hold by default. They never see a key, and an outward call returns an action id instead of a result.
+
+## 11. Growth & scale 🔜
 
 Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**
 
@@ -270,7 +338,7 @@ Galahad grows by having resources added to him. **Everything is a resource with 
 - 🔜 `galahad add <anything>` detects what it was given, probes it (lists models, test call, latency, cost), runs a calibration eval, and registers it.
 - **Scaling the mind:** periodic snapshots, cold segments moved to the blob store, partial replicas on phones. Presence and telemetry never go into the log.
 
-## 10. R2: caches, blobs, backups 🔜
+## 12. R2: caches, blobs, backups 🔜
 
 Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 
@@ -289,13 +357,14 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
   - Encrypted, append-only segments of the mind are stored in a bucket with an **R2 bucket lock** (retention), so even a compromised node can't erase them.
   - A **recovery key** is printed once for disaster recovery.
 
-## 11. Roadmap
+## 13. Roadmap
 
 | Milestone | Scope | State |
 |---|---|---|
 | **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (PWA not yet run in a real browser) |
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
-| **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, transactional outbox, approvals UI, checkpoint/migrate | 🔜 |
+| **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox | ✅ |
+| **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, signed standing orders, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
 | **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🔜 |
 | **M5: Secure self-update** | Signed releases (your key), provenance, canary node, automatic rollback | 🔜 |

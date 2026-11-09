@@ -48,7 +48,17 @@ The review also confirmed what held up:
 - the sandbox's Docker flags
 - the PWA's DOM-only rendering
 
+## Loops, connectors and approvals (tested)
+
+- **Connector keys go where you said, only.** A key is injected only if it was pinned to the connector's origin and entered for that connector; redirects are never followed; answers are capped and redacted; arguments that look like keys are refused; hostile arguments can't leave their path segment or the origin (`packages/core/test/connectors.test.ts`, `packages/brain/test/connectors.test.ts`).
+- **Manifests are data.** No connector code runs; a manifest can't set credentials, cookies or `Host`, and its HTTP method bounds the oath class it may claim. Installing one needs `brain:write`, which arms never hold.
+- **Only you approve.** Action decisions are accepted only from your terminal or a paired device, never from a node or an agent; the first decision stands on every replica; only the requesting node sends, at most once, even across a crash (`packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).
+- **Loops act as Galahad, not as you.** A loop's quest runs on a short-lived arm token and its connector calls are an agent's calls, so outward actions ask.
+- **Residual risk:** a read tool's query string reaches the connector's own service, so an injected agent could leak data *to that service* (never elsewhere); and answers from services are untrusted data that reach agents.
+
 ## Known limitations
+
+**Sandbox disk.** A sandbox's `/work` volume has no size quota yet, so a runaway job could fill the host's disk (on ultra, the root volume Coolify shares). Galahad found this himself, in a live quest run as a loop, in November 2026. The heartbeat warns on low disk. **Planned:** per-sandbox volume quotas.
 
 **#5: same-user agents.** On a desktop, the daemon and your coding agents (Claude Code and others) run as the same OS user. An agent with shell access can read the admin token and, with the file keystore, the device keys. Arm tokens limit what an agent can do *through Galahad*. They can't stop a same-user process from reading files that user owns.
 - On sandbox hosts (ultra), the daemon runs as the dedicated `galahad` user, and its home directory isn't readable by other users.

@@ -222,12 +222,51 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `ledger` and `request_secret`, plus the Oath as a resource. Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.
 - **Off-limits:** it can never touch the vault, devices, providers or the gateway.
 - **Local only:** the credential works on the loopback listener only.
+- **Connectors, never keys:** it can call your connectors' tools; anything outward or destructive is filed for your approval.
+
+## 11. Loops and the heartbeat
+
+Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox.
+
+```sh
+bun galahad heartbeat                      # run the checks now and print what they find
+bun galahad notices                        # what needs you (notice dismiss <key> to quiet one)
+bun galahad loop ls                        # every loop, where it runs, when next, how the last run went
+bun galahad loop set heartbeat --checklist "Is galahad.bot up? Anything waiting on me for more than a day?"
+```
+
+Add your own. Each runs on one node and every run is recorded in the mind:
+
+```sh
+# a quest every weekday morning, Copenhagen time (online: it clones the repo)
+bun galahad loop add morning --cron "0 7 * * 1-5" --tz Europe/Copenhagen \
+  --quest "Check the galahad repo's tests in a fresh clone and report anything failing" --net online
+# a connector check every hour
+bun galahad loop add ci --every 1h --call github.runs --arg owner=amiriteorg --arg repo=galahad --arg per_page=5
+bun galahad loop run morning               # now, by hand
+bun galahad loop runs morning              # its history
+bun galahad loop pause morning             # resume / rm
+```
+
+## 12. Connectors: your services, through the oath
+
+```sh
+bun galahad connector ls                               # the catalog and what's installed
+bun galahad connector add github                       # or cloudflare, or home-assistant --origin http://homeassistant.local:8123
+bun galahad secret set github --connector github       # hidden prompt; the key is pinned to api.github.com
+bun galahad connector tools github                     # tools and their oath class
+bun galahad connector call github.issues --arg owner=amiriteorg --arg repo=galahad --arg state=open
+bun galahad action ls                                  # what agents and loops asked to do
+bun galahad action approve <id>                        # sent once, by the node that asked (or: action deny <id>)
+```
+
+Reading, creating and modifying just happen (and are ledgered). When *you* call an outward or delete tool, your request is the approval. When an agent or a loop does, it waits for you in the inbox and is sent exactly once if you approve.
 
 ## Troubleshooting
 

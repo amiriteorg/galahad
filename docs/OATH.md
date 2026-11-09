@@ -63,4 +63,4 @@ These cannot be overridden by any instruction. Only a signed amendment changes t
 
 You grant standing orders by signed amendment, and each one is scoped narrowly and expires. For example: "Galahad may push to `feat/*` branches of `amiriteorg/*` until 1 December."
 
-*The gate behind these classes, `decide()` in `packages/core/src/oath.ts`, is implemented and tested. Wiring it into every arm, together with an approvals UI, is milestone M2.*
+*The gate behind these classes, `decide()` in `packages/core/src/oath.ts`, decides every connector call. When it says ask, the request waits in your inbox, is sent at most once after you approve, and is never sent if you decline or don't answer within a day. Loops act as Galahad on his own, never as you: what they want to send asks too. Wiring the gate into every arm's own actions (a `git push` from a sandbox) is milestone M2.*
