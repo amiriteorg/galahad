@@ -289,6 +289,10 @@ describe("loops over the API", () => {
     expect(asked.summary).toContain("needs your approval");
     expect(posts()).toHaveLength(before);
     expect((await admin<{ actions: ActionView[] }>("actions")).body.actions.some((a) => a.by === "loop:poster" && a.state === "waiting")).toBe(true);
+    // The loop that needs a look tells you; the one that ran fine doesn't.
+    const { notices } = (await admin<{ notices: NoticeView[] }>("notices")).body;
+    expect(notices.find((n) => n.key === "loop:poster")).toMatchObject({ title: "Loop poster needs a look", source: "loop:poster" });
+    expect(notices.some((n) => n.key === "loop:poll")).toBe(false);
   });
 
   test("pause, resume and change a loop; what you leave out stays", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { b64u, newNodeIdentity } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore } from "@galahad/mind";
-import { assess, type HeartbeatSnapshot, OFFLINE_AFTER_MS, readChecklistReply, reconcile } from "../src/heartbeat.ts";
+import { assess, type HeartbeatSnapshot, loopNotice, OFFLINE_AFTER_MS, readChecklistReply, reconcile } from "../src/heartbeat.ts";
 
 const NOW = Date.parse("2026-11-09T12:00:00Z");
 
@@ -148,6 +148,28 @@ describe("notices follow the findings", () => {
     expect(store.lww<{ dismissed: boolean }>(`notice:${finding.key}`)?.value?.dismissed).toBe(true);
     expect(reconcile(store, a, [{ ...finding, body: "Last reached at 11:30." }], NOW + 2).raised).toBe(1);
     expect(store.lww<{ dismissed: boolean }>(`notice:${finding.key}`)?.value?.dismissed).toBe(false);
+  });
+
+  test("a loop that needs a look says so once, and its next good run clears it", () => {
+    const { a, store } = setup();
+    const before = store.eventCount();
+    loopNotice(store, a, "site", "ok", "200", NOW); // nothing to clear: writes nothing
+    expect(store.eventCount()).toBe(before);
+    loopNotice(store, a, "site", "attention", "site.home → 503 Service Unavailable", NOW);
+    loopNotice(store, a, "site", "attention", "site.home → 503 Service Unavailable", NOW + 1);
+    expect(store.eventCount()).toBe(before + 1);
+    expect(store.lww<{ title: string; severity: string; source: string }>("notice:loop:site")?.value).toMatchObject({
+      title: "Loop site needs a look",
+      severity: "info",
+      source: "loop:site",
+    });
+    loopNotice(store, a, "site", "failed", "site unreachable: timed out", NOW + 2);
+    expect(store.lww<{ severity: string }>("notice:loop:site")?.value?.severity).toBe("warn");
+    // The heartbeat leaves a loop's notice alone; the loop's own good run clears it.
+    reconcile(store, a, [], NOW + 3);
+    expect(store.lww("notice:loop:site")?.value).not.toBeNull();
+    loopNotice(store, a, "site", "ok", "site.home → 200", NOW + 4);
+    expect(store.lww("notice:loop:site")?.value).toBeNull();
   });
 
   test("another node's body is that node's business; other sources are theirs", () => {

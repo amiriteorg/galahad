@@ -10,7 +10,7 @@ import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
-import { assess } from "./heartbeat.ts";
+import { assess, loopNotice } from "./heartbeat.ts";
 import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
@@ -172,7 +172,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     log,
     fetch: opts.fetch,
   };
-  const loops = new LoopRunner({ store, identity, local, log, execute: loopExecutor(taskDeps) });
+  const loops = new LoopRunner({
+    store,
+    identity,
+    local,
+    log,
+    execute: loopExecutor(taskDeps),
+    onFinished: (loop, result) => {
+      if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
+    },
+  });
 
   const app = createApp({
     identity,

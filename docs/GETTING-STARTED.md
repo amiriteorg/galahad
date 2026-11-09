@@ -238,7 +238,7 @@ Galahad already has a heartbeat: every 30 minutes on your always-on node, he loo
 bun galahad heartbeat                      # run the checks now and print what they find
 bun galahad notices                        # what needs you (notice dismiss <key> to quiet one)
 bun galahad loop ls                        # every loop, where it runs, when next, how the last run went
-bun galahad loop set heartbeat --checklist "Is galahad.bot up? Anything waiting on me for more than a day?"
+bun galahad loop set heartbeat --checklist "Tell me if a quest gave up, or if the same loop needed a look twice in a row."
 ```
 
 Add your own. Each runs on one node and every run is recorded in the mind:
@@ -253,6 +253,8 @@ bun galahad loop run morning               # now, by hand
 bun galahad loop runs morning              # its history
 bun galahad loop pause morning             # resume / rm
 ```
+
+A loop that fails or needs a look leaves a notice in your inbox, and its next good run clears it. So a loop that calls a connector is a monitor: install a one-tool connector for your site (`{"id":"site","label":"galahad.bot","origin":"https://galahad.bot","tools":{"home":{"description":"The home page","method":"GET","path":"/","class":"read"}}}`) and `loop add site --every 5m --call site.home`.
 
 ## 12. Connectors: your services, through the oath
 

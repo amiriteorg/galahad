@@ -111,6 +111,8 @@ export interface LoopRunnerOptions {
   maxConcurrent?: number;
   /** No run lasts longer than this. */
   deadlineMs?: number;
+  /** After each run is recorded (e.g. to tell you when a loop needs a look). */
+  onFinished?: (loop: RunnableLoop, result: RunResult) => void;
 }
 
 export class LoopError extends Error {}
@@ -205,6 +207,11 @@ export class LoopRunner {
       }
       this.record(loop.name, run, slot, started, result);
       this.active.delete(loop.name);
+      try {
+        this.o.onFinished?.(loop, result);
+      } catch (error) {
+        this.o.log(`loop ${loop.name}: ${(error as Error).message}`);
+      }
     })();
     this.active.set(loop.name, { run, controller, done });
     return run;

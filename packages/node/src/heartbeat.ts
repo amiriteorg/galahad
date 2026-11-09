@@ -204,6 +204,25 @@ export function reconcile(store: MindStore, identity: NodeIdentity, findings: Fi
   return { raised, cleared };
 }
 
+/**
+ * A loop that needs a look tells you: a notice per loop, raised when a run
+ * fails or needs attention and cleared by its next good run. (The heartbeat's
+ * own findings are already notices.) Unchanged news writes nothing.
+ */
+export function loopNotice(store: MindStore, identity: NodeIdentity, loop: string, status: "ok" | "attention" | "failed", summary: string, now: number): void {
+  const key = `loop:${loop}`;
+  const current = store.lww<NoticeValue>(`notice:${key}`)?.value;
+  if (status === "ok") {
+    if (current) store.emit(identity, "notice.cleared", { key });
+    return;
+  }
+  const title = status === "failed" ? `Loop ${loop} failed` : `Loop ${loop} needs a look`;
+  const body = summary.trim().slice(0, 600) || "(no summary)";
+  const severity: Severity = status === "failed" ? "warn" : "info";
+  if (current && current.title === title && current.body === body && current.severity === severity) return;
+  store.emit(identity, "notice.raised", { key, severity, title, body, source: `loop:${loop}`, at: now });
+}
+
 export const HEARTBEAT_OK = "HEARTBEAT_OK";
 
 /** The checklist prompt: findings and your items in, HEARTBEAT_OK or a short note out. */

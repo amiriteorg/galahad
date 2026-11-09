@@ -276,7 +276,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 |---|---|
 | **At most once per slot** | A run is marked in node-local storage before it starts and recorded in the mind (`loop.ran`) when it ends. A crash in between is recorded as *interrupted* on the next start and never rerun. |
 | **No pile-ups** | A node that was away runs a missed loop once (looking back a week at most), not once per missed slot. At most two runs at once per node; a run past its deadline (2 h) is stopped. |
-| **Honest history** | Every run's status (`ok`, `attention`, `failed`, `interrupted`) and a redacted summary are signed events, readable from any device (`galahad loop runs`). |
+| **Honest history** | Every run's status (`ok`, `attention`, `failed`, `interrupted`) and a redacted summary are signed events, readable from any device (`galahad loop runs`). A run that fails or needs a look also leaves a notice (one per loop), cleared by its next good run, so a loop that calls a connector is a monitor. |
 | **Bounded** | Defining, changing or running a loop needs `brain:write`, which arms never hold. Loop text is scanned for secrets before it's written. |
 
 **The heartbeat** is a built-in loop: the fleet's founding node creates it once (every 30 minutes, on an always-on node) and never again, so if you remove it, it stays removed. Its checks are cheap and deterministic, and a pure function of a snapshot (`assess` in `packages/node/src/heartbeat.ts`), so every rule is tested exactly:
