@@ -177,7 +177,8 @@ export function loopExecutor(deps: LoopTaskDeps) {
         if (outcome.status === "asked") {
           return { status: "attention", summary: `${task.connector}.${task.tool} needs your approval: action ${outcome.action} is in your inbox.` };
         }
-        return { status: outcome.result.ok ? "ok" : "attention", summary: `${task.connector}.${task.tool} → ${excerpt(outcome.result, 500)}` };
+        const took = `${outcome.result.durationMs} ms`;
+        return { status: outcome.result.ok ? "ok" : "attention", summary: `${task.connector}.${task.tool} → ${excerpt(outcome.result, 240)} (${took})` };
       }
       case "quest": {
         // The loop works as an arm: least privilege, its own ephemeral sandboxes, untrusted memories.

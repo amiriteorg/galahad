@@ -131,13 +131,17 @@ export async function sendConnectorRequest(ctx: SendContext, manifest: Connector
 /** A short, human-sized excerpt of a result for ledgers, receipts and run summaries. */
 export function excerpt(result: ConnectorResult, max = 600): string {
   let body = result.body.trim();
+  let json = false;
   if (result.contentType?.includes("json")) {
     try {
       body = JSON.stringify(JSON.parse(body));
+      json = true;
     } catch {
       /* not JSON after all */
     }
   }
+  // HTML and text pages collapse to one line: summaries, receipts and ledger rows stay readable.
+  if (!json) body = body.replace(/\s+/g, " ");
   const head = `${result.status}${result.truncated ? " (truncated)" : ""}`;
   return `${head} ${body.length > max ? `${body.slice(0, max)}…` : body}`.trim();
 }
