@@ -1,9 +1,12 @@
-# CI on your self-hosted runners.
+# CI on your self-hosted runners (ultra-runner, gamma, …): independent jobs run in
+# parallel across whichever runners are free.
 #
-#  check    every push and PR: typecheck, all tests, site gate (fast, any Linux runner)
-#  sandbox  real-Docker sandbox tests, on a runner with Docker; opt-in via repo
-#           variables SANDBOX_TESTS=true and (optionally) SANDBOX_RUNNER='["self-hosted","linux","docker"]'
-#  site     on main: deploy galahad.bot's site, when the CLOUDFLARE_API_TOKEN secret exists
+#  typecheck  ┐
+#  test       ├ every push and PR
+#  site-gate  ┘
+#  sandbox    real-Docker sandbox tests; opt-in via repo variables SANDBOX_TESTS=true
+#             and (optionally) SANDBOX_RUNNER='["self-hosted","linux","docker"]'
+#  site       on main, after everything passes: deploy galahad.bot (when CLOUDFLARE_API_TOKEN exists)
 #
 # Hardening: read-only token, actions pinned to commit SHAs, no pull_request_target,
 # credentials not persisted in the checkout, superseded runs cancelled.
@@ -23,8 +26,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Typecheck & test
+  typecheck:
+    name: Typecheck
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  test:
+    name: Test
     runs-on: [self-hosted, linux]
     timeout-minutes: 15
     steps:
@@ -35,15 +52,26 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
       - run: bun test
         env:
           GALAHAD_KEYSTORE: file
+
+  site-gate:
+    name: Site gate
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
       - run: bun apps/site/scripts/check.ts
 
   sandbox:
     name: Sandbox (real Docker)
-    needs: check
+    needs: [typecheck, test]
     if: vars.SANDBOX_TESTS == 'true'
     runs-on: ${{ fromJSON(vars.SANDBOX_RUNNER || '["self-hosted","linux"]') }}
     timeout-minutes: 30
@@ -62,7 +90,7 @@ jobs:
 
   site:
     name: Deploy galahad.bot
-    needs: check
+    needs: [typecheck, test, site-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux]
     timeout-minutes: 10
