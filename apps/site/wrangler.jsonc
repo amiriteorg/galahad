@@ -10,8 +10,10 @@
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash"
   },
-  // The apex (galahad.bot) currently serves another app; the site lives on www until you decide otherwise.
-  "routes": [{ "pattern": "www.galahad.bot", "custom_domain": true }],
+  "routes": [
+    { "pattern": "galahad.bot", "custom_domain": true },
+    { "pattern": "www.galahad.bot", "custom_domain": true }
+  ],
   "workers_dev": false,
   "preview_urls": false
 }
