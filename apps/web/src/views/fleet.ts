@@ -236,8 +236,20 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
       sasCode(p.sas),
       p.conflict
         ? callout("danger", "Two devices used this invite. It may have been intercepted: reject, then create a new invite.", { title: "Possible interception" })
-        : h("p", { class: "small muted", style: "text-align:center" }, `Approve only if ${p.name} shows exactly this code.`),
-      h("div", { class: "row wrap", style: "justify-content:center" }, reject, approve),
+        : node
+          ? callout(
+              "info",
+              h(
+                "span",
+                {},
+                "A new machine receives the whole vault, so it's approved from a terminal on an existing node, never from a phone. There, run ",
+                h("code", {}, "galahad pairings"),
+                ", check this same code, then approve. You can still reject it here.",
+              ),
+              { title: "Approve machines from a terminal" },
+            )
+          : h("p", { class: "small muted", style: "text-align:center" }, `Approve only if ${p.name} shows exactly this code.`),
+      h("div", { class: "row wrap", style: "justify-content:center" }, ...(node ? [reject] : [reject, approve])),
       note,
     ),
   );

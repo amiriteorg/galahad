@@ -167,6 +167,12 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ device: z.string(), reason: z.string().max(500).optional() }),
   },
+  setDeviceScopes: {
+    method: "POST",
+    path: "/api/devices/scopes",
+    scope: "fleet:admin",
+    input: z.strictObject({ device: z.string(), scopes: z.array(ScopeSchema).max(16) }),
+  },
   place: { method: "POST", path: "/api/place", scope: "mind:read", input: PlacementNeeds },
   mintToken: {
     method: "POST",

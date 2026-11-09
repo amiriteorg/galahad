@@ -24,6 +24,7 @@ Set up
   invite [--client] [--origin https://host.ts.net]         add a device (prints an invite, then asks you to approve)
   pairings | approve <invite> <device> | reject <invite> <device>
   revoke <device> [--reason text]
+  grant <device> <scope…>                                   give a paired phone/browser more permissions (e.g. sandbox)
   status                                                   fleet, peers, capabilities
 
 Mind
@@ -356,6 +357,21 @@ Next:
       if (result.resealed?.length) {
         console.log(`Vault rotated. ${target.name} could read these before; rotate them at the provider too:\n  ${result.resealed.join("\n  ")}`);
       }
+      return;
+    }
+
+    case "grant": {
+      // galahad grant <device> <scope…>: add permissions to a paired phone or browser.
+      if (!sub || !rest.length) fail("usage: galahad grant <device name or id> <scope…>  (e.g. galahad grant iphone sandbox)");
+      const admin = new Admin(home);
+      const fleet = await admin.call<FleetView>("fleet");
+      const target = fleet.devices.find(
+        (d) => !d.revokedAt && d.kind === "client" && (d.id === sub || d.id.startsWith(sub) || d.name.toLowerCase().includes(sub.toLowerCase())),
+      );
+      if (!target) fail(`no paired phone or browser matches "${sub}"`);
+      const scopes = [...new Set([...target.scopes, ...rest])];
+      await admin.call("setDeviceScopes", { device: target.id, scopes });
+      console.log(`${target.name} may now: ${scopes.join(", ")}`);
       return;
     }
 

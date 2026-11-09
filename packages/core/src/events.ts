@@ -64,6 +64,8 @@ export const Bodies = {
       .nullable()
       .optional(),
   }),
+  /** Change what a paired client may do (full nodes are always owner-equivalent). */
+  "device.scoped": z.strictObject({ device: DeviceRef, scopes: z.array(Scope).max(32) }),
   /** A legacy (v1) fleet adopts chains: exactly these unchained events stay valid, no others ever. */
   "fleet.chained": z.strictObject({ legacy: z.array(z.string().regex(/^[A-Za-z0-9_-]{43}$/)).max(1400) }),
   "vault.key": z.strictObject({ kid: B64, grants: z.record(z.string(), SealedBoxSchema) }),

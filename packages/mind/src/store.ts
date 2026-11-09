@@ -533,6 +533,15 @@ export class MindStore {
         this.db.query("UPDATE v_devices SET revoked_hlc = ? WHERE id = ?").run(event.hlc, body.device);
         return null;
       }
+      case "device.scoped": {
+        if (!isFullNode(signer)) return "only full nodes may change a device's scopes";
+        const body = bodyOf(event, "device.scoped");
+        const target = this.device(body.device);
+        if (!target || target.revokedHlc) return "unknown or revoked device";
+        if (target.kind !== "client") return "nodes are always owner-equivalent";
+        this.db.query("UPDATE v_devices SET scopes = ? WHERE id = ?").run(JSON.stringify([...new Set(body.scopes)]), body.device);
+        return null;
+      }
       case "node.profile": {
         const body = bodyOf(event, "node.profile");
         const previous = this.profileHlc(event.device);

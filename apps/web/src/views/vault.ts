@@ -344,7 +344,16 @@ export const vaultView: View = (root, ctx, { scope, opts }) => {
         "div",
         { class: "grow" },
         h("div", { class: "row wrap" }, h("span", { class: "strong mono" }, s.name), s.provider ? badge(s.provider, "neutral") : null, s.hint ? h("span", { class: "mono subtle small", title: "Only the last characters are ever shown" }, s.hint) : null),
-        h("div", { class: "meta" }, s.label ? h("span", {}, s.label) : null, ms ? h("span", { title: new Date(ms).toLocaleString() }, `updated ${relativeTime(ms)}`) : null),
+        h(
+          "div",
+          { class: "meta" },
+          s.label ? h("span", {}, s.label) : null,
+          // Keys are pinned: shown so you can see exactly where this one may ever go.
+          s.origin
+            ? h("span", { class: "mono", title: "This key is only ever sent to this host" }, `only to ${s.origin.replace(/^https?:\/\//, "")}`)
+            : h("span", { title: "Unpinned keys are never used; replace it to pin it" }, "unpinned · not used"),
+          ms ? h("span", { title: new Date(ms).toLocaleString() }, `updated ${relativeTime(ms)}`) : null,
+        ),
       ),
       write
         ? h(

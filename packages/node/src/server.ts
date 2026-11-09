@@ -392,6 +392,8 @@ export function createApp(ctx: AppContext) {
     rotateVault: () => ctx.vault.rotate(),
     providers: () => ({ providers: providerViews(ctx.store, ctx.vault), presets: PRESETS }),
     setProvider: (input) => {
+      // Provider records replicate in plaintext: a key pasted into a URL or label must never land there.
+      guardAgainstSecrets(input.baseUrl ?? "", input.label ?? "");
       const base = preset(input.preset ?? input.id);
       const kind = input.kind ?? base?.kind;
       const baseUrl = input.baseUrl ?? base?.baseUrl;
@@ -471,6 +473,12 @@ export function createApp(ctx: AppContext) {
       return { ok: true };
     },
     revokeDevice: (input) => revokeDevice(ctx.store, ctx.identity, input.device, input.reason ?? "revoked by owner"),
+    setDeviceScopes: (input, p) => {
+      // Granting permissions is never done from a phone, so a phone can't raise its own.
+      if (p.kind === "client" || p.kind === "arm") throw new HttpError(403, "change a device's permissions from a terminal on a node");
+      ctx.store.emit(ctx.identity, "device.scoped", { device: input.device, scopes: input.scopes });
+      return { device: ctx.store.device(input.device) };
+    },
     place: (input) => place(input, candidates()),
     mintToken: (input) => {
       const { token, info } = ctx.tokens.mint(input);

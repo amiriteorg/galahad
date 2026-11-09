@@ -380,6 +380,31 @@ describe("a browser client (the PWA path)", () => {
     expect(laptop.store.device(id)?.scopes).not.toContain("gateway:mint");
   });
 
+  test("permissions can be granted to a paired device from a terminal, never by the device itself", async () => {
+    // Even a phone that holds fleet:admin cannot raise its own permissions.
+    await admin(homeA, portA)("setDeviceScopes", { device, scopes: [...laptop.store.device(device)!.scopes, "fleet:admin"] });
+    const before = laptop.store.device(device)!.scopes;
+    expect(before).toContain("fleet:admin");
+    expect(before).not.toContain("sandbox");
+    const self = await sign("POST", "/api/devices/scopes", { device, scopes: [...before, "sandbox", "gateway:mint"] });
+    const refused = await fetch(`http://127.0.0.1:${portA}/api/devices/scopes`, { method: "POST", ...self });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/terminal/);
+    // You grant it from the terminal:
+    await admin(homeA, portA)("setDeviceScopes", { device, scopes: [...before, "sandbox"] });
+    const who = await sign("GET", "/api/whoami", undefined);
+    expect((await (await fetch(`http://127.0.0.1:${portA}/api/whoami`, { headers: who.headers })).json()).scopes).toContain("sandbox");
+  });
+
+  test("a key pasted into a provider's URL or label never lands in the log", async () => {
+    const response = await fetch(`http://127.0.0.1:${portA}/api/providers`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${homeA.adminToken()}`, "content-type": "application/json" },
+      body: JSON.stringify({ id: "oops", kind: "openai", baseUrl: "https://example.com/v1", label: "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123" }),
+    });
+    expect(response.status).toBe(422);
+  });
+
   test("replayed and unsigned requests are refused", async () => {
     const signed = await sign("GET", "/api/whoami", undefined);
     expect((await fetch(`http://127.0.0.1:${portA}/api/whoami`, { headers: signed.headers })).status).toBe(200);
