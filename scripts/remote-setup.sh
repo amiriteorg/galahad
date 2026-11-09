@@ -63,11 +63,12 @@ SUDOERS
   BUN="$SVC_HOME/.bun/bin/bun"
   APP="$SVC_HOME/galahad/app"
   # The tailnet-facing daemon holds the vault, so it runs sandboxed even though the
-  # galahad user itself may sudo: a bug in the listener must not be a root shell.
+  # galahad user itself may sudo: a bug in the listener must not be a root shell via sudo.
+  # (Docker group membership is still root-equivalent on sandbox hosts: see docs/SECURITY.md #6.)
   cat >/etc/systemd/system/galahad.service <<UNIT
 [Unit]
 Description=Galahad node
-After=network-online.target tailscaled.service docker.service
+After=network-online.target tailscaled.service docker.service galahad-firewall.service
 Wants=network-online.target
 
 [Service]
@@ -109,6 +110,40 @@ WRAPPER
     # Sandboxes on the internal gateway network may reach exactly one host port: the model gateway.
     ufw allow in on galahad0 to any port 7779 proto tcp comment "Galahad sandboxes to model gateway only" >/dev/null &&
       echo "→ ufw: sandboxes may reach 7779/tcp on galahad0 only" || echo "ufw sandbox rule not added" >&2
+  fi
+
+  # Sandbox isolation must not depend on UFW being active: Galahad owns its own rules.
+  # Sandboxes may reach exactly one host port (the model gateway on galahad0), nothing else.
+  if command -v docker >/dev/null && command -v iptables >/dev/null; then
+    cat >/usr/local/sbin/galahad-firewall <<'FIREWALL'
+#!/bin/sh
+# Applied before galahad.service and on every boot (idempotent).
+set -e
+iptables -N GALAHAD-SANDBOX 2>/dev/null || iptables -F GALAHAD-SANDBOX
+iptables -A GALAHAD-SANDBOX -i galahad0 -p tcp --dport 7779 -j ACCEPT
+iptables -A GALAHAD-SANDBOX -i galahad0 -j DROP
+iptables -A GALAHAD-SANDBOX -i galahad1 -j DROP
+iptables -C INPUT -j GALAHAD-SANDBOX 2>/dev/null || iptables -I INPUT 1 -j GALAHAD-SANDBOX
+FIREWALL
+    chmod 0755 /usr/local/sbin/galahad-firewall
+    cat >/etc/systemd/system/galahad-firewall.service <<'UNIT'
+[Unit]
+Description=Galahad sandbox firewall (sandboxes reach only the model gateway)
+After=network-pre.target docker.service
+Before=galahad.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/galahad-firewall
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable galahad-firewall.service >/dev/null 2>&1
+    systemctl restart galahad-firewall.service && echo "→ sandbox firewall: only 7779/tcp on galahad0; galahad1 → host blocked (independent of UFW)"
   fi
 
   # Sandbox host: build (or refresh, from cache) the squires' image before the node starts.
