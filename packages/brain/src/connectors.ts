@@ -140,8 +140,17 @@ export function excerpt(result: ConnectorResult, max = 600): string {
       /* not JSON after all */
     }
   }
-  // HTML and text pages collapse to one line: summaries, receipts and ledger rows stay readable.
-  if (!json) body = body.replace(/\s+/g, " ");
+  // HTML becomes its text, and text collapses to one line: summaries, receipts and ledger rows stay readable.
+  if (!json && result.contentType?.includes("html")) {
+    body = body
+      .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  }
+  if (!json) body = body.replace(/\s+/g, " ").trim();
   const head = `${result.status}${result.truncated ? " (truncated)" : ""}`;
   return `${head} ${body.length > max ? `${body.slice(0, max)}…` : body}`.trim();
 }

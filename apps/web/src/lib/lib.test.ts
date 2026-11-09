@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fuzzyMatch, rank } from "./fuzzy.ts";
 import { type Block, type Inline, inlineText, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
+import { describeSchedule, scheduleProblem } from "./schedule.ts";
 import { detectProvider, matchRanges, parseCommand } from "./text.ts";
 import { countdown, duration, hlcMs, minutesLabel, relativeTime } from "./time.ts";
 
@@ -170,5 +171,40 @@ describe("time", () => {
     expect(countdown(9 * 60_000 + 5_000)).toBe("9:05");
     expect(minutesLabel(90)).toBe("1 h 30 min");
     expect(minutesLabel(24 * 60)).toBe("1 d");
+  });
+});
+
+describe("schedules", () => {
+  test("intervals and common cron lines read like people say them", () => {
+    expect(describeSchedule("every 30m")).toBe("Every 30 minutes");
+    expect(describeSchedule("every 1h")).toBe("Every hour");
+    expect(describeSchedule("Every 2 d")).toBe("Every 2 days");
+    expect(describeSchedule("*/15 * * * *")).toBe("Every 15 minutes");
+    expect(describeSchedule("0 * * * *")).toBe("Every hour");
+    expect(describeSchedule("@hourly")).toBe("Every hour");
+    expect(describeSchedule("30 * * * *")).toBe("Every hour at :30");
+    expect(describeSchedule("0 7 * * *")).toBe("Every day at 07:00");
+    expect(describeSchedule("0 7 * * 1-5")).toBe("Weekdays at 07:00");
+    expect(describeSchedule("0 9 * * sat,sun")).toBe("Weekends at 09:00");
+    expect(describeSchedule("15 18 * * 5-7")).toBe("Fri, Sat, Sun at 18:15");
+    expect(describeSchedule("0 8 * * 1")).toBe("Mondays at 08:00");
+    expect(describeSchedule("0 8 * * 7")).toBe("Sundays at 08:00");
+    expect(describeSchedule("0 6 1 * *")).toBe("Monthly on day 1 at 06:00");
+  });
+
+  test("anything unusual is left as written", () => {
+    expect(describeSchedule("0 7 * 1 *")).toBeNull();
+    expect(describeSchedule("0 7,19 * * *")).toBeNull();
+    expect(describeSchedule("0 7 * * */2")).toBeNull();
+    expect(describeSchedule("whenever")).toBeNull();
+  });
+
+  test("the quick check catches the wrong shape and leaves values to the node", () => {
+    expect(scheduleProblem("")).not.toBeNull();
+    expect(scheduleProblem("every 30m")).toBeNull();
+    expect(scheduleProblem("every thirty minutes")).not.toBeNull();
+    expect(scheduleProblem("0 7 * * 1-5")).toBeNull();
+    expect(scheduleProblem("@daily")).toBeNull();
+    expect(scheduleProblem("0 7 * *")).not.toBeNull();
   });
 });

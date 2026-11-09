@@ -29,7 +29,8 @@ export function verdictBadge(verdict: Verdict): HTMLElement {
   return badge(VERDICT_LABEL[verdict] ?? verdict, VERDICT_TONE[verdict] ?? "neutral");
 }
 
-function deviceName(ctx: Ctx, id: string): string {
+/** A device id as the owner knows it: this node, a fleet name, or a short id. */
+export function deviceName(ctx: Ctx, id: string): string {
   if (id === ctx.whoami.node) return ctx.whoami.nodeName;
   const known = ctx.live.fleet.value?.devices.find((d) => d.id === id);
   return known?.name ?? shortId(id);

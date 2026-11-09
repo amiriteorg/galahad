@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildRequest, ConnectorManifest, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { CATALOG, keyState, MAX_RESPONSE_BYTES, sendConnectorRequest } from "../src/index.ts";
+import { CATALOG, excerpt, keyState, MAX_RESPONSE_BYTES, sendConnectorRequest } from "../src/index.ts";
 
 function vault() {
   const identity = newNodeIdentity();
@@ -99,5 +99,15 @@ describe("sending a request", () => {
     const result = await sendConnectorRequest({ vault: vault(), fetch }, open, buildRequest(open, "me"));
     expect(result.truncated).toBe(true);
     expect(result.body.length).toBeLessThanOrEqual(60_000);
+  });
+});
+
+describe("excerpts", () => {
+  const result = (body: string, contentType: string) => ({ ok: false, status: 503, contentType, body, truncated: false, durationMs: 5 });
+  test("HTML becomes its text on one line; JSON is compacted", () => {
+    const page = "<html><head><title>x</title><style>h1{}</style></head><body>\n<h1>503 Service&nbsp;Unavailable</h1>\n<script>var a = 1;</script></body></html>";
+    expect(excerpt(result(page, "text/html; charset=utf-8"))).toBe("503 503 Service Unavailable");
+    expect(excerpt(result('{\n  "a": 1\n}', "application/json"))).toBe('503 {"a":1}');
+    expect(excerpt(result("line one\n\nline two", "text/plain"), 8)).toBe("503 line one…");
   });
 });

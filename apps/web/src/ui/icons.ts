@@ -57,6 +57,7 @@ const ICONS = {
   info: [circle(12, 12, 8.75), "M12 11v5.25", `!${circle(12, 7.9, 1)}`],
   clock: [circle(12, 12, 8.75), "M12 7.25V12l3.25 2"],
   play: ["M8 5.25v13.5L18.75 12z"],
+  pause: ["M9 6v12M15 6v12"],
   user: [circle(12, 8.25, 3.75), "M4.75 20c.9-3.6 3.75-5.75 7.25-5.75S18.35 16.4 19.25 20"],
   globe: [circle(12, 12, 8.75), "M3.25 12h17.5", "M12 3.25c2.35 2.4 3.5 5.3 3.5 8.75s-1.15 6.35-3.5 8.75c-2.35-2.4-3.5-5.3-3.5-8.75S9.65 5.65 12 3.25z"],
   gateway: ["M4 12h9.5M10 8l4 4-4 4", "M18.5 4.5v15"],
@@ -88,6 +89,10 @@ const ICONS = {
   sparkle: ["M12 3.5c.5 4.25 2.25 6 6.5 6.5-4.25.5-6 2.25-6.5 6.5-.5-4.25-2.25-6-6.5-6.5 4.25-.5 6-2.25 6.5-6.5z"],
   scroll: ["M7 4.5h10.5A2 2 0 0 1 19.5 6.5v11", "M7 4.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h10.5a2 2 0 0 0 2-2", "M9 9h6.5M9 12.5h6.5M9 16h4"],
   "play-circle": [circle(12, 12, 8.75), "M10 8.75v6.5l5.25-3.25z"],
+  /** Loops: work on a schedule, round and round. */
+  repeat: ["M16.5 3.5l3 3-3 3", "M4.5 11.25V10a3.5 3.5 0 0 1 3.5-3.5h11.5", "M7.5 20.5l-3-3 3-3", "M19.5 12.75V14a3.5 3.5 0 0 1-3.5 3.5H4.5"],
+  /** Connectors: how Galahad plugs into the services you use. */
+  plug: ["M9.25 3.5v4M14.75 3.5v4", "M6.5 7.5h11v3.75a5.5 5.5 0 0 1-5.5 5.5 5.5 5.5 0 0 1-5.5-5.5z", "M12 16.75v3.75"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

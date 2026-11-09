@@ -361,7 +361,7 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 
 | Milestone | Scope | State |
 |---|---|---|
-| **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (PWA not yet run in a real browser) |
+| **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (the PWA paired and ran in headless Edge, November 2026) |
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
 | **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox | ✅ |
 | **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, signed standing orders, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |

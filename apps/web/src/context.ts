@@ -1,18 +1,18 @@
-import type { FleetView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
 import type { Scope } from "./ui/dom.ts";
 import type { Signal } from "./ui/signal.ts";
 
-export type Route = "overview" | "inbox" | "chat" | "activity" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "settings";
+export type Route = "overview" | "inbox" | "chat" | "activity" | "loops" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "connectors" | "settings";
 
 export interface NavigateOptions {
   /** A secret detected in chat or memory, handed to the vault form. Kept in memory only, never in the URL. */
   prefillKey?: string;
   /** A search to run on arrival (memory). */
   query?: string;
-  /** Something to open on arrival, e.g. "add-key", "invite", "create", "remember", "place". */
+  /** Something to open on arrival, e.g. "add-key", "invite", "create", "remember", "place", "add-loop", "check". */
   intent?: string;
 }
 
@@ -21,9 +21,16 @@ export interface Live {
   fleet: Signal<FleetView | null>;
   pairings: Signal<PairingView[]>;
   secretRequests: Signal<SecretRequestView[]>;
+  /** The oath's outbox: actions waiting for your answer, and recently decided ones. */
+  actions: Signal<ActionView[]>;
+  /** What the heartbeat found, dismissed ones included (the Inbox shows the open ones). */
+  notices: Signal<NoticeView[]>;
   online: Signal<boolean>;
   inboxCount: Signal<number>;
   refreshFleet(): Promise<void>;
+  refreshActions(): Promise<void>;
+  refreshNotices(): Promise<void>;
+  /** Pairings, secret requests, actions and notices. */
   refreshInbox(): Promise<void>;
   /** Stops polling and listening (when the app shell is torn down). */
   stop(): void;

@@ -153,6 +153,7 @@
       .strong { font-weight: 600; }
       .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
       .wrap-anywhere { overflow-wrap: anywhere; }
+      .pre-wrap { white-space: pre-wrap; }
       .grow { flex: 1 1 auto; min-width: 0; }
       .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
       .row.wrap { flex-wrap: wrap; }
@@ -270,6 +271,8 @@
         background: var(--surface-3); color: var(--text-2);
       }
       .avatar.agent { background: var(--accent-soft); color: var(--accent); }
+      /* A toned avatar: a notice's severity, a run's status, a tool's class. */
+      .avatar[data-tone] { background: var(--tone-soft); color: var(--tone); }
       .device-meta { min-width: 0; line-height: 1.25; }
       .device-meta .name { color: var(--text); font-weight: 550; font-size: var(--fs-13); }
       .device-meta .id { font-size: var(--fs-11); }
@@ -798,6 +801,10 @@
       .reorder .r-item:first-child { border-color: var(--accent-border); }
       .reorder .r-item:first-child .r-index { color: var(--accent); }
       .reveal-in { animation: page-in var(--d-2) var(--ease-out); }
+      /* Words Galahad (or an agent) wrote, shown as a quotation: data, never instructions. */
+      .quote { padding: 2px 0 2px 12px; border-left: 2px solid var(--border-strong); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+      /* A tool's answer or a receipt: verbatim, scrollable, never parsed. */
+      .result { margin: 0; padding: 10px 12px; max-height: 50vh; overflow: auto; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--r-md); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--font-mono); color: var(--text); }
       .scroll-x { overflow-x: auto; }
       .notice-strip { display: flex; gap: var(--sp-2); align-items: center; font-size: var(--fs-12); color: var(--text-3); }
       .notice-strip svg { width: 14px; height: 14px; }

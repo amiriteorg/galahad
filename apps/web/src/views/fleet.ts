@@ -34,10 +34,11 @@ export const SCOPE_INFO: { scope: AnyScope; label: string }[] = [
   { scope: "mind:write", label: "Remember and forget" },
   { scope: "vault:read", label: "See secret names (never values)" },
   { scope: "vault:write", label: "Add, replace and delete keys" },
-  { scope: "brain:write", label: "Change providers and the roster" },
+  { scope: "brain:write", label: "Change providers, the roster, loops and connectors" },
   { scope: "gateway:mint", label: "Mint scoped model-gateway tokens" },
   { scope: "fleet:admin", label: "Invite, approve and revoke devices" },
   { scope: "sandbox", label: "Create and use sandboxes" },
+  { scope: "connect", label: "Run connector tools (never see their keys)" },
 ];
 
 export function peerOf(fleet: FleetView, id: string): PeerStatus | undefined {

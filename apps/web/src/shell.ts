@@ -1,4 +1,4 @@
-import type { PairingView } from "@galahad/core";
+import type { ActionView, PairingView } from "@galahad/core";
 import { type Api, setNetworkHandler } from "./api.ts";
 import type { Ctx, NavigateOptions, Route, View } from "./context.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -15,8 +15,10 @@ import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
 import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
+import { connectorsView } from "./views/connectors.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
 import { inboxView } from "./views/inbox.ts";
+import { loopsView, openLoopSheet } from "./views/loops.ts";
 import { memoryView, openRemember } from "./views/memory.ts";
 import { modelsView } from "./views/models.ts";
 import { overviewView } from "./views/overview.ts";
@@ -39,16 +41,18 @@ interface RouteSpec {
 
 const ROUTES: RouteSpec[] = [
   { id: "overview", label: "Overview", icon: "overview", group: "main", scope: null, key: "o", keywords: ["home", "dashboard", "health"], view: overviewView },
-  { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests"], view: inboxView },
+  { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk"], view: chatView },
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
+  { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
   { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
   // Owner devices see Sandboxes even before they hold the new scope, so the feature can be found;
   // the page explains what's missing instead of offering actions that would be refused.
   { id: "sandboxes", label: "Sandboxes", icon: "sandbox", group: "bodies", scope: "sandbox", alsoFor: "fleet:admin", key: "s", keywords: ["containers", "vm", "console"], view: sandboxesView },
   { id: "vault", label: "Vault", icon: "vault", group: "keys", scope: "vault:read", key: "v", keywords: ["keys", "secrets", "api key"], view: vaultView },
   { id: "models", label: "Models", icon: "models", group: "keys", scope: "mind:read", key: "l", keywords: ["providers", "roster", "llm"], view: modelsView },
+  { id: "connectors", label: "Connectors", icon: "plug", group: "keys", scope: "mind:read", key: "n", keywords: ["github", "cloudflare", "home assistant", "integrations", "services", "tools"], view: connectorsView },
   { id: "settings", label: "Settings", icon: "settings", group: "keys", scope: null, key: ",", keywords: ["preferences", "theme", "device"], view: settingsView },
 ];
 
@@ -73,13 +77,23 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   let pending: { route: Route; opts: NavigateOptions } | null = null;
   let titleObserver: IntersectionObserver | null = null;
 
-  const live = startLive(base.api, can, (pairing: PairingView) => {
-    if (current === "inbox") return;
-    toast(`${pairing.name} asks to join`, {
-      description: "Compare the six-digit code before you approve.",
-      action: { label: "Review", run: () => ctx.navigate("inbox") },
-      duration: 12_000,
-    });
+  const live = startLive(base.api, can, {
+    onNewPairing(pairing: PairingView) {
+      if (current === "inbox") return;
+      toast(`${pairing.name} asks to join`, {
+        description: "Compare the six-digit code before you approve.",
+        action: { label: "Review", run: () => ctx.navigate("inbox") },
+        duration: 12_000,
+      });
+    },
+    onNewAction(action: ActionView) {
+      if (current === "inbox") return;
+      toast(action.class === "delete" ? "Galahad asks to delete something" : "Galahad asks your leave", {
+        description: `${action.connector}.${action.tool}: ${action.target}`,
+        action: { label: "Review", run: () => ctx.navigate("inbox") },
+        duration: 12_000,
+      });
+    },
   });
   setNetworkHandler((ok) => live.online.set(ok));
 
@@ -327,6 +341,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       if (can("mind:write")) actions.push({ id: "remember", label: "Remember something", group: "Actions", icon: "memory", keywords: ["note", "add memory"], run: () => openRemember(ctx) });
       if (can("sandbox")) actions.push({ id: "create-sandbox", label: "Create a sandbox", group: "Actions", icon: "sandbox", keywords: ["container", "vm", "new"], run: () => openCreateSandbox(ctx) });
       if (can("mind:read")) actions.push({ id: "place", label: "Where would this run?", group: "Actions", icon: "compass", keywords: ["placement", "playground", "schedule"], run: () => ctx.navigate("fleet", { intent: "place" }) });
+      if (can("brain:write")) actions.push({ id: "add-loop", label: "Add a loop", group: "Actions", icon: "repeat", keywords: ["schedule", "cron", "every", "routine"], run: () => openLoopSheet(ctx) });
+      if (can("mind:read")) actions.push({ id: "heartbeat", label: "Run the heartbeat's checks now", group: "Actions", icon: "review", keywords: ["health", "check", "notices"], run: () => ctx.navigate("loops", { intent: "check" }) });
+      if (can("brain:write")) actions.push({ id: "add-connector", label: "Install a connector", group: "Actions", icon: "plug", keywords: ["github", "cloudflare", "home assistant", "integration"], run: () => ctx.navigate("connectors") });
       const appearance: Command[] = [
         { id: "theme-system", label: "Theme: match system", group: "Appearance", icon: "monitor", keywords: ["auto"], run: () => setTheme("system") },
         { id: "theme-light", label: "Theme: light", group: "Appearance", icon: "sun", run: () => setTheme("light") },

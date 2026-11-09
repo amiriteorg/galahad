@@ -143,7 +143,7 @@ Rules:
 
 ## Layout and shell
 
-- **Desktop (≥ 960 px):** a sidebar with the wordmark, search (⌘K / Ctrl+K), grouped navigation (Overview, Inbox, Chat · *Mind:* Memory, Activity · *Bodies:* Fleet, Sandboxes · *Keys & models:* Vault, Models), then Settings and this device. It collapses to icons (`[`); the choice is remembered. The top bar carries the fleet status pill and, while Galahad answers, an "Answering… Stop" pill.
+- **Desktop (≥ 960 px):** a sidebar with the wordmark, search (⌘K / Ctrl+K), grouped navigation (Overview, Inbox, Chat · *Mind:* Memory, Activity, Loops · *Bodies:* Fleet, Sandboxes · *Keys & models:* Vault, Models, Connectors), then Settings and this device. It collapses to icons (`[`); the choice is remembered. The top bar carries the fleet status pill and, while Galahad answers, an "Answering… Stop" pill.
 - **Phones:** a glassy top bar with the mark, and a bottom tab bar with Home, Chat, Inbox and Fleet (or the first four destinations this device may use) plus **More**, a bottom sheet with the rest and search. Safe-area insets are honoured everywhere.
 - The page title appears in the top bar only once the page's own heading has scrolled away (iOS large-title behaviour), so it is never said twice.
 - **Routing** is hash-based (`#/fleet`), so links survive reloads without server routes. `#pair=…` is reserved for invites.
@@ -172,7 +172,9 @@ Rules:
 
 - **Process view, not a spinner.** Each answer shows its steps as they happen: *Asked as planner* → *Thinking with anthropic/claude-opus-5-5* → (*… didn't answer: reason*, on fallback) → *Answering*. When it's done, the steps fold into one line (`planner · model · 4.2 s · 1 fallback`) that you can open again.
 - **Stop is always one click away:** the send button becomes Stop while streaming, Esc stops, and from any other page the top bar shows "Answering… Stop". Enter never stops an answer: you can type your next message while this one streams. A stream keeps running while you look elsewhere.
-- **The Inbox** gathers everything that needs you: devices asking to join (with their code), credentials Galahad asked for (with an inline sealed field), and a reserved slot for oath approvals ("Galahad asks to delete X"), which already explains what will appear there. New pairing requests also raise a toast with **Review**.
+- **The Inbox** gathers everything that needs you: **oath approvals** first (what an agent or a loop wants to send or delete: the exact request, who asked, why, the arguments and the time left; Decline is one click, Approve confirms what will be sent once, and a delete makes you type what it deletes), then devices asking to join (with their code), credentials Galahad asked for (with an inline sealed field), and the **notices** the heartbeat and loops raise (Dismiss keeps one quiet until it changes). A collapsed list shows recent decisions and their receipts. New pairing requests and new approvals raise a toast with **Review**; the Inbox badge counts all of it.
+- **Loops** lists the work Galahad does on a schedule: the schedule in words with its time zone and node, next run, the last run's status and first line, Run now, Pause/Resume, Change, Remove and recent runs. *Check now* runs the heartbeat's checks on the spot. The add/change dialog offers schedule presets with a live preview and the three tasks (heartbeat with a checklist, quest, connector call with typed fields).
+- **Connectors** shows the installed and available connectors with the origin each is pinned to, its key state in plain words, a sealed key field, and its tools with their oath class (outward and delete say they ask you).
 - **Autonomy view:** what Galahad may do alone (read; create and modify, logged), what asks (outward, delete) and what's denied (forbidden), with the last 24 hours' counts once the ledger exists. It sits on Overview and Activity.
 - **Everything is visible:** the Activity timeline lists every classified action with its verdict and reason, filterable by class and verdict and grouped by day.
 - **Permissions in the UI, not in settings:** Settings shows this device's scopes as granted or not; invites let you choose what a new phone may do (Everything / Chat & read / Custom); pages explain why an action is missing instead of failing.
@@ -208,7 +210,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | Keys | Action |
 |---|---|
 | ⌘K / Ctrl+K, `/` | Search and commands |
-| `G` then `O I C M A F S V L ,` | Go to Overview, Inbox, Chat, Memory, Activity, Fleet, Sandboxes, Vault, Models, Settings |
+| `G` then `O I C M A R F S V L N ,` | Go to Overview, Inbox, Chat, Memory, Activity, Loops, Fleet, Sandboxes, Vault, Models, Connectors, Settings |
 | `[` | Collapse or expand the sidebar |
 | `?` | Show shortcuts |
 | Enter / Shift+Enter | Send / new line (chat) |
@@ -219,7 +221,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~141 KB, ~50 KB gzipped) | Always; cached by the service worker |
+| `/app.js` | The app (~189 KB, ~65 KB gzipped) | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 

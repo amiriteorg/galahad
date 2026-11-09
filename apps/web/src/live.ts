@@ -1,4 +1,4 @@
-import type { FleetView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
 import type { AnyScope } from "./types.ts";
@@ -6,27 +6,54 @@ import { signal } from "./ui/signal.ts";
 
 /*
  * Background polling for what the shell shows everywhere: fleet health and
- * the inbox (pairing requests, secret requests). It pauses while the app is
- * hidden and catches up the moment it's visible again.
+ * the inbox (pairing requests, secret requests, actions waiting for your
+ * answer, the heartbeat's notices). It pauses while the app is hidden and
+ * catches up the moment it's visible again.
  */
 
 const FLEET_MS = 10_000;
 const PAIRINGS_MS = 3_000;
 const REQUESTS_MS = 15_000;
+const ACTIONS_MS = 5_000;
+const NOTICES_MS = 15_000;
 
-export function startLive(api: Api, can: (scope: AnyScope) => boolean, onNewPairing: (pairing: PairingView) => void): Live {
+export interface LiveEvents {
+  /** A device asked to join since the last look. */
+  onNewPairing(pairing: PairingView): void;
+  /** An action began waiting for your answer since the last look. */
+  onNewAction(action: ActionView): void;
+}
+
+/** Waiting, and not yet past its deadline (the node says expired on its next answer). */
+export const isWaiting = (action: ActionView, now = Date.now()): boolean => action.state === "waiting" && action.expires > now;
+
+export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: LiveEvents): Live {
   const fleet = signal<FleetView | null>(null);
   const pairings = signal<PairingView[]>([]);
   const secretRequests = signal<SecretRequestView[]>([]);
+  const actions = signal<ActionView[]>([]);
+  const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
   const inboxCount = signal(0);
   const seen = new Set<string>();
+  const seenActions = new Set<string>();
   let lastFleet = "";
+  let lastActions = "";
+  let lastNotices = "";
   let primed = false;
+  let actionsPrimed = false;
 
-  const recount = () => inboxCount.set(pairings.value.length + secretRequests.value.length);
+  const recount = () =>
+    inboxCount.set(
+      pairings.value.length +
+        secretRequests.value.length +
+        actions.value.filter((a) => isWaiting(a)).length +
+        notices.value.filter((n) => !n.dismissed).length,
+    );
   pairings.subscribe(recount);
   secretRequests.subscribe(recount);
+  actions.subscribe(recount);
+  notices.subscribe(recount);
 
   async function refreshFleet(): Promise<void> {
     if (!can("mind:read")) return;
@@ -51,7 +78,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, onNewPair
         const key = `${p.invite}:${p.device}`;
         if (!seen.has(key)) {
           seen.add(key);
-          if (primed) onNewPairing(p);
+          if (primed) events.onNewPairing(p);
         }
       }
       primed = true;
@@ -73,8 +100,42 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, onNewPair
     }
   }
 
+  async function refreshActions(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { actions: list } = await api.get<{ actions: ActionView[] }>("/api/actions");
+      for (const a of list) {
+        if (!isWaiting(a) || seenActions.has(a.id)) continue;
+        seenActions.add(a.id);
+        if (actionsPrimed) events.onNewAction(a);
+      }
+      actionsPrimed = true;
+      const signature = JSON.stringify(list);
+      if (signature !== lastActions) {
+        lastActions = signature;
+        actions.set(list);
+      }
+    } catch {
+      /* transient; an older node without the outbox answers 404 and shows nothing */
+    }
+  }
+
+  async function refreshNotices(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { notices: list } = await api.get<{ notices: NoticeView[] }>("/api/notices");
+      const signature = JSON.stringify(list);
+      if (signature !== lastNotices) {
+        lastNotices = signature;
+        notices.set(list);
+      }
+    } catch {
+      /* transient */
+    }
+  }
+
   const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests()]);
+    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices()]);
   };
 
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -85,6 +146,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, onNewPair
     timers.push(setInterval(() => void refreshFleet(), FLEET_MS));
     timers.push(setInterval(() => void refreshPairings(), PAIRINGS_MS));
     timers.push(setInterval(() => void refreshRequests(), REQUESTS_MS));
+    timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
+    timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
   }
   function stop(): void {
     for (const t of timers.splice(0)) clearInterval(t);
@@ -104,5 +167,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, onNewPair
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, online, inboxCount, refreshFleet, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, notices, online, inboxCount, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
 }
