@@ -1,4 +1,5 @@
 import {
+  CLIENT_DEFAULT_SCOPES,
   type ChatStreamEvent,
   type DeviceView,
   equalBytes,
@@ -21,9 +22,11 @@ import {
   GatewayTokens,
   handleGateway,
   listModels,
+  originOf,
   parseRef,
   PRESETS,
   preset,
+  providerRecord,
   providerViews,
   resolveProvider,
   roster,
@@ -167,6 +170,7 @@ const secretView = (s: SecretInfo): SecretView => ({
   name: s.name,
   provider: s.provider,
   hint: s.hint,
+  origin: s.origin,
   label: s.label,
   updatedAt: s.hlc,
   updatedBy: s.device,
@@ -343,14 +347,27 @@ export function createApp(ctx: AppContext) {
       });
       return { id: event.id, trust };
     },
-    forget: (input) => {
+    forget: (input, p) => {
+      // An agent may forget only what it wrote itself; your memories are yours to delete.
+      if (p.kind === "arm" && ctx.store.event(input.id)?.prov?.source !== p.device) {
+        throw new HttpError(403, "agents may only forget memories they wrote themselves");
+      }
       ctx.store.emit(ctx.identity, "memory.forgotten", { memory: input.id });
       return { ok: true };
     },
     secrets: () => ({ secrets: ctx.vault.list().map(secretView), unlocked: ctx.vault.unlocked() }),
-    setSecret: (input) => ({
-      secret: secretView(ctx.vault.set(input.name, input.value, { provider: input.provider, label: input.label })),
-    }),
+    setSecret: (input) => {
+      // Pin the key to an origin taken from what you entered with it, or the built-in
+      // preset. Never from a provider record, which someone else may have repointed.
+      const known = input.provider ? preset(input.provider) : undefined;
+      let origin: string | null = null;
+      if (input.baseUrl) origin = originOf(input.baseUrl); // typed by you, next to the key
+      else if (known?.baseUrl) origin = originOf(known.baseUrl); // built-in preset (constant)
+      else if (input.provider && !known) origin = originOf(providerRecord(ctx.store, input.provider)?.baseUrl ?? ""); // custom provider
+      // A preset without a URL (e.g. Verda) stays unpinned, and therefore unused, until re-added with --base-url.
+      const info = ctx.vault.set(input.name, input.value, { provider: input.provider, label: input.label, ...(origin ? { origin } : {}) });
+      return { secret: secretView(info) };
+    },
     deleteSecret: (input) => {
       ctx.vault.delete(input.name);
       return { ok: true };
@@ -401,7 +418,8 @@ export function createApp(ctx: AppContext) {
       return { roster: roster(ctx.store) };
     },
     chat: (input, _p, req) => {
-      guardAgainstSecrets(...input.messages.filter((m: { role: string }) => m.role === "user").map((m: { content: string }) => m.content));
+      // Every message goes to a provider, whoever "said" it, so all of them are scanned.
+      guardAgainstSecrets(...input.messages.map((m: { content: string }) => m.content));
       const lastUser = [...input.messages].reverse().find((m: { role: string }) => m.role === "user");
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
@@ -429,9 +447,19 @@ export function createApp(ctx: AppContext) {
         headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS },
       });
     },
-    createInvite: (input) => ctx.pairing.createInvite(input.kind, { scopes: input.scopes, origin: input.origin }),
+    createInvite: (input) =>
+      ctx.pairing.createInvite(input.kind, {
+        scopes: input.scopes ?? (input.kind === "client" ? CLIENT_DEFAULT_SCOPES : undefined),
+        origin: input.origin,
+      }),
     pairings: () => ({ pairings: ctx.pairing.pending() }),
-    approvePairing: (input) => {
+    approvePairing: (input, p) => {
+      // A new machine receives the vault. A lost or stolen phone must not be able to
+      // add one, so machines are approved from a terminal on an existing node.
+      const pending = ctx.pairing.pending().find((r) => r.invite === input.invite && r.device === input.device);
+      if (pending?.kind === "node" && p.kind === "client") {
+        throw new HttpError(403, "approve new machines from a terminal on an existing node (`galahad pairings`)");
+      }
       ctx.pairing.approve(input.invite, input.device);
       return { ok: true };
     },

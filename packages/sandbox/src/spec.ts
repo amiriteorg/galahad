@@ -55,7 +55,8 @@ export function labels(spec: SandboxSpec): Record<string, string> {
     [`${LABEL}.providers`]: spec.providers.join(","),
     [`${LABEL}.cpus`]: String(spec.cpus),
     [`${LABEL}.memory`]: String(spec.memoryGb),
-    ...(spec.tokenHash ? { [`${LABEL}.token`]: spec.tokenHash } : {}),
+    // The gateway token's hash is deliberately NOT a label: images can carry labels of
+    // their own, so anything security-relevant lives in node-local state instead.
   };
 }
 

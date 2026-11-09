@@ -398,15 +398,22 @@ Next:
       if (!providerId) fail("couldn't tell which provider this key is for; pass --provider <id> (see `galahad provider presets`)");
       const admin = new Admin(home);
       const secretName = str("secret") ?? providerId;
-      await admin.call("setSecret", { name: secretName, value, provider: providerId });
       const known = preset(providerId);
-      const baseUrl = str("base-url") ?? known?.baseUrl;
+      const baseUrl = str("base-url") ?? (known?.baseUrl || undefined);
+      const { secret } = await admin.call<{ secret: { origin: string | null } }>("setSecret", {
+        name: secretName,
+        value,
+        provider: providerId,
+        ...(str("base-url") ? { baseUrl: str("base-url") } : {}),
+      });
       if (!baseUrl) {
         console.log(`Key stored as "${secretName}". ${known?.note ?? "Now add the provider with --base-url."}`);
         return;
       }
       await admin.call("setProvider", { id: providerId, baseUrl, kind: (str("kind") ?? known?.kind) as any, secret: secretName });
-      console.log(`Key stored and provider "${providerId}" configured. Every full node can now use it.`);
+      console.log(
+        `Key stored and provider "${providerId}" configured. Every full node can now use it.\n${dim(`It will only ever be sent to ${secret.origin ?? "(unpinned: re-add with --base-url)"}.`)}`,
+      );
       return;
     }
 

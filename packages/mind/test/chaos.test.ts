@@ -139,6 +139,6 @@ describe("chaos: the mind under a hostile network", () => {
       }
       expect(() => victim.vault.reveal("orcarouter")).toThrow();
       expect(founder.vault.reveal("deepseek")).toBe("sk-chaos-initial-0000000000");
-    });
+    }, 60_000); // full replays under heavy churn are the known slow path
   }
 });

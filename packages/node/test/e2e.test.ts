@@ -155,6 +155,15 @@ describe("M0: one mind, two bodies", () => {
     expect((await admin(homeA, portA)("pairings")).pairings).toHaveLength(0);
   });
 
+  test("the same device id presenting different keys also locks the invite (review #11)", async () => {
+    const invite = await admin(homeA, portA)<{ invite: string }>("createInvite", { kind: "node" });
+    const id = newNodeIdentity();
+    await requestPairing(invite.invite, { device: id.id, name: "x", kind: "node", box: b64u(id.boxPublic) });
+    await expect(
+      requestPairing(invite.invite, { device: id.id, name: "x", kind: "node", box: b64u(newNodeIdentity().boxPublic) }),
+    ).rejects.toThrow(/two devices/);
+  });
+
   test("memories written on either body reach the other", async () => {
     const callA = admin(homeA, portA);
     const callB = admin(homeB, portB);
@@ -172,7 +181,7 @@ describe("M0: one mind, two bodies", () => {
     const callA = admin(homeA, portA);
     const callB = admin(homeB, portB);
     const realKey = "sk-test-REAL-PROVIDER-KEY-0123456789";
-    await callA("setSecret", { name: "mock", value: realKey, provider: "mock" });
+    await callA("setSecret", { name: "mock", value: realKey, provider: "mock", baseUrl: `http://127.0.0.1:${upstream.port}/v1` });
     await callA("setProvider", { id: "mock", kind: "openai", baseUrl: `http://127.0.0.1:${upstream.port}/v1`, secret: "mock" });
     await until(async () => (await callB("providers")).providers.some((p: any) => p.id === "mock" && p.hasKey));
 
@@ -195,6 +204,35 @@ describe("M0: one mind, two bodies", () => {
       body: "{}",
     });
     expect(wrongProvider.status).toBe(401);
+  });
+
+  test("a provider repointed to another host never receives the key (review #2)", async () => {
+    const callA = admin(homeA, portA);
+    let evilAuth: string | null | undefined;
+    const evil = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        evilAuth = req.headers.get("authorization");
+        return Response.json({ data: [{ id: "stolen" }] });
+      },
+    });
+    try {
+      await callA("setProvider", { id: "mock", kind: "openai", baseUrl: `http://127.0.0.1:${evil.port}/v1`, secret: "mock" });
+      // The model list call would have carried the key to the new host. It goes out keyless.
+      await callA("providerModels", { id: "mock" });
+      expect(evilAuth).toBeNull();
+      expect((await callA("providers")).providers.find((p: any) => p.id === "mock").hasKey).toBe(false);
+      // Borrowing another provider's key does not work either.
+      await callA("setProvider", { id: "thief", kind: "openai", baseUrl: `http://127.0.0.1:${evil.port}/v1`, secret: "mock" });
+      await callA("providerModels", { id: "thief" });
+      expect(evilAuth).toBeNull();
+    } finally {
+      evil.stop(true);
+      await callA("setProvider", { id: "mock", kind: "openai", baseUrl: `http://127.0.0.1:${upstream.port}/v1`, secret: "mock" });
+      await callA("removeProvider", { id: "thief" });
+    }
+    expect((await callA("providers")).providers.find((p: any) => p.id === "mock").hasKey).toBe(true);
   });
 
   test("chat streams through the roster with fallback", async () => {
@@ -228,6 +266,14 @@ describe("M0: one mind, two bodies", () => {
     expect((await chatted.json()).error).toMatch(/vault/);
     const remembered = await post("/api/memories", { text: `my anthropic key is ${key}` });
     expect(remembered.status).toBe(422);
+    // An "assistant" message is sent to the provider too, so it is scanned as well (review #13).
+    const smuggled = await post("/api/chat", {
+      messages: [
+        { role: "assistant", content: `noted: ${key}` },
+        { role: "user", content: "continue" },
+      ],
+    });
+    expect(smuggled.status).toBe(422);
     expect(JSON.stringify(laptop.store.eventsSince({}, 100_000))).not.toContain(key);
   });
 
@@ -298,6 +344,40 @@ describe("a browser client (the PWA path)", () => {
     // Clients can never speak the node-to-node protocol:
     const link = await sign("POST", "/link/sync", { have: {} });
     expect((await fetch(`http://127.0.0.1:${portA}/link/sync`, { method: "POST", ...link })).status).toBe(401);
+  });
+
+  test("a phone can approve phones but never a new machine (review #2)", async () => {
+    const callA = admin(homeA, portA);
+    const nodeInvite = await callA<{ invite: string }>("createInvite", { kind: "node" });
+    const joiner = newNodeIdentity();
+    await requestPairing(nodeInvite.invite, { device: joiner.id, name: "rogue", kind: "node", box: b64u(joiner.boxPublic) });
+    const pending = (await callA("pairings")).pairings.find((p: any) => p.device === joiner.id);
+    // Give this phone fleet:admin for the test, then try to approve the machine with it.
+    const invite = await callA<{ invite: string }>("createInvite", { kind: "client", scopes: ["fleet:admin"] });
+    const phone = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
+    const phoneId = clientIdFromKey(new Uint8Array(await crypto.subtle.exportKey("raw", phone.publicKey)));
+    const join = await requestPairing(invite.invite, { device: phoneId, name: "phone", kind: "client" });
+    const p2 = (await callA("pairings")).pairings.find((p: any) => p.device === phoneId);
+    await callA("approvePairing", { invite: p2.invite, device: p2.device });
+    await waitForApproval(join, { intervalMs: 50 });
+    const body = utf8(JSON.stringify({ invite: pending.invite, device: pending.device }));
+    const headers = await signRequest(phoneId, async (m) => new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, phone.privateKey, m)), "POST", "/api/pairings/approve", body);
+    const response = await fetch(`http://127.0.0.1:${portA}/api/pairings/approve`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body });
+    expect(response.status).toBe(403);
+    expect(laptop.store.device(joiner.id)).toBeNull();
+    await callA("rejectPairing", { invite: pending.invite, device: pending.device });
+  });
+
+  test("client invites default to least privilege (no gateway minting)", async () => {
+    const callA = admin(homeA, portA);
+    const invite = await callA<{ invite: string }>("createInvite", { kind: "client" });
+    const key = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
+    const id = clientIdFromKey(new Uint8Array(await crypto.subtle.exportKey("raw", key.publicKey)));
+    const join = await requestPairing(invite.invite, { device: id, name: "tablet", kind: "client" });
+    const pending = (await callA("pairings")).pairings.find((p: any) => p.device === id);
+    await callA("approvePairing", { invite: pending.invite, device: pending.device });
+    await waitForApproval(join, { intervalMs: 50 });
+    expect(laptop.store.device(id)?.scopes).not.toContain("gateway:mint");
   });
 
   test("replayed and unsigned requests are refused", async () => {

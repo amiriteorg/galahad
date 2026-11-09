@@ -94,7 +94,12 @@ export class PairingHost {
     if (this.store.device(req.device)) throw new PairingError("device already enrolled", 409);
 
     const existing = record.requests.get(req.device);
-    if (!existing && record.requests.size > 0) {
+    // A second device, or the same device id presenting different keys or details,
+    // means someone else is holding this invite. Lock it.
+    const changed =
+      existing &&
+      (existing.name !== req.name || existing.kind !== req.kind || existing.box !== req.box || existing.endpoint !== req.endpoint);
+    if ((!existing && record.requests.size > 0) || changed) {
       record.conflict = true;
       for (const pending of record.requests.values()) pending.status = "rejected";
       throw new PairingError("invite was used by two devices: possible interception; create a new invite", 409);

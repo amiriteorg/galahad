@@ -10,6 +10,7 @@ import {
   encodeInvite,
   fromB64u,
   HlcClock,
+  isHlc,
   newInvite,
   newNodeIdentity,
   openSealed,
@@ -64,6 +65,14 @@ describe("hybrid logical clock", () => {
     clock.observe(remote);
     expect(clock.tick() > remote).toBe(true);
   });
+  test("a maxed-out observed counter carries into milliseconds instead of wedging writes (review #3)", () => {
+    const clock = new HlcClock(() => 1_000);
+    clock.observe("000000000001000.999999");
+    const next = clock.tick();
+    expect(next).toBe("000000000001001.000000");
+    expect(isHlc(next)).toBe(true);
+  });
+
   test("refuses far-future timestamps", () => {
     const clock = new HlcClock(() => 1_000);
     const future = new HlcClock(() => 1_000 + 60 * 60_000).tick();

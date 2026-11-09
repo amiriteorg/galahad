@@ -30,6 +30,8 @@ import { isFullNode, type MindStore } from "./store.ts";
 export interface SecretMetaInput {
   provider?: string;
   label?: string;
+  /** Origin the key may be sent to, e.g. https://api.deepseek.com */
+  origin?: string;
 }
 
 export interface SecretInfo {
@@ -38,6 +40,7 @@ export interface SecretInfo {
   provider: string | null;
   label: string | null;
   hint: string | null;
+  origin: string | null;
   hlc: string;
   device: string;
 }
@@ -47,7 +50,7 @@ interface SecretRecord {
   kid: string;
   nonce: string;
   ct: string;
-  meta: { provider?: string; hint?: string; label?: string };
+  meta: { provider?: string; hint?: string; label?: string; origin?: string };
 }
 
 export class VaultLockedError extends Error {
@@ -137,9 +140,25 @@ export class Vault {
       name,
       kid,
       ...sealed,
-      meta: { ...(meta.provider ? { provider: meta.provider } : {}), ...(meta.label ? { label: meta.label } : {}), ...(hint ? { hint } : {}) },
+      meta: {
+        ...(meta.provider ? { provider: meta.provider } : {}),
+        ...(meta.label ? { label: meta.label } : {}),
+        ...(meta.origin ? { origin: meta.origin } : {}),
+        ...(hint ? { hint } : {}),
+      },
     });
     return this.info(name)!;
+  }
+
+  /** Pin an existing, unpinned key to an origin (one-time migration; the value is re-sealed unchanged). */
+  pin(name: string, origin: string): boolean {
+    const record = this.store.lww<SecretRecord>(`secret:${name}`)?.value;
+    if (!record || record.meta.origin) return false;
+    const value = this.reveal(name);
+    const kid = this.ensureKey();
+    const sealed = aeadSeal(this.key(kid), utf8(value), this.secretAad(name, kid));
+    this.store.emit(this.identity, "secret.set", { name, kid, ...sealed, meta: { ...record.meta, origin } });
+    return true;
   }
 
   /** Plaintext, in memory only. Never log it, never return it to a client. */
@@ -167,6 +186,7 @@ export class Vault {
       provider: meta.provider ?? null,
       label: meta.label ?? null,
       hint: meta.hint ?? null,
+      origin: meta.origin ?? null,
       hlc: entry.hlc,
       device: entry.device,
     };

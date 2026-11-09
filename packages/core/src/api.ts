@@ -87,6 +87,8 @@ export const routes = {
       value: z.string().min(1).max(16_384),
       provider: Name.optional(),
       label: z.string().max(128).optional(),
+      /** Where this key may be sent (entered with the key). Defaults to the provider's built-in preset. */
+      baseUrl: z.string().url().max(512).optional(),
     }),
   },
   deleteSecret: { method: "POST", path: "/api/secrets/delete", scope: "vault:write", input: z.strictObject({ name: Name }) },
@@ -289,6 +291,8 @@ export interface SecretView {
   name: string;
   provider: string | null;
   hint: string | null;
+  /** The only origin this key is ever sent to. */
+  origin: string | null;
   label: string | null;
   updatedAt: string;
   updatedBy: string;

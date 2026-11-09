@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, type NodeIdentity } from "@galahad/core";
-import { GatewayTokens } from "@galahad/brain";
+import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } from "@galahad/sandbox";
@@ -30,6 +30,9 @@ export interface DaemonOptions {
   /** Skip the (slow) hardware probe; used by tests. */
   capabilities?: Capabilities;
 }
+
+/** No request may make a node buffer more than this (Bun's default is about 128 MB). */
+const MAX_REQUEST_BODY = 8 * 1024 * 1024;
 
 /** Publish this node's endpoint + capabilities, only when they changed (idempotent). */
 function publishProfile(store: MindStore, identity: NodeIdentity, endpoint: string, caps: Capabilities): void {
@@ -63,6 +66,25 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const stopPush = store.onEmit((event) => sync.push([event]));
   const pairing = new PairingHost(store, identity, endpoint);
 
+  // Keys entered before origin pinning get pinned to where their provider points today.
+  try {
+    const pinned = pinLegacyKeys(store, vault);
+    if (pinned.length) log(`pinned ${pinned.length} key(s) to their provider's origin: ${pinned.join(", ")}`);
+  } catch (error) {
+    log(`key pinning skipped: ${(error as Error).message}`);
+  }
+
+  // Node-local: which gateway token belongs to which sandbox (never trusted from container labels).
+  local.exec("CREATE TABLE IF NOT EXISTS sandbox_tokens (id TEXT PRIMARY KEY, hash TEXT NOT NULL)");
+  const sandboxTokens = {
+    put: (id: string, hash: string) => void local.query("INSERT OR REPLACE INTO sandbox_tokens (id, hash) VALUES (?, ?)").run(id, hash),
+    take: (id: string) => {
+      const row = local.query<{ hash: string }, [string]>("SELECT hash FROM sandbox_tokens WHERE id = ?").get(id);
+      local.query("DELETE FROM sandbox_tokens WHERE id = ?").run(id);
+      return row?.hash ?? null;
+    },
+  };
+
   // Every gated action lands in the signed, replicated ledger.
   const ledger = (entry: LedgerEntryInput) => {
     const body = Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined)) as LedgerEntryInput;
@@ -79,6 +101,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sandbox = new SandboxHost({
       node: identity.id,
       tokens,
+      tokenStore: sandboxTokens,
       ledger,
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
@@ -116,18 +139,18 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // Tailnet: node-to-node link traffic. Never 0.0.0.0.
   const proxyPort = opts.proxyPort ?? env.GALAHAD_PROXY_PORT ?? port + 1;
   const servers = [
-    Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 255, fetch: (req) => app(req, "loopback") }),
-    Bun.serve({ hostname: "127.0.0.1", port: proxyPort, idleTimeout: 255, fetch: (req) => app(req, "proxied") }),
+    Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "loopback") }),
+    Bun.serve({ hostname: "127.0.0.1", port: proxyPort, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "proxied") }),
   ];
   if (advertise !== "127.0.0.1") {
-    servers.push(Bun.serve({ hostname: advertise, port, idleTimeout: 255, fetch: (req) => app(req, "tailnet") }));
+    servers.push(Bun.serve({ hostname: advertise, port, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "tailnet") }));
   }
   // Sandboxes reach this listener (and only this one) on the gateway network's bridge IP.
   let reaper: ReturnType<typeof setInterval> | null = null;
   if (sandbox) {
     try {
       servers.push(
-        Bun.serve({ hostname: NETWORKS.gateway.gateway, port: SANDBOX_GATEWAY_PORT, idleTimeout: 255, fetch: (req) => app(req, "sandbox") }),
+        Bun.serve({ hostname: NETWORKS.gateway.gateway, port: SANDBOX_GATEWAY_PORT, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "sandbox") }),
       );
     } catch (error) {
       log(`sandbox gateway listener unavailable: ${(error as Error).message}`);

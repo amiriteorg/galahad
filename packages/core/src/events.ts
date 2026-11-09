@@ -36,6 +36,12 @@ export const SecretMeta = z.strictObject({
   provider: Name.optional(),
   hint: z.string().max(16).optional(),
   label: z.string().max(128).optional(),
+  /** The only origin this key is ever sent to; set when you enter it. A repointed provider gets nothing. */
+  origin: z
+    .string()
+    .max(256)
+    .regex(/^https?:\/\/[^/?#]+$/)
+    .optional(),
 });
 
 export const Bodies = {

@@ -526,6 +526,11 @@ export class MindStore {
       .slice(0, limit);
   }
 
+  event(id: string): GEvent | null {
+    const raw = this.db.query<{ raw: string }, [string]>("SELECT raw FROM events WHERE id = ?").get(id)?.raw;
+    return raw ? (JSON.parse(raw) as GEvent) : null;
+  }
+
   eventCount(): number {
     return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM events").get()!.n;
   }

@@ -30,12 +30,31 @@ export interface TokenMinter {
   revoke(hash: string): boolean;
 }
 
+/** Node-local record of which gateway token belongs to which sandbox (never a container label). */
+export interface SandboxTokenStore {
+  put(id: string, tokenHash: string): void;
+  take(id: string): string | null;
+}
+
+export function memoryTokenStore(): SandboxTokenStore {
+  const map = new Map<string, string>();
+  return {
+    put: (id, hash) => void map.set(id, hash),
+    take: (id) => {
+      const hash = map.get(id) ?? null;
+      map.delete(id);
+      return hash;
+    },
+  };
+}
+
 export interface SandboxHostOptions {
   node: string;
   tokens: TokenMinter;
   ledger: (entry: LedgerEntryInput) => void;
   maxCpus: number;
   maxMemoryGb: number;
+  tokenStore?: SandboxTokenStore;
   docker?: string;
   now?: () => number;
 }
@@ -98,10 +117,12 @@ async function readCapped(stream: ReadableStream<Uint8Array>, max: number): Prom
 export class SandboxHost {
   private readonly bin: string;
   private readonly now: () => number;
+  private readonly tokenStore: SandboxTokenStore;
 
   constructor(private readonly opts: SandboxHostOptions) {
     this.bin = opts.docker ?? "docker";
     this.now = opts.now ?? Date.now;
+    this.tokenStore = opts.tokenStore ?? memoryTokenStore();
   }
 
   private async docker(args: string[], timeoutMs = 60_000, max = MAX_OUTPUT): Promise<Run> {
@@ -200,6 +221,7 @@ export class SandboxHost {
       if (tokenHash) this.opts.tokens.revoke(tokenHash);
       throw new SandboxError(`could not start sandbox: ${redact(run.stderr.trim()).slice(0, 500)}`, 500);
     }
+    if (tokenHash) this.tokenStore.put(id, tokenHash);
     if (input.network === "online") {
       await this.docker(["network", "connect", NETWORKS.gateway.name, containerName(id)]);
     }
@@ -284,10 +306,9 @@ export class SandboxHost {
       });
       return decision;
     }
-    const labels = (await this.labels(id)) ?? {};
     await this.docker(["rm", "--force", "--volumes", containerName(id)]);
     await this.docker(["volume", "rm", "--force", volumeName(id)]);
-    const tokenHash = labels[`${LABEL}.token`];
+    const tokenHash = this.tokenStore.take(id);
     if (tokenHash) this.opts.tokens.revoke(tokenHash);
     this.opts.ledger({
       class: "delete",
@@ -312,10 +333,6 @@ export class SandboxHost {
     return reaped;
   }
 
-  private async labels(id: string): Promise<Record<string, string> | null> {
-    const result = await this.docker(["inspect", "--format", "{{json .Config.Labels}}", containerName(id)]);
-    return result.code === 0 ? (JSON.parse(result.stdout) as Record<string, string>) : null;
-  }
 }
 
 /** Cheap readiness probe for capability reporting (no side effects). */

@@ -69,19 +69,55 @@ export function providerRecord(store: MindStore, id: string): ProviderRecord | n
   return store.lww<ProviderRecord>(`provider:${id}`)?.value ?? null;
 }
 
+export const originOf = (url: string): string | null => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Whether the provider may use its configured key. A key is only ever sent to the
+ * origin it was pinned to when you entered it, and only for the provider it was
+ * entered for, so repointing a provider (or borrowing another provider's key)
+ * cannot carry the key to a host of someone else's choosing.
+ */
+export function keyUsable(vault: Vault, record: ProviderRecord): boolean {
+  if (!record.secret) return false;
+  const info = vault.info(record.secret);
+  return !!info && info.provider === record.id && !!info.origin && info.origin === originOf(record.baseUrl);
+}
+
 /** Provider config plus its key, decrypted in memory on this node only. */
 export function resolveProvider(store: MindStore, vault: Vault, id: string): ResolvedProvider | null {
   const record = providerRecord(store, id);
   if (!record) return null;
   let apiKey: string | null = null;
-  if (record.secret && vault.has(record.secret)) {
+  if (keyUsable(vault, record)) {
     try {
-      apiKey = vault.reveal(record.secret);
+      apiKey = vault.reveal(record.secret!);
     } catch {
       apiKey = null;
     }
   }
   return { ...record, apiKey, local: isLocalUrl(record.baseUrl) };
+}
+
+/**
+ * One-time migration: keys entered before origin pinning are pinned to the origin
+ * their provider uses *now* (trusted configuration). Idempotent.
+ */
+export function pinLegacyKeys(store: MindStore, vault: Vault): string[] {
+  if (!vault.unlocked()) return [];
+  const pinned: string[] = [];
+  for (const record of providerRecords(store)) {
+    if (!record.secret) continue;
+    const info = vault.info(record.secret);
+    const origin = originOf(record.baseUrl);
+    if (info && !info.origin && info.provider === record.id && origin && vault.pin(record.secret, origin)) pinned.push(record.secret);
+  }
+  return pinned;
 }
 
 export function providerViews(store: MindStore, vault: Vault): ProviderView[] {
@@ -91,7 +127,7 @@ export function providerViews(store: MindStore, vault: Vault): ProviderView[] {
     baseUrl: p.baseUrl,
     secret: p.secret ?? null,
     label: p.label ?? null,
-    hasKey: !!p.secret && vault.has(p.secret),
+    hasKey: keyUsable(vault, p),
   }));
 }
 

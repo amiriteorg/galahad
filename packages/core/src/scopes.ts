@@ -21,3 +21,10 @@ export const Scope = z.enum(SCOPES);
 export type Scope = z.infer<typeof Scope>;
 
 export const OWNER_SCOPES: Scope[] = [...SCOPES];
+
+/**
+ * What a newly paired phone or browser gets unless the invite says otherwise.
+ * It can do almost everything you can, except mint gateway tokens. Approving
+ * new *machines* additionally requires a terminal on an existing node (see the server).
+ */
+export const CLIENT_DEFAULT_SCOPES: Scope[] = OWNER_SCOPES.filter((s) => s !== "gateway:mint");

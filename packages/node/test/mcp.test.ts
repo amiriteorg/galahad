@@ -138,6 +138,13 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     expect(daemon.store.recall("tea")[0]?.trust).toBe("untrusted");
   });
 
+  test("an agent cannot erase your memories, only its own (review #7)", async () => {
+    const mine = (await (await call("remember", { text: "owner memory: the oath is not negotiable" }, home.adminToken())).json()) as { id: string };
+    expect((await call("forget", { id: mine.id }, armToken)).status).toBe(403);
+    const its = (await (await call("remember", { text: "agent scratch note" }, armToken)).json()) as { id: string };
+    expect((await call("forget", { id: its.id }, armToken)).status).toBe(200);
+  });
+
   test("secrets are refused, and the agent is pointed to request_secret", async () => {
     const result = await client.callTool({ name: "remember", arguments: { text: "key: sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123" } });
     expect(result.isError).toBe(true);

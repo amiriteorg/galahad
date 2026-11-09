@@ -5,6 +5,7 @@
  */
 
 export const MAX_CLOCK_DRIFT_MS = 5 * 60_000;
+const MAX_COUNTER = 999_999;
 const HLC_RE = /^\d{15}\.\d{6}$/;
 
 export interface Hlc {
@@ -37,7 +38,11 @@ export class HlcClock {
   /** A new timestamp strictly greater than every timestamp issued or observed. */
   tick(): string {
     const wall = this.now();
-    this.last = wall > this.last.ms ? { ms: wall, counter: 0 } : { ms: this.last.ms, counter: this.last.counter + 1 };
+    if (wall > this.last.ms) this.last = { ms: wall, counter: 0 };
+    // The counter is 6 digits; carry into the millisecond field instead of ever
+    // producing an invalid timestamp (an observed counter of 999999 must not wedge writes).
+    else if (this.last.counter >= MAX_COUNTER) this.last = { ms: this.last.ms + 1, counter: 0 };
+    else this.last = { ms: this.last.ms, counter: this.last.counter + 1 };
     return encodeHlc(this.last);
   }
 
