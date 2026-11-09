@@ -10,6 +10,7 @@ import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { runMcpServer } from "./mcp.ts";
+import { questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
 
 const VERSION = "0.1.0";
@@ -42,6 +43,8 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
 Work
+  do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
+                                  a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
   sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--ttl 120]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
@@ -189,6 +192,7 @@ async function main(): Promise<void> {
       keep: { type: "boolean" },
       limit: { type: "string" },
       timeout: { type: "string" },
+      steps: { type: "string" },
       arm: { type: "string" },
       apply: { type: "boolean" },
       help: { type: "boolean", short: "h" },
@@ -564,6 +568,22 @@ Next:
       console.log(`Gateway token (shown once): ${result.token}\n`);
       for (const [k, v] of Object.entries(result.env)) console.log(`  ${k}=${v}`);
       return;
+    }
+
+    case "do": {
+      const goal = [sub, ...rest].filter(Boolean).join(" ").trim();
+      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
+      const network = str("net") ?? "isolated";
+      if (!["isolated", "gateway", "online"].includes(network)) fail("--net must be isolated, gateway or online");
+      const outcome = await questFromCli(new Admin(home), {
+        goal,
+        network: network as "isolated" | "gateway" | "online",
+        on: str("on"),
+        maxSteps: str("steps") ? Number(str("steps")) : undefined,
+        commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
+        keep: Boolean(flags.keep),
+      });
+      process.exit(outcome.status === "done" ? 0 : 1);
     }
 
     case "place": {

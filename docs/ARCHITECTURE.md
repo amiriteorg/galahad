@@ -236,6 +236,25 @@ Network reachability was verified on ultra before it was built. From an internal
 
 Tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy`, `ledger`, `request_secret`. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
 
+## 8⅞. Quests: the first agent loop ✅
+
+`galahad do "<goal>"` runs one quest end to end: **plan → work → independent review → remembered.**
+
+| Stage | How |
+|---|---|
+| **Plan** | The `planner` role writes a short numbered plan and a "Done when:" line. |
+| **Work** | The `engineer` role works in a fresh sandbox on the best sandbox host, with exactly one tool: a shell, one command per turn (after [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent)). Any model on the roster can do this, local ones included; no provider's tool-calling API is needed. Each command is a ledgered `execSandbox` under the quest's id. |
+| **Review** | When the engineer replies `DONE`, the `reviewer` role (ideally another model family) judges only the evidence: the commands, exit codes and output excerpts. Anything but a clear `PASS` sends the work back with notes, at most twice; after that the outcome is honest: *unverified*. |
+| **Remember** | The outcome goes into the mind as an `untrusted` memory tagged `quest`: it's model output shaped by whatever the sandbox read, so it's data, never instructions. |
+
+Guarantees:
+- **Secrets never reach a model.** Every message is redacted before any call, including command output; the chat door would refuse them anyway.
+- **Bounded.** A step budget (default 30 commands), a per-command time limit (300 s) and two revisions at most. Older observations shrink to excerpts so long quests stay affordable.
+- **Contained.** The default network is `isolated`; `--net gateway` or `--net online` is your explicit choice. The sandbox is destroyed afterwards unless `--keep`. Ctrl-C stops after the current step and still cleans up.
+- **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
+
+The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Next: quests started from the PWA and MCP, running on the node, with live progress.
+
 ## 9. Growth & scale 🔜
 
 Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**

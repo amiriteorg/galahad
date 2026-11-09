@@ -14,6 +14,7 @@ Working and tested today (58 tests, including property tests and a two-node end-
 - **Secrets stay out of chat.** Hidden prompts for entering keys; secret scanning refuses keys in chat and memory; provider errors are redacted; Galahad asks for keys with *secret requests*.
 - **Model gateway.** Tools such as OpenCode, Claude Code, Codex and Hermes use your keys through scoped, capped, expiring tokens (`galahad run -- opencode`). The real key never leaves the vault.
 - **Provider-agnostic brain.** Roles (planner, engineer, reviewer, swift) with fallback chains. Anthropic via the official SDK, plus DeepSeek, Abliteration, OrcaRouter, OpenRouter, Moonshot, Verda, Ollama and llama.cpp.
+- **Quests.** `galahad do "<goal>"` plans, works in a fresh sandbox one shell command at a time, and is checked by an independent reviewer model before it counts as done. Works with any model on the roster.
 - **Placement.** Work goes to the body that suits it: long and untrusted work to the always-on sandbox server, interactive work to the laptop you're on.
 - **The oath gate.** Creating is free; deleting and outward-facing actions ask first.
 - **PWA.** Pair a phone or browser with a non-extractable WebCrypto key and the 6-digit code. From there you can chat, search memory, add keys in a password field (never shown back), answer secret requests, approve devices and edit the roster. Every request is signed, each route has its own scope, and the CSP is strict. *Builds and is served correctly, but hasn't been run in a real browser yet; your first run is its first real test.*

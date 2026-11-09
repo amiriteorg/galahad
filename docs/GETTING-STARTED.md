@@ -198,6 +198,18 @@ bun galahad sandbox rm <id>
 bun galahad ledger                                              # every action, with the oath's verdict
 ```
 
+### Give Galahad a quest
+
+`galahad do` plans the work, does it in a fresh sandbox one command at a time, has another model review the evidence, and remembers the outcome:
+
+```sh
+bun galahad do "Write fizzbuzz.py for 1..30 and prove it correct with a test"
+bun galahad do --net online "Clone oven-sh/bun and tell me how many test files it has"
+bun galahad do --steps 60 --timeout 900 --keep "Build the repo in /work and get its tests green"
+```
+
+The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
+
 ## 10. Give your coding agents the mind (MCP)
 
 Any MCP-capable agent can share Galahad's memory and sandboxes: Claude Code, OpenCode, Codex, Hermes, and T3 Code through them.
