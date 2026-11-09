@@ -8,6 +8,7 @@ import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
+import { streamedError } from "./server.ts";
 
 const HELP = `galahad — one mind, many bodies
 
@@ -38,7 +39,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
 Work
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
   sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--ttl 120]
-              [--providers deepseek,anthropic] [--image img] [--keep] -- <command…>
+              [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox build [--on ultra]      build the sandbox image on a host
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
@@ -55,6 +56,9 @@ function fail(message: string): never {
   console.error(`galahad: ${message}`);
   process.exit(1);
 }
+
+/** Thrown (never `process.exit`) so `finally` blocks, like sandbox cleanup, always run. */
+class CliError extends Error {}
 
 class Admin {
   readonly base: string;
@@ -76,17 +80,20 @@ class Admin {
         body: route.method === "POST" ? JSON.stringify(input ?? {}) : undefined,
       });
     } catch {
-      fail(`no daemon on ${this.base} — start it with \`galahad serve\``);
+      throw new CliError(`no daemon on ${this.base} — start it with \`galahad serve\``);
     }
     if (!response.ok) {
       const body = (await response.json().catch(() => ({}))) as { error?: string; issues?: unknown };
-      fail(`${body.error ?? response.statusText}${body.issues ? ` ${JSON.stringify(body.issues)}` : ""}`);
+      throw new CliError(`${body.error ?? response.statusText}${body.issues ? ` ${JSON.stringify(body.issues)}` : ""}`);
     }
     return response;
   }
 
   async call<T = any>(name: RouteName, input?: unknown): Promise<T> {
-    return (await (await this.request(name, input)).json()) as T;
+    const body = await (await this.request(name, input)).json();
+    const failed = streamedError(body);
+    if (failed) throw new CliError(failed.error);
+    return body as T;
   }
 
   async *stream(name: RouteName, input: unknown): AsyncGenerator<ChatStreamEvent> {
@@ -170,6 +177,7 @@ async function main(): Promise<void> {
       image: { type: "string" },
       keep: { type: "boolean" },
       limit: { type: "string" },
+      timeout: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -567,7 +575,7 @@ Next:
       if (sub === "exec") {
         const [id, ...cmd] = rest;
         if (!id || !cmd.length) fail("usage: galahad sandbox exec <id> [--on node] -- <command…>");
-        const result = await admin.call("execSandbox", { id, cmd, ...(on ? { on } : {}) });
+        const result = await admin.call("execSandbox", { id, cmd, ...(str("timeout") ? { timeoutSec: Number(str("timeout")) } : {}), ...(on ? { on } : {}) });
         printResult(result);
         process.exit(result.exitCode);
       }
@@ -593,7 +601,12 @@ Next:
         process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB]\n`));
         let code = 1;
         try {
-          const result = await admin.call("execSandbox", { id: sandbox.id, cmd, ...(on ? { on } : {}) });
+          const result = await admin.call("execSandbox", {
+            id: sandbox.id,
+            cmd,
+            ...(str("timeout") ? { timeoutSec: Number(str("timeout")) } : {}),
+            ...(on ? { on } : {}),
+          });
           printResult(result);
           code = result.exitCode;
         } finally {
@@ -634,4 +647,7 @@ Next:
   }
 }
 
-await main();
+await main().catch((error: unknown) => {
+  console.error(`galahad: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+});

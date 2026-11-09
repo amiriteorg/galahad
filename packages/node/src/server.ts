@@ -88,6 +88,73 @@ const SECURITY_HEADERS: Record<string, string> = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
 
+const statusOf = (error: unknown): number =>
+  error instanceof HttpError || error instanceof SandboxError || error instanceof PairingError ? error.status : 500;
+
+/**
+ * For work that may outlast every idle timer between here and the caller (Bun's
+ * 255 s cap, proxies): if it settles within `graceMs` it is an ordinary response
+ * with a real status code; otherwise the response streams whitespace heartbeats
+ * (valid leading JSON whitespace) and ends with the JSON result. A failure after
+ * streaming began arrives as `{ "error", "status" }`, which every Galahad client checks.
+ */
+export async function longRunning<T>(work: Promise<T>, graceMs = 300, heartbeatMs = 10_000): Promise<Response> {
+  const outcome = work.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+  const early = await Promise.race([outcome, Bun.sleep(graceMs).then(() => null)]);
+  if (early) {
+    if (early.ok) return json(early.value);
+    throw early.error;
+  }
+  const encoder = new TextEncoder();
+  let beat: ReturnType<typeof setInterval> | undefined;
+  let open = true;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (text: string) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(text));
+        } catch {
+          open = false; // the caller went away; the work itself still finishes and is recorded
+        }
+      };
+      beat = setInterval(() => send(" "), heartbeatMs);
+      void outcome.then((result) => {
+        clearInterval(beat);
+        const body = result.ok
+          ? result.value
+          : { error: String((result.error as Error).message ?? result.error), status: statusOf(result.error) };
+        send(JSON.stringify(body));
+        if (open) {
+          open = false;
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
+      });
+    },
+    cancel() {
+      open = false;
+      clearInterval(beat);
+    },
+  });
+  return new Response(stream, { headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
+}
+
+/** Unwrap a `{ error, status }` body produced by a streamed long-running response. */
+export function streamedError(body: unknown): { error: string; status: number } | null {
+  if (body && typeof body === "object" && "error" in body && "status" in body) {
+    const { error, status } = body as { error: unknown; status: unknown };
+    if (typeof error === "string" && typeof status === "number") return { error, status };
+  }
+  return null;
+}
+
 const SyncInput = z.strictObject({ have: z.record(z.string().max(100), z.string().max(32)) });
 const PushInput = z.strictObject({ events: z.array(z.unknown()).max(500) });
 const StatusInput = z.strictObject({ invite: z.string().max(64), device: z.string().max(100), proof: z.string().max(100) });
@@ -161,8 +228,9 @@ export function createApp(ctx: AppContext) {
       return local();
     }
     if (!target.profile?.endpoint) throw new HttpError(424, `${target.name} has no reachable endpoint`);
+    let result: T;
     try {
-      return await signedPost<T>(ctx.identity, target.profile.endpoint, path, body, { timeoutMs: 20 * 60_000 });
+      result = await signedPost<T>(ctx.identity, target.profile.endpoint, path, body, { timeoutMs: 75 * 60_000 });
     } catch (error) {
       const match = String((error as Error).message).match(/→ (\d{3}) (.*)$/s);
       if (!match) throw new HttpError(502, `${target.name} is unreachable`);
@@ -174,6 +242,9 @@ export function createApp(ctx: AppContext) {
       }
       throw new HttpError(Number(match[1]), `${target.name}: ${message}`);
     }
+    const failed = streamedError(result);
+    if (failed) throw new HttpError(failed.status, `${target.name}: ${failed.error}`);
+    return result;
   }
 
   function candidates(): Candidate[] {
@@ -386,11 +457,14 @@ export function createApp(ctx: AppContext) {
       onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
     createSandbox: (input, p) => {
       const { on, ...request } = input;
-      return onNode(p, on, routes.createSandbox.path, request, async () => ({ sandbox: await ctx.sandbox!.create(request) }));
+      // Creating may pull an image: long-running.
+      return longRunning(
+        onNode(p, on, routes.createSandbox.path, request, async () => ({ sandbox: await ctx.sandbox!.create(request) })),
+      );
     },
     execSandbox: (input, p) => {
       const { on, ...rest } = input;
-      return onNode(p, on, routes.execSandbox.path, rest, () => ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec));
+      return longRunning(onNode(p, on, routes.execSandbox.path, rest, () => ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec)));
     },
     destroySandbox: (input, p) => {
       // A request from you (CLI or a paired device) *is* the approval. A node may relay
@@ -403,11 +477,13 @@ export function createApp(ctx: AppContext) {
       });
     },
     buildSandboxImage: (input, p) =>
-      onNode(p, input.on, routes.buildSandboxImage.path, {}, async () => {
-        const result = await ctx.sandbox!.build(ctx.sandboxContext!);
-        if (!result.ok) throw new HttpError(500, `image build failed: ${result.output.slice(-400)}`);
-        return { ok: true };
-      }),
+      longRunning(
+        onNode(p, input.on, routes.buildSandboxImage.path, {}, async () => {
+          const result = await ctx.sandbox!.build(ctx.sandboxContext!);
+          if (!result.ok) throw new HttpError(500, `image build failed: ${result.output.slice(-400)}`);
+          return { ok: true };
+        }),
+      ),
   };
 
   const routeTable = new Map(Object.entries(routes).map(([name, r]) => [`${r.method} ${r.path}`, name as RouteName]));
