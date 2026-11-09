@@ -23,9 +23,20 @@ if [[ $(id -u) -eq 0 && -z ${GALAHAD_USER_PHASE:-} ]]; then
   command -v unzip >/dev/null || { echo "→ installing unzip (needed by the bun installer)"; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip >/dev/null; }
 
   if [[ $SUDO == 1 ]]; then
-    # Full sudo, fully recorded. visudo validates before anything is installed.
+    # Full sudo, recorded. visudo validates before anything is installed, so a bad
+    # rule can never break sudo for anyone else on the machine.
     TMP=$(mktemp)
-    cat >"$TMP" <<'SUDOERS'
+    if sudo --version 2>/dev/null | grep -q sudo-rs; then
+      # sudo-rs (Ubuntu 25.10+) logs every command to the journal and rejects
+      # classic-sudo logging options in the shared sudoers.d.
+      cat >"$TMP" <<'SUDOERS'
+# Galahad's sudo rights. Remove this file to revoke them.
+# sudo-rs logs every command to the journal: journalctl -t sudo
+galahad ALL=(ALL:ALL) NOPASSWD: ALL
+SUDOERS
+      WHERE="journalctl -t sudo"
+    else
+      cat >"$TMP" <<'SUDOERS'
 # Galahad's sudo rights. Remove this file to revoke them.
 # Every command is logged to /var/log/galahad-sudo.log; output is recorded for `sudoreplay`.
 Defaults:galahad logfile=/var/log/galahad-sudo.log
@@ -33,10 +44,13 @@ Defaults:galahad log_output
 Defaults:galahad !requiretty
 galahad ALL=(ALL:ALL) NOPASSWD: ALL
 SUDOERS
+      WHERE="/var/log/galahad-sudo.log + sudoreplay"
+    fi
     if visudo -cf "$TMP" >/dev/null; then
       install -m 0440 -o root -g root "$TMP" /etc/sudoers.d/galahad
-      echo "→ sudo granted to $SVC (logged: /var/log/galahad-sudo.log, sudoreplay)"
+      echo "→ sudo granted to $SVC (audit: $WHERE)"
     else
+      visudo -cf "$TMP" >&2 || true
       echo "sudoers rule failed validation; not installed" >&2
     fi
     rm -f "$TMP"
@@ -94,12 +108,20 @@ WRAPPER
   systemctl restart galahad.service
 
   if [[ $OPEN_FIREWALL == 1 ]] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-    ufw allow in on tailscale0 to any port "$PORT" proto tcp comment "Galahad link over Tailscale" >/dev/null
-    echo "→ ufw: allowed $PORT/tcp on tailscale0 only"
+    ufw allow in on tailscale0 to any port "$PORT" proto tcp comment "Galahad link over Tailscale" >/dev/null &&
+      echo "→ ufw: allowed $PORT/tcp on tailscale0 only" || echo "ufw rule not added" >&2
   fi
   if [[ $EXPOSE != 0 ]]; then
-    tailscale serve --bg --https="$EXPOSE" "http://127.0.0.1:$PORT" >/dev/null
-    echo "→ PWA: https://$(tailscale status --json | sed -n 's/.*"DNSName": *"\([^"]*\)\.".*/\1/p' | head -1):$EXPOSE/  (tailnet only)"
+    # `tailscale serve` blocks while waiting for Serve/HTTPS to be enabled for the
+    # tailnet; never let that hang a deploy. Show its link instead.
+    SERVE_OUT=$(timeout 20 tailscale serve --bg --https="$EXPOSE" "http://127.0.0.1:$PORT" 2>&1) && SERVE_OK=1 || SERVE_OK=0
+    DNS=$(tailscale status --self --json 2>/dev/null | sed -n 's/.*"DNSName": *"\([^"]*\)\.".*/\1/p' | head -1)
+    if [[ $SERVE_OK == 1 ]]; then
+      echo "→ PWA: https://$DNS:$EXPOSE/  (tailnet only)"
+    else
+      echo "→ tailscale serve needs a one-time approval for this tailnet; open the link below, then re-run the deploy:"
+      echo "$SERVE_OUT" | grep -Eo 'https://login\.tailscale\.com/[^ ]+' | head -1 || echo "$SERVE_OUT" | tail -3
+    fi
   fi
 
   for _ in $(seq 1 30); do
