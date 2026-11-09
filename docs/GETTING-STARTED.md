@@ -42,7 +42,7 @@ New-NetFirewallRule -DisplayName "Galahad (tailnet)" -Direction Inbound -Protoco
 ## 2. Publish the PWA on your tailnet (laptop)
 
 ```powershell
-bun galahad expose     # runs: tailscale serve --bg 7777
+bun galahad expose     # runs: tailscale serve --bg --https=443 http://127.0.0.1:7778 (use --https 8443 if 443 is taken)
 ```
 
 The PWA is now at `https://wkp-minaltan.<your-tailnet>.ts.net/`, reachable only from your tailnet, over HTTPS with a real certificate.

@@ -7,6 +7,8 @@ import { z } from "zod";
 const Env = z.object({
   GALAHAD_HOME: z.string().min(1).optional(),
   GALAHAD_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+  /** Loopback port for `tailscale serve` (the HTTPS PWA); defaults to GALAHAD_PORT + 1. */
+  GALAHAD_PROXY_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   /** "os" = OS keychain via Bun.secrets (default), "file" = 0600 key file (headless servers). */
   GALAHAD_KEYSTORE: z.enum(["os", "file"]).optional(),
   /** Override the tailnet address this node advertises and binds, e.g. 100.118.201.75. */

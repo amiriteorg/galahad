@@ -88,7 +88,15 @@ Event kinds today:
 
 ## 2. The Link ✅
 
-- **Transport v0: Tailscale.** Each node binds `127.0.0.1` (CLI, gateway, PWA via `tailscale serve`) and its **tailnet IP** (node-to-node traffic). It never binds `0.0.0.0`.
+- **Transport v0: Tailscale.** Each node has three listeners and never binds `0.0.0.0`:
+
+  | Listener | Address | Purpose |
+  |---|---|---|
+  | **loopback** | `127.0.0.1:<port>` | Local processes only: the CLI's admin token and the model gateway |
+  | **proxied** | `127.0.0.1:<port+1>` | The only target of `tailscale serve` (the HTTPS PWA) |
+  | **tailnet** | `<tailnet ip>:<port>` | Node-to-node link traffic |
+
+  Proxied traffic arrives from `127.0.0.1` but is remote, so that listener refuses the admin token and the gateway (tested).
 - **Every request is signed** by the caller's device key over `(method, path+query, time, nonce, sha256(body))`, with a 60-second skew window and a nonce cache against replay. WireGuard already encrypts the wire; the signature proves *which enrolled device* is calling.
 - **Credentials by caller:**
 

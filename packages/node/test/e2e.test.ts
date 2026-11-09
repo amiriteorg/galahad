@@ -69,6 +69,8 @@ const homeA = new Home(join(root, "laptop"));
 const homeB = new Home(join(root, "server"));
 const portA = freePort();
 const portB = freePort();
+const proxyA = freePort();
+const proxyB = freePort();
 let laptop: Daemon;
 let server: Daemon;
 let upstream: ReturnType<typeof Bun.serve>;
@@ -94,7 +96,12 @@ beforeAll(async () => {
   const fleet = foundFleet(store, identity, { fleetName: "camelot", nodeName: "laptop" });
   store.close();
   homeA.writeConfig({ v: 1, name: "laptop", fleet, port: portA, keystore, advertise: "127.0.0.1" });
-  laptop = await startDaemon(homeA, { capabilities: fakeCaps("laptop", { hasBattery: true }), syncIntervalMs: 150, log: () => {} });
+  laptop = await startDaemon(homeA, {
+    capabilities: fakeCaps("laptop", { hasBattery: true }),
+    syncIntervalMs: 150,
+    proxyPort: proxyA,
+    log: () => {},
+  });
 });
 
 afterAll(async () => {
@@ -135,6 +142,7 @@ describe("M0: one mind, two bodies", () => {
     server = await startDaemon(homeB, {
       capabilities: fakeCaps("server", { docker: true, cores: 32, memoryGb: 128, vm: { kvm: true, tools: ["incus"] } }),
       syncIntervalMs: 150,
+      proxyPort: proxyB,
       log: () => {},
     });
   });
@@ -287,5 +295,21 @@ describe("a browser client (the PWA path)", () => {
 
   test("the client's enrollment replicated to the server too", async () => {
     await until(() => server.store.activeDevice(device) !== null);
+  });
+
+  test("the tailscale-serve listener serves the PWA and signed clients, but never the admin token or gateway", async () => {
+    const proxied = `http://127.0.0.1:${proxyA}`;
+    expect((await fetch(`${proxied}/`)).status).toBe(200);
+    const signed = await sign("GET", "/api/whoami", undefined);
+    expect((await fetch(`${proxied}/api/whoami`, { headers: signed.headers })).status).toBe(200);
+    const asAdmin = await fetch(`${proxied}/api/whoami`, { headers: { authorization: `Bearer ${homeA.adminToken()}` } });
+    expect(asAdmin.status).toBe(401);
+    const { token } = await admin(homeA, portA)<{ token: string }>("mintToken", { label: "t", ttlMinutes: 1, maxRequests: 5 });
+    const viaGateway = await fetch(`${proxied}/gw/mock/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: "{}",
+    });
+    expect(viaGateway.status).toBe(404);
   });
 });

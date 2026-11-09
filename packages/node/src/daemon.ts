@@ -21,6 +21,8 @@ export interface Daemon {
 export interface DaemonOptions {
   log?: (message: string) => void;
   syncIntervalMs?: number;
+  /** Loopback port that `tailscale serve` proxies to (default: port + 1). */
+  proxyPort?: number;
   /** Skip the (slow) hardware probe; used by tests. */
   capabilities?: Capabilities;
 }
@@ -72,9 +74,15 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     log,
   });
 
-  // Loopback: the CLI, the local gateway, and the PWA via `tailscale serve` (HTTPS).
+  // Loopback: the CLI and the local model gateway (local processes only).
+  // Proxied: what `tailscale serve` forwards to (the HTTPS PWA) — remote traffic, so no
+  //   admin token and no gateway, even though it arrives from 127.0.0.1.
   // Tailnet: node-to-node link traffic. Never 0.0.0.0.
-  const servers = [Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 255, fetch: (req) => app(req, "loopback") })];
+  const proxyPort = opts.proxyPort ?? env.GALAHAD_PROXY_PORT ?? port + 1;
+  const servers = [
+    Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 255, fetch: (req) => app(req, "loopback") }),
+    Bun.serve({ hostname: "127.0.0.1", port: proxyPort, idleTimeout: 255, fetch: (req) => app(req, "proxied") }),
+  ];
   if (advertise !== "127.0.0.1") {
     servers.push(Bun.serve({ hostname: advertise, port, idleTimeout: 255, fetch: (req) => app(req, "tailnet") }));
   }

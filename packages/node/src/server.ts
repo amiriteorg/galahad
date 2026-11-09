@@ -35,7 +35,12 @@ import type { Assets } from "./assets.ts";
 import type { Capabilities } from "./capabilities.ts";
 import { type Candidate, place } from "./placement.ts";
 
-export type Listener = "loopback" | "tailnet";
+/**
+ * loopback  127.0.0.1:<port>      local processes only: CLI (admin token), model gateway
+ * proxied   127.0.0.1:<port + 1>  target of `tailscale serve` (HTTPS PWA): remote traffic, treated like tailnet
+ * tailnet   <tailnet ip>:<port>   node-to-node link
+ */
+export type Listener = "loopback" | "proxied" | "tailnet";
 
 export interface AppContext {
   identity: NodeIdentity;

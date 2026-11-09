@@ -15,7 +15,7 @@ Set up
   init [--name laptop] [--fleet camelot] [--port 7777]     found a fleet on this machine
   join <invite> [--name server] [--port 7777]              join a fleet with an invite
   serve                                                    run this node (daemon)
-  expose                                                   publish the PWA over HTTPS on your tailnet (tailscale serve)
+  expose [--https 443]                                     publish the PWA over HTTPS on your tailnet (tailscale serve)
   invite [--client] [--origin https://host.ts.net]         add a device (prints an invite, then asks you to approve)
   pairings | approve <invite> <device> | reject <invite> <device>
   revoke <device> [--reason text]
@@ -132,6 +132,7 @@ async function main(): Promise<void> {
       name: { type: "string" },
       fleet: { type: "string" },
       port: { type: "string" },
+      https: { type: "string" },
       keystore: { type: "string" },
       advertise: { type: "string" },
       client: { type: "boolean" },
@@ -247,12 +248,15 @@ Next:
       const config = home.readConfig();
       const ts = await tailscaleInfo();
       if (!ts) fail("tailscale is not running");
-      const proc = Bun.spawn(["tailscale", "serve", "--bg", String(loadEnv().GALAHAD_PORT ?? config.port)], {
+      const env = loadEnv();
+      const proxyPort = env.GALAHAD_PROXY_PORT ?? (env.GALAHAD_PORT ?? config.port) + 1;
+      const https = str("https") ?? "443";
+      const proc = Bun.spawn(["tailscale", "serve", "--bg", `--https=${https}`, `http://127.0.0.1:${proxyPort}`], {
         stdout: "inherit",
         stderr: "inherit",
       });
       if ((await proc.exited) !== 0) fail("tailscale serve failed (is HTTPS enabled for your tailnet?)");
-      console.log(`PWA: https://${ts.dnsName}/  (tailnet only)`);
+      console.log(`PWA: https://${ts.dnsName}${https === "443" ? "" : `:${https}`}/  (tailnet only)`);
       return;
     }
 

@@ -114,7 +114,8 @@ WRAPPER
   if [[ $EXPOSE != 0 ]]; then
     # `tailscale serve` blocks while waiting for Serve/HTTPS to be enabled for the
     # tailnet; never let that hang a deploy. Show its link instead.
-    SERVE_OUT=$(timeout 20 tailscale serve --bg --https="$EXPOSE" "http://127.0.0.1:$PORT" 2>&1) && SERVE_OK=1 || SERVE_OK=0
+    # Serve targets the dedicated "proxied" listener (port + 1), never the local-only port.
+    SERVE_OUT=$(timeout 20 tailscale serve --bg --https="$EXPOSE" "http://127.0.0.1:$((PORT + 1))" 2>&1) && SERVE_OK=1 || SERVE_OK=0
     DNS=$(tailscale status --self --json 2>/dev/null | sed -n 's/.*"DNSName": *"\([^"]*\)\.".*/\1/p' | head -1)
     if [[ $SERVE_OK == 1 ]]; then
       echo "→ PWA: https://$DNS:$EXPOSE/  (tailnet only)"
