@@ -61,6 +61,35 @@ bun galahad invite --client
 
 ## 4. Add the server
 
+### The one-command way: `scripts/deploy.sh`
+
+The script is idempotent. It works on Linux (a systemd user service) and macOS (a launchd agent). From the laptop, in Git Bash:
+
+```sh
+# a new fleet whose first node is the server
+scripts/deploy.sh wmd@ultra --found camelot --name ultra
+# or: add the server to an existing fleet
+scripts/deploy.sh wmd@ultra --join "$(bun galahad invite --no-wait | grep -o 'gi1\.[A-Za-z0-9_-]*')" --name ultra
+# later: ship the current commit to the node, test it there, restart it
+scripts/deploy.sh wmd@ultra
+```
+
+What a deploy does:
+
+1. Ships the committed tree only. It refuses to run if you have uncommitted changes.
+2. Unpacks it into `~/galahad/releases/<rev>`, then switches the `~/galahad/app` symlink to that directory in one atomic step. To roll back, point the symlink at an older release and restart.
+3. Installs Bun if it's missing and runs `bun install --frozen-lockfile`.
+4. Runs the whole test suite on the server and stops if anything fails.
+5. Creates the node or joins the fleet, but only the first time. On later runs the node's identity and mind are kept.
+6. Installs and restarts the service, then prints `galahad status`.
+
+You need SSH access to the server first. Pick one:
+
+- **Tailscale SSH (no keys to manage):** run `sudo tailscale set --ssh` on the server once, then deploy with `GALAHAD_SSH="tailscale ssh" scripts/deploy.sh wmd@ultra …`.
+- **An SSH key:** add the laptop's public key to `~/.ssh/authorized_keys` on the server.
+
+### By hand
+
 On the **laptop**:
 
 ```powershell
