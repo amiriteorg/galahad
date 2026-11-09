@@ -1,0 +1,11 @@
+{
+  "name": "@galahad/sandbox",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@galahad/core": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

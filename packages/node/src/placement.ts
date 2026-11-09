@@ -83,6 +83,10 @@ export function place(needs: PlacementNeeds, candidates: Candidate[]): Placement
     if (needs.untrusted) {
       score += caps.vm.kvm ? 10 : 5;
       reasons.push(caps.vm.kvm ? "VM isolation available" : "container isolation");
+      if (caps.sandbox?.image && caps.sandbox.networks) {
+        score += 15;
+        reasons.push("sandbox host ready");
+      }
     }
     if (needs.localModels && caps.gpu.length) {
       score += 15;

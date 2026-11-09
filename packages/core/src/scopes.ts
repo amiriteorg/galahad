@@ -14,6 +14,7 @@ export const SCOPES = [
   "brain:write", // providers + roster
   "gateway:mint", // mint scoped model-gateway tokens for arms
   "fleet:admin", // invite, approve, revoke devices
+  "sandbox", // create, use and destroy sandboxes on sandbox hosts
 ] as const;
 
 export const Scope = z.enum(SCOPES);

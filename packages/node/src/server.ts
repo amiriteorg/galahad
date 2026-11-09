@@ -28,19 +28,21 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { PairingError, type PairingHost, type SyncEngine } from "@galahad/link";
-import { type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
+import { PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
+import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
+import { SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
 import type { Assets } from "./assets.ts";
 import type { Capabilities } from "./capabilities.ts";
 import { type Candidate, place } from "./placement.ts";
 
 /**
- * loopback  127.0.0.1:<port>      local processes only: CLI (admin token), model gateway
- * proxied   127.0.0.1:<port + 1>  target of `tailscale serve` (HTTPS PWA): remote traffic, treated like tailnet
- * tailnet   <tailnet ip>:<port>   node-to-node link
+ * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
+ * proxied   127.0.0.1:<port + 1>     target of `tailscale serve` (HTTPS PWA): remote traffic, treated like tailnet
+ * tailnet   <tailnet ip>:<port>      node-to-node link
+ * sandbox   <gateway bridge>:7779    reachable only from sandboxes: the model gateway and nothing else
  */
-export type Listener = "loopback" | "proxied" | "tailnet";
+export type Listener = "loopback" | "proxied" | "tailnet" | "sandbox";
 
 export interface AppContext {
   identity: NodeIdentity;
@@ -56,6 +58,10 @@ export interface AppContext {
   caps: () => Capabilities | null;
   presence: () => Promise<Presence>;
   log: (message: string) => void;
+  /** Present when this node is a sandbox host. */
+  sandbox?: SandboxHost | null;
+  /** Build context for the sandbox image (repo `sandbox/`). */
+  sandboxContext?: string;
 }
 
 interface Principal {
@@ -112,7 +118,62 @@ export function createApp(ctx: AppContext) {
     const device = ctx.store.activeDevice(proof.device);
     if (!device) return null;
     if (!nonces.claim(proof.device, proof.nonce)) return null;
-    return { device: device.id, kind: device.kind, scopes: device.scopes };
+    // Full nodes already hold the vault: they are owner-equivalent, including scopes added later.
+    const fullNode = device.kind === "node" && device.role === "full";
+    return { device: device.id, kind: device.kind, scopes: fullNode ? OWNER_SCOPES : device.scopes };
+  }
+
+  function resolveNode(ref: string): Device {
+    const node = ctx.store
+      .devices()
+      .find((d) => d.kind === "node" && (d.id === ref || d.name === ref || (ref.length >= 6 && d.id.startsWith(ref))));
+    if (!node) throw new HttpError(404, `no active node "${ref}"`);
+    return node;
+  }
+
+  /** Pick the best sandbox host in the fleet for work nobody pinned to a node. */
+  function placeSandbox(): Device {
+    const { ranked } = place({ docker: true, untrusted: true }, candidates());
+    const best = ranked.find((p) => {
+      const device = ctx.store.device(p.device);
+      const caps = (p.device === ctx.identity.id ? ctx.caps() : device?.profile?.caps) as Capabilities | null | undefined;
+      return !!caps?.sandbox;
+    });
+    if (!best) throw new HttpError(424, "no sandbox host is online in this fleet");
+    return resolveNode(best.device);
+  }
+
+  /**
+   * Run here, or forward (signed, as this node) to the node that should run it.
+   * A request that another node forwarded always runs where it lands: never re-forwarded,
+   * so two nodes can never bounce work back and forth.
+   */
+  async function onNode<T>(
+    p: Principal,
+    on: string | undefined,
+    path: string,
+    body: Record<string, unknown>,
+    local: () => Promise<T>,
+  ): Promise<T> {
+    const target = p.kind === "node" ? null : on ? resolveNode(on) : ctx.sandbox ? null : placeSandbox();
+    if (!target || target.id === ctx.identity.id) {
+      if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
+      return local();
+    }
+    if (!target.profile?.endpoint) throw new HttpError(424, `${target.name} has no reachable endpoint`);
+    try {
+      return await signedPost<T>(ctx.identity, target.profile.endpoint, path, body, { timeoutMs: 20 * 60_000 });
+    } catch (error) {
+      const match = String((error as Error).message).match(/→ (\d{3}) (.*)$/s);
+      if (!match) throw new HttpError(502, `${target.name} is unreachable`);
+      let message = match[2]!;
+      try {
+        message = (JSON.parse(match[2]!) as { error?: string }).error ?? message;
+      } catch {
+        /* plain text */
+      }
+      throw new HttpError(Number(match[1]), `${target.name}: ${message}`);
+    }
   }
 
   function candidates(): Candidate[] {
@@ -307,6 +368,46 @@ export function createApp(ctx: AppContext) {
       };
     },
     revokeToken: (input) => ({ revoked: ctx.tokens.revoke(input.hash) }),
+    ledger: () => ({
+      entries: ctx.store.ledger(200).map((e) => ({
+        id: e.id,
+        hlc: e.hlc,
+        device: e.device,
+        class: e.body.class,
+        resource: e.body.resource,
+        target: e.body.target,
+        verdict: e.body.verdict,
+        reason: e.body.reason ?? null,
+        quest: e.body.quest ?? null,
+        detail: e.body.detail ?? null,
+      })),
+    }),
+    sandboxes: (input, p) =>
+      onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
+    createSandbox: (input, p) => {
+      const { on, ...request } = input;
+      return onNode(p, on, routes.createSandbox.path, request, async () => ({ sandbox: await ctx.sandbox!.create(request) }));
+    },
+    execSandbox: (input, p) => {
+      const { on, ...rest } = input;
+      return onNode(p, on, routes.execSandbox.path, rest, () => ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec));
+    },
+    destroySandbox: (input, p) => {
+      // A request from you (CLI or a paired device) *is* the approval. A node may relay
+      // that approval; a node acting on its own goes through the oath gate.
+      const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.device;
+      return onNode(p, input.on, routes.destroySandbox.path, { id: input.id, ...(approver ? { onBehalfOf: approver } : {}) }, async () => {
+        const decision = await ctx.sandbox!.destroy(input.id, approver ? { approvedBy: approver } : {});
+        if (decision.verdict !== "allow") throw new HttpError(409, `the oath requires approval: ${decision.reason}`);
+        return { ok: true };
+      });
+    },
+    buildSandboxImage: (input, p) =>
+      onNode(p, input.on, routes.buildSandboxImage.path, {}, async () => {
+        const result = await ctx.sandbox!.build(ctx.sandboxContext!);
+        if (!result.ok) throw new HttpError(500, `image build failed: ${result.output.slice(-400)}`);
+        return { ok: true };
+      }),
   };
 
   const routeTable = new Map(Object.entries(routes).map(([name, r]) => [`${r.method} ${r.path}`, name as RouteName]));
@@ -314,6 +415,12 @@ export function createApp(ctx: AppContext) {
   async function handle(req: Request, listener: Listener): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // Sandboxes can reach exactly one thing on the host: the token-gated model gateway.
+    if (listener === "sandbox") {
+      if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
+      return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
+    }
 
     if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path);
 
@@ -364,6 +471,7 @@ export function createApp(ctx: AppContext) {
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       if (error instanceof PairingError) return json({ error: error.message }, error.status);
+      if (error instanceof SandboxError) return json({ error: error.message }, error.status);
       if (error instanceof ZodError) return json({ error: "invalid input", issues: error.issues }, 400);
       if (error instanceof SyntaxError) return json({ error: "invalid JSON" }, 400);
       const message = String((error as Error).message ?? error);

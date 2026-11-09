@@ -516,6 +516,16 @@ export class MindStore {
     return { events: batch.slice(0, limit), more: batch.length > limit };
   }
 
+  /** Most recent ledger entries, newest first (only from devices that were active when they wrote). */
+  ledger(limit = 100): (GEvent & { body: BodyOf<"ledger.recorded"> })[] {
+    return this.db
+      .query<{ raw: string }, [number]>("SELECT raw FROM events WHERE kind = 'ledger.recorded' ORDER BY hlc DESC, id DESC LIMIT ?")
+      .all(limit * 2)
+      .map((row) => JSON.parse(row.raw) as GEvent & { body: BodyOf<"ledger.recorded"> })
+      .filter((event) => !this.rejection(event.id))
+      .slice(0, limit);
+  }
+
   eventCount(): number {
     return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM events").get()!.n;
   }

@@ -1,8 +1,11 @@
 import { Database } from "bun:sqlite";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { canonical, type NodeIdentity } from "@galahad/core";
 import { GatewayTokens } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { MindStore, Vault } from "@galahad/mind";
+import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } from "@galahad/sandbox";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
 import { loadEnv } from "./env.ts";
@@ -58,6 +61,34 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const stopPush = store.onEmit((event) => sync.push([event]));
   const pairing = new PairingHost(store, identity, endpoint);
 
+  // Every gated action lands in the signed, replicated ledger.
+  const ledger = (entry: LedgerEntryInput) => {
+    const body = Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined)) as LedgerEntryInput;
+    try {
+      store.emit(identity, "ledger.recorded", body);
+    } catch (error) {
+      log(`ledger write failed: ${(error as Error).message}`);
+    }
+  };
+
+  // Sandbox host: only when Docker is reachable on this machine.
+  let sandbox: SandboxHost | null = null;
+  if (caps.sandbox !== undefined && caps.sandbox !== null) {
+    sandbox = new SandboxHost({
+      node: identity.id,
+      tokens,
+      ledger,
+      maxCpus: caps.cores,
+      maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
+    });
+    try {
+      await sandbox.ensureNetworks();
+    } catch (error) {
+      log(`sandbox networks unavailable: ${(error as Error).message}`);
+      sandbox = null;
+    }
+  }
+
   const app = createApp({
     identity,
     nodeName: config.name,
@@ -72,6 +103,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     caps: () => caps,
     presence,
     log,
+    sandbox,
+    sandboxContext: resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox"),
   });
 
   // Loopback: the CLI and the local model gateway (local processes only).
@@ -86,6 +119,25 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   if (advertise !== "127.0.0.1") {
     servers.push(Bun.serve({ hostname: advertise, port, idleTimeout: 255, fetch: (req) => app(req, "tailnet") }));
   }
+  // Sandboxes reach this listener (and only this one) on the gateway network's bridge IP.
+  let reaper: ReturnType<typeof setInterval> | null = null;
+  if (sandbox) {
+    try {
+      servers.push(
+        Bun.serve({ hostname: NETWORKS.gateway.gateway, port: SANDBOX_GATEWAY_PORT, idleTimeout: 255, fetch: (req) => app(req, "sandbox") }),
+      );
+    } catch (error) {
+      log(`sandbox gateway listener unavailable: ${(error as Error).message}`);
+    }
+    const host = sandbox;
+    reaper = setInterval(() => {
+      host
+        .reap()
+        .then((reaped) => reaped.length && log(`reaped ${reaped.length} expired sandbox(es)`))
+        .catch((error) => log(`reaper: ${(error as Error).message}`));
+    }, 60_000);
+  }
+
   // Advertise the endpoint only once we are actually listening on it.
   publishProfile(store, identity, endpoint, caps);
   sync.start();
@@ -96,7 +148,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
         publishProfile(store, identity, endpoint, caps);
       }, 5 * 60_000);
 
-  log(`node ${config.name} up · fleet ${store.genesis?.name} · ${endpoint} · vault ${vault.unlocked() ? "unlocked" : "locked"}`);
+  log(
+    `node ${config.name} up · fleet ${store.genesis?.name} · ${endpoint} · vault ${vault.unlocked() ? "unlocked" : "locked"}${sandbox ? " · sandbox host" : ""}`,
+  );
   return {
     port,
     endpoint,
@@ -105,6 +159,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sync,
     async stop() {
       if (refresh) clearInterval(refresh);
+      if (reaper) clearInterval(reaper);
       stopPush();
       sync.stop();
       await Promise.all(servers.map((s) => s.stop(true)));

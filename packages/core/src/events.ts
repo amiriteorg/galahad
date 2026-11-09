@@ -76,6 +76,16 @@ export const Bodies = {
     label: z.string().max(128).optional(),
   }),
   "provider.removed": z.strictObject({ id: Name }),
+  /** The ledger: every gated action, its verdict and why. Signed and replicated like everything else. */
+  "ledger.recorded": z.strictObject({
+    class: z.enum(["read", "create", "modify", "outward", "delete", "forbidden"]),
+    resource: z.string().min(1).max(64),
+    target: z.string().min(1).max(256),
+    verdict: z.enum(["allow", "ask", "deny", "approved"]),
+    reason: z.string().max(500).optional(),
+    quest: z.string().max(64).optional(),
+    detail: z.string().max(2000).optional(),
+  }),
   "roster.set": z.strictObject({ role: Name, models: z.array(z.string().min(1).max(256)).max(16) }),
 } as const;
 

@@ -103,14 +103,26 @@ if [ "\$(id -u)" = 0 ]; then exec runuser -u $SVC -- \$CMD "\$@"; fi
 exec sudo -u $SVC \$CMD "\$@"
 WRAPPER
   chmod 0755 /usr/local/bin/galahad
-  systemctl daemon-reload
-  systemctl enable galahad.service >/dev/null 2>&1
-  systemctl restart galahad.service
-
   if [[ $OPEN_FIREWALL == 1 ]] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow in on tailscale0 to any port "$PORT" proto tcp comment "Galahad link over Tailscale" >/dev/null &&
       echo "→ ufw: allowed $PORT/tcp on tailscale0 only" || echo "ufw rule not added" >&2
+    # Sandboxes on the internal gateway network may reach exactly one host port: the model gateway.
+    ufw allow in on galahad0 to any port 7779 proto tcp comment "Galahad sandboxes to model gateway only" >/dev/null &&
+      echo "→ ufw: sandboxes may reach 7779/tcp on galahad0 only" || echo "ufw sandbox rule not added" >&2
   fi
+
+  # Sandbox host: build (or refresh, from cache) the squires' image before the node starts.
+  if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+    if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/sandbox:1 "$APP/sandbox" >/dev/null; then
+      echo "→ sandbox image ready (galahad/sandbox:1)"
+    else
+      echo "sandbox image build failed; the node will run without sandbox hosting" >&2
+    fi
+  fi
+
+  systemctl daemon-reload
+  systemctl enable galahad.service >/dev/null 2>&1
+  systemctl restart galahad.service
   if [[ $EXPOSE != 0 ]]; then
     # `tailscale serve` blocks while waiting for Serve/HTTPS to be enabled for the
     # tailnet; never let that hang a deploy. Show its link instead.

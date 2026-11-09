@@ -58,6 +58,15 @@
         "@galahad/core": "workspace:*",
         "@galahad/link": "workspace:*",
         "@galahad/mind": "workspace:*",
+        "@galahad/sandbox": "workspace:*",
+        "zod": "^4.6.7",
+      },
+    },
+    "packages/sandbox": {
+      "name": "@galahad/sandbox",
+      "version": "0.0.1",
+      "dependencies": {
+        "@galahad/core": "workspace:*",
         "zod": "^4.6.7",
       },
     },
@@ -76,6 +85,8 @@
     "@galahad/mind": ["@galahad/mind@workspace:packages/mind"],
 
     "@galahad/node": ["@galahad/node@workspace:packages/node"],
+
+    "@galahad/sandbox": ["@galahad/sandbox@workspace:packages/sandbox"],
 
     "@galahad/web": ["@galahad/web@workspace:apps/web"],
 

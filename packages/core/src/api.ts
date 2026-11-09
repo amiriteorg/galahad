@@ -30,6 +30,32 @@ export const PlacementNeeds = z.strictObject({
 });
 export type PlacementNeeds = z.infer<typeof PlacementNeeds>;
 
+/** A node, by name or device id. */
+const NodeRef = z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/);
+const SandboxId = z.string().regex(/^[a-f0-9]{10}$/);
+
+export const SandboxNetwork = z.enum(["isolated", "gateway", "online"]);
+export type SandboxNetwork = z.infer<typeof SandboxNetwork>;
+
+export const SandboxRequest = z.strictObject({
+  /** isolated = no network · gateway = models only (default) · online = internet + models */
+  network: SandboxNetwork.default("gateway"),
+  image: z
+    .string()
+    .max(200)
+    .regex(/^[a-z0-9][a-z0-9._/:@-]*$/)
+    .optional(),
+  cpus: z.number().min(0.25).max(64).default(4),
+  memoryGb: z.number().min(0.25).max(512).default(8),
+  ttlMinutes: z.number().int().min(1).max(7 * 24 * 60).default(120),
+  /** Providers the sandbox may call through the gateway (scoped token; never the key). */
+  providers: z.array(Name).max(16).optional(),
+  /** Persistent sandboxes are not cleaned up automatically; destroying one asks first. */
+  persistent: z.boolean().default(false),
+  quest: z.string().max(64).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+});
+export type SandboxRequest = z.input<typeof SandboxRequest>;
+
 export const routes = {
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },
@@ -152,6 +178,32 @@ export const routes = {
     scope: "gateway:mint",
     input: z.strictObject({ hash: z.string().min(10).max(64) }),
   },
+  ledger: { method: "GET", path: "/api/ledger", scope: "mind:read", input: null },
+  sandboxes: { method: "POST", path: "/api/sandboxes/list", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
+  createSandbox: { method: "POST", path: "/api/sandboxes", scope: "sandbox", input: SandboxRequest.extend({ on: NodeRef.optional() }) },
+  execSandbox: {
+    method: "POST",
+    path: "/api/sandboxes/exec",
+    scope: "sandbox",
+    input: z.strictObject({
+      id: SandboxId,
+      cmd: z.array(z.string().max(100_000)).min(1).max(256),
+      timeoutSec: z.number().int().min(1).max(3600).optional(),
+      on: NodeRef.optional(),
+    }),
+  },
+  destroySandbox: {
+    method: "POST",
+    path: "/api/sandboxes/destroy",
+    scope: "sandbox",
+    input: z.strictObject({
+      id: SandboxId,
+      on: NodeRef.optional(),
+      /** Set by a full node forwarding an owner's request; honored only from full nodes. */
+      onBehalfOf: z.string().max(100).optional(),
+    }),
+  },
+  buildSandboxImage: { method: "POST", path: "/api/sandboxes/build", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;
@@ -245,6 +297,43 @@ export interface PairingView {
   sas: string;
   requestedAt: number;
   conflict: boolean;
+}
+
+export interface SandboxView {
+  id: string;
+  name: string;
+  node: string;
+  quest: string;
+  image: string;
+  network: SandboxNetwork;
+  cpus: number;
+  memoryGb: number;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+  ephemeral: boolean;
+  providers: string[];
+}
+
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  truncated: boolean;
+}
+
+export interface LedgerEntry {
+  id: string;
+  hlc: string;
+  device: string;
+  class: "read" | "create" | "modify" | "outward" | "delete" | "forbidden";
+  resource: string;
+  target: string;
+  verdict: "allow" | "ask" | "deny" | "approved";
+  reason: string | null;
+  quest: string | null;
+  detail: string | null;
 }
 
 export type ChatStreamEvent =

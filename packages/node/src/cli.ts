@@ -37,6 +37,11 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
 
 Work
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--ttl 120]
+              [--providers deepseek,anthropic] [--image img] [--keep] -- <command…>
+  sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
+  sandbox build [--on ultra]      build the sandbox image on a host
+  ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
 Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
@@ -159,6 +164,12 @@ async function main(): Promise<void> {
       untrusted: { type: "boolean" },
       interactive: { type: "boolean" },
       "no-wait": { type: "boolean" },
+      on: { type: "string" },
+      net: { type: "string" },
+      cpus: { type: "string" },
+      image: { type: "string" },
+      keep: { type: "boolean" },
+      limit: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -525,6 +536,84 @@ Next:
       });
       for (const p of result.ranked) console.log(`  ${String(p.score).padStart(4)}  ${p.name.padEnd(18)} ${dim(p.reasons.join(", "))}`);
       for (const r of result.rejected) console.log(dim(`     ✗  ${r.name.padEnd(18)} ${r.reason}`));
+      return;
+    }
+
+    case "sandbox": {
+      const admin = new Admin(home);
+      const on = str("on");
+      const printResult = (r: { exitCode: number; stdout: string; stderr: string; durationMs: number; truncated: boolean }) => {
+        if (r.stdout) process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : `${r.stdout}\n`);
+        if (r.stderr) process.stderr.write(r.stderr.endsWith("\n") ? r.stderr : `${r.stderr}\n`);
+        process.stderr.write(dim(`[exit ${r.exitCode} · ${r.durationMs} ms${r.truncated ? " · output truncated" : ""}]\n`));
+      };
+      if (sub === "build") {
+        console.log(dim("Building the sandbox image (first build takes a few minutes)…"));
+        await admin.call("buildSandboxImage", { ...(on ? { on } : {}) });
+        console.log("Sandbox image ready.");
+        return;
+      }
+      if (sub === "ls") {
+        const { node, sandboxes } = await admin.call("sandboxes", { ...(on ? { on } : {}) });
+        if (!sandboxes.length) console.log(`No sandboxes on ${node}.`);
+        for (const s of sandboxes) {
+          const left = Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000));
+          console.log(
+            `  ${s.id}  ${s.status.padEnd(8)} ${s.network.padEnd(8)} ${String(s.cpus).padStart(3)} cpu ${String(s.memoryGb).padStart(4)} GB  ${s.ephemeral ? `${left} min left` : "persistent"}  ${dim(s.quest)}`,
+          );
+        }
+        return;
+      }
+      if (sub === "exec") {
+        const [id, ...cmd] = rest;
+        if (!id || !cmd.length) fail("usage: galahad sandbox exec <id> [--on node] -- <command…>");
+        const result = await admin.call("execSandbox", { id, cmd, ...(on ? { on } : {}) });
+        printResult(result);
+        process.exit(result.exitCode);
+      }
+      if (sub === "rm") {
+        if (!rest[0]) fail("usage: galahad sandbox rm <id>");
+        await admin.call("destroySandbox", { id: rest[0], ...(on ? { on } : {}) });
+        console.log("Sandbox destroyed.");
+        return;
+      }
+      if (sub === "run") {
+        const cmd = rest;
+        if (!cmd.length) fail("usage: galahad sandbox run [options] -- <command…>");
+        const { sandbox } = await admin.call("createSandbox", {
+          network: str("net") ?? "gateway",
+          ...(str("cpus") ? { cpus: Number(str("cpus")) } : {}),
+          ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
+          ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
+          ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
+          ...(str("image") ? { image: str("image") } : {}),
+          ...(on ? { on } : {}),
+        });
+        const where = on ?? "the best sandbox host";
+        process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB]\n`));
+        let code = 1;
+        try {
+          const result = await admin.call("execSandbox", { id: sandbox.id, cmd, ...(on ? { on } : {}) });
+          printResult(result);
+          code = result.exitCode;
+        } finally {
+          if (flags.keep) process.stderr.write(dim(`[kept: galahad sandbox exec ${sandbox.id} -- …]\n`));
+          else await admin.call("destroySandbox", { id: sandbox.id, ...(on ? { on } : {}) });
+        }
+        process.exit(code);
+      }
+      fail("usage: galahad sandbox run|ls|exec|rm|build — see `galahad help`");
+    }
+
+    case "ledger": {
+      const { entries } = await new Admin(home).call("ledger");
+      const limit = Number(str("limit") ?? 30);
+      if (!entries.length) console.log("The ledger is empty.");
+      for (const e of entries.slice(0, limit).reverse()) {
+        const when = new Date(Number(e.hlc.slice(0, 15))).toLocaleString();
+        const verdict = e.verdict === "allow" || e.verdict === "approved" ? e.verdict : bold(e.verdict);
+        console.log(`  ${dim(when)}  ${e.class.padEnd(7)} ${verdict.padEnd(8)} ${e.resource} ${e.target}${e.detail ? dim(`  ${e.detail}`) : ""}`);
+      }
       return;
     }
 

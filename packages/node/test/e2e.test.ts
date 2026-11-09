@@ -240,6 +240,20 @@ describe("M0: one mind, two bodies", () => {
     await until(async () => (await callB("secretRequests")).requests.length === 0);
   });
 
+  test("sandbox requests are routed to a named node, with its answer relayed faithfully", async () => {
+    const callA = admin(homeA, portA);
+    // Neither test node runs Docker: unpinned work finds no host…
+    await expect(callA("createSandbox", { network: "isolated" })).rejects.toThrow(/424.*no sandbox host/);
+    // …and work pinned to the server is forwarded there (signed as the laptop) and refused by it.
+    await expect(callA("createSandbox", { network: "isolated", on: "server" })).rejects.toThrow(/424.*server: this node is not a sandbox host/);
+    await expect(callA("sandboxes", { on: "nowhere" })).rejects.toThrow(/404/);
+  });
+
+  test("the ledger is readable fleet-wide", async () => {
+    const { entries } = await admin(homeB, portB)("ledger");
+    expect(Array.isArray(entries)).toBe(true);
+  });
+
   test("placement sends long, untrusted work to the always-on sandbox host", async () => {
     const callA = admin(homeA, portA);
     // Placement only considers peers the laptop has actually reached.

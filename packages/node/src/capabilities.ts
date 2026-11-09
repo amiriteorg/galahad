@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import type { Presence } from "@galahad/core";
+import { probeSandbox } from "@galahad/sandbox";
 
 /*
  * What this body can do. Stable facts go into the node's profile in the mind
@@ -21,6 +22,8 @@ export interface Capabilities {
   tools: string[];
   localModels: { runtime: string; models: string[] }[];
   tailscale: { ip: string | null; dnsName: string | null } | null;
+  /** Present when this node can host sandboxes (Docker reachable). */
+  sandbox?: { image: boolean; networks: boolean } | null;
 }
 
 const TOOLS = [
@@ -98,12 +101,13 @@ function hasBattery(): boolean {
 
 export async function probeCapabilities(): Promise<Capabilities> {
   const tools = TOOLS.filter((tool) => Bun.which(tool));
-  const [gpu, models, docker, tailscale, windowsBattery] = await Promise.all([
+  const [gpu, models, docker, tailscale, windowsBattery, sandbox] = await Promise.all([
     gpus(),
     localModels(),
     tools.includes("docker") ? run(["docker", "info", "--format", "{{.ServerVersion}}"], 5000) : Promise.resolve(null),
     tailscaleInfo(),
     process.platform === "win32" ? batteryWindows() : Promise.resolve(null),
+    tools.includes("docker") ? probeSandbox() : Promise.resolve(null),
   ]);
   const cpus = os.cpus();
   return {
@@ -123,6 +127,7 @@ export async function probeCapabilities(): Promise<Capabilities> {
     tools,
     localModels: models,
     tailscale,
+    sandbox,
   };
 }
 
