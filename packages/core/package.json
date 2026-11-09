@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./bytes": "./src/bytes.ts",
+    "./identity": "./src/identity.ts",
+    "./pairing": "./src/pairing.ts",
+    "./request-auth": "./src/request-auth.ts",
+    "./secret-scan": "./src/secret-scan.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
