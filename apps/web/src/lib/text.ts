@@ -1,0 +1,113 @@
+/*
+ * Small pure text helpers: search highlighting, command-line splitting,
+ * provider detection from a key prefix. No DOM, so they are unit-tested.
+ */
+
+/** Ranges [start, end) where any query term occurs (case-insensitive), merged and sorted. */
+export function matchRanges(text: string, query: string): [number, number][] {
+  const terms = [...new Set(query.toLowerCase().split(/\s+/).filter((t) => t.length >= 2 || (t.length === 1 && query.trim().length === 1)))];
+  if (!terms.length) return [];
+  const lower = text.toLowerCase();
+  const ranges: [number, number][] = [];
+  for (const term of terms) {
+    for (let i = lower.indexOf(term); i >= 0; i = lower.indexOf(term, i + term.length)) ranges.push([i, i + term.length]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const r of ranges) {
+    const last = merged.at(-1);
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
+  return merged;
+}
+
+export interface ParsedCommand {
+  argv: string[];
+  /** True when the line used shell syntax (pipes, redirects, &&, $vars) and is run through `sh -c`. */
+  viaShell: boolean;
+}
+
+const SHELL_SYNTAX = /[|&;<>()$`*?~]|\\\n/;
+
+/**
+ * Split a console line into argv, honouring 'single' and "double" quotes and
+ * backslash escapes. Lines that need a shell (pipes, globs, $VARS…) are run as
+ * `sh -c <line>`, and the console says so, rather than silently guessing.
+ */
+export function parseCommand(line: string): ParsedCommand {
+  const trimmed = line.trim();
+  if (!trimmed) return { argv: [], viaShell: false };
+  const argv: string[] = [];
+  let current = "";
+  let has = false;
+  let quote: "'" | '"' | null = null;
+  let unquotedShell = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]!;
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      else current += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      else if (ch === "\\" && i + 1 < trimmed.length && /["\\$`]/.test(trimmed[i + 1]!)) current += trimmed[++i]!;
+      else {
+        if (ch === "$" || ch === "`") unquotedShell = true;
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      has = true;
+    } else if (ch === "\\" && i + 1 < trimmed.length) {
+      current += trimmed[++i]!;
+      has = true;
+    } else if (/\s/.test(ch)) {
+      if (has) argv.push(current);
+      current = "";
+      has = false;
+    } else {
+      if (SHELL_SYNTAX.test(ch)) unquotedShell = true;
+      current += ch;
+      has = true;
+    }
+  }
+  if (quote) unquotedShell = true; // unbalanced quotes: let the shell report it
+  if (has) argv.push(current);
+  return unquotedShell ? { argv: ["sh", "-c", trimmed], viaShell: true } : { argv, viaShell: false };
+}
+
+export interface KeyPreset {
+  id: string;
+  keyPrefixes?: string[];
+}
+
+/** Longest matching key prefix wins (sk-orca- beats sk-). */
+export function detectProvider(key: string, presets: KeyPreset[]): string | null {
+  let best: { id: string; length: number } | null = null;
+  for (const preset of presets) {
+    for (const prefix of preset.keyPrefixes ?? []) {
+      if (key.startsWith(prefix) && (!best || prefix.length > best.length)) best = { id: preset.id, length: prefix.length };
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** "…3456"-style hint is all the UI ever shows of a key; this only formats what the server sends. */
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+export const shortId = (id: string, n = 8): string => (id.length > n + 2 ? id.slice(2, 2 + n) : id);
+
+export function titleCase(text: string): string {
+  return text ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
+/** Bytes → "1.2 GB"-style; inputs are already GB in our API, so this formats GB numbers. */
+export function gb(value: number): string {
+  if (value >= 1024) return `${(value / 1024).toFixed(value % 1024 ? 1 : 0)} TB`;
+  if (value < 1) return `${Math.round(value * 1024)} MB`;
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} GB`;
+}

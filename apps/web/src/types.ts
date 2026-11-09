@@ -1,0 +1,107 @@
+import type { Scope } from "@galahad/core";
+
+/*
+ * Response shapes the PWA codes against that are not (yet) in @galahad/core's
+ * contract: the ledger and sandboxes are being built alongside this UI. Views
+ * using them degrade gracefully when the node answers 404 or 424.
+ */
+
+/** "sandbox" joins the core scope list with the sandbox backend. */
+export type AnyScope = Scope | "sandbox";
+
+export interface WhoAmI {
+  device: string;
+  kind: string;
+  scopes: AnyScope[];
+  node: string;
+  nodeName: string;
+  fleet: string;
+  fleetName: string | null;
+}
+
+export interface PresetView {
+  id: string;
+  kind: "openai" | "anthropic";
+  baseUrl: string;
+  keyPrefixes?: string[];
+  local?: boolean;
+  note?: string;
+}
+
+export interface RoleSpec {
+  models: string[];
+  configured: boolean;
+  description: string;
+}
+
+export type ActionClass = "read" | "create" | "modify" | "outward" | "delete" | "forbidden";
+export type Verdict = "allow" | "ask" | "deny" | "approved";
+
+export interface LedgerEntry {
+  id: string;
+  hlc: string;
+  device: string;
+  class: ActionClass;
+  resource: string;
+  target: string;
+  verdict: Verdict;
+  reason: string | null;
+  quest: string | null;
+  detail: string | null;
+}
+
+export type NetworkMode = "isolated" | "gateway" | "online";
+
+export interface SandboxView {
+  id: string;
+  name: string;
+  node: string;
+  quest: string;
+  image: string;
+  network: NetworkMode;
+  cpus: number;
+  memoryGb: number;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+  ephemeral: boolean;
+  providers: string[];
+}
+
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  truncated: boolean;
+}
+
+export interface PlacementResult {
+  ranked: { device: string; name: string; score: number; reasons: string[] }[];
+  rejected: { device: string; name: string; reason: string }[];
+}
+
+export interface InviteResponse {
+  invite: string;
+  url: string | null;
+  expiresAt: number;
+  id: string;
+}
+
+/** The node's capability profile as published in the mind (see packages/node/src/capabilities.ts). */
+export interface Caps {
+  os?: string;
+  arch?: string;
+  hostname?: string;
+  cores?: number;
+  cpu?: string;
+  memoryGb?: number;
+  hasBattery?: boolean;
+  gpu?: { name: string; memoryGb: number | null }[];
+  docker?: boolean;
+  vm?: { kvm: boolean; tools: string[] };
+  tools?: string[];
+  localModels?: { runtime: string; models: string[] }[];
+}
+
+export const asCaps = (value: Record<string, unknown> | null): Caps | null => value as Caps | null;

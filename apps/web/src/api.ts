@@ -1,4 +1,6 @@
-import { type ChatStreamEvent, signRequest, utf8 } from "@galahad/core";
+import type { ChatStreamEvent } from "@galahad/core";
+import { utf8 } from "@galahad/core/bytes";
+import { signRequest } from "@galahad/core/request-auth";
 import { type BrowserIdentity, signerFor } from "./identity.ts";
 
 /*
@@ -11,54 +13,73 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The node's clock (from its Date header), to tell a skewed device clock from a revoked key. */
+    readonly serverTime: number | null = null,
   ) {
     super(message);
+    this.name = "ApiError";
   }
 }
 
-type UnauthorizedHandler = () => void;
-let onUnauthorized: UnauthorizedHandler = () => {};
-export const setUnauthorizedHandler = (handler: UnauthorizedHandler) => {
+/** True when the node doesn't have this feature (yet): unknown route, or a capability it lacks. */
+export const isUnavailable = (error: unknown): boolean => error instanceof ApiError && (error.status === 404 || error.status === 424 || error.status === 501);
+
+/** True when the request never reached the node (offline, DNS, refused). */
+export const isNetworkError = (error: unknown): boolean => error instanceof TypeError || (error instanceof ApiError && error.status === 0);
+
+export const isAbort = (error: unknown): boolean => error instanceof DOMException && error.name === "AbortError";
+
+type Handler = (error: ApiError) => void;
+let onUnauthorized: Handler = () => {};
+let onNetwork: (ok: boolean) => void = () => {};
+export const setUnauthorizedHandler = (handler: Handler): void => {
   onUnauthorized = handler;
 };
+/** Called with false when a request fails at the network layer, true when one succeeds. */
+export const setNetworkHandler = (handler: (ok: boolean) => void): void => {
+  onNetwork = handler;
+};
 
-async function signedFetch(
-  identity: BrowserIdentity,
-  method: "GET" | "POST",
-  path: string,
-  body?: unknown,
-  signal?: AbortSignal,
-): Promise<Response> {
+async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   const bytes = body === undefined ? new Uint8Array() : utf8(JSON.stringify(body));
   const headers = await signRequest(identity.device, signerFor(identity), method, path, bytes);
-  const response = await fetch(`${location.origin}${path}`, {
-    method,
-    headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-    body: method === "GET" ? undefined : bytes,
-    signal,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${location.origin}${path}`, {
+      method,
+      headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      body: method === "GET" ? undefined : bytes,
+      signal,
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (!isAbort(error)) onNetwork(false);
+    throw error;
+  }
+  onNetwork(true);
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    if (response.status === 401) onUnauthorized();
-    throw new ApiError(response.status, payload.error ?? `${response.status} ${response.statusText}`);
+    const date = Date.parse(response.headers.get("date") ?? "");
+    const error = new ApiError(response.status, payload.error ?? `${response.status} ${response.statusText}`, Number.isFinite(date) ? date : null);
+    if (response.status === 401) onUnauthorized(error);
+    throw error;
   }
   return response;
 }
 
 export interface Api {
-  get<T>(path: string): Promise<T>;
-  post<T>(path: string, body?: unknown): Promise<T>;
+  get<T>(path: string, signal?: AbortSignal): Promise<T>;
+  post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
 }
 
 export function apiFor(identity: BrowserIdentity): Api {
   return {
-    async get<T>(path: string) {
-      return (await (await signedFetch(identity, "GET", path)).json()) as T;
+    async get<T>(path: string, signal?: AbortSignal) {
+      return (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
     },
-    async post<T>(path: string, body: unknown = {}) {
-      return (await (await signedFetch(identity, "POST", path, body)).json()) as T;
+    async post<T>(path: string, body: unknown = {}, signal?: AbortSignal) {
+      return (await (await signedFetch(identity, "POST", path, body, signal)).json()) as T;
     },
     async *chat(body: unknown, signal: AbortSignal) {
       const response = await signedFetch(identity, "POST", "/api/chat", body, signal);

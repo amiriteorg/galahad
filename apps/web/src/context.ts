@@ -1,42 +1,51 @@
-import type { Scope } from "@galahad/core";
+import type { FleetView, PairingView, SecretRequestView } from "@galahad/core";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
+import type { AnyScope, WhoAmI } from "./types.ts";
+import type { Scope } from "./ui/dom.ts";
+import type { Signal } from "./ui/signal.ts";
 
-export type Tab = "chat" | "memory" | "vault" | "models" | "fleet";
-
-export interface WhoAmI {
-  device: string;
-  kind: string;
-  scopes: Scope[];
-  node: string;
-  nodeName: string;
-  fleet: string;
-  fleetName: string | null;
-}
+export type Route = "overview" | "inbox" | "chat" | "activity" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "settings";
 
 export interface NavigateOptions {
-  /** Hand a detected secret from chat to the vault form (never sent anywhere). */
+  /** A secret detected in chat or memory, handed to the vault form. Kept in memory only, never in the URL. */
   prefillKey?: string;
+  /** A search to run on arrival (memory). */
+  query?: string;
+  /** Something to open on arrival, e.g. "add-key", "invite", "create", "remember", "place". */
+  intent?: string;
+}
+
+/** Live data shared by the shell and the views, polled while the app is visible. */
+export interface Live {
+  fleet: Signal<FleetView | null>;
+  pairings: Signal<PairingView[]>;
+  secretRequests: Signal<SecretRequestView[]>;
+  online: Signal<boolean>;
+  inboxCount: Signal<number>;
+  refreshFleet(): Promise<void>;
+  refreshInbox(): Promise<void>;
+  /** Stops polling and listening (when the app shell is torn down). */
+  stop(): void;
 }
 
 export interface Ctx {
   api: Api;
   identity: BrowserIdentity;
   whoami: WhoAmI;
-  can(scope: Scope): boolean;
-  navigate(tab: Tab, opts?: NavigateOptions): void;
+  can(scope: AnyScope): boolean;
+  navigate(route: Route, opts?: NavigateOptions): void;
+  live: Live;
+  /** Opens the command palette, optionally with a query. */
+  palette(query?: string): void;
 }
 
-/** A view renders into `root` and may return a cleanup function (timers, aborts). */
-export type View = (root: HTMLElement, ctx: Ctx, opts: NavigateOptions) => void | (() => void);
-
-export interface PresetView {
-  id: string;
-  kind: "openai" | "anthropic";
-  baseUrl: string;
-  keyPrefixes?: string[];
-  local?: boolean;
-  note?: string;
+export interface ViewArgs {
+  /** Disposed when the view is left: timers, listeners, aborts in-flight requests. */
+  scope: Scope;
+  opts: NavigateOptions;
 }
 
-export const errorMessage = (error: unknown): string => String((error as Error)?.message ?? error);
+export type View = (root: HTMLElement, ctx: Ctx, args: ViewArgs) => void;
+
+export const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
