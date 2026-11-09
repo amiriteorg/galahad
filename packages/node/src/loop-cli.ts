@@ -254,3 +254,20 @@ export async function actionCommand(api: Api, sub: string | undefined, rest: str
   }
   if (shown.some((a) => a.state === "waiting")) console.log(dim("\n  galahad action approve <id> · galahad action deny <id>"));
 }
+
+/** One line for `galahad status`: loops, what needs you, what waits for your answer. */
+export async function statusLine(api: Api): Promise<void> {
+  const [loops, notices, actions] = await Promise.all([
+    api.call<{ loops: LoopView[] }>("loops").then((r) => r.loops).catch(() => [] as LoopView[]),
+    api.call<{ notices: NoticeView[] }>("notices").then((r) => r.notices.filter((n) => !n.dismissed)).catch(() => [] as NoticeView[]),
+    api.call<{ actions: ActionView[] }>("actions").then((r) => r.actions.filter((a) => a.state === "waiting")).catch(() => [] as ActionView[]),
+  ]);
+  const beat = loops.find((l) => l.name === "heartbeat")?.last;
+  const parts = [
+    `${loops.length} loop${loops.length === 1 ? "" : "s"}`,
+    beat ? `heartbeat ${MARK[beat.status]} ${new Date(beat.finished).toLocaleTimeString()}` : "no heartbeat yet",
+    notices.length ? bold(`${notices.length} notice${notices.length === 1 ? "" : "s"}`) : "nothing needs you",
+    ...(actions.length ? [bold(`${actions.length} waiting for your answer (galahad action ls)`)] : []),
+  ];
+  console.log(`\n  ${parts.join(" · ")}`);
+}

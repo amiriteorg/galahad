@@ -9,7 +9,7 @@ import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
-import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand } from "./loop-cli.ts";
+import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
@@ -423,6 +423,7 @@ Next:
           : "";
         console.log(`  ${d.name.padEnd(18)} ${d.kind.padEnd(6)} ${state.padEnd(14)} ${dim(summary)}`);
       }
+      await statusLine(new Admin(home));
       return;
     }
 
