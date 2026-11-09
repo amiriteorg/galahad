@@ -5,63 +5,64 @@
       <stop offset="0" stop-color="#1e1e21"/>
       <stop offset="1" stop-color="#050506"/>
     </linearGradient>
-    <radialGradient id="starlight" cx="512" cy="442.1" r="336" gradientUnits="userSpaceOnUse">
+    <radialGradient id="starlight" cx="512" cy="431" r="336" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.2"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#night)"/>
   <rect width="1024" height="1024" fill="url(#starlight)"/>
-  <g transform="translate(512 512) scale(0.6) translate(-512 -516.45)">
+  <g transform="translate(512 512) scale(0.6) translate(-512 -495)">
     <g>
       <defs>
-        <linearGradient id="em-upper" gradientUnits="userSpaceOnUse" x1="512" y1="452" x2="512" y2="932.9">
+        <clipPath id="em-chevrons">
+          <path d="M451.2 502.8 195.6 830 94 830 388.1 453.6Z"/>
+          <path d="M635.9 453.6 930 830 828.4 830 572.8 502.8Z"/>
+          <path d="M512 467.2 795.4 830 693.9 830 512 597.1 330.1 830 228.6 830Z"/>
+          <path d="M512 639.4 660.9 830 363.1 830Z"/>
+        </clipPath>
+        <linearGradient id="em-left" gradientUnits="userSpaceOnUse" x1="94" y1="453.6" x2="512" y2="830">
           <stop offset="0" stop-color="#ffffff"/>
           <stop offset="0.5" stop-color="#f1f1f3"/>
           <stop offset="1" stop-color="#d4d4d9"/>
         </linearGradient>
-        <linearGradient id="em-under" gradientUnits="userSpaceOnUse" x1="512" y1="452" x2="512" y2="932.9">
-          <stop offset="0" stop-color="#d2d2d8"/>
-          <stop offset="0.5" stop-color="#bcbcc3"/>
-          <stop offset="1" stop-color="#a2a2ab"/>
+        <linearGradient id="em-right" gradientUnits="userSpaceOnUse" x1="512" y1="453.6" x2="930" y2="830">
+          <stop offset="0" stop-color="#e2e2e6"/>
+          <stop offset="0.5" stop-color="#cdcdd3"/>
+          <stop offset="1" stop-color="#b4b4bc"/>
         </linearGradient>
-        <linearGradient id="em-lit" gradientUnits="userSpaceOnUse" x1="362" y1="250" x2="587" y2="532">
+        <linearGradient id="em-lit" gradientUnits="userSpaceOnUse" x1="372" y1="220" x2="582" y2="484">
           <stop offset="0" stop-color="#ffffff"/>
           <stop offset="0.5" stop-color="#f1f1f3"/>
           <stop offset="1" stop-color="#d4d4d9"/>
         </linearGradient>
-        <linearGradient id="em-shade" gradientUnits="userSpaceOnUse" x1="512" y1="250" x2="662" y2="532">
-          <stop offset="0" stop-color="#d2d2d8"/>
-          <stop offset="0.5" stop-color="#bcbcc3"/>
-          <stop offset="1" stop-color="#a2a2ab"/>
+        <linearGradient id="em-shade" gradientUnits="userSpaceOnUse" x1="512" y1="220" x2="652" y2="484">
+          <stop offset="0" stop-color="#e2e2e6"/>
+          <stop offset="0.5" stop-color="#cdcdd3"/>
+          <stop offset="1" stop-color="#b4b4bc"/>
         </linearGradient>
       </defs>
-      <path d="M399.8 630 92 888.3 92 846 399.8 452Z" fill="#bcbcc3"/>
-      <path d="M624.2 452 932 846 932 888.3 624.2 630Z" fill="#bcbcc3"/>
-      <path d="M512 575 774 794.9 774 932.9 512 713 250 932.9 250 794.9Z" fill="#bcbcc3"/>
-      <path d="M399.8 541 92 867.2 92 846 399.8 452Z" fill="url(#em-upper)"/>
-      <path d="M624.2 452 932 846 932 867.2 624.2 541Z" fill="url(#em-upper)"/>
-      <path d="M399.8 630 92 888.3 92 867.2 399.8 541Z" fill="url(#em-under)"/>
-      <path d="M624.2 541 932 867.2 932 888.3 624.2 630Z" fill="url(#em-under)"/>
-      <path d="M512 575 774 794.9 774 863.9 512 644 250 863.9 250 794.9Z" fill="url(#em-upper)"/>
-      <path d="M512 644 774 863.9 774 932.9 512 713 250 932.9 250 863.9Z" fill="url(#em-under)"/>
-      <path d="M512 100 532.7 350.1 579.9 332.1 561.9 379.3 662 400 560.6 423.5 594.2 503.3 529.8 451 512 535.9 494.2 451 429.8 503.3 463.4 423.5 362 400 462.1 379.3 444.1 332.1 491.3 350.1Z" fill="#bcbcc3"/>
-      <path d="M512 400 512 100 532.7 350.1Z" fill="url(#em-lit)"/>
-      <path d="M512 400 532.7 350.1 579.9 332.1Z" fill="url(#em-shade)"/>
-      <path d="M512 400 579.9 332.1 561.9 379.3Z" fill="url(#em-lit)"/>
-      <path d="M512 400 561.9 379.3 662 400Z" fill="url(#em-shade)"/>
-      <path d="M512 400 662 400 560.6 423.5Z" fill="url(#em-lit)"/>
-      <path d="M512 400 560.6 423.5 594.2 503.3Z" fill="url(#em-shade)"/>
-      <path d="M512 400 594.2 503.3 529.8 451Z" fill="url(#em-lit)"/>
-      <path d="M512 400 529.8 451 512 535.9Z" fill="url(#em-shade)"/>
-      <path d="M512 400 512 535.9 494.2 451Z" fill="url(#em-lit)"/>
-      <path d="M512 400 494.2 451 429.8 503.3Z" fill="url(#em-shade)"/>
-      <path d="M512 400 429.8 503.3 463.4 423.5Z" fill="url(#em-lit)"/>
-      <path d="M512 400 463.4 423.5 362 400Z" fill="url(#em-shade)"/>
-      <path d="M512 400 362 400 462.1 379.3Z" fill="url(#em-lit)"/>
-      <path d="M512 400 462.1 379.3 444.1 332.1Z" fill="url(#em-shade)"/>
-      <path d="M512 400 444.1 332.1 491.3 350.1Z" fill="url(#em-lit)"/>
-      <path d="M512 400 491.3 350.1 512 100Z" fill="url(#em-shade)"/>
+      <g clip-path="url(#em-chevrons)">
+        <rect x="512" y="452.6" height="378.4" width="419" fill="url(#em-right)"/>
+        <rect x="93" y="452.6" height="378.4" width="420" fill="url(#em-left)"/>
+      </g>
+      <path d="M512 160 529.6 317.5 571.4 300.6 554.5 342.4 652 360 553.3 380.2 588.3 457.7 527 403.5 512 425 497 403.5 435.7 457.7 470.7 380.2 372 360 469.5 342.4 452.6 300.6 494.4 317.5Z" fill="#cdcdd3"/>
+      <path d="M512 360 512 160 529.6 317.5Z" fill="url(#em-lit)"/>
+      <path d="M512 360 529.6 317.5 571.4 300.6Z" fill="url(#em-shade)"/>
+      <path d="M512 360 571.4 300.6 554.5 342.4Z" fill="url(#em-lit)"/>
+      <path d="M512 360 554.5 342.4 652 360Z" fill="url(#em-shade)"/>
+      <path d="M512 360 652 360 553.3 380.2Z" fill="url(#em-lit)"/>
+      <path d="M512 360 553.3 380.2 588.3 457.7Z" fill="url(#em-shade)"/>
+      <path d="M512 360 588.3 457.7 527 403.5Z" fill="url(#em-lit)"/>
+      <path d="M512 360 527 403.5 512 425Z" fill="url(#em-shade)"/>
+      <path d="M512 360 512 425 497 403.5Z" fill="url(#em-lit)"/>
+      <path d="M512 360 497 403.5 435.7 457.7Z" fill="url(#em-shade)"/>
+      <path d="M512 360 435.7 457.7 470.7 380.2Z" fill="url(#em-lit)"/>
+      <path d="M512 360 470.7 380.2 372 360Z" fill="url(#em-shade)"/>
+      <path d="M512 360 372 360 469.5 342.4Z" fill="url(#em-lit)"/>
+      <path d="M512 360 469.5 342.4 452.6 300.6Z" fill="url(#em-shade)"/>
+      <path d="M512 360 452.6 300.6 494.4 317.5Z" fill="url(#em-lit)"/>
+      <path d="M512 360 494.4 317.5 512 160Z" fill="url(#em-shade)"/>
     </g>
   </g>
 </svg>

@@ -15,15 +15,15 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ### The emblem: Crest
 
-A **lodestar flying at the head of swept wings**. The star is the guide (the oath he follows); the chevrons are the climb (work done, rank earned), drawn like a fighter's planform so the mark feels fast and decisive:
+A **lodestar crowning a pyramid of chevrons**. The star is the guide (the oath he follows); the pyramid is the climb (work done, rank earned), built from chevrons. Bold and precise, in the spirit of defence-grade marks: few shapes, hard edges, exact gaps.
 
-- **A fighter's planform.** The star is the nose. The first chevron gives its peak to the star and becomes two tapered wings; the second chevron is the tail, narrower than the wings. Wing roots, wingtips and tail tips are all cut parallel to the line of flight.
-- **Planform alignment.** Every edge runs at one of two sweep angles (52° for the wings' leading edges, 40° for everything else) or along the line of flight, the way a stealth fighter aligns its edges. The harder leading-edge sweep is what tapers the wings to sharp tips.
-- **One gap.** Every star tip that faces a wing or the tail stops exactly one gap short of it (the lower rays at the wing roots, the south ray at the tail's peak), and the wings fly one gap ahead of the tail. The lower rays aim at the middle of the wing roots.
-- **A compass lodestar.** A long north ray, then east and west, short upper diagonals, lower rays reaching for the wings, heavy valleys. The lower rays' angle and the south ray are set by the gap.
-- **Ridged facets.** Each wing and the tail is a ridge along its length: the face toward the star is lit, the face away is steel. Each ray of the star has a lit and a shaded side. The star is the brightest thing in the mark.
+- **The star is the capstone.** The outer chevron's centre lines meet at the star's centre, so the star's lower rays point straight down its two legs, and the legs begin one gap past the ray tips.
+- **A true pyramid.** Inside the legs, a full chevron and a solid core. Every band ends on one baseline and runs at one slope, the Great Pyramid's 52°; the legs' top ends are cut square to the leg.
+- **One gap.** Every star tip that faces a band stops exactly one gap short of it (the lower rays at the legs, the south ray at the chevron's peak), and the bands are one gap apart.
+- **A compass lodestar.** A north ray, then east and west, short upper diagonals, lower diagonals that run down the legs, heavy valleys. The south ray is set by the gap. No needle: the north ray is only a little longer than the others.
+- **Lit like a pyramid.** Light comes from the upper left: every band's left face is lit and its right face a step down. Each ray of the star has a lit and a shaded side. The star is the brightest thing in the mark.
 
-The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, the two sweeps, the star's centre and rays, wing and tail). Everything is generated from that one definition, tests pin the planform alignment, every gap and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
+The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, slope, the star's centre and rays, the baseline). Everything is generated from that one definition, tests pin the pyramid (one baseline, one slope), the star's aim, every gap and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
 
 | File | Use |
 |---|---|
@@ -37,7 +37,7 @@ The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, the two sw
 
 Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium).
 
-- Faceting is lit from the star above: on dark grounds lit faces run from white to `#d4d4d9` and shaded faces from `#d2d2d8` to steel `#a2a2ab`; on light grounds lit faces run from graphite `#4a4a4e` to black and shaded faces are near black.
+- Faceting is lit from the upper left: on dark grounds lit faces run from white to `#d4d4d9` and shaded faces from `#e2e2e6` to `#b4b4bc`; on light grounds lit faces run from graphite `#3a3a3d` to black and shaded faces are near black.
 - Keep clear space of at least a quarter of the emblem's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the flat mark.
 
 ### Wordmark
@@ -77,7 +77,7 @@ All colour tokens use `light-dark()`, so one list serves both themes. The theme 
 | `--text-3` | `#696971` | `#8b8b94` | Meta, placeholders |
 | `--accent` | `#0a0a0b` | `#ffffff` | Ink: owner, focus, links |
 | `--accent-fill-top` → `--accent-fill` | `#3a3a3f` → `#0c0c0e` | `#ffffff` → `#e4e4e8` | Primary button gradient (`--on-accent` text: white on light, near-black on dark) |
-| `--em-lit` … `--em-deep`, `--em-shade` … `--em-shade-deep`, `--em-base` | `#4a4a4e` … `#000000` | `#ffffff` … `#a2a2ab` | The emblem's lit and shaded facets, and the base under them |
+| `--em-lit` … `--em-deep`, `--em-shade` … `--em-shade-deep`, `--em-base` | `#3a3a3d` … `#000000` | `#ffffff` … `#b4b4bc` | The emblem's lit and shaded faces, and the base under the star |
 
 ### Semantic tones
 
