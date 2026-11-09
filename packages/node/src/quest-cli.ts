@@ -1,4 +1,4 @@
-import { type ChatStreamEvent, type ExecResult, redact, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { type ChatStreamEvent, type ExecResult, type FleetView, redact, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
 import { type QuestEvent, type QuestOutcome, runQuest } from "@galahad/brain";
 
 /*
@@ -37,9 +37,9 @@ const NETWORK: Record<SandboxNetwork, string> = {
   online: "the internet",
 };
 
-function environment(sandbox: SandboxView): string {
+function environment(sandbox: SandboxView, host: string): string {
   return [
-    `a Debian Linux sandbox on ${sandbox.node}: unprivileged user, no sudo, no package installs via apt.`,
+    `a Debian Linux sandbox on ${host}: unprivileged user, no sudo, no package installs via apt.`,
     "Workspace /work (kept for the whole quest); /tmp is scratch.",
     "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
     `Network: ${NETWORK[sandbox.network]}.`,
@@ -91,7 +91,10 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     quest,
     ...(options.on ? { on: options.on } : {}),
   });
-  console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${sandbox.node} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
+  // Sandboxes name their host by device id; people (and the engineer) know it by name.
+  const fleet = await node.call<FleetView>("fleet").catch(() => null);
+  const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
+  console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
 
   const controller = new AbortController();
   let interrupts = 0;
@@ -106,7 +109,7 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   let outcome: QuestOutcome;
   try {
     outcome = await runQuest(
-      { goal: options.goal, environment: environment(sandbox), maxSteps: options.maxSteps, commandTimeoutSec: options.commandTimeoutSec },
+      { goal: options.goal, environment: environment(sandbox, host), maxSteps: options.maxSteps, commandTimeoutSec: options.commandTimeoutSec },
       {
         ask: async (role, messages) => {
           let text = "";
@@ -126,7 +129,7 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     );
   } finally {
     process.off("SIGINT", onInterrupt);
-    if (options.keep) console.log(dim(`[sandbox kept: galahad sandbox exec ${sandbox.id} --on ${sandbox.node} -- …]`));
+    if (options.keep) console.log(dim(`[sandbox kept: galahad sandbox exec ${sandbox.id} --on ${host} -- …]`));
     else await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
 
