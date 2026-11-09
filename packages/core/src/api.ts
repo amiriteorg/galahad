@@ -69,7 +69,12 @@ export const routes = {
     method: "POST",
     path: "/api/memories",
     scope: "mind:write",
-    input: z.strictObject({ text: z.string().min(1).max(20_000), tags: z.array(z.string().min(1).max(64)).max(32).optional() }),
+    input: z.strictObject({
+      text: z.string().min(1).max(20_000),
+      tags: z.array(z.string().min(1).max(64)).max(32).optional(),
+      /** Set when the content came from the web, a file or someone else: it stays data, never instructions. */
+      untrusted: z.boolean().optional(),
+    }),
   },
   forget: { method: "POST", path: "/api/memories/forget", scope: "mind:write", input: z.strictObject({ id: z.string() }) },
   secrets: { method: "GET", path: "/api/secrets", scope: "vault:read", input: null },
@@ -190,6 +195,8 @@ export const routes = {
       cmd: z.array(z.string().max(100_000)).min(1).max(256),
       timeoutSec: z.number().int().min(1).max(3600).optional(),
       on: NodeRef.optional(),
+      /** Set by a full node relaying an arm's request: the arm may only use its own sandboxes. */
+      quest: z.string().max(64).optional(),
     }),
   },
   destroySandbox: {
@@ -201,9 +208,24 @@ export const routes = {
       on: NodeRef.optional(),
       /** Set by a full node forwarding an owner's request; honored only from full nodes. */
       onBehalfOf: z.string().max(100).optional(),
+      /** Set by a full node relaying an arm's request: cleanup of that quest's own sandboxes only. */
+      quest: z.string().max(64).optional(),
     }),
   },
   buildSandboxImage: { method: "POST", path: "/api/sandboxes/build", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
+  arms: { method: "GET", path: "/api/arms", scope: "fleet:admin", input: null },
+  mintArm: {
+    method: "POST",
+    path: "/api/arms",
+    scope: "fleet:admin",
+    input: z.strictObject({ label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/), scopes: z.array(ScopeSchema).max(16).optional() }),
+  },
+  revokeArm: {
+    method: "POST",
+    path: "/api/arms/revoke",
+    scope: "fleet:admin",
+    input: z.strictObject({ label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/) }),
+  },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;

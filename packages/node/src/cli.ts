@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
@@ -8,7 +9,10 @@ import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
+import { runMcpServer } from "./mcp.ts";
 import { streamedError } from "./server.ts";
+
+const VERSION = "0.1.0";
 
 const HELP = `galahad — one mind, many bodies
 
@@ -43,6 +47,12 @@ Work
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox build [--on ultra]      build the sandbox image on a host
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
+
+Agents (MCP)
+  mcp install claude|opencode|codex|hermes [--label name] [--apply]
+                                  give a coding agent Galahad's mind and sandboxes (least privilege)
+  mcp --arm <label>               the MCP server itself (stdio; started by the agent, not by you)
+  arms | arms revoke <label>      list or revoke agent credentials
 
 Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
@@ -178,6 +188,8 @@ async function main(): Promise<void> {
       keep: { type: "boolean" },
       limit: { type: "string" },
       timeout: { type: "string" },
+      arm: { type: "string" },
+      apply: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -627,6 +639,62 @@ Next:
         const verdict = e.verdict === "allow" || e.verdict === "approved" ? e.verdict : bold(e.verdict);
         console.log(`  ${dim(when)}  ${e.class.padEnd(7)} ${verdict.padEnd(8)} ${e.resource} ${e.target}${e.detail ? dim(`  ${e.detail}`) : ""}`);
       }
+      return;
+    }
+
+    case "mcp": {
+      if (sub !== "install") {
+        // The MCP server: stdout belongs to the protocol, so nothing else may print there.
+        const label = str("arm") ?? "default";
+        const config = home.readConfig();
+        const base = `http://127.0.0.1:${loadEnv().GALAHAD_PORT ?? config.port}`;
+        await runMcpServer({ base, token: home.readArmToken(label), version: VERSION });
+        return;
+      }
+      const target = rest[0];
+      const targets = ["claude", "opencode", "codex", "hermes"];
+      if (!target || !targets.includes(target)) fail(`usage: galahad mcp install ${targets.join("|")} [--label name] [--apply]`);
+      const label = str("label") ?? (target === "claude" ? "claude-code" : target);
+      const minted = await new Admin(home).call<{ token: string; info: { scopes: string[] } }>("mintArm", { label });
+      const tokenPath = home.writeArmToken(label, minted.token);
+      const cli = fileURLToPath(import.meta.url);
+      const args = [cli, "mcp", "--arm", label, ...(flags.home ? ["--home", home.dir] : [])];
+      const bunPath = process.execPath;
+      console.log(`${bold(`Arm "${label}" ready`)} · scopes: ${minted.info.scopes.join(", ")}\n  token: ${tokenPath} (0600; never shown, never in chat)\n`);
+      if (target === "claude") {
+        const command = ["claude", "mcp", "add", "--scope", "user", "galahad", "--", bunPath, ...args];
+        if (flags.apply) {
+          const proc = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
+          if ((await proc.exited) !== 0) fail("`claude mcp add` failed; run the command below yourself");
+          console.log("Added to Claude Code (user scope). Restart Claude Code to load it.");
+        } else {
+          console.log(`Add it to Claude Code (or re-run with --apply):\n\n  ${command.map((c) => (/\s/.test(c) ? `"${c}"` : c)).join(" ")}\n`);
+        }
+      } else if (target === "opencode") {
+        console.log(
+          `Add to opencode.json (project) or ~/.config/opencode/opencode.json:\n\n${JSON.stringify({ mcp: { galahad: { type: "local", command: [bunPath, ...args], enabled: true } } }, null, 2)}\n`,
+        );
+      } else if (target === "codex") {
+        console.log(`Add to ~/.codex/config.toml:\n\n[mcp_servers.galahad]\ncommand = ${JSON.stringify(bunPath)}\nargs = ${JSON.stringify(args)}\n`);
+      } else {
+        console.log(
+          `Add to your Hermes config (mcp_servers):\n\nmcp_servers:\n  galahad:\n    command: ${JSON.stringify(bunPath)}\n    args: ${JSON.stringify(args)}\n\n${dim("Check Hermes's MCP docs for the exact key in your version.")}`,
+        );
+      }
+      return;
+    }
+
+    case "arms": {
+      const admin = new Admin(home);
+      if (sub === "revoke") {
+        if (!rest[0]) fail("usage: galahad arms revoke <label>");
+        const { revoked } = await admin.call("revokeArm", { label: rest[0] });
+        console.log(revoked ? `Revoked ${rest[0]}. Its MCP server will be refused from now on.` : `No arm named ${rest[0]}.`);
+        return;
+      }
+      const { arms } = await admin.call("arms");
+      if (!arms.length) console.log("No agents connected. `galahad mcp install claude` to add one.");
+      for (const a of arms) console.log(`  ${a.label.padEnd(18)} ${dim(a.scopes.join(", "))}  since ${new Date(a.createdAt).toLocaleDateString()}`);
       return;
     }
 

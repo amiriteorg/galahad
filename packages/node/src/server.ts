@@ -32,6 +32,7 @@ import { PairingError, type PairingHost, signedPost, type SyncEngine } from "@ga
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
+import { type ArmTokens, armQuest } from "./arms.ts";
 import type { Assets } from "./assets.ts";
 import type { Capabilities } from "./capabilities.ts";
 import { type Candidate, place } from "./placement.ts";
@@ -53,6 +54,7 @@ export interface AppContext {
   pairing: PairingHost;
   sync: SyncEngine;
   tokens: GatewayTokens;
+  arms: ArmTokens;
   adminToken: string;
   assets: Assets;
   caps: () => Capabilities | null;
@@ -66,8 +68,10 @@ export interface AppContext {
 
 interface Principal {
   device: string;
-  kind: "admin" | "node" | "client";
+  /** admin = you at a terminal · client = a paired device · node = a fleet node · arm = a coding agent via MCP */
+  kind: "admin" | "node" | "client" | "arm";
   scopes: Scope[];
+  label?: string;
 }
 
 class HttpError extends Error {
@@ -173,6 +177,13 @@ export function createApp(ctx: AppContext) {
   const adminBytes = utf8(ctx.adminToken);
 
   function authenticate(req: Request, body: Uint8Array, pathAndQuery: string, listener: Listener): Principal | null {
+    const armToken = req.headers.get("authorization")?.match(/^Bearer\s+(arm_\S+)$/)?.[1];
+    if (armToken) {
+      // Arm tokens are local credentials too: never valid over the tailnet or through tailscale serve.
+      if (listener !== "loopback") return null;
+      const arm = ctx.arms.verify(armToken);
+      return arm ? { device: `arm:${arm.label}`, kind: "arm", scopes: arm.scopes, label: arm.label } : null;
+    }
     const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(adm_\S+)$/)?.[1];
     if (bearer) {
       // The admin token is a local credential for the CLI; it is never valid over the tailnet listener.
@@ -320,11 +331,17 @@ export function createApp(ctx: AppContext) {
     recall: (input) => ({ memories: ctx.store.recall(input.q, input.limit ?? 50) }),
     remember: (input, p) => {
       guardAgainstSecrets(input.text, ...(input.tags ?? []));
+      // Only you write "owner" memories. Agents write "agent" ones; anything from outside is "untrusted".
+      const trust = input.untrusted ? "untrusted" : p.kind === "arm" ? "agent" : "owner";
       const event = ctx.store.remember(ctx.identity, input.text, {
         tags: input.tags,
-        prov: { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) },
+        prov: {
+          trust,
+          ...(p.kind === "client" ? { via: p.device } : {}),
+          ...(p.kind === "arm" ? { source: p.device } : {}),
+        },
       });
-      return { id: event.id };
+      return { id: event.id, trust };
     },
     forget: (input) => {
       ctx.store.emit(ctx.identity, "memory.forgotten", { memory: input.id });
@@ -457,25 +474,48 @@ export function createApp(ctx: AppContext) {
       onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
     createSandbox: (input, p) => {
       const { on, ...request } = input;
+      // An arm's sandboxes all belong to its own quest and are always ephemeral.
+      const scoped = p.kind === "arm" ? { ...request, quest: armQuest(p.label!), persistent: false } : request;
       // Creating may pull an image: long-running.
       return longRunning(
-        onNode(p, on, routes.createSandbox.path, request, async () => ({ sandbox: await ctx.sandbox!.create(request) })),
+        onNode(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped) })),
       );
     },
     execSandbox: (input, p) => {
-      const { on, ...rest } = input;
-      return longRunning(onNode(p, on, routes.execSandbox.path, rest, () => ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec)));
+      const { on, quest: relayed, ...rest } = input;
+      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
+      return longRunning(
+        onNode(p, on, routes.execSandbox.path, { ...rest, ...(quest ? { quest } : {}) }, async () => {
+          if (quest) {
+            const sandbox = await ctx.sandbox!.get(rest.id);
+            if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
+            if (sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
+          }
+          return ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec);
+        }),
+      );
     },
     destroySandbox: (input, p) => {
       // A request from you (CLI or a paired device) *is* the approval. A node may relay
-      // that approval; a node acting on its own goes through the oath gate.
-      const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.device;
-      return onNode(p, input.on, routes.destroySandbox.path, { id: input.id, ...(approver ? { onBehalfOf: approver } : {}) }, async () => {
-        const decision = await ctx.sandbox!.destroy(input.id, approver ? { approvedBy: approver } : {});
+      // that approval. An arm, or a node acting on its own, goes through the oath gate.
+      const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.kind === "arm" ? undefined : p.device;
+      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? input.quest : undefined;
+      const relay = { id: input.id, ...(approver ? { onBehalfOf: approver } : {}), ...(quest ? { quest } : {}) };
+      return onNode(p, input.on, routes.destroySandbox.path, relay, async () => {
+        const decision = await ctx.sandbox!.destroy(input.id, approver ? { approvedBy: approver } : quest ? { quest } : {});
         if (decision.verdict !== "allow") throw new HttpError(409, `the oath requires approval: ${decision.reason}`);
         return { ok: true };
       });
     },
+    arms: () => ({ arms: ctx.arms.list() }),
+    mintArm: (input) => {
+      try {
+        return ctx.arms.mint(input.label, input.scopes);
+      } catch (error) {
+        throw new HttpError(400, (error as Error).message);
+      }
+    },
+    revokeArm: (input) => ({ revoked: ctx.arms.revoke(input.label) }),
     buildSandboxImage: (input, p) =>
       longRunning(
         onNode(p, input.on, routes.buildSandboxImage.path, {}, async () => {

@@ -6,6 +6,7 @@ import { GatewayTokens } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } from "@galahad/sandbox";
+import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
 import { loadEnv } from "./env.ts";
@@ -51,6 +52,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const local = new Database(home.localPath, { create: true, strict: true });
   local.exec("PRAGMA journal_mode = WAL");
   const tokens = new GatewayTokens(local);
+  const arms = new ArmTokens(local);
 
   const port = env.GALAHAD_PORT ?? config.port;
   let caps = opts.capabilities ?? (await probeCapabilities());
@@ -98,6 +100,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     pairing,
     sync,
     tokens,
+    arms,
     adminToken: home.adminToken(),
     assets: await buildAssets(),
     caps: () => caps,

@@ -198,6 +198,25 @@ bun galahad sandbox rm <id>
 bun galahad ledger                                              # every action, with the oath's verdict
 ```
 
+## 10. Give your coding agents the mind (MCP)
+
+Any MCP-capable agent can share Galahad's memory and sandboxes: Claude Code, OpenCode, Codex, Hermes, and T3 Code through them.
+
+```sh
+bun galahad mcp install claude --apply     # mints an arm credential and runs `claude mcp add`
+bun galahad mcp install opencode           # prints the opencode.json snippet
+bun galahad mcp install codex              # prints the ~/.codex/config.toml snippet
+bun galahad arms                           # who's connected
+bun galahad arms revoke claude-code        # cut one off, instantly
+```
+
+The agent gets these tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `ledger` and `request_secret`, plus the Oath as a resource. Its credential is **least privilege**:
+
+- **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
+- **Sandboxes:** it may use and clean up only its own.
+- **Off-limits:** it can never touch the vault, devices, providers or the gateway.
+- **Local only:** the credential works on the loopback listener only.
+
 ## Troubleshooting
 
 | Symptom | Try |

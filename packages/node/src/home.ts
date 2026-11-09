@@ -93,6 +93,25 @@ export class Home {
     return importIdentity(serialized);
   }
 
+  // ---- arm tokens (MCP) ----------------------------------------------------
+
+  armTokenPath(label: string): string {
+    return join(this.dir, "arms", `${label}.token`);
+  }
+
+  writeArmToken(label: string, token: string): string {
+    const path = this.armTokenPath(label);
+    mkdirSync(join(this.dir, "arms"), { recursive: true, mode: 0o700 });
+    writeSecretFile(path, token);
+    return path;
+  }
+
+  readArmToken(label: string): string {
+    const path = this.armTokenPath(label);
+    if (!existsSync(path)) throw new Error(`no arm token for "${label}" — run \`galahad mcp install <target> --label ${label}\``);
+    return readFileSync(path, "utf8").trim();
+  }
+
   // ---- local admin credential ---------------------------------------------
 
   adminToken(): string {

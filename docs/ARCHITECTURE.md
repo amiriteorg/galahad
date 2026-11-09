@@ -223,6 +223,19 @@ Any node with Docker is a **sandbox host**; ultra is the first. A sandbox is whe
 
 Network reachability was verified on ultra before it was built. From an internal-network container, the gateway port is reachable only once the UFW rule exists. The internet, Coolify (8080) and Galahad's local port (7777) all stay blocked. 🔜 Next: KVM microVMs for code we have no reason to trust, per-sandbox disk quotas, and an egress allowlist for `online`.
 
+## 8¾. A mind for every arm (MCP) ✅
+
+`galahad mcp` is an MCP server (official SDK, stdio) that any agent harness launches next to a node. It talks to that node over loopback using an **arm token**.
+
+| Property | How |
+|---|---|
+| **Least privilege** | Arm tokens hold `mind:read`, `mind:write`, `sandbox`, `vault:read` (names only) and `chat`. `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write` are refused at mint time. The token works on loopback only, is stored as a hash and is revoked instantly with `galahad arms revoke`. |
+| **Provenance** | Memories written through an arm are `agent`, or `untrusted` when they come from the web, files or other people. They're never `owner`, and the arm's label is recorded as their source. |
+| **Contained** | Every sandbox an arm creates belongs to the quest `arm.<label>` and is always ephemeral. The arm can execute in and clean up only those. That holds across nodes too: forwarding relays the quest, never your approval. |
+| **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |
+
+Tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy`, `ledger`, `request_secret`. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
+
 ## 9. Growth & scale 🔜
 
 Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**
