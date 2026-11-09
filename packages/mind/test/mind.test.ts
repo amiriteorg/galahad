@@ -130,22 +130,23 @@ describe("one mind, many replicas", () => {
 });
 
 describe("authorization is part of the log's rules", () => {
-  test("events from an unenrolled device are rejected, and accepted once enrollment arrives", () => {
-    const { a, storeA } = twoNodeFleet();
+  test("events from unknown signers are parked (capped, never relayed), not written to the mind (review #8)", () => {
+    const { storeA } = twoNodeFleet();
     const stranger = newNodeIdentity();
     const replica = joinedReplica(storeA);
     syncInto(storeA, replica);
-
-    // The stranger writes before anyone enrolls it: stored, but rejected.
-    const strangerStore = joinedReplica(storeA);
-    syncInto(storeA, strangerStore);
-    const early = signEvent(
-      { v: 1, fleet: storeA.fleet!, hlc: new HlcClock().tick(), device: stranger.id, kind: "memory.added", body: { text: "hi" } },
-      stranger,
+    const junk = Array.from({ length: 5 }, (_, i) =>
+      signEvent(
+        { v: 2, fleet: storeA.fleet!, hlc: new HlcClock().tick(), device: stranger.id, prev: null, kind: "memory.added", body: { text: `junk ${i}` } },
+        stranger,
+      ),
     );
-    replica.ingest([early]);
-    expect(replica.rejection(early.id)).toContain("not an active device");
-    expect(replica.recall("hi")).toEqual([]);
+    replica.ingest(junk);
+    expect(replica.recall("junk")).toEqual([]);
+    expect(replica.event(junk[0]!.id)).toBeNull();
+    expect(replica.pendingCount()).toBe(5);
+    // Nothing parked is ever offered to peers.
+    expect(replica.eventsSince({}, 10_000).events.some((e) => e.device === stranger.id)).toBe(false);
   });
 
   test("a device enrolled later can write, and replicas agree regardless of arrival order", () => {

@@ -40,7 +40,28 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_order ON events (hlc, id);
 CREATE INDEX IF NOT EXISTS events_device ON events (device, hlc);
+-- Signed events whose signer is not (yet) enrolled: capped, never relayed, promoted on enrollment.
+CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, hlc TEXT NOT NULL, raw TEXT NOT NULL, received INTEGER NOT NULL);
 `;
+
+const MAX_PENDING = 2000;
+
+/** Chain verdicts computed over the whole log before a replay (deterministic). */
+interface Validity {
+  bad: Map<string, string>;
+  /** Devices that forked their own chain, and the first conflicting event. */
+  forks: Map<string, { hlc: string; id: string }>;
+}
+
+function samePins(a: Map<string, Set<string>>, b: Map<string, Set<string>>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [device, set] of a) {
+    const other = b.get(device);
+    if (!other || other.size !== set.size) return false;
+    for (const id of set) if (!other.has(id)) return false;
+  }
+  return true;
+}
 
 const VIEWS = `
 CREATE TABLE IF NOT EXISTS v_state (k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -84,6 +105,11 @@ export interface Memory {
   hlc: string;
 }
 
+export interface DeviceDigest {
+  n: number;
+  h: string;
+}
+
 export interface IngestResult {
   added: number;
   invalid: { id?: string; error: string }[];
@@ -102,6 +128,8 @@ export class MindStore {
   readonly db: Database;
   readonly clock: HlcClock;
   private readonly listeners = new Set<(event: GEvent) => void>();
+  /** Set only during a replay: chain verdicts for every event in the log. */
+  private validity: Validity | null = null;
 
   /** Called after each event this node writes (e.g. to push it to peers). */
   onEmit(listener: (event: GEvent) => void): () => void {
@@ -114,7 +142,12 @@ export class MindStore {
     this.db.exec(SCHEMA);
     this.db.exec(VIEWS);
     this.clock = clock;
-    const latest = this.db.query<{ hlc: string }, []>("SELECT hlc FROM events ORDER BY hlc DESC, id DESC LIMIT 1").get();
+    // Only accepted events move the clock (a rejected or junk timestamp must not).
+    const latest = this.db
+      .query<{ hlc: string }, []>(
+        "SELECT e.hlc FROM events e LEFT JOIN v_rejected r ON r.id = e.id WHERE r.id IS NULL ORDER BY e.hlc DESC, e.id DESC LIMIT 1",
+      )
+      .get();
     if (latest) this.safeObserve(latest.hlc);
   }
 
@@ -150,7 +183,16 @@ export class MindStore {
     const fleet = kind === "fleet.genesis" ? "" : this.fleet;
     if (fleet === null) throw new Error("replica has no fleet yet");
     const event = signEvent(
-      { v: 1, fleet, hlc: this.clock.tick(), device: signer.id, kind, body: body as Json, ...(prov ? { prov } : {}) },
+      {
+        v: 2,
+        fleet,
+        hlc: this.clock.tick(),
+        device: signer.id,
+        prev: this.head(signer.id),
+        kind,
+        body: body as Json,
+        ...(prov ? { prov } : {}),
+      },
       signer,
     );
     // Atomic: an event this node is not authorized to write never enters the log.
@@ -208,25 +250,82 @@ export class MindStore {
 
     let added = 0;
     let rebuilt = false;
+    const applied: GEvent[] = [];
     this.db.transaction(() => {
+      // Candidates: what just arrived, plus anything still waiting for its signer to be enrolled.
+      const seen = new Set<string>();
+      let candidates: GEvent[] = [];
+      const consider = (event: GEvent) => {
+        if (seen.has(event.id)) return;
+        seen.add(event.id);
+        candidates.push(event);
+      };
+      for (const event of fresh) consider(event);
+      for (const row of this.db.query<{ raw: string }, []>("SELECT raw FROM pending").all()) consider(JSON.parse(row.raw) as GEvent);
+
       const insert = this.db.query("INSERT OR IGNORE INTO events (id, hlc, device, kind, raw) VALUES (?, ?, ?, ?, ?)");
-      const inserted: GEvent[] = [];
-      for (const event of fresh) {
-        if (insert.run(event.id, event.hlc, event.device, event.kind, JSON.stringify(event)).changes) inserted.push(event);
+      const unpend = this.db.query("DELETE FROM pending WHERE id = ?");
+      // Enrollments inside a batch make more signers known, so admit in rounds.
+      for (let round = 0; round < 64 && candidates.length; round++) {
+        const ready = candidates.filter((event) => this.knownSigner(event));
+        if (!ready.length) break;
+        const readyIds = new Set(ready.map((event) => event.id));
+        candidates = candidates.filter((event) => !readyIds.has(event.id));
+        const inserted: GEvent[] = [];
+        for (const event of ready) {
+          unpend.run(event.id);
+          if (insert.run(event.id, event.hlc, event.device, event.kind, JSON.stringify(event)).changes) inserted.push(event);
+        }
+        if (!inserted.length) continue;
+        added += inserted.length;
+        applied.push(...inserted);
+        inserted.sort(compareEvents);
+        let tail = this.appliedTail();
+        for (const event of inserted) {
+          if (this.mustReplay(event, tail)) {
+            this.replay();
+            rebuilt = true;
+            break;
+          }
+          this.apply(event);
+          tail = event;
+        }
       }
-      added = inserted.length;
-      if (!added) return;
-      inserted.sort(compareEvents);
-      const tail = this.appliedTail();
-      if (tail && compareEvents(inserted[0]!, tail) <= 0) {
-        this.replay();
-        rebuilt = true;
-      } else {
-        for (const event of inserted) this.apply(event);
-      }
+
+      // Signed but from nobody we know: park it (capped, never relayed) instead of
+      // letting arbitrary keys grow every replica's log forever.
+      const freshIds = new Set(fresh.map((event) => event.id));
+      const park = this.db.query("INSERT OR IGNORE INTO pending (id, device, hlc, raw, received) VALUES (?, ?, ?, ?, ?)");
+      for (const event of candidates) if (freshIds.has(event.id)) park.run(event.id, event.device, event.hlc, JSON.stringify(event), Date.now());
+      this.db.exec(`DELETE FROM pending WHERE id IN (SELECT id FROM pending ORDER BY received DESC, id LIMIT -1 OFFSET ${MAX_PENDING})`);
     })();
-    for (const event of fresh) this.safeObserve(event.hlc);
+    // Only events that entered the mind and were accepted may move the clock.
+    for (const event of applied) if (!this.rejection(event.id)) this.safeObserve(event.hlc);
     return { added, invalid, rebuilt };
+  }
+
+  /** Genesis, the founder's own events, and anything from an enrolled (even since revoked) device. */
+  private knownSigner(event: GEvent): boolean {
+    if (event.kind === "fleet.genesis") return true;
+    const genesis = this.genesis;
+    return !!genesis && (genesis.device === event.device || !!this.device(event.device));
+  }
+
+  /** Cheap incremental apply is only sound when nothing can change earlier verdicts. */
+  private mustReplay(event: GEvent, tail: { hlc: string; id: string } | null): boolean {
+    if (tail && compareEvents(event, tail) <= 0) return true; // out of order
+    if (event.kind === "device.revoked" || event.kind === "fleet.chained") return true; // may invalidate history
+    if (event.v === 2 && (event.prev ?? null) !== this.head(event.device)) return true; // gap or fork
+    return false;
+  }
+
+  pendingCount(): number {
+    return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM pending").get()!.n;
+  }
+
+  /** The newest event of this device's chain (what its next event must point at). */
+  head(device: string): string | null {
+    return this.state<string>(`head:${device}`);
   }
 
   /** Drop every view and re-materialize from the log. Same events ⇒ same state. */
@@ -234,10 +333,103 @@ export class MindStore {
     this.db.transaction(() => this.replay())();
   }
 
+  /**
+   * Replay to a fixpoint: chain verdicts depend on which revocations are valid, and
+   * revocation validity depends on the replayed state. In practice: one pass without
+   * revocations, two with.
+   */
   private replay(): void {
-    for (const table of VIEW_TABLES) this.db.exec(`DELETE FROM ${table}`);
-    const rows = this.db.query<{ raw: string }, []>("SELECT raw FROM events ORDER BY hlc, id").all();
-    for (const row of rows) this.apply(JSON.parse(row.raw) as GEvent);
+    const events = this.db
+      .query<{ raw: string }, []>("SELECT raw FROM events ORDER BY hlc, id")
+      .all()
+      .map((row) => JSON.parse(row.raw) as GEvent);
+    let pins = new Map<string, Set<string>>();
+    for (let pass = 0; pass < 5; pass++) {
+      for (const table of VIEW_TABLES) this.db.exec(`DELETE FROM ${table}`);
+      this.validity = this.prescan(events, pins);
+      // Persist fork verdicts so the incremental path refuses a compromised device too.
+      for (const [device, at] of this.validity.forks) this.setState(`fork:${device}`, at);
+      try {
+        for (const event of events) this.apply(event);
+      } finally {
+        this.validity = null;
+      }
+      const next = this.revocationPins(events);
+      if (samePins(pins, next)) return;
+      pins = next;
+    }
+  }
+
+  /** Chain verdicts over the whole log: legacy allowlist, gaps, equivocation, revocation pins. */
+  private prescan(events: GEvent[], pins: Map<string, Set<string>>): Validity {
+    const bad = new Map<string, string>();
+    const genesis = events.find((event) => event.kind === "fleet.genesis");
+    const chained = genesis?.v === 2;
+    let legacy: Set<string> | null = null;
+    if (genesis && !chained) {
+      const adoption = events.find((event) => event.kind === "fleet.chained" && event.device === genesis.device);
+      if (adoption) legacy = new Set((adoption.body as { legacy: string[] }).legacy);
+    }
+    for (const event of events) {
+      if (event.v !== 1) continue;
+      if (chained) bad.set(event.id, "unchained event in a chained fleet");
+      else if (legacy && !legacy.has(event.id)) bad.set(event.id, "unchained event after the fleet adopted chains");
+    }
+
+    const forks = new Map<string, { hlc: string; id: string }>();
+    const byDevice = new Map<string, GEvent[]>();
+    for (const event of events) {
+      if (event.v !== 2) continue;
+      const list = byDevice.get(event.device) ?? [];
+      list.push(event);
+      byDevice.set(event.device, list);
+    }
+    for (const [device, list] of byDevice) {
+      const byId = new Map(list.map((event) => [event.id, event]));
+      const ids = new Set(byId.keys());
+      const children = new Map<string, GEvent[]>();
+      for (const event of list) {
+        const key = event.prev ?? "∅";
+        children.set(key, [...(children.get(key) ?? []), event]);
+      }
+      // Equivocation: two events claiming the same predecessor (or two "first" events).
+      let forkAt: GEvent | null = null;
+      for (const siblings of children.values()) {
+        if (siblings.length < 2) continue;
+        const first = [...siblings].sort(compareEvents)[0]!;
+        if (!forkAt || compareEvents(first, forkAt) < 0) forkAt = first;
+      }
+      if (forkAt) forks.set(device, { hlc: forkAt.hlc, id: forkAt.id });
+      const allowed = pins.get(device);
+      for (const event of list) {
+        const parent = event.prev ? byId.get(event.prev) : undefined;
+        if (event.prev && !ids.has(event.prev)) bad.set(event.id, "its predecessor is missing (chain gap)");
+        else if (parent && compareEvents(event, parent) <= 0) bad.set(event.id, "dated before its own predecessor");
+        else if (forkAt && compareEvents(event, forkAt) >= 0) bad.set(event.id, "the device forked its own chain (equivocation)");
+        else if (allowed && !allowed.has(event.id)) bad.set(event.id, "written after the device was revoked");
+        else if (event.prev && bad.has(event.prev)) bad.set(event.id, "follows an invalid event");
+      }
+    }
+    return { bad, forks };
+  }
+
+  /** From the replayed state: each validly revoked device may keep only the ancestors of its pinned head. */
+  private revocationPins(events: GEvent[]): Map<string, Set<string>> {
+    const pins = new Map<string, Set<string>>();
+    const byId = new Map(events.map((event) => [event.id, event]));
+    for (const event of events) {
+      if (event.kind !== "device.revoked" || this.rejection(event.id)) continue;
+      const body = event.body as { device: string; head?: string | null };
+      if (body.head === undefined || pins.has(body.device)) continue;
+      const allowed = new Set<string>();
+      let cursor = body.head ? byId.get(body.head) : undefined;
+      while (cursor && cursor.device === body.device && cursor.v === 2 && !allowed.has(cursor.id)) {
+        allowed.add(cursor.id);
+        cursor = cursor.prev ? byId.get(cursor.prev) : undefined;
+      }
+      pins.set(body.device, allowed);
+    }
+    return pins;
   }
 
   private appliedTail(): { hlc: string; id: string } | null {
@@ -268,20 +460,38 @@ export class MindStore {
 
   private apply(event: GEvent): void {
     this.setState("tail", { hlc: event.hlc, id: event.id });
-    const reason = this.applyKind(event);
+    let reason = this.chainReason(event);
+    // A chain-valid event advances its device's head even if it is later refused as unauthorized:
+    // the chain records what the device *signed*, authorization what it was *allowed* to do.
+    if (!reason && event.v === 2) this.setState(`head:${event.device}`, event.id);
+    if (!reason) reason = this.applyKind(event);
     if (reason) this.db.query("INSERT OR REPLACE INTO v_rejected (id, reason) VALUES (?, ?)").run(event.id, reason);
+  }
+
+  private chainReason(event: GEvent): string | null {
+    if (this.validity) return this.validity.bad.get(event.id) ?? null;
+    // Incremental path (mustReplay guarantees v2 events extend their device's head).
+    if (event.v === 2) {
+      const fork = this.state<{ hlc: string; id: string }>(`fork:${event.device}`);
+      return fork && compareEvents(event, fork) >= 0 ? "the device forked its own chain (equivocation)" : null;
+    }
+    const genesis = this.genesis;
+    if (genesis?.v === 2) return "unchained event in a chained fleet";
+    const legacy = this.state<string[]>("legacy");
+    if (legacy && !legacy.includes(event.id)) return "unchained event after the fleet adopted chains";
+    return null;
   }
 
   /** Returns a rejection reason, or null when applied. */
   private applyKind(event: GEvent): string | null {
     if (!isKnownKind(event.kind)) return null; // stored for forward compatibility; newer nodes understand it
     const signer = this.deviceAt(event.device, event.hlc);
-    const genesis = this.state<{ id: string; device: string; name: string }>("genesis");
+    const genesis = this.state<{ id: string; device: string; name: string; v?: number }>("genesis");
 
     if (event.kind === "fleet.genesis") {
       if (genesis) return "fleet already has a genesis";
       const body = bodyOf(event, "fleet.genesis");
-      this.setState("genesis", { id: event.id, device: event.device, name: body.name });
+      this.setState("genesis", { id: event.id, device: event.device, name: body.name, v: event.v });
       return null;
     }
     if (!genesis) return "no genesis yet";
@@ -306,6 +516,13 @@ export class MindStore {
     if (!signer) return "signer is not an active device";
 
     switch (event.kind) {
+      case "fleet.chained": {
+        if (event.device !== genesis.device) return "only the founding node adopts chains";
+        if (genesis.v === 2) return "this fleet has been chained since its founding";
+        if (this.state("legacy")) return "chains were already adopted";
+        this.setState("legacy", bodyOf(event, "fleet.chained").legacy);
+        return null;
+      }
       case "device.revoked": {
         if (!isFullNode(signer)) return "only full nodes may revoke";
         const body = bodyOf(event, "device.revoked");
@@ -424,7 +641,7 @@ export class MindStore {
 
   // ---- reading -------------------------------------------------------------
 
-  get genesis(): { id: string; device: string; name: string } | null {
+  get genesis(): { id: string; device: string; name: string; v?: number } | null {
     return this.state("genesis");
   }
 
@@ -502,18 +719,56 @@ export class MindStore {
     return Object.fromEntries(rows.map((r) => [r.device, r.hlc]));
   }
 
-  /** Events the peer described by `have` is missing, oldest first. */
-  eventsSince(have: Record<string, string>, limit = 500): { events: GEvent[]; more: boolean } {
+  /** Per device: how many events we hold and a hash of their ids (detects holes a frontier can't see). */
+  deviceDigests(): Record<string, DeviceDigest> {
+    const out: Record<string, DeviceDigest> = {};
+    for (const { device } of this.db.query<{ device: string }, []>("SELECT DISTINCT device FROM events").all()) {
+      out[device] = this.digestOf(device, null);
+    }
+    return out;
+  }
+
+  private digestOf(device: string, upTo: string | null): DeviceDigest {
+    const ids = this.db
+      .query<{ id: string }, [string, string]>("SELECT id FROM events WHERE device = ? AND hlc <= ? ORDER BY id")
+      .all(device, upTo ?? "999999999999999.999999")
+      .map((row) => row.id);
+    return { n: ids.length, h: sha256B64u(ids.join(",")) };
+  }
+
+  /**
+   * Events the peer described by `have` (+ optional `digests`) is missing, oldest first.
+   * When a digest shows the peer lacks something *below* its frontier (an event dated
+   * in the past, a partial delivery), that device's whole log is offered: a frontier
+   * alone could never surface it, and replicas would silently fork.
+   */
+  eventsSince(
+    have: Record<string, string>,
+    limit = 500,
+    digests?: Record<string, DeviceDigest>,
+  ): { events: GEvent[]; more: boolean } {
     const devices = this.db.query<{ device: string }, []>("SELECT DISTINCT device FROM events").all();
     const batch: GEvent[] = [];
+    const complete: GEvent[] = [];
     const perDevice = this.db.query<{ raw: string }, [string, string, number]>(
       "SELECT raw FROM events WHERE device = ? AND hlc > ? ORDER BY hlc, id LIMIT ?",
     );
     for (const { device } of devices) {
+      const theirs = digests?.[device];
+      if (theirs && have[device]) {
+        const ours = this.digestOf(device, have[device]!);
+        // Only when we hold at least as much below their frontier can we fill their hole;
+        // otherwise they are ahead of us and our own pull will catch up.
+        if (ours.h !== theirs.h && ours.n >= theirs.n) {
+          for (const row of perDevice.all(device, "", 1_000_000)) complete.push(JSON.parse(row.raw) as GEvent);
+          continue;
+        }
+      }
       for (const row of perDevice.all(device, have[device] ?? "", limit + 1)) batch.push(JSON.parse(row.raw) as GEvent);
     }
     batch.sort(compareEvents);
-    return { events: batch.slice(0, limit), more: batch.length > limit };
+    const page = batch.slice(0, limit);
+    return { events: [...complete, ...page].sort(compareEvents), more: batch.length > limit };
   }
 
   /** Most recent ledger entries, newest first (only from devices that were active when they wrote). */

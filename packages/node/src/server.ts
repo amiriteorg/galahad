@@ -162,7 +162,10 @@ export function streamedError(body: unknown): { error: string; status: number } 
   return null;
 }
 
-const SyncInput = z.strictObject({ have: z.record(z.string().max(100), z.string().max(32)) });
+const SyncInput = z.strictObject({
+  have: z.record(z.string().max(100), z.string().max(32)),
+  digests: z.record(z.string().max(100), z.strictObject({ n: z.number().int().min(0), h: z.string().max(64) })).optional(),
+});
 const PushInput = z.strictObject({ events: z.array(z.unknown()).max(500) });
 const StatusInput = z.strictObject({ invite: z.string().max(64), device: z.string().max(100), proof: z.string().max(100) });
 
@@ -587,8 +590,8 @@ export function createApp(ctx: AppContext) {
       if (!principal || principal.kind !== "node") throw new HttpError(401, "link requests must come from an enrolled node");
       const payload = JSON.parse(new TextDecoder().decode(body));
       if (path === "/link/sync") {
-        const { have } = SyncInput.parse(payload);
-        return json({ ...ctx.store.eventsSince(have, 500), presence: await ctx.presence() });
+        const { have, digests } = SyncInput.parse(payload);
+        return json({ ...ctx.store.eventsSince(have, 500, digests), presence: await ctx.presence() });
       }
       const { events } = PushInput.parse(payload);
       return json({ added: ctx.store.ingest(events).added });

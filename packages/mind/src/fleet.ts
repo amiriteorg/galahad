@@ -43,9 +43,28 @@ export function enrollDevice(store: MindStore, approver: NodeIdentity, input: En
 export function revokeDevice(store: MindStore, approver: NodeIdentity, device: string, reason: string) {
   const target = store.activeDevice(device);
   if (!target) throw new Error("unknown or already revoked device");
-  store.emit(approver, "device.revoked", { device, reason });
+  // Pin the chain head we have seen: whatever the revoked key signs later, at any
+  // claimed time, can never count.
+  store.emit(approver, "device.revoked", { device, reason, head: store.head(device) });
   if (target.kind === "node") return new Vault(store, approver).rotate();
   return { kid: null, resealed: [] as string[] };
+}
+
+/**
+ * Legacy (v1) fleets adopt hash chains once: the founding node lists every unchained
+ * event in its log, and no other unchained event is ever accepted again. Idempotent;
+ * a no-op on fleets chained since founding and on every node but the founder.
+ */
+export function adoptChains(store: MindStore, founder: NodeIdentity): number | null {
+  const genesis = store.genesis;
+  if (!genesis || genesis.v === 2 || genesis.device !== founder.id) return null;
+  if (store.db.query("SELECT 1 FROM events WHERE kind = 'fleet.chained' LIMIT 1").get()) return null;
+  const legacy = store.db
+    .query<{ id: string }, []>("SELECT id FROM events WHERE json_extract(raw, '$.v') = 1 ORDER BY hlc, id")
+    .all()
+    .map((row) => row.id);
+  store.emit(founder, "fleet.chained", { legacy });
+  return legacy.length;
 }
 
 export { MindStore };

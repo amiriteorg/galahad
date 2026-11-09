@@ -54,7 +54,18 @@ export const Bodies = {
     box: B64.optional(),
     scopes: z.array(Scope).max(32),
   }),
-  "device.revoked": z.strictObject({ device: DeviceRef, reason: z.string().max(500) }),
+  "device.revoked": z.strictObject({
+    device: DeviceRef,
+    reason: z.string().max(500),
+    /** The revoked device's chain head as the revoker saw it: nothing after it ever counts. */
+    head: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{43}$/)
+      .nullable()
+      .optional(),
+  }),
+  /** A legacy (v1) fleet adopts chains: exactly these unchained events stay valid, no others ever. */
+  "fleet.chained": z.strictObject({ legacy: z.array(z.string().regex(/^[A-Za-z0-9_-]{43}$/)).max(1400) }),
   "vault.key": z.strictObject({ kid: B64, grants: z.record(z.string(), SealedBoxSchema) }),
   "vault.grant": z.strictObject({ kid: B64, device: DeviceRef, box: SealedBoxSchema }),
   "secret.set": z.strictObject({ name: Name, kid: B64, nonce: B64, ct: B64, meta: SecretMeta }),
@@ -101,13 +112,23 @@ export const isKnownKind = (kind: string): kind is EventKind => Object.hasOwn(Bo
 
 export const MAX_EVENT_BYTES = 64 * 1024;
 
+const EventIdRef = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+
+/*
+ * v1: legacy, unchained.
+ * v2: chained. `prev` is the id of the same device's previous event (null for its
+ *     first). A device's events form one hash chain; revocation pins its head, so a
+ *     stolen key cannot add events "in the past", and a device that forks its own
+ *     chain (equivocates) is detected by every replica.
+ */
 export const EventEnvelope = z.strictObject({
-  v: z.literal(1),
-  id: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  v: z.union([z.literal(1), z.literal(2)]),
+  id: EventIdRef,
   /** Fleet id = id of the fleet.genesis event; empty only on the genesis event itself. */
   fleet: z.string().regex(/^([A-Za-z0-9_-]{43})?$/),
   hlc: z.string().refine(isHlc, "invalid hlc"),
   device: DeviceRef,
+  prev: EventIdRef.nullable().optional(),
   kind: z.string().regex(/^[a-z]+(\.[a-z_]+)+$/).max(64),
   body: z.unknown(),
   prov: Prov.optional(),
@@ -134,6 +155,8 @@ export function signEvent(unsigned: UnsignedEvent, signer: NodeIdentity): GEvent
 /** Structural parse + content-address check + signature check. Throws on any failure. */
 export function parseEvent(raw: unknown): GEvent {
   const event = EventEnvelope.parse(raw) as GEvent;
+  if (event.v === 2 && event.prev === undefined) throw new Error("v2 events must name their predecessor (prev)");
+  if (event.v === 1 && event.prev !== undefined) throw new Error("v1 events cannot be chained");
   if (canonical(event).length > MAX_EVENT_BYTES) throw new Error("event too large");
   if (!isNodeId(event.device)) throw new Error("only nodes sign log events");
   if (eventId(unsignedOf(event)) !== event.id) throw new Error("event id does not match content");

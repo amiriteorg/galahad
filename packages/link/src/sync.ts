@@ -48,7 +48,7 @@ export class SyncEngine {
           this.identity,
           peer.profile!.endpoint!,
           "/link/sync",
-          { have: this.store.frontier() },
+          { have: this.store.frontier(), digests: this.store.deviceDigests() },
           { fetch: this.opts.fetch, timeoutMs: 8000 },
         );
         presence = result.presence ?? presence;

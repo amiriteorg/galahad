@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { canonical, type NodeIdentity } from "@galahad/core";
 import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
-import { MindStore, Vault } from "@galahad/mind";
+import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
@@ -65,6 +65,14 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const sync = new SyncEngine(store, identity, { intervalMs: opts.syncIntervalMs, log });
   const stopPush = store.onEmit((event) => sync.push([event]));
   const pairing = new PairingHost(store, identity, endpoint);
+
+  // A legacy fleet's founder adopts hash chains once (no-op everywhere else).
+  try {
+    const adopted = adoptChains(store, identity);
+    if (adopted !== null) log(`adopted hash chains; ${adopted} legacy event(s) grandfathered, no others ever`);
+  } catch (error) {
+    log(`chain adoption failed: ${(error as Error).message}`);
+  }
 
   // Keys entered before origin pinning get pinned to where their provider points today.
   try {
