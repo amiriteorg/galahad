@@ -1,6 +1,15 @@
 import {
+  type ActionView,
   CLIENT_DEFAULT_SCOPES,
   type ChatStreamEvent,
+  ConnectorManifest,
+  type ConnectorView,
+  type FindingView,
+  isTimeZone,
+  type LoopTask,
+  type LoopView,
+  nextRun,
+  type NoticeView,
   type DeviceView,
   equalBytes,
   findSecrets,
@@ -18,8 +27,12 @@ import {
   verifyRequestSignature,
 } from "@galahad/core";
 import {
+  CATALOG,
   chat,
   GatewayTokens,
+  installedConnector,
+  installedConnectors,
+  keyState,
   handleGateway,
   listModels,
   originOf,
@@ -38,6 +51,8 @@ import { z, ZodError } from "zod";
 import { type ArmTokens, armQuest } from "./arms.ts";
 import type { Assets } from "./assets.ts";
 import type { Capabilities } from "./capabilities.ts";
+import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
+import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { type Candidate, place } from "./placement.ts";
 
 /**
@@ -67,6 +82,10 @@ export interface AppContext {
   sandbox?: SandboxHost | null;
   /** Build context for the sandbox image (repo `sandbox/`). */
   sandboxContext?: string;
+  connectors: ConnectorService;
+  loops: LoopRunner;
+  /** The heartbeat's checks, run here and now (no writes). */
+  heartbeatCheck: () => Promise<FindingView[]>;
 }
 
 interface Principal {
@@ -228,23 +247,8 @@ export function createApp(ctx: AppContext) {
     return resolveNode(best.device);
   }
 
-  /**
-   * Run here, or forward (signed, as this node) to the node that should run it.
-   * A request that another node forwarded always runs where it lands: never re-forwarded,
-   * so two nodes can never bounce work back and forth.
-   */
-  async function onNode<T>(
-    p: Principal,
-    on: string | undefined,
-    path: string,
-    body: Record<string, unknown>,
-    local: () => Promise<T>,
-  ): Promise<T> {
-    const target = p.kind === "node" ? null : on ? resolveNode(on) : ctx.sandbox ? null : placeSandbox();
-    if (!target || target.id === ctx.identity.id) {
-      if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
-      return local();
-    }
+  /** Send a request to another node, signed as this one; its errors come back as ours. */
+  async function forward<T>(target: Device, path: string, body: Record<string, unknown>): Promise<T> {
     if (!target.profile?.endpoint) throw new HttpError(424, `${target.name} has no reachable endpoint`);
     let result: T;
     try {
@@ -263,6 +267,26 @@ export function createApp(ctx: AppContext) {
     const failed = streamedError(result);
     if (failed) throw new HttpError(failed.status, `${target.name}: ${failed.error}`);
     return result;
+  }
+
+  /**
+   * Run here, or forward (signed, as this node) to the node that should run it.
+   * A request that another node forwarded always runs where it lands: never re-forwarded,
+   * so two nodes can never bounce work back and forth.
+   */
+  async function onNode<T>(
+    p: Principal,
+    on: string | undefined,
+    path: string,
+    body: Record<string, unknown>,
+    local: () => Promise<T>,
+  ): Promise<T> {
+    const target = p.kind === "node" ? null : on ? resolveNode(on) : ctx.sandbox ? null : placeSandbox();
+    if (!target || target.id === ctx.identity.id) {
+      if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
+      return local();
+    }
+    return forward<T>(target, path, body);
   }
 
   function candidates(): Candidate[] {
@@ -323,6 +347,101 @@ export function createApp(ctx: AppContext) {
     }
   }
 
+  const fullNode = (ref: string): Device => {
+    const node = resolveNode(ref);
+    if (!isFullNode(node)) throw new HttpError(400, `${ref} is not a full node, so it can't run loops`);
+    return node;
+  };
+
+  /** Where a new loop runs if you don't say: quests by a sandbox host, the rest on an always-on node. */
+  function defaultRunner(task: LoopTask): Device {
+    if (task.kind === "quest") return ctx.sandbox ? ctx.store.device(ctx.identity.id)! : placeSandbox();
+    if (ctx.caps()?.hasBattery !== true) return ctx.store.device(ctx.identity.id)!;
+    const server = ctx.store
+      .devices()
+      .find((d) => isFullNode(d) && (d.profile?.caps as Partial<Capabilities> | undefined)?.hasBattery === false);
+    return server ?? ctx.store.device(ctx.identity.id)!;
+  }
+
+  function loopViews(): LoopView[] {
+    const now = Date.now();
+    return loopRecords(ctx.store).map((loop) => {
+      const last = ctx.store.loopRuns(loop.name, 1)[0];
+      const since = Math.max(ctx.store.lastSlot(loop.name, loop.on) ?? Number.NEGATIVE_INFINITY, loop.updatedAt);
+      return {
+        name: loop.name,
+        schedule: loop.scheduleText,
+        tz: loop.tz,
+        on: loop.on,
+        onName: ctx.store.device(loop.on)?.name ?? null,
+        enabled: loop.enabled,
+        task: loop.task,
+        problem: loop.problem,
+        label: loop.label,
+        updatedAt: loop.updatedHlc,
+        next: loop.enabled && loop.schedule ? nextRun(loop.schedule, Number.isFinite(since) ? since : now, loop.tz) : null,
+        last: last ? runView(last) : null,
+        running: loop.on === ctx.identity.id ? ctx.loops.isRunning(loop.name) : null,
+      };
+    });
+  }
+
+  function connectorViews(): ConnectorView[] {
+    const installed = new Map(installedConnectors(ctx.store).map((c) => [c.id, c]));
+    const ids = [...new Set([...installed.keys(), ...Object.keys(CATALOG)])].sort();
+    return ids.map((id) => {
+      const mine = installed.get(id);
+      const catalog = Object.hasOwn(CATALOG, id) ? CATALOG[id] : undefined;
+      const manifest = mine?.manifest ?? catalog?.manifest ?? null;
+      const tools = Object.entries(manifest?.tools ?? {}).map(([name, tool]) => ({
+        name,
+        description: tool.description,
+        method: tool.method,
+        class: tool.class,
+        asks: tool.class === "outward" || tool.class === "delete",
+        params: Object.fromEntries(
+          Object.entries(tool.params ?? {}).map(([pname, param]) => [
+            pname,
+            { type: param.type, required: !!param.required || tool.path.includes(`{${pname}}`), description: param.description ?? null, enum: param.enum ?? null },
+          ]),
+        ),
+      }));
+      return {
+        id,
+        label: manifest?.label ?? id,
+        description: manifest?.description ?? null,
+        origin: manifest?.origin ?? null,
+        installed: !!mine,
+        key: mine?.manifest ? keyState(ctx.vault, mine.manifest) : manifest?.auth ? "missing" : "none-needed",
+        secret: manifest?.auth?.secret ?? null,
+        keyHelp: catalog?.keyHelp ?? null,
+        needsOrigin: !!catalog?.needsOrigin,
+        problem: mine?.problem ?? null,
+        tools,
+      };
+    });
+  }
+
+  function noticeViews(): NoticeView[] {
+    const rank = { alert: 0, warn: 1, info: 2 } as const;
+    return ctx.store
+      .lwwPrefix<NoticeView & { node?: string }>("notice:")
+      .map((entry) => {
+        const n = entry.value!;
+        return { key: n.key, severity: n.severity, title: n.title, body: n.body, source: n.source, node: n.node ?? null, at: n.at, dismissed: !!n.dismissed };
+      })
+      .sort((a, b) => rank[a.severity] - rank[b.severity] || b.at - a.at);
+  }
+
+  const connectorErrors = async <T>(work: () => Promise<T> | T): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof ConnectorCallError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
+
   type Handler = (input: any, principal: Principal, req: Request) => unknown;
   const handlers: Record<RouteName, Handler> = {
     whoami: (_input, p) => ({
@@ -363,6 +482,23 @@ export function createApp(ctx: AppContext) {
       // Pin the key to an origin taken from what you entered with it, or the built-in
       // preset. Never from a provider record, which someone else may have repointed.
       const known = input.provider ? preset(input.provider) : undefined;
+      // A key for a connector (named, or filling a request the connector filed) is pinned to the connector's origin.
+      const connectorId: string | undefined =
+        input.connector ??
+        (input.provider && !known && !providerRecord(ctx.store, input.provider) && (Object.hasOwn(CATALOG, input.provider) || installedConnector(ctx.store, input.provider))
+          ? input.provider
+          : undefined);
+      if (connectorId) {
+        const catalog = Object.hasOwn(CATALOG, connectorId) ? CATALOG[connectorId] : undefined;
+        const pinned = input.baseUrl
+          ? originOf(input.baseUrl)
+          : catalog?.manifest.origin && !catalog.needsOrigin
+            ? catalog.manifest.origin // built-in (constant)
+            : (installedConnector(ctx.store, connectorId)?.origin ?? null);
+        if (!pinned) throw new HttpError(400, `install the ${connectorId} connector first: its origin is where this key may go`);
+        const info = ctx.vault.set(input.name, input.value, { provider: connectorId, label: input.label, origin: pinned });
+        return { secret: secretView(info) };
+      }
       let origin: string | null = null;
       if (input.baseUrl) origin = originOf(input.baseUrl); // typed by you, next to the key
       else if (known?.baseUrl) origin = originOf(known.baseUrl); // built-in preset (constant)
@@ -545,6 +681,111 @@ export function createApp(ctx: AppContext) {
         if (decision.verdict !== "allow") throw new HttpError(409, `the oath requires approval: ${decision.reason}`);
         return { ok: true };
       });
+    },
+    loops: () => ({ loops: loopViews() }),
+    setLoop: (input) => {
+      const existing = loopRecords(ctx.store).find((l) => l.name === input.name);
+      if (!existing && (!input.schedule || !input.task)) throw new HttpError(400, "a new loop needs a schedule and a task");
+      const task: LoopTask | null = input.task ?? existing?.task ?? null;
+      if (!task) throw new HttpError(400, "this node can't read the loop's task; give it again");
+      const schedule: string = input.schedule ?? existing!.scheduleText;
+      const tz: string = input.tz ?? existing?.tz ?? "UTC";
+      if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);
+      try {
+        checkSchedule(schedule, tz, Date.now());
+      } catch (error) {
+        throw new HttpError(400, (error as Error).message);
+      }
+      // Loops replicate in plaintext and their text reaches models: no keys in them.
+      guardAgainstSecrets(JSON.stringify(task), input.label ?? "");
+      const keep = existing && ctx.store.activeDevice(existing.on) ? existing.on : null;
+      const on = input.on ? fullNode(input.on).id : (keep ?? defaultRunner(task).id);
+      const label: string | undefined = input.label ?? existing?.label ?? undefined;
+      ctx.store.emit(ctx.identity, "loop.set", {
+        name: input.name,
+        schedule,
+        tz,
+        on,
+        enabled: input.enabled ?? existing?.enabled ?? true,
+        task: task as unknown as Record<string, unknown>,
+        ...(label ? { label } : {}),
+      });
+      return { loop: loopViews().find((l) => l.name === input.name) };
+    },
+    removeLoop: (input) => {
+      if (!loopRecords(ctx.store).some((l) => l.name === input.name)) throw new HttpError(404, `no loop "${input.name}"`);
+      ctx.store.emit(ctx.identity, "loop.removed", { name: input.name });
+      return { ok: true };
+    },
+    runLoop: async (input, p) => {
+      const loop = loopRecords(ctx.store).find((l) => l.name === input.name);
+      if (!loop) throw new HttpError(404, `no loop "${input.name}"`);
+      if (loop.on === ctx.identity.id) {
+        try {
+          return { node: ctx.nodeName, ...ctx.loops.runNow(input.name) };
+        } catch (error) {
+          throw new HttpError(409, (error as Error).message);
+        }
+      }
+      // Forwarded requests run where they land, never onward.
+      if (p.kind === "node") throw new HttpError(409, `loop ${input.name} doesn't run on ${ctx.nodeName}`);
+      const runner = ctx.store.activeDevice(loop.on);
+      if (!runner) throw new HttpError(409, `loop ${input.name} has no runner (its node was revoked)`);
+      return forward(runner, routes.runLoop.path, { name: input.name });
+    },
+    loopRuns: (input) => ({ runs: ctx.store.loopRuns(input.name, input.limit ?? 20).map(runView) }),
+    notices: () => ({ notices: noticeViews() }),
+    dismissNotice: (input) => {
+      if (!ctx.store.lww(`notice:${input.key}`)?.value) throw new HttpError(404, "no such notice");
+      ctx.store.emit(ctx.identity, "notice.dismissed", { key: input.key });
+      return { ok: true };
+    },
+    heartbeat: async () => ({ node: ctx.nodeName, findings: await ctx.heartbeatCheck() }),
+    connectors: () => ({ connectors: connectorViews() }),
+    setConnector: (input) => {
+      let manifest: ConnectorManifest;
+      if (input.manifest) {
+        const parsed = ConnectorManifest.safeParse(input.manifest);
+        if (!parsed.success) {
+          throw new HttpError(400, `not a valid connector: ${parsed.error.issues.map((i) => `${i.path.join(".") || "manifest"}: ${i.message}`).join("; ")}`);
+        }
+        if (parsed.data.id !== input.id) throw new HttpError(400, `the manifest's id is "${parsed.data.id}", not "${input.id}"`);
+        manifest = parsed.data;
+      } else {
+        const catalog = Object.hasOwn(CATALOG, input.id) ? CATALOG[input.id] : undefined;
+        if (!catalog) throw new HttpError(404, `no "${input.id}" in the catalog (${Object.keys(CATALOG).join(", ")}); give a manifest for your own`);
+        const origin = catalog.needsOrigin ? (input.origin ? originOf(input.origin) : null) : catalog.manifest.origin;
+        if (!origin) throw new HttpError(400, `${catalog.manifest.label} runs at an address of yours: give its origin (e.g. http://homeassistant.local:8123)`);
+        const parsed = ConnectorManifest.safeParse({ ...catalog.manifest, origin });
+        if (!parsed.success) throw new HttpError(400, parsed.error.issues.map((i) => i.message).join("; "));
+        manifest = parsed.data;
+      }
+      // Manifests replicate in plaintext: a key pasted into a description or header must never land there.
+      guardAgainstSecrets(JSON.stringify({ ...manifest, tools: Object.fromEntries(Object.entries(manifest.tools).map(([k, t]) => [k, t.description])) }));
+      ctx.store.emit(ctx.identity, "connector.set", { id: manifest.id, manifest: manifest as unknown as Record<string, unknown> });
+      return { connector: connectorViews().find((c) => c.id === manifest.id) };
+    },
+    removeConnector: (input) => {
+      if (!installedConnector(ctx.store, input.id) && !ctx.store.lww(`connector:${input.id}`)?.value) throw new HttpError(404, `${input.id} isn't installed`);
+      ctx.store.emit(ctx.identity, "connector.removed", { id: input.id });
+      return { ok: true };
+    },
+    callConnector: (input, p) =>
+      connectorErrors(() =>
+        ctx.connectors.call(
+          input,
+          p.kind === "admin" || p.kind === "client"
+            ? { kind: "owner", device: p.device }
+            : p.kind === "arm"
+              ? { kind: "agent", by: `arm:${p.label}`, quest: armQuest(p.label!) }
+              : { kind: "agent", by: `node:${ctx.store.device(p.device)?.name ?? p.device}` },
+        ),
+      ),
+    actions: (): { actions: ActionView[] } => ({ actions: ctx.connectors.actions() }),
+    decideAction: (input, p) => {
+      // Only you decide: never another node, never an agent (arms can't hold fleet:admin anyway).
+      if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can answer an action request");
+      return connectorErrors(() => ({ action: ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note) }));
     },
     arms: () => ({ arms: ctx.arms.list() }),
     mintArm: (input) => {

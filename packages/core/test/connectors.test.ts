@@ -1,0 +1,117 @@
+import { describe, expect, test } from "bun:test";
+import { buildRequest, ConnectorError, ConnectorManifest, isPrivateHost } from "../src/index.ts";
+
+const base = {
+  id: "forge",
+  label: "Forge",
+  origin: "https://api.forge.test",
+  auth: { secret: "forge", scheme: "bearer" as const },
+  tools: {
+    repo: {
+      description: "A repo.",
+      method: "GET" as const,
+      path: "/repos/{owner}/{repo}",
+      params: { owner: { type: "string" as const, pattern: "[a-z0-9-]{1,40}" }, repo: { type: "string" as const } },
+      class: "read" as const,
+    },
+    issues: {
+      description: "Issues.",
+      method: "GET" as const,
+      path: "/issues",
+      params: { state: { type: "string" as const, enum: ["open", "closed"] }, per_page: { type: "integer" as const } },
+      class: "read" as const,
+    },
+    open: {
+      description: "Open an issue.",
+      method: "POST" as const,
+      path: "/repos/{owner}/issues",
+      params: { owner: { type: "string" as const }, title: { type: "string" as const, required: true }, draft: { type: "boolean" as const } },
+      class: "outward" as const,
+    },
+  },
+};
+const forge = ConnectorManifest.parse(base);
+const withTool = (tool: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  ConnectorManifest.safeParse({ ...base, ...extra, tools: { t: { description: "t", ...tool } } });
+
+describe("connector manifests", () => {
+  test("the HTTP method bounds the oath class a tool may claim", () => {
+    expect(withTool({ method: "GET", path: "/x", class: "read" }).success).toBe(true);
+    expect(withTool({ method: "GET", path: "/x", class: "delete" }).success).toBe(false);
+    expect(withTool({ method: "DELETE", path: "/x", class: "modify" }).success).toBe(false);
+    expect(withTool({ method: "DELETE", path: "/x", class: "delete" }).success).toBe(true);
+    expect(withTool({ method: "POST", path: "/x", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "POST", path: "/x", class: "create" }).success).toBe(true);
+  });
+
+  test("paths are plain templates: every placeholder declared, no dot segments", () => {
+    expect(withTool({ method: "GET", path: "/a/{b}", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "/a/{b}", params: { b: { type: "string", in: "query" } }, class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "/a/../b", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "//evil.test/b", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "/a/{b", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "relative", class: "read" }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "/a", params: { q: { type: "string", in: "body" } }, class: "read" }).success).toBe(false);
+  });
+
+  test("a manifest never carries credentials or steers routing", () => {
+    for (const header of ["Authorization", "Cookie", "Host", "Proxy-Authorization"]) {
+      expect(withTool({ method: "GET", path: "/x", class: "read" }, { headers: { [header]: "x" } }).success).toBe(false);
+    }
+    expect(withTool({ method: "GET", path: "/x", class: "read" }, { headers: { "x-token": "ghp_0123456789abcdefghijABCDEFGHIJ0123456789" } }).success).toBe(false);
+    expect(withTool({ method: "GET", path: "/x", class: "read" }, { headers: { accept: "application/vnd.github+json" } }).success).toBe(true);
+    expect(withTool({ method: "GET", path: "/x", class: "read" }, { auth: { secret: "forge", scheme: "header" } }).success).toBe(false);
+  });
+
+  test("origins are https, or plain http on this machine and private networks", () => {
+    for (const origin of ["https://api.github.com", "http://127.0.0.1:8123", "http://homeassistant.local:8123", "http://192.168.1.20", "http://100.101.102.103:7777"]) {
+      expect(withTool({ method: "GET", path: "/x", class: "read" }, { origin }).success).toBe(true);
+    }
+    for (const origin of ["http://api.github.com", "https://api.github.com/v3", "ftp://x.test", "https://a.test?x=1", "javascript:alert(1)"]) {
+      expect(withTool({ method: "GET", path: "/x", class: "read" }, { origin }).success).toBe(false);
+    }
+    expect(isPrivateHost("172.20.0.1")).toBe(true);
+    expect(isPrivateHost("172.32.0.1")).toBe(false);
+    expect(isPrivateHost("8.8.8.8")).toBe(false);
+  });
+});
+
+describe("building a request", () => {
+  test("arguments fill the path, the query or the JSON body", () => {
+    expect(buildRequest(forge, "repo", { owner: "amiriteorg", repo: "galahad" })).toMatchObject({
+      method: "GET",
+      url: "https://api.forge.test/repos/amiriteorg/galahad",
+      class: "read",
+      target: "GET /repos/amiriteorg/galahad",
+    });
+    expect(buildRequest(forge, "issues", { state: "open", per_page: 5 }).url).toBe("https://api.forge.test/issues?state=open&per_page=5");
+    const open = buildRequest(forge, "open", { owner: "amiriteorg", title: "Hello", draft: true });
+    expect(open).toMatchObject({ method: "POST", class: "outward", url: "https://api.forge.test/repos/amiriteorg/issues" });
+    expect(JSON.parse(open.body!)).toEqual({ title: "Hello", draft: true });
+  });
+
+  test("hostile values stay inside their path segment and never leave the origin", () => {
+    const sneaky = ConnectorManifest.parse({ ...base, tools: { t: { description: "t", method: "GET", path: "/{a}/x", params: { a: { type: "string" } }, class: "read" } } });
+    for (const value of ["../admin", "@evil.test", "a/../../b", "%2e%2e", "x?y=1#z", "\\\\evil.test"]) {
+      const built = buildRequest(sneaky, "t", { a: value });
+      expect(new URL(built.url).origin).toBe("https://api.forge.test");
+      expect(new URL(built.url).pathname.split("/")).toHaveLength(3);
+    }
+    expect(() => buildRequest(sneaky, "t", { a: ".." })).toThrow(ConnectorError);
+    expect(() => buildRequest(sneaky, "t", { a: "." })).toThrow(ConnectorError);
+    expect(() => buildRequest(sneaky, "t", { a: "" })).toThrow(ConnectorError);
+  });
+
+  test("arguments are checked against the tool's params", () => {
+    expect(() => buildRequest(forge, "nope")).toThrow(/has no tool/);
+    expect(() => buildRequest(forge, "repo", { owner: "a", repo: "b", extra: "x" })).toThrow(/takes no "extra"/);
+    expect(() => buildRequest(forge, "repo", { owner: "a" })).toThrow(/needs repo/);
+    expect(() => buildRequest(forge, "repo", { owner: "Not Allowed!", repo: "b" })).toThrow(/doesn't match/);
+    expect(() => buildRequest(forge, "repo", { owner: "a\nb", repo: "b" })).toThrow(/doesn't match/);
+    expect(() => buildRequest(forge, "issues", { state: "merged" })).toThrow(/one of/);
+    expect(() => buildRequest(forge, "issues", { per_page: 1.5 })).toThrow(/whole number/);
+    expect(() => buildRequest(forge, "open", { owner: "a" })).toThrow(/needs title/);
+    expect(() => buildRequest(forge, "open", { owner: "a", title: "t", draft: "yes" })).toThrow(/true or false/);
+    expect(() => buildRequest(forge, "toString")).toThrow(/has no tool/);
+  });
+});

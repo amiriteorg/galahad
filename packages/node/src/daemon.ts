@@ -9,6 +9,10 @@ import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } fr
 import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
+import { ConnectorService } from "./connectors.ts";
+import { assess } from "./heartbeat.ts";
+import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
+import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
@@ -19,6 +23,8 @@ export interface Daemon {
   identity: NodeIdentity;
   store: MindStore;
   sync: SyncEngine;
+  loops: LoopRunner;
+  connectors: ConnectorService;
   stop(): Promise<void>;
 }
 
@@ -29,6 +35,32 @@ export interface DaemonOptions {
   proxyPort?: number;
   /** Skip the (slow) hardware probe; used by tests. */
   capabilities?: Capabilities;
+  /** How often the loop runner wakes (default 15 s). */
+  loopIntervalMs?: number;
+  /** Let the fleet's founding node create the default heartbeat loop (default true; GALAHAD_HEARTBEAT=off disables). */
+  defaultHeartbeat?: boolean;
+  /** Outbound fetch for connectors (tests). */
+  fetch?: typeof fetch;
+}
+
+/**
+ * The fleet's founder gives Galahad a heartbeat once: every 30 minutes on an
+ * always-on node. Never again after that, so a heartbeat you removed stays removed.
+ */
+function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabilities): void {
+  if (store.genesis?.device !== identity.id || store.lww("loop:heartbeat")) return;
+  const server = caps.hasBattery
+    ? store.devices().find((d) => d.kind === "node" && d.role === "full" && (d.profile?.caps as Partial<Capabilities> | undefined)?.hasBattery === false)
+    : undefined;
+  store.emit(identity, "loop.set", {
+    name: "heartbeat",
+    schedule: "every 30m",
+    tz: "UTC",
+    on: server?.id ?? identity.id,
+    enabled: true,
+    task: { kind: "heartbeat" },
+    label: "Galahad's regular look around",
+  });
 }
 
 /** No request may make a node buffer more than this (Bun's default is about 128 MB). */
@@ -122,6 +154,26 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   }
 
+  const startedAt = Date.now();
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch });
+  const taskDeps: LoopTaskDeps = {
+    store,
+    vault,
+    identity,
+    nodeName: config.name,
+    sync,
+    caps: () => caps,
+    sandbox,
+    connectors,
+    arms,
+    port,
+    home: home.dir,
+    startedAt,
+    log,
+    fetch: opts.fetch,
+  };
+  const loops = new LoopRunner({ store, identity, local, log, execute: loopExecutor(taskDeps) });
+
   const app = createApp({
     identity,
     nodeName: config.name,
@@ -139,6 +191,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     log,
     sandbox,
     sandboxContext: resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox"),
+    connectors,
+    loops,
+    heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
   });
 
   // Loopback: the CLI and the local model gateway (local processes only).
@@ -175,6 +230,19 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // Advertise the endpoint only once we are actually listening on it.
   publishProfile(store, identity, endpoint, caps);
   sync.start();
+
+  // Loops and the outbox start once the API they call is listening.
+  if ((opts.defaultHeartbeat ?? true) && process.env.GALAHAD_HEARTBEAT !== "off") {
+    try {
+      ensureHeartbeat(store, identity, caps);
+    } catch (error) {
+      log(`default heartbeat not created: ${(error as Error).message}`);
+    }
+  }
+  loops.start(opts.loopIntervalMs);
+  const drain = () => connectors.drain().catch((error) => log(`outbox: ${(error as Error).message}`));
+  void drain();
+  const outbox = setInterval(drain, 5_000);
   const refresh = opts.capabilities
     ? null
     : setInterval(async () => {
@@ -183,7 +251,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       }, 5 * 60_000);
 
   log(
-    `node ${config.name} up · fleet ${store.genesis?.name} · ${endpoint} · vault ${vault.unlocked() ? "unlocked" : "locked"}${sandbox ? " · sandbox host" : ""}`,
+    `node ${config.name} up · fleet ${store.genesis?.name} · ${endpoint} · vault ${vault.unlocked() ? "unlocked" : "locked"}${sandbox ? " · sandbox host" : ""} · ${loops.mine().length} loop(s) here of ${loopRecords(store).length}`,
   );
   return {
     port,
@@ -191,7 +259,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     identity,
     store,
     sync,
+    loops,
+    connectors,
     async stop() {
+      clearInterval(outbox);
+      await loops.stop();
+      await connectors.drain();
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
       stopPush();

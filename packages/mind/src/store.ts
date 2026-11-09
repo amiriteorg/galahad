@@ -618,6 +618,74 @@ export class MindStore {
         this.db.query("DELETE FROM v_memories_fts WHERE id = ?").run(memory);
         return null;
       }
+      case "loop.set": {
+        if (!isFullNode(signer)) return "only full nodes may define loops";
+        const body = bodyOf(event, "loop.set");
+        if (!isFullNode(this.deviceAt(body.on, event.hlc))) return "a loop runs on an active full node";
+        this.putLww(`loop:${body.name}`, event, body as Json);
+        return null;
+      }
+      case "loop.removed": {
+        if (!isFullNode(signer)) return "only full nodes may remove loops";
+        this.putLww(`loop:${bodyOf(event, "loop.removed").name}`, event, null);
+        return null;
+      }
+      case "loop.ran":
+        // A record of what that node did; read straight from the log (see loopRuns).
+        return signer.kind === "node" ? null : "only nodes run loops";
+      case "notice.raised": {
+        const body = bodyOf(event, "notice.raised");
+        this.putLww(`notice:${body.key}`, event, { ...body, dismissed: false } as Json);
+        return null;
+      }
+      case "notice.cleared": {
+        this.putLww(`notice:${bodyOf(event, "notice.cleared").key}`, event, null);
+        return null;
+      }
+      case "notice.dismissed": {
+        const { key } = bodyOf(event, "notice.dismissed");
+        const current = this.lww<Record<string, Json>>(`notice:${key}`);
+        if (!current?.value) return "no such notice";
+        this.putLww(`notice:${key}`, event, { ...current.value, dismissed: true });
+        return null;
+      }
+      case "connector.set": {
+        if (!isFullNode(signer)) return "only full nodes may install connectors";
+        const body = bodyOf(event, "connector.set");
+        this.putLww(`connector:${body.id}`, event, body.manifest as Json);
+        return null;
+      }
+      case "connector.removed": {
+        if (!isFullNode(signer)) return "only full nodes may remove connectors";
+        this.putLww(`connector:${bodyOf(event, "connector.removed").id}`, event, null);
+        return null;
+      }
+      case "action.requested": {
+        if (!isFullNode(signer)) return "only full nodes may file actions";
+        const body = bodyOf(event, "action.requested");
+        if (this.lww(`action:${body.id}`)) return "action already filed";
+        this.putLww(`action:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "action.decided": {
+        if (!isFullNode(signer)) return "only full nodes may record decisions";
+        const body = bodyOf(event, "action.decided");
+        if (!this.lww(`action:${body.id}`)) return "no such action";
+        // The first decision stands: an approval can't be flipped after the fact, nor a refusal.
+        if (this.lww(`action-decision:${body.id}`)) return "action already decided";
+        this.putLww(`action-decision:${body.id}`, event, { ...body, ...(event.prov?.via ? { via: event.prov.via } : {}) } as Json);
+        return null;
+      }
+      case "action.done": {
+        const body = bodyOf(event, "action.done");
+        const request = this.lww(`action:${body.id}`);
+        if (!request) return "no such action";
+        if (request.device !== event.device) return "only the node that filed an action completes it";
+        if (this.lww<{ verdict: string }>(`action-decision:${body.id}`)?.value?.verdict !== "approved") return "action was not approved";
+        if (this.lww(`action-done:${body.id}`)) return "action already done";
+        this.putLww(`action-done:${body.id}`, event, body as Json);
+        return null;
+      }
       default:
         return null;
     }
@@ -788,6 +856,42 @@ export class MindStore {
       .map((row) => JSON.parse(row.raw) as GEvent & { body: BodyOf<"ledger.recorded"> })
       .filter((event) => !this.rejection(event.id))
       .slice(0, limit);
+  }
+
+  /** Recent runs of one loop (or of all), newest first, from devices that were active when they wrote. */
+  loopRuns(loop?: string, limit = 20): (GEvent & { body: BodyOf<"loop.ran"> })[] {
+    const rows = loop
+      ? this.db
+          .query<{ raw: string }, [string, number]>(
+            "SELECT raw FROM events WHERE kind = 'loop.ran' AND json_extract(raw, '$.body.loop') = ? ORDER BY hlc DESC, id DESC LIMIT ?",
+          )
+          .all(loop, limit * 2)
+      : this.db
+          .query<{ raw: string }, [number]>("SELECT raw FROM events WHERE kind = 'loop.ran' ORDER BY hlc DESC, id DESC LIMIT ?")
+          .all(limit * 2);
+    return rows
+      .map((row) => JSON.parse(row.raw) as GEvent & { body: BodyOf<"loop.ran"> })
+      .filter((event) => !this.rejection(event.id))
+      .slice(0, limit);
+  }
+
+  /** The latest scheduled slot a device has recorded for a loop (null: it never ran on schedule). */
+  lastSlot(loop: string, device: string): number | null {
+    const row = this.db
+      .query<{ slot: number | null }, [string, string]>(
+        `SELECT MAX(json_extract(e.raw, '$.body.slot')) AS slot FROM events e LEFT JOIN v_rejected r ON r.id = e.id
+         WHERE e.kind = 'loop.ran' AND e.device = ? AND json_extract(e.raw, '$.body.loop') = ? AND r.id IS NULL`,
+      )
+      .get(device, loop);
+    return row?.slot ?? null;
+  }
+
+  /** Devices caught signing two different histories (a stolen key, or worse). */
+  forks(): string[] {
+    return this.db
+      .query<{ k: string }, []>("SELECT k FROM v_state WHERE k LIKE 'fork:%' ORDER BY k")
+      .all()
+      .map((row) => row.k.slice("fork:".length));
   }
 
   event(id: string): GEvent | null {

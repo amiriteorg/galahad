@@ -9,6 +9,7 @@ import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
+import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
@@ -51,6 +52,23 @@ Work
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox build [--on ultra]      build the sandbox image on a host
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
+
+Loops (work on a schedule, on one node; every run is recorded in the mind)
+  loop ls | loop runs [name] | loop run <name> | loop pause|resume|rm <name>
+  loop add <name> (--every 30m | --cron "0 7 * * 1-5") [--tz Europe/Copenhagen] [--on ultra] [--label text]
+       --heartbeat [--checklist "…"]                    look around; notices in your inbox
+     | --quest "<goal>" [--net isolated|gateway|online] [--steps 20]
+     | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
+  loop set <name> [same options]  change a loop (what you leave out stays)
+  heartbeat                       run the heartbeat's checks now and print what they find
+  notices [--all] | notice dismiss <key>
+
+Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
+  connector ls | connector tools <id> | connector rm <id>
+  connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json
+  connector call <id>.<tool> [--arg key=value …] [--why "…"]
+  secret set <name> --connector <id>                    a connector's key, pinned to its origin
+  action ls [--all] | action approve <id> [--note …] | action deny <id>
 
 Agents (MCP)
   mcp install claude|opencode|codex|hermes [--label name] [--apply]
@@ -195,6 +213,19 @@ async function main(): Promise<void> {
       steps: { type: "string" },
       arm: { type: "string" },
       apply: { type: "boolean" },
+      every: { type: "string" },
+      cron: { type: "string" },
+      tz: { type: "string" },
+      heartbeat: { type: "boolean" },
+      checklist: { type: "string" },
+      quest: { type: "string" },
+      call: { type: "string" },
+      arg: { type: "string", multiple: true },
+      why: { type: "string" },
+      note: { type: "string" },
+      manifest: { type: "string" },
+      all: { type: "boolean" },
+      connector: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -442,7 +473,7 @@ Next:
       if (sub === "set") {
         if (!rest[0]) fail("usage: galahad secret set <name>");
         const value = await readSecret(`Value for ${rest[0]} (hidden): `);
-        await admin.call("setSecret", { name: rest[0], value, provider: str("provider"), label: str("label") });
+        await admin.call("setSecret", { name: rest[0], value, provider: str("provider"), label: str("label"), connector: str("connector") });
         console.log("Sealed into the vault.");
       } else if (sub === "rm") {
         if (!rest[0]) fail("usage: galahad secret rm <name>");
@@ -740,6 +771,25 @@ Next:
       for (const a of arms) console.log(`  ${a.label.padEnd(18)} ${dim(a.scopes.join(", "))}  since ${new Date(a.createdAt).toLocaleDateString()}`);
       return;
     }
+
+    case "loop":
+      await loopCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "heartbeat":
+      await heartbeatCommand(new Admin(home));
+      return;
+    case "notices":
+    case "notice":
+      await noticeCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "connector":
+    case "connectors":
+      await connectorCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "action":
+    case "actions":
+      await actionCommand(new Admin(home), sub, rest, flags);
+      return;
 
     case "rebuild": {
       const config = home.readConfig();

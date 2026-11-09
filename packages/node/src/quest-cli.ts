@@ -84,7 +84,19 @@ const VERDICT: Record<QuestOutcome["status"], string> = {
   stopped: "■ Stopped.",
 };
 
-export async function questFromCli(node: NodeClient, options: DoOptions): Promise<QuestOutcome> {
+export interface NodeQuestHooks {
+  emit?(event: QuestEvent): void;
+  signal?: AbortSignal;
+  /** Once the sandbox exists. */
+  started?(info: { quest: string; sandbox: SandboxView; host: string }): void;
+}
+
+/**
+ * One quest through a node's API: a fresh sandbox, the pure loop, cleanup, and the
+ * outcome remembered. The CLI and loops both run quests this way; the node decides
+ * what the caller may do (an arm's or a loop's sandboxes are always its own and ephemeral).
+ */
+export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: NodeQuestHooks = {}): Promise<{ outcome: QuestOutcome; quest: string }> {
   const quest = `q-${Date.now().toString(36)}`;
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
@@ -94,17 +106,7 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   // Sandboxes name their host by device id; people (and the engineer) know it by name.
   const fleet = await node.call<FleetView>("fleet").catch(() => null);
   const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
-  console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
-
-  const controller = new AbortController();
-  let interrupts = 0;
-  const onInterrupt = (): void => {
-    interrupts += 1;
-    if (interrupts > 1) process.exit(130);
-    controller.abort();
-    process.stderr.write(dim("\n[stopping after this step; Ctrl-C again to quit now]\n"));
-  };
-  process.on("SIGINT", onInterrupt);
+  hooks.started?.({ quest, sandbox, host });
 
   let outcome: QuestOutcome;
   try {
@@ -123,19 +125,13 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
         },
         exec: (command, timeoutSec) =>
           node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node }),
-        emit: print,
-        signal: controller.signal,
+        emit: hooks.emit,
+        signal: hooks.signal,
       },
     );
   } finally {
-    process.off("SIGINT", onInterrupt);
-    if (options.keep) console.log(dim(`[sandbox kept: galahad sandbox exec ${sandbox.id} --on ${host} -- …]`));
-    else await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
+    if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
-
-  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions`)}`);
-  console.log(indent(outcome.summary.trim()));
-  if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
 
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
@@ -143,5 +139,36 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     [`Quest (${outcome.status}): ${options.goal}`, outcome.summary.trim(), outcome.review ? `Reviewer: ${outcome.review.trim()}` : ""].filter(Boolean).join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
+  return { outcome, quest };
+}
+
+export async function questFromCli(node: NodeClient, options: DoOptions): Promise<QuestOutcome> {
+  const controller = new AbortController();
+  let interrupts = 0;
+  const onInterrupt = (): void => {
+    interrupts += 1;
+    if (interrupts > 1) process.exit(130);
+    controller.abort();
+    process.stderr.write(dim("\n[stopping after this step; Ctrl-C again to quit now]\n"));
+  };
+  process.on("SIGINT", onInterrupt);
+
+  let outcome: QuestOutcome;
+  try {
+    ({ outcome } = await runNodeQuest(node, options, {
+      emit: print,
+      signal: controller.signal,
+      started: ({ quest, sandbox, host }) => {
+        console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
+        if (options.keep) console.log(dim(`[the sandbox is kept afterwards: galahad sandbox exec ${sandbox.id} --on ${host} -- …]`));
+      },
+    }));
+  } finally {
+    process.off("SIGINT", onInterrupt);
+  }
+
+  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions`)}`);
+  console.log(indent(outcome.summary.trim()));
+  if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
   return outcome;
 }

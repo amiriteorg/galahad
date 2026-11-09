@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { ConnectorArgs, ToolName } from "./connectors.ts";
+import { ActionId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 
 /*
@@ -56,6 +58,22 @@ export const SandboxRequest = z.strictObject({
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
+/** What a loop does each time it runs. */
+export const LoopTask = z.discriminatedUnion("kind", [
+  /** Look around: fleet and body checks, notices in your inbox; optionally a checklist a model reads. */
+  z.strictObject({ kind: z.literal("heartbeat"), checklist: z.string().max(4000).optional() }),
+  /** A quest in a fresh sandbox: plan, work, independent review, remembered. */
+  z.strictObject({
+    kind: z.literal("quest"),
+    goal: z.string().min(1).max(4000),
+    network: SandboxNetwork,
+    maxSteps: z.number().int().min(1).max(100).optional(),
+  }),
+  /** One connector tool; outward and delete tools file an approval request instead. */
+  z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),
+]);
+export type LoopTask = z.infer<typeof LoopTask>;
+
 export const routes = {
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },
@@ -89,6 +107,8 @@ export const routes = {
       label: z.string().max(128).optional(),
       /** Where this key may be sent (entered with the key). Defaults to the provider's built-in preset. */
       baseUrl: z.string().url().max(512).optional(),
+      /** The key is for this connector: it is pinned to the connector's origin. */
+      connector: ConnectorId.optional(),
     }),
   },
   deleteSecret: { method: "POST", path: "/api/secrets/delete", scope: "vault:write", input: z.strictObject({ name: Name }) },
@@ -221,6 +241,61 @@ export const routes = {
     }),
   },
   buildSandboxImage: { method: "POST", path: "/api/sandboxes/build", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
+  loops: { method: "GET", path: "/api/loops", scope: "mind:read", input: null },
+  setLoop: {
+    method: "POST",
+    path: "/api/loops",
+    scope: "brain:write",
+    // A new loop needs a schedule and a task; an existing one keeps whatever you leave out.
+    input: z.strictObject({
+      name: LoopName,
+      schedule: z.string().min(1).max(128).optional(),
+      tz: z.string().max(64).optional(),
+      on: NodeRef.optional(),
+      enabled: z.boolean().optional(),
+      task: LoopTask.optional(),
+      label: z.string().max(128).optional(),
+    }),
+  },
+  removeLoop: { method: "POST", path: "/api/loops/remove", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
+  runLoop: { method: "POST", path: "/api/loops/run", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
+  loopRuns: {
+    method: "POST",
+    path: "/api/loops/runs",
+    scope: "mind:read",
+    input: z.strictObject({ name: LoopName.optional(), limit: z.number().int().min(1).max(200).optional() }),
+  },
+  notices: { method: "GET", path: "/api/notices", scope: "mind:read", input: null },
+  dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "mind:write", input: z.strictObject({ key: NoticeKey }) },
+  /** Run the heartbeat's checks here, now, and return what they find (writes nothing). */
+  heartbeat: { method: "POST", path: "/api/heartbeat", scope: "mind:read", input: z.strictObject({}) },
+  connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },
+  setConnector: {
+    method: "POST",
+    path: "/api/connectors",
+    scope: "brain:write",
+    input: z.strictObject({
+      id: ConnectorId,
+      /** For a catalog connector whose origin is yours (Home Assistant on your LAN). */
+      origin: z.string().url().max(256).optional(),
+      /** A connector of your own: a full manifest. */
+      manifest: z.record(z.string(), z.unknown()).optional(),
+    }),
+  },
+  removeConnector: { method: "POST", path: "/api/connectors/remove", scope: "brain:write", input: z.strictObject({ id: ConnectorId }) },
+  callConnector: {
+    method: "POST",
+    path: "/api/connectors/call",
+    scope: "connect",
+    input: z.strictObject({ connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional(), why: z.string().max(500).optional() }),
+  },
+  actions: { method: "GET", path: "/api/actions", scope: "mind:read", input: null },
+  decideAction: {
+    method: "POST",
+    path: "/api/actions/decide",
+    scope: "fleet:admin",
+    input: z.strictObject({ id: ActionId, approve: z.boolean(), note: z.string().max(500).optional() }),
+  },
   arms: { method: "GET", path: "/api/arms", scope: "fleet:admin", input: null },
   mintArm: {
     method: "POST",
@@ -366,6 +441,97 @@ export interface LedgerEntry {
   reason: string | null;
   quest: string | null;
   detail: string | null;
+}
+
+export interface LoopRunView {
+  loop: string;
+  run: string;
+  /** The scheduled time it ran for; null when run by hand. */
+  slot: number | null;
+  status: z.infer<typeof LoopStatus>;
+  started: number;
+  finished: number;
+  summary: string;
+  node: string;
+}
+
+export interface LoopView {
+  name: string;
+  schedule: string;
+  tz: string;
+  on: string;
+  onName: string | null;
+  enabled: boolean;
+  /** null when this node can't read the task (written by a newer version). */
+  task: LoopTask | null;
+  problem: string | null;
+  label: string | null;
+  updatedAt: string;
+  next: number | null;
+  last: LoopRunView | null;
+  /** Known only on the node that runs it. */
+  running: boolean | null;
+}
+
+export interface NoticeView {
+  key: string;
+  severity: z.infer<typeof NoticeSeverity>;
+  title: string;
+  body: string;
+  source: string;
+  node: string | null;
+  at: number;
+  dismissed: boolean;
+}
+
+export interface FindingView {
+  key: string;
+  severity: z.infer<typeof NoticeSeverity>;
+  title: string;
+  body: string;
+  node?: string;
+}
+
+export interface ConnectorToolView {
+  name: string;
+  description: string;
+  method: string;
+  class: "read" | "create" | "modify" | "outward" | "delete";
+  /** read, create and modify run freely; outward and delete ask you. */
+  asks: boolean;
+  params: Record<string, { type: string; required: boolean; description: string | null; enum: string[] | null }>;
+}
+
+export interface ConnectorView {
+  id: string;
+  label: string;
+  description: string | null;
+  origin: string | null;
+  installed: boolean;
+  /** none-needed · ready · missing · optional-missing · wrong-origin */
+  key: string;
+  secret: string | null;
+  keyHelp: string | null;
+  needsOrigin: boolean;
+  problem: string | null;
+  tools: ConnectorToolView[];
+}
+
+export interface ActionView {
+  id: string;
+  connector: string;
+  tool: string;
+  args: Record<string, unknown>;
+  class: string;
+  target: string;
+  by: string;
+  why: string | null;
+  node: string;
+  requestedAt: string;
+  expires: number;
+  state: "waiting" | "approved" | "denied" | "expired" | "done" | "failed";
+  decidedVia: string | null;
+  receipt: string | null;
 }
 
 export type ChatStreamEvent =

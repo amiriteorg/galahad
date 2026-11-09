@@ -120,7 +120,22 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["fleet", "ledger", "place", "recall", "remember", "request_secret", "sandbox_create", "sandbox_destroy", "sandbox_exec", "sandbox_run"].sort(),
+      [
+        "connector_call",
+        "connectors",
+        "fleet",
+        "ledger",
+        "loops",
+        "notices",
+        "place",
+        "recall",
+        "remember",
+        "request_secret",
+        "sandbox_create",
+        "sandbox_destroy",
+        "sandbox_exec",
+        "sandbox_run",
+      ].sort(),
     );
     const oath = await client.readResource({ uri: "galahad://oath" });
     expect(JSON.stringify(oath.contents)).toContain("Oath");
@@ -150,6 +165,44 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     expect(result.isError).toBe(true);
     expect(text(result)).toMatch(/vault/);
     expect(text(await client.callTool({ name: "request_secret", arguments: { name: "deepseek", purpose: "reviewer role" } }))).toMatch(/never see/);
+  });
+
+  test("connectors: reads come back, outward calls are filed for you, and the key never shows", async () => {
+    const seen: string[] = [];
+    const service = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (req) => {
+        seen.push(`${req.method} ${new URL(req.url).pathname} ${req.headers.get("authorization")}`);
+        return Response.json({ ok: true, token: req.headers.get("authorization") });
+      },
+    });
+    try {
+      const manifest = {
+        id: "forge",
+        label: "Forge",
+        origin: `http://127.0.0.1:${service.port}`,
+        auth: { secret: "forge", scheme: "bearer" },
+        tools: {
+          status: { description: "Status.", method: "GET", path: "/status", class: "read" },
+          post: { description: "Post.", method: "POST", path: "/posts", params: { text: { type: "string", required: true } }, class: "outward" },
+        },
+      };
+      expect((await call("setConnector", { id: "forge", manifest }, home.adminToken())).status).toBe(200);
+      expect((await call("setSecret", { name: "forge", value: "forge-mcp-key-0123456789", connector: "forge" }, home.adminToken())).status).toBe(200);
+
+      expect(text(await client.callTool({ name: "connectors", arguments: {} }))).toMatch(/post\(text: string\) \[outward: asks the user\]/);
+      const read = text(await client.callTool({ name: "connector_call", arguments: { connector: "forge", tool: "status" } }));
+      expect(read).toContain("GET /status → 200");
+      expect(read).not.toContain("forge-mcp-key-0123456789");
+      expect(seen).toEqual(["GET /status Bearer forge-mcp-key-0123456789"]);
+
+      const outward = text(await client.callTool({ name: "connector_call", arguments: { connector: "forge", tool: "post", args: { text: "hi" }, why: "say hi" } }));
+      expect(outward).toMatch(/Filed for the user's approval as action a_/);
+      expect(seen).toHaveLength(1);
+    } finally {
+      service.stop(true);
+    }
   });
 
   test("tool failures come back as readable errors, not crashes", async () => {

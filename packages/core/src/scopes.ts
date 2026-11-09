@@ -11,10 +11,11 @@ export const SCOPES = [
   "chat",
   "vault:read", // secret names + metadata only
   "vault:write", // add / replace / delete / rotate
-  "brain:write", // providers + roster
+  "brain:write", // providers, roster, loops and connectors: how Galahad thinks and acts on his own
   "gateway:mint", // mint scoped model-gateway tokens for arms
   "fleet:admin", // invite, approve, revoke devices
   "sandbox", // create, use and destroy sandboxes on sandbox hosts
+  "connect", // call connector tools (never their keys); outward and delete still ask
 ] as const;
 
 export const Scope = z.enum(SCOPES);

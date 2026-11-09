@@ -1,6 +1,7 @@
 export * from "./api.ts";
 export * from "./bytes.ts";
 export * from "./canonical.ts";
+export * from "./connectors.ts";
 export * from "./crypto.ts";
 export * from "./events.ts";
 export * from "./hlc.ts";
@@ -8,5 +9,6 @@ export * from "./identity.ts";
 export * from "./oath.ts";
 export * from "./pairing.ts";
 export * from "./request-auth.ts";
+export * from "./schedule.ts";
 export * from "./scopes.ts";
 export * from "./secret-scan.ts";

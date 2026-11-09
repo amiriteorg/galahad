@@ -11,7 +11,7 @@ import { randomId, type Scope, sha256B64u } from "@galahad/core";
  * Tokens are node-local, stored as hashes, valid on the loopback listener only.
  */
 
-export const ARM_DEFAULT_SCOPES: Scope[] = ["mind:read", "mind:write", "sandbox", "vault:read", "chat"];
+export const ARM_DEFAULT_SCOPES: Scope[] = ["mind:read", "mind:write", "sandbox", "vault:read", "chat", "connect"];
 export const ARM_FORBIDDEN_SCOPES: Scope[] = ["vault:write", "fleet:admin", "gateway:mint", "brain:write"];
 export const ARM_LABEL = /^[a-z0-9][a-z0-9._-]{0,47}$/;
 

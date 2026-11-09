@@ -44,6 +44,20 @@ export const SecretMeta = z.strictObject({
     .optional(),
 });
 
+/** Loop names double as arm labels (`loop.<name>`), so they are lowercase. */
+export const LoopName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/, "lowercase letters, digits, . _ - (max 40)");
+export const ConnectorId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "lowercase letters, digits and - (max 40)");
+export const NoticeKey = z.string().min(1).max(160).regex(/^[A-Za-z0-9._:-]+$/);
+export const ActionId = z.string().regex(/^a_[A-Za-z0-9_-]{22}$/);
+export const LoopStatus = z.enum(["ok", "attention", "failed", "interrupted"]);
+export const NoticeSeverity = z.enum(["info", "warn", "alert"]);
+/**
+ * Open-ended objects (a loop's task, a connector's manifest, a call's arguments)
+ * stay loosely typed in the log, so what a newer node adds never makes an older
+ * one refuse the event. The API and the runner validate them strictly.
+ */
+const Open = z.record(z.string(), z.unknown());
+
 export const Bodies = {
   "fleet.genesis": z.strictObject({ name: z.string().min(1).max(64), created: z.number().int() }),
   "device.enrolled": z.strictObject({
@@ -106,6 +120,61 @@ export const Bodies = {
     detail: z.string().max(2000).optional(),
   }),
   "roster.set": z.strictObject({ role: Name, models: z.array(z.string().min(1).max(256)).max(16) }),
+  /** A loop: work Galahad does on a schedule, on one named node (LWW by name). */
+  "loop.set": z.strictObject({
+    name: LoopName,
+    schedule: z.string().min(1).max(128),
+    tz: z.string().max(64).optional(),
+    /** The one node that runs it, so a loop never runs twice. */
+    on: DeviceRef,
+    enabled: z.boolean(),
+    task: Open,
+    label: z.string().max(128).optional(),
+  }),
+  "loop.removed": z.strictObject({ name: LoopName }),
+  /** One run of a loop, recorded by the node that ran it. `slot` is the scheduled time (null when run by hand). */
+  "loop.ran": z.strictObject({
+    loop: LoopName,
+    run: z.string().min(1).max(64),
+    slot: z.number().int().nullable(),
+    status: LoopStatus,
+    started: z.number().int(),
+    finished: z.number().int(),
+    summary: z.string().max(2000),
+  }),
+  /** Something that needs your attention (LWW by key); the heartbeat raises and clears these. */
+  "notice.raised": z.strictObject({
+    key: NoticeKey,
+    severity: NoticeSeverity,
+    title: z.string().min(1).max(200),
+    body: z.string().max(2000),
+    source: z.string().min(1).max(64),
+    /** The node whose body it concerns, when it is about one node (its disk, its vault). */
+    node: DeviceRef.optional(),
+    at: z.number().int(),
+  }),
+  "notice.cleared": z.strictObject({ key: NoticeKey }),
+  /** You've seen it: it stays quiet until it changes. */
+  "notice.dismissed": z.strictObject({ key: NoticeKey }),
+  "connector.set": z.strictObject({ id: ConnectorId, manifest: Open }),
+  "connector.removed": z.strictObject({ id: ConnectorId }),
+  /** The outbox: an action the oath says to ask about, recorded before anything is sent. */
+  "action.requested": z.strictObject({
+    id: ActionId,
+    connector: ConnectorId,
+    tool: z.string().min(1).max(48),
+    args: Open,
+    class: z.enum(["read", "create", "modify", "outward", "delete"]),
+    target: z.string().min(1).max(256),
+    /** Who asked: an arm, a loop or a quest. */
+    by: z.string().min(1).max(100),
+    why: z.string().max(500).optional(),
+    expires: z.number().int(),
+  }),
+  /** Your answer. The first decision stands; no answer before it expires means no. */
+  "action.decided": z.strictObject({ id: ActionId, verdict: z.enum(["approved", "denied"]), note: z.string().max(500).optional() }),
+  /** The receipt, written once by the node that asked, after it sent the request exactly once. */
+  "action.done": z.strictObject({ id: ActionId, ok: z.boolean(), status: z.number().int().optional(), receipt: z.string().max(2000) }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;
