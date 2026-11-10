@@ -6,15 +6,25 @@ import { fbm, hash2, hash3, simplex, smoothstep } from "./noise.ts";
  * streams that come down from the hills in pools and waterfalls (their beds are
  * stepped, so where a stream drops, it falls); the keep's ground (45 m around
  * the origin) and every experiment plot are flat at level 0 and blend into the
- * hills around them. Pure and deterministic: the same seed and the same plots
- * give the same land on every device. World coordinates (metres, x east, y
- * north, z up), as in the contract.
+ * hills around them. Small things for the fine grid to show: the meadows ripple,
+ * crags break through the turf, some hillsides step down in gentle terraces and
+ * streams cut crisp banks. Each chunk is sampled on a base grid (4 m cells) and,
+ * near the camera, a fine one (2 m cells) whose vertices include the base grid's;
+ * every cell is split along its more level diagonal, so ledges and banks stay
+ * crisp. Pure and deterministic: the same seed and the same plots give the same
+ * land on every device. World coordinates (metres, x east, y north, z up), as in
+ * the contract.
  */
 
 export const SEED = 0x6a1a4ad;
 export const CHUNK = 64;
+/** The base grid, drawn everywhere: cells a chunk's side (4 m). */
 export const CELLS = 16;
 export const CELL = CHUNK / CELLS;
+/** The fine grid near the camera: each base cell split this many ways a side (2 m cells). */
+export const FINE = 2;
+export const FINE_CELLS = CELLS * FINE;
+export const FINE_CELL = CHUNK / FINE_CELLS;
 export const WATER_LEVEL = -1.4;
 export const FLAT_LEVEL = 0;
 export const KEEP_RADIUS = 45;
@@ -66,10 +76,32 @@ export function streamLevel(seed: number, x: number, y: number): number {
   return WATER_LEVEL + Math.max(0, Math.floor((broadHeight(seed, x, y, 3) - WATER_LEVEL - 0.9) / STREAM_STEP)) * STREAM_STEP;
 }
 
+/** A gentle terrace's step, metres. */
+const TERRACE = 0.8;
+
+/** Where a crag breaks through the turf: 0 none, up to 1 at its crown. Only some hillsides have them. */
+export function outcrop(seed: number, x: number, y: number): number {
+  const region = simplex(seed + 141, x / 150, y / 150);
+  if (region < 0.15) return 0;
+  const n = simplex(seed + 149, x / 9, y / 9) + 0.35 * simplex(seed + 151, x / 4.5, y / 4.5);
+  return smoothstep(0.15, 0.5, region) * smoothstep(0.3, 0.9, n);
+}
+
 /** The land as it would be with nothing built on it. */
 export function naturalHeight(seed: number, x: number, y: number): number {
-  const detail = simplex(seed + 17, x / 45, y / 45) * 1.1;
-  let h = broadHeight(seed, x, y) + detail;
+  let h = broadHeight(seed, x, y) + simplex(seed + 17, x / 45, y / 45) * 1.1;
+  // Small undulations above the shore: the meadows ripple, so the fine grid's facets catch the light.
+  const dry = smoothstep(WATER_LEVEL - 0.4, WATER_LEVEL + 1.6, h);
+  if (dry > 0) h += (simplex(seed + 131, x / 17, y / 17) * 0.3 + simplex(seed + 137, x / 7.5, y / 7.5) * 0.11) * dry;
+  // Gentle terraces on the middle slopes, where a slow noise says so: old fields, sheep tracks.
+  if (h > 1 && h < 5.4) {
+    const where = smoothstep(0.2, 0.55, simplex(seed + 157, x / 120, y / 120)) * smoothstep(1, 2.2, h) * (1 - smoothstep(4.4, 5.4, h));
+    if (where > 0) {
+      const k = h / TERRACE;
+      const f = k - Math.floor(k);
+      h += ((Math.floor(k) + smoothstep(0.62, 1, f)) * TERRACE - h) * where;
+    }
+  }
   // High ground breaks into low limestone terraces (little cliffs).
   if (h > 5) {
     const step = 2.2;
@@ -77,10 +109,15 @@ export function naturalHeight(seed: number, x: number, y: number): number {
     const f = k - Math.floor(k);
     h = 5 + (Math.floor(k) + smoothstep(0.55, 1, f)) * step;
   }
-  // Streams lay their beds just below their pool's surface, so the water shows in them.
+  // Crags stand a metre or so out of the turf (never at the water's edge).
+  const crag = outcrop(seed, x, y);
+  if (crag > 0) h += crag * 1.3 * smoothstep(0, 2.5, h);
+  // Streams lay their beds just below their pool's surface, so the water shows in them, and cut crisp banks down
+  // to them. They only ever cut: where the land is already lower (a lake's floor), it stays so.
   const s = streamAt(seed, x, y);
   if (s <= 0) return h;
-  return h + (streamLevel(seed, x, y) - STREAM_DEPTH - h) * s;
+  const bed = streamLevel(seed, x, y) - STREAM_DEPTH;
+  return bed < h ? h + (bed - h) * (0.2 * s + 0.8 * smoothstep(0.3, 0.72, s)) : h;
 }
 
 /**
@@ -88,7 +125,11 @@ export function naturalHeight(seed: number, x: number, y: number): number {
  * level, or a stream's pool above it (never on the keep's lawn or a plot).
  */
 export function waterAt(seed: number, x: number, y: number, flats: readonly Flat[]): number {
-  const h = heightAt(seed, x, y, flats);
+  return waterAtHeight(seed, x, y, heightAt(seed, x, y, flats), flats);
+}
+
+/** waterAt, for a point whose ground height `h` is already known. */
+export function waterAtHeight(seed: number, x: number, y: number, h: number, flats: readonly Flat[]): number {
   const s = streamAt(seed, x, y);
   if (s > 0.35 && flatMix(flats, x, y) < 0.3) {
     const level = streamLevel(seed, x, y);
@@ -97,7 +138,7 @@ export function waterAt(seed: number, x: number, y: number, flats: readonly Flat
   return h < WATER_LEVEL ? WATER_LEVEL : Number.NEGATIVE_INFINITY;
 }
 
-function flatMix(flats: readonly Flat[], x: number, y: number): number {
+export function flatMix(flats: readonly Flat[], x: number, y: number): number {
   let w = 0;
   for (const f of flats) {
     w = Math.max(w, flatWeight(f, x, y));
@@ -132,9 +173,15 @@ const LUSH = 0x7fb447;
 
 /** A ground's colour at (x, y): its base, with broad patches of sunnier or lusher grass. */
 export function groundColor(seed: number, x: number, y: number, ground: Ground): number {
+  return patchColor(ground, patchNoise(seed, x, y));
+}
+
+/** The noise that lays out the sunny and lush patches. */
+const patchNoise = (seed: number, x: number, y: number): number => simplex(seed + 71, x / 38, y / 38) + 0.4 * simplex(seed + 73, x / 11, y / 11);
+
+function patchColor(ground: Ground, n: number): number {
   const base = GROUND_COLOR[ground];
   if (ground !== "meadow" && ground !== "green" && ground !== "forest") return base;
-  const n = simplex(seed + 71, x / 38, y / 38) + 0.4 * simplex(seed + 73, x / 11, y / 11);
   return n > 0 ? mixHex(base, SUNNY, Math.min(1, n) * 0.55) : mixHex(base, LUSH, Math.min(1, -n) * 0.45);
 }
 
@@ -147,8 +194,16 @@ export function groundAt(seed: number, x: number, y: number, h: number, flat: nu
   if (h < WATER_LEVEL - 0.2) return "lakebed";
   if (h < WATER_LEVEL + 0.8) return "sand";
   if (flat > 0.55) return "green";
-  if (h > 6.8 + simplex(seed + 53, x / 60, y / 60) * 1.6) return "rock";
-  return simplex(seed + 41, x / 170, y / 170) > 0.12 ? "forest" : "meadow";
+  return groundOf(h, flat, simplex(seed + 53, x / 60, y / 60), simplex(seed + 41, x / 170, y / 170));
+}
+
+/** groundAt, given its two noises: where the bare rock starts, and where the forests are. */
+function groundOf(h: number, flat: number, rockline: number, woods: number): Ground {
+  if (h < WATER_LEVEL - 0.2) return "lakebed";
+  if (h < WATER_LEVEL + 0.8) return "sand";
+  if (flat > 0.55) return "green";
+  if (h > 6.8 + rockline * 1.6) return "rock";
+  return woods > 0.12 ? "forest" : "meadow";
 }
 
 export const chunkOf = (x: number, y: number): [number, number] => [Math.floor(x / CHUNK), Math.floor(y / CHUNK)];
@@ -192,17 +247,227 @@ export type Layer = (typeof LAYERS)[number];
 export const SMALL: readonly Layer[] = ["flowers", "grass", "detail"];
 export const BIG: readonly Layer[] = ["trees", "bushes", "rocks"];
 
-export interface ChunkSamples {
+/** A chunk's ground sampled on a grid: heights at its corners, how each cell is split, and each triangle's colour. */
+export interface Surface {
+  /** Cells a side. */
+  cells: number;
+  /** (cells+1)² heights, row by row from the chunk's south-west corner. */
+  heights: Float32Array;
+  /** How each cell is split into two triangles (an index into SPLITS). */
+  split: Uint8Array;
+  /** Two triangles per cell, in SPLITS' order, as sRGB colours. */
+  faces: Uint32Array;
+}
+
+export interface ChunkSamples extends Surface {
   cx: number;
   cy: number;
-  /** (CELLS+1)² heights, row by row from the chunk's south-west corner. */
-  heights: Float32Array;
-  /** Two triangles per cell, as sRGB colours. */
-  faces: Uint32Array;
   /** Packed placements per layer (STRIDE numbers each); a small layer only once grown. */
   layers: Partial<Record<Layer, Float64Array>>;
   /** The flats that shape it (for growing its small layers later). */
   near: readonly Flat[];
+  /** Its fine surface, once it's been asked for (see fineSurface). */
+  fine?: FineSurface;
+}
+
+/** A chunk's fine surface, with the base surface's height under each of its corners (it morphs into that far off). */
+export interface FineSurface extends Surface {
+  coarse: Float32Array;
+}
+
+/**
+ * The corners (di, dj) of a cell's two triangles, counter-clockwise from above:
+ * split along its south-west to north-east diagonal (0), or the other (1).
+ */
+export const SPLITS: readonly (readonly number[])[] = [
+  [0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1],
+  [0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1],
+];
+
+/** A cell is split along its more level diagonal (so a ledge or a bank runs along an edge, crisp); a tie, by its hash. */
+function splitOf(seed: number, gi: number, gj: number, salt: number, h00: number, h10: number, h01: number, h11: number): number {
+  const a = Math.abs(h00 - h11);
+  const b = Math.abs(h10 - h01);
+  if (Math.abs(a - b) > 1e-3) return a < b ? 0 : 1;
+  return hash3(seed, gi, gj, salt) < 0.5 ? 0 : 1;
+}
+
+/**
+ * The height of a sampled surface at (u, v), in cells from the chunk's south-west
+ * corner: on the triangle of the cell it falls in, exactly as it's drawn.
+ */
+export function surfaceHeight(s: Surface, u: number, v: number): number {
+  const n = s.cells + 1;
+  const i = Math.max(0, Math.min(s.cells - 1, Math.floor(u)));
+  const j = Math.max(0, Math.min(s.cells - 1, Math.floor(v)));
+  return cellHeight(s.split[j * s.cells + i]!, s.heights[j * n + i]!, s.heights[j * n + i + 1]!, s.heights[(j + 1) * n + i]!, s.heights[(j + 1) * n + i + 1]!, u - i, v - j);
+}
+
+/** The height at (fu, fv) in a cell with these corners, split this way (on the triangle it falls in). */
+function cellHeight(split: number, h00: number, h10: number, h01: number, h11: number, fu: number, fv: number): number {
+  if (split === 0) return fu >= fv ? h00 + fu * (h10 - h00) + fv * (h11 - h10) : h00 + fv * (h01 - h00) + fu * (h11 - h01);
+  return fu + fv <= 1 ? h00 + fu * (h10 - h00) + fv * (h01 - h00) : h11 + (1 - fu) * (h01 - h11) + (1 - fv) * (h10 - h11);
+}
+
+/**
+ * The ground's height at (x, y) exactly as the fine grid draws it (heightAt is
+ * the land's own, smooth between the grid's corners; this is the faceted surface
+ * feet stand on). Deterministic, like heightAt.
+ */
+export function surfaceAt(seed: number, x: number, y: number, flats: readonly Flat[]): number {
+  const gi = Math.floor(x / FINE_CELL);
+  const gj = Math.floor(y / FINE_CELL);
+  const x0 = gi * FINE_CELL;
+  const y0 = gj * FINE_CELL;
+  // Rounded as the grid stores them, so this is the drawn surface to the last bit.
+  const h00 = Math.fround(heightAt(seed, x0, y0, flats));
+  const h10 = Math.fround(heightAt(seed, x0 + FINE_CELL, y0, flats));
+  const h01 = Math.fround(heightAt(seed, x0, y0 + FINE_CELL, flats));
+  const h11 = Math.fround(heightAt(seed, x0 + FINE_CELL, y0 + FINE_CELL, flats));
+  return cellHeight(splitOf(seed, gi, gj, FINE_SALT, h00, h10, h01, h11), h00, h10, h01, h11, (x - x0) / FINE_CELL, (y - y0) / FINE_CELL);
+}
+
+/** Salts for the two grids' tie-breaking splits and face variation. */
+const BASE_SALT = 13;
+const FINE_SALT = 14;
+
+/** Bare earth on steep banks and terrace risers, and the worn turf beside the keep's paths. */
+const EARTH = 0xc9a477;
+const WORN = 0xc3c27a;
+const FACE_JITTER = 0.035;
+
+/**
+ * A face's colour: its ground's (with the meadows' sunny and lush patches), bare
+ * earth where it's steep, rock on crags and cliffs, worn where feet go, and a
+ * little per-face variation for the low-poly look. Its noises are its corners'
+ * (averaged: they're slow, and a corner is shared by six faces); `ny` is its
+ * normal's vertical part, `jitter` a hash in [0, 1).
+ */
+function faceColor(f: Fields, a: number, b: number, c: number, h: number, flat: number, ny: number, jitter: number): number {
+  const ground = groundOf(h, flat, (f.rockline[a]! + f.rockline[b]! + f.rockline[c]!) / 3, (f.woods[a]! + f.woods[b]! + f.woods[c]!) / 3);
+  let color = patchColor(ground, (f.patch[a]! + f.patch[b]! + f.patch[c]!) / 3);
+  if (ground === "meadow" || ground === "forest" || ground === "sand") {
+    const steep = smoothstep(0.95, 0.8, ny);
+    if (steep > 0) color = mixHex(color, EARTH, steep * 0.55);
+    const crag = (f.crag[a]! + f.crag[b]! + f.crag[c]!) / 3;
+    const rocky = Math.max(crag > 0 ? smoothstep(0.12, 0.4, crag) : 0, smoothstep(0.8, 0.62, ny));
+    if (rocky > 0) color = mixHex(color, GROUND_COLOR.rock, rocky);
+  } else if (ground === "rock") {
+    // A cliff's face a little warmer and darker than its top.
+    color = mixHex(color, 0xcdb39f, smoothstep(0.9, 0.6, ny));
+  } else if (ground === "green" && f.built[a]! + f.built[b]! + f.built[c]! >= 2) color = mixHex(color, WORN, 0.45);
+  return shade(color, 1 - FACE_JITTER + 2 * FACE_JITTER * jitter);
+}
+
+/** The noises that colour the ground, sampled at a grid's corners. */
+interface Fields {
+  rockline: Float32Array;
+  woods: Float32Array;
+  patch: Float32Array;
+  crag: Float32Array;
+  built: Uint8Array;
+}
+
+function fields(seed: number, x0: number, y0: number, cells: number, built: (x: number, y: number) => boolean): Fields {
+  const n = cells + 1;
+  const cell = CHUNK / cells;
+  const f: Fields = { rockline: new Float32Array(n * n), woods: new Float32Array(n * n), patch: new Float32Array(n * n), crag: new Float32Array(n * n), built: new Uint8Array(n * n) };
+  // Only near the keep is anything built (and asking is slow).
+  const keep = Math.hypot(Math.max(Math.abs(x0 + CHUNK / 2) - CHUNK / 2, 0), Math.max(Math.abs(y0 + CHUNK / 2) - CHUNK / 2, 0)) < 80;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * cell;
+      const y = y0 + j * cell;
+      const k = j * n + i;
+      f.rockline[k] = simplex(seed + 53, x / 60, y / 60);
+      f.woods[k] = simplex(seed + 41, x / 170, y / 170);
+      f.patch[k] = patchNoise(seed, x, y);
+      f.crag[k] = outcrop(seed, x, y);
+      f.built[k] = keep && built(x, y) ? 1 : 0;
+    }
+  }
+  return f;
+}
+
+/** A triangle's slope (dh/dx, dh/dy per metre) from its corners' heights (corners as in SPLITS), into `slope`. */
+const slope = new Float64Array(2);
+function gradient(c: readonly number[], t: number, h0: number, h1: number, h2: number, cell: number): Float64Array {
+  const ax = c[t * 6]!;
+  const ay = c[t * 6 + 1]!;
+  const bx = c[t * 6 + 2]! - ax;
+  const by = c[t * 6 + 3]! - ay;
+  const dx = c[t * 6 + 4]! - ax;
+  const dy = c[t * 6 + 5]! - ay;
+  const hb = h1 - h0;
+  const hd = h2 - h0;
+  // Solve [bx by; dx dy] g = [hb; hd] (in cells), then per metre.
+  const det = bx * dy - by * dx;
+  slope[0] = (hb * dy - hd * by) / det / cell;
+  slope[1] = (bx * hd - dx * hb) / det / cell;
+  return slope;
+}
+
+/**
+ * Samples a chunk's ground on a grid of `cells` a side. Heights a coarser
+ * surface already has (at every few corners) are taken from it, not computed again.
+ */
+function sampleSurface(seed: number, cx: number, cy: number, cells: number, near: readonly Flat[], built: (x: number, y: number) => boolean, salt: number, from?: Surface): Surface {
+  const x0 = cx * CHUNK;
+  const y0 = cy * CHUNK;
+  const cell = CHUNK / cells;
+  const n = cells + 1;
+  const heights = new Float32Array(n * n);
+  const step = from ? cells / from.cells : 0;
+  const fn = from ? from.cells + 1 : 0;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      heights[j * n + i] = from && i % step === 0 && j % step === 0 ? from.heights[(j / step) * fn + i / step]! : heightAt(seed, x0 + i * cell, y0 + j * cell, near);
+    }
+  }
+  const split = new Uint8Array(cells * cells);
+  const faces = new Uint32Array(cells * cells * 2);
+  const f = fields(seed, x0, y0, cells, built);
+  const gi0 = cx * cells;
+  const gj0 = cy * cells;
+  for (let j = 0; j < cells; j++) {
+    for (let i = 0; i < cells; i++) {
+      const h00 = heights[j * n + i]!;
+      const h10 = heights[j * n + i + 1]!;
+      const h01 = heights[(j + 1) * n + i]!;
+      const h11 = heights[(j + 1) * n + i + 1]!;
+      const k = splitOf(seed, gi0 + i, gj0 + j, salt, h00, h10, h01, h11);
+      split[j * cells + i] = k;
+      const c = SPLITS[k]!;
+      // Two triangles per cell; each one's corners, centroid and slope decide its colour.
+      for (let t = 0; t < 2; t++) {
+        const a = (j + c[t * 6 + 1]!) * n + i + c[t * 6]!;
+        const b = (j + c[t * 6 + 3]!) * n + i + c[t * 6 + 2]!;
+        const d = (j + c[t * 6 + 5]!) * n + i + c[t * 6 + 4]!;
+        const g = gradient(c, t, heights[a]!, heights[b]!, heights[d]!, cell);
+        const ny = 1 / Math.sqrt(1 + g[0]! * g[0]! + g[1]! * g[1]!);
+        const x = x0 + (i + (c[t * 6]! + c[t * 6 + 2]! + c[t * 6 + 4]!) / 3) * cell;
+        const y = y0 + (j + (c[t * 6 + 1]! + c[t * 6 + 3]! + c[t * 6 + 5]!) / 3) * cell;
+        const flat = near.length ? flatMix(near, x, y) : 0;
+        faces[(j * cells + i) * 2 + t] = faceColor(f, a, b, d, (heights[a]! + heights[b]! + heights[d]!) / 3, flat, ny, hash3(seed, gi0 + i, gj0 + j, salt * 4 + t + 7));
+      }
+    }
+  }
+  return { cells, heights, split, faces };
+}
+
+/**
+ * A chunk's fine surface (FINE_CELLS a side), grown from its base samples: their
+ * heights are reused, the rest are new, and every corner knows the base
+ * surface's height under it.
+ */
+export function fineSurface(seed: number, base: ChunkSamples, built: (x: number, y: number) => boolean = () => false): FineSurface {
+  if (base.fine) return base.fine;
+  const s = sampleSurface(seed, base.cx, base.cy, FINE_CELLS, base.near, built, FINE_SALT, base);
+  const n = FINE_CELLS + 1;
+  const coarse = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) coarse[j * n + i] = surfaceHeight(base, i / FINE, j / FINE);
+  base.fine = { ...s, coarse };
+  return base.fine;
 }
 
 /** Scales an sRGB colour's brightness (per-face variation for the low-poly look). */
@@ -225,6 +490,8 @@ interface LayerRule {
   underwater?: boolean;
   /** Grows on the keep's lawn too (not on plots, nor where something is built). */
   lawn?: boolean;
+  /** Only where the ground is even (not on a terrace's riser, a crag or a steep bank): trees and bushes. */
+  even?: boolean;
 }
 
 const RULES: Record<Layer, LayerRule> = {
@@ -233,6 +500,7 @@ const RULES: Record<Layer, LayerRule> = {
     density: { lakebed: 0, sand: 0, green: 0, meadow: 0.07, forest: 0.7, rock: 0.05 },
     clearance: TREE_CLEARANCE,
     scale: [0.8, 1.4],
+    even: true,
     // 0 broadleaf, 1 conifer, 2 round, 3 parasol.
     kind: (g, p) => (g === "forest" ? (p < 0.36 ? 1 : p < 0.76 ? 0 : p < 0.9 ? 2 : 3) : p < 0.45 ? 0 : p < 0.7 ? 3 : 2),
     salt: 1,
@@ -242,6 +510,7 @@ const RULES: Record<Layer, LayerRule> = {
     density: { lakebed: 0, sand: 0.04, green: 0.05, meadow: 0.14, forest: 0.35, rock: 0.1 },
     clearance: 2,
     scale: [0.7, 1.3],
+    even: true,
     kind: (_g, p) => (p < 0.6 ? 0 : 1),
     salt: 21,
   },
@@ -289,8 +558,15 @@ function clearOfFlats(flats: readonly Flat[], x: number, y: number, clearance: n
   return true;
 }
 
-function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[], rule: LayerRule, built: (x: number, y: number) => boolean): Float64Array {
+/**
+ * Where a layer grows on a chunk. Small things stand on the fine surface (`fine`,
+ * exactly as it's drawn near the camera); big ones on the land's own height,
+ * and the even-minded only where the base surface (`base`) agrees with it.
+ */
+function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[], rule: LayerRule, built: (x: number, y: number) => boolean, base: Surface, fine: Surface | null): Float64Array {
   const out: number[] = [];
+  const x0 = cx * CHUNK;
+  const y0 = cy * CHUNK;
   const per = Math.round(CHUNK / rule.grid);
   const step = CHUNK / per;
   const s = rule.salt;
@@ -302,8 +578,9 @@ function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[],
       const y = (gy + 0.12 + 0.76 * hash3(seed, gx, gy, s + 2)) * step;
       if (!clearOfFlats(near, x, y, rule.clearance, rule.lawn)) continue;
       if (rule.lawn && built(x, y)) continue;
-      const z = heightAt(seed, x, y, near);
+      const z = fine ? surfaceHeight(fine, (x - x0) / FINE_CELL, (y - y0) / FINE_CELL) : heightAt(seed, x, y, near);
       if (z < WATER_LEVEL + 0.15 && !rule.underwater) continue;
+      if (rule.even && Math.abs(surfaceHeight(base, (x - x0) / CELL, (y - y0) / CELL) - z) > 0.35) continue;
       const ground = groundAt(seed, x, y, z, 0);
       if (hash3(seed, gx, gy, s) >= rule.density[ground]) continue;
       const [lo, hi] = rule.scale;
@@ -320,38 +597,16 @@ function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[],
  */
 export function chunkSamples(seed: number, cx: number, cy: number, flats: readonly Flat[], built: (x: number, y: number) => boolean = () => false, layerList: readonly Layer[] = LAYERS): ChunkSamples {
   const near = flatsTouching(cx, cy, flats);
-  const x0 = cx * CHUNK;
-  const y0 = cy * CHUNK;
-  const n = CELLS + 1;
-  const heights = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) heights[j * n + i] = heightAt(seed, x0 + i * CELL, y0 + j * CELL, near);
-
-  const faces = new Uint32Array(CELLS * CELLS * 2);
-  for (let j = 0; j < CELLS; j++) {
-    for (let i = 0; i < CELLS; i++) {
-      const h00 = heights[j * n + i]!;
-      const h10 = heights[j * n + i + 1]!;
-      const h01 = heights[(j + 1) * n + i]!;
-      const h11 = heights[(j + 1) * n + i + 1]!;
-      // Two triangles per cell; their centroids decide their ground.
-      for (let t = 0; t < 2; t++) {
-        const x = x0 + (i + (t === 0 ? 2 / 3 : 1 / 3)) * CELL;
-        const y = y0 + (j + (t === 0 ? 1 / 3 : 2 / 3)) * CELL;
-        const h = t === 0 ? (h00 + h10 + h11) / 3 : (h00 + h11 + h01) / 3;
-        const ground = groundAt(seed, x, y, h, flatMix(near, x, y));
-        faces[(j * CELLS + i) * 2 + t] = shade(groundColor(seed, x, y, ground), 0.97 + hash3(seed, x0 / CELL + i, y0 / CELL + j, t + 7) * 0.06);
-      }
-    }
-  }
-  const layers: Partial<Record<Layer, Float64Array>> = {};
-  for (const layer of layerList) layers[layer] = placeLayer(seed, cx, cy, near, RULES[layer], built);
-  return { cx, cy, heights, faces, layers, near };
+  const surface = sampleSurface(seed, cx, cy, CELLS, near, built, BASE_SALT);
+  const samples: ChunkSamples = { cx, cy, ...surface, layers: {}, near };
+  for (const layer of layerList) growLayer(seed, samples, layer, built);
+  return samples;
 }
 
 /** A chunk's layer, grown now if it wasn't yet (the small ones, when the chunk comes near). */
 export function growLayer(seed: number, s: ChunkSamples, layer: Layer, built: (x: number, y: number) => boolean = () => false): Float64Array {
   let packed = s.layers[layer];
-  if (!packed) packed = s.layers[layer] = placeLayer(seed, s.cx, s.cy, s.near, RULES[layer], built);
+  if (!packed) packed = s.layers[layer] = placeLayer(seed, s.cx, s.cy, s.near, RULES[layer], built, s, SMALL.includes(layer) ? fineSurface(seed, s, built) : null);
   return packed;
 }
 

@@ -1,9 +1,10 @@
-import { abs, attribute, cameraPosition, clamp, float, fract, mix, modelWorldMatrix, normalize, positionLocal, positionWorld, pow, sin, smoothstep, time, uniform, uv, vec3, vec4, vertexColor } from "three/tsl";
+import { abs, attribute, cameraPosition, clamp, float, fract, length, mix, modelWorldMatrix, normalize, positionLocal, positionWorld, pow, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4, vertexColor } from "three/tsl";
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, MeshLambertNodeMaterial, MeshPhongNodeMaterial } from "three/webgpu";
 import { toScene } from "./coords.ts";
 import { flatNormals, linear } from "./mesher.ts";
 import { built } from "./path.ts";
-import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, type Flat, flatKey, flatsTouching, growLayer, heightAt, KEEP_FLAT, type Layer, streamAt, streamLevel, WATER_LEVEL, waterAt } from "./terrain.ts";
+import { BIG, CELL, CELLS, CHUNK, chunkKey, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, KEEP_FLAT, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
+import type { ChunkSamples } from "./terrain.ts";
 
 /*
  * The land on the GPU: one mesh per loaded 64 m chunk (faces coloured, flat
@@ -12,15 +13,26 @@ import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chu
  * in a chunk, its pools and waterfalls. Chunks load nearest first within a time
  * budget per frame (never a hitch), and unload behind you; what grows on them is
  * drawn by the vegetation, which hears of each chunk as it comes and goes.
- * Everything sits under the world root, which the floating origin moves, so the
- * GPU's numbers stay small however far you go.
+ *
+ * Every chunk is drawn on the base grid (4 m cells); near the camera's focus it
+ * swaps to the fine grid (2 m cells), grown a chunk at a time within the same
+ * budget. The fine grid morphs into the base one in the vertex shader as it nears
+ * the edge of its ring, so by the time a chunk swaps back (or meets a neighbour
+ * still on the base grid) the two are the same surface: no pop, no crack. A short
+ * skirt hangs from every chunk's edges, so a moment's mismatch while a chunk is
+ * still growing its fine grid shows no gap either. Everything sits under the
+ * world root, which the floating origin moves, so the GPU's numbers stay small
+ * however far you go.
  */
 
 export interface Chunk {
   key: string;
   cx: number;
   cy: number;
+  /** The base grid. */
   mesh: Mesh;
+  /** The fine grid, while the chunk is near the focus (the base mesh is hidden then). */
+  fine: Mesh | null;
   /** Its stream's pools and falls, if one runs here. */
   stream: Mesh | null;
   samples: ChunkSamples;
@@ -61,9 +73,21 @@ function waterMaterial(near: boolean): MeshPhongNodeMaterial {
   return m;
 }
 
-/** The land's material: vertex colours, and foam lapping where it meets a water surface (its "water" level). */
+/** Where the fine grid has fully become the base one: a world point (scene x, z) and the distances it morphs between. */
+const morph = { focus: uniform(vec2(0, 0)), near: uniform(1e5), far: uniform(2e5) };
+
+/**
+ * The land's material: vertex colours, and foam lapping where it meets a water
+ * surface (its "water" level). Each vertex eases from its own height to the base
+ * grid's under it ("coarse") between the morph's distances; faces are shaded by
+ * their own slope (flat shading from the surface's derivatives), so they shade
+ * true while they morph.
+ */
 function landMaterial(): MeshLambertNodeMaterial {
-  const m = new MeshLambertNodeMaterial({ vertexColors: true });
+  const m = new MeshLambertNodeMaterial({ vertexColors: true, flatShading: true });
+  const at = modelWorldMatrix.mul(vec4(positionLocal.x, 0, positionLocal.z, 1));
+  const k = smoothstep(morph.near, morph.far, length(at.xz.sub(morph.focus)));
+  m.positionNode = vec3(positionLocal.x, mix(positionLocal.y, attribute("coarse", "float"), k), positionLocal.z);
   const level = attribute("water", "float");
   const y = positionWorld.y;
   const lap = sin(time.mul(waterUniforms.waves).mul(1.3).add(positionWorld.x.mul(0.35)).add(positionWorld.z.mul(0.27))).mul(0.05);
@@ -97,6 +121,8 @@ export class Land {
     private readonly seed: number,
     private readonly shadows: boolean,
     waterGrid = 48,
+    /** The fine grid is drawn this far round the focus (metres); 0: never. */
+    private readonly fineRadius = 0,
   ) {
     // A grid of `waterGrid` cells a side over 320 m (waves need vertices), its outer ring stretched far
     // past the fog, so one sheet reaches the horizon with no seam.
@@ -134,9 +160,24 @@ export class Land {
     }
   }
 
+  /**
+   * The ground's height at (x, y) as the fine grid draws it, so feet, paws and
+   * contact shadows stand on the faceted surface (from the chunk's fine samples
+   * where it has them, which is wherever anyone walks).
+   */
   heightAt(x: number, y: number): number {
-    return heightAt(this.seed, x, y, this.flats);
+    let c = this.last;
+    if (!c || x < c.cx * CHUNK || y < c.cy * CHUNK || x >= (c.cx + 1) * CHUNK || y >= (c.cy + 1) * CHUNK) {
+      c = this.chunks.get(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) ?? null;
+      this.last = c;
+    }
+    const fine = c?.samples.fine;
+    if (c && fine) return surfaceHeight(fine, (x - c.cx * CHUNK) / FINE_CELL, (y - c.cy * CHUNK) / FINE_CELL);
+    return surfaceAt(this.seed, x, y, this.flats);
   }
+
+  /** The chunk heightAt looked in last (most calls in a frame fall in the same one). */
+  private last: Chunk | null = null;
 
   /** The water's surface at (x, y): a lake's or a stream pool's, or −Infinity where it's dry. */
   waterAt(x: number, y: number): number {
@@ -183,11 +224,119 @@ export class Land {
       this.grow(cx, cy);
       grown++;
     }
+    const refining = this.refine(x, y, deadline);
     // Keep the water's grid on whole cells, so its waves don't swim as it follows.
     const [sx, , sz] = toScene(Math.round(x / this.waterCell) * this.waterCell, Math.round(y / this.waterCell) * this.waterCell);
     this.water.position.x = sx;
     this.water.position.z = sz;
-    return this.next < this.wanted.length;
+    return this.next < this.wanted.length || refining;
+  }
+
+  /** How many chunks are drawn on the fine grid now (for tests and the stats). */
+  get fineChunks(): number {
+    let n = 0;
+    for (const c of this.list) if (c.fine) n++;
+    return n;
+  }
+
+  /**
+   * The fine ring: chunks near the focus swap to the fine grid (nearest first,
+   * one at least when the nearest lacks it, more while the frame's budget
+   * lasts), and those that have left the ring swap back at once. Returns true
+   * while chunks are still to refine.
+   */
+  private refine(x: number, y: number, deadline: number): boolean {
+    const r = this.fineRadius;
+    if (r <= 0) return false;
+    // The morph, in the scene's world frame (the root is moved by the floating origin).
+    const [fx, , fz] = toScene(x, y);
+    morph.focus.value.set(fx + this.root.position.x, fz + this.root.position.z);
+    morph.near.value = r - fineBand(r);
+    morph.far.value = r;
+    let best: Chunk | null = null;
+    let bestD = Infinity;
+    let pending = 0;
+    for (let i = 0; i < this.list.length; i++) {
+      const c = this.list[i]!;
+      const d = chunkDistance(c.cx, c.cy, x, y);
+      const want = wantsFine(d, c.fine !== null, r);
+      if (!want && c.fine) this.coarsen(c);
+      else if (want && !c.fine) {
+        pending++;
+        if (d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+    }
+    // The nearest first; then, while there's time, the next nearest (one scan each: there are only a few).
+    let done = 0;
+    while (best) {
+      // Beyond the first, only within the budget; the first, always if its fine grid would show (inside the morph).
+      if ((done > 0 || bestD >= morph.near.value) && performance.now() > deadline) break;
+      this.refineChunk(best);
+      done++;
+      if (best.fine) pending--;
+      best = null;
+      bestD = Infinity;
+      for (let i = 0; i < this.list.length; i++) {
+        const c = this.list[i]!;
+        if (c.fine) continue;
+        const d = chunkDistance(c.cx, c.cy, x, y);
+        if (wantsFine(d, false, r) && d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+    }
+    return pending > 0;
+  }
+
+  /** One step towards a chunk's fine grid: its samples (unless it has them), else its mesh. */
+  private refineChunk(chunk: Chunk): void {
+    if (!chunk.samples.fine) {
+      fineSurface(this.seed, chunk.samples, built);
+      return;
+    }
+    const fine = chunk.samples.fine;
+    const mesh = this.surfaceMesh(chunk.cx, chunk.cy, fine, fine.coarse, chunk.samples.near);
+    chunk.fine = mesh;
+    chunk.mesh.visible = false;
+    this.root.add(mesh);
+  }
+
+  private coarsen(chunk: Chunk): void {
+    if (!chunk.fine) return;
+    this.root.remove(chunk.fine);
+    chunk.fine.geometry.dispose();
+    chunk.fine = null;
+    chunk.mesh.visible = true;
+  }
+
+  /** A surface's mesh, placed at its chunk's south-west corner. */
+  private surfaceMesh(cx: number, cy: number, s: Surface, coarse: Float32Array | null, near: readonly Flat[]): Mesh {
+    const n = s.cells + 1;
+    const cell = CHUNK / s.cells;
+    const x0 = cx * CHUNK;
+    const y0 = cy * CHUNK;
+    // The water's surface at every corner, for the foam.
+    const levels = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) levels[j * n + i] = Math.max(-1000, waterAtHeight(this.seed, x0 + i * cell, y0 + j * cell, s.heights[j * n + i]!, near));
+    const a = surfaceArrays(s, coarse, levels);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(a.positions, 3));
+    geometry.setAttribute("color", new BufferAttribute(a.colors, 3));
+    // No normals: the material shades each face by its own slope.
+    geometry.setAttribute("water", new BufferAttribute(a.water, 1));
+    geometry.setAttribute("coarse", new BufferAttribute(a.coarse, 1));
+    geometry.computeBoundingSphere();
+    const mesh = new Mesh(geometry, this.material);
+    const [sx, sy, sz] = toScene(x0, y0, 0);
+    mesh.position.set(sx, sy, sz);
+    mesh.receiveShadow = this.shadows;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    return mesh;
   }
 
   private lastX = Number.NaN;
@@ -200,55 +349,7 @@ export class Land {
   private grow(cx: number, cy: number): void {
     const near = flatsTouching(cx, cy, this.flats);
     const s = chunkSamples(this.seed, cx, cy, near, built, BIG);
-    const n = CELLS + 1;
-    const x0 = cx * CHUNK;
-    const y0 = cy * CHUNK;
-    // The water's surface at every corner, for the foam.
-    const levels = new Float32Array(n * n);
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) levels[j * n + i] = Math.max(-1000, waterAt(this.seed, x0 + i * CELL, y0 + j * CELL, near));
-    const positions = new Float32Array(CELLS * CELLS * 2 * 9);
-    const colors = new Float32Array(positions.length);
-    const water = new Float32Array(positions.length / 3);
-    let p = 0;
-    // Local scene coordinates from the chunk's south-west corner: x east, y up, z south (−north).
-    const put = (i: number, j: number) => {
-      water[p / 3] = levels[j * n + i]!;
-      positions[p++] = i * CELL;
-      positions[p++] = s.heights[j * n + i]!;
-      positions[p++] = -j * CELL;
-    };
-    for (let j = 0; j < CELLS; j++) {
-      for (let i = 0; i < CELLS; i++) {
-        // Counter-clockwise seen from above (scene +y), in the same order as the face colours.
-        put(i, j);
-        put(i + 1, j);
-        put(i + 1, j + 1);
-        put(i, j);
-        put(i + 1, j + 1);
-        put(i, j + 1);
-      }
-    }
-    for (let f = 0; f < s.faces.length; f++) {
-      const [r, g, b] = linear(s.faces[f]!);
-      for (let v = 0; v < 3; v++) {
-        const k = (f * 3 + v) * 3;
-        colors[k] = r;
-        colors[k + 1] = g;
-        colors[k + 2] = b;
-      }
-    }
-    const geometry = new BufferGeometry();
-    geometry.setAttribute("position", new BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new BufferAttribute(colors, 3));
-    geometry.setAttribute("normal", new BufferAttribute(flatNormals(positions), 3));
-    geometry.setAttribute("water", new BufferAttribute(water, 1));
-    geometry.computeBoundingSphere();
-    const mesh = new Mesh(geometry, this.material);
-    const [sx, sy, sz] = toScene(x0, y0, 0);
-    mesh.position.set(sx, sy, sz);
-    mesh.receiveShadow = this.shadows;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
+    const mesh = this.surfaceMesh(cx, cy, s, null, near);
     this.root.add(mesh);
     const stream = this.streamMesh(cx, cy, near);
     if (stream) {
@@ -258,7 +359,7 @@ export class Land {
       this.root.add(stream);
     }
     const key = chunkKey(cx, cy);
-    const chunk: Chunk = { key, cx, cy, mesh, stream, samples: s, flats: keyOf(near) };
+    const chunk: Chunk = { key, cx, cy, mesh, fine: null, stream, samples: s, flats: keyOf(near) };
     this.chunks.set(key, chunk);
     this.list.push(chunk);
     this.version++;
@@ -332,6 +433,8 @@ export class Land {
   }
 
   private drop(chunk: Chunk): void {
+    if (this.last === chunk) this.last = null;
+    this.coarsen(chunk);
     this.root.remove(chunk.mesh);
     chunk.mesh.geometry.dispose();
     if (chunk.stream) {
@@ -356,3 +459,114 @@ export class Land {
 }
 
 const keyOf = (flats: readonly Flat[]): string => flats.map(flatKey).sort().join("|");
+
+/** How far a chunk's square is from (x, y), metres (0 inside it). */
+export function chunkDistance(cx: number, cy: number, x: number, y: number): number {
+  const nx = Math.max(cx * CHUNK, Math.min(x, (cx + 1) * CHUNK));
+  const ny = Math.max(cy * CHUNK, Math.min(y, (cy + 1) * CHUNK));
+  return Math.hypot(nx - x, ny - y);
+}
+
+/** The width of the band over which the fine grid morphs into the base one, at the edge of a ring `radius` wide. */
+export const fineBand = (radius: number): number => Math.min(40, radius * 0.4);
+
+/**
+ * Whether a chunk `d` metres from the focus wants the fine grid (it has it now:
+ * `fine`). It asks a little before the ring reaches it and lets go a little after,
+ * so it doesn't flip on the edge; and a chunk on the base grid always lies wholly
+ * beyond the ring, where its fine neighbours have morphed into the same surface.
+ */
+export function wantsFine(d: number, fine: boolean, radius: number): boolean {
+  if (radius <= 0) return false;
+  return fine ? d < radius + CHUNK * 0.5 : d < radius + CHUNK * 0.25;
+}
+
+/** sRGB channel (0..255) to linear, as the renderer's colour management does it (faces are coloured thousands at a time). */
+const SRGB = Float32Array.from({ length: 256 }, (_, i) => linear(i)[2]);
+
+/** How far a skirt hangs below a chunk's edge, metres. */
+export const SKIRT = 1.5;
+
+export interface SurfaceArrays {
+  positions: Float32Array;
+  colors: Float32Array;
+  /** The base grid's height under each vertex: where it morphs to. */
+  coarse: Float32Array;
+  /** The water's level at each vertex (for the foam). */
+  water: Float32Array;
+}
+
+/**
+ * A surface's triangles in its chunk's local scene coordinates (x east, y up, z
+ * south, from the chunk's south-west corner), each vertex with its face's colour
+ * (linear), the base grid's height under it (`coarse`; its own height when null)
+ * and the water's level (`levels`, per corner); and a skirt hanging SKIRT below
+ * every edge, facing out, morphing with it.
+ */
+export function surfaceArrays(s: Surface, coarse: Float32Array | null, levels: Float32Array): SurfaceArrays {
+  const cells = s.cells;
+  const n = cells + 1;
+  const cell = CHUNK / cells;
+  const tris = cells * cells * 2 + cells * 8;
+  const positions = new Float32Array(tris * 9);
+  const colors = new Float32Array(tris * 9);
+  const under = new Float32Array(tris * 3);
+  const water = new Float32Array(tris * 3);
+  const target = coarse ?? s.heights;
+  let v = 0;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const color = (hex: number, k = 1) => {
+    r = SRGB[(hex >> 16) & 255]! * k;
+    g = SRGB[(hex >> 8) & 255]! * k;
+    b = SRGB[hex & 255]! * k;
+  };
+  const put = (i: number, j: number, drop = 0) => {
+    const k = j * n + i;
+    positions[v * 3] = i * cell;
+    positions[v * 3 + 1] = s.heights[k]! - drop;
+    positions[v * 3 + 2] = -j * cell;
+    colors[v * 3] = r;
+    colors[v * 3 + 1] = g;
+    colors[v * 3 + 2] = b;
+    under[v] = target[k]! - drop;
+    water[v] = drop ? -1000 : levels[k]!;
+    v++;
+  };
+  for (let j = 0; j < cells; j++) {
+    for (let i = 0; i < cells; i++) {
+      const c = SPLITS[s.split[j * cells + i]!]!;
+      for (let t = 0; t < 2; t++) {
+        color(s.faces[(j * cells + i) * 2 + t]!);
+        for (let q = 0; q < 3; q++) put(i + c[t * 6 + q * 2]!, j + c[t * 6 + q * 2 + 1]!);
+      }
+    }
+  }
+  // Skirts: south and east edges run with the grid, north and west against it, so each faces out.
+  const skirt = (ai: number, aj: number, bi: number, bj: number, face: number, outward: boolean) => {
+    color(s.faces[face]!, 0.8);
+    if (outward) {
+      put(ai, aj, SKIRT);
+      put(bi, bj, SKIRT);
+      put(bi, bj);
+      put(ai, aj, SKIRT);
+      put(bi, bj);
+      put(ai, aj);
+    } else {
+      put(bi, bj, SKIRT);
+      put(ai, aj, SKIRT);
+      put(ai, aj);
+      put(bi, bj, SKIRT);
+      put(ai, aj);
+      put(bi, bj);
+    }
+  };
+  for (let k = 0; k < cells; k++) {
+    skirt(k, 0, k + 1, 0, k * 2, true);
+    skirt(cells, k, cells, k + 1, (k * cells + cells - 1) * 2, true);
+    skirt(k, cells, k + 1, cells, ((cells - 1) * cells + k) * 2 + 1, false);
+    skirt(0, k, 0, k + 1, k * cells * 2 + 1, false);
+  }
+  return { positions, colors, coarse: under, water };
+}

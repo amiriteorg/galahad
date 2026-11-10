@@ -40,6 +40,8 @@ export interface Tier {
   grassRadius: number;
   /** Beyond this (metres from the focus) trees are drawn with their simpler model. */
   treeLod: number;
+  /** The land is drawn on the fine grid (2 m cells) this far round the focus, metres; the base grid (4 m) beyond. */
+  terrainFine: number;
   /** Chunks started per frame at most, and the milliseconds a frame may spend growing land. */
   chunkBudget: number;
   chunkMs: number;
@@ -75,6 +77,7 @@ export const TIERS: Record<TierName, Tier> = {
     radius: 200,
     grassRadius: 36,
     treeLod: 60,
+    terrainFine: 40,
     chunkBudget: 1,
     chunkMs: 3,
     waterGrid: 32,
@@ -104,6 +107,7 @@ export const TIERS: Record<TierName, Tier> = {
     radius: 280,
     grassRadius: 60,
     treeLod: 90,
+    terrainFine: 96,
     chunkBudget: 2,
     chunkMs: 4,
     waterGrid: 56,
@@ -133,6 +137,7 @@ export const TIERS: Record<TierName, Tier> = {
     radius: 380,
     grassRadius: 100,
     treeLod: 140,
+    terrainFine: 150,
     chunkBudget: 3,
     chunkMs: 6,
     waterGrid: 80,

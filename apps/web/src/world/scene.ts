@@ -199,7 +199,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const sky = new SkyDome(tier.name === "low" ? 300 : 900);
   const horizon = new Horizon();
   scene.add(sky.group, horizon.group);
-  const land = new Land(worldRoot, SEED, shadows, tier.waterGrid);
+  const land = new Land(worldRoot, SEED, shadows, tier.waterGrid, tier.terrainFine);
   const vegetation = new Vegetation(worldRoot, tier, (x, y) => land.heightAt(x, y), (chunk, layer) => land.smallLayer(chunk, layer));
   land.onGrow = (chunk) => vegetation.addChunk(chunk);
   land.onDrop = (chunk) => vegetation.removeChunk(chunk);

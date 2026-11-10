@@ -143,18 +143,41 @@ function paths(): Point[][] {
   return keepPaths;
 }
 
-/** True where the keep has built something: a station's footprint, a path, a place to stand. Nothing grows there. */
-export function built(x: number, y: number): boolean {
-  if (Math.hypot(x, y) > 70) return false;
+/** Every footprint and place to stand round the keep, as circles (x, y, r), worked out once. */
+let builtCircles: Float64Array | null = null;
+function circles(): Float64Array {
+  if (builtCircles) return builtCircles;
+  const out: number[] = [];
   for (const p of PLACES) {
     const s = STATIONS[p];
     const stand = standAt(p);
-    if (Math.hypot(x - s.x, y - s.y) < LAYOUT[p].r + 1.5 || Math.hypot(x - stand.x, y - stand.y) < (p === "keep" ? 3.6 : 2.2)) return true;
+    out.push(s.x, s.y, LAYOUT[p].r + 1.5, stand.x, stand.y, p === "keep" ? 3.6 : 2.2);
   }
+  builtCircles = Float64Array.from(out);
+  return builtCircles;
+}
+
+/** True where the keep has built something: a station's footprint, a path, a place to stand. Nothing grows there. */
+export function built(x: number, y: number): boolean {
+  if (x * x + y * y > 70 * 70) return false;
+  const c = circles();
+  for (let i = 0; i < c.length; i += 3) {
+    const dx = x - c[i]!;
+    const dy = y - c[i + 1]!;
+    if (dx * dx + dy * dy < c[i + 2]! * c[i + 2]!) return true;
+  }
+  // Within 1.3 m of a path (asked thousands of times when the ground near the keep is coloured: no allocation).
   for (const line of paths()) {
     for (let i = 1; i < line.length; i++) {
-      const q = closestOnSegment(line[i - 1]!, line[i]!, { x, y });
-      if (Math.hypot(q.x - x, q.y - y) < 1.3) return true;
+      const a = line[i - 1]!;
+      const b = line[i]!;
+      const ex = b.x - a.x;
+      const ey = b.y - a.y;
+      const len2 = ex * ex + ey * ey;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / len2)) : 0;
+      const dx = a.x + ex * t - x;
+      const dy = a.y + ey * t - y;
+      if (dx * dx + dy * dy < 1.3 * 1.3) return true;
     }
   }
   return false;

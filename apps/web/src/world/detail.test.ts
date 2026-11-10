@@ -1,0 +1,188 @@
+import { describe, expect, test } from "bun:test";
+import { Group } from "three/webgpu";
+import { chunkDistance, fineBand, Land, SKIRT, surfaceArrays, wantsFine } from "./land.ts";
+import { built } from "./path.ts";
+import { CELL, CELLS, CHUNK, chunkSamples, FINE, FINE_CELL, FINE_CELLS, fineSurface, heightAt, KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, surfaceAt, surfaceHeight } from "./terrain.ts";
+
+/*
+ * The world's finer resolution: the land's fine grid near the camera (how it
+ * meets the base grid without a crack or a pop, and that what feet stand on is
+ * what's drawn).
+ */
+
+const BIG = ["trees", "bushes", "rocks"] as const;
+const n = FINE_CELLS + 1;
+
+describe("the land's fine grid", () => {
+  test("it holds the base grid's corners, and every corner is the land's own height", () => {
+    const base = chunkSamples(SEED, 3, -2, [KEEP_FLAT], built, BIG);
+    const fine = fineSurface(SEED, base, built);
+    expect(fine.cells).toBe(CELLS * FINE);
+    for (let j = 0; j <= CELLS; j++) for (let i = 0; i <= CELLS; i++) expect(fine.heights[j * FINE * n + i * FINE]).toBe(base.heights[j * (CELLS + 1) + i]!);
+    for (let j = 0; j < n; j += 3) for (let i = 0; i < n; i += 5) expect(fine.heights[j * n + i]).toBe(Math.fround(heightAt(SEED, 3 * CHUNK + i * FINE_CELL, -2 * CHUNK + j * FINE_CELL, [KEEP_FLAT])));
+    // The same seed, the same fine land.
+    expect(fineSurface(SEED, chunkSamples(SEED, 3, -2, [KEEP_FLAT], built, BIG), built).faces).toEqual(fine.faces);
+  });
+
+  test("neighbouring chunks share their fine edges exactly, morph targets too (no cracks)", () => {
+    const a = fineSurface(SEED, chunkSamples(SEED, 2, 1, [], undefined, BIG));
+    const right = fineSurface(SEED, chunkSamples(SEED, 3, 1, [], undefined, BIG));
+    const up = fineSurface(SEED, chunkSamples(SEED, 2, 2, [], undefined, BIG));
+    for (let k = 0; k < n; k++) {
+      expect(a.heights[k * n + FINE_CELLS]).toBe(right.heights[k * n]!);
+      expect(a.heights[FINE_CELLS * n + k]).toBe(up.heights[k]!);
+      expect(a.coarse[k * n + FINE_CELLS]).toBeCloseTo(right.coarse[k * n]!, 5);
+      expect(a.coarse[FINE_CELLS * n + k]).toBeCloseTo(up.coarse[k]!, 5);
+    }
+  });
+
+  test("fully morphed, it is the base surface: a chunk on the fine grid meets one on the base grid without a crack", () => {
+    const base = chunkSamples(SEED, -4, 5, [], undefined, BIG);
+    const fine = fineSurface(SEED, base);
+    const east = chunkSamples(SEED, -3, 5, [], undefined, BIG);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) expect(fine.coarse[j * n + i]).toBeCloseTo(surfaceHeight(base, i / FINE, j / FINE), 5);
+      // Along the shared edge, the base neighbour's edge is a straight line between its corners.
+      const v = j / FINE;
+      const j0 = Math.min(CELLS - 1, Math.floor(v));
+      const t = v - j0;
+      const edge = east.heights[j0 * (CELLS + 1)]! * (1 - t) + east.heights[(j0 + 1) * (CELLS + 1)]! * t;
+      expect(fine.coarse[j * n + FINE_CELLS]).toBeCloseTo(edge, 4);
+    }
+  });
+
+  test("what feet stand on is what's drawn: surfaceAt and the land's heightAt follow the fine grid's triangles", () => {
+    const land = new Land(new Group(), SEED, false, 32, 96);
+    land.update(140, -90, 120, performance.now() + 60_000, 999);
+    expect(land.fineChunks).toBeGreaterThan(0);
+    let worst = 0;
+    let off = 0;
+    for (let k = 0; k < 600; k++) {
+      const x = 100 + ((k * 0.618) % 1) * 90;
+      const y = -130 + ((k * 0.377) % 1) * 90;
+      const fine = fineSurface(SEED, chunkSamples(SEED, Math.floor(x / CHUNK), Math.floor(y / CHUNK), [KEEP_FLAT], built, BIG), built);
+      const drawn = surfaceHeight(fine, (x - Math.floor(x / CHUNK) * CHUNK) / FINE_CELL, (y - Math.floor(y / CHUNK) * CHUNK) / FINE_CELL);
+      worst = Math.max(worst, Math.abs(surfaceAt(SEED, x, y, [KEEP_FLAT]) - drawn), Math.abs(land.heightAt(x, y) - drawn));
+      off += Math.abs(heightAt(SEED, x, y, [KEEP_FLAT]) - drawn);
+    }
+    expect(worst).toBeLessThan(1e-4);
+    // And the land's own smooth height is never far from it on average (a few centimetres).
+    expect(off / 600).toBeLessThan(0.06);
+  });
+
+  test("the keep's ground and a plot stay level on the fine grid", () => {
+    const plot = { x: 140, y: -90, size: 30 };
+    const flats = [KEEP_FLAT, plotFlat(plot)];
+    for (const [cx, cy] of [[0, 0], [-1, 0], [0, -1], [-1, -1], [2, -2]] as const) {
+      const s = chunkSamples(SEED, cx, cy, flats, built, BIG);
+      const fine = fineSurface(SEED, s, built);
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const x = cx * CHUNK + i * FINE_CELL;
+          const y = cy * CHUNK + j * FINE_CELL;
+          const onPlot = Math.max(Math.abs(x - plot.x), Math.abs(y - plot.y)) <= plot.size / 2;
+          if (Math.hypot(x, y) <= KEEP_RADIUS || onPlot) expect(fine.heights[j * n + i]).toBe(0);
+          // Far off, it morphs to the base grid: level too, a base cell in from the flat's edge.
+          if (Math.hypot(x, y) <= KEEP_RADIUS - CELL * 1.5) expect(fine.coarse[j * n + i]).toBe(0);
+        }
+      }
+    }
+  });
+
+  test("every edge has a skirt hanging below it, facing out, morphing with it", () => {
+    const s = chunkSamples(SEED, 1, 1, [], undefined, BIG);
+    const fine = fineSurface(SEED, s);
+    const c = FINE_CELLS;
+    const a = surfaceArrays(fine, fine.coarse, new Float32Array(n * n).fill(-1000));
+    expect(a.positions.length / 9).toBe(c * c * 2 + c * 8);
+    const skirts = { south: 0, north: 0, east: 0, west: 0 };
+    const lifts = new Map<string, number>();
+    for (let t = c * c * 2; t < a.positions.length / 9; t++) {
+      const p = a.positions.subarray(t * 9, t * 9 + 9);
+      // The face's normal, from its winding.
+      const ux = p[3]! - p[0]!;
+      const uy = p[4]! - p[1]!;
+      const uz = p[5]! - p[2]!;
+      const vx = p[6]! - p[0]!;
+      const vy = p[7]! - p[1]!;
+      const vz = p[8]! - p[2]!;
+      const nx = uy * vz - uz * vy;
+      const nz = ux * vy - uy * vx;
+      const cx = (p[0]! + p[3]! + p[6]!) / 3;
+      const cz = (p[2]! + p[5]! + p[8]!) / 3;
+      if (Math.abs(cz) < 1e-6) {
+        expect(nz).toBeGreaterThan(0);
+        skirts.south++;
+      } else if (Math.abs(cz + CHUNK) < 1e-6) {
+        expect(nz).toBeLessThan(0);
+        skirts.north++;
+      } else if (Math.abs(cx) < 1e-6) {
+        expect(nx).toBeLessThan(0);
+        skirts.west++;
+      } else {
+        expect(cx).toBeCloseTo(CHUNK, 6);
+        expect(nx).toBeGreaterThan(0);
+        skirts.east++;
+      }
+      // Its morph target hangs with it: top and bottom of a skirt move by the same amount.
+      for (let q = 0; q < 3; q++) {
+        const v = t * 3 + q;
+        const key = `${a.positions[v * 3]},${a.positions[v * 3 + 2]}`;
+        const lift = a.positions[v * 3 + 1]! - a.coarse[v]!;
+        const seen = lifts.get(key);
+        if (seen === undefined) lifts.set(key, lift);
+        else expect(lift).toBeCloseTo(seen, 5);
+      }
+    }
+    expect(skirts).toEqual({ south: c * 2, north: c * 2, east: c * 2, west: c * 2 });
+    let lowest = Infinity;
+    for (let v = c * c * 6; v < a.positions.length / 3; v++) lowest = Math.min(lowest, a.positions[v * 3 + 1]!);
+    expect(lowest).toBeLessThan(Math.min(...fine.heights) - SKIRT + 1e-4);
+  });
+
+  test("a chunk on the base grid always lies wholly beyond the ring, where its fine neighbours have become the base surface", () => {
+    for (const radius of [40, 96, 150]) {
+      expect(fineBand(radius)).toBeGreaterThan(0);
+      expect(fineBand(radius)).toBeLessThan(radius);
+      for (let d = 0; d < radius + CHUNK; d += 0.5) {
+        // Asked for before the ring reaches it, let go only after: no flicker on the edge.
+        if (wantsFine(d, false, radius)) expect(wantsFine(d, true, radius)).toBe(true);
+        if (!wantsFine(d, false, radius)) expect(d).toBeGreaterThanOrEqual(radius);
+      }
+    }
+    expect(wantsFine(0, false, 0)).toBe(false);
+    expect(chunkDistance(0, 0, 10, 10)).toBe(0);
+    expect(chunkDistance(1, 0, 10, 10)).toBe(54);
+  });
+
+  test("the land swaps chunks near the focus to the fine grid, and back as the focus moves away", () => {
+    const radius = 96;
+    const land = new Land(new Group(), SEED, false, 32, radius);
+    const settle = (x: number, y: number) => {
+      for (let i = 0; i < 400; i++) if (!land.update(x, y, 200, performance.now() + 60_000, 999)) break;
+    };
+    settle(0, 0);
+    const check = (x: number, y: number) => {
+      let fine = 0;
+      for (const c of land.list) {
+        const d = chunkDistance(c.cx, c.cy, x, y);
+        if (d < radius) expect(c.fine).not.toBeNull();
+        if (d > radius + CHUNK * 0.5) expect(c.fine).toBeNull();
+        expect(c.mesh.visible).toBe(c.fine === null);
+        if (c.fine) fine++;
+      }
+      return fine;
+    };
+    expect(check(0, 0)).toBeGreaterThan(4);
+    settle(600, 0);
+    check(600, 0);
+    // The far side of the world, on the base grid again: nothing near the keep is still fine.
+    for (const c of land.list) if (chunkDistance(c.cx, c.cy, 0, 0) < radius) expect(c.fine).toBeNull();
+    land.dispose();
+  });
+
+  test("the base grid samples every 4 m and the fine every 2 m", () => {
+    expect(CELL).toBe(4);
+    expect(FINE_CELL).toBe(2);
+  });
+});
