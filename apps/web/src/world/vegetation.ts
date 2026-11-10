@@ -538,9 +538,9 @@ export const FAR = 2;
  * A tier without near trees (`near` 0) never draws them.
  */
 export function treeBand(d: number, current: number, near: number, lod: number): number {
-  const within = (edge: number, inside: boolean) => d < edge + CHUNK * (inside ? 1.1 : 0.7);
-  if (near > 0 && within(near, current === NEAR)) return NEAR;
-  if (within(lod, current <= MID)) return MID;
+  // Asked every frame for every chunk: plain comparisons, nothing allocated.
+  if (near > 0 && d < near + CHUNK * (current === NEAR ? 1.1 : 0.7)) return NEAR;
+  if (d < lod + CHUNK * (current <= MID ? 1.1 : 0.7)) return MID;
   return FAR;
 }
 
