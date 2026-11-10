@@ -38,6 +38,9 @@ export function groundAO(base = 0.6, height = 1.3, under = 0.72, ground = 0): Am
   return (_x, y, _z, _nx, ny) => (base + (1 - base) * smoothstep(ground, ground + height, y)) * (1 - (1 - under) * smoothstep(0.05, -0.75, ny));
 }
 
+/** A colour (sRGB) for a face, from its centroid (after the primitive's transform): strata, bark bands, blossom. */
+export type Paint = (x: number, y: number, z: number) => number;
+
 export interface BuildOptions {
   ao?: AmbientOcclusion;
   /** "up": every normal points up (grass and flowers shade like the ground they stand on). */
@@ -69,14 +72,20 @@ export class Mesher {
     return this;
   }
 
-  /** Adds a primitive, transformed by `m`, painted `color` (sRGB) with `vary` (0..1) per-face brightness variation. */
-  add(geometry: BufferGeometry, color: number, m?: Matrix4, vary = 0.06): this {
+  /**
+   * Adds a primitive, transformed by `m`, painted `color` (sRGB, or a Paint per
+   * face) with `vary` (0..1) per-face brightness variation.
+   */
+  add(geometry: BufferGeometry, color: number | Paint, m?: Matrix4, vary = 0.06): this {
     const g = geometry.index ? geometry.toNonIndexed() : geometry.clone();
     if (m) g.applyMatrix4(m);
     const p = g.getAttribute("position");
-    const [r, gr, bl] = linear(color);
+    let [r, gr, bl] = typeof color === "number" ? linear(color) : [0, 0, 0];
     for (let i = 0; i + 2 < p.count; i += 3) {
       const k = vary ? 1 - vary + 2 * vary * fract(Math.sin(++this.faces * 12.9898) * 43758.5453) : 1;
+      if (typeof color !== "number") {
+        [r, gr, bl] = linear(color((p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3, (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3, (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3));
+      }
       for (let v = 0; v < 3; v++) {
         this.pos.push(p.getX(i + v), p.getY(i + v), p.getZ(i + v));
         this.col.push(r * k, gr * k, bl * k);
@@ -190,6 +199,90 @@ export function between(ax: number, ay: number, az: number, bx: number, by: numb
   q.setFromUnitVectors(a, b);
   s.set(scaleXZ, len, scaleXZ);
   return new Matrix4().compose(t, q, s);
+}
+
+/**
+ * Knocks flat facets off a solid round the origin, as if chipped: `cuts` planes
+ * at random (by `seed`) turns, each `depth` (0..1) of the way in from its
+ * farthest point; whatever stands beyond a plane is pressed onto it.
+ */
+export function chip(geometry: BufferGeometry, seed: number, cuts = 3, depth = 0.82): BufferGeometry {
+  const p = geometry.getAttribute("position");
+  let reach = 0;
+  for (let i = 0; i < p.count; i++) reach = Math.max(reach, Math.hypot(p.getX(i), p.getY(i), p.getZ(i)));
+  for (let c = 0; c < cuts; c++) {
+    const u = fract(Math.sin((seed + 1) * 91.7 + c * 13.1) * 43758.5453);
+    const w = fract(Math.sin((seed + 3) * 47.3 + c * 7.7) * 24634.6345);
+    // A direction mostly sideways or up (a chip off the bottom would never be seen).
+    const yaw = u * Math.PI * 2;
+    const tilt = (w - 0.3) * 1.3;
+    const nx = Math.cos(yaw) * Math.cos(tilt);
+    const ny = Math.sin(tilt);
+    const nz = Math.sin(yaw) * Math.cos(tilt);
+    const d = reach * (depth + 0.08 * w);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i);
+      const y = p.getY(i);
+      const z = p.getZ(i);
+      const over = x * nx + y * ny + z * nz - d;
+      if (over > 0) p.setXYZ(i, x - nx * over, y - ny * over, z - nz * over);
+    }
+  }
+  return geometry;
+}
+
+/**
+ * A box `w` × `h` × `d` with every edge bevelled by `b`: its faces inset, a
+ * narrow face along each edge and a small one at each corner, so its edges catch
+ * the light (crafted, not cut from foam). 44 triangles.
+ */
+export function bevelBox(w: number, h: number, d: number, b: number): BufferGeometry {
+  const hx = w / 2;
+  const hy = h / 2;
+  const hz = d / 2;
+  b = Math.min(b, hx * 0.9, hy * 0.9, hz * 0.9);
+  // Each corner (sx, sy, sz) cut into three points: on its x, y and z faces.
+  const P = (sx: number, sy: number, sz: number, axis: 0 | 1 | 2): number[] =>
+    axis === 0 ? [sx * hx, sy * (hy - b), sz * (hz - b)] : axis === 1 ? [sx * (hx - b), sy * hy, sz * (hz - b)] : [sx * (hx - b), sy * (hy - b), sz * hz];
+  const tris: number[][] = [];
+  const quad = (a: number[], b2: number[], c: number[], e: number[]) => tris.push(a, b2, c, a, c, e);
+  const S = [-1, 1];
+  for (const s of S) {
+    quad(P(s, -1, -1, 0), P(s, 1, -1, 0), P(s, 1, 1, 0), P(s, -1, 1, 0));
+    quad(P(-1, s, -1, 1), P(1, s, -1, 1), P(1, s, 1, 1), P(-1, s, 1, 1));
+    quad(P(-1, -1, s, 2), P(1, -1, s, 2), P(1, 1, s, 2), P(-1, 1, s, 2));
+  }
+  for (const s of S) {
+    for (const t of S) {
+      // The edges along z, y and x at this pair of signs.
+      quad(P(s, t, -1, 0), P(s, t, -1, 1), P(s, t, 1, 1), P(s, t, 1, 0));
+      quad(P(s, -1, t, 0), P(s, -1, t, 2), P(s, 1, t, 2), P(s, 1, t, 0));
+      quad(P(-1, s, t, 1), P(-1, s, t, 2), P(1, s, t, 2), P(1, s, t, 1));
+    }
+  }
+  for (const sx of S) for (const sy of S) for (const sz of S) tris.push(P(sx, sy, sz, 0), P(sx, sy, sz, 1), P(sx, sy, sz, 2));
+  return outward(tris);
+}
+
+/** Triangles of a solid that's convex round the origin, each wound to face away from it. */
+function outward(points: number[][]): BufferGeometry {
+  const out = new Float32Array(points.length * 3);
+  for (let i = 0; i < points.length; i += 3) {
+    a.fromArray(points[i]!);
+    b.fromArray(points[i + 1]!);
+    c.fromArray(points[i + 2]!);
+    const cx = (a.x + b.x + c.x) / 3;
+    const cy = (a.y + b.y + c.y) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
+    t.subVectors(b, a).cross(s.subVectors(c, a));
+    const flip = t.x * cx + t.y * cy + t.z * cz < 0;
+    a.toArray(out, i * 3);
+    (flip ? c : b).toArray(out, i * 3 + 3);
+    (flip ? b : c).toArray(out, i * 3 + 6);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(out, 3));
+  return g;
 }
 
 /**

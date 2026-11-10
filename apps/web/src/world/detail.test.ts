@@ -3,11 +3,13 @@ import { Group } from "three/webgpu";
 import { chunkDistance, fineBand, Land, SKIRT, surfaceArrays, wantsFine } from "./land.ts";
 import { built } from "./path.ts";
 import { CELL, CELLS, CHUNK, chunkSamples, FINE, FINE_CELL, FINE_CELLS, fineSurface, heightAt, KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, surfaceAt, surfaceHeight } from "./terrain.ts";
+import { TIERS } from "./tiers.ts";
+import { FAR, MID, NEAR, TREE_KINDS, treeBand, treeTriangles, Vegetation } from "./vegetation.ts";
 
 /*
  * The world's finer resolution: the land's fine grid near the camera (how it
  * meets the base grid without a crack or a pop, and that what feet stand on is
- * what's drawn).
+ * what's drawn), the trees' levels of detail, and the tiers' triangle budgets.
  */
 
 const BIG = ["trees", "bushes", "rocks"] as const;
@@ -184,5 +186,66 @@ describe("the land's fine grid", () => {
   test("the base grid samples every 4 m and the fine every 2 m", () => {
     expect(CELL).toBe(4);
     expect(FINE_CELL).toBe(2);
+  });
+});
+
+describe("levels of detail and budgets", () => {
+  test("trees: near within the tier's detail distance, simpler to its tree distance, far beyond; steady on the edges", () => {
+    for (const tier of Object.values(TIERS)) {
+      let last = NEAR;
+      for (let d = 0; d < 600; d += 1) {
+        const band = treeBand(d, FAR, tier.treeDetail, tier.treeLod);
+        // Farther never means more detail; a tier without near trees never draws them.
+        expect(band).toBeGreaterThanOrEqual(last);
+        if (tier.treeDetail === 0) expect(band).not.toBe(NEAR);
+        // A chunk keeps its level a little past the edge: never coarser than a fresh one's.
+        for (const current of [NEAR, MID, FAR]) expect(treeBand(d, current, tier.treeDetail, tier.treeLod)).toBeLessThanOrEqual(band);
+        last = band;
+      }
+      expect(treeBand(tier.treeLod + CHUNK * 2, FAR, tier.treeDetail, tier.treeLod)).toBe(FAR);
+    }
+    const edge = TIERS.medium.treeLod + CHUNK * 0.9;
+    expect(treeBand(edge, MID, TIERS.medium.treeDetail, TIERS.medium.treeLod)).toBe(MID);
+    expect(treeBand(edge, FAR, TIERS.medium.treeDetail, TIERS.medium.treeLod)).toBe(FAR);
+  });
+
+  test("every kind of tree has more, smaller facets near than farther off", () => {
+    const tris = treeTriangles();
+    for (const kind of TREE_KINDS) {
+      const [near, mid] = tris[kind];
+      expect(near).toBeGreaterThan(mid * 1.5);
+      expect(near).toBeLessThan(1000);
+    }
+  });
+
+  test("the land and what grows on it stay within each tier's triangle budget, at the keep and out in the woods", () => {
+    // Room left for the keep, the characters and the sky.
+    const room = 80_000;
+    for (const name of ["low", "medium", "high"] as const) {
+      const tier = TIERS[name];
+      for (const [x, y] of [[0, 0], [400, 300], [-120, 90]] as const) {
+        const root = new Group();
+        const land = new Land(root, SEED, false, 32, tier.terrainFine);
+        const veg = new Vegetation(root, tier, (px, py) => land.heightAt(px, py), (c, l) => land.smallLayer(c, l));
+        land.onGrow = (c) => veg.addChunk(c);
+        land.onDrop = (c) => veg.removeChunk(c);
+        for (let i = 0; i < 400; i++) {
+          const growing = land.update(x, y, tier.radius, performance.now() + 60_000, 999);
+          if (!veg.update(x, y, performance.now() + 60_000) && !growing) break;
+        }
+        let ground = 0;
+        for (const c of land.list) ground += (c.fine ?? c.mesh).geometry.getAttribute("position").count / 3;
+        expect(ground + veg.triangles()).toBeLessThan(tier.triangles - room);
+        veg.dispose();
+        land.dispose();
+      }
+    }
+    // And the budgets themselves grow with the tier, each below what it drew at full reach before the finer
+    // world (low 0.54-0.65 M, medium 1.07-1.16 M, high 1.75-2.14 M): phones must not get slower.
+    expect(TIERS.low.triangles).toBeLessThan(TIERS.medium.triangles);
+    expect(TIERS.medium.triangles).toBeLessThan(TIERS.high.triangles);
+    expect(TIERS.low.triangles).toBeLessThan(540_000);
+    expect(TIERS.medium.triangles).toBeLessThan(1_070_000);
+    expect(TIERS.high.triangles).toBeLessThan(2_000_000);
   });
 });

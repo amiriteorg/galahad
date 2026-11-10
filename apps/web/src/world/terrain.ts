@@ -83,8 +83,9 @@ const TERRACE = 0.8;
 export function outcrop(seed: number, x: number, y: number): number {
   const region = simplex(seed + 141, x / 150, y / 150);
   if (region < 0.15) return 0;
-  const n = simplex(seed + 149, x / 9, y / 9) + 0.35 * simplex(seed + 151, x / 4.5, y / 4.5);
-  return smoothstep(0.15, 0.5, region) * smoothstep(0.3, 0.9, n);
+  // Knolls several cells across (narrower ones would stand up off the grid like tents), their crowns craggy.
+  const n = simplex(seed + 149, x / 16, y / 16) + 0.3 * simplex(seed + 151, x / 7, y / 7);
+  return smoothstep(0.15, 0.5, region) * smoothstep(0.25, 0.95, n);
 }
 
 /** The land as it would be with nothing built on it. */
@@ -111,7 +112,7 @@ export function naturalHeight(seed: number, x: number, y: number): number {
   }
   // Crags stand a metre or so out of the turf (never at the water's edge).
   const crag = outcrop(seed, x, y);
-  if (crag > 0) h += crag * 1.3 * smoothstep(0, 2.5, h);
+  if (crag > 0) h += crag * 1.5 * smoothstep(0, 2.5, h);
   // Streams lay their beds just below their pool's surface, so the water shows in them, and cut crisp banks down
   // to them. They only ever cut: where the land is already lower (a lake's floor), it stays so.
   const s = streamAt(seed, x, y);
@@ -332,7 +333,7 @@ const BASE_SALT = 13;
 const FINE_SALT = 14;
 
 /** Bare earth on steep banks and terrace risers, and the worn turf beside the keep's paths. */
-const EARTH = 0xc9a477;
+const EARTH = 0xcbab7e;
 const WORN = 0xc3c27a;
 const FACE_JITTER = 0.035;
 
@@ -348,9 +349,9 @@ function faceColor(f: Fields, a: number, b: number, c: number, h: number, flat: 
   let color = patchColor(ground, (f.patch[a]! + f.patch[b]! + f.patch[c]!) / 3);
   if (ground === "meadow" || ground === "forest" || ground === "sand") {
     const steep = smoothstep(0.95, 0.8, ny);
-    if (steep > 0) color = mixHex(color, EARTH, steep * 0.55);
+    if (steep > 0) color = mixHex(color, EARTH, steep * 0.45);
     const crag = (f.crag[a]! + f.crag[b]! + f.crag[c]!) / 3;
-    const rocky = Math.max(crag > 0 ? smoothstep(0.12, 0.4, crag) : 0, smoothstep(0.8, 0.62, ny));
+    const rocky = Math.max(crag > 0 ? smoothstep(0.45, 0.8, crag) : 0, smoothstep(0.8, 0.62, ny));
     if (rocky > 0) color = mixHex(color, GROUND_COLOR.rock, rocky);
   } else if (ground === "rock") {
     // A cliff's face a little warmer and darker than its top.
@@ -492,6 +493,8 @@ interface LayerRule {
   lawn?: boolean;
   /** Only where the ground is even (not on a terrace's riser, a crag or a steep bank): trees and bushes. */
   even?: boolean;
+  /** Thicker on crags (boulders gather where the rock breaks through). */
+  crags?: number;
 }
 
 const RULES: Record<Layer, LayerRule> = {
@@ -501,8 +504,10 @@ const RULES: Record<Layer, LayerRule> = {
     clearance: TREE_CLEARANCE,
     scale: [0.8, 1.4],
     even: true,
-    // 0 broadleaf, 1 conifer, 2 round, 3 parasol.
-    kind: (g, p) => (g === "forest" ? (p < 0.36 ? 1 : p < 0.76 ? 0 : p < 0.9 ? 2 : 3) : p < 0.45 ? 0 : p < 0.7 ? 3 : 2),
+    // TREE_KINDS: 0 oak, 1 pine, 2 round, 3 parasol, 4 birch, 5 blossom. Forests are mostly pines, oaks and
+    // birches; the meadows have their lone oaks and parasols, and here and there a tree in blossom.
+    kind: (g, p) =>
+      g === "forest" ? (p < 0.34 ? 1 : p < 0.64 ? 0 : p < 0.82 ? 4 : p < 0.92 ? 2 : p < 0.96 ? 3 : 5) : p < 0.32 ? 0 : p < 0.52 ? 3 : p < 0.67 ? 2 : p < 0.83 ? 4 : 5,
     salt: 1,
   },
   bushes: {
@@ -511,7 +516,8 @@ const RULES: Record<Layer, LayerRule> = {
     clearance: 2,
     scale: [0.7, 1.3],
     even: true,
-    kind: (_g, p) => (p < 0.6 ? 0 : 1),
+    // 0 leafy, 1 in flower, 2 fern (mostly under the trees).
+    kind: (g, p) => (g === "forest" ? (p < 0.4 ? 0 : p < 0.55 ? 1 : 2) : p < 0.5 ? 0 : p < 0.82 ? 1 : 2),
     salt: 21,
   },
   flowers: {
@@ -519,7 +525,8 @@ const RULES: Record<Layer, LayerRule> = {
     density: { lakebed: 0, sand: 0.02, green: 0.3, meadow: 0.46, forest: 0.08, rock: 0.05 },
     clearance: 0.5,
     scale: [1.3, 2.1],
-    kind: (_g, p) => Math.min(2, Math.floor(p * 3)),
+    // 0 daisies, 1 lupines, 2 lavender, 3 buttercups, 4 campions.
+    kind: (_g, p) => (p < 0.28 ? 0 : p < 0.46 ? 1 : p < 0.62 ? 2 : p < 0.82 ? 3 : 4),
     salt: 41,
     lawn: true,
   },
@@ -528,7 +535,8 @@ const RULES: Record<Layer, LayerRule> = {
     density: { lakebed: 0, sand: 0.1, green: 0.42, meadow: 0.7, forest: 0.4, rock: 0.14 },
     clearance: 0.5,
     scale: [0.9, 1.8],
-    kind: () => 0,
+    // 0 a tuft, 1 a lush clump, 2 tall grass in seed.
+    kind: (g, p) => (p < 0.55 ? 0 : p < (g === "forest" ? 0.95 : 0.85) ? 1 : 2),
     salt: 61,
     lawn: true,
   },
@@ -537,9 +545,11 @@ const RULES: Record<Layer, LayerRule> = {
     density: { lakebed: 0.06, sand: 0.1, green: 0, meadow: 0.12, forest: 0.14, rock: 0.62 },
     clearance: TREE_CLEARANCE,
     scale: [0.6, 2.4],
+    // 0 a boulder, 1 a few stones, 2 a layered slab.
     kind: (_g, p) => Math.min(2, Math.floor(p * 3)),
     salt: 81,
     underwater: true,
+    crags: 0.75,
   },
   detail: {
     grid: 2.1,
@@ -582,7 +592,8 @@ function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[],
       if (z < WATER_LEVEL + 0.15 && !rule.underwater) continue;
       if (rule.even && Math.abs(surfaceHeight(base, (x - x0) / CELL, (y - y0) / CELL) - z) > 0.35) continue;
       const ground = groundAt(seed, x, y, z, 0);
-      if (hash3(seed, gx, gy, s) >= rule.density[ground]) continue;
+      const density = rule.crags ? Math.max(rule.density[ground], outcrop(seed, x, y) * rule.crags) : rule.density[ground];
+      if (hash3(seed, gx, gy, s) >= density) continue;
       const [lo, hi] = rule.scale;
       out.push(x, y, z, lo + (hi - lo) * hash3(seed, gx, gy, s + 3) ** 1.5, hash3(seed, gx, gy, s + 4) * Math.PI * 2, rule.kind(ground, hash3(seed, gx, gy, s + 5)));
     }
