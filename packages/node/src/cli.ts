@@ -1140,7 +1140,7 @@ Evidence: galahad artifact ${i!.artifact}`));
           ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
           ...(str("disk") ? { diskGb: Number(str("disk")) } : {}),
           ...(isolation() ? { isolation: isolation() } : {}),
-          ...(flags.lab ? { lab: true } : {}),
+          ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : {}),
           ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),
