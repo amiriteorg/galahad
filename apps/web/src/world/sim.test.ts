@@ -127,10 +127,10 @@ describe("quality tiers", () => {
 
   test("the governor lowers the pixel ratio first, then drops shadows, then grass; and recovers when fast", () => {
     const g = new ResolutionGovernor(TIERS.high, 2);
-    const second = (start: number, ms: number) => {
+    const second = (start: number, ms: number | (() => number)) => {
       let action = "none";
       for (let t = 0; t <= 1000; t += 1000 / 30) {
-        const a = g.frame(start + t, ms);
+        const a = g.frame(start + t, typeof ms === "number" ? ms : ms());
         if (a !== "none") action = a;
       }
       return action;
@@ -142,7 +142,8 @@ describe("quality tiers", () => {
     expect(second((t += 1100), 60)).toBe("none");
     expect(second((t += 1100), 10)).toBe("none");
     expect(g.dpr).toBe(2);
-    for (let i = 0; i < 20; i++) actions.push(second((t += 1100), 40));
+    // Fill-bound, and slow even at the floor: each step down helps, but not enough.
+    for (let i = 0; i < 20; i++) actions.push(second((t += 1100), () => 15 + 40 * (g.dpr / 2) ** 2));
     expect(actions.filter((a) => a !== "none")).toEqual(["dpr", "dpr", "dpr", "dpr", "drop-shadows", "drop-grass"]);
     expect(g.dpr).toBe(TIERS.high.minDpr);
     for (let i = 0; i < 12; i++) second((t += 1100), 5);
@@ -151,6 +152,45 @@ describe("quality tiers", () => {
     const idle = new ResolutionGovernor(TIERS.high, 2);
     for (let i = 0; i < 10; i++) idle.frame(i * 400, 100);
     expect(idle.dpr).toBe(2);
+  });
+
+  test("when a lower pixel ratio doesn't make frames faster, the governor puts it back and drops effects instead", () => {
+    // A phone held back by something other than pixels (an iPhone at 26 ms a frame at dpr 0.75 as at 1.5):
+    // blurring the picture buys nothing, so it keeps it sharp.
+    const g = new ResolutionGovernor(TIERS.high, 2);
+    let t = 0;
+    const second = (ms: number) => {
+      t += 1100;
+      let action = "none";
+      for (let s = 0; s <= 1000; s += 1000 / 30) {
+        const a = g.frame(t + s, ms);
+        if (a !== "none") action = a;
+      }
+      return action;
+    };
+    for (let i = 0; i < 4; i++) second(10);
+    const actions: string[] = [];
+    for (let i = 0; i < 12; i++) actions.push(second(26));
+    expect(actions.filter((a) => a !== "none")).toEqual(["dpr", "dpr", "drop-shadows", "drop-grass"]);
+    expect(g.dpr).toBe(2);
+  });
+
+  test("a lower pixel ratio that helps is kept", () => {
+    const g = new ResolutionGovernor(TIERS.high, 2);
+    let t = 0;
+    const second = (ms: () => number) => {
+      t += 1100;
+      for (let s = 0; s <= 1000; s += 1000 / 30) g.frame(t + s, ms());
+    };
+    for (let i = 0; i < 4; i++) second(() => 10);
+    // Fill-bound: frame time follows the pixel count.
+    for (let i = 0; i < 12; i++) second(() => Math.max(12, 30 * (g.dpr / 2) ** 2));
+    expect(g.dpr).toBeLessThan(2);
+    expect(g.dpr).toBeGreaterThanOrEqual(TIERS.high.minDpr);
+  });
+
+  test("phones never drop below a pixel ratio of 1", () => {
+    expect(TIERS.medium.minDpr).toBeGreaterThanOrEqual(1);
   });
 });
 

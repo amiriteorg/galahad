@@ -69,7 +69,7 @@ export const TIERS: Record<TierName, Tier> = {
   medium: {
     name: "medium",
     maxDpr: 1.5,
-    minDpr: 0.75,
+    minDpr: 1,
     shadows: false,
     shadowMapSize: 0,
     trees: 3000,
@@ -148,7 +148,10 @@ export type GovernorAction = "none" | "dpr" | "drop-shadows" | "drop-grass";
  * Holds the frame time near the budget by changing the pixel ratio: two slow
  * seconds in a row lower it a step (down to the tier's floor); several fast
  * seconds in a row raise it again (up to the tier's ceiling). At the floor and
- * still slow, it drops shadows, then grass, once each. A second is judged by its
+ * still slow, it drops shadows, then grass, once each. A step down that doesn't
+ * make frames faster (a device held back by something other than pixels) is put
+ * back at once, and the pixel ratio isn't lowered again: a blurrier picture that
+ * buys nothing is the worst of both. A second is judged by its
  * median frame (a shader compiling once is not a slow device), and the first
  * seconds after a start or a pause aren't judged at all.
  */
@@ -162,6 +165,10 @@ export class ResolutionGovernor {
   private started = -1;
   private fastWindows = 0;
   private slowWindows = 0;
+  /** The last step down, judged by the window after it. */
+  private stepped: { from: number; median: number } | null = null;
+  /** Whether lowering the pixel ratio has been worth it here (until shown otherwise). */
+  private dprHelps = true;
 
   constructor(
     private readonly tier: Tier,
@@ -188,11 +195,22 @@ export class ResolutionGovernor {
     this.samples = 0;
     this.windowStart = now;
     if (n < 20) return "none";
+    if (this.stepped) {
+      const { from, median: before } = this.stepped;
+      this.stepped = null;
+      if (median > before * 0.88) {
+        this.dprHelps = false;
+        this.slowWindows = 0;
+        this.dpr = from;
+        return "dpr";
+      }
+    }
     if (median > this.budgetMs * 1.15) {
       this.fastWindows = 0;
       if (++this.slowWindows < 2) return "none";
       this.slowWindows = 0;
-      if (this.dpr > this.tier.minDpr + 1e-6) {
+      if (this.dprHelps && this.dpr > this.tier.minDpr + 1e-6) {
+        this.stepped = { from: this.dpr, median };
         this.dpr = Math.max(this.tier.minDpr, Math.round((this.dpr - 0.25) * 100) / 100);
         return "dpr";
       }
@@ -224,5 +242,6 @@ export class ResolutionGovernor {
     this.windowStart = -1;
     this.started = -1;
     this.slowWindows = 0;
+    this.stepped = null;
   }
 }

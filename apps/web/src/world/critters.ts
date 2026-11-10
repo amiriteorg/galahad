@@ -35,7 +35,7 @@ import { loadRobot, type RobotAsset } from "./robots/load.ts";
  * instanced mesh for all of its kind, posed every frame without allocating.
  */
 
-export const MICRODUCK_LABEL = "Microduck (Pollen Robotics)";
+export const MICRODUCK_LABEL = "Open Duck Mini (Antoine Pirrone)";
 export const ARM_LABEL = "SO-101 arm (LeRobot)";
 export const REACHY_LABEL = "Reachy Mini (Pollen Robotics)";
 

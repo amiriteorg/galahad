@@ -2,8 +2,8 @@ import { type Ground, moveOnGround, rng } from "./physics.ts";
 import { turnTowards } from "./path.ts";
 
 /*
- * Microducks: small biped duck robots (after Pollen Robotics and Hugging Face's
- * open-source Microduck) pottering round the keep. They waddle in a loose flock,
+ * Microducks: small biped duck robots (Antoine Pirrone's open-source Open Duck
+ * Mini v2, drawn from its URDF) pottering round the keep. They waddle in a loose flock,
  * stop to look about, bob their heads, peck, hop now and then, and sometimes tag
  * along behind Galahad or the dog for a few seconds. They keep off water, the
  * keep's buildings and the plots, and stay near home. Pure (the renderer reads
