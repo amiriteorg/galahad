@@ -1,6 +1,7 @@
 import type { ActionView, NoticeView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
+import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { ActionClass } from "../types.ts";
 import { badge, busy, button, callout, empty, pageHead, section, type Tone } from "../ui/controls.ts";
@@ -11,6 +12,7 @@ import { toast } from "../ui/toast.ts";
 import { CLASS_INFO, deviceName } from "./activity.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
 import { findingRow } from "./loops.ts";
+import { openOrderFromAction } from "./orders.ts";
 import { secretRequestCard } from "./vault.ts";
 
 /*
@@ -38,17 +40,6 @@ function askedBy(by: string): HTMLElement {
   return words[kind!] && who ? h("span", {}, `${words[kind!]} `, h("span", { class: "mono" }, who)) : h("span", { class: "mono" }, by);
 }
 
-/** What a delete names: the last segment of its target ("DELETE /…/buckets/scratch" → "scratch"). */
-function deleteName(action: ActionView): string {
-  const path = action.target.replace(/^[A-Z]+\s+/, "").split(/[?#]/)[0] ?? "";
-  const last = path.split("/").filter(Boolean).at(-1);
-  try {
-    return last ? decodeURIComponent(last) : `${action.connector}.${action.tool}`;
-  } catch {
-    return last ?? `${action.connector}.${action.tool}`;
-  }
-}
-
 function argsList(args: Record<string, unknown>): HTMLElement | null {
   const entries = Object.entries(args);
   if (!entries.length) return null;
@@ -70,6 +61,8 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const admin = ctx.can("fleet:admin");
   const approve = button(destructive ? "Approve delete…" : "Approve…", { variant: "primary", icon: "check" });
   const decline = button("Decline", { variant: "danger", icon: "x" });
+  // Approve, and answer calls like it the same way next time: a standing order, signed in the same step.
+  const similar = button("Approve and allow similar…", { icon: "scroll" });
 
   async function decide(yes: boolean, trigger: HTMLButtonElement): Promise<void> {
     await busy(trigger, async () => {
@@ -108,6 +101,16 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
     if (ok) await decide(true, approve);
   });
   decline.addEventListener("click", () => void decide(false, decline));
+  similar.addEventListener("click", () =>
+    openOrderFromAction(ctx, action, {
+      rows: rowsFromCall(action),
+      caller: callerName(action.by),
+      label: defaultLabel(action),
+      node,
+      confirmName: deleteName(action),
+      onDone: () => void ctx.live.refreshActions(),
+    }),
+  );
 
   return h(
     "article",
@@ -139,10 +142,12 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
         { class: "tiny subtle" },
         expires,
         ". No answer means no. ",
-        destructive ? "Deleting anything persistent always asks you." : "Outward actions (posting, sending, pushing, the physical world) always ask you.",
+        destructive
+          ? "Deleting anything persistent asks you, unless a standing order of yours names exactly this."
+          : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them.",
       ),
       admin
-        ? h("div", { class: "row wrap", style: "justify-content:flex-end" }, decline, approve)
+        ? h("div", { class: "row wrap", style: "justify-content:flex-end" }, decline, similar, approve)
         : callout("quiet", h("span", {}, "This device can't answer (no fleet:admin scope). Answer from one that can, or on a node: ", h("code", {}, `galahad action approve ${action.id}`))),
       note,
     ),
@@ -166,7 +171,11 @@ function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
         { class: "meta" },
         h("span", {}, "asked by ", askedBy(action.by)),
         asked ? h("span", {}, relativeTime(asked)) : null,
-        action.decidedVia ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`) : null,
+        action.order
+          ? h("span", { class: "row", style: "gap:4px" }, icon("scroll", { size: 12 }), `answered by your standing order "${action.order.label}"`)
+          : action.decidedVia
+            ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`)
+            : null,
       ),
       action.receipt ? h("details", { class: "process", style: "margin-top:6px" }, h("summary", { "data-key": `receipt:${action.id}` }, icon("chevron-right", { size: 14, class: "chev" }), "Receipt"), h("pre", { class: "result", style: "margin-top:6px" }, action.receipt)) : null,
     ),
@@ -276,7 +285,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
     h(
       "p",
       { class: "tiny subtle" },
-      "Reading, creating and changing things are his to do, and logged. Anything outward, and every delete, waits for you here. Approved, it's sent once, by the node that asked. No answer in 24 hours means no.",
+      "Reading, creating and changing things are his to do, and logged. Anything outward, and every delete, waits for you here, unless a standing order of yours already answers it. Approved, it's sent once, by the node that asked. No answer in 24 hours means no.",
     ),
     actionsBox,
   );

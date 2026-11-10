@@ -1,10 +1,10 @@
-import type { FleetView, ProviderView } from "@galahad/core";
+import type { FleetView, ProviderView, SandboxView } from "@galahad/core";
 import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { gb, parseCommand, plural } from "../lib/text.ts";
+import { diskUse, gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
-import { asCaps, type ExecResult, type NetworkMode, type SandboxView } from "../types.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, rangeControl, section, segmented, skeletonBlock, switchControl, type Tone } from "../ui/controls.ts";
+import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
+import { badge, busy, button, callout, empty, errorState, field, meter, pageHead, rangeControl, section, segmented, skeletonBlock, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -40,6 +40,10 @@ export const NETWORK: Record<NetworkMode, { label: string; icon: IconName; tone:
 };
 
 const TTL_STEPS = [15, 30, 60, 120, 240, 480, 720, 1440, 2880, 10080];
+/** Workspace sizes to choose from, in GB (the node takes 1 to 2048; 20 by default). */
+const DISK_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1024, 2048];
+const DISK_DEFAULT = 20;
+const NO_DISK_LIMIT = "This machine can't cap a sandbox's disk: its workspace shares the machine's drive, so a runaway job could fill it.";
 const sandboxesChanged = signal(0);
 
 const statusTone = (status: string): Tone => (/run|ready|up/i.test(status) ? "ok" : /start|creat|pull/i.test(status) ? "info" : /err|fail|dead/i.test(status) ? "danger" : "neutral");
@@ -72,6 +76,16 @@ export function openCreateSandbox(ctx: Ctx): void {
 
   const cpus = rangeControl({ label: "CPUs", min: 1, max: Math.min(64, maxCores), step: 1, value: Math.min(2, maxCores), format: (v) => `${v}`, onInput: () => sync() });
   const memory = rangeControl({ label: "Memory", min: 1, max: Math.min(256, maxMemory), step: 1, value: Math.min(4, maxMemory), format: (v) => gb(v), onInput: () => sync() });
+  const disk = rangeControl({
+    label: "Disk",
+    min: 0,
+    max: DISK_STEPS.length - 1,
+    step: 1,
+    value: DISK_STEPS.indexOf(DISK_DEFAULT),
+    format: (i) => gb(DISK_STEPS[i] ?? DISK_DEFAULT),
+    onInput: () => sync(),
+    scale: ["1 GB", "2 TB"],
+  });
   const ttl = rangeControl({
     label: "Expires after",
     min: 0,
@@ -99,7 +113,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     replace(
       summary,
       icon(NETWORK[network].icon),
-      `${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${NETWORK[network].label.toLowerCase()} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
+      `${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${gb(DISK_STEPS[disk.value()] ?? DISK_DEFAULT)} disk · ${NETWORK[network].label.toLowerCase()} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
     );
   }
 
@@ -125,6 +139,7 @@ export function openCreateSandbox(ctx: Ctx): void {
           network,
           cpus: cpus.value(),
           memoryGb: memory.value(),
+          diskGb: DISK_STEPS[disk.value()] ?? DISK_DEFAULT,
           ...(persistent ? { persistent: true } : { ttlMinutes: TTL_STEPS[ttl.value()] ?? 60 }),
           ...(network !== "isolated" && providers.size ? { providers: [...providers] } : {}),
           ...(image.value.trim() ? { image: image.value.trim() } : {}),
@@ -145,6 +160,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     },
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Network"), networkControl.el, explain),
     h("div", { class: "fields" }, cpus.el, memory.el),
+    h("div", { class: "stack tight" }, disk.el, h("p", { class: "tiny subtle" }, "Its workspace can't grow past this. On a machine that can't cap disks, the sandbox says so.")),
     ttl.el,
     switchControl("Keep it after it expires", false, (on) => {
       persistent = on;
@@ -267,6 +283,22 @@ async function destroy(ctx: Ctx, sandbox: SandboxView, on: string | null): Promi
   }
 }
 
+/** Disk used of its limit, with a meter; or a plain warning when its machine can't cap it. */
+function diskLine(sandbox: SandboxView): HTMLElement {
+  const use = diskUse(sandbox.disk ?? null);
+  return h(
+    "div",
+    {},
+    h(
+      "div",
+      { class: "load-label" },
+      h("span", {}, "Disk"),
+      sandbox.disk ? h("span", { class: "tnum" }, use.text) : h("span", { title: NO_DISK_LIMIT }, badge(use.text, "warn", "alert")),
+    ),
+    use.fraction !== null ? meter(use.fraction, use.nearlyFull ? "var(--warn)" : undefined, `Disk: ${use.text}`) : null,
+  );
+}
+
 function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLElement {
   const net = NETWORK[sandbox.network];
   const expires = h("span", { class: "tnum" });
@@ -285,7 +317,7 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         "div",
         { class: "grow" },
         h("div", { class: "row wrap" }, h("span", { class: "node-name mono" }, sandbox.name), badge(sandbox.status, statusTone(sandbox.status)), net ? badge(net.label, net.tone, net.icon) : badge(sandbox.network)),
-        h("div", { class: "node-sub" }, sandbox.quest ? h("span", {}, sandbox.quest) : h("span", {}, "no quest"), h("span", {}, "·"), expires, h("span", {}, "·"), h("span", {}, sandbox.ephemeral ? "ephemeral" : "persistent")),
+        h("div", { class: "node-sub" }, sandbox.quest ? h("span", {}, sandbox.quest) : h("span", {}, "no quest"), h("span", {}, "·"), expires, ...(sandbox.ephemeral || sandbox.expiresAt ? [h("span", {}, "·"), h("span", {}, sandbox.ephemeral ? "ephemeral" : "persistent")] : [])),
       ),
     ),
     h(
@@ -299,6 +331,7 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         h("span", { class: "chip mono" }, icon("layers"), sandbox.image),
         ...sandbox.providers.map((p) => h("span", { class: "chip" }, icon("models"), p)),
       ),
+      diskLine(sandbox),
       h(
         "div",
         { class: "row" },
@@ -367,7 +400,12 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
         { count: list ? plural(list.length, "sandbox", "sandboxes") : "" },
         list
           ? list.length
-            ? h("div", { class: "grid wide" }, ...list.map((s) => sandboxCard(ctx, s, on)))
+            ? h(
+                "div",
+                { class: "stack" },
+                list.some((s) => !s.disk) ? callout("warn", `${NO_DISK_LIMIT} Your Inbox has a notice that says how to fix it.`, { title: "No disk limit here" }) : null,
+                h("div", { class: "grid wide" }, ...list.map((s) => sandboxCard(ctx, s, on))),
+              )
             : h("div", { class: "card" }, empty({ icon: "sandbox", title: "None running", compact: true }))
           : h("div", { class: "card pad" }, callout("quiet", isUnavailable(error) ? "Not available on this node yet." : `Couldn't reach it: ${errorMessage(error)}`)),
       );

@@ -1,6 +1,7 @@
-import type { ConnectorToolView, ConnectorView } from "@galahad/core";
+import type { ArgValue, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
 import { plural } from "../lib/text.ts";
 import { duration } from "../lib/time.ts";
 import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonBlock, type Tone } from "../ui/controls.ts";
@@ -10,6 +11,8 @@ import { icon, type IconName } from "../ui/icons.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO } from "./activity.ts";
+import { classSelect, type McpDeps, mcpBadge, openAddMcp, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
+import { loadOrders, openNewOrder, ordersChanged, renderOrders } from "./orders.ts";
 import { vaultChanged } from "./vault.ts";
 
 /*
@@ -19,6 +22,8 @@ import { vaultChanged } from "./vault.ts";
  * creating and changing are his to do (and logged); outward tools and deletes
  * ask you first. A connector's key goes from a password field into the vault,
  * pinned to the connector's origin; no model, arm or loop ever sees it.
+ * A remote MCP server is a connector too: its tools are listed from the server,
+ * and their classes are yours to choose (views/mcp.ts).
  */
 
 /** Bumped whenever a connector is installed or removed, or its key changes. */
@@ -43,7 +48,6 @@ export async function loadConnectors(ctx: Ctx, abort?: AbortSignal): Promise<Con
   return (await ctx.api.get<{ connectors: ConnectorView[] }>("/api/connectors", abort)).connectors;
 }
 
-export type ArgValue = string | number | boolean;
 export type ArgsRead = { args: Record<string, ArgValue> } | { problem: string; focus: HTMLElement };
 
 const LONG_TEXT = /^(body|text|message|content|description)$/;
@@ -58,10 +62,11 @@ export function argFields(tool: ConnectorToolView, initial: Record<string, unkno
   const fields: HTMLElement[] = [];
   for (const [name, p] of Object.entries(tool.params)) {
     const start = initial[name];
+    const kind = argKind(p.type);
     const label = p.required ? name : `${name} (optional)`;
-    const hint = p.description ?? undefined;
-    if (p.enum || p.type === "boolean") {
-      const options: [string, string][] = p.type === "boolean" ? [["true", "yes"], ["false", "no"]] : p.enum!.map((v) => [v, v]);
+    const hint = kind === "json" ? `${p.description ? `${p.description} ` : ""}As JSON, such as ["bug", "docs"].` : (p.description ?? undefined);
+    if (p.enum || kind === "boolean") {
+      const options: [string, string][] = kind === "boolean" ? [["true", "yes"], ["false", "no"]] : p.enum!.map((v) => [v, v]);
       const select = h(
         "select",
         { class: "select" },
@@ -71,35 +76,45 @@ export function argFields(tool: ConnectorToolView, initial: Record<string, unkno
       fields.push(field(label, select, { hint }));
       readers.push(() => {
         if (!select.value) return p.required ? { problem: `Choose ${name}.`, focus: select } : { name, value: undefined };
-        return { name, value: p.type === "boolean" ? select.value === "true" : select.value };
+        return { name, value: kind === "boolean" ? select.value === "true" : select.value };
       });
       continue;
     }
-    const numeric = p.type === "integer" || p.type === "number";
-    const control = !numeric && LONG_TEXT.test(name)
+    const numeric = kind === "integer" || kind === "number";
+    const json = kind === "json";
+    const control = json
+      ? h("textarea", { class: "textarea mono", rows: 3, spellcheck: "false", autocapitalize: "off" })
+      : !numeric && LONG_TEXT.test(name)
       ? h("textarea", { class: "textarea", rows: 4, spellcheck: "true" })
       : h("input", {
           class: numeric ? "input tnum" : "input",
           type: numeric ? "number" : "text",
-          inputmode: p.type === "integer" ? "numeric" : numeric ? "decimal" : null,
-          step: p.type === "integer" ? 1 : numeric ? "any" : null,
+          inputmode: kind === "integer" ? "numeric" : numeric ? "decimal" : null,
+          step: kind === "integer" ? 1 : numeric ? "any" : null,
           autocomplete: "off",
           spellcheck: "false",
           autocapitalize: "off",
         });
-    if (start !== undefined && start !== null) control.value = String(start);
+    if (start !== undefined && start !== null) control.value = json && typeof start === "object" ? JSON.stringify(start) : String(start);
     fields.push(field(label, control, { hint }));
     readers.push(() => {
       const raw = control.value.trim();
       if (!raw) return p.required ? { problem: `${name} is required.`, focus: control } : { name, value: undefined };
       if (numeric) {
         const n = Number(raw);
-        if (!Number.isFinite(n) || (p.type === "integer" && !Number.isInteger(n))) return { problem: `${name} must be ${p.type === "integer" ? "a whole number" : "a number"}.`, focus: control };
+        if (!Number.isFinite(n) || (kind === "integer" && !Number.isInteger(n))) return { problem: `${name} must be ${kind === "integer" ? "a whole number" : "a number"}.`, focus: control };
         return { name, value: n };
       }
       if (findSecrets(raw).length) {
         control.value = "";
         return { problem: `${name} looks like it holds a key, so it was cleared. Connectors take keys from the vault, never from their arguments.`, focus: control };
+      }
+      if (json) {
+        try {
+          return { name, value: JSON.parse(raw) as ArgValue };
+        } catch {
+          return { problem: `${name} takes JSON (a list or an object), such as ["bug", "docs"].`, focus: control };
+        }
       }
       return { name, value: raw };
     });
@@ -142,7 +157,7 @@ function deleteName(tool: ConnectorToolView, args: Record<string, ArgValue>): st
 }
 
 type CallOutcome =
-  | { status: "done"; class: string; target: string; result: { ok: boolean; status: number; body: string; truncated: boolean; durationMs: number } }
+  | { status: "done"; class: string; target: string; result: { ok: boolean; status: number; body: string; truncated: boolean; durationMs: number; mcp?: boolean } }
   | { status: "asked"; action: string; class: string; target: string; expires: number };
 
 function outcomeView(outcome: CallOutcome): HTMLElement {
@@ -160,7 +175,7 @@ function outcomeView(outcome: CallOutcome): HTMLElement {
     h(
       "div",
       { class: "row wrap tiny subtle" },
-      badge(String(r.status), r.ok ? "ok" : "danger"),
+      badge(r.mcp ? (r.ok ? "ok" : "tool error") : String(r.status), r.ok ? "ok" : "danger"),
       h("span", { class: "mono wrap-anywhere" }, outcome.target),
       h("span", { class: "tnum" }, duration(r.durationMs)),
       r.truncated ? h("span", {}, "clipped") : null,
@@ -223,9 +238,13 @@ export function openRunTool(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView)
   const sheet = openSheet({ title: `${c.label} · ${tool.name}`, description: tool.description, body: form, size: "wide" });
 }
 
-function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView): HTMLElement {
+/** Active standing orders per tool ("github.pr.create" → 2). */
+type OrderCounts = Map<string, number>;
+
+function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView, orders: number, pick: ((cls: ToolClass) => void) | null): HTMLElement {
   const info = CLASS_INFO[tool.class];
   const params = Object.entries(tool.params).map(([name, p]) => (p.required ? name : `[${name}]`)).join(" ");
+  const mcp = c.kind === "mcp";
   return h(
     "div",
     { class: "item" },
@@ -233,9 +252,24 @@ function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView): HTMLEleme
     h(
       "div",
       { class: "grow" },
-      h("div", { class: "row wrap" }, h("span", { class: "mono strong small" }, tool.name), badge(tool.class, info?.tone ?? "neutral"), tool.asks ? badge("asks you", "warn", "shield") : null),
-      h("div", { class: "small muted" }, tool.description),
+      h(
+        "div",
+        { class: "row wrap" },
+        h("span", { class: "mono strong small" }, tool.name),
+        pick ? null : badge(tool.class, info?.tone ?? "neutral"),
+        tool.asks && !pick ? badge("asks you", "warn", "shield") : null,
+        orders
+          ? h(
+              "span",
+              { title: `${orders === 1 ? "A standing order of yours answers" : `${orders} standing orders of yours answer`} some of these calls without asking. See Standing orders.` },
+              badge("standing order", "accent", "scroll"),
+            )
+          : null,
+      ),
+      mcp ? h("div", { class: "tiny subtle", style: "margin-top:2px" }, claimSentence(tool.hints)) : null,
+      mcp ? h("div", { style: "margin-top:6px" }, serverWords(tool.description)) : h("div", { class: "small muted" }, tool.description),
       params ? h("div", { class: "meta mono" }, params) : null,
+      pick ? h("div", { class: "row wrap", style: "margin-top:8px" }, h("span", { class: "tiny subtle" }, "Class"), classSelect(tool, pick)) : null,
     ),
     c.installed && ctx.can("connect")
       ? h("div", { class: "item-actions" }, button(`Run ${tool.name}`, { size: "sm", variant: "ghost", icon: "play", label: `Run ${c.id}.${tool.name}`, onClick: () => openRunTool(ctx, c, tool) }))
@@ -243,7 +277,7 @@ function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView): HTMLEleme
   );
 }
 
-function keyBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
+function keyBlock(ctx: Ctx, c: ConnectorView, onSealed?: () => void): HTMLElement | null {
   if (!c.installed || !c.secret || c.key === "none-needed") return null;
   const state = KEY_STATE[c.key];
   const secret = secretInput({ label: `Key for ${c.label}` });
@@ -269,6 +303,7 @@ function keyBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
             await ctx.api.post("/api/secrets", { name: c.secret, value, connector: c.id });
             vaultChanged.update((n) => n + 1);
             toast(`${c.label}'s key sealed`, { tone: "ok", description: `Only ever sent to ${host(c.origin)}. No model ever sees it.` });
+            onSealed?.();
           } catch (error) {
             replace(status, callout("danger", `${errorMessage(error)}. The field was cleared for safety; paste the key again.`));
             secret.input.focus();
@@ -370,9 +405,41 @@ async function remove(ctx: Ctx, c: ConnectorView): Promise<void> {
   }
 }
 
-function connectorCard(ctx: Ctx, c: ConnectorView): HTMLElement {
+function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: McpDeps): HTMLElement {
   const state = KEY_STATE[c.key];
   const asking = c.tools.filter((t) => t.asks).length;
+  const mcp = c.kind === "mcp" && c.installed;
+  const write = ctx.can("brain:write");
+  // Your class choices for an MCP server's tools, until you save them.
+  const picked = new Map<string, ToolClass>();
+  const saveNote = h("div");
+  const save = button("Save classes", { size: "sm", variant: "primary", icon: "check" });
+  const undo = button("Undo", { size: "sm", variant: "ghost" });
+  const saveBar = h("div", { class: "row wrap", hidden: true, style: "justify-content:flex-end" }, h("span", { class: "tiny subtle grow" }, ""), undo, save);
+  const syncSave = () => {
+    saveBar.hidden = !picked.size;
+    saveBar.firstElementChild!.textContent = picked.size ? `${plural(picked.size, "class", "classes")} changed, not saved yet.` : "";
+  };
+  const pick = (tool: ConnectorToolView) => (cls: ToolClass) => {
+    if (cls === tool.class) picked.delete(tool.name);
+    else picked.set(tool.name, cls);
+    syncSave();
+  };
+  save.addEventListener("click", () =>
+    void busy(save, async () => {
+      replace(saveNote);
+      const result = await saveClasses(ctx, c, Object.fromEntries(picked), deps);
+      if (result.problem) replace(saveNote, callout("danger", result.problem, { title: "Not saved" }));
+    }),
+  );
+  undo.addEventListener("click", () => deps.changed());
+  const refresh = mcp && write
+    ? button("Refresh tools", {
+        size: "sm",
+        icon: "refresh",
+        onClick: (event) => void busy(event.currentTarget as HTMLButtonElement, () => refreshMcp(ctx, c, deps)),
+      })
+    : null;
   return h(
     "article",
     { class: "card", "aria-label": c.label },
@@ -391,20 +458,37 @@ function connectorCard(ctx: Ctx, c: ConnectorView): HTMLElement {
             { class: "row wrap" },
             h("span", { class: "strong" }, c.label),
             c.installed ? (state ? badge(state.label, state.tone, state.icon) : badge(c.key)) : badge("not installed", "neutral"),
+            mcp ? mcpBadge() : null,
           ),
           h(
             "div",
             { class: "tiny subtle row wrap", style: "margin-top:2px" },
             h("span", { class: "mono" }, c.id),
-            c.origin ? h("span", { class: "mono", title: "Every request goes to this origin and nowhere else" }, `only to ${host(c.origin)}`) : h("span", {}, c.needsOrigin ? "runs at an address of yours" : ""),
+            mcp && c.url
+              ? h("span", { class: "mono wrap-anywhere", title: "Galahad talks to this server and nowhere else" }, `only to ${c.url.replace(/^https?:\/\//, "")}`)
+              : c.origin
+                ? h("span", { class: "mono", title: "Every request goes to this origin and nowhere else" }, `only to ${host(c.origin)}`)
+                : h("span", {}, c.needsOrigin ? "runs at an address of yours" : ""),
           ),
         ),
         c.installed && ctx.can("brain:write") ? button(`Remove ${c.label}`, { size: "sm", variant: "ghost", iconOnly: true, icon: "trash", onClick: () => void remove(ctx, c) }) : null,
       ),
       c.description ? h("p", { class: "small muted" }, c.description) : null,
       c.problem ? callout("warn", c.problem) : null,
-      keyBlock(ctx, c),
+      keyBlock(ctx, c, mcp && !c.tools.length ? () => void refreshMcp(ctx, c, deps) : undefined),
       installBlock(ctx, c),
+      mcp
+        ? h(
+            "div",
+            { class: "row wrap" },
+            h(
+              "span",
+              { class: "tiny subtle grow" },
+              c.tools.length ? "Its tools and their descriptions come from the server. You choose what each may do." : c.key === "missing" ? "No tools yet: add its key, and Galahad lists them." : "No tools yet. Refresh to list them.",
+            ),
+            refresh,
+          )
+        : null,
       c.tools.length
         ? h(
             "details",
@@ -415,9 +499,15 @@ function connectorCard(ctx: Ctx, c: ConnectorView): HTMLElement {
               icon("chevron-right", { size: 14, class: "chev" }),
               `${plural(c.tools.length, "tool")}${asking ? ` · ${asking} ask${asking === 1 ? "s" : ""} you first` : ""}`,
             ),
-            h("div", { class: "card flat", style: "margin-top:8px" }, h("div", { class: "rows" }, ...c.tools.map((t) => toolRow(ctx, c, t)))),
+            h(
+              "div",
+              { class: "card flat", style: "margin-top:8px" },
+              h("div", { class: "rows" }, ...c.tools.map((t) => toolRow(ctx, c, t, orders.get(`${c.id}.${t.name}`) ?? 0, mcp && write ? pick(t) : null))),
+            ),
           )
         : null,
+      mcp ? saveBar : null,
+      mcp ? saveNote : null,
     ),
   );
 }
@@ -426,12 +516,48 @@ export const connectorsView: View = (root, ctx, { scope }) => {
   const installedBox = h("div", { class: "grid wide" }, skeletonBlock(160));
   const availableBox = h("div", { class: "grid wide" });
   const note = h("div");
-  const installedSection = section("Installed", {}, installedBox);
+  const deps: McpDeps = {
+    changed: () => connectorsChanged.update((n) => n + 1),
+    keyField: (c, onSealed) => keyBlock(ctx, c, onSealed),
+  };
+  const addMcp = ctx.can("brain:write") ? button("Add an MCP server", { size: "sm", variant: "ghost", icon: "plus", onClick: () => openAddMcp(ctx, connectors, deps) }) : null;
+  const installedSection = section("Installed", { actions: addMcp }, installedBox);
   const availableSection = section("Available", {}, availableBox);
+  const read = ctx.can("mind:read");
+  const admin = ctx.can("fleet:admin");
+  const ordersBox = h("div", { class: "stack" }, skeletonBlock(96));
+  let connectors: ConnectorView[] = [];
+  let orders: OrderView[] = [];
+  let shownOrders = "";
+  const canAdd = () => admin && connectors.some((c) => c.installed && c.tools.some((t) => t.asks));
+  const addOrder = button("Add a standing order", { size: "sm", variant: "ghost", icon: "plus", onClick: () => openNewOrder(ctx, connectors) });
+  addOrder.hidden = true;
+  const ordersSection = section(
+    "Standing orders",
+    { actions: admin ? addOrder : null },
+    h(
+      "p",
+      { class: "tiny subtle" },
+      "Your answers given in advance. A call an order covers goes out at once instead of waiting for you, and still shows up in your Inbox. Each names one tool, narrows its arguments and expires.",
+    ),
+    ordersBox,
+  );
+  ordersSection.hidden = !read;
+  const counts = (): OrderCounts => {
+    const map: OrderCounts = new Map();
+    for (const o of orders) if (o.state === "active") map.set(`${o.connector}.${o.tool}`, (map.get(`${o.connector}.${o.tool}`) ?? 0) + 1);
+    return map;
+  };
+  function showOrders(): void {
+    shownOrders = JSON.stringify(orders);
+    addOrder.hidden = !canAdd();
+    renderOrders(ordersBox, ctx, orders, canAdd() ? () => openNewOrder(ctx, connectors) : null);
+  }
 
   function render(list: ConnectorView[]): void {
     const installed = list.filter((c) => c.installed);
     const available = list.filter((c) => !c.installed);
+    const active = counts();
     replace(
       note,
       installed.length && !ctx.can("connect")
@@ -441,26 +567,55 @@ export const connectorsView: View = (root, ctx, { scope }) => {
     replace(
       installedBox,
       ...(installed.length
-        ? installed.map((c) => connectorCard(ctx, c))
+        ? installed.map((c) => connectorCard(ctx, c, active, deps))
         : [
             h(
               "div",
               { class: "card" },
-              empty({ icon: "plug", title: "Nothing installed yet", body: "Install one below and add its key. Every node can use it; no model ever sees the key.", compact: true }),
+              empty({
+                icon: "plug",
+                title: "Nothing installed yet",
+                body: "Install one below, or add an MCP server, and add its key. Every node can use it; no model ever sees the key.",
+                compact: true,
+              }),
             ),
           ]),
     );
-    replace(availableBox, ...available.map((c) => connectorCard(ctx, c)));
+    replace(availableBox, ...available.map((c) => connectorCard(ctx, c, active, deps)));
     availableSection.hidden = !available.length;
+  }
+
+  async function fetchOrders(): Promise<OrderView[] | null> {
+    if (!read) return null;
+    try {
+      return await loadOrders(ctx, scope.signal);
+    } catch (error) {
+      if (!scope.disposed) replace(ordersBox, errorState("Couldn't load standing orders", error, () => void refresh()));
+      return null;
+    }
   }
 
   async function refresh(): Promise<void> {
     try {
-      const list = await loadConnectors(ctx, scope.signal);
-      if (!scope.disposed) keepPlace(root, () => render(list));
+      const [list, signed] = await Promise.all([loadConnectors(ctx, scope.signal), fetchOrders()]);
+      if (scope.disposed) return;
+      connectors = list;
+      if (signed) orders = signed;
+      keepPlace(root, () => render(list));
+      if (signed) showOrders();
     } catch (error) {
       if (!scope.disposed) replace(installedBox, errorState("Couldn't load connectors", error, () => void refresh()));
     }
+  }
+
+  // Use counts move as agents use orders: only the orders list re-renders, so a half-typed key stays put.
+  async function refreshOrders(): Promise<void> {
+    const signed = await fetchOrders();
+    if (!signed || scope.disposed) return;
+    const before = [...counts()].sort().join();
+    orders = signed;
+    if (JSON.stringify(signed) !== shownOrders) showOrders();
+    if ([...counts()].sort().join() !== before) keepPlace(root, () => render(connectors));
   }
 
   replace(
@@ -472,6 +627,7 @@ export const connectorsView: View = (root, ctx, { scope }) => {
       ctx.can("brain:write") ? null : callout("quiet", "This device can see connectors but not install or remove them (no brain:write scope)."),
       note,
       installedSection,
+      ordersSection,
       availableSection,
       h("p", { class: "tiny subtle" }, "A service of your own: describe it in a manifest and run ", h("span", { class: "mono" }, "galahad connector add --manifest file.json"), " on a node."),
     ),
@@ -479,5 +635,7 @@ export const connectorsView: View = (root, ctx, { scope }) => {
 
   scope.add(connectorsChanged.subscribe(() => void refresh()));
   scope.add(vaultChanged.subscribe(() => void refresh()));
+  scope.add(ordersChanged.subscribe(() => void refreshOrders()));
+  if (read) scope.interval(() => void refreshOrders(), 15_000);
   void refresh();
 };

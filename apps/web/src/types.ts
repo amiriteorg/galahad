@@ -52,22 +52,6 @@ export interface LedgerEntry {
 
 export type NetworkMode = "isolated" | "gateway" | "online";
 
-export interface SandboxView {
-  id: string;
-  name: string;
-  node: string;
-  quest: string;
-  image: string;
-  network: NetworkMode;
-  cpus: number;
-  memoryGb: number;
-  createdAt: number;
-  expiresAt: number;
-  status: string;
-  ephemeral: boolean;
-  providers: string[];
-}
-
 export interface ExecResult {
   exitCode: number;
   stdout: string;
