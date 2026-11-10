@@ -1,4 +1,4 @@
-import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentStatus, ExperimentView, GalahadState, Pose, SceneBody, Station, WorldEvent, WorldNode } from "@galahad/core/world";
+import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentStatus, ExperimentView, GalahadState, Pose, SceneBody, Station, WeatherKind, WorldEvent, WorldNode, WorldWeather } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
 
 /*
@@ -32,6 +32,8 @@ export interface WorldModel {
   thoughts: string[];
   /** The latest notice, if any. */
   notice: WorldNotice | null;
+  /** Denmark's weather now, as the node says (null: unknown, or turned off there). */
+  weather: WorldWeather | null;
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -42,6 +44,7 @@ export const emptyWorld = (): WorldModel => ({
   frames: {},
   thoughts: [],
   notice: null,
+  weather: null,
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -66,7 +69,7 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
   switch (event.type) {
     case "hello": {
       const { experiments, frames } = prune(dedupe(event.experiments), state.frames);
-      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice };
+      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null };
     }
     case "galahad":
       return { ...state, at, galahad: event.galahad };
@@ -94,6 +97,8 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
       return { ...state, at, nodes: event.nodes };
     case "notice":
       return { ...state, at, notice: { at: event.at, severity: event.severity, title: event.title } };
+    case "weather":
+      return { ...state, at, weather: event.weather };
     default:
       return state;
   }
@@ -123,6 +128,7 @@ const STATION_NAMES = new Set<string>([...Object.keys(STATIONS), "field"]);
 const ENGINES = new Set<string>(["mujoco", "gazebo", "isaac", "jsbsim", "rocketpy", "custom"]);
 const STATUSES = new Set<string>(["starting", "running", "done", "failed"]);
 const SEVERITIES = new Set<string>(["info", "warn", "error"]);
+const WEATHER_KINDS = new Set<string>(["clear", "cloudy", "overcast", "mist", "drizzle", "rain", "snow", "storm"]);
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -282,7 +288,9 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       const nodes = readList(v.nodes, LIMITS.nodes, readNode);
       const experiments = readList(v.experiments, LIMITS.experiments, readExperiment);
       const thoughts = readList(v.thoughts, 64, (t) => (str(t) ? t : null));
-      return galahad && nodes && experiments && thoughts ? { type: "hello", at, galahad, nodes, experiments, thoughts } : null;
+      if (!(galahad && nodes && experiments && thoughts)) return null;
+      // Weather it can't read is unknown weather: never a reason to lose the world.
+      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null };
     }
     case "galahad": {
       const galahad = readGalahad(v.galahad);
@@ -304,9 +312,41 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
     }
     case "notice":
       return typeof v.severity === "string" && SEVERITIES.has(v.severity) && str(v.title) ? { type: "notice", at, severity: v.severity as WorldNotice["severity"], title: v.title } : null;
+    case "weather": {
+      if (v.weather === null) return { type: "weather", at, weather: null };
+      const weather = readWeather(v.weather);
+      return weather === undefined ? null : { type: "weather", at, weather };
+    }
     default:
       return null;
   }
+}
+
+/** Denmark's weather, checked: the weather, null for a kind this page doesn't know yet (shown as unknown), undefined if malformed. */
+function readWeather(v: unknown): WorldWeather | null | undefined {
+  if (!isObj(v)) return undefined;
+  const { kind, cloud, precipitation, visibility, wind, temperature, humidity, observed, place, source } = v;
+  const unit = (x: unknown): x is number => num(x) && x >= 0 && x <= 1;
+  const ok =
+    typeof kind === "string" &&
+    unit(cloud) &&
+    unit(humidity) &&
+    num(precipitation) &&
+    precipitation >= 0 &&
+    precipitation <= 500 &&
+    (visibility === null || (num(visibility) && visibility >= 0)) &&
+    num(wind) &&
+    wind >= 0 &&
+    wind <= 120 &&
+    num(temperature) &&
+    temperature >= -60 &&
+    temperature <= 60 &&
+    num(observed) &&
+    str(place, 80) &&
+    str(source, 80);
+  if (!ok) return undefined;
+  if (!WEATHER_KINDS.has(kind)) return null;
+  return { kind: kind as WeatherKind, cloud, precipitation, visibility: visibility as number | null, wind, temperature, humidity, observed, place, source };
 }
 
 // ---------- words ----------
@@ -322,6 +362,19 @@ export const ENGINE_LABEL: Record<ExperimentEngine, string> = {
 
 export const STATUS_LABEL: Record<ExperimentStatus, string> = { starting: "Starting", running: "Running", done: "Done", failed: "Failed" };
 export const STATUS_TONE: Record<ExperimentStatus, "warn" | "ok" | "neutral" | "danger"> = { starting: "warn", running: "ok", done: "neutral", failed: "danger" };
+
+export const WEATHER_LABEL: Record<WeatherKind, string> = {
+  clear: "Clear",
+  cloudy: "Cloudy",
+  overcast: "Overcast",
+  mist: "Mist",
+  drizzle: "Drizzle",
+  rain: "Rain",
+  snow: "Snow",
+  storm: "Thunder",
+};
+
+export const weatherLabel = (w: WorldWeather): string => WEATHER_LABEL[w.kind];
 
 export const stationLabel = (station: Station): string => (station === "field" ? "the field" : STATIONS[station].label);
 
@@ -354,6 +407,7 @@ export function worldSummary(model: WorldModel): string {
   const where = g.station === "field" ? `out at ${model.experiments.find((e) => e.id === g.experiment)?.title ?? "an experiment"}` : `at ${stationLabel(g.station)}`;
   const parts = [`Galahad is ${where}${g.doing ? `: ${g.doing}` : ""}.`];
   if (g.model) parts.push(`Thinking with ${g.model}.`);
+  if (model.weather) parts.push(`In ${model.weather.place}: ${weatherLabel(model.weather).toLowerCase()}, ${Math.round(model.weather.temperature)} °C.`);
   const running = model.experiments.filter((e) => !isEnded(e));
   const ended = model.experiments.filter(isEnded);
   if (!model.experiments.length) parts.push("No experiments.");

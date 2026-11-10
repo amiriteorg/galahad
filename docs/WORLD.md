@@ -9,7 +9,7 @@ It's a view of what's happening now, not a record: the ledger, your chats and ke
 | Where | How |
 |---|---|
 | The app | **SANDBOX** (`G` then `X`): the world in 3D; follow Galahad or roam; open an experiment for its readouts |
-| A terminal | `galahad world` (where he is, the experiments); `galahad world --follow` keeps watching |
+| A terminal | `galahad world` (where he is, the weather, the experiments); `galahad world --follow` keeps watching |
 
 The stream is yours alone: agents can't watch it, because it carries a line of what Galahad is saying in your chats now and then. Once he has read the bank in an answer, nothing more from that answer appears.
 
@@ -29,6 +29,14 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 | The keep | Everything else, and resting |
 
 Agents connected over MCP move him too: their calls are his tools. With nothing to do for half a minute he walks home.
+
+## The weather
+
+The world has Denmark's weather, now: the node asks Open-Meteo for DMI's own forecast model (HARMONIE) at Copenhagen and sends it down the stream as a `weather` event (cloud, rain or snow in mm an hour, visibility, wind, temperature, humidity). Clear, cloudy, overcast, mist, drizzle, rain, snow and thunder are what the world can show; weather it doesn't know is shown as unknown.
+
+- **One fixed request, nothing about you in it.** The same address every time (Copenhagen's coordinates, no key, no cookies, only an `accept` header), redirects refused, the answer checked before it's used (`packages/node/src/weather.ts`).
+- **Only while someone watches.** It asks when the world is opened and then at most every 15 minutes while anyone has it open (5 minutes after a failure); with nobody watching, it doesn't ask at all. Weather older than three hours isn't shown.
+- **Off switch.** `GALAHAD_WEATHER=off` in the node's environment, and it never asks; the world then shows whatever the HUD is set to.
 
 ## The robots
 

@@ -16,7 +16,7 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent, WorldReport } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
@@ -405,7 +405,7 @@ Next:
 
     case "serve":
     case "start": {
-      const daemon = await startDaemon(home);
+      const daemon = await startDaemon(home, { weather: process.env.GALAHAD_WEATHER !== "off" });
       const shutdown = async () => {
         await daemon.stop();
         process.exit(0);
@@ -724,10 +724,15 @@ Next:
         return;
       }
       // The SANDBOX in words: where Galahad is, what's running on the plots; --follow keeps watching.
+      const weatherLine = (w: WorldWeather | null | undefined) =>
+        w
+          ? `${w.kind} in ${w.place}, ${Math.round(w.temperature)} °C, wind ${Math.round(w.wind)} m/s${w.precipitation ? `, ${w.precipitation} mm/h` : ""} ${dim(`(${w.source}, ${new Date(w.observed).toLocaleTimeString()})`)}`
+          : dim("weather unknown (or GALAHAD_WEATHER=off on the node)");
       const say = (e: WorldEvent) => {
         const at = dim(new Date(e.at).toLocaleTimeString());
         if (e.type === "hello") {
           console.log(`${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station}${e.galahad.model ? ` · ${e.galahad.model}` : ""})`)}`);
+          console.log(`  ${weatherLine(e.weather)}`);
           for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
           for (const x of e.experiments) console.log(`  ${x.status.padEnd(8)} ${x.title} ${dim(`${x.engine} · plot ${x.plot.x},${x.plot.y} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
@@ -735,6 +740,7 @@ Next:
         else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
         else if (e.type === "experiment") console.log(`${at} ${e.experiment.status} ${e.experiment.title}${e.experiment.summary ? dim(` · ${e.experiment.summary}`) : ""}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
+        else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);

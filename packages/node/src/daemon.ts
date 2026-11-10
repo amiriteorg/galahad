@@ -22,6 +22,7 @@ import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
 import { shipNative } from "./ship.ts";
+import { WeatherService } from "./weather.ts";
 
 export interface Daemon {
   port: number;
@@ -51,6 +52,8 @@ export interface DaemonOptions {
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
+  /** Fetch Denmark's weather for the SANDBOX while someone watches it (default off; `galahad serve` turns it on unless GALAHAD_WEATHER=off). */
+  weather?: boolean;
 }
 
 /**
@@ -183,6 +186,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
   const world = new WorldHub();
+  const weather = new WeatherService({
+    enabled: opts.weather ?? false,
+    wanted: () => world.watching > 0,
+    onChange: () => world.weatherChanged(),
+    log,
+  });
+  world.setWeather(
+    () => weather.current(),
+    () => void weather.refresh(),
+  );
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -315,6 +328,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       bank.close();
       chats.close();
       world.close();
+      weather.close();
       await loops.stop();
       await connectors.drain();
       if (refresh) clearInterval(refresh);
