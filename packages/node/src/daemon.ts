@@ -11,6 +11,7 @@ import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { BankService } from "./bank/service.ts";
 import { ChatStore } from "./chats.ts";
+import { WorldHub } from "./world-hub.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
@@ -179,6 +180,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
+  const world = new WorldHub();
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -233,6 +235,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
     bank,
     chats,
+    world,
     ledger,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
@@ -308,6 +311,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       clearInterval(outbox);
       bank.close();
       chats.close();
+      world.close();
       await loops.stop();
       await connectors.drain();
       if (refresh) clearInterval(refresh);

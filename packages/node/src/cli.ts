@@ -16,7 +16,7 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent } from "@galahad/core";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -52,6 +52,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
+  world [--follow]                what Galahad is doing in the SANDBOX, and the experiments on its plots
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -314,6 +315,7 @@ async function main(): Promise<void> {
       title: { type: "string" },
       body: { type: "string" },
       temp: { type: "boolean" },
+      follow: { type: "boolean" },
       chat: { type: "string" },
       project: { type: "string" },
       instructions: { type: "string" },
@@ -701,6 +703,27 @@ Next:
         else if (event.type === "error") fail(event.error);
       }
       process.stdout.write("\n");
+      return;
+    }
+
+    case "world": {
+      // The SANDBOX in words: where Galahad is, what's running on the plots; --follow keeps watching.
+      const say = (e: WorldEvent) => {
+        const at = dim(new Date(e.at).toLocaleTimeString());
+        if (e.type === "hello") {
+          console.log(`${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station}${e.galahad.model ? ` · ${e.galahad.model}` : ""})`)}`);
+          for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
+          if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
+          for (const x of e.experiments) console.log(`  ${x.status.padEnd(8)} ${x.title} ${dim(`${x.engine} · plot ${x.plot.x},${x.plot.y} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
+        } else if (e.type === "galahad") console.log(`${at} ${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station})`)}`);
+        else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
+        else if (e.type === "experiment") console.log(`${at} ${e.experiment.status} ${e.experiment.title}${e.experiment.summary ? dim(` · ${e.experiment.summary}`) : ""}`);
+        else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
+      };
+      for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
+        say(event as WorldEvent);
+        if (!flags.follow) return;
+      }
       return;
     }
 

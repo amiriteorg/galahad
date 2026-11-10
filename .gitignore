@@ -9,3 +9,4 @@ REVISION
 
 # Agent worktrees (local only)
 .claude/worktrees/
+__pycache__/

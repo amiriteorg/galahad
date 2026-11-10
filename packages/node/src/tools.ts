@@ -227,7 +227,7 @@ export const TOOLS: GalahadTool[] = [
     name: "sandbox_run",
     title: "Run a command in a fresh sandbox",
     description:
-      "Run a shell command in a new, unprivileged, resource-capped container on the fleet's sandbox host, then destroy it. Use for untrusted, heavy or risky code, and for calculations. Optionally give it model access via scoped tokens.",
+      "Run a shell command in a new, unprivileged, resource-capped container on the fleet's sandbox host, then destroy it. Use for untrusted, heavy or risky code, and for calculations. Optionally give it model access via scoped tokens. Simulations can be shown live in the user's SANDBOX world: Python's galahad_world module (help(galahad_world)) streams MuJoCo models, JSBSim aircraft and RocketPy rockets, or any bodies you pose yourself; `python3 -m galahad_world arm|plane|rocket` runs a demo (lab: true for the simulators; network gateway or online).",
     input: {
       command: z.string().min(1).max(100_000).describe("Shell command, run with sh -c in /work"),
       network: NETWORK,

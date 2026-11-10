@@ -268,6 +268,51 @@ describe("projects", () => {
   });
 });
 
+describe("the SANDBOX, live", () => {
+  /** Reads the world's stream until `until` holds (or 5 s pass). */
+  async function watchWorld(token: string, during: () => Promise<unknown>, until: (events: any[]) => boolean): Promise<any[]> {
+    const controller = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${port}/api/world`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const events: any[] = [];
+    let buffer = "";
+    const reading = (async () => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && !until(events)) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += new TextDecoder().decode(value);
+        for (let i = buffer.indexOf("\n\n"); i >= 0; i = buffer.indexOf("\n\n")) {
+          const chunk = buffer.slice(0, i);
+          buffer = buffer.slice(i + 2);
+          if (chunk.startsWith("data: ")) events.push(JSON.parse(chunk.slice(6)));
+        }
+      }
+    })();
+    await during();
+    await reading;
+    controller.abort();
+    return events;
+  }
+
+  test("yours: the whole world first, then Galahad walking to the library when a chat recalls", async () => {
+    script = [callTool("recall", { query: "the round table" }), say("Nothing yet.")];
+    const events = await watchWorld(
+      home.adminToken(),
+      () => ask(home.adminToken(), "What do we remember about the round table?", { tools: true }),
+      (seen) => seen.some((e) => e.type === "galahad" && e.galahad.station === "library"),
+    );
+    expect(events[0]).toMatchObject({ type: "hello", galahad: { station: expect.any(String) }, nodes: [expect.objectContaining({ name: "chat-node", self: true })] });
+    expect(events.find((e) => e.type === "galahad" && e.galahad.station === "library")!.galahad.doing).toBe("Recall from the shared mind: the round table");
+  });
+
+  test("never an agent's: it carries what Galahad thinks about in your chats", async () => {
+    const { token } = (await (await call("mintArm", { label: "watcher" }, home.adminToken())).json()) as { token: string };
+    expect((await call("world", undefined, token)).status).toBe(403);
+  });
+});
+
 describe("one answer's tools", () => {
   const fake = (name: string, flow: GalahadTool["flow"], run: () => Promise<string>): GalahadTool => ({ name, title: name, description: name, input: { q: z.string().optional() }, routes: ["recall"], flow, run });
   const api: ToolApi = { call: async <T,>() => ({}) as T, bytes: async () => ({ bytes: new Uint8Array(), type: "" }) };

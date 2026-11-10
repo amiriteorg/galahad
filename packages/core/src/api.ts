@@ -197,6 +197,8 @@ export const routes = {
   /** Gone for good: the node overwrites what it held. */
   deleteConversation: { method: "POST", path: "/api/conversations/delete", scope: "chat", input: z.strictObject({ id: ConversationId }) },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
+  /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
+  world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

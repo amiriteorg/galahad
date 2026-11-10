@@ -2,6 +2,9 @@ import {
   type ActionView,
   CLIENT_DEFAULT_SCOPES,
   type ChatStreamEvent,
+  stationForTool,
+  type WorldEvent,
+  type WorldNode,
   type ConversationSummary,
   type ProjectView,
   type StoredStep,
@@ -66,6 +69,7 @@ import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore } from "./chats.ts";
+import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
@@ -113,6 +117,8 @@ export interface AppContext {
   bank: BankService;
   /** Your chat history, on this node. */
   chats: ChatStore;
+  /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
+  world: WorldHub;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
@@ -394,6 +400,22 @@ export function createApp(ctx: AppContext) {
     };
   }
 
+  // The world's banners: the fleet's nodes and paired devices, with who's online.
+  ctx.world.setNodes((): WorldNode[] => {
+    const fleet = fleetView();
+    const online = new Map(fleet.peers.map((p) => [p.device, p.online]));
+    return fleet.devices
+      .filter((d) => !d.revokedAt)
+      .map((d) => ({
+        id: d.id,
+        name: d.name,
+        kind: d.kind,
+        self: d.id === fleet.self,
+        online: d.id === fleet.self || (online.get(d.id) ?? false),
+        sandboxHost: Boolean((d.caps as { sandbox?: { image?: unknown } } | null)?.sandbox?.image),
+      }));
+  });
+
   /** Recalled memories become context for chat, labelled with their trust level. */
   function memoryContext(query: string): string | undefined {
     const memories = ctx.store.recall(query, 8);
@@ -444,6 +466,46 @@ export function createApp(ctx: AppContext) {
         return { bytes: new Uint8Array(await result.arrayBuffer()), type: result.headers.get("content-type") ?? "" };
       },
     };
+  }
+
+  /**
+   * What the world shows of an answer: where Galahad goes for each step, and a line of
+   * what he's saying now and then. Once the bank is in the answer, no more lines from it.
+   */
+  function worldWatcher(role: string, quest: boolean, answer: { content: string; bank: boolean }) {
+    let model: string | null = null;
+    let spoken = 0;
+    let lastLine = 0;
+    const thinking = () => ctx.world.doing("council", quest ? `The ${role} is thinking` : "Thinking it over", { model });
+    return (event: ChatStreamEvent) => {
+      if (event.type === "model") {
+        model = event.ref;
+        thinking();
+      } else if (event.type === "tool") {
+        const tool = TOOLS.find((t) => t.name === event.name);
+        const detail = tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
+        ctx.world.doing(stationForTool(event.name), `${event.title}${detail}`, { model });
+      } else if (event.type === "tool_result") {
+        thinking();
+      } else if (event.type === "text" && !answer.bank && Date.now() - lastLine > 2_500 && answer.content.length - spoken > 40) {
+        // The latest complete sentence he's written, now and then.
+        const fresh = answer.content.slice(spoken);
+        const sentence = fresh.match(/[^.!?\n]{12,}[.!?](?=\s|$)(?![^]*[^.!?\n]{12,}[.!?](?=\s|$))/)?.[0];
+        if (sentence) {
+          ctx.world.think(sentence.replace(/[*_`#>]/g, ""));
+          spoken = answer.content.length;
+          lastLine = Date.now();
+        }
+      }
+    };
+  }
+
+  /** What an agent (an arm, Galahad's own tools included) does through the API, as the world shows it. */
+  function armActivity(name: RouteName, input: unknown): void {
+    const tool = TOOLS.find((t) => t.routes[0] === name);
+    if (!tool || (name === "connectors" || name === "fleet")) return;
+    const q = input && typeof input === "object" ? ((input as Record<string, unknown>).q ?? (input as Record<string, unknown>).query) : undefined;
+    ctx.world.doing(stationForTool(tool.name), `${tool.title}${typeof q === "string" && tool.flow !== "private" ? `: ${q.slice(0, 80)}` : ""}`);
   }
 
   /** A tool's failure in words the model may see: what the API would say, never an internal error's detail. */
@@ -804,15 +866,18 @@ export function createApp(ctx: AppContext) {
             answerId = ctx.chats.startAnswer(kept.id);
             send({ type: "conversation", id: kept.id, title: kept.title, project: kept.project });
           }
+          const seen = worldWatcher(request.role ?? "planner", wantTools === false, answer);
           try {
             for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal: req.signal })) {
               keepStep(answer, event);
+              seen(event);
               send(event);
             }
           } catch (error) {
             answer.error = String((error as Error).message ?? error);
             send({ type: "error", error: answer.error });
           } finally {
+            ctx.world.rest();
             clearInterval(heartbeat);
             if (kept && answerId !== null) {
               const status = answer.error ? "error" : req.signal.aborted ? "stopped" : "done";
@@ -851,6 +916,41 @@ export function createApp(ctx: AppContext) {
       return { deleted: ctx.chats.delete(input.id) };
     },
     projects: () => ({ projects: projectsView() }),
+    world: (_input, p, req) => {
+      // Yours alone: it carries what Galahad is thinking about in your chats.
+      ownerOnly(p);
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          let open = true;
+          const write = (text: string) => {
+            if (!open) return;
+            try {
+              controller.enqueue(encoder.encode(text));
+            } catch {
+              open = false;
+            }
+          };
+          const send = (event: WorldEvent) => write(`data: ${JSON.stringify(event)}\n\n`);
+          send(ctx.world.hello());
+          const stop = ctx.world.watch(send);
+          const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
+          req.signal.addEventListener("abort", () => {
+            stop();
+            clearInterval(heartbeat);
+            if (open) {
+              open = false;
+              try {
+                controller.close();
+              } catch {
+                /* already closed */
+              }
+            }
+          });
+        },
+      });
+      return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+    },
     setProject: (input) => {
       guardAgainstSecrets(input.name, input.instructions ?? "", input.repo ?? "");
       const existing = projectsView().find((x) => x.id === input.id);
@@ -1254,10 +1354,12 @@ export function createApp(ctx: AppContext) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Sandboxes can reach exactly three things on the host, all token-gated: the model
-    // gateway, the git gateway (read-only clones of one repository) and web search.
+    // Sandboxes can reach exactly four things on the host, all token-gated: the model
+    // gateway, the git gateway (read-only clones of one repository), web search, and the
+    // world (their experiments, shown in the SANDBOX).
     if (listener === "sandbox") {
       if (path === "/search") return handleSandboxSearch(req, { tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}) });
+      if (path.startsWith("/world/")) return handleSandboxWorld(req, { tokens: ctx.tokens, world: ctx.world, nodeName: ctx.nodeName });
       if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
@@ -1299,6 +1401,7 @@ export function createApp(ctx: AppContext) {
       if (!principal) throw new HttpError(401, "sign the request with an enrolled device key");
       if (route.scope && !principal.scopes.includes(route.scope)) throw new HttpError(403, `requires scope ${route.scope}`);
       const input = route.input ? route.input.parse(body.length ? JSON.parse(new TextDecoder().decode(body)) : {}) : undefined;
+      if (principal.kind === "arm") armActivity(name, input);
       const result = await handlers[name](input, principal, req);
       return result instanceof Response ? result : json(result);
     }

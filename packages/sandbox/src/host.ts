@@ -267,7 +267,8 @@ export class SandboxHost {
 
     const id = hex(randomBytes(5));
     const quest = input.quest ?? `adhoc-${id}`;
-    const providers = input.network === "isolated" ? [] : [...(input.providers ?? []), ...(input.search ? ["search"] : [])];
+    // Wherever there's a network, a sandbox may show its experiments in the world.
+    const providers = input.network === "isolated" ? [] : [...(input.providers ?? []), ...(input.search ? ["search"] : []), "world"];
     let env: Record<string, string> = {};
     let tokenHash: string | undefined;
     if (providers.length) {

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /*
  * The SANDBOX: an infinite synthetic world where Galahad is visible as he works, and
  * every experiment (a robot in MuJoCo or Gazebo, a plane in JSBSim, a rocket in
@@ -146,3 +148,56 @@ export const STATIONS: Record<Exclude<Station, "field">, { x: number; y: number;
   oracle: { x: -30, y: -2, label: "Oracle" },
   observatory: { x: -8, y: 30, label: "Observatory" },
 };
+
+/* ---------- what a simulation sends (through its sandbox's gateway), checked at the node ---------- */
+
+const Finite = z.number().finite();
+const Size = z.number().finite().positive().max(10_000);
+const BodyId = z.string().regex(/^[A-Za-z0-9_.:-]{1,64}$/);
+
+export const BodyShapeSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("box"), size: z.tuple([Size, Size, Size]) }),
+  z.strictObject({ kind: z.literal("sphere"), radius: Size }),
+  z.strictObject({ kind: z.literal("capsule"), radius: Size, length: z.number().finite().min(0).max(10_000) }),
+  z.strictObject({ kind: z.literal("cylinder"), radius: Size, length: Size }),
+  z.strictObject({ kind: z.literal("plane"), size: z.tuple([Size, Size]) }),
+  z
+    .strictObject({ kind: z.literal("mesh"), vertices: z.array(Finite).max(60_000), indices: z.array(z.number().int().min(0)).max(120_000) })
+    .refine((m) => m.vertices.length % 3 === 0 && m.indices.length % 3 === 0 && m.indices.every((i) => i < m.vertices.length / 3), "vertices are x,y,z triples; indices name them in triangles"),
+  z.strictObject({ kind: z.literal("aircraft"), span: Size, length: Size }),
+  z.strictObject({ kind: z.literal("rocket"), radius: Size, length: Size }),
+]);
+
+export const SceneBodySchema = z.strictObject({
+  id: BodyId,
+  shape: BodyShapeSchema,
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  fixed: z.boolean().optional(),
+  label: z.string().max(60).optional(),
+  trail: z.boolean().optional(),
+});
+
+/** A new experiment: what it is and what it draws. `extent` is how far it spans (metres), so the node can scale it onto its plot. */
+export const ExperimentStart = z.strictObject({
+  title: z.string().trim().min(1).max(120),
+  engine: z.enum(["mujoco", "gazebo", "isaac", "jsbsim", "rocketpy", "custom"]),
+  scene: z.array(SceneBodySchema).min(1).max(500),
+  extent: z.number().finite().positive().max(10_000_000).optional(),
+  plot: z.enum(["small", "medium", "large"]).optional(),
+});
+
+const PoseSchema = z.tuple([Finite, Finite, Finite, Finite, Finite, Finite, Finite]);
+const Metrics = z.record(z.string().regex(/^[A-Za-z0-9_.-]{1,40}$/), Finite).refine((m) => Object.keys(m).length <= 24, "at most 24 metrics");
+
+export const ExperimentFrames = z.strictObject({
+  frames: z
+    .array(z.strictObject({ t: z.number().finite().min(0), poses: z.record(BodyId, PoseSchema).refine((p) => Object.keys(p).length <= 500, "at most 500 bodies"), metrics: Metrics.optional() }))
+    .min(1)
+    .max(120),
+});
+
+export const ExperimentEnd = z.strictObject({
+  status: z.enum(["done", "failed"]),
+  summary: z.string().max(300).optional(),
+  metrics: Metrics.optional(),
+});

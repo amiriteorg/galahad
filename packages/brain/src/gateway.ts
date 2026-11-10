@@ -77,6 +77,12 @@ export class GatewayTokens {
       .map(toInfo);
   }
 
+  /** The label a token was minted with (e.g. "sandbox:<id>"), without spending it; null if it isn't one. */
+  labelOf(token: string): string | null {
+    if (!/^gw_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    return this.info(sha256B64u(token))?.label ?? null;
+  }
+
   private info(hash: string): TokenInfo | null {
     const row = this.db.query<TokenRow, [string]>("SELECT * FROM gw_tokens WHERE hash = ?").get(hash);
     return row ? toInfo(row) : null;
