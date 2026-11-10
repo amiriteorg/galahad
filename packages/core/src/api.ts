@@ -8,6 +8,7 @@ import { TrialRecord } from "./trials.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
+import { WorldReport } from "./world-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -201,6 +202,9 @@ export const routes = {
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
   /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
   world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },
+  /** How the world ran on a device (yours alone), and the latest reports, for `galahad world --logs`. */
+  worldReport: { method: "POST", path: "/api/world/report", scope: "mind:read", input: WorldReport },
+  worldReports: { method: "GET", path: "/api/world/reports", scope: "mind:read", input: null },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

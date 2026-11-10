@@ -38,7 +38,7 @@ export interface Leader {
   heading: number;
 }
 
-const WALK = 0.45;
+const WALK = 0.65;
 const HOME_RADIUS = 34;
 
 export class MicroduckFlock {

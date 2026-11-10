@@ -13,6 +13,7 @@ import {
   STATIONS,
   type WorldEvent,
   type WorldNode,
+  type WorldReport,
 } from "@galahad/core";
 import type { z } from "zod";
 
@@ -80,6 +81,8 @@ export class WorldHub {
   private readonly experiments = new Map<string, Running>();
   private readonly watchers = new Set<(event: WorldEvent) => void>();
   private idle: ReturnType<typeof setTimeout> | null = null;
+  /** The latest report from each device session (newest last), for `galahad world --logs`. */
+  private readonly reports = new Map<string, z.infer<typeof WorldReport> & { device: string; at: number }>();
   private readonly sweep: ReturnType<typeof setInterval>;
   private nodes: () => WorldNode[] = () => [];
 
@@ -290,6 +293,17 @@ export class WorldHub {
   private prune(): void {
     const ended = [...this.experiments.values()].filter((e) => e.endedAt !== null).sort((a, b) => b.endedAt! - a.endedAt!);
     for (const e of ended.slice(KEEP_ENDED)) this.experiments.delete(e.id);
+  }
+
+  /** A device says how the world ran there. The 20 most recent sessions are kept, in memory. */
+  report(input: z.infer<typeof WorldReport>, device: string): void {
+    this.reports.delete(input.session);
+    this.reports.set(input.session, { ...input, device, at: this.now() });
+    while (this.reports.size > 20) this.reports.delete(this.reports.keys().next().value!);
+  }
+
+  reportsView(): (z.infer<typeof WorldReport> & { device: string; at: number })[] {
+    return [...this.reports.values()].reverse();
   }
 
   close(): void {

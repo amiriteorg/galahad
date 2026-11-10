@@ -16,7 +16,8 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent, WorldReport } from "@galahad/core";
+type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -52,7 +53,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
-  world [--follow]                what Galahad is doing in the SANDBOX, and the experiments on its plots
+  world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -317,6 +318,7 @@ async function main(): Promise<void> {
       body: { type: "string" },
       temp: { type: "boolean" },
       follow: { type: "boolean" },
+      logs: { type: "boolean" },
       chat: { type: "string" },
       project: { type: "string" },
       instructions: { type: "string" },
@@ -708,6 +710,19 @@ Next:
     }
 
     case "world": {
+      if (flags.logs) {
+        // How the world ran on each device that opened it lately (newest first).
+        const { reports } = await new Admin(home).call<{ reports: (WorldReportInput & { device: string; at: number })[] }>("worldReports");
+        if (!reports.length) console.log("No reports yet: open the SANDBOX in the app, and its device reports here every 30 s.");
+        for (const r of reports) {
+          console.log(`${bold(r.device)} ${dim(`${new Date(r.at).toLocaleString()} · session ${r.session.slice(0, 8)} · ${r.mode}`)}`);
+          console.log(`  ${r.backend} · ${r.tier} · ${r.fps.now} fps (avg ${r.fps.avg}, min ${r.fps.min}) · ${r.frameMs} ms · dpr ${r.dpr} · ${r.drawCalls} draws · shadows ${r.shadows ? "on" : "off"} · restarts ${r.restarts}`);
+          console.log(dim(`  ${r.viewport[0]}×${r.viewport[1]} @${r.viewport[2]}x · ${r.adapter ?? "adapter unknown"}`));
+          console.log(dim(`  ${r.userAgent}`));
+          for (const e of r.events.slice(-15)) console.log(`  ${dim(new Date(e.at).toLocaleTimeString())} ${e.kind.padEnd(8)} ${e.text}`);
+        }
+        return;
+      }
       // The SANDBOX in words: where Galahad is, what's running on the plots; --follow keeps watching.
       const say = (e: WorldEvent) => {
         const at = dim(new Date(e.at).toLocaleTimeString());

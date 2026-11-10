@@ -38,7 +38,8 @@ const DARK = 0x40444c;
 const ARM_LIGHT = 0xf2efe8;
 const ARM_TONE = 0xe8853a;
 /** The ducks are drawn about twice life size, the arms half again: so they can be seen. */
-const DUCK_SCALE = 2;
+/** Bigger than life (they're 25 cm), so they read at a glance next to a 2.5 m knight. */
+const DUCK_SCALE = 3.2;
 
 function instanced(geometry: BufferGeometry, material: MeshLambertMaterial, count: number, root: Group, shadows: boolean): InstancedMesh {
   const mesh = new InstancedMesh(geometry, material, Math.max(1, count));

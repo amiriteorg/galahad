@@ -307,6 +307,32 @@ describe("the SANDBOX, live", () => {
     expect(events.find((e) => e.type === "galahad" && e.galahad.station === "library")!.galahad.doing).toBe("Recall from the shared mind: the round table");
   });
 
+  test("how it ran on a device comes back to the node, for galahad world --logs", async () => {
+    const report = {
+      session: "a1b2c3d4e5f6a7b8c9d0e1f2",
+      mode: "live",
+      backend: "webgpu",
+      tier: "medium",
+      dpr: 1.5,
+      fps: { now: 58, avg: 52, min: 31 },
+      frameMs: 17.2,
+      drawCalls: 88,
+      shadows: false,
+      viewport: [390, 844, 3],
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X)",
+      adapter: "apple · common-3",
+      restarts: 1,
+      experiments: 2,
+      events: [{ at: 1, kind: "lost", text: "device lost (webgpu · high)" }],
+    };
+    expect((await call("worldReport", report, home.adminToken())).status).toBe(200);
+    expect((await call("worldReport", { ...report, session: "x" }, home.adminToken())).status).toBe(400);
+    const { reports } = (await (await call("worldReports", undefined, home.adminToken())).json()) as { reports: { device: string; events: unknown[] }[] };
+    expect(reports[0]).toMatchObject({ device: "a terminal", backend: "webgpu", events: [{ kind: "lost" }] });
+    const { token } = (await (await call("mintArm", { label: "snoop" }, home.adminToken())).json()) as { token: string };
+    expect((await call("worldReports", undefined, token)).status).toBe(403);
+  });
+
   test("never an agent's: it carries what Galahad thinks about in your chats", async () => {
     const { token } = (await (await call("mintArm", { label: "watcher" }, home.adminToken())).json()) as { token: string };
     expect((await call("world", undefined, token)).status).toBe(403);

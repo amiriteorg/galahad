@@ -54,3 +54,23 @@ export const ExperimentEnd = z.strictObject({
   summary: z.string().max(300).optional(),
   metrics: Metrics.optional(),
 });
+
+/** How the world ran on a device: what the page reports, so problems on a phone can be seen from a terminal. Nothing personal: the device, the renderer, its numbers, its errors. */
+export const WorldReport = z.strictObject({
+  session: z.string().regex(/^[A-Za-z0-9_-]{8,40}$/),
+  mode: z.enum(["live", "demo", "fallback"]),
+  backend: z.enum(["webgpu", "webgl2", "none"]),
+  tier: z.string().max(20),
+  dpr: z.number().finite().min(0).max(8),
+  fps: z.strictObject({ now: z.number().finite().min(0).max(1000), avg: z.number().finite().min(0).max(1000), min: z.number().finite().min(0).max(1000) }),
+  frameMs: z.number().finite().min(0).max(100_000),
+  drawCalls: z.number().int().min(0).max(1_000_000),
+  shadows: z.boolean(),
+  viewport: z.tuple([z.number().int().min(0).max(100_000), z.number().int().min(0).max(100_000), z.number().finite().min(0).max(8)]),
+  userAgent: z.string().max(400),
+  adapter: z.string().max(300).optional(),
+  restarts: z.number().int().min(0).max(100),
+  experiments: z.number().int().min(0).max(1000),
+  /** The latest things that happened: started, slow, reset, error, warning, fallback. */
+  events: z.array(z.strictObject({ at: z.number().int(), kind: z.enum(["start", "slow", "lost", "restart", "fallback", "error", "warning"]), text: z.string().max(600) })).max(40),
+});

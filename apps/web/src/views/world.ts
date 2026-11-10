@@ -177,6 +177,83 @@ export const worldView: View = (root, ctx, { scope }) => {
     const recent = model.notice !== null && model.at - model.notice.at < NOTICE_MS;
     handle?.setBeacon(open || recent);
   }
+
+  // ---------- diagnostics: how it ran here, reported to the node (galahad world --logs) ----------
+  type DiagKind = "start" | "slow" | "lost" | "restart" | "fallback" | "error" | "warning";
+  const session = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const diag = { events: [] as { at: number; kind: DiagKind; text: string }[], fps: [] as number[], slow: 0, lastSlowNote: 0, adapter: undefined as string | undefined };
+  const note = (kind: DiagKind, text: string) => {
+    diag.events.push({ at: Date.now(), kind, text: text.slice(0, 600) });
+    if (diag.events.length > 40) diag.events.shift();
+    if (kind !== "start" && kind !== "slow") void sendReport();
+  };
+  let lastReport = 0;
+  let reportTimer: ReturnType<typeof setTimeout> | null = null;
+  async function sendReport(): Promise<void> {
+    // At most one every 5 s; the rest wait for that.
+    const wait = 5000 - (Date.now() - lastReport);
+    if (wait > 0) {
+      reportTimer ??= setTimeout(() => {
+        reportTimer = null;
+        void sendReport();
+      }, wait);
+      return;
+    }
+    lastReport = Date.now();
+    const s = handle?.stats();
+    const fps = diag.fps.length ? diag.fps : [0];
+    try {
+      await ctx.api.post("/api/world/report", {
+        session,
+        mode: !fallback.hidden ? "fallback" : demoTimer ? "demo" : "live",
+        backend: s?.backend ?? "none",
+        tier: s?.tier ?? String(tier ?? "?"),
+        dpr: s?.dpr ?? 0,
+        fps: { now: fps.at(-1)!, avg: Math.round(fps.reduce((a, b) => a + b, 0) / fps.length), min: Math.min(...fps) },
+        frameMs: s?.frameMs ?? 0,
+        drawCalls: s?.drawCalls ?? 0,
+        shadows: s?.shadows ?? false,
+        viewport: [innerWidth, innerHeight, devicePixelRatio],
+        userAgent: navigator.userAgent.slice(0, 400),
+        ...(diag.adapter ? { adapter: diag.adapter } : {}),
+        restarts,
+        experiments: model.experiments.length,
+        events: diag.events,
+      });
+    } catch {
+      /* a node without reports yet: nothing to do */
+    }
+  }
+  // Errors and warnings while the world is open (three.js and the GPU speak through the console).
+  const original = { warn: console.warn, error: console.error };
+  const said = (args: unknown[]) => args.map((a) => (a instanceof Error ? `${a.name}: ${a.message}` : typeof a === "string" ? a : JSON.stringify(a)?.slice(0, 200))).join(" ");
+  console.warn = (...args: unknown[]) => {
+    note("warning", said(args));
+    original.warn.apply(console, args);
+  };
+  console.error = (...args: unknown[]) => {
+    note("error", said(args));
+    original.error.apply(console, args);
+  };
+  scope.add(() => {
+    console.warn = original.warn;
+    console.error = original.error;
+    if (reportTimer) clearTimeout(reportTimer);
+    void sendReport();
+  });
+  scope.listen(window, "error", (e: ErrorEvent) => note("error", `${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`));
+  scope.listen(window, "unhandledrejection", (e: PromiseRejectionEvent) => note("error", `unhandled: ${e.reason instanceof Error ? e.reason.message : String(e.reason)}`));
+  scope.interval(() => void sendReport(), 30_000);
+  void (async () => {
+    try {
+      const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{ info?: Record<string, string> } | null> } }).gpu;
+      const info = (await gpu?.requestAdapter())?.info;
+      if (info) diag.adapter = [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(" · ").slice(0, 300) || undefined;
+    } catch {
+      /* no adapter info here */
+    }
+  })();
+
   scope.add(ctx.live.notices.subscribe(() => updateBeacon()));
 
   // ---------- the panel: the experiments, or the one selected ----------
@@ -357,6 +434,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
 
   function showFallback(message: string, reload = false): void {
+    note("fallback", message);
     loading.remove();
     hud.hidden = true;
     fallback.hidden = false;
@@ -396,6 +474,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       }
       handle = mounted;
       loading.remove();
+      const s = mounted.stats();
+      note("start", `${s.backend} · ${s.tier} · dpr ${s.dpr}${restarts ? ` (restart ${restarts})` : ""}`);
+      setTimeout(() => void sendReport(), 6000);
       handle.update(model, null);
       handle.select(selected);
       handle.setFollow(following);
@@ -408,6 +489,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   async function lostDevice(reason: string): Promise<void> {
     const was = handle?.stats();
+    note("lost", `${reason} (${was?.backend ?? "?"} · ${was?.tier ?? "?"})`);
     handle?.dispose();
     handle = null;
     if (scope.disposed) return;
@@ -419,6 +501,7 @@ export const worldView: View = (root, ctx, { scope }) => {
     // Come back lighter: a tier down, and on WebGL2 if it was WebGPU that went.
     tier = mod?.lowerTier(was?.tier ?? tier ?? "high");
     forceWebGL ||= was?.backend === "webgpu";
+    note("restart", `restarting at ${tier}${forceWebGL ? " on WebGL2" : ""}`);
     toast("The 3D view restarted", { tone: "info", description: "The graphics device was reset; it's running at a lighter setting now." });
     await new Promise((resolve) => setTimeout(resolve, 800));
     await start();
@@ -429,6 +512,16 @@ export const worldView: View = (root, ctx, { scope }) => {
     const s = handle?.stats();
     if (!s) return;
     stats.textContent = `${s.backend === "webgpu" ? "WebGPU" : "WebGL2"} · ${s.tier} · ${s.fps} fps`;
+    if (document.visibilityState === "visible" && s.fps > 0) {
+      diag.fps.push(s.fps);
+      if (diag.fps.length > 30) diag.fps.shift();
+      // Slow for three readings in a row (6 s): note it, at most once a minute.
+      diag.slow = s.fps < 24 ? diag.slow + 1 : 0;
+      if (diag.slow >= 3 && Date.now() - diag.lastSlowNote > 60_000) {
+        diag.lastSlowNote = Date.now();
+        note("slow", `${s.fps} fps, ${s.frameMs} ms a frame, dpr ${s.dpr}, ${s.drawCalls} draw calls, shadows ${s.shadows ? "on" : "off"}`);
+      }
+    }
   }, 2000);
 
   // ---------- the stream, or the demo ----------

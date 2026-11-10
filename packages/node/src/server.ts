@@ -916,6 +916,15 @@ export function createApp(ctx: AppContext) {
       return { deleted: ctx.chats.delete(input.id) };
     },
     projects: () => ({ projects: projectsView() }),
+    worldReport: (input, p) => {
+      ownerOnly(p);
+      ctx.world.report(input, ctx.store.device(p.device)?.name ?? (p.kind === "admin" ? "a terminal" : p.device));
+      return { ok: true };
+    },
+    worldReports: (_input, p) => {
+      ownerOnly(p);
+      return { reports: ctx.world.reportsView() };
+    },
     world: (_input, p, req) => {
       // Yours alone: it carries what Galahad is thinking about in your chats.
       ownerOnly(p);
