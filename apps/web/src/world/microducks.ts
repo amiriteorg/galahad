@@ -139,7 +139,7 @@ export class MicroduckFlock {
           d.y = this.scratch.y;
           d.heading = taken;
         }
-        d.phase += dt * (6 + d.speed * 6);
+        d.phase += dt * MicroduckFlock.cadence(d.speed);
       }
       this.pose(d, dt, t, i);
     }
@@ -173,6 +173,11 @@ export class MicroduckFlock {
       d.hop += dt;
       if (d.hop > 0.42) d.hop = 0;
     }
+  }
+
+  /** How fast the gait's phase turns (rad/s) at a walking speed (m/s): quicker steps when hurrying. */
+  static cadence(speed: number): number {
+    return 6 + speed * 6;
   }
 
   /** The hop's height now (m). */

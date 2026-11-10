@@ -1,0 +1,789 @@
+{
+ "format": 1,
+ "name": "open-duck-mini-v2",
+ "title": "Open Duck Mini v2",
+ "source": {
+  "repo": "https://github.com/apirrone/Open_Duck_Mini",
+  "commit": "b23317a485b3cec7d8417f352478778b3475173c",
+  "path": "mini_bdx/robots/open_duck_mini_v2/robot.urdf",
+  "license": "Apache-2.0"
+ },
+ "materials": [
+  15395562,
+  15132390,
+  3891636,
+  10066329,
+  3026478,
+  4144702,
+  10463923,
+  10855845,
+  15241770,
+  3749944,
+  16430593,
+  5131335,
+  6710886,
+  6908265,
+  8421504,
+  7318521
+ ],
+ "links": [
+  {
+   "name": "trunk_assembly",
+   "mesh": {
+    "vertexOffset": 0,
+    "vertices": 2663,
+    "indexOffset": 0,
+    "indices": 17682,
+    "min": [
+     -0.154,
+     -0.055,
+     -0.03511
+    ],
+    "max": [
+     0.046,
+     0.055,
+     0.107891
+    ]
+   }
+  },
+  {
+   "name": "hip_roll_assembly",
+   "mesh": {
+    "vertexOffset": 2663,
+    "vertices": 558,
+    "indexOffset": 17682,
+    "indices": 3672,
+    "min": [
+     -0.019,
+     -0.01537,
+     -0.066125
+    ],
+    "max": [
+     0.019051,
+     0.01537,
+     0
+    ]
+   }
+  },
+  {
+   "name": "left_roll_to_pitch_assembly",
+   "mesh": {
+    "vertexOffset": 3221,
+    "vertices": 634,
+    "indexOffset": 21354,
+    "indices": 4176,
+    "min": [
+     -0.010966,
+     -0.015361,
+     -0.005
+    ],
+    "max": [
+     0.075101,
+     0.015361,
+     0.045221
+    ]
+   }
+  },
+  {
+   "name": "knee_and_ankle_assembly",
+   "mesh": {
+    "vertexOffset": 3855,
+    "vertices": 768,
+    "indexOffset": 25530,
+    "indices": 5040,
+    "min": [
+     -0.030972,
+     -0.10194,
+     -0.0139
+    ],
+    "max": [
+     0.05858,
+     0.047034,
+     0.040951
+    ]
+   }
+  },
+  {
+   "name": "knee_and_ankle_assembly_2",
+   "mesh": {
+    "vertexOffset": 4623,
+    "vertices": 675,
+    "indexOffset": 30570,
+    "indices": 4470,
+    "min": [
+     -0.015351,
+     -0.088761,
+     -0.0039
+    ],
+    "max": [
+     0.015351,
+     0.010961,
+     0.040951
+    ]
+   }
+  },
+  {
+   "name": "foot_assembly",
+   "mesh": {
+    "vertexOffset": 5298,
+    "vertices": 298,
+    "indexOffset": 35040,
+    "indices": 2010,
+    "min": [
+     -0.039588,
+     -0.038825,
+     -0.005001
+    ],
+    "max": [
+     0.064337,
+     0.014503,
+     0.041901
+    ]
+   }
+  },
+  {
+   "name": "hip_roll_assembly_2",
+   "mesh": {
+    "vertexOffset": 5596,
+    "vertices": 558,
+    "indexOffset": 37050,
+    "indices": 3672,
+    "min": [
+     -0.019,
+     -0.01537,
+     -0.066125
+    ],
+    "max": [
+     0.019051,
+     0.01537,
+     0
+    ]
+   }
+  },
+  {
+   "name": "right_roll_to_pitch_assembly",
+   "mesh": {
+    "vertexOffset": 6154,
+    "vertices": 620,
+    "indexOffset": 40722,
+    "indices": 4110,
+    "min": [
+     -0.075101,
+     -0.015361,
+     -0.005
+    ],
+    "max": [
+     0.010966,
+     0.015361,
+     0.045221
+    ]
+   }
+  },
+  {
+   "name": "knee_and_ankle_assembly_3",
+   "mesh": {
+    "vertexOffset": 6774,
+    "vertices": 772,
+    "indexOffset": 44832,
+    "indices": 5064,
+    "min": [
+     -0.030972,
+     -0.047034,
+     -0.01385
+    ],
+    "max": [
+     0.05858,
+     0.103887,
+     0.041
+    ]
+   }
+  },
+  {
+   "name": "knee_and_ankle_assembly_4",
+   "mesh": {
+    "vertexOffset": 7546,
+    "vertices": 675,
+    "indexOffset": 49896,
+    "indices": 4470,
+    "min": [
+     -0.015351,
+     -0.088761,
+     -0.0039
+    ],
+    "max": [
+     0.015351,
+     0.010961,
+     0.040951
+    ]
+   }
+  },
+  {
+   "name": "foot_assembly_2",
+   "mesh": {
+    "vertexOffset": 8221,
+    "vertices": 298,
+    "indexOffset": 54366,
+    "indices": 2010,
+    "min": [
+     -0.039588,
+     -0.038825,
+     -0.005001
+    ],
+    "max": [
+     0.064337,
+     0.014503,
+     0.041901
+    ]
+   }
+  },
+  {
+   "name": "neck_pitch_assembly",
+   "mesh": {
+    "vertexOffset": 8519,
+    "vertices": 557,
+    "indexOffset": 56376,
+    "indices": 3672,
+    "min": [
+     -0.01536,
+     -0.010742,
+     -0.004001
+    ],
+    "max": [
+     0.015361,
+     0.07611,
+     0.0409
+    ]
+   }
+  },
+  {
+   "name": "head_pitch_to_yaw",
+   "mesh": {
+    "vertexOffset": 9076,
+    "vertices": 250,
+    "indexOffset": 60048,
+    "indices": 1728,
+    "min": [
+     -0.021,
+     -0.01084,
+     -0.004001
+    ],
+    "max": [
+     0.010994,
+     0.061,
+     0.0409
+    ]
+   }
+  },
+  {
+   "name": "neck_yaw_assembly",
+   "mesh": {
+    "vertexOffset": 9326,
+    "vertices": 576,
+    "indexOffset": 61776,
+    "indices": 3786,
+    "min": [
+     -0.047001,
+     -0.039776,
+     -0.041251
+    ],
+    "max": [
+     0.040951,
+     0.039776,
+     0.00095
+    ]
+   }
+  },
+  {
+   "name": "head_assembly",
+   "mesh": {
+    "vertexOffset": 9902,
+    "vertices": 1359,
+    "indexOffset": 65562,
+    "indices": 8676,
+    "min": [
+     -0.01935,
+     -0.098658,
+     -0.05905
+    ],
+    "max": [
+     0.04005,
+     0.098658,
+     0.140784
+    ]
+   }
+  },
+  {
+   "name": "left_antenna_holder",
+   "mesh": {
+    "vertexOffset": 11261,
+    "vertices": 61,
+    "indexOffset": 74238,
+    "indices": 372,
+    "min": [
+     -0.020539,
+     -0.020628,
+     -0.007001
+    ],
+    "max": [
+     0.005001,
+     0.129373,
+     0.003071
+    ]
+   }
+  },
+  {
+   "name": "right_antenna_holder",
+   "mesh": {
+    "vertexOffset": 11322,
+    "vertices": 63,
+    "indexOffset": 74610,
+    "indices": 384,
+    "min": [
+     -0.020539,
+     -0.130396,
+     -0.007001
+    ],
+    "max": [
+     0.005001,
+     0.020598,
+     0.003071
+    ]
+   }
+  }
+ ],
+ "joints": [
+  {
+   "name": "left_hip_yaw",
+   "type": "revolute",
+   "parent": "trunk_assembly",
+   "child": "hip_roll_assembly",
+   "xyz": [
+    -0.019,
+    0.035,
+    0.0459409
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.5235988,
+   "upper": 0.5235988
+  },
+  {
+   "name": "left_hip_roll",
+   "type": "revolute",
+   "parent": "hip_roll_assembly",
+   "child": "left_roll_to_pitch_assembly",
+   "xyz": [
+    0.01905,
+    0,
+    -0.046015
+   ],
+   "rpy": [
+    -1.5707963,
+    0,
+    1.5707963
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.4363323,
+   "upper": 0.4363323
+  },
+  {
+   "name": "left_hip_pitch",
+   "type": "revolute",
+   "parent": "left_roll_to_pitch_assembly",
+   "child": "knee_and_ankle_assembly",
+   "xyz": [
+    0.07415,
+    0,
+    0.03511
+   ],
+   "rpy": [
+    0,
+    1.5707963,
+    -3.1415927
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.2217305,
+   "upper": 0.5235988
+  },
+  {
+   "name": "left_knee",
+   "type": "revolute",
+   "parent": "knee_and_ankle_assembly",
+   "child": "knee_and_ankle_assembly_2",
+   "xyz": [
+    0,
+    -0.07865,
+    0.0001
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  },
+  {
+   "name": "left_ankle",
+   "type": "revolute",
+   "parent": "knee_and_ankle_assembly_2",
+   "child": "foot_assembly",
+   "xyz": [
+    0,
+    -0.07865,
+    0.0001
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  },
+  {
+   "name": "right_hip_yaw",
+   "type": "revolute",
+   "parent": "trunk_assembly",
+   "child": "hip_roll_assembly_2",
+   "xyz": [
+    -0.019,
+    -0.035,
+    0.0459409
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.5235988,
+   "upper": 0.5235988
+  },
+  {
+   "name": "right_hip_roll",
+   "type": "revolute",
+   "parent": "hip_roll_assembly_2",
+   "child": "right_roll_to_pitch_assembly",
+   "xyz": [
+    0.01905,
+    0,
+    -0.046015
+   ],
+   "rpy": [
+    -1.5707963,
+    0,
+    1.5707963
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.4363323,
+   "upper": 0.4363323
+  },
+  {
+   "name": "right_hip_pitch",
+   "type": "revolute",
+   "parent": "right_roll_to_pitch_assembly",
+   "child": "knee_and_ankle_assembly_3",
+   "xyz": [
+    -0.07415,
+    0,
+    0.03511
+   ],
+   "rpy": [
+    0,
+    1.5707963,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.5235988,
+   "upper": 1.2217305
+  },
+  {
+   "name": "right_knee",
+   "type": "revolute",
+   "parent": "knee_and_ankle_assembly_3",
+   "child": "knee_and_ankle_assembly_4",
+   "xyz": [
+    0,
+    0.07865,
+    0.037
+   ],
+   "rpy": [
+    3.1415927,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  },
+  {
+   "name": "right_ankle",
+   "type": "revolute",
+   "parent": "knee_and_ankle_assembly_4",
+   "child": "foot_assembly_2",
+   "xyz": [
+    0,
+    -0.07865,
+    0.0001
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  },
+  {
+   "name": "neck_pitch",
+   "type": "revolute",
+   "parent": "trunk_assembly",
+   "child": "neck_pitch_assembly",
+   "xyz": [
+    0.001,
+    0.01915,
+    0.0900009
+   ],
+   "rpy": [
+    1.5707963,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.3490659,
+   "upper": 1.134464
+  },
+  {
+   "name": "head_pitch",
+   "type": "revolute",
+   "parent": "neck_pitch_assembly",
+   "child": "head_pitch_to_yaw",
+   "xyz": [
+    0,
+    0.066,
+    0
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.7853982,
+   "upper": 0.7853982
+  },
+  {
+   "name": "head_yaw",
+   "type": "revolute",
+   "parent": "head_pitch_to_yaw",
+   "child": "neck_yaw_assembly",
+   "xyz": [
+    0,
+    0.057,
+    0.01905
+   ],
+   "rpy": [
+    -1.5707963,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -2.7925268,
+   "upper": 2.7925268
+  },
+  {
+   "name": "head_roll",
+   "type": "revolute",
+   "parent": "neck_yaw_assembly",
+   "child": "head_assembly",
+   "xyz": [
+    0.04095,
+    0,
+    -0.01915
+   ],
+   "rpy": [
+    0,
+    -1.5707963,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -0.5235988,
+   "upper": 0.5235988
+  },
+  {
+   "name": "left_antenna",
+   "type": "revolute",
+   "parent": "head_assembly",
+   "child": "left_antenna_holder",
+   "xyz": [
+    0.0007041,
+    0.0606628,
+    0.1164349
+   ],
+   "rpy": [
+    -3.1415927,
+    1.3045792,
+    1.3234424
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  },
+  {
+   "name": "right_antenna",
+   "type": "revolute",
+   "parent": "head_assembly",
+   "child": "right_antenna_holder",
+   "xyz": [
+    0.0007041,
+    -0.0606628,
+    0.1164349
+   ],
+   "rpy": [
+    3.1415927,
+    1.3045792,
+    -1.3234424
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.5707963,
+   "upper": 1.5707963
+  }
+ ],
+ "sites": [
+  {
+   "name": "trunk",
+   "link": "trunk_assembly",
+   "xyz": [
+    -0.024,
+    0,
+    0.0881909
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "left_foot",
+   "link": "foot_assembly",
+   "xyz": [
+    0.0005,
+    -0.036225,
+    0.01955
+   ],
+   "rpy": [
+    -1.5707963,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "right_foot",
+   "link": "foot_assembly_2",
+   "xyz": [
+    0.0005,
+    -0.036225,
+    0.01955
+   ],
+   "rpy": [
+    -1.5707963,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "head",
+   "link": "head_assembly",
+   "xyz": [
+    0.04245,
+    0,
+    0.03595
+   ],
+   "rpy": [
+    0,
+    1.5707963,
+    0
+   ]
+  }
+ ],
+ "bin": {
+  "file": "open-duck-mini-v2.fa70ac55.bin",
+  "bytes": 229684,
+  "vertices": 11385,
+  "indices": 74994
+ },
+ "triangles": 24998
+}

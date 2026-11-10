@@ -1,0 +1,307 @@
+{
+ "format": 1,
+ "name": "reachy-mini",
+ "title": "Reachy Mini",
+ "source": {
+  "repo": "https://github.com/pollen-robotics/reachy_mini",
+  "commit": "25756e7042e453bfd89ed46bebfee3dbc35f39be",
+  "path": "src/reachy_mini/descriptions/reachy_mini/urdf/robot.urdf",
+  "license": "Apache-2.0"
+ },
+ "materials": [
+  5066061,
+  4409421,
+  16777215,
+  12903155,
+  7371136,
+  13622245,
+  8355711,
+  15132390,
+  1644825,
+  3289650,
+  0,
+  11977420
+ ],
+ "links": [
+  {
+   "name": "body_foot_3dprint",
+   "mesh": {
+    "vertexOffset": 0,
+    "vertices": 1162,
+    "indexOffset": 0,
+    "indices": 7146,
+    "min": [
+     -0.051305,
+     -0.062942,
+     -0.000201
+    ],
+    "max": [
+     0.06294,
+     0.062465,
+     0.040401
+    ]
+   }
+  },
+  {
+   "name": "body_down_3dprint",
+   "mesh": {
+    "vertexOffset": 1162,
+    "vertices": 7174,
+    "indexOffset": 7146,
+    "indices": 48528,
+    "min": [
+     -0.077472,
+     -0.077345,
+     -0.019009
+    ],
+    "max": [
+     0.077497,
+     0.07745,
+     0.149917
+    ]
+   }
+  },
+  {
+   "name": "head_yaw_link",
+   "mesh": null
+  },
+  {
+   "name": "head_pitch_link",
+   "mesh": null
+  },
+  {
+   "name": "xl_330",
+   "mesh": {
+    "vertexOffset": 8336,
+    "vertices": 4808,
+    "indexOffset": 55674,
+    "indices": 30255,
+    "min": [
+     -0.051349,
+     -0.074938,
+     -0.00397
+    ],
+    "max": [
+     0.043347,
+     0.075032,
+     0.098945
+    ]
+   }
+  },
+  {
+   "name": "dc15_a01_horn_dummy_7",
+   "mesh": {
+    "vertexOffset": 13144,
+    "vertices": 323,
+    "indexOffset": 85929,
+    "indices": 1968,
+    "min": [
+     -0.010959,
+     -0.168044,
+     -0.015947
+    ],
+    "max": [
+     0.010833,
+     0.010833,
+     0.005601
+    ]
+   }
+  },
+  {
+   "name": "dc15_a01_horn_dummy_8",
+   "mesh": {
+    "vertexOffset": 13467,
+    "vertices": 323,
+    "indexOffset": 87897,
+    "indices": 1968,
+    "min": [
+     -0.010959,
+     -0.168044,
+     -0.015947
+    ],
+    "max": [
+     0.010833,
+     0.010833,
+     0.005601
+    ]
+   }
+  }
+ ],
+ "joints": [
+  {
+   "name": "yaw_body",
+   "type": "revolute",
+   "parent": "body_foot_3dprint",
+   "child": "body_down_3dprint",
+   "xyz": [
+    -2e-7,
+    0,
+    0.0348
+   ],
+   "rpy": [
+    0,
+    0,
+    -1.5708
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -2.79253,
+   "upper": 2.79253
+  },
+  {
+   "name": "head_yaw",
+   "type": "revolute",
+   "parent": "body_down_3dprint",
+   "child": "head_yaw_link",
+   "xyz": [
+    1e-7,
+    -4e-7,
+    0.1147708
+   ],
+   "rpy": [
+    0,
+    0,
+    1.5708
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -1.0471975511965976,
+   "upper": 1.0471975511965976
+  },
+  {
+   "name": "head_pitch",
+   "type": "revolute",
+   "parent": "head_yaw_link",
+   "child": "head_pitch_link",
+   "xyz": [
+    0,
+    0,
+    0
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower": -0.5235987755982988,
+   "upper": 0.5235987755982988
+  },
+  {
+   "name": "head_roll",
+   "type": "revolute",
+   "parent": "head_pitch_link",
+   "child": "xl_330",
+   "xyz": [
+    0,
+    0,
+    0
+   ],
+   "rpy": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "lower": -0.4363323129985824,
+   "upper": 0.4363323129985824
+  },
+  {
+   "name": "right_antenna",
+   "type": "revolute",
+   "parent": "xl_330",
+   "child": "dc15_a01_horn_dummy_7",
+   "xyz": [
+    -0.0367567,
+    -0.0521924,
+    0.0720194
+   ],
+   "rpy": [
+    -1.6757051,
+    0.0599381,
+    -1.0534987
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -3.1415927,
+   "upper": 3.1415927
+  },
+  {
+   "name": "left_antenna",
+   "type": "revolute",
+   "parent": "xl_330",
+   "child": "dc15_a01_horn_dummy_8",
+   "xyz": [
+    -0.0367574,
+    0.0521927,
+    0.0720188
+   ],
+   "rpy": [
+    -1.6756982,
+    -0.0599463,
+    -2.0880803
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower": -3.1415927,
+   "upper": 3.1415927
+  }
+ ],
+ "sites": [
+  {
+   "name": "head",
+   "link": "xl_330",
+   "xyz": [
+    0,
+    0,
+    0
+   ],
+   "rpy": [
+    -0.0000103,
+    -0.0000035,
+    0.0000069
+   ]
+  },
+  {
+   "name": "camera",
+   "link": "xl_330",
+   "xyz": [
+    0.0394998,
+    6e-7,
+    0.0525002
+   ],
+   "rpy": [
+    -0.0000103,
+    -0.0000035,
+    0.0000069
+   ]
+  }
+ ],
+ "bin": {
+  "file": "reachy-mini.3d02a5fd.bin",
+  "bytes": 276260,
+  "vertices": 13790,
+  "indices": 89865
+ },
+ "triangles": 29955
+}

@@ -7,28 +7,37 @@ import {
   type Group,
   IcosahedronGeometry,
   InstancedMesh,
+  Matrix4,
   MeshLambertMaterial,
   Object3D,
   Vector3,
 } from "three/webgpu";
 import { ARM, ArmTask, CUBE, follow, type Joints } from "./arms.ts";
-import { headingToSceneYaw } from "./coords.ts";
+import { headingToSceneYaw, toScene } from "./coords.ts";
 import { stationMatrix } from "./keep.ts";
 import { at, Mesher } from "./mesher.ts";
 import { type Duck, type Leader, MicroduckFlock } from "./microducks.ts";
+import { standAt } from "./path.ts";
 import type { Ground } from "./physics.ts";
+import { RealBench, RealDucks, RealReachy, ROBOT_SCALE } from "./robots/actors.ts";
+import { loadRobot, type RobotAsset } from "./robots/load.ts";
 
 /*
- * Small machines with a life of their own: Microducks (little biped duck robots)
- * waddling round the keep, and two LeRobot SO-101 arms doing pick-and-place on the
- * lab's workbench. Each body part is one instanced mesh for all of its kind (five
- * draw calls for the ducks, eight for the arms and their cubes); each frame the
- * parts are posed through one reusable scratch hierarchy and their matrices
- * copied out, so nothing is allocated.
+ * Small machines with a life of their own: Microducks waddling round the keep, two
+ * LeRobot SO-101 arms doing pick-and-place on the lab's workbench, and Reachy Mini
+ * on the council table.
+ *
+ * They're the real open-source robots (robots/: Open Duck Mini v2, SO-101, Reachy
+ * Mini, from their URDFs, with inverse-kinematics skeletons), fetched after the
+ * world first renders. Until then, and for good if a robot's assets fail to load,
+ * the hand-made stand-ins below are drawn (for the ducks and the arms; Reachy has
+ * none), so the world never breaks. Either way each link or body part is one
+ * instanced mesh for all of its kind, posed every frame without allocating.
  */
 
 export const MICRODUCK_LABEL = "Microduck (Pollen Robotics)";
 export const ARM_LABEL = "SO-101 arm (LeRobot)";
+export const REACHY_LABEL = "Reachy Mini (Pollen Robotics)";
 
 const WHITE = 0xf3f1ec;
 const PANEL = 0xd5d8de;
@@ -37,9 +46,28 @@ const BEAK = 0xf1a73b;
 const DARK = 0x40444c;
 const ARM_LIGHT = 0xf2efe8;
 const ARM_TONE = 0xe8853a;
-/** The ducks are drawn about twice life size, the arms half again: so they can be seen. */
-/** Bigger than life (they're 25 cm), so they read at a glance next to a 2.5 m knight. */
+/** The stand-in ducks: bigger than life (they're 25 cm), so they read at a glance next to a 2.5 m knight. */
 const DUCK_SCALE = 3.2;
+/** Where the arms stand on the lab's workbench (its frame: x along it, front +z), and the bench top's height. */
+const ARM_SPOTS = [0.65, 1.75];
+const ARM_DEPTH = 2.0;
+const BENCH_TOP = 0.93;
+
+/** Each arm's place on the bench at a scale (scene; the arm's frame y up, forward +z). */
+function benchPlaces(scale: number): Matrix4[] {
+  const lab = stationMatrix("forge");
+  return ARM_SPOTS.map((x) => lab.clone().multiply(at(x, BENCH_TOP, ARM_DEPTH, 0, scale)));
+}
+
+/** Reachy Mini's place on the council table (the station's frame), turned to face where Galahad stands there. */
+function reachyPlace(): Matrix4 {
+  const council = stationMatrix("council");
+  const x = 0.25;
+  const z = 0.08;
+  const stand = standAt("council");
+  const local = new Vector3(...toScene(stand.x, stand.y, 0)).applyMatrix4(council.clone().invert());
+  return council.multiply(at(x, 0.87, z, Math.atan2(local.x - x, local.z - z), ROBOT_SCALE));
+}
 
 function instanced(geometry: BufferGeometry, material: MeshLambertMaterial, count: number, root: Group, shadows: boolean): InstancedMesh {
   const mesh = new InstancedMesh(geometry, material, Math.max(1, count));
@@ -64,7 +92,7 @@ export class Critters {
   private readonly dLegR = new Object3D();
   private readonly gaitOut = { roll: 0, left: 0, right: 0, bob: 0 };
 
-  readonly leader = new ArmTask(5);
+  private readonly leader = new ArmTask(5);
   private readonly followerJoints: Joints = [0, 0, 0, 0, 0, 0];
   private readonly armParts: InstancedMesh[];
   private readonly cubes: InstancedMesh;
@@ -83,7 +111,21 @@ export class Critters {
   private readonly armPlace: Object3D[] = [new Object3D(), new Object3D()];
   readonly armWorld: [number, number][] = [];
 
-  constructor(root: Group, count: number, ground: Ground, shadows: boolean) {
+  // The real robots, once loaded (null until then, or for good if loading failed).
+  private realDucks: RealDucks | null = null;
+  private realBench: RealBench | null = null;
+  private reachy: RealReachy | null = null;
+  private loading = false;
+  private steps = 0;
+  private disposed = false;
+  private readonly originScene = new Vector3();
+
+  constructor(
+    private readonly root: Group,
+    count: number,
+    ground: Ground,
+    private readonly shadows: boolean,
+  ) {
     this.flock = new MicroduckFlock(count, ground);
     const s = DUCK_SCALE;
     // A rounded body with a tail, a neck; a head with an upper beak and eyes; a lower beak; jointed legs with flat feet.
@@ -149,11 +191,10 @@ export class Critters {
     this.aWrist.position.y = ARM.fore;
     this.aRoll.position.y = ARM.wrist;
     // On the lab's workbench (its local frame: front +z), side by side, drawn about twice life size.
-    const lab = stationMatrix("forge");
     const v = new Vector3();
-    [0.65, 1.75].forEach((x, i) => {
+    benchPlaces(2.2).forEach((m, i) => {
       const place = this.armPlace[i]!;
-      place.matrix.copy(lab).multiply(at(x, 0.93, 2.0, 0, 2.2));
+      place.matrix.copy(m);
       place.matrix.decompose(place.position, place.quaternion, place.scale);
       v.setFromMatrixPosition(place.matrix);
       this.armWorld.push([v.x, -v.z]);
@@ -165,15 +206,62 @@ export class Critters {
    * (busy while Galahad works at the lab). Positions are relative to the floating origin.
    */
   step(dt: number, t: number, galahad: Leader, dog: Leader, height: (x: number, y: number) => number, busy: boolean, origin: [number, number], motion: boolean): void {
+    // The second step comes after the first frame is on screen: then fetch the real robots.
+    if (!this.loading && ++this.steps >= 2) this.loadRobots();
     if (motion) this.flock.step(dt, t, galahad, dog);
-    this.poseDucks(height, origin);
-    if (motion) {
-      this.leader.step(dt, busy);
-      follow(this.leader.joints, this.followerJoints, dt);
+    if (this.realDucks) this.realDucks.pose(this.flock.ducks, dt, t, galahad, height, origin);
+    else this.poseDucks(height, origin);
+    if (this.realBench) this.realBench.step(dt, busy, motion, origin);
+    else {
+      if (motion) {
+        this.leader.step(dt, busy);
+        follow(this.leader.joints, this.followerJoints, dt);
+      }
+      this.poseArm(0, this.leader.joints, origin);
+      this.poseArm(1, this.followerJoints, origin);
+      this.poseCubes(origin);
     }
-    this.poseArm(0, this.leader.joints, origin);
-    this.poseArm(1, this.followerJoints, origin);
-    this.poseCubes(origin);
+    this.reachy?.step(dt, t, galahad, height, origin, motion);
+  }
+
+  /** Fetches the real robots one after another; each replaces its stand-in when (and only if) it's ready. */
+  private loadRobots(): void {
+    this.loading = true;
+    const swap = (name: string, use: (asset: RobotAsset) => void): Promise<void> =>
+      loadRobot(name)
+        .then((asset) => {
+          try {
+            if (this.disposed) throw new Error("the world closed");
+            use(asset);
+          } catch (error) {
+            for (const g of asset.geometries.values()) g.dispose();
+            throw error;
+          }
+        })
+        .catch((error: unknown) => {
+          if (!this.disposed) console.warn(`SANDBOX: keeping the stand-in for ${name}:`, error instanceof Error ? error.message : error);
+        });
+    void swap("open-duck-mini-v2", (asset) => {
+      const ducks = new RealDucks(asset, this.root, this.flock.ducks.length, this.material, this.shadows);
+      ducks.setOrigin(this.originScene);
+      this.realDucks = ducks;
+      for (const m of this.duckMeshes) m.visible = false;
+    })
+      .then(() =>
+        swap("so-101", (asset) => {
+          const bench = new RealBench(asset, this.root, this.material, this.shadows, benchPlaces(ROBOT_SCALE));
+          bench.setOrigin(this.originScene);
+          this.realBench = bench;
+          for (const m of [...this.armParts, this.cubes]) m.visible = false;
+        }),
+      )
+      .then(() =>
+        swap("reachy-mini", (asset) => {
+          const reachy = new RealReachy(asset, this.root, this.material, this.shadows, reachyPlace());
+          reachy.setOrigin(this.originScene);
+          this.reachy = reachy;
+        }),
+      );
   }
 
   private poseDucks(height: (x: number, y: number) => number, origin: [number, number]): void {
@@ -239,14 +327,20 @@ export class Critters {
     this.cubes.instanceMatrix.needsUpdate = true;
   }
 
-  /** What's under a world point, for a hover label: a Microduck or an arm (and where to put the label). */
+  /** What's under a world point, for a hover label: a Microduck, an arm or Reachy Mini (and where to put the label). */
   hover(x: number, y: number, out: [number, number, number]): string | null {
     const d = this.flock.near(x, y, 0.9);
     if (d) {
       out[0] = d.x;
       out[1] = d.y;
-      out[2] = 0.75;
+      out[2] = this.realDucks ? this.realDucks.labelHeight : 0.75;
       return MICRODUCK_LABEL;
+    }
+    if (this.reachy && Math.hypot(this.reachy.world[0] - x, this.reachy.world[1] - y) < 0.8) {
+      out[0] = this.reachy.world[0];
+      out[1] = this.reachy.world[1];
+      out[2] = this.reachy.labelHeight;
+      return REACHY_LABEL;
     }
     for (const [ax, ay] of this.armWorld) {
       if (Math.hypot(ax - x, ay - y) < 0.9) {
@@ -261,15 +355,23 @@ export class Critters {
 
   /** The instanced meshes sit at the floating origin (their instances are relative to it). */
   place(originScene: Vector3): void {
+    this.originScene.copy(originScene);
     for (const m of [...this.duckMeshes, ...this.armParts, this.cubes]) m.position.copy(originScene);
+    this.realDucks?.setOrigin(originScene);
+    this.realBench?.setOrigin(originScene);
+    this.reachy?.setOrigin(originScene);
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const m of [...Object.values(this.duckParts), ...this.armParts, this.cubes]) {
       m.removeFromParent();
       m.geometry.dispose();
       m.dispose();
     }
+    this.realDucks?.dispose();
+    this.realBench?.dispose();
+    this.reachy?.dispose();
     this.material.dispose();
   }
 }

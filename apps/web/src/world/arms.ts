@@ -79,6 +79,22 @@ export const CUBE = 0.04;
 const HOME: [number, number, number] = [0, 0.26, 0.12];
 const ABOVE = 0.12;
 
+/**
+ * Where an arm works and how it reaches: the cube slots, the cube's size, where it
+ * rests, how high it lifts, and its inverse kinematics (fingertips at x, y, z in
+ * the arm's frame, the gripper pointing down; writes joints 0–3, returns whether
+ * it reached). The hand-made arm's by default; the real SO-101 brings its own.
+ */
+export interface ArmLayout {
+  slots: readonly (readonly [number, number])[];
+  cube: number;
+  home: readonly [number, number, number];
+  above: number;
+  solve: (x: number, y: number, z: number, out: Joints) => boolean;
+}
+
+export const HAND_MADE_ARM: ArmLayout = { slots: SLOTS, cube: CUBE, home: HOME, above: ABOVE, solve: solveArm };
+
 type Phase = "rest" | "reach" | "descend" | "grasp" | "lift" | "carry" | "lower" | "release" | "rise" | "return" | "pause";
 
 const ease = (t: number): number => t * t * (3 - 2 * t);
@@ -90,20 +106,27 @@ export class ArmTask {
   phase: Phase = "rest";
   private t = 0;
   private duration = 1;
-  private from: [number, number, number] = [...HOME];
-  private to: [number, number, number] = [...HOME];
-  private readonly tip: [number, number, number] = [...HOME];
   private pick = 0;
   private drop = 0;
   private readonly random: () => number;
+  private readonly from: [number, number, number];
+  private readonly to: [number, number, number];
+  private readonly tip: [number, number, number];
 
-  constructor(seed = 3) {
+  constructor(
+    seed = 3,
+    readonly layout: ArmLayout = HAND_MADE_ARM,
+  ) {
     this.random = rng(seed);
-    this.cubes.push({ x: SLOTS[0]![0], y: CUBE / 2, z: SLOTS[0]![1], slot: 0 }, { x: SLOTS[1]![0], y: CUBE / 2, z: SLOTS[1]![1], slot: 1 });
-    solveArm(HOME[0], HOME[1], HOME[2], this.joints);
+    const { slots, cube, home } = layout;
+    this.from = [...home];
+    this.to = [...home];
+    this.tip = [...home];
+    this.cubes.push({ x: slots[0]![0], y: cube / 2, z: slots[0]![1], slot: 0 }, { x: slots[1]![0], y: cube / 2, z: slots[1]![1], slot: 1 });
+    layout.solve(home[0], home[1], home[2], this.joints);
   }
 
-  private move(phase: Phase, to: [number, number, number], seconds: number): void {
+  private move(phase: Phase, to: readonly [number, number, number], seconds: number): void {
     this.phase = phase;
     this.from[0] = this.tip[0];
     this.from[1] = this.tip[1];
@@ -116,7 +139,7 @@ export class ArmTask {
   }
 
   private slotPoint(slot: number, height: number): [number, number, number] {
-    const [x, z] = SLOTS[slot]!;
+    const [x, z] = this.layout.slots[slot]!;
     return [x, height, z];
   }
 
@@ -132,38 +155,39 @@ export class ArmTask {
     if (this.phase === "grasp") grip = k;
     else if (this.phase === "release") grip = 1 - k;
     if (done) this.next(busy);
-    solveArm(this.tip[0], this.tip[1], this.tip[2], this.joints);
+    this.layout.solve(this.tip[0], this.tip[1], this.tip[2], this.joints);
     // The wrist turns a little as it works, as a hand would.
     this.joints[4] = this.phase === "rest" ? 0 : 0.35 * Math.sin(this.tip[0] * 6);
     this.joints[5] = grip;
     if (this.held >= 0) {
       const c = this.cubes[this.held]!;
       c.x = this.tip[0];
-      c.y = this.tip[1] - CUBE * 0.4;
+      c.y = this.tip[1] - this.layout.cube * 0.4;
       c.z = this.tip[2];
     }
   }
 
   private next(busy: boolean): void {
+    const { cube, above, home, slots } = this.layout;
     switch (this.phase) {
       case "rest":
       case "pause": {
         if (!busy) {
-          this.move("rest", HOME, 0.8);
+          this.move("rest", home, 0.8);
           return;
         }
         // A cube, and the free slot.
         this.pick = Math.floor(this.random() * this.cubes.length);
         const used = new Set(this.cubes.map((c) => c.slot));
-        const free = [0, 1, 2].filter((s) => !used.has(s));
+        const free = slots.map((_, s) => s).filter((s) => !used.has(s));
         this.drop = free[Math.floor(this.random() * free.length)] ?? 2;
         const c = this.cubes[this.pick]!;
-        this.move("reach", [c.x, CUBE / 2 + ABOVE + this.random() * 0.04, c.z], 0.9);
+        this.move("reach", [c.x, cube / 2 + above * (1 + this.random() / 3), c.z], 0.9);
         return;
       }
       case "reach": {
         const c = this.cubes[this.pick]!;
-        this.move("descend", [c.x, CUBE * 0.6, c.z], 0.5);
+        this.move("descend", [c.x, cube * 0.6, c.z], 0.5);
         return;
       }
       case "descend":
@@ -172,33 +196,33 @@ export class ArmTask {
       case "grasp":
         this.held = this.pick;
         this.cubes[this.pick]!.slot = -1;
-        this.move("lift", [this.tip[0], CUBE / 2 + ABOVE, this.tip[2]], 0.45);
+        this.move("lift", [this.tip[0], cube / 2 + above, this.tip[2]], 0.45);
         return;
       case "lift":
-        this.move("carry", this.slotPoint(this.drop, CUBE / 2 + ABOVE), 1);
+        this.move("carry", this.slotPoint(this.drop, cube / 2 + above), 1);
         return;
       case "carry":
-        this.move("lower", this.slotPoint(this.drop, CUBE * 0.6), 0.5);
+        this.move("lower", this.slotPoint(this.drop, cube * 0.6), 0.5);
         return;
       case "lower":
         this.move("release", this.tip, 0.3);
         return;
       case "release": {
         const c = this.cubes[this.held]!;
-        const [x, z] = SLOTS[this.drop]!;
+        const [x, z] = slots[this.drop]!;
         c.x = x;
-        c.y = CUBE / 2;
+        c.y = cube / 2;
         c.z = z;
         c.slot = this.drop;
         this.held = -1;
-        this.move("rise", [this.tip[0], CUBE / 2 + ABOVE, this.tip[2]], 0.4);
+        this.move("rise", [this.tip[0], cube / 2 + above, this.tip[2]], 0.4);
         return;
       }
       case "rise":
-        this.move("return", HOME, 0.8);
+        this.move("return", home, 0.8);
         return;
       case "return":
-        this.move("pause", HOME, 0.6 + this.random() * 1.4);
+        this.move("pause", home, 0.6 + this.random() * 1.4);
         return;
     }
   }

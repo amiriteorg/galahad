@@ -1,0 +1,33 @@
+Robot models in the SANDBOX
+===========================
+
+The robots drawn in Galahad's world are built from these open-source robot
+descriptions, each licensed under the Apache License, Version 2.0 (LICENSE.txt
+beside this file). Their upstream repositories carry no NOTICE file.
+
+Open Duck Mini v2
+  Source:  https://github.com/apirrone/Open_Duck_Mini
+  Commit:  b23317a485b3cec7d8417f352478778b3475173c
+  Files:   mini_bdx/robots/open_duck_mini_v2/robot.urdf and the meshes it names
+  License: Apache-2.0
+
+SO-101 arm
+  Source:  https://github.com/TheRobotStudio/SO-ARM100
+  Commit:  a758567c3978dfeefe282ede0500085a48fe8f78
+  Files:   Simulation/SO101/so101_new_calib.urdf and the meshes it names
+  License: Apache-2.0
+
+Reachy Mini
+  Source:  https://github.com/pollen-robotics/reachy_mini
+  Commit:  25756e7042e453bfd89ed46bebfee3dbc35f39be
+  Files:   src/reachy_mini/descriptions/reachy_mini/urdf/robot.urdf and the meshes it names
+  License: Apache-2.0
+
+Changes made (Apache-2.0 §4(b)): by scripts/robots/build.ts in the Galahad
+repository. Each model's links joined by fixed joints were merged into rigid
+parts; parts sealed inside a shell and tiny fasteners and connectors were left
+out; the meshes were welded and simplified (quadric edge collapse) to a
+triangle budget, quantized, and stored with the kinematic tree in a compact
+format.
+Reachy Mini's head, carried in the original by a Stewart platform (a closed
+chain), is instead hung on yaw, pitch and roll joints about its centre.

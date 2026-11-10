@@ -459,6 +459,7 @@ An infinite world in the app where Galahad is visible as he works and every expe
 | From sandboxes | The `world` gateway scope (every sandbox with a network): start with the sandbox's token, frames with the experiment's own key |
 | In sandboxes | `galahad_world` (Python, in every image): shapes, experiments, MuJoCo, JSBSim and RocketPy adapters (the Lab), Gazebo (its own image, `galahad/gazebo:1`: Ubuntu 24.04, gz-sim 8, headless DART; `gz-check` proves it), demos |
 | Renderer | The app's SANDBOX page (three.js, its own bundle `world.js`, loaded only there) |
+| Robots | The real open-source robots (Open Duck Mini v2, SO-101, Reachy Mini) built from their URDFs by `bun scripts/robots/build.ts` into `apps/web/src/world/assets/robots/` (committed), served at `/world-assets/robots/` and posed by inverse kinematics in `apps/web/src/world/robots/` |
 
 ## 10½. The bank, read-only ✅
 

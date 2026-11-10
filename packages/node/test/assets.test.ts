@@ -73,6 +73,35 @@ describe("the PWA bundle", () => {
     }
   });
 
+  test("the world's robot models are served as files, versioned ones cached for good", async () => {
+    const assets = await buildAssets();
+    const world = await assets.serve("/world.js").text();
+    // The index the world fetches by is bundled into it; every file it names is served.
+    const manifests = [...world.matchAll(/"([a-z0-9-]+\.json\?v=[0-9a-f]{8})"/g)].map((m) => m[1]!);
+    expect(manifests.length).toBe(3);
+    for (const entry of manifests) {
+      const path = `/world-assets/robots/${entry.split("?")[0]}`;
+      expect(assets.has(path)).toBe(true);
+      const response = assets.serve(path);
+      expect(response.headers.get("content-type")).toBe("application/json");
+      expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      const manifest = (await response.json()) as { bin: { file: string; bytes: number } };
+      const bin = assets.serve(`/world-assets/robots/${manifest.bin.file}`);
+      expect(bin.headers.get("content-type")).toBe("application/octet-stream");
+      expect(bin.headers.get("cache-control")).toContain("immutable");
+      expect((await bin.arrayBuffer()).byteLength).toBe(manifest.bin.bytes);
+    }
+    // The attribution is there for anyone who looks, and isn't cached for good.
+    const notice = assets.serve("/world-assets/robots/NOTICE.txt");
+    expect(notice.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(notice.headers.get("cache-control")).toBe("no-cache");
+    expect(await notice.text()).toContain("Apache");
+    expect(assets.has("/world-assets/robots/LICENSE.txt")).toBe(true);
+    // Only the asset files: not the generated source beside them.
+    expect(assets.has("/world-assets/robots/index.ts")).toBe(false);
+  });
+
   test("daily use doesn't load the pairing schema; the pairing bundle does", async () => {
     const assets = await buildAssets();
     const app = await assets.serve("/app.js").text();
