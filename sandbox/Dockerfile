@@ -23,6 +23,10 @@ RUN curl -fsSL -o /tmp/opencode.tgz "https://github.com/anomalyco/opencode/relea
  && chmod 0755 /opt/opencode/bin/opencode && rm /tmp/opencode.tgz
 ENV PATH=/opt/opencode/bin:$PATH
 
+# Web search through Galahad's own SearXNG, via the gateway (no internet needed).
+COPY websearch /usr/local/bin/websearch
+RUN chmod 0755 /usr/local/bin/websearch
+
 RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
  && mkdir -p /work && chown 1000:1000 /work
 

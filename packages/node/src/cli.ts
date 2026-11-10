@@ -35,6 +35,7 @@ Set up
 
 Mind
   remember <text> [--tag t]      recall [query]
+  search "<words>" [--page 2]    search the web through Galahad's own SearXNG (also: websearch, in sandboxes)
 
 Keys & models (keys are typed into a hidden prompt — never into chat, never on the command line)
   key add [--provider id]        paste any API key; provider is auto-detected when possible
@@ -282,6 +283,7 @@ async function main(): Promise<void> {
       repeat: { type: "string" },
       parallel: { type: "string" },
       seed: { type: "string" },
+      page: { type: "string" },
       agent: { type: "string" },
       minutes: { type: "string" },
       repo: { type: "string" },
@@ -760,6 +762,22 @@ Reviewer:
 ${i!.review}`);
       if (i!.artifact) console.log(dim(`
 Evidence: galahad artifact ${i!.artifact}`));
+      return;
+    }
+
+    case "search": {
+      const q = [sub, ...rest].filter(Boolean).join(" ").trim();
+      if (!q) fail('usage: galahad search "<words>" [--page 2]');
+      const page = str("page") ? Number(str("page")) : undefined;
+      const { results, suggestions } = (await new Admin(home).call("webSearch", { q, ...(page ? { page } : {}) })) as {
+        results: { title: string; url: string; snippet: string; engines: string[] }[];
+        suggestions: string[];
+      };
+      if (!results.length) console.log(`No results for "${q}".`);
+      for (const [i, r] of results.entries()) {
+        console.log(`${bold(`${i + 1}. ${r.title}`)}\n   ${r.url}${r.snippet ? `\n   ${dim(r.snippet)}` : ""}`);
+      }
+      if (suggestions.length) console.log(dim(`\nAlso try: ${suggestions.join("; ")}`));
       return;
     }
 

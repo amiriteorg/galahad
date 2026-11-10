@@ -250,6 +250,28 @@ UNIT
     else
       echo "sandbox image build failed; the node will run without sandbox hosting" >&2
     fi
+
+    # Web search: Galahad's own SearXNG, on loopback only (the node proxies it to you, to
+    # agents and to sandboxes through their gateway). Pinned by digest; replaced only when
+    # the pin changes; its secret key is made once and stays on this host.
+    SEARX_IMAGE="searxng/searxng:2026.11.6-ac11e14c5@sha256:c750ee1d859b26d3aeae51c07f6a48c3a0bfbaa9195d71a18b258862d88c4c3c"
+    install -d -m 0755 /etc/galahad/searxng
+    if [[ ! -s /etc/galahad/searxng/settings.yml ]]; then
+      SEARX_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+      printf 'use_default_settings: true\nserver:\n  secret_key: "%s"\n  limiter: false\n  public_instance: false\n  image_proxy: false\nsearch:\n  formats: [html, json]\n  safe_search: 0\n' "$SEARX_SECRET" > /etc/galahad/searxng/settings.yml
+      unset SEARX_SECRET
+    fi
+    if [[ $(docker inspect -f '{{.Config.Image}}' galahad-searxng 2>/dev/null) != "$SEARX_IMAGE" ]]; then
+      docker rm -f galahad-searxng >/dev/null 2>&1 || true
+      docker run -d --name galahad-searxng --restart unless-stopped -p 127.0.0.1:8888:8080 \
+        -v /etc/galahad/searxng:/etc/searxng --label dev.galahad.service=search \
+        --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID --cap-add DAC_OVERRIDE \
+        --security-opt no-new-privileges "$SEARX_IMAGE" >/dev/null || echo "web search couldn't start; Galahad works without it" >&2
+    fi
+    for _ in $(seq 1 30); do
+      [[ $(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8888/search?q=galahad&format=json') == 200 ]] && { echo "→ web search ready (SearXNG on 127.0.0.1:8888)"; break; }
+      sleep 2
+    done
   fi
 
   systemctl daemon-reload

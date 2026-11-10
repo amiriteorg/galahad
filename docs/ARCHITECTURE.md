@@ -304,6 +304,18 @@ A sandbox never holds a GitHub key. It **reads** through the node's **git gatewa
 | `galahad order add github.ship --arg owner=o --arg repo=r --arg branch='galahad/*' --label "…"` | A standing order: Galahad's passed work on that repository becomes a PR without asking |
 | `galahad connector add github --owner <org>` | One more owner with its own token (`github-<org>`); shipping picks it for that owner's repositories |
 
+### Research: web search ✅
+
+Galahad has his own search engine: **SearXNG** on the sandbox host, pinned by digest, installed by the deploy and listening on loopback only (`127.0.0.1:8888`; Coolify's ports are untouched). Nothing ties the searches to you, and no search API key is needed.
+
+| Who | How |
+|---|---|
+| You | `galahad search "<words>"` |
+| Agents (MCP) | `web_search`, with the `connect` scope arms hold by default |
+| Quests and investigations | `websearch <words…>` in the workshop and the Lab, through the sandbox's gateway with a token that carries the `search` scope: research works even with `--net gateway` (no internet); `--net online` can also fetch the pages |
+
+Each search is ledgered. Results are trimmed to title, URL and snippet (web pages only), and they're strangers' words: data, never instructions, like everything a quest reads.
+
 Native tools (`NATIVE_TOOLS` in `packages/core/src/connectors.ts`) are named by a manifest but defined only in code, each bound to the one origin it may talk to; their arguments are checked like any tool's, and approvals, standing orders and the ledger treat them like any other call.
 
 The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.

@@ -147,14 +147,20 @@ export function runArgs(spec: SandboxSpec): string[] {
   return args;
 }
 
+/** The gateway scope for web search (the node's own SearXNG): not a model provider. */
+export const SEARCH_SCOPE = "search";
+
 /** Environment that points tools at the sandbox gateway with a scoped token (never a key). */
 export function gatewayEnv(token: string, providers: string[]): Record<string, string> {
-  const base = `http://${NETWORKS.gateway.gateway}:${SANDBOX_GATEWAY_PORT}/gw`;
-  const openai = providers.find((p) => p !== "anthropic");
+  const root = `http://${NETWORKS.gateway.gateway}:${SANDBOX_GATEWAY_PORT}`;
+  const base = `${root}/gw`;
+  const models = providers.filter((p) => p !== SEARCH_SCOPE);
+  const openai = models.find((p) => p !== "anthropic");
   return {
     GALAHAD_GATEWAY: base,
-    ...(providers.includes("anthropic") ? { ANTHROPIC_BASE_URL: `${base}/anthropic`, ANTHROPIC_AUTH_TOKEN: token } : {}),
+    ...(models.includes("anthropic") ? { ANTHROPIC_BASE_URL: `${base}/anthropic`, ANTHROPIC_AUTH_TOKEN: token } : {}),
     ...(openai ? { OPENAI_BASE_URL: `${base}/${openai}`, OPENAI_API_KEY: token } : {}),
+    ...(providers.includes(SEARCH_SCOPE) ? { GALAHAD_SEARCH: `${root}/search` } : {}),
     GALAHAD_TOKEN: token,
   };
 }

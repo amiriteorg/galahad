@@ -62,6 +62,7 @@ import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
+import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { type Candidate, place } from "./placement.ts";
@@ -774,6 +775,16 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
       return { trial: trialViews().find((t) => t.id === id) };
     },
+    webSearch: async (input, p) => {
+      try {
+        const found = await searchWeb(input);
+        ctx.ledger?.({ class: "read", resource: "search", target: input.q.slice(0, 200), verdict: "allow", reason: `searched by ${p.kind === "arm" ? `arm:${p.label}` : p.kind}` });
+        return found;
+      } catch (error) {
+        if (error instanceof SearchError) throw new HttpError(error.status, error.message);
+        throw error;
+      }
+    },
     artifacts: () => ({ artifacts: ctx.artifacts.list() }),
     saveArtifact: (input, p) => {
       const { on, quest: relayed, ...rest } = input;
@@ -991,9 +1002,10 @@ export function createApp(ctx: AppContext) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Sandboxes can reach exactly two things on the host, both token-gated: the model
-    // gateway, and the git gateway (read-only clones of one repository).
+    // Sandboxes can reach exactly three things on the host, all token-gated: the model
+    // gateway, the git gateway (read-only clones of one repository) and web search.
     if (listener === "sandbox") {
+      if (path === "/search") return handleSandboxSearch(req, { tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}) });
       if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });

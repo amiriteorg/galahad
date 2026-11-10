@@ -263,6 +263,14 @@ bun galahad findings                 # supported, refuted or inconclusive, newes
 bun galahad finding <id>             # the registration beside what was found, and the evidence's artifact
 ```
 
+### Search the web
+
+The deploy gives Galahad his own search engine (SearXNG, on the server, loopback only). Quests and investigations use it from their sandbox as `websearch <words>`, even without the internet:
+
+```sh
+bun galahad search "Euler buckling effective length factor fixed pinned"
+```
+
 ### Measure him: the trials
 
 Fourteen mathematics, physics and engineering problems with exact answers, posed with fresh random parameters and graded by a program, not a model:
@@ -287,7 +295,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.

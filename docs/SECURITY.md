@@ -95,6 +95,12 @@ The review also confirmed what held up:
 - **What you approved is what leaves.** Each file is checked against the SHA-256 recorded when the work was kept; a file changed on disk since stops the shipment. Paths that climb out, absolute paths and anything under `.git/` are refused.
 - **Residual risk:** a pull request is public to whoever can see the repository, and what's in it is model-written: read `changes.patch` (Inbox → **Read the changes**) before you approve. Merging stays yours.
 
+## Web search (tested)
+
+- **Loopback only.** SearXNG listens on `127.0.0.1:8888` of the sandbox host, with every capability dropped but the three its entrypoint needs and `no-new-privileges`; it's reached through the node, never directly from a sandbox.
+- **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Every search is ledgered.
+- **Residual risk:** search results and the pages behind them are written by strangers and can carry prompt injection; quests treat them as data, and anything outward still asks you.
+
 ## Known limitations
 
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.

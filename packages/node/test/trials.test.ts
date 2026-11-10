@@ -23,7 +23,7 @@ function fakeNode(options: { answer?: (goal: string) => string | null; failCreat
       switch (name) {
         case "createSandbox":
           if (options.failCreate) throw new Error("no sandbox host in this fleet");
-          return { sandbox: { id: "0123456789", node: "n_ultra", image: "galahad/lab:1", network: input.network, isolation: "vm", cpus: 4, memoryGb: 8 } } as T;
+          return { sandbox: { id: "0123456789", node: "n_ultra", image: "galahad/lab:1", network: input.network, isolation: "vm", cpus: 4, memoryGb: 8, providers: input.search ? ["search"] : [] } } as T;
         case "fleet":
           throw new Error("not needed");
         case "execSandbox": {

@@ -92,6 +92,8 @@ export interface CreateInput {
   isolation?: "container" | "vm";
   /** The Lab image (mathematics, physics, engineering) instead of the workshop. */
   lab?: boolean;
+  /** Web search through the gateway (the node's own SearXNG): `websearch` in the images. */
+  search?: boolean;
 }
 
 export class SandboxError extends Error {
@@ -265,7 +267,7 @@ export class SandboxHost {
 
     const id = hex(randomBytes(5));
     const quest = input.quest ?? `adhoc-${id}`;
-    const providers = input.network === "isolated" ? [] : (input.providers ?? []);
+    const providers = input.network === "isolated" ? [] : [...(input.providers ?? []), ...(input.search ? ["search"] : [])];
     let env: Record<string, string> = {};
     let tokenHash: string | undefined;
     if (providers.length) {
@@ -329,7 +331,7 @@ export class SandboxHost {
       target: containerName(id),
       verdict: "allow",
       quest,
-      detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
+      detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.some((p) => p !== "search") ? ` · models: ${providers.filter((p) => p !== "search").join(", ")}` : ""}${providers.includes("search") ? " · web search" : ""}`,
     });
     return (await this.get(id))!;
   }

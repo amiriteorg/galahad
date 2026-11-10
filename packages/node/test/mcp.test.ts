@@ -138,6 +138,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "sandbox_exec",
         "sandbox_run",
         "sandbox_save",
+        "web_search",
       ].sort(),
     );
     const oath = await client.readResource({ uri: "galahad://oath" });

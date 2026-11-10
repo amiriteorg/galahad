@@ -34,7 +34,8 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4" && chmod -R a+rX /o
 
 COPY lab-check /usr/local/bin/lab-check
 COPY openfoam /usr/local/bin/openfoam
-RUN chmod 0755 /usr/local/bin/lab-check /usr/local/bin/openfoam
+COPY websearch /usr/local/bin/websearch
+RUN chmod 0755 /usr/local/bin/lab-check /usr/local/bin/openfoam /usr/local/bin/websearch
 
 RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
  && mkdir -p /work && chown 1000:1000 /work
