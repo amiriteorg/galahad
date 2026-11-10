@@ -1,0 +1,302 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { type ActionView, type RouteName, routes } from "@galahad/core";
+import { foundFleet, MindStore } from "@galahad/mind";
+import type { Capabilities } from "../src/capabilities.ts";
+import { type Daemon, startDaemon } from "../src/daemon.ts";
+import { Home } from "../src/home.ts";
+import { githubRepo, shipBranch } from "../src/quest-cli.ts";
+import { sameRepository, SHIPMENT_SCRIPT, type ShipDeps, shipToGitHub } from "../src/ship.ts";
+
+/*
+ * Shipping: a quest's kept changes become a pull request. The shipper against a fake
+ * GitHub; the gate end to end through a node (an agent asks, you approve, it ships
+ * once, with the connector's key and nowhere else); and the script the sandbox runs,
+ * on a real git repository.
+ */
+
+const enc = new TextEncoder();
+const BASE = "a".repeat(40);
+const REMOTE = "https://github.com/amiriteorg/shipyard.git";
+
+function shipmentFiles(manifest: object, files: Record<string, string>): Record<string, Uint8Array> {
+  const out: Record<string, Uint8Array> = { "ship/manifest.json": enc.encode(JSON.stringify(manifest)) };
+  for (const [path, text] of Object.entries(files)) out[`ship/files/${path}`] = enc.encode(text);
+  out["changes.patch"] = enc.encode("diff --git …");
+  return out;
+}
+
+const SHIPMENT = shipmentFiles(
+  {
+    v: 1,
+    base: BASE,
+    remote: REMOTE,
+    files: [
+      { path: "src/units.ts", mode: "100644" },
+      { path: "bin/run", mode: "100755" },
+      { path: "old.txt", deleted: true },
+    ],
+  },
+  { "src/units.ts": "export const k = 1e3;\n", "bin/run": "#!/bin/sh\nbun src/units.ts\n" },
+);
+
+function fakeGitHub(options: { branchExists?: boolean; prFails?: boolean } = {}) {
+  const calls: { method: string; path: string; body?: any }[] = [];
+  let blobs = 0;
+  const github: ShipDeps["github"] = async (method, path, body) => {
+    calls.push({ method, path, ...(body === undefined ? {} : { body }) });
+    if (method === "GET" && path.includes("/git/ref/heads/")) return { status: options.branchExists ? 200 : 404, json: {} };
+    if (method === "GET" && path === "/repos/amiriteorg/shipyard") return { status: 200, json: { default_branch: "main" } };
+    if (method === "GET" && path === `/repos/amiriteorg/shipyard/git/commits/${BASE}`) return { status: 200, json: { tree: { sha: "f".repeat(40) } } };
+    if (path.endsWith("/git/blobs")) return { status: 201, json: { sha: String(++blobs).padStart(40, "b") } };
+    if (path.endsWith("/git/trees")) return { status: 201, json: { sha: "e".repeat(40) } };
+    if (path.endsWith("/git/commits")) return { status: 201, json: { sha: "c".repeat(40) } };
+    if (path.endsWith("/git/refs")) return { status: 201, json: {} };
+    if (path.endsWith("/pulls"))
+      return options.prFails
+        ? { status: 422, json: { message: "Validation Failed", errors: [{ message: "No commits between main and galahad/units" }] } }
+        : { status: 201, json: { number: 7, html_url: "https://github.com/amiriteorg/shipyard/pull/7" } };
+    return { status: 404, json: {} };
+  };
+  return { calls, github, posts: () => calls.filter((c) => c.method === "POST") };
+}
+
+const kept = (files: Record<string, Uint8Array>): ShipDeps["artifact"] => (id) =>
+  id === "art_AAAAAAAAAAAAAAAAAAAAAA"
+    ? { files: Object.entries(files).map(([path, bytes]) => ({ path, size: bytes.length })), read: (path) => files[path]! }
+    : null;
+
+const ARGS = { owner: "amiriteorg", repo: "shipyard", artifact: "art_AAAAAAAAAAAAAAAAAAAAAA", branch: "galahad/units", title: "Parse SI units", body: "40 tests pass." };
+
+describe("shipping to GitHub", () => {
+  test("blobs, one tree on the starting commit (deletions included), one commit, a new branch, the pull request", async () => {
+    const gh = fakeGitHub();
+    const result = await shipToGitHub({ github: gh.github, artifact: kept(SHIPMENT) }, ARGS);
+    expect(result).toMatchObject({ ok: true, status: 201, url: "https://github.com/amiriteorg/shipyard/pull/7" });
+    expect(result.receipt).toContain("pull request #7");
+    expect(gh.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /repos/amiriteorg/shipyard/git/ref/heads/galahad/units",
+      "GET /repos/amiriteorg/shipyard",
+      `GET /repos/amiriteorg/shipyard/git/commits/${BASE}`,
+      "POST /repos/amiriteorg/shipyard/git/blobs",
+      "POST /repos/amiriteorg/shipyard/git/blobs",
+      "POST /repos/amiriteorg/shipyard/git/trees",
+      "POST /repos/amiriteorg/shipyard/git/commits",
+      "POST /repos/amiriteorg/shipyard/git/refs",
+      "POST /repos/amiriteorg/shipyard/pulls",
+    ]);
+    const [blob] = gh.posts();
+    expect(Buffer.from(blob!.body.content, "base64").toString()).toBe("export const k = 1e3;\n");
+    const tree = gh.posts().find((c) => c.path.endsWith("/git/trees"))!.body;
+    expect(tree.base_tree).toBe("f".repeat(40));
+    expect(tree.tree).toEqual([
+      { path: "src/units.ts", mode: "100644", type: "blob", sha: "1".padStart(40, "b") },
+      { path: "bin/run", mode: "100755", type: "blob", sha: "2".padStart(40, "b") },
+      { path: "old.txt", mode: "100644", type: "blob", sha: null },
+    ]);
+    expect(gh.posts().find((c) => c.path.endsWith("/git/commits"))!.body).toEqual({ message: "Parse SI units\n\n40 tests pass.", tree: "e".repeat(40), parents: [BASE] });
+    expect(gh.posts().find((c) => c.path.endsWith("/git/refs"))!.body).toEqual({ ref: "refs/heads/galahad/units", sha: "c".repeat(40) });
+    expect(gh.posts().at(-1)!.body).toEqual({ title: "Parse SI units", head: "galahad/units", base: "main", body: "40 tests pass." });
+  });
+
+  test("an existing branch is never touched", async () => {
+    const gh = fakeGitHub({ branchExists: true });
+    expect(await shipToGitHub({ github: gh.github, artifact: kept(SHIPMENT) }, ARGS)).toMatchObject({ ok: false, status: 409 });
+    expect(gh.posts()).toEqual([]);
+  });
+
+  test("work done on another repository, a file it doesn't hold, or an unsafe path: nothing is sent", async () => {
+    for (const files of [
+      shipmentFiles({ v: 1, base: BASE, remote: "https://github.com/someone/else", files: [{ path: "a.ts" }] }, { "a.ts": "x" }),
+      shipmentFiles({ v: 1, base: BASE, remote: REMOTE, files: [{ path: "a.ts" }] }, {}),
+      shipmentFiles({ v: 1, base: BASE, remote: REMOTE, files: [{ path: "../etc/passwd" }] }, { "../etc/passwd": "x" }),
+      shipmentFiles({ v: 1, base: BASE, remote: REMOTE, files: [{ path: ".git/config" }] }, { ".git/config": "x" }),
+    ]) {
+      const gh = fakeGitHub();
+      const result = await shipToGitHub({ github: gh.github, artifact: kept(files) }, ARGS);
+      expect(result).toMatchObject({ ok: false, status: 422 });
+      expect(gh.calls).toEqual([]);
+    }
+    expect((await shipToGitHub({ github: fakeGitHub().github, artifact: () => null }, ARGS)).status).toBe(404);
+  });
+
+  test("a pull request GitHub refuses says what was done and what wasn't", async () => {
+    const result = await shipToGitHub({ github: fakeGitHub({ prFails: true }).github, artifact: kept(SHIPMENT) }, ARGS);
+    expect(result.ok).toBe(false);
+    expect(result.receipt).toContain("committed 3 files on galahad/units");
+    expect(result.receipt).toContain("No commits between main and galahad/units");
+  });
+
+  test("a file that fails its check stops the shipment", async () => {
+    const result = await shipToGitHub(
+      {
+        github: fakeGitHub().github,
+        artifact: () => ({ files: Object.entries(SHIPMENT).map(([path, b]) => ({ path, size: b.length })), read: (path) => {
+          if (path === "ship/files/bin/run") throw new Error("ship/files/bin/run isn't what was kept (its SHA-256 differs)");
+          return SHIPMENT[path]!;
+        } }),
+      },
+      ARGS,
+    );
+    expect(result).toMatchObject({ ok: false, status: 500 });
+    expect(result.receipt).toContain("SHA-256 differs");
+  });
+
+  test("repositories and branch names", () => {
+    expect(sameRepository("https://github.com/AmiriteOrg/Shipyard.git", "amiriteorg", "shipyard")).toBe(true);
+    expect(sameRepository("git@github.com:amiriteorg/shipyard.git", "amiriteorg", "shipyard")).toBe(true);
+    expect(sameRepository("https://github.com/amiriteorg/shipyard-evil", "amiriteorg", "shipyard")).toBe(false);
+    expect(sameRepository("https://gitlab.com/amiriteorg/shipyard", "amiriteorg", "shipyard")).toBe(false);
+    expect(githubRepo("https://github.com/amiriteorg/galahad.git")).toEqual({ owner: "amiriteorg", repo: "galahad" });
+    expect(githubRepo("https://example.com/a/b")).toBeNull();
+    expect(shipBranch("Parse SI units, with tests!", "q-mwafrqc4")).toBe("galahad/parse-si-units-with-tests-mwafrqc4");
+  });
+});
+
+describe("the shipment the sandbox leaves", () => {
+  const have = (cmd: string[]) => {
+    try {
+      return Bun.spawnSync(cmd).exitCode === 0;
+    } catch {
+      return false;
+    }
+  };
+  const python = have(["python3", "--version"]) && have(["git", "--version"]);
+
+  test.skipIf(!python)("every change since the clone: new, changed, executable and deleted files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-ship-"));
+    try {
+      const repo = join(dir, "repo");
+      const git = (...a: string[]) => Bun.spawnSync(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
+      mkdirSync(repo);
+      git("init", "-q");
+      git("config", "core.autocrlf", "false");
+      writeFileSync(join(repo, "keep.txt"), "same\n");
+      writeFileSync(join(repo, "old.txt"), "going\n");
+      writeFileSync(join(repo, "calc.py"), "a - b\n");
+      git("add", "-A");
+      git("commit", "-qm", "init");
+      git("remote", "add", "origin", REMOTE);
+      const base = git("rev-parse", "HEAD").stdout.toString().trim();
+      writeFileSync(join(repo, "calc.py"), "a + b\n");
+      rmSync(join(repo, "old.txt"));
+      mkdirSync(join(repo, "bin"));
+      writeFileSync(join(repo, "bin", "run"), "#!/bin/sh\n", { mode: 0o755 });
+      const out = join(dir, "out", "ship");
+      const run = Bun.spawnSync(["python3", "-c", SHIPMENT_SCRIPT, repo, out]);
+      expect({ exit: run.exitCode, stderr: run.exitCode ? run.stderr.toString() : "" }).toEqual({ exit: 0, stderr: "" });
+      expect(run.stdout.toString().trim()).toBe("3");
+      const manifest = JSON.parse(require("node:fs").readFileSync(join(out, "manifest.json"), "utf8"));
+      expect(manifest).toMatchObject({ v: 1, base, remote: REMOTE });
+      expect(manifest.files).toEqual(
+        expect.arrayContaining([
+          { path: "calc.py", mode: "100644" },
+          { path: "old.txt", deleted: true },
+          { path: "bin/run", mode: process.platform === "win32" ? "100644" : "100755" },
+        ]),
+      );
+      expect(require("node:fs").readFileSync(join(out, "files", "calc.py"), "utf8")).toBe("a + b\n");
+      // The repository is as the agent left it (nothing staged).
+      expect(git("diff", "--cached", "--name-only").stdout.toString()).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the gate, end to end", () => {
+  const caps: Capabilities = { os: "linux", arch: "x64", hostname: "ship", cores: 4, cpu: "t", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
+  const freePort = () => {
+    const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
+    const p = s.port!;
+    s.stop(true);
+    return p;
+  };
+  const root = mkdtempSync(join(tmpdir(), "galahad-shipgate-"));
+  const home = new Home(join(root, "node"));
+  const port = freePort();
+  const TOKEN = "github_pat_FAKEFAKEFAKEFAKE0000_fakefakefakefakefakefakefakefakefakefakefakefake";
+  const seen: { method: string; url: string; auth: string | null }[] = [];
+  const gh = fakeGitHub();
+  let daemon: Daemon;
+  let armToken: string;
+  let artifact: string;
+  const send = (token: string, name: RouteName, input?: unknown) =>
+    fetch(`http://127.0.0.1:${port}${routes[name].path}`, {
+      method: routes[name].method,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: routes[name].method === "POST" ? JSON.stringify(input ?? {}) : undefined,
+    }).then(async (r) => ({ status: r.status, body: (await r.json()) as any }));
+
+  beforeAll(async () => {
+    const { identity, keystore } = await home.createIdentity("file");
+    const store = new MindStore(home.mindPath);
+    const fleet = foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
+    store.close();
+    home.writeConfig({ v: 1, name: "ultra", fleet, port, keystore, advertise: "127.0.0.1" });
+    // GitHub, as the node's fetch sees it.
+    const fakeFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      seen.push({ method: init?.method ?? "GET", url: url.toString(), auth: new Headers(init?.headers).get("authorization") });
+      if (url.origin !== "https://api.github.com") return new Response("{}", { status: 404 });
+      const answer = await gh.github((init?.method ?? "GET") as "GET" | "POST", url.pathname, init?.body ? JSON.parse(String(init.body)) : undefined);
+      return Response.json(answer.json, { status: answer.status });
+    }) as typeof fetch;
+    daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, fetch: fakeFetch });
+    armToken = (await send(home.adminToken(), "mintArm", { label: "coder" })).body.token;
+    expect((await send(home.adminToken(), "setConnector", { id: "github" })).status).toBe(200);
+    expect((await send(home.adminToken(), "setSecret", { name: "github", value: TOKEN, provider: "github" })).status).toBe(200);
+    const collector = async (_s: string, _f: string, dest: string) => {
+      const out = { files: [] as { path: string; size: number; sha256: string }[], bytes: 0, skipped: [] as { path: string; reason: string }[] };
+      for (const [path, bytes] of Object.entries(SHIPMENT)) {
+        const target = join(dest, ...path.split("/"));
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, bytes);
+        out.files.push({ path, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+        out.bytes += bytes.length;
+      }
+      return out;
+    };
+    artifact = (await daemon.artifacts.save(collector, { sandbox: "0123456789", label: "units" }))!.id;
+  });
+  afterAll(async () => {
+    await daemon?.stop();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("an agent's shipment waits for you; approved, it ships once, with the key and only to GitHub", async () => {
+    const args = { ...ARGS, artifact };
+    const asked = await send(armToken, "callConnector", { connector: "github", tool: "ship", args, why: "40 tests pass" });
+    expect(asked.status).toBe(200);
+    expect(asked.body).toMatchObject({ status: "asked", class: "outward" });
+    expect(seen).toEqual([]); // nothing left before you answered
+    // Arms can't answer; you can.
+    expect((await send(armToken, "decideAction", { id: asked.body.action, approve: true })).status).toBe(403);
+    const decided = await send(home.adminToken(), "decideAction", { id: asked.body.action, approve: true });
+    expect(decided.status).toBe(200);
+    const actions = (await send(home.adminToken(), "actions")).body.actions as ActionView[];
+    const action = actions.find((a) => a.id === asked.body.action)!;
+    expect(action.state).toBe("done");
+    expect(action.receipt).toContain("pull request #7");
+    expect(seen.every((s) => s.url.startsWith("https://api.github.com/") && s.auth === `Bearer ${TOKEN}`)).toBe(true);
+    expect(seen.filter((s) => s.method === "POST" && s.url.endsWith("/pulls"))).toHaveLength(1);
+    // Approving again sends nothing more.
+    const before = seen.length;
+    await send(home.adminToken(), "decideAction", { id: asked.body.action, approve: true });
+    expect(seen.length).toBe(before);
+  });
+
+  test("you can ask to be asked: your own call, filed for approval", async () => {
+    const filed = await send(home.adminToken(), "callConnector", { connector: "github", tool: "ship", args: { ...ARGS, artifact, branch: "galahad/second" }, ask: {} });
+    expect(filed.body).toMatchObject({ status: "asked" });
+  });
+
+  test("a branch the catalog's pattern doesn't allow is refused before anything is filed", async () => {
+    const bad = await send(armToken, "callConnector", { connector: "github", tool: "ship", args: { ...ARGS, artifact, branch: "main" } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/branch doesn't match/);
+  });
+});

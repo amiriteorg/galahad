@@ -240,6 +240,19 @@ bun galahad do --agent opencode --net online --repo https://github.com/you/proje
 
 With `--repo`, the changes are kept as a patch (`changes.patch`) in the quest's artifact.
 
+### Ship it: pull requests through your approval
+
+Galahad's sandboxes never hold your GitHub token. With `--ship`, work the reviewer passed becomes a pull request request in your Inbox; approve it and the node commits the changes on a new `galahad/…` branch and opens the PR:
+
+```sh
+bun galahad do --agent opencode --net online --repo https://github.com/you/project --ship "Fix the failing tests"
+bun galahad ship art_… --title "Fix the failing tests"     # ship kept work yourself (asks y/N first)
+bun galahad connector add github --owner yourorg            # a second owner with its own token
+bun galahad order add github.ship --arg owner=you --arg repo=project --arg branch='galahad/*' --label "Galahad's PRs on project"
+```
+
+The token needs **Contents: read and write** and **Pull requests: read and write** on the repositories you want shipped to.
+
 ### Ask Galahad a scientific question
 
 `galahad investigate` runs the scientific method in the Lab. The hypothesis and its falsifiable predictions are recorded in the mind before anything runs, the experiment verifies its own instruments, and an independent reviewer judges the method:

@@ -178,3 +178,36 @@ describe("MCP connectors", () => {
     expect(proposedClass(undefined)).toBe("outward");
   });
 });
+
+describe("native tools", () => {
+  const ship = {
+    description: "Ship a quest's changes as a pull request.",
+    native: "github.ship" as const,
+    method: "POST" as const,
+    path: "/repos/{owner}/{repo}/pulls",
+    params: {
+      owner: { type: "string" as const, pattern: "[A-Za-z0-9_.-]{1,100}", required: true },
+      repo: { type: "string" as const, pattern: "[A-Za-z0-9_.-]{1,100}", required: true },
+      artifact: { type: "string" as const, pattern: "art_[A-Za-z0-9_-]{22}", required: true },
+      branch: { type: "string" as const, pattern: "galahad/[A-Za-z0-9._-]{1,80}", required: true },
+      title: { type: "string" as const, required: true },
+    },
+    class: "outward" as const,
+  };
+  const github = ConnectorManifest.parse({ ...base, id: "github", origin: "https://api.github.com", tools: { ship } });
+  const args = { owner: "amiriteorg", repo: "galahad", artifact: "art_AAAAAAAAAAAAAAAAAAAAAA", branch: "galahad/units", title: "Units" };
+
+  test("a manifest can name one, only on the origin it's bound to", () => {
+    const elsewhere = ConnectorManifest.safeParse({ ...base, tools: { ship } });
+    expect(elsewhere.success).toBe(false);
+    expect(JSON.stringify(elsewhere.error?.issues)).toContain("github.ship only talks to https://api.github.com");
+    expect(ConnectorManifest.safeParse({ ...base, id: "github", origin: "https://api.github.com", tools: { ship: { ...ship, native: "rm.everything" } } }).success).toBe(false);
+  });
+
+  test("its arguments are checked like any tool's; it's never a single request", () => {
+    expect(buildCall(github, "ship", args)).toEqual({ kind: "native", native: "github.ship", args, class: "outward", target: "POST /repos/amiriteorg/galahad/pulls (ship)" });
+    expect(() => buildCall(github, "ship", { ...args, branch: "main" })).toThrow(/branch doesn't match/);
+    expect(() => buildCall(github, "ship", { ...args, force: true })).toThrow(/takes no "force"/);
+    expect(() => buildRequest(github, "ship", args)).toThrow(/carried out by Galahad/);
+  });
+});

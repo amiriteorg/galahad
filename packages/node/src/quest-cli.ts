@@ -1,4 +1,5 @@
 import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { AGENTS, chooseAgentModel, investigate, type InvestigationOutcome, type QuestEvent, type QuestOptions, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
 
 /*
@@ -37,6 +38,39 @@ export interface DoOptions {
    * `repo` if given (which needs --net online). Its model calls go through the gateway.
    */
   agent?: { name: string; minutes: number; repo?: string };
+  /** With a GitHub repo: once the reviewer passes the work, ask you (or a standing order) to open a pull request. */
+  ship?: { title?: string; base?: string; draft?: boolean; connector?: string };
+}
+
+/** What became of shipping a quest's work. */
+export interface Shipped {
+  /** Filed for your approval. */
+  action?: string;
+  /** Sent at once: a standing order covered it. */
+  receipt?: string;
+  /** Why nothing was filed. */
+  problem?: string;
+}
+
+const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/** owner/repo of a github.com clone URL, or null. */
+export function githubRepo(url: string): { owner: string; repo: string } | null {
+  const m = url.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100}?)(?:\.git)?\/?$/);
+  return m ? { owner: m[1]!, repo: m[2]! } : null;
+}
+
+/** A branch name from a title: galahad/<words>-<quest>. */
+export function shipBranch(title: string, quest: string): string {
+  const words = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "");
+  return `galahad/${words || "changes"}-${quest.replace(/^q-/, "")}`;
+}
+
+/** The GitHub connector for an owner: github-<owner> if installed with its key, else github. */
+export async function githubConnector(node: NodeClient, owner: string): Promise<string> {
+  const { connectors } = await node.call<{ connectors: { id: string; installed: boolean; key: string }[] }>("connectors");
+  const own = connectors.find((c) => c.id === `github-${owner.toLowerCase()}` && c.installed && c.key === "ready");
+  return own ? own.id : "github";
 }
 
 const tty = process.stdout.isTTY;
@@ -127,7 +161,7 @@ export async function runNodeQuest(
   node: NodeClient,
   options: DoOptions,
   hooks: NodeQuestHooks = {},
-): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null }> {
+): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped }> {
   const quest = `q-${Date.now().toString(36)}`;
   const agent = options.agent ? await agentFor(node, options) : undefined;
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
@@ -180,8 +214,12 @@ export async function runNodeQuest(
         signal: hooks.signal,
       },
     );
-    // A repository's changes are kept as a patch (new files included), ready to apply or review.
-    if (options.agent?.repo) await exec("mkdir -p /work/out && cd /work/repo && git add -A && git diff --cached --binary > /work/out/changes.patch && git reset -q", 120).catch(() => {});
+    // A repository's changes are kept as a patch (new files included) to read, and as a
+    // shipment (ship/: the files themselves) that github.ship can turn into a pull request.
+    if (options.agent?.repo) {
+      await exec("mkdir -p /work/out && cd /work/repo && git add -A && git diff --cached --binary > /work/out/changes.patch && git reset -q", 120).catch(() => {});
+      await exec(`python3 -c ${shq(SHIPMENT_SCRIPT)} /work/repo /work/out/ship`, 120).catch(() => {});
+    }
     await hooks.finished?.(exec);
   } finally {
     // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
@@ -192,7 +230,8 @@ export async function runNodeQuest(
     if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
 
-  if (options.remember === false) return { outcome, quest, artifact };
+  const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
+  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}) };
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
   const memory = redact(
@@ -206,7 +245,47 @@ export async function runNodeQuest(
       .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest, artifact };
+  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}) };
+}
+
+/** Passed work on a GitHub clone: file github.ship for your approval (a standing order may answer it at once). */
+async function shipQuest(node: NodeClient, options: DoOptions, done: { outcome: QuestOutcome; quest: string; artifact: ArtifactView | null }): Promise<Shipped> {
+  const where = options.agent?.repo ? githubRepo(options.agent.repo) : null;
+  if (!where) return { problem: "only a quest on a github.com clone (--repo) can ship" };
+  if (done.outcome.status !== "done") return { problem: "not shipped: the reviewer didn't pass the work" };
+  if (!done.artifact?.files.some((f) => f.path === "ship/manifest.json")) return { problem: "nothing to ship: the work changed no files" };
+  const title = (options.ship!.title ?? options.goal.split("\n")[0]!).slice(0, 120);
+  const body = [
+    done.outcome.summary.trim(),
+    done.outcome.review ? `**Independent review:** ${done.outcome.review.trim()}` : "",
+    `_Made by Galahad in quest ${done.quest}; the work is kept as ${done.artifact.id}._`,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 20_000);
+  const changed = done.artifact.files.filter((f) => f.path.startsWith("ship/files/")).length;
+  try {
+    const connector = options.ship!.connector ?? (await githubConnector(node, where.owner));
+    const result = await node.call<{ status: "asked" | "done"; action?: string; result?: { body: string } }>("callConnector", {
+      connector,
+      tool: "ship",
+      args: {
+        owner: where.owner,
+        repo: where.repo,
+        artifact: done.artifact.id,
+        branch: shipBranch(title, done.quest),
+        title,
+        body,
+        ...(options.ship!.base ? { base: options.ship!.base } : {}),
+        ...(options.ship!.draft ? { draft: true } : {}),
+      },
+      why: `Quest ${done.quest} changed ${changed} file(s) in ${where.owner}/${where.repo}, and the independent reviewer passed it. Its patch: ${done.artifact.id}, changes.patch.`.slice(0, 500),
+      ask: { quest: done.quest },
+    });
+    return result.status === "asked" ? { action: result.action! } : { receipt: result.result?.body ?? "sent" };
+  } catch (error) {
+    return { problem: `couldn't file the pull request: ${(error as Error).message}` };
+  }
 }
 
 /** The coding agent for a quest: its driver, and the engineer's first model the gateway can serve to it. */
@@ -245,8 +324,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
 
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
+  let shipped: Shipped | undefined;
   try {
-    ({ outcome, artifact } = await runNodeQuest(node, options, {
+    ({ outcome, artifact, shipped } = await runNodeQuest(node, options, {
       emit: print,
       signal: controller.signal,
       started: ({ quest, sandbox, host }) => {
@@ -265,6 +345,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     const kb = Math.max(1, Math.round(artifact.bytes / 1024));
     console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));
   }
+  if (shipped?.action) console.log(`\n${bold("◇ Pull request filed for your approval")} ${dim(`· galahad action approve ${shipped.action} · or the Inbox`)}`);
+  if (shipped?.receipt) console.log(`\n${bold("◇ Shipped under your standing order:")} ${shipped.receipt}`);
+  if (shipped?.problem) console.log(dim(`\n${shipped.problem}`));
   return outcome;
 }
 

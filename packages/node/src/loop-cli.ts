@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { ActionView, ArgValue, ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, NoticeView, OrderView, RouteName } from "@galahad/core";
+import { CATALOG } from "@galahad/brain";
 
 /*
  * The terminal side of loops, the heartbeat, notices, connectors and approvals.
@@ -246,8 +247,27 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         printDiscovered(connector, discovered);
         return;
       }
-      if (!rest[0]) throw new Error("usage: galahad connector add <id> [--origin url] | --manifest file.json | --mcp <url>");
-      const { connector } = await api.call<{ connector: ConnectorView }>("setConnector", { id: rest[0], ...(str(flags, "origin") ? { origin: str(flags, "origin") } : {}) });
+      if (!rest[0]) throw new Error("usage: galahad connector add <id> [--origin url] [--owner org] | --manifest file.json | --mcp <url>");
+      const owner = str(flags, "owner");
+      if (owner && rest[0] !== "github") throw new Error("--owner goes with github: one more GitHub owner, with its own token");
+      if (owner && !/^[A-Za-z0-9-]{1,39}$/.test(owner)) throw new Error("--owner is a GitHub user or organization name");
+      // One more GitHub owner (a token per organization): the catalog's manifest under github-<owner>, with its own key.
+      const own = owner ? `github-${owner.toLowerCase()}` : null;
+      const { connector } = await api.call<{ connector: ConnectorView }>(
+        "setConnector",
+        own
+          ? {
+              id: own,
+              manifest: {
+                ...structuredClone(CATALOG.github!.manifest),
+                id: own,
+                label: `GitHub (${owner})`,
+                description: `GitHub, with the token for ${owner}. ${CATALOG.github!.manifest.description ?? ""}`.trim(),
+                auth: { secret: own, scheme: "bearer" },
+              },
+            }
+          : { id: rest[0], ...(str(flags, "origin") ? { origin: str(flags, "origin") } : {}) },
+      );
       console.log(`Installed ${connector.label} (${connector.tools.length} tools) for ${connector.origin}.`);
       if (connector.secret && connector.key !== "ready") {
         console.log(`Its key${connector.key === "optional-missing" ? " (optional; public reads work without it)" : ""}: galahad secret set ${connector.secret} --connector ${connector.id}${connector.keyHelp ? dim(`\n  (${connector.keyHelp})`) : ""}`);

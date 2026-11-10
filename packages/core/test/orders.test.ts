@@ -138,3 +138,26 @@ describe("which calls an order answers", () => {
     expect(orderCovers(order, { ...call, digest: null }, NOW)).toBe(false);
   });
 });
+
+describe("standing orders for a native tool", () => {
+  test("shipping pull requests can be pre-approved for one repository's galahad/* branches", () => {
+    const manifest = ConnectorManifest.parse({
+      id: "github",
+      label: "GitHub",
+      origin: "https://api.github.com",
+      tools: {
+        ship: {
+          description: "Ship.",
+          native: "github.ship",
+          method: "POST",
+          path: "/repos/{owner}/{repo}/pulls",
+          params: { owner: { type: "string", required: true }, repo: { type: "string", required: true }, branch: { type: "string", required: true } },
+          class: "outward",
+        },
+      },
+    });
+    const terms = { connector: "github", tool: "ship", class: "outward" as const, args: { owner: "amiriteorg", repo: "galahad", branch: "galahad/*" }, until: NOW + 86_400_000 };
+    expect(orderProblems(terms, manifest, NOW)).toEqual([]);
+    expect(orderProblems({ ...terms, args: { branch: "galahad/*" } }, manifest, NOW).join(" ")).toMatch(/owner|repo/);
+  });
+});

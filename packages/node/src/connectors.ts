@@ -3,6 +3,7 @@ import {
   type ActionView,
   argStrings,
   type ArgValue,
+  type BuiltRequest,
   buildCall,
   ConnectorArgs,
   ConnectorError,
@@ -12,6 +13,7 @@ import {
   decodeHlc,
   findSecrets,
   MAX_ORDER_DAYS,
+  type NativeName,
   type NodeIdentity,
   orderCovers,
   orderProblems,
@@ -71,6 +73,12 @@ export class ConnectorCallError extends Error {
   }
 }
 
+/**
+ * A native tool (see NATIVE_TOOLS): carried out by the node, its requests sent through
+ * `send`, which holds the connector's pinned origin and key.
+ */
+export type NativeTool = (manifest: ConnectorManifest, args: Record<string, ArgValue>, send: (request: BuiltRequest) => Promise<ConnectorResult>) => Promise<ConnectorResult>;
+
 export interface ConnectorServiceOptions {
   store: MindStore;
   vault: Vault;
@@ -80,6 +88,8 @@ export interface ConnectorServiceOptions {
   log: (message: string) => void;
   fetch?: typeof fetch;
   now?: () => number;
+  /** The native tools this node can carry out (a call to another is refused). */
+  natives?: Partial<Record<NativeName, NativeTool>>;
 }
 
 /** How long an action waits for you. No answer means no. */
@@ -172,8 +182,14 @@ export class ConnectorService {
   private async send(manifest: ConnectorManifest, request: ConnectorRequest): Promise<ConnectorResult> {
     try {
       const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}) };
+      if (request.kind === "native") {
+        const native = this.o.natives?.[request.native];
+        if (!native) throw new ConnectorCallError(501, `${request.native} isn't available on this node`);
+        return await native(manifest, request.args, (step) => sendConnectorRequest(ctx, manifest, step));
+      }
       return request.kind === "mcp" ? await callMcpTool(ctx, manifest, request) : await sendConnectorRequest(ctx, manifest, request);
     } catch (error) {
+      if (error instanceof ConnectorCallError) throw error;
       if (error instanceof ConnectorError) {
         // Missing key: ask for it once, in the vault, never in chat.
         if (manifest.auth && keyState(this.o.vault, manifest) === "missing" && !this.o.vault.requests().some((r) => r.name === manifest.auth!.secret)) {

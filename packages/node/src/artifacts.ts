@@ -77,6 +77,11 @@ export class ArtifactStore {
     }
   }
 
+  /** Every file of work this node holds (the mind's record lists at most 200), or null. */
+  filesOf(id: string): { path: string; size: number; sha256: string }[] | null {
+    return this.manifest(id)?.files ?? null;
+  }
+
   /** Bytes this node already keeps. */
   usedBytes(): number {
     if (!existsSync(this.o.dir)) return 0;

@@ -291,6 +291,21 @@ Guarantees:
 
 The driver is pure orchestration over `exec` (`packages/brain/src/agents.ts`), tested against OpenCode's real event stream and a fake sandbox. Claude Code joins once there's an Anthropic key in the vault.
 
+### Shipping: pull requests through the oath gate ✅
+
+A sandbox never holds a GitHub key, so it can't push. Instead a quest on a clone (`--repo`) leaves a **shipment** in its kept work: `ship/manifest.json` (the commit it started from, the remote, each changed file's path and mode, deletions) and `ship/files/…` (the new contents), beside `changes.patch` for reading.
+
+`github.ship` is a **native tool** of the GitHub connector: one outward action, carried out by the node itself. When you approve it (or a standing order does), the node, with the connector's key on its pinned origin (`api.github.com`), uploads each file as a blob, builds one tree on the starting commit, commits it, creates a **new** `galahad/…` branch (one that exists is never touched) and opens the pull request; the receipt in the mind names the PR. Every file is checked against the SHA-256 recorded when it was kept before it leaves.
+
+| | |
+|---|---|
+| `galahad do --agent opencode --net online --repo https://github.com/o/r --ship "<goal>"` | Once the reviewer passes the work, a pull request is filed for your approval (Inbox, with **Read the changes**) |
+| `galahad ship <artifact> --title "…"` | Ship kept work yourself, after a look at the files (`--ask` files it for approval instead) |
+| `galahad order add github.ship --arg owner=o --arg repo=r --arg branch='galahad/*' --label "…"` | A standing order: Galahad's passed work on that repository becomes a PR without asking |
+| `galahad connector add github --owner <org>` | One more owner with its own token (`github-<org>`); shipping picks it for that owner's repositories |
+
+Native tools (`NATIVE_TOOLS` in `packages/core/src/connectors.ts`) are named by a manifest but defined only in code, each bound to the one origin it may talk to; their arguments are checked like any tool's, and approvals, standing orders and the ledger treat them like any other call.
+
 The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.
 
 ### Investigations: the scientific method ✅

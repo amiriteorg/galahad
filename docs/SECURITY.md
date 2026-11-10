@@ -86,6 +86,13 @@ The review also confirmed what held up:
 - **Watched and bounded.** Every command and edit it makes is followed from its event stream and shown; past its time budget, or when you stop the quest, its whole process group is killed; an independent reviewer judges the result from the sandbox, not from the agent's account.
 - **Residual risk:** inside the sandbox the agent can do anything the sandbox user can; what it writes is untrusted, like all model output, and a patch is only a proposal until you apply it.
 
+## Shipping (tested)
+
+- **No key in the sandbox, no push from it.** A quest's changes leave the sandbox as kept files (hashed, through the hostile-archive extractor); the node turns them into a commit with GitHub's API, using the connector's key on its pinned origin. Tested end to end against a stand-in GitHub: nothing is sent before approval, the key goes only to `api.github.com`, an approval ships exactly once (`packages/node/test/ship.test.ts`).
+- **One approval, one shipment.** `github.ship` is outward: an agent's request waits for you (or a standing order you signed, which must name the owner and repository). Branch names are pinned to `galahad/…`; an existing branch is refused, never force-pushed; a shipment whose clone came from another repository is refused.
+- **What you approved is what leaves.** Each file is checked against the SHA-256 recorded when the work was kept; a file changed on disk since stops the shipment. Paths that climb out, absolute paths and anything under `.git/` are refused.
+- **Residual risk:** a pull request is public to whoever can see the repository, and what's in it is model-written: read `changes.patch` (Inbox → **Read the changes**) before you approve. Merging stays yours.
+
 ## Known limitations
 
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.

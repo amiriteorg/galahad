@@ -320,7 +320,17 @@ export const routes = {
     method: "POST",
     path: "/api/connectors/call",
     scope: "connect",
-    input: z.strictObject({ connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional(), why: z.string().max(500).optional() }),
+    input: z.strictObject({
+      connector: ConnectorId,
+      tool: ToolName,
+      args: ConnectorArgs.optional(),
+      why: z.string().max(500).optional(),
+      /**
+       * You, asking to be asked: file it for approval like an agent's call (on behalf of a quest
+       * you started), instead of running it now. Standing orders still answer it.
+       */
+      ask: z.strictObject({ quest: z.string().regex(/^q-[a-z0-9]{1,16}$/).optional() }).optional(),
+    }),
   },
   actions: { method: "GET", path: "/api/actions", scope: "mind:read", input: null },
   decideAction: {

@@ -933,11 +933,13 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "connector.removed", { id: input.id });
       return { ok: true };
     },
-    callConnector: (input, p) =>
+    callConnector: ({ ask, ...input }, p) =>
       connectorErrors(() =>
         ctx.connectors.call(
           input,
-          p.kind === "admin" || p.kind === "client"
+          (p.kind === "admin" || p.kind === "client") && ask
+            ? { kind: "agent", by: "quest", ...(ask.quest ? { quest: ask.quest } : {}) }
+            : p.kind === "admin" || p.kind === "client"
             ? { kind: "owner", device: p.device }
             : p.kind === "arm"
               ? { kind: "agent", by: `arm:${p.label}`, quest: armQuest(p.label!) }

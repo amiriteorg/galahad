@@ -13,7 +13,8 @@ import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
-import { investigateFromCli, questFromCli } from "./quest-cli.ts";
+import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
+import { ShipManifest } from "./ship.ts";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -60,6 +61,11 @@ Work
   do --agent opencode "<goal>" [--minutes 60] [--repo https://…] [--net gateway|online]
                                   the same, with a full coding agent doing the work for up to --minutes
                                   (models through the gateway; --repo clones first and keeps a patch)
+     … --repo https://github.com/o/r --ship [--title …] [--base main] [--draft]
+                                  once the reviewer passes it, ask you to open a pull request (Inbox)
+  ship <artifact> --title "…" [--body …] [--base main] [--branch galahad/…] [--draft] [--ask] [-y]
+                                  open a pull request from a quest's kept changes (the node commits them on
+                                  a new branch with the connector's key; the sandbox never holds it)
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
   sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
@@ -82,6 +88,7 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
   connector ls | connector tools <id> | connector rm <id>
   connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json
+  connector add github --owner <org>                    one more GitHub owner with its own token (github-<org>)
   connector add <id> --mcp <url> [--auth bearer|header:<name>] [--only a,b] [--class tool=read …]
                                   a remote MCP server: its tools are listed once; you choose their classes
   connector refresh <id> [--class tool=class …]   list an MCP server's tools again (your classes stay)
@@ -277,6 +284,15 @@ async function main(): Promise<void> {
       agent: { type: "string" },
       minutes: { type: "string" },
       repo: { type: "string" },
+      ship: { type: "boolean" },
+      owner: { type: "string" },
+      title: { type: "string" },
+      body: { type: "string" },
+      base: { type: "string" },
+      branch: { type: "string" },
+      draft: { type: "boolean" },
+      ask: { type: "boolean" },
+      yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -666,7 +682,8 @@ Next:
       if (agentName && (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60)) fail("--minutes must be a whole number from 1 to 10080");
       const repo = str("repo");
       if (repo && !agentName) fail("--repo goes with --agent");
-      if (repo && !/^https:\/\/[A-Za-z0-9._~:/?#@!$&()*+,;=%-]+$/.test(repo)) fail("--repo must be an https:// URL");
+      if (repo && !/^https:\/\/[A-Za-z0-9._~:/?#!$&()*+,;=%-]+$/.test(repo)) fail("--repo must be an https:// URL (no user or password in it)");
+      if (flags.ship && !(repo && githubRepo(repo))) fail("--ship needs --repo https://github.com/<owner>/<repo>");
       const outcome = await questFromCli(new Admin(home), {
         goal,
         network: network as "isolated" | "gateway" | "online",
@@ -677,6 +694,9 @@ Next:
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
         keep: Boolean(flags.keep),
         ...(agentName ? { agent: { name: agentName, minutes, ...(repo ? { repo } : {}) } } : {}),
+        ...(flags.ship
+          ? { ship: { ...(str("title") ? { title: str("title") } : {}), ...(str("base") ? { base: str("base") } : {}), ...(flags.draft ? { draft: true } : {}), ...(str("connector") ? { connector: str("connector") } : {}) } }
+          : {}),
       });
       process.exit(outcome.status === "done" ? 0 : 1);
     }
@@ -739,6 +759,46 @@ Reviewer:
 ${i!.review}`);
       if (i!.artifact) console.log(dim(`
 Evidence: galahad artifact ${i!.artifact}`));
+      return;
+    }
+
+    case "ship": {
+      const id = sub;
+      if (!id || !/^art_[A-Za-z0-9_-]{22}$/.test(id) || !str("title")) fail('usage: galahad ship <artifact> --title "…" [--body …] [--base main] [--branch galahad/…] [--draft] [--ask] [-y]');
+      const admin = new Admin(home);
+      let shipment: ShipManifest;
+      try {
+        shipment = ShipManifest.parse(JSON.parse(new TextDecoder().decode((await admin.bytes("artifactFile", { id, path: "ship/manifest.json" })).bytes)));
+      } catch (error) {
+        fail(`${id} holds no shipment (ship/manifest.json): only a quest on a clone (--repo) leaves one. ${(error as Error).message}`);
+      }
+      const where = githubRepo(shipment!.remote);
+      if (!where) fail(`the work was done on ${shipment!.remote}, which isn't a github.com repository`);
+      const title = str("title")!;
+      const branch = str("branch") ?? shipBranch(title, `q-${id.slice(4, 12).toLowerCase().replace(/[^a-z0-9]/g, "")}`);
+      const connector = str("connector") ?? (await githubConnector(admin, where!.owner));
+      console.log(`${bold(`${where!.owner}/${where!.repo}`)}: ${shipment!.files.length} file(s) on a new branch ${branch}, from ${shipment!.base.slice(0, 12)}, through ${connector}`);
+      for (const f of shipment!.files.slice(0, 30)) console.log(`  ${f.deleted ? "deleted " : ""}${f.path}`);
+      if (shipment!.files.length > 30) console.log(dim(`  … ${shipment!.files.length - 30} more (galahad artifact ${id} changes.patch)`));
+      if (!flags.ask && !flags.yes && !confirm(`Open this pull request on ${where!.owner}/${where!.repo}?`)) return;
+      const result = (await admin.call("callConnector", {
+        connector,
+        tool: "ship",
+        args: {
+          owner: where!.owner,
+          repo: where!.repo,
+          artifact: id,
+          branch,
+          title,
+          ...(str("body") ? { body: str("body") } : {}),
+          ...(str("base") ? { base: str("base") } : {}),
+          ...(flags.draft ? { draft: true } : {}),
+        },
+        ...(flags.ask ? { ask: {}, why: `Ship ${shipment!.files.length} file(s) from ${id} to ${where!.owner}/${where!.repo}.` } : {}),
+      })) as { status: "asked" | "done"; action?: string; result?: { ok: boolean; body: string } };
+      if (result.status === "asked") console.log(`Filed for your approval: galahad action approve ${result.action} (or the Inbox)`);
+      else if (result.result?.ok) console.log(`✓ ${result.result.body}`);
+      else fail(result.result?.body ?? "not shipped");
       return;
     }
 

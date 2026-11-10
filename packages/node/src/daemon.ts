@@ -18,6 +18,7 @@ import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
+import { shipNative } from "./ship.ts";
 
 export interface Daemon {
   port: number;
@@ -172,8 +173,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   }
 
   const startedAt = Date.now();
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch });
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
   const taskDeps: LoopTaskDeps = {
     store,
     vault,

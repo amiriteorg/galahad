@@ -103,6 +103,24 @@ export const CATALOG: Record<string, CatalogEntry> = {
           },
           class: "outward",
         },
+        ship: {
+          description:
+            "Ship a quest's changes: commit them on a new galahad/… branch (never an existing one) and open a pull request. Others see it: Galahad asks first, unless a standing order covers it.",
+          native: "github.ship",
+          method: "POST",
+          path: "/repos/{owner}/{repo}/pulls",
+          params: {
+            owner,
+            repo,
+            artifact: { type: "string", pattern: "art_[A-Za-z0-9_-]{22}", required: true, description: "The kept work holding the shipment (ship/manifest.json)" },
+            branch: { type: "string", pattern: "galahad/[A-Za-z0-9._-]{1,80}(/[A-Za-z0-9._-]{1,80})?", required: true, description: "A new branch for the changes, e.g. galahad/units" },
+            base: { type: "string", pattern: "[A-Za-z0-9._/-]{1,200}", description: "The branch to merge into (default: the repository's default branch)" },
+            title: { type: "string", required: true },
+            body: { type: "string" },
+            draft: { type: "boolean" },
+          },
+          class: "outward",
+        },
         "issue.comment": {
           description: "Comment on an issue or pull request. Others see it: Galahad asks first.",
           method: "POST",

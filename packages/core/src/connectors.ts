@@ -42,6 +42,17 @@ export type ConnectorParam = z.infer<typeof ConnectorParam>;
 
 export const ToolClass = z.enum(["read", "create", "modify", "outward", "delete"]);
 
+/**
+ * Tools Galahad implements himself, each bound to the one origin it may talk to, with the
+ * connector's own key (the node's natives). A manifest can name one; it can't define one.
+ */
+export const NATIVE_TOOLS = {
+  /** Commit a quest's kept changes on a new branch and open a pull request (GitHub's Git Data API). */
+  "github.ship": "https://api.github.com",
+} as const;
+export type NativeName = keyof typeof NATIVE_TOOLS;
+const NativeName = z.enum(Object.keys(NATIVE_TOOLS) as [NativeName, ...NativeName[]]);
+
 export const ConnectorTool = z.strictObject({
   description: z.string().min(1).max(500),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -53,6 +64,8 @@ export const ConnectorTool = z.strictObject({
   params: z.record(ParamName, ConnectorParam).optional(),
   /** The oath class: read, create and modify run freely (logged); outward and delete ask you first. */
   class: ToolClass,
+  /** Carried out by Galahad himself (several requests, one approval); method and path say where it acts. */
+  native: NativeName.optional(),
 });
 export type ConnectorTool = z.infer<typeof ConnectorTool>;
 
@@ -157,6 +170,9 @@ export const ConnectorManifest = z
       if (isMcpTool(tool)) {
         issue.addIssue({ code: "custom", message: "MCP tools belong to an MCP connector (give mcp.path)", path: where });
         continue;
+      }
+      if (tool.native && new URL(manifest.origin).origin !== NATIVE_TOOLS[tool.native]) {
+        issue.addIssue({ code: "custom", message: `${tool.native} only talks to ${NATIVE_TOOLS[tool.native]}`, path: [...where, "native"] });
       }
       if (!classFits(tool.method, tool.class)) {
         issue.addIssue({ code: "custom", message: `${tool.method} can't be class ${tool.class} (${CLASS_RULE})`, path: [...where, "class"] });
@@ -268,6 +284,13 @@ function checkValue(name: string, param: ConnectorParam, value: ArgValue): ArgVa
 
 /** Turn a tool call into exactly one request to the connector's origin, or refuse. */
 export function buildRequest(manifest: ConnectorManifest, toolName: string, args: Record<string, ArgValue> = {}): BuiltRequest {
+  const built = buildHttpOrNative(manifest, toolName, args);
+  if (built.kind === "native") throw new ConnectorError(`${manifest.id}.${toolName} is carried out by Galahad, not as one request`);
+  return built;
+}
+
+/** A request template's call, or a native tool's checked call (same parameter rules). */
+function buildHttpOrNative(manifest: ConnectorManifest, toolName: string, args: Record<string, ArgValue>): BuiltRequest | BuiltNative {
   const tool = Object.hasOwn(manifest.tools, toolName) ? manifest.tools[toolName] : undefined;
   if (!tool) throw new ConnectorError(`${manifest.id} has no tool "${toolName}" (it has: ${Object.keys(manifest.tools).join(", ") || "none yet"})`);
   if (isMcpTool(tool)) throw new ConnectorError(`${manifest.id} is an MCP server: its calls go through buildMcpCall`);
@@ -278,6 +301,7 @@ export function buildRequest(manifest: ConnectorManifest, toolName: string, args
   let path = tool.path;
   const query = new URLSearchParams();
   const body: Record<string, ArgValue> = {};
+  const checked: Record<string, ArgValue> = {};
   for (const [name, param] of Object.entries(params)) {
     const raw = args[name];
     if (raw === undefined) {
@@ -285,6 +309,7 @@ export function buildRequest(manifest: ConnectorManifest, toolName: string, args
       continue;
     }
     const value = checkValue(name, param, raw);
+    checked[name] = value;
     const where = placementOf(tool, name, param);
     if (where === "path") {
       const text = String(value);
@@ -298,6 +323,7 @@ export function buildRequest(manifest: ConnectorManifest, toolName: string, args
   const url = new URL(`${manifest.origin}${fullPath}${search}`);
   // Belt and braces: whatever the arguments were, the request goes to the pinned origin.
   if (url.origin !== new URL(manifest.origin).origin) throw new ConnectorError("refusing a request off the connector's origin");
+  if (tool.native) return { kind: "native", native: tool.native, args: checked, class: tool.class, target: `${tool.method} ${url.pathname} (${toolName})`.slice(0, 256) };
   const hasBody = tool.method !== "GET" && tool.method !== "DELETE" && Object.keys(body).length > 0;
   return {
     kind: "http",
@@ -310,6 +336,15 @@ export function buildRequest(manifest: ConnectorManifest, toolName: string, args
   };
 }
 
+/** A native tool's call: its checked arguments, carried out by the node (see NATIVE_TOOLS). */
+export interface BuiltNative {
+  kind: "native";
+  native: NativeName;
+  args: Record<string, ArgValue>;
+  class: ConnectorTool["class"];
+  target: string;
+}
+
 export interface BuiltMcpCall {
   kind: "mcp";
   /** The server's name for the tool. */
@@ -320,7 +355,7 @@ export interface BuiltMcpCall {
   target: string;
 }
 
-export type ConnectorRequest = BuiltRequest | BuiltMcpCall;
+export type ConnectorRequest = BuiltRequest | BuiltMcpCall | BuiltNative;
 
 const jsonType = (value: ArgValue): string =>
   Array.isArray(value) ? "array" : value === null ? "null" : typeof value === "object" ? "object" : typeof value === "number" ? (Number.isInteger(value) ? "integer" : "number") : typeof value;
@@ -351,7 +386,7 @@ export function buildMcpCall(manifest: ConnectorManifest, toolName: string, args
 
 /** Build the one request a call makes, whichever kind of connector it is. */
 export const buildCall = (manifest: ConnectorManifest, toolName: string, args: Record<string, ArgValue> = {}): ConnectorRequest =>
-  manifest.mcp ? buildMcpCall(manifest, toolName, args) : buildRequest(manifest, toolName, args);
+  manifest.mcp ? buildMcpCall(manifest, toolName, args) : buildHttpOrNative(manifest, toolName, args);
 
 /** A local tool name for a server's tool name (lowercase, safe), unique among `taken`. */
 export function localToolName(remote: string, taken: Set<string>): string {

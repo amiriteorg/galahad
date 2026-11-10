@@ -46,7 +46,22 @@ function argsList(args: Record<string, unknown>): HTMLElement | null {
   return h(
     "dl",
     { class: "kv" },
-    ...entries.flatMap(([key, value]) => [h("dt", { class: "mono" }, key), h("dd", { class: "mono pre-wrap" }, typeof value === "string" ? value : JSON.stringify(value))]),
+    ...entries.flatMap(([key, value]) => {
+      const text = typeof value === "string" ? value : JSON.stringify(value);
+      return [h("dt", { class: "mono" }, key), h("dd", { class: "mono pre-wrap" }, text.length > 800 ? `${text.slice(0, 800)}…` : text)];
+    }),
+  );
+}
+
+/** Work a request would send (a shipment's kept changes): read it before you answer. */
+function keptWork(ctx: Ctx, action: ActionView): HTMLElement | null {
+  const id = action.args.artifact;
+  if (typeof id !== "string" || !/^art_[A-Za-z0-9_-]{22}$/.test(id)) return null;
+  return h(
+    "div",
+    { class: "row wrap" },
+    button("Read the changes", { size: "sm", icon: "archive", onClick: () => ctx.navigate("artifacts", { intent: id }) }),
+    h("span", { class: "tiny subtle" }, "The work this sends, kept with its SHA-256s: changes.patch, and the files themselves under ship/."),
   );
 }
 
@@ -137,6 +152,7 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
       ),
       action.why ? h("div", { class: "quote small" }, action.why) : null,
       argsList(action.args),
+      keptWork(ctx, action),
       h(
         "p",
         { class: "tiny subtle" },
