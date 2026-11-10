@@ -6,3 +6,6 @@ dist/
 .galahad*/
 .env*
 REVISION
+
+# Agent worktrees (local only)
+.claude/worktrees/
