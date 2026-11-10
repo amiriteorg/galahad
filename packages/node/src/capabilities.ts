@@ -92,6 +92,13 @@ export async function tailscaleInfo(): Promise<Capabilities["tailscale"]> {
   }
 }
 
+/**
+ * A server: Linux and no battery. Windows and macOS machines are personal bodies that
+ * sleep and travel, battery or not (Windows doesn't always report a laptop's battery).
+ */
+export const isAlwaysOn = (caps: Partial<Pick<Capabilities, "os" | "hasBattery">> | null | undefined): boolean =>
+  caps?.os === "linux" && caps.hasBattery === false;
+
 function hasBattery(): boolean {
   if (process.platform === "linux") {
     return ["BAT0", "BAT1"].some((b) => existsSync(`/sys/class/power_supply/${b}`));

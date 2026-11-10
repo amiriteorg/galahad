@@ -1,5 +1,5 @@
 import type { PlacementNeeds, Presence } from "@galahad/core";
-import type { Capabilities } from "./capabilities.ts";
+import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 
 /*
  * Where should a piece of work run? Hard constraints filter, soft preferences
@@ -61,7 +61,7 @@ export function place(needs: PlacementNeeds, candidates: Candidate[]): Placement
     const reasons: string[] = [];
     let score = 50;
     const onBattery = c.presence?.onBattery ?? false;
-    const alwaysOn = !caps.hasBattery;
+    const alwaysOn = isAlwaysOn(caps);
 
     if (needs.longRunning) {
       if (alwaysOn) {

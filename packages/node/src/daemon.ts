@@ -8,7 +8,7 @@ import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
-import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
+import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
 import { assess, loopNotice } from "./heartbeat.ts";
 import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
@@ -49,9 +49,9 @@ export interface DaemonOptions {
  */
 function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabilities): void {
   if (store.genesis?.device !== identity.id || store.lww("loop:heartbeat")) return;
-  const server = caps.hasBattery
-    ? store.devices().find((d) => d.kind === "node" && d.role === "full" && (d.profile?.caps as Partial<Capabilities> | undefined)?.hasBattery === false)
-    : undefined;
+  const server = isAlwaysOn(caps)
+    ? undefined
+    : store.devices().find((d) => d.kind === "node" && d.role === "full" && isAlwaysOn(d.profile?.caps as Partial<Capabilities> | undefined));
   store.emit(identity, "loop.set", {
     name: "heartbeat",
     schedule: "every 30m",

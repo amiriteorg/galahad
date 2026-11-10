@@ -290,7 +290,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 
 | Check | Severity |
 |---|---|
-| An always-on node silent for 10 minutes (laptops come and go and aren't flagged) | warn |
+| An always-on node (Linux, no battery) silent for 10 minutes; Windows and macOS machines come and go and aren't flagged | warn |
 | This node can't open the vault | alert |
 | A device signed two histories (equivocation: its key may be stolen) | alert |
 | A role with no usable model (no key, no running local runtime) | warn for planner, engineer, reviewer; info for others |

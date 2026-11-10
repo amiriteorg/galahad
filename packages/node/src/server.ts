@@ -51,7 +51,7 @@ import { SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
 import { type ArmTokens, armQuest } from "./arms.ts";
 import type { Assets } from "./assets.ts";
-import type { Capabilities } from "./capabilities.ts";
+import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { type Candidate, place } from "./placement.ts";
@@ -357,10 +357,8 @@ export function createApp(ctx: AppContext) {
   /** Where a new loop runs if you don't say: quests by a sandbox host, the rest on an always-on node. */
   function defaultRunner(task: LoopTask): Device {
     if (task.kind === "quest") return ctx.sandbox ? ctx.store.device(ctx.identity.id)! : placeSandbox();
-    if (ctx.caps()?.hasBattery !== true) return ctx.store.device(ctx.identity.id)!;
-    const server = ctx.store
-      .devices()
-      .find((d) => isFullNode(d) && (d.profile?.caps as Partial<Capabilities> | undefined)?.hasBattery === false);
+    if (isAlwaysOn(ctx.caps())) return ctx.store.device(ctx.identity.id)!;
+    const server = ctx.store.devices().find((d) => isFullNode(d) && isAlwaysOn(d.profile?.caps as Partial<Capabilities> | undefined));
     return server ?? ctx.store.device(ctx.identity.id)!;
   }
 

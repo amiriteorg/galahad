@@ -4,7 +4,7 @@ import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { ArmTokens } from "./arms.ts";
-import type { Capabilities } from "./capabilities.ts";
+import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import type { ConnectorService } from "./connectors.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
 import { loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
@@ -106,7 +106,7 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
       .map((d) => {
         const status = statuses.get(d.id);
         const caps = d.profile?.caps as Partial<Capabilities> | undefined;
-        return { id: d.id, name: d.name, alwaysOn: caps?.hasBattery === false, online: !!status?.online, lastSeen: status?.lastSeen ?? null };
+        return { id: d.id, name: d.name, alwaysOn: isAlwaysOn(caps), online: !!status?.online, lastSeen: status?.lastSeen ?? null };
       }),
     vaultUnlocked: deps.vault.unlocked(),
     roles: Object.entries(roster(deps.store)).map(([role, spec]) => ({ role, models: spec.models, usable: roleUsable(deps, spec.models) })),
