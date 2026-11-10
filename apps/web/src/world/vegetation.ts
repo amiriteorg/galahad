@@ -100,8 +100,9 @@ function trunk(m: Mesher, h: number, r: number, topX: number, topZ: number, segs
     const z = topZ * t + Math.cos(k * 1.7) * wobble * 0.6;
     const y = h * t;
     const nr = r * (1 - 0.5 * t);
-    // A touch longer than the gap, so the pieces overlap at the bends.
+    // A touch longer than the gap, so the pieces overlap at the bends, and a knot where they meet.
     m.add(new CylinderGeometry(nr, pr, 1, sides, rings, true), color, between(px, py - (k > 1 ? 0.06 : 0), pz, x, y, z, 1), 0.12);
+    if (k > 1) m.add(new IcosahedronGeometry(pr * 1.06, 0), color, at(px, py, pz, k), 0.12);
     px = x;
     py = y;
     pz = z;
