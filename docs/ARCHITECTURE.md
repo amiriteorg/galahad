@@ -293,13 +293,13 @@ The driver is pure orchestration over `exec` (`packages/brain/src/agents.ts`), t
 
 ### Shipping: pull requests through the oath gate ✅
 
-A sandbox never holds a GitHub key, so it can't push. Instead a quest on a clone (`--repo`) leaves a **shipment** in its kept work: `ship/manifest.json` (the commit it started from, the remote, each changed file's path and mode, deletions) and `ship/files/…` (the new contents), beside `changes.patch` for reading.
+A sandbox never holds a GitHub key. It **reads** through the node's **git gateway**: a quest on a GitHub repository (private ones included) clones `http://<gateway>/git/<connector>/<owner>/<repo>.git` with a token minted for that one repository for the quest's lifetime; the node adds the connector's key on the way to `github.com` (a host fixed in code, never a manifest's say), serves git's smart HTTP **fetch only**, ledgers the read, and revokes the token when the quest ends. The clone's `origin` points back at GitHub and keeps no credential. It **can't push**: instead a quest on a clone (`--repo`) leaves a **shipment** in its kept work: `ship/manifest.json` (the commit it started from, the remote, each changed file's path and mode, deletions) and `ship/files/…` (the new contents), beside `changes.patch` for reading.
 
 `github.ship` is a **native tool** of the GitHub connector: one outward action, carried out by the node itself. When you approve it (or a standing order does), the node, with the connector's key on its pinned origin (`api.github.com`), uploads each file as a blob, builds one tree on the starting commit, commits it, creates a **new** `galahad/…` branch (one that exists is never touched) and opens the pull request; the receipt in the mind names the PR. Every file is checked against the SHA-256 recorded when it was kept before it leaves.
 
 | | |
 |---|---|
-| `galahad do --agent opencode --net online --repo https://github.com/o/r --ship "<goal>"` | Once the reviewer passes the work, a pull request is filed for your approval (Inbox, with **Read the changes**) |
+| `galahad do --agent opencode --repo https://github.com/o/r --ship "<goal>"` | Once the reviewer passes the work, a pull request is filed for your approval (Inbox, with **Read the changes**) |
 | `galahad ship <artifact> --title "…"` | Ship kept work yourself, after a look at the files (`--ask` files it for approval instead) |
 | `galahad order add github.ship --arg owner=o --arg repo=r --arg branch='galahad/*' --label "…"` | A standing order: Galahad's passed work on that repository becomes a PR without asking |
 | `galahad connector add github --owner <org>` | One more owner with its own token (`github-<org>`); shipping picks it for that owner's repositories |

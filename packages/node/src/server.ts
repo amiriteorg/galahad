@@ -55,12 +55,13 @@ import {
 } from "@galahad/brain";
 import { PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
-import { SandboxError, type SandboxHost } from "@galahad/sandbox";
+import { type LedgerEntryInput, SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
 import { type ArmTokens, armQuest } from "./arms.ts";
 import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
+import { handleGitGateway } from "./git-gateway.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { type Candidate, place } from "./placement.ts";
@@ -98,6 +99,10 @@ export interface AppContext {
   loops: LoopRunner;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
+  /** What the node did, for the ledger (the git gateway's reads). */
+  ledger?: (entry: LedgerEntryInput) => void;
+  /** How the node reaches the world (tests pass a stand-in). */
+  fetch?: typeof fetch;
 }
 
 interface Principal {
@@ -986,8 +991,10 @@ export function createApp(ctx: AppContext) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Sandboxes can reach exactly one thing on the host: the token-gated model gateway.
+    // Sandboxes can reach exactly two things on the host, both token-gated: the model
+    // gateway, and the git gateway (read-only clones of one repository).
     if (listener === "sandbox") {
+      if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
     }

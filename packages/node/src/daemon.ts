@@ -223,6 +223,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     loops,
     heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
+    ledger,
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 
   // Loopback: the CLI and the local model gateway (local processes only).

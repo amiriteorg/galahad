@@ -60,7 +60,8 @@ Work
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   do --agent opencode "<goal>" [--minutes 60] [--repo https://…] [--net gateway|online]
                                   the same, with a full coding agent doing the work for up to --minutes
-                                  (models through the gateway; --repo clones first and keeps a patch)
+                                  (models through the gateway; --repo clones first and keeps a patch:
+                                  GitHub repositories, private ones too, through the read-only git gateway)
      … --repo https://github.com/o/r --ship [--title …] [--base main] [--draft]
                                   once the reviewer passes it, ask you to open a pull request (Inbox)
   ship <artifact> --title "…" [--body …] [--base main] [--branch galahad/…] [--draft] [--ask] [-y]

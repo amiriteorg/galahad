@@ -242,10 +242,10 @@ With `--repo`, the changes are kept as a patch (`changes.patch`) in the quest's 
 
 ### Ship it: pull requests through your approval
 
-Galahad's sandboxes never hold your GitHub token. With `--ship`, work the reviewer passed becomes a pull request request in your Inbox; approve it and the node commits the changes on a new `galahad/…` branch and opens the PR:
+Galahad's sandboxes never hold your GitHub token: they clone through the node's read-only git gateway (private repositories too, no internet needed), and with `--ship`, work the reviewer passed becomes a pull request request in your Inbox; approve it and the node commits the changes on a new `galahad/…` branch and opens the PR:
 
 ```sh
-bun galahad do --agent opencode --net online --repo https://github.com/you/project --ship "Fix the failing tests"
+bun galahad do --agent opencode --repo https://github.com/you/project --ship "Fix the failing tests"
 bun galahad ship art_… --title "Fix the failing tests"     # ship kept work yourself (asks y/N first)
 bun galahad connector add github --owner yourorg            # a second owner with its own token
 bun galahad order add github.ship --arg owner=you --arg repo=project --arg branch='galahad/*' --label "Galahad's PRs on project"

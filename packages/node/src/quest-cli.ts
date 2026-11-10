@@ -66,11 +66,45 @@ export function shipBranch(title: string, quest: string): string {
   return `galahad/${words || "changes"}-${quest.replace(/^q-/, "")}`;
 }
 
-/** The GitHub connector for an owner: github-<owner> if installed with its key, else github. */
-export async function githubConnector(node: NodeClient, owner: string): Promise<string> {
+/** The GitHub connector for an owner: github-<owner> if installed with its key, else github if installed, else null. */
+export async function installedGithubConnector(node: NodeClient, owner: string): Promise<string | null> {
   const { connectors } = await node.call<{ connectors: { id: string; installed: boolean; key: string }[] }>("connectors");
   const own = connectors.find((c) => c.id === `github-${owner.toLowerCase()}` && c.installed && c.key === "ready");
-  return own ? own.id : "github";
+  if (own) return own.id;
+  return connectors.some((c) => c.id === "github" && c.installed && c.key !== "wrong-origin") ? "github" : null;
+}
+
+/** The GitHub connector to ship through (github if none is installed yet: the call then says so). */
+export const githubConnector = async (node: NodeClient, owner: string): Promise<string> => (await installedGithubConnector(node, owner)) ?? "github";
+
+/**
+ * A GitHub repository cloned through the node's git gateway (private ones included):
+ * a token for that one repository, fetch only; the key stays on the node.
+ */
+async function cloneThroughGateway(node: NodeClient, exec: (command: string, timeoutSec: number) => Promise<ExecResult>, repo: { owner: string; repo: string }, quest: string, minutes: number): Promise<{ hash: string } | null> {
+  const connector = await installedGithubConnector(node, repo.owner);
+  if (!connector) return null;
+  const { token, info } = await node.call<{ token: string; info: { hash: string } }>("mintToken", {
+    label: `git:${quest}`,
+    providers: [`git:${connector}:${repo.owner}:${repo.repo}`],
+    ttlMinutes: Math.min(minutes + 30, 7 * 24 * 60),
+    maxRequests: 500,
+  });
+  const cloned = await exec(
+    [
+      `G="\${GALAHAD_GATEWAY%/gw}"`,
+      `git -c http.extraHeader='Authorization: Bearer ${token}' clone -q --depth 50 "$G/git/${connector}/${repo.owner}/${repo.repo}.git" /work/repo 2>&1 | tail -5`,
+      "test -d /work/repo/.git",
+      // The clone points back at GitHub, not at the gateway, and keeps no credential.
+      `git -C /work/repo remote set-url origin https://github.com/${repo.owner}/${repo.repo}.git`,
+    ].join(" && "),
+    900,
+  );
+  if (cloned.exitCode !== 0) {
+    await node.call("revokeToken", { hash: info.hash }).catch(() => {});
+    throw new Error(`couldn't clone ${repo.owner}/${repo.repo} through ${connector}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
+  }
+  return { hash: info.hash };
 }
 
 const tty = process.stdout.isTTY;
@@ -182,10 +216,17 @@ export async function runNodeQuest(
     node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
+  let gitToken: string | null = null;
   try {
     if (options.agent?.repo) {
-      const cloned = await exec(`git clone -q --depth 50 '${options.agent.repo}' /work/repo 2>&1 | tail -5; test -d /work/repo/.git`, 900);
-      if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
+      const github = githubRepo(options.agent.repo);
+      const through = github ? await cloneThroughGateway(node, exec, github, quest, options.agent.minutes) : null;
+      if (through) gitToken = through.hash;
+      else {
+        if (options.network !== "online") throw new Error(`cloning ${options.agent.repo} needs --net online (or, for GitHub, a GitHub connector: galahad connector add github)`);
+        const cloned = await exec(`git clone -q --depth 50 '${options.agent.repo}' /work/repo 2>&1 | tail -5; test -d /work/repo/.git`, 900);
+        if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
+      }
     }
     const evidence = options.evidence ?? (agent ? agentEvidence(agent.workdir) : undefined);
     outcome = await runQuest(
@@ -228,6 +269,7 @@ export async function runNodeQuest(
       .then((r) => r.artifact)
       .catch(() => null);
     if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
+    if (gitToken) await node.call("revokeToken", { hash: gitToken }).catch(() => {});
   }
 
   const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
@@ -295,7 +337,6 @@ async function agentFor(node: NodeClient, options: DoOptions): Promise<NonNullab
   if (!driver) throw new Error(`no coding agent "${wanted.name}" (there is: ${Object.keys(AGENTS).join(", ")})`);
   if (options.network === "isolated") throw new Error("a coding agent needs models: use --net gateway (models only) or --net online");
   if (options.lab) throw new Error("coding agents work in the workshop for now, not the Lab");
-  if (wanted.repo && options.network !== "online") throw new Error("cloning a repository needs --net online");
   const [{ roster }, { providers }] = await Promise.all([
     node.call<{ roster: Record<string, { models: string[] }> }>("roster"),
     node.call<{ providers: ProviderView[] }>("providers"),
