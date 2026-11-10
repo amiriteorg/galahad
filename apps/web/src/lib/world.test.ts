@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ExperimentView, WorldEvent } from "@galahad/core/world";
-import { applyWorldEvent, backoffMs, emptyWorld, followWorld, MAX_ENDED, MAX_THOUGHTS, metricLabel, metricValue, readWorldEvent, type StreamStatus, worldSummary } from "./world.ts";
+import type { ExperimentView, WorldEvent, WorldWeather } from "@galahad/core/world";
+import { applyWorldEvent, backoffMs, emptyWorld, followWorld, MAX_ENDED, MAX_THOUGHTS, metricLabel, metricValue, readWorldEvent, type StreamStatus, weatherLabel, worldSummary } from "./world.ts";
 
 const experiment = (over: Partial<ExperimentView> = {}): ExperimentView => ({
   id: "x1",
@@ -17,6 +17,20 @@ const experiment = (over: Partial<ExperimentView> = {}): ExperimentView => ({
   quest: null,
   metrics: {},
   summary: null,
+  ...over,
+});
+
+const weather = (over: Partial<WorldWeather> = {}): WorldWeather => ({
+  kind: "overcast",
+  cloud: 0.92,
+  precipitation: 0,
+  visibility: 20760,
+  wind: 1.6,
+  temperature: 6.8,
+  humidity: 0.84,
+  observed: 1_794_329_100_000,
+  place: "Copenhagen",
+  source: "DMI HARMONIE via Open-Meteo",
   ...over,
 });
 
@@ -97,7 +111,17 @@ describe("the world reducer", () => {
 
   test("an unknown event kind changes nothing", () => {
     const w = applyWorldEvent(emptyWorld(), hello());
-    expect(applyWorldEvent(w, { type: "weather", at: 99 } as unknown as WorldEvent)).toBe(w);
+    expect(applyWorldEvent(w, { type: "rainbow", at: 99 } as unknown as WorldEvent)).toBe(w);
+  });
+
+  test("the weather comes with hello and changes with weather events; an older node's hello has none", () => {
+    let w = applyWorldEvent(emptyWorld(), hello({ weather: weather() }));
+    expect(w.weather?.kind).toBe("overcast");
+    w = applyWorldEvent(w, { type: "weather", at: 30, weather: weather({ kind: "rain", precipitation: 2 }) });
+    expect(w.weather?.kind).toBe("rain");
+    w = applyWorldEvent(w, { type: "weather", at: 31, weather: null });
+    expect(w.weather).toBeNull();
+    expect(applyWorldEvent(emptyWorld(), hello()).weather).toBeNull();
   });
 });
 
@@ -109,6 +133,10 @@ describe("reading events at the boundary", () => {
       { type: "frame", at: 2, frame: { experiment: "x1", t: 0, poses: { a: [0, 0, 0, 1, 0, 0, 0] } } },
       { type: "notice", at: 3, severity: "error", title: "Down" },
       { type: "experiment", at: 4, experiment: experiment({ scene: [{ id: "m", shape: { kind: "mesh", vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0], indices: [0, 1, 2] }, color: "#aabbcc", trail: true }] }) },
+      hello({ weather: weather() }),
+      hello({ weather: null }),
+      { type: "weather", at: 5, weather: weather({ kind: "drizzle", visibility: null }) },
+      { type: "weather", at: 6, weather: null },
     ];
     for (const e of events) expect(readWorldEvent(JSON.parse(JSON.stringify(e)))).toEqual(e);
   });
@@ -127,8 +155,18 @@ describe("reading events at the boundary", () => {
       { type: "experiment", at: 1, experiment: experiment({ scene: [{ id: "b", shape: { kind: "box", size: [1, 1, 1] }, color: "red" }] }) },
       { type: "notice", at: 1, severity: "fatal", title: "x" },
       { type: "weather", at: 1 },
+      { type: "weather", at: 1, weather: { ...weather(), temperature: Number.NaN } },
+      { type: "weather", at: 1, weather: { ...weather(), cloud: 3 } },
+      { type: "weather", at: 1, weather: { ...weather(), place: "x".repeat(200) } },
     ];
     for (const b of bad) expect(readWorldEvent(b)).toBeNull();
+  });
+
+  test("weather it can't read in a hello, or of a kind it doesn't know, is unknown weather, not a lost hello", () => {
+    const e = readWorldEvent({ ...hello(), weather: { ...weather(), wind: -1 } });
+    expect(e?.type === "hello" && e.weather).toBeNull();
+    const hail = readWorldEvent({ type: "weather", at: 1, weather: { ...weather(), kind: "hail" } });
+    expect(hail).toEqual({ type: "weather", at: 1, weather: null });
   });
 
   test("a station or engine it doesn't know yet is shown as the keep or a custom engine", () => {
@@ -159,6 +197,14 @@ describe("words", () => {
     expect(text).toContain("Rocket (RocketPy), done on ultra: Apogee 900 m.");
     const moved = applyWorldEvent(w, { type: "frame", at: 12, frame: { experiment: "x1", t: 1, poses: { link: [1, 2, 3, 1, 0, 0, 0] }, metrics: { reward: 1 } } });
     expect(worldSummary(moved)).toBe(text);
+  });
+
+  test("the summary says the weather in Denmark when it's known", () => {
+    const w = applyWorldEvent(emptyWorld(), hello({ weather: weather({ kind: "rain", temperature: 6.6, precipitation: 1.2 }) }));
+    expect(worldSummary(w)).toContain("In Copenhagen: rain, 7 °C.");
+    expect(weatherLabel(weather({ kind: "clear" }))).toBe("Clear");
+    expect(weatherLabel(weather({ kind: "storm" }))).toBe("Thunder");
+    expect(worldSummary(applyWorldEvent(emptyWorld(), hello()))).not.toContain("Copenhagen");
   });
 });
 

@@ -3,8 +3,8 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, M
 import { toScene } from "./coords.ts";
 import { flatNormals, linear } from "./mesher.ts";
 import { built } from "./path.ts";
-import { BIG, CELL, CELLS, CHUNK, chunkKey, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, KEEP_FLAT, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
-import type { ChunkSamples } from "./terrain.ts";
+import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, KEEP_FLAT, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
+import { ripples, wetDarken, wetSheen } from "./wet.ts";
 
 /*
  * The land on the GPU: one mesh per loaded 64 m chunk (faces coloured, flat
@@ -60,7 +60,8 @@ function waterMaterial(near: boolean): MeshPhongNodeMaterial {
   m.positionNode = positionLocal.add(vec3(0, wave.mul(reach), 0));
   const view = normalize(cameraPosition.sub(positionWorld));
   const grazing = pow(float(1).sub(clamp(view.y, 0, 1)), 3).mul(0.55);
-  const surface = mix(waterUniforms.color, waterUniforms.sky, grazing);
+  // Rain rings the surface.
+  const surface = mix(mix(waterUniforms.color, waterUniforms.sky, grazing), vec3(0.92, 0.96, 1), ripples().mul(0.55));
   if (near) {
     m.colorNode = surface;
     m.opacityNode = float(0.84);
@@ -95,7 +96,9 @@ function landMaterial(): MeshLambertNodeMaterial {
   const foam = smoothstep(0.2, 0.04, above).mul(smoothstep(-0.06, 0.02, above));
   const wet = smoothstep(0.55, 0.15, above).mul(smoothstep(-0.2, 0.0, above));
   const ground = mix(vertexColor(), vertexColor().mul(0.82), wet);
-  m.colorNode = mix(ground, vec3(0.93, 0.98, 0.96), foam.mul(0.8));
+  m.colorNode = mix(ground.mul(wetDarken()), vec3(0.93, 0.98, 0.96), foam.mul(0.8));
+  // Wet ground takes a sheen of the sky.
+  m.emissiveNode = wetSheen(1);
   return m;
 }
 

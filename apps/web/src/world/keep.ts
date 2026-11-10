@@ -28,6 +28,7 @@ import {
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
 import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
+import { pathSheen, puddleDarken } from "./wet.ts";
 import { obstacles, PLACES, planPath, standAt, stationFacing } from "./path.ts";
 import { swaying } from "./vegetation.ts";
 
@@ -735,6 +736,9 @@ export class Keep {
     this.warmGlows = parts.warm;
     this.coolGlows = parts.cool;
     this.solidMaterial.maskNode = occlusionMask();
+    // In rain: wet roofs, decks and walls, and puddles that ring with drops on the paths and plazas.
+    this.solidMaterial.colorNode = puddleDarken();
+    this.solidMaterial.emissiveNode = pathSheen(0.8);
     this.canopyMaterial.maskNode = occlusionMask();
     // Glass: the sky's pale blue by day, a warm lit room at night (bright enough to bloom past white).
     this.glassMaterial.colorNode = mix(this.dayGlass, this.nightGlass.mul(1.8), this.nightUniform).mul(vertexColor());

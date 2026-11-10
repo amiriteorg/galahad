@@ -14,6 +14,7 @@ import {
   type WorldEvent,
   type WorldNode,
   type WorldReport,
+  type WorldWeather,
 } from "@galahad/core";
 import type { z } from "zod";
 
@@ -85,12 +86,20 @@ export class WorldHub {
   private readonly reports = new Map<string, z.infer<typeof WorldReport> & { device: string; at: number }>();
   private readonly sweep: ReturnType<typeof setInterval>;
   private nodes: () => WorldNode[] = () => [];
+  private weather: () => WorldWeather | null = () => null;
+  private wakeWeather: () => void = () => {};
 
   constructor(private readonly opts: { now?: () => number } = {}) {
     this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
     // An experiment that stops sending (its sandbox died, its script hung) ends as failed.
     this.sweep = setInterval(() => this.quiet(), 15_000);
     this.sweep.unref?.();
+  }
+
+  /** Where the weather comes from, and how to ask for fresh weather when someone opens the world (the app sets it). */
+  setWeather(weather: () => WorldWeather | null, wake: () => void): void {
+    this.weather = weather;
+    this.wakeWeather = wake;
   }
 
   /** Where the fleet's nodes come from (the app sets it). */
@@ -127,11 +136,12 @@ export class WorldHub {
 
   /** Everything now: what a new watcher sees first. */
   hello(): WorldEvent {
-    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts] };
+    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather() };
   }
 
   watch(fn: (event: WorldEvent) => void): () => void {
     this.watchers.add(fn);
+    this.wakeWeather();
     return () => this.watchers.delete(fn);
   }
 
@@ -177,6 +187,10 @@ export class WorldHub {
 
   notice(severity: "info" | "warn" | "error", title: string): void {
     this.emit({ type: "notice", at: this.now(), severity, title: clipThought(title) });
+  }
+
+  weatherChanged(): void {
+    this.emit({ type: "weather", at: this.now(), weather: this.weather() });
   }
 
   fleetChanged(): void {

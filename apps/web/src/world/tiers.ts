@@ -2,9 +2,19 @@
  * How much world a device can carry. A tier is chosen once at start from the GPU
  * (WebGPU adapter, or the WebGL2 fallback) and the screen; it caps every
  * instance count and effect. While running, the resolution governor holds the
- * frame time: it lowers the pixel ratio first, and only when that's at its floor
- * does it drop effects (shadows, then grass). Pure, so unit-tested.
+ * frame time: it sheds post effects first (the high tier's ambient occlusion,
+ * sun shafts and bloom), then lowers the pixel ratio, and only when that's at its
+ * floor does it drop shadows, then grass. Pure, so unit-tested.
  */
+
+/** The high tier's finish (WebGPU only): ambient occlusion, sun shafts, bloom. */
+export interface PostEffects {
+  ao: boolean;
+  shafts: boolean;
+  bloom: boolean;
+}
+
+const NO_POST: PostEffects = { ao: false, shafts: false, bloom: false };
 
 export type TierName = "low" | "medium" | "high";
 
@@ -58,6 +68,14 @@ export interface Tier {
   halos: number;
   /** Multisampling (cheap on the tile-based GPUs of phones). */
   antialias: boolean;
+  /** Rain streaks round the camera at most. */
+  rain: number;
+  /**
+   * Post effects. Only the high tier has any: on phones (medium) a post pipeline's
+   * extra full-screen passes cost more than they give, so the medium picture is
+   * drawn straight to the screen, as before.
+   */
+  post: PostEffects;
 }
 
 export const TIERS: Record<TierName, Tier> = {
@@ -92,6 +110,8 @@ export const TIERS: Record<TierName, Tier> = {
     waterGrid: 32,
     halos: 24,
     antialias: false,
+    rain: 500,
+    post: NO_POST,
   },
   medium: {
     name: "medium",
@@ -124,6 +144,8 @@ export const TIERS: Record<TierName, Tier> = {
     waterGrid: 56,
     halos: 48,
     antialias: true,
+    rain: 1400,
+    post: NO_POST,
   },
   high: {
     name: "high",
@@ -156,6 +178,8 @@ export const TIERS: Record<TierName, Tier> = {
     waterGrid: 80,
     halos: 96,
     antialias: true,
+    rain: 3600,
+    post: { ao: true, shafts: true, bloom: true },
   },
 };
 
@@ -185,13 +209,18 @@ export function chooseTier(d: DeviceInfo): TierName {
 /** One lower, for a restart after the device was lost. */
 export const lowerTier = (t: TierName): TierName => (t === "high" ? "medium" : "low");
 
-export type GovernorAction = "none" | "dpr" | "drop-shadows" | "drop-grass";
+export type GovernorAction = "none" | "drop-post" | "dpr" | "drop-shadows" | "drop-grass";
+
+/** The order post effects are shed in: the dearest first. */
+const POST_ORDER: readonly (keyof PostEffects)[] = ["ao", "shafts", "bloom"];
 
 /**
- * Holds the frame time near the budget by changing the pixel ratio: two slow
- * seconds in a row lower it a step (down to the tier's floor); several fast
- * seconds in a row raise it again (up to the tier's ceiling). At the floor and
- * still slow, it drops shadows, then grass, once each. A step down that doesn't
+ * Holds the frame time near the budget. Two slow seconds in a row shed a post
+ * effect (ambient occlusion, then sun shafts, then bloom) while any is left;
+ * after that they lower the pixel ratio a step (down to the tier's floor), and
+ * several fast seconds in a row raise it again (up to the tier's ceiling). At the
+ * floor and still slow, it drops shadows, then grass, once each. Shed effects
+ * stay off. A step down that doesn't
  * make frames faster (a device held back by something other than pixels) is put
  * back at once, and the pixel ratio isn't lowered again: a blurrier picture that
  * buys nothing is the worst of both. A second is judged by its
@@ -202,6 +231,8 @@ export class ResolutionGovernor {
   dpr: number;
   shadows: boolean;
   grass: boolean;
+  /** The post effects still on (shed one by one, never put back). */
+  readonly post: PostEffects;
   private readonly times = new Float32Array(256);
   private samples = 0;
   private windowStart = -1;
@@ -223,6 +254,7 @@ export class ResolutionGovernor {
     this.dpr = Math.max(tier.minDpr, Math.min(tier.maxDpr, startDpr));
     this.shadows = tier.shadows;
     this.grass = tier.grass > 0;
+    this.post = { ...tier.post };
   }
 
   /** Records one rendered frame's time; every second, maybe acts. Only frames rendered back to back count. */
@@ -252,6 +284,12 @@ export class ResolutionGovernor {
       this.fastWindows = 0;
       if (++this.slowWindows < 2) return "none";
       this.slowWindows = 0;
+      for (const effect of POST_ORDER) {
+        if (this.post[effect]) {
+          this.post[effect] = false;
+          return "drop-post";
+        }
+      }
       if (this.dprHelps && this.dpr > this.tier.minDpr + 1e-6) {
         this.stepped = { from: this.dpr, median };
         this.dpr = Math.max(this.tier.minDpr, Math.round((this.dpr - 0.25) * 100) / 100);

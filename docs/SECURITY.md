@@ -111,6 +111,7 @@ The review also confirmed what held up:
 ## The SANDBOX world (tested)
 
 - **Watching is yours alone.** `/api/world` carries what Galahad is doing and a line of what he says in your chats now and then, so agents are refused; once the bank is in an answer, nothing more from it reaches the world (`packages/node/test/chat-tools.test.ts`).
+- **The weather is one fixed request.** For Denmark's weather the node asks Open-Meteo (DMI's model) at Copenhagen: always the same address, no key, cookies or identifiers, only while someone watches the world and at most every 15 minutes; redirects are refused and the answer is validated before it's used. `GALAHAD_WEATHER=off` turns it off (`packages/node/test/weather.test.ts`).
 - **Sandboxes reach it narrowly.** Starting an experiment needs the sandbox's own gateway token with the `world` scope; its frames need the experiment's key (constant-time). Everything a simulation sends is validated, with caps on bodies, mesh size, frames per second and request size (`packages/node/test/world.test.ts`). It shows things; it can't change anything else.
 
 ## Galahad's chat tools (tested)

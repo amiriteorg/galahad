@@ -15,6 +15,7 @@ import {
   type StreamStatus,
   stationLabel,
   type WorldModel,
+  weatherLabel,
   worldSummary,
 } from "../lib/world.ts";
 import { relativeTime } from "../lib/time.ts";
@@ -31,10 +32,14 @@ import { toast } from "../ui/toast.ts";
  * only when this page opens; this page keeps the stream (GET /api/world, signed,
  * reconnecting), the model, and the HUD. A node that doesn't stream the world yet
  * gets a clearly labelled demo. Leaving the page closes the stream and gives the
- * GPU everything back.
+ * GPU everything back. The sky is the real one over Denmark now (its clock on
+ * the HUD), unless a preset is chosen; the weather is the viewer's choice, kept
+ * in this browser.
  */
 
 const WORLD_MODULE = "/world.js";
+/** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
+const WORLD_API = 3;
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
 type TierName = NonNullable<Parameters<WorldModule["mountWorld"]>[1]["tier"]>;
@@ -46,6 +51,25 @@ const TIME_CHOICES = [
   { value: "night", label: "Night", icon: "moon" },
 ] as const;
 type TimeChoice = (typeof TIME_CHOICES)[number]["value"];
+const WEATHER_CHOICES = [
+  // Denmark's weather now (DMI's model at Copenhagen, from the node); clear while it isn't known.
+  { value: "live", label: "Live", icon: "globe" },
+  { value: "clear", label: "Clear", icon: "sun" },
+  { value: "mist", label: "Mist", icon: "mist" },
+  { value: "rain", label: "Rain", icon: "rain" },
+] as const;
+type WeatherChoice = (typeof WEATHER_CHOICES)[number]["value"];
+/** This viewer's weather (only theirs: it's kept in this browser). */
+const WEATHER_KEY = "galahad.world.weather";
+
+function storedWeather(): WeatherChoice {
+  try {
+    const v = localStorage.getItem(WEATHER_KEY);
+    return WEATHER_CHOICES.some((c) => c.value === v) ? (v as WeatherChoice) : "live";
+  } catch {
+    return "live";
+  }
+}
 
 /** A notice this recent (node's clock) still lights the beacon. */
 const NOTICE_MS = 10 * 60_000;
@@ -63,6 +87,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   let tier: TierName | undefined;
   let forceWebGL = false;
   let gPressed = 0;
+  let timeChoice: TimeChoice = "now";
+  let weatherChoice: WeatherChoice = storedWeather();
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
@@ -74,6 +100,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   const goButton = button("Go to", { icon: "compass", size: "sm", onClick: () => openGoTo() });
   const listButton = button("Experiments", { icon: "flask", size: "sm", onClick: () => togglePanel() });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true });
+  const weatherControl = segmented<WeatherChoice>(WEATHER_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), weatherChoice, (v) => setWeather(v), { label: "Weather", small: true });
+  const clock = h("span", { class: "world-clock tiny tnum", title: "The sky follows the real sun and moon over Denmark" });
   const panel = h("div", { class: "world-panel card", hidden: true });
   const stats = h("div", { class: "world-stats tiny", "aria-hidden": "true" });
   const controls = h(
@@ -87,7 +115,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   const hud = h(
     "div",
     { class: "world-hud" },
-    h("div", { class: "world-top" }, banner, h("div", { class: "world-tools" }, followButton, goButton, listButton, time.el)),
+    h("div", { class: "world-top" }, banner, h("div", { class: "world-tools" }, followButton, goButton, listButton, clock, time.el, weatherControl.el)),
     h("div", { class: "world-bottom" }, panel, h("div", { class: "world-corner" }, controls, stats)),
   );
   const summary = h("div", { class: "sr-only", "aria-live": "polite" });
@@ -130,9 +158,39 @@ export const worldView: View = (root, ctx, { scope }) => {
   setFollow(true);
 
   function setTime(choice: TimeChoice): void {
-    if (!mod) return;
-    handle?.setTimeOfDay(choice === "now" ? null : mod.TIME_PRESETS[choice]);
+    timeChoice = choice;
+    handle?.setTimeOfDay(choice === "now" ? null : choice);
+    showClock();
   }
+
+  /** The chosen weather to the world: a preset, or Denmark's real weather when it's known (clear until then). */
+  function applyWeather(snap = false): void {
+    if (!handle || !mod) return;
+    if (weatherChoice !== "live") handle.setWeather(weatherChoice);
+    else if (model.weather) handle.aimWeather(mod.liveTarget(model.weather), snap);
+    else handle.setWeather("clear");
+  }
+
+  function setWeather(choice: WeatherChoice): void {
+    weatherChoice = choice;
+    applyWeather();
+    showClock();
+    try {
+      localStorage.setItem(WEATHER_KEY, choice);
+    } catch {
+      /* storage off (a private window): the choice lasts this visit */
+    }
+  }
+
+  /** The time in Denmark, whatever the device's zone; a preset says it's showing another light. */
+  function showClock(): void {
+    if (!mod) return;
+    const w = weatherChoice === "live" ? model.weather : null;
+    const now = `${mod.danishTime(Date.now())} in Denmark${w ? ` · ${weatherLabel(w).toLowerCase()}, ${Math.round(w.temperature)} °C` : ""}`;
+    clock.textContent = timeChoice === "now" ? now : `${now} · showing ${TIME_CHOICES.find((c) => c.value === timeChoice)!.label.toLowerCase()}`;
+    clock.title = w ? `${w.place}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${w.source}` : "";
+  }
+  scope.interval(showClock, 15_000);
 
   // ---------- the model ----------
   let hudTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,6 +202,10 @@ export const worldView: View = (root, ctx, { scope }) => {
     if (next === model) return;
     model = next;
     handle?.update(model, event);
+    if ((event.type === "weather" || event.type === "hello") && weatherChoice === "live") {
+      applyWeather();
+      showClock();
+    }
     if (event.type !== "frame" || selected === event.frame.experiment) scheduleHud();
   }
 
@@ -425,7 +487,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   async function loadModule(): Promise<WorldModule | null> {
     try {
       const loaded = (await import(WORLD_MODULE)) as WorldModule;
-      if (loaded.WORLD_API !== 1) throw new Error("version");
+      if (loaded.WORLD_API !== WORLD_API) throw new Error("version");
       return loaded;
     } catch {
       showFallback("The SANDBOX was just updated. Reload the page to open it.", true);
@@ -460,6 +522,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       const mounted = await mod.mountWorld(stage, {
         tier,
         forceWebGL,
+        weather: weatherChoice === "live" ? "clear" : weatherChoice,
         onSelect: (id) => select(id),
         onFollow: (on) => {
           following = on;
@@ -480,6 +543,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       handle.update(model, null);
       handle.select(selected);
       handle.setFollow(following);
+      handle.setTimeOfDay(timeChoice === "now" ? null : timeChoice);
+      applyWeather(true);
+      showClock();
       updateBeacon();
       scope.add(() => handle?.dispose());
     } catch (error) {

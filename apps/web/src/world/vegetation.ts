@@ -19,6 +19,7 @@ import {
 import type { Chunk } from "./land.ts";
 import { type AmbientOcclusion, at, between, chip, groundAO, lumpy, Mesher, type Paint } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
+import { wetDarken, wetSheen } from "./wet.ts";
 import { CHUNK, type Layer, SMALL, STRIDE } from "./terrain.ts";
 import type { Tier } from "./tiers.ts";
 
@@ -610,6 +611,10 @@ export class Vegetation {
       const mat = new MeshLambertNodeMaterial({ vertexColors: true });
       if (stiffness > 0) mat.positionNode = swaying(stiffness);
       if (mask) mat.maskNode = occlusionMask();
+      // Rain darkens rock and bark most, leaves and grass a little, and gives them a sheen.
+      const porosity = stiffness > 0.1 ? 0.35 : stiffness > 0 ? 0.6 : 1;
+      mat.colorNode = wetDarken(porosity);
+      mat.emissiveNode = wetSheen(porosity);
       this.materials.push(mat);
       return mat;
     };

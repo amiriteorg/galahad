@@ -107,9 +107,36 @@ export interface WorldNode {
   sandboxHost: boolean;
 }
 
+/** The weather the world shows: in Denmark (Copenhagen), now, from DMI's model. */
+export type WeatherKind = "clear" | "cloudy" | "overcast" | "mist" | "drizzle" | "rain" | "snow" | "storm";
+
+export interface WorldWeather {
+  kind: WeatherKind;
+  /** Cloud cover, 0–1. */
+  cloud: number;
+  /** Rain or snow, mm an hour. */
+  precipitation: number;
+  /** Metres, when the model gives it. */
+  visibility: number | null;
+  /** Wind at 10 m, m/s. */
+  wind: number;
+  /** °C. */
+  temperature: number;
+  /** Relative humidity, 0–1. */
+  humidity: number;
+  /** The time these conditions are for (ms). */
+  observed: number;
+  /** "Copenhagen". */
+  place: string;
+  /** "DMI HARMONIE via Open-Meteo". */
+  source: string;
+}
+
 export type WorldEvent =
-  /** The whole world as it is now: first, on every (re)connect. */
-  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[] }
+  /** The whole world as it is now: first, on every (re)connect. `weather` is null when it's unknown or turned off. */
+  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null }
+  /** The weather changed (null: no longer known). */
+  | { type: "weather"; at: number; weather: WorldWeather | null }
   /** He moved or started something else. */
   | { type: "galahad"; at: number; galahad: GalahadState }
   /** A line of what he's thinking or saying (short; the world shows it in a bubble). */
