@@ -666,6 +666,17 @@ export class MindStore {
         this.putLww(`connector:${bodyOf(event, "connector.removed").id}`, event, null);
         return null;
       }
+      case "project.set": {
+        if (!isFullNode(signer)) return "only full nodes may set projects";
+        const body = bodyOf(event, "project.set");
+        this.putLww(`project:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "project.removed": {
+        if (!isFullNode(signer)) return "only full nodes may remove projects";
+        this.putLww(`project:${bodyOf(event, "project.removed").id}`, event, null);
+        return null;
+      }
       case "action.requested": {
         if (!isFullNode(signer)) return "only full nodes may file actions";
         const body = bodyOf(event, "action.requested");
@@ -854,6 +865,14 @@ export class MindStore {
 
   remember(signer: NodeIdentity, text: string, opts: { tags?: string[]; prov?: Prov } = {}): GEvent {
     return this.emit(signer, "memory.added", { text, ...(opts.tags?.length ? { tags: opts.tags } : {}) }, opts.prov ?? { trust: "owner" });
+  }
+
+  /** The most recent memories carrying one tag (a project's, say), newest first. */
+  memoriesTagged(tag: string, limit = 10): Memory[] {
+    return this.db
+      .query<MemoryRow, [string, number]>("SELECT m.* FROM v_memories m, json_each(m.tags) t WHERE t.value = ? AND m.forgotten = 0 ORDER BY m.hlc DESC LIMIT ?")
+      .all(tag, limit)
+      .map((row) => ({ ...row, tags: JSON.parse(row.tags) as string[] }));
   }
 
   /** Full-text recall (BM25). An empty query returns the most recent memories. */

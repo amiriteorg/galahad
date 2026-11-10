@@ -5,7 +5,7 @@ import type { AnyScope, WhoAmI } from "./types.ts";
 import type { Scope } from "./ui/dom.ts";
 import type { Signal } from "./ui/signal.ts";
 
-export type Route = "overview" | "inbox" | "chat" | "activity" | "loops" | "artifacts" | "findings" | "trials" | "bank" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "connectors" | "settings";
+export type Route = "overview" | "inbox" | "chat" | "activity" | "loops" | "artifacts" | "findings" | "trials" | "bank" | "projects" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "connectors" | "settings";
 
 export interface NavigateOptions {
   /** A secret detected in chat or memory, handed to the vault form. Kept in memory only, never in the URL. */
@@ -14,6 +14,9 @@ export interface NavigateOptions {
   query?: string;
   /** Something to open on arrival, e.g. "add-key", "invite", "create", "remember", "place", "add-loop", "check". */
   intent?: string;
+  /** A kept chat to open (chat), or a project to show or start a chat in (projects, chat). */
+  conversation?: string;
+  project?: string;
 }
 
 /** Live data shared by the shell and the views, polled while the app is visible. */

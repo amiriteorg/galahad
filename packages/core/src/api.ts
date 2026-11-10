@@ -7,6 +7,7 @@ import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord } from "./trials.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
+import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -175,8 +176,30 @@ export const routes = {
       messages: z.array(ChatMessage).min(1).max(500),
       /** Galahad's tools, within the caller's scopes (default). Quests turn them off: their roles have their own. */
       tools: z.boolean().optional(),
+      /** Keep it in your chat history: a new conversation, or the one named by `conversation` (whose stored history then leads). */
+      save: z.boolean().optional(),
+      conversation: ConversationId.optional(),
+      /** A new conversation's project: its instructions and memories go with every answer. */
+      project: ProjectId.optional(),
+      /** Ask again: the conversation's last exchange is replaced by this one. */
+      retry: z.boolean().optional(),
     }),
   },
+  /** Your chats, kept on this node (yours alone: never an agent's to read). */
+  conversations: { method: "GET", path: "/api/conversations", scope: "chat", input: null },
+  conversation: { method: "POST", path: "/api/conversations/get", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  updateConversation: {
+    method: "POST",
+    path: "/api/conversations/update",
+    scope: "chat",
+    input: z.strictObject({ id: ConversationId, title: z.string().trim().min(1).max(120).optional(), project: ProjectId.nullable().optional(), pinned: z.boolean().optional() }),
+  },
+  /** Gone for good: the node overwrites what it held. */
+  deleteConversation: { method: "POST", path: "/api/conversations/delete", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
+  /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
+  setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
+  removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },
   createInvite: {
     method: "POST",
     path: "/api/invites",
@@ -773,6 +796,8 @@ export interface OrderView {
 
 export type ChatStreamEvent =
   | { type: "model"; ref: string }
+  /** Kept in your history: the conversation this answer belongs to (first, when it's new). */
+  | { type: "conversation"; id: string; title: string; project: string | null }
   | { type: "text"; text: string }
   /** Galahad calls one of his tools (input: a short summary of the arguments). */
   | { type: "tool"; id: string; name: string; title: string; input: string }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -16,7 +16,7 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -49,7 +49,10 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
   roster | roster set <role> <provider/model>...
-  ask [--role planner] [--model provider/model] <prompt>
+  ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] <prompt>
+                                  kept in your chat history (the app's too) unless --temp; --chat goes on with one
+  chats [--project id] | chat <id> | chat rm <id>
+  projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
 Work
@@ -310,6 +313,11 @@ async function main(): Promise<void> {
       owner: { type: "string" },
       title: { type: "string" },
       body: { type: "string" },
+      temp: { type: "boolean" },
+      chat: { type: "string" },
+      project: { type: "string" },
+      instructions: { type: "string" },
+      "instructions-file": { type: "string" },
       base: { type: "string" },
       branch: { type: "string" },
       draft: { type: "boolean" },
@@ -674,13 +682,18 @@ Next:
 
     case "ask": {
       const text = [sub, ...rest].filter(Boolean).join(" ");
-      if (!text) fail("usage: galahad ask <prompt>");
+      if (!text) fail("usage: galahad ask [--chat <id>] [--project <id>] [--temp] <prompt>");
+      // Kept in your history like the app's chats, unless --temp; --chat goes on with one.
+      const continued = str("chat");
       for await (const event of new Admin(home).stream("chat", {
         role: str("role"),
         model: str("model"),
         messages: [{ role: "user", content: text }],
+        ...(continued ? { conversation: continued } : flags.temp ? {} : { save: true }),
+        ...(str("project") && !continued ? { project: str("project") } : {}),
       })) {
-        if (event.type === "text") process.stdout.write(event.text);
+        if (event.type === "conversation") process.stderr.write(dim(`[chat ${event.id}${event.project ? ` · project ${event.project}` : ""}]\n`));
+        else if (event.type === "text") process.stdout.write(event.text);
         else if (event.type === "model") process.stderr.write(dim(`[${event.ref}]\n`));
         else if (event.type === "tool") process.stderr.write(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
         else if (event.type === "tool_result") process.stderr.write(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
@@ -688,6 +701,73 @@ Next:
         else if (event.type === "error") fail(event.error);
       }
       process.stdout.write("\n");
+      return;
+    }
+
+    case "chats": {
+      const { conversations } = await new Admin(home).call<{ conversations: ConversationSummary[] }>("conversations");
+      const shown = conversations.filter((c) => !str("project") || c.project === str("project"));
+      if (!shown.length) console.log(str("project") ? `No chats in ${str("project")}.` : "No chats yet. `galahad ask …` starts one.");
+      for (const c of shown) {
+        console.log(`${c.pinned ? "★ " : "  "}${c.title}  ${dim(`${c.id} · ${c.count} messages · ${new Date(c.updatedAt).toLocaleString()}${c.project ? ` · ${c.project}` : ""}${c.bank ? " · bank" : ""}`)}`);
+      }
+      return;
+    }
+
+    case "chat": {
+      const admin = new Admin(home);
+      if (sub === "rm") {
+        if (!rest[0]) fail("usage: galahad chat rm <id>");
+        if (!flags.yes && !confirm("Delete this chat for good?")) return;
+        const { deleted } = await admin.call<{ deleted: boolean }>("deleteConversation", { id: rest[0] });
+        console.log(deleted ? "Deleted." : "No such chat.");
+        return;
+      }
+      if (!sub) fail("usage: galahad chat <id> | galahad chat rm <id>   (galahad chats lists them)");
+      const { conversation } = await admin.call<{ conversation: ConversationView }>("conversation", { id: sub });
+      console.log(`${bold(conversation.title)}  ${dim(`${conversation.id}${conversation.project ? ` · project ${conversation.project}` : ""}`)}\n`);
+      for (const m of conversation.messages) {
+        if (m.role === "user") console.log(`${bold("You:")} ${m.content}\n`);
+        else {
+          const tools = m.steps.filter((s) => s.kind === "tool").map((s) => (s.kind === "tool" ? s.title : ""));
+          console.log(`${bold("Galahad:")} ${m.content || dim(`(${m.status}${m.error ? `: ${m.error}` : ""})`)}`);
+          console.log(dim(`  ${[m.model, tools.length ? `tools: ${tools.join(", ")}` : null].filter(Boolean).join(" · ")}\n`));
+        }
+      }
+      console.log(dim(`Go on with: galahad ask --chat ${conversation.id} "…"`));
+      return;
+    }
+
+    case "projects": {
+      const { projects } = await new Admin(home).call<{ projects: ProjectView[] }>("projects");
+      if (!projects.length) console.log('No projects yet. `galahad project set <id> --name "…" --instructions "…"` starts one.');
+      for (const p of projects) console.log(`  ${p.id.padEnd(20)} ${p.name}${p.repo ? dim(`  ${p.repo}`) : ""}${p.instructions ? dim(`\n  ${"".padEnd(20)} ${p.instructions.split("\n")[0]!.slice(0, 100)}`) : ""}`);
+      return;
+    }
+
+    case "project": {
+      const admin = new Admin(home);
+      if (sub === "rm") {
+        if (!rest[0]) fail("usage: galahad project rm <id>");
+        if (!flags.yes && !confirm(`Remove project ${rest[0]}? Its chats stay, outside any project.`)) return;
+        await admin.call("removeProject", { id: rest[0] });
+        console.log("Removed.");
+        return;
+      }
+      if (sub !== "set" || !rest[0]) fail('usage: galahad project set <id> --name "…" [--instructions "…" | --instructions-file path] [--repo https://…]   ·   galahad project rm <id>');
+      const file = str("instructions-file");
+      const instructions = file ? readFileSync(file, "utf8") : str("instructions");
+      const { projects } = await admin.call<{ projects: ProjectView[] }>("projects");
+      const existing = projects.find((p) => p.id === rest[0]);
+      const name = str("name") ?? existing?.name;
+      if (!name) fail("a new project needs --name");
+      const { project } = await admin.call<{ project: ProjectView }>("setProject", {
+        id: rest[0],
+        name,
+        ...(instructions !== undefined ? { instructions } : {}),
+        ...(str("repo") !== undefined ? { repo: str("repo") || null } : {}),
+      });
+      console.log(`${bold(project.name)} (${project.id})${project.repo ? `  ${project.repo}` : ""}\n${dim("Chat in it: galahad ask --project " + project.id + ' "…", or the app\'s Projects page.')}`);
       return;
     }
 

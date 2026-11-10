@@ -1,11 +1,13 @@
-import type { ChatMessage } from "@galahad/core";
+import type { ChatMessage, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { duration } from "../lib/time.ts";
+import { filterConversations, groupConversations, stepsOf } from "../lib/chats.ts";
+import { duration, relativeTime } from "../lib/time.ts";
 import { lastRole, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
-import { button, callout, copyText, segmented } from "../ui/controls.ts";
+import { badge, button, callout, copyText, empty, segmented, skeletonRows } from "../ui/controls.ts";
+import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { emblem } from "../ui/emblem.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -64,7 +66,7 @@ const DEFAULT_ROLES: Record<string, RoleSpec> = {
 };
 const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "code", reviewer: "review", swift: "zap" };
 
-// ---- module state: survives navigation, never persisted ----
+// ---- module state: survives navigation; the conversation itself is kept by the node ----
 let turns: Turn[] = [];
 let nextId = 1;
 let controller: AbortController | null = null;
@@ -72,6 +74,82 @@ let draft = "";
 let role = lastRole() ?? "planner";
 let roster: Record<string, RoleSpec> | null = null;
 const changed = new Set<(turn: Turn | null) => void>();
+
+/** The kept conversation on screen (null: a new one, kept from its first answer, unless temporary). */
+interface Current {
+  id: string;
+  title: string;
+  project: string | null;
+  bank: boolean;
+  pinned: boolean;
+}
+let current: Current | null = null;
+/** Not kept anywhere: gone when you start another chat or close the tab. */
+let temporary = false;
+/** The project a new conversation starts in. */
+let startIn: string | null = null;
+/** Your chats and projects, as last fetched. */
+let kept: ConversationSummary[] | null = null;
+let projects: ProjectView[] | null = null;
+const keptChanged = new Set<() => void>();
+
+async function refreshKept(api: Api): Promise<void> {
+  try {
+    kept = (await api.get<{ conversations: ConversationSummary[] }>("/api/conversations")).conversations;
+    const mine = current && kept.find((c) => c.id === current!.id);
+    if (mine) current = { id: mine.id, title: mine.title, project: mine.project, bank: mine.bank, pinned: mine.pinned };
+    for (const fn of keptChanged) fn();
+  } catch {
+    /* a node without chat history yet: chats still work, unkept */
+  }
+}
+
+async function refreshProjects(api: Api): Promise<void> {
+  try {
+    projects = (await api.get<{ projects: ProjectView[] }>("/api/projects")).projects;
+    for (const fn of keptChanged) fn();
+  } catch {
+    /* projects need mind:read */
+  }
+}
+
+/** A kept conversation, back on screen with its answers' steps. */
+export async function openConversation(api: Api, id: string): Promise<void> {
+  if (controller) return;
+  const { conversation } = await api.post<{ conversation: ConversationView }>("/api/conversations/get", { id });
+  turns = conversation.messages.map((m) => {
+    const steps: Step[] =
+      m.role === "assistant"
+        ? stepsOf(m, conversation.role).map((s) => ({
+            icon: s.tool ? toolIcon(s.tool.name) : (STEP_ICON[s.kind] ?? "check"),
+            text: s.text,
+            ...(s.detail ? { detail: s.detail } : {}),
+            state: s.state,
+            ...(s.tool ? { tool: s.tool.id } : {}),
+          }))
+        : [];
+    return {
+      id: nextId++,
+      role: m.role,
+      content: m.content,
+      as: conversation.role,
+      ...(m.model ? { model: m.model } : {}),
+      steps,
+      status: m.status === "streaming" ? "stopped" : m.status,
+      ...(m.error ? { error: m.error } : {}),
+      fallbacks: m.steps.filter((s) => s.kind === "fallback").length,
+      startedAt: m.createdAt,
+      ...(m.endedAt ? { endedAt: m.endedAt } : {}),
+    };
+  });
+  current = { id: conversation.id, title: conversation.title, project: conversation.project, bank: conversation.bank, pinned: conversation.pinned };
+  temporary = false;
+  startIn = null;
+  emit(null);
+  for (const fn of keptChanged) fn();
+}
+
+const STEP_ICON: Record<string, IconName> = { asked: "arrow-up", model: "models", fallback: "alert", answer: "chat", error: "x-circle", stopped: "stop" };
 
 /** For the shell: whether Galahad is answering right now, and with which model. */
 export const chatActivity = signal<{ streaming: boolean; model: string | null }>({ streaming: false, model: null });
@@ -84,24 +162,29 @@ export function stopChat(): void {
   controller?.abort();
 }
 
-/** Clears the conversation; returns a function that restores it (for Undo). */
-export function newConversation(): () => void {
+/** A new conversation (in the same project, unless told otherwise); returns a function that brings the last one back (for Undo). */
+export function newConversation(project: string | null = current?.project ?? startIn): () => void {
   stopChat();
-  const saved = turns;
+  const saved = { turns, current, startIn, temporary };
   turns = [];
+  current = null;
+  startIn = project;
   emit(null);
+  for (const fn of keptChanged) fn();
   return () => {
     if (turns.length) return;
-    turns = saved;
+    ({ turns, current, startIn, temporary } = saved);
     emit(null);
+    for (const fn of keptChanged) fn();
   };
 }
 
-/** "New chat" from anywhere: clears the conversation, and offers Undo when there was one. */
+/** "New chat" from anywhere. A kept chat stays in your history; a temporary one can be brought back once. */
 export function startNewChat(): void {
   if (!turns.length) return;
+  const wasTemporary = temporary && !current;
   const restore = newConversation();
-  toast("Conversation cleared", { action: { label: "Undo", run: restore } });
+  if (wasTemporary) toast("Temporary chat cleared", { action: { label: "Undo", run: restore } });
 }
 
 const toolCount = (turn: Turn): number => turn.steps.filter((s) => s.tool).length;
@@ -112,16 +195,26 @@ function step(turn: Turn, next: Step): void {
   turn.steps.push(next);
 }
 
-async function run(api: Api, turn: Turn): Promise<void> {
+async function run(api: Api, turn: Turn, again = false): Promise<void> {
   controller = new AbortController();
   chatActivity.set({ streaming: true, model: null });
   const history: ChatMessage[] = turns
     .filter((t) => t !== turn && t.content && t.status !== "error" && t.id < turn.id)
     .map((t) => ({ role: t.role, content: t.content }));
+  // A kept conversation: the node holds what was said, so only the question goes. A new one is kept from now (unless temporary).
+  const body = current
+    ? { role: turn.as, conversation: current.id, messages: history.slice(-1), ...(again ? { retry: true } : {}) }
+    : temporary
+      ? { role: turn.as, messages: history }
+      : { role: turn.as, save: true, messages: history, ...(startIn ? { project: startIn } : {}) };
   step(turn, { icon: "arrow-up", text: `Asked as ${turn.as}`, state: "done" });
   try {
-    for await (const event of api.chat({ role: turn.as, messages: history }, controller.signal)) {
-      if (event.type === "model") {
+    for await (const event of api.chat(body, controller.signal)) {
+      if (event.type === "conversation") {
+        current = { id: event.id, title: event.title, project: event.project, bank: false, pinned: false };
+        startIn = null;
+        for (const fn of keptChanged) fn();
+      } else if (event.type === "model") {
         turn.model = event.ref;
         chatActivity.set({ streaming: true, model: event.ref });
         step(turn, { icon: "models", text: `Thinking with ${event.ref}`, state: "active" });
@@ -174,6 +267,7 @@ async function run(api: Api, turn: Turn): Promise<void> {
     controller = null;
     chatActivity.set({ streaming: false, model: null });
     emit(turn);
+    if (current) void refreshKept(api);
   }
 }
 
@@ -194,7 +288,7 @@ function retry(api: Api, turn: Turn): void {
   const again: Turn = { id: nextId++, role: "assistant", content: "", as: role, steps: [], status: "streaming", fallbacks: 0, startedAt: Date.now() };
   turns.push(again);
   emit(null);
-  void run(api, again);
+  void run(api, again, true);
 }
 
 // ---- view ----
@@ -354,8 +448,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       "div",
       { class: "chat-hero" },
       h("div", { class: "hero-mark" }, emblem({ size: 52 })),
-      h("h2", {}, "At your service."),
-      h("p", {}, "Ask anything. Galahad recalls what your fleet remembers. Keys belong in the vault, never here."),
+      h("h2", {}, startIn ? projectName(startIn) : "At your service."),
+      h("p", {}, startIn ? "A new chat in this project: its instructions and memories go with every answer." : "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here."),
       canChat
         ? h(
             "div",
@@ -378,6 +472,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
             ),
           )
         : null,
+      recentChats(),
     );
   }
 
@@ -552,6 +647,166 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   });
   newChat.classList.add("new-chat");
 
+  // ---- your history and projects ----
+  const subHead = h("div", { class: "chat-sub" });
+  const node = ctx.whoami.nodeName ?? "this node";
+  const projectName = (id: string) => projects?.find((p) => p.id === id)?.name ?? id;
+
+  const historyButton = button("Chats", { size: "sm", icon: "clock", label: "Your chats", title: "Your chats", onClick: () => openHistory() });
+  historyButton.classList.add("new-chat");
+  const temporaryButton = button("Temporary", {
+    size: "sm",
+    variant: "ghost",
+    icon: "eye",
+    label: "Temporary chat: not kept",
+    title: "Temporary chat: not kept",
+    onClick: () => {
+      if (controller) return;
+      if (turns.length) newConversation();
+      temporary = !temporary;
+      syncTemporary();
+      renderSub();
+      input.focus();
+    },
+  });
+  temporaryButton.classList.add("new-chat");
+  function syncTemporary(): void {
+    temporaryButton.setAttribute("aria-pressed", String(temporary && !current));
+  }
+
+  async function changeKept(change: { title?: string; project?: string | null; pinned?: boolean }): Promise<void> {
+    if (!current) return;
+    try {
+      await ctx.api.post("/api/conversations/update", { id: current.id, ...change }, scope.signal);
+      Object.assign(current, change);
+      renderSub();
+      void refreshKept(ctx.api);
+    } catch (error) {
+      toast("Couldn't change it", { tone: "error", description: errorMessage(error) });
+    }
+  }
+
+  function rename(): void {
+    if (!current) return;
+    const field = h("input", { class: "input", type: "text", value: current.title, maxlength: 120, "aria-label": "Title" });
+    const sheet = openSheet({
+      title: "Rename this chat",
+      size: "small",
+      body: h("form", { onsubmit: (e: Event) => { e.preventDefault(); const title = field.value.trim(); if (title) void changeKept({ title }); sheet.close(); } }, field),
+      footer: [button("Cancel", { onClick: () => sheet.close() }), button("Save", { variant: "primary", onClick: () => { const title = field.value.trim(); if (title) void changeKept({ title }); sheet.close(); } })],
+      initialFocus: () => field,
+    });
+  }
+
+  function moveToProject(): void {
+    if (!current) return;
+    const select = h("select", { class: "select", "aria-label": "Project" }, h("option", { value: "" }, "No project"), ...(projects ?? []).map((p) => h("option", { value: p.id, selected: p.id === current!.project }, p.name)));
+    const sheet = openSheet({
+      title: "Move to a project",
+      size: "small",
+      description: "Its instructions and memories go with every answer from now on.",
+      body: projects?.length ? select : h("p", { class: "small muted" }, "No projects yet: make one on the Projects page."),
+      footer: [button("Cancel", { onClick: () => sheet.close() }), projects?.length ? button("Move", { variant: "primary", onClick: () => { void changeKept({ project: select.value || null }); sheet.close(); } }) : null],
+    });
+  }
+
+  async function deleteCurrent(): Promise<void> {
+    if (!current) return;
+    const ok = await confirmAction({
+      title: "Delete this chat?",
+      body: [h("p", {}, `"${current.title}" is deleted on ${node} for good, with every answer in it. Memories Galahad made from it stay in the mind.`)],
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await ctx.api.post("/api/conversations/delete", { id: current.id }, scope.signal);
+      newConversation(null);
+      void refreshKept(ctx.api);
+      toast("Chat deleted", { tone: "info" });
+    } catch (error) {
+      toast("Couldn't delete it", { tone: "error", description: errorMessage(error) });
+    }
+  }
+
+  function renderSub(): void {
+    syncTemporary();
+    if (current) {
+      replace(
+        subHead,
+        h("button", { class: "chat-title", type: "button", title: "Rename", onclick: () => rename() }, current.title),
+        current.project
+          ? h("a", { class: "chip", href: "#/projects", onclick: (e: Event) => { e.preventDefault(); ctx.navigate("projects", { project: current!.project! }); } }, icon("folder", { size: 12 }), projectName(current.project))
+          : null,
+        current.bank ? badge("bank", "neutral", "bank") : null,
+        h("span", { class: "spacer" }),
+        button(current.pinned ? "Unpin" : "Pin", { variant: "ghost", size: "sm", iconOnly: true, icon: "pin", onClick: () => void changeKept({ pinned: !current!.pinned }) }),
+        ctx.can("mind:read") ? button("Move to a project", { variant: "ghost", size: "sm", iconOnly: true, icon: "folder", onClick: () => moveToProject() }) : null,
+        button("Delete this chat", { variant: "ghost", size: "sm", iconOnly: true, icon: "trash", onClick: () => void deleteCurrent() }),
+      );
+    } else if (temporary) {
+      replace(subHead, badge("temporary", "warn", "eye"), h("span", { class: "small muted" }, "Not kept: gone when you start another chat or close the app."));
+    } else if (startIn) {
+      replace(
+        subHead,
+        h("span", { class: "chip" }, icon("folder", { size: 12 }), `New chat in ${projectName(startIn)}`),
+        button("Leave the project", { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => { startIn = null; renderSub(); } }),
+      );
+    } else replace(subHead);
+  }
+
+  function chatRow(c: ConversationSummary, after: () => void): HTMLElement {
+    const meta = [c.project ? projectName(c.project) : null, `${c.count} message${c.count === 1 ? "" : "s"}`, relativeTime(c.updatedAt)].filter(Boolean).join(" · ");
+    return h(
+      "button",
+      {
+        class: "item chat-row",
+        type: "button",
+        "aria-current": current?.id === c.id ? "true" : null,
+        onclick: () => {
+          after();
+          openConversation(ctx.api, c.id).catch((error: unknown) => toast("Couldn't open it", { tone: "error", description: errorMessage(error) }));
+        },
+      },
+      h("span", { class: "avatar" }, icon(c.pinned ? "pin" : c.project ? "folder" : "chat", { size: 14 })),
+      h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, meta, c.bank ? h("span", {}, " · bank") : null)),
+    );
+  }
+
+  function openHistory(): void {
+    const search = h("input", { class: "input", type: "search", placeholder: "Search your chats", "aria-label": "Search your chats", autocomplete: "off" });
+    const listHost = h("div", { class: "stack" });
+    const sheet = openSheet({ title: "Your chats", description: `Kept privately on ${node}. Temporary chats aren't kept.`, body: [search, listHost], size: "wide" });
+    const draw = () => {
+      if (!kept) return replace(listHost, skeletonRows(4));
+      const shown = filterConversations(kept, search.value);
+      if (!shown.length) return replace(listHost, empty({ icon: "chat", title: search.value ? "No chat matches" : "No chats yet", body: search.value ? undefined : "Ask something: the conversation is kept here.", compact: true }));
+      replace(
+        listHost,
+        ...groupConversations(shown).map((g) => h("div", { class: "stack tight" }, h("div", { class: "tiny subtle" }, g.label), h("div", { class: "card" }, h("div", { class: "rows" }, ...g.items.map((c) => chatRow(c, () => sheet.close())))))),
+      );
+    };
+    search.addEventListener("input", draw);
+    keptChanged.add(draw);
+    sheet.scope.add(() => keptChanged.delete(draw));
+    draw();
+    void refreshKept(ctx.api);
+  }
+
+  function recentChats(): HTMLElement | null {
+    if (!kept?.length || temporary) return null;
+    const recent = (startIn ? kept.filter((c) => c.project === startIn) : kept).slice(0, 4);
+    if (!recent.length) return null;
+    return h("div", { class: "recent-chats" }, h("div", { class: "tiny subtle" }, startIn ? `Recent in ${projectName(startIn)}` : "Recent"), h("div", { class: "card" }, h("div", { class: "rows" }, ...recent.map((c) => chatRow(c, () => {})))), button("All chats", { variant: "ghost", size: "sm", icon: "clock", onClick: () => openHistory() }));
+  }
+
+  const onKept = () => {
+    renderSub();
+    if (!turns.length) renderAll();
+  };
+  keptChanged.add(onKept);
+  scope.add(() => keptChanged.delete(onKept));
+
   const form = h(
     "form",
     { class: "composer", onsubmit: (event: Event) => submit(event) },
@@ -566,7 +821,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       { class: "chat", "aria-labelledby": "chat-title" },
       h("h1", { id: "chat-title", class: "sr-only" }, "Chat with Galahad"),
       announcer,
-      h("div", { class: "chat-head" }, roleHost, h("span", { class: "spacer" }), newChat),
+      h("div", { class: "chat-head" }, roleHost, h("span", { class: "spacer" }), temporaryButton, historyButton, newChat),
+      subHead,
       thread,
       h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, form),
     ),
@@ -574,8 +830,18 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
 
   changed.add(onChange);
   scope.add(() => changed.delete(onChange));
+  // Arriving for one chat, or to start one in a project.
+  if (opts.conversation && opts.conversation !== current?.id) {
+    openConversation(ctx.api, opts.conversation).catch((error: unknown) => toast("Couldn't open that chat", { tone: "error", description: errorMessage(error) }));
+  } else if (opts.project && !controller && startIn !== opts.project) {
+    if (turns.length) newConversation(opts.project);
+    else startIn = opts.project;
+  }
+  renderSub();
   renderAll();
   renderRoles();
+  void refreshKept(ctx.api);
+  if (ctx.can("mind:read")) void refreshProjects(ctx.api);
   syncComposer();
   grow();
   if (input.value) check();

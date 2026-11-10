@@ -384,6 +384,25 @@ bun galahad order revoke <id>
 
 In the PWA, **Approve and allow similar…** on any request in the Inbox does the same, and the Connectors page lists your orders. A covered call still shows up in your inbox and the ledger, marked with the order that answered it. Orders that delete name exactly one thing (no `*`), every order names where its calls go, and if the connector's tool changes after you sign, the order stops applying until you sign a new one.
 
+## 12½. Chats and projects
+
+Chats are kept on the node you talk to, the app's and the terminal's alike:
+
+```sh
+bun galahad ask "Plan the week"                  # kept; --temp for one that isn't
+bun galahad chats                                # your chats, pinned first
+bun galahad ask --chat <id> "And on Friday?"     # go on with one
+bun galahad chat <id>                            # read it; galahad chat rm <id> deletes it for good
+```
+
+A project is a workspace: instructions Galahad follows in its chats, an optional repository, and its own chats and memories.
+
+```sh
+bun galahad project set rocket --name "Rocket engine" --instructions "SI units. Cite sources." --repo https://github.com/you/rocket
+bun galahad ask --project rocket "Size the nozzle for 5 kN at sea level"
+bun galahad projects
+```
+
 ## 13. Your bank, read-only
 
 Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:

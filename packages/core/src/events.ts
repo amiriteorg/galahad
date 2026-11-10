@@ -4,6 +4,7 @@ import { b64u, fromB64u } from "./bytes.ts";
 import { sha256B64u } from "./crypto.ts";
 import { isHlc } from "./hlc.ts";
 import { type DeviceId, domain, isNodeId, type NodeIdentity, verifyDeviceSignature } from "./identity.ts";
+import { ProjectId } from "./chats.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
@@ -167,6 +168,9 @@ export const Bodies = {
   "notice.dismissed": z.strictObject({ key: NoticeKey }),
   "connector.set": z.strictObject({ id: ConnectorId, manifest: Open }),
   "connector.removed": z.strictObject({ id: ConnectorId }),
+  /** A project: a workspace every node knows (LWW by id). Its instructions steer Galahad, so only you set them. */
+  "project.set": z.strictObject({ id: ProjectId, name: z.string().min(1).max(80), instructions: z.string().max(8000), repo: z.string().url().max(300).optional() }),
+  "project.removed": z.strictObject({ id: ProjectId }),
   /** The outbox: an action the oath says to ask about, recorded before anything is sent. */
   "action.requested": z.strictObject({
     id: ActionId,

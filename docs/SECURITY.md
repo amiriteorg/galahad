@@ -101,6 +101,13 @@ The review also confirmed what held up:
 - **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Every search is ledgered.
 - **Residual risk:** search results and the pages behind them are written by strangers and can carry prompt injection; quests treat them as data, and anything outward still asks you.
 
+## Chat history (tested)
+
+- **Private and local.** Chats are kept on the node you talk to (`chats.db`, mode 600, never replicated), and only you read or keep them: agents and quests are refused (`packages/node/test/chat-tools.test.ts`).
+- **Deleted means gone.** Deleting a chat removes it with SQLite's `secure_delete`, so its words aren't left in the file (tested). Memories Galahad made from it stay in the mind until you forget them.
+- **The bank stays with those who may see it.** A chat where Galahad read the bank is shown only to devices holding `bank:read`.
+- **Project instructions are yours.** They steer Galahad, so setting them needs `brain:write`, which no agent can hold.
+
 ## Galahad's chat tools (tested)
 
 - **An agent's powers, capped by yours.** In chat (the PWA, `galahad ask`) Galahad runs his tools as the agent `galahad`: the caller's scopes minus `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write`. Outward and destructive calls are filed for your approval, memories are `agent`, sandboxes are his own (`packages/node/test/chat-tools.test.ts`). A request from your own device doesn't make the model's choices yours.

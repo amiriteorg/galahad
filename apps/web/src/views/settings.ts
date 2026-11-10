@@ -116,7 +116,7 @@ export const settingsView: View = (root, ctx) => {
           { class: "card rows" },
           h("div", { class: "item" }, icon("key", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "A device key"), h("div", { class: "subtle tiny" }, "In IndexedDB, created non-extractable: it can sign, but nothing can read it out, not even this page."))),
           h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page and chat role, in localStorage. Nothing else."))),
-          h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chat, only while open"), h("div", { class: "subtle tiny" }, "Conversations live in this tab's memory and vanish when you close it. Keys you paste are never kept."))),
+          h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chats: not on this device"), h("div", { class: "subtle tiny" }, "Kept privately on the node you talk to, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept."))),
         ),
       ),
       section(

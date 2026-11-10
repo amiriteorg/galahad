@@ -438,6 +438,15 @@ Coding agents use connectors through MCP (`connectors`, `connector_call`) with t
 
 A covered call is still filed as an action, so it's in your inbox and the ledger. The node that filed it records which order answered it (`order.applied`), and **every replica checks again on replay** that the order existed, was unrevoked and unexpired at that moment, and covers that exact call, before it counts as approved. Only you sign orders (`fleet:admin`, from a terminal or a paired device); agents and nodes never can.
 
+## 10¼. Chat history and projects ✅
+
+| | How |
+|---|---|
+| **History** | A chat is kept on the node that served it, in a private database (`chats.db`, mode 600 in the node's 700 home), never replicated: every device and `galahad ask` see the same history through that node. The chat route takes `save` (keep it, from its first answer), `conversation` (go on with one: the stored history leads, whatever the client sends) and `retry` (the last exchange is replaced). Each answer is kept with its model, fallbacks and tool steps; an answer cut short (an error, a stop, a restart) is kept as such. `secure_delete` overwrites what a deleted chat held. |
+| **Yours alone** | The conversation routes and keeping a chat are for you (a terminal or a paired device), never an agent or a quest. A chat where Galahad read the bank is marked and shown only to devices that may read the bank. |
+| **Projects** | `project.set` / `project.removed` in the mind (LWW by id, full nodes only): a name, instructions, an optional https repository. Setting one needs `brain:write`, which agents can never hold, because its instructions steer Galahad. In a project's chats, the project (name, repository, instructions, its 10 latest memories) goes with every answer after the persona, and what Galahad remembers there is tagged `project:<id>`. Removing a project leaves its chats and memories. |
+| **Surfaces** | The app's Chat (Chats, Temporary, rename, pin, move, delete) and Projects pages; `galahad ask [--project] [--chat] [--temp]`, `galahad chats`, `galahad chat <id>`, `galahad projects`, `galahad project set|rm`. |
+
 ## 10½. The bank, read-only ✅
 
 Your own accounts' balances and transactions, through Enable Banking (PSD2 account information only), for the agents you choose. Setup, the threat model and what couldn't be verified: [BANK](BANK.md).

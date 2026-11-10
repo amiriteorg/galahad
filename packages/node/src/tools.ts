@@ -644,7 +644,7 @@ const CHAT_RESULT_MAX = 30_000;
  * one rule across calls: once the user's private data (the bank) is in the answer,
  * nothing that can carry data out of Galahad runs for the rest of it.
  */
-export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string): ChatTools {
+export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string, opts: { tag?: string } = {}): ChatTools {
   const byName = new Map(tools.map((t) => [t.name, t]));
   let privateIn = false;
   return {
@@ -673,6 +673,8 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
         const why = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ");
         return { content: `Invalid input: ${why}`, isError: true, summary: `invalid input: ${why}`.slice(0, 200) };
       }
+      // In a project, what he remembers carries the project's tag.
+      if (opts.tag && t.name === "remember") parsed.data.tags = [...new Set([...((parsed.data.tags as string[] | undefined) ?? []), opts.tag])];
       try {
         const text = await t.run(api, parsed.data);
         if (t.flow === "private") privateIn = true;
