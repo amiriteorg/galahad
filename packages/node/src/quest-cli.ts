@@ -89,6 +89,9 @@ function print(event: QuestEvent): void {
     case "review":
       console.log(`${bold(`◇ Review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}${event.notes ? `\n${indent(firstLines(event.notes, 6))}` : ""}\n`);
       return;
+    case "retry":
+      console.log(dim(`  (the ${event.role} couldn't answer: ${event.error.split("\n")[0]}; asking again in ${Math.round(event.waitMs / 1000)} s)`));
+      return;
     case "finished":
       return;
   }

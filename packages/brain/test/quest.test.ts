@@ -145,6 +145,51 @@ describe("quests", () => {
     expect(outcome.status).toBe("done");
     expect(engineerSaw[1]!.at(-1)!.content).toContain("sandbox gone");
   });
+
+  test("a model that fails mid-reply (an outage) is asked again after a pause, not the end of the quest", async () => {
+    // Seen live: "The upstream provider is temporarily unavailable" after the reply had begun,
+    // which the roster can't fall back from; the quest died with the work half done.
+    const replies: Record<QuestRole, string[]> = { planner: ["1. x"], engineer: [sh("ls"), "DONE\nok"], reviewer: ["PASS"] };
+    let failures = 2;
+    const pauses: number[] = [];
+    const events: QuestEvent[] = [];
+    const outcome = await runQuest(
+      { goal: "g", environment: "e" },
+      {
+        ask: async (role) => {
+          if (role === "engineer" && failures > 0) {
+            failures -= 1;
+            throw new Error("the engineer could not answer: orcarouter: The upstream provider is temporarily unavailable.");
+          }
+          return { text: replies[role].shift()!, model: "t" };
+        },
+        exec: async () => ({ exitCode: 0, stdout: "ok", stderr: "", durationMs: 1, truncated: false }),
+        emit: (event) => events.push(event),
+        sleep: async (ms) => void pauses.push(ms),
+      },
+    );
+    expect(outcome.status).toBe("done");
+    expect(pauses).toHaveLength(2);
+    expect(pauses[1]!).toBeGreaterThan(pauses[0]!);
+    expect(events.filter((e) => e.type === "retry")).toHaveLength(2);
+  });
+
+  test("a model that keeps failing ends the quest with the error, after a few tries", async () => {
+    let calls = 0;
+    const run = runQuest(
+      { goal: "g", environment: "e" },
+      {
+        ask: async () => {
+          calls += 1;
+          throw new Error("no model in the roster could answer");
+        },
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "", durationMs: 1, truncated: false }),
+        sleep: async () => {},
+      },
+    );
+    await expect(run).rejects.toThrow(/no model in the roster could answer/);
+    expect(calls).toBe(4);
+  });
 });
 
 describe("the protocol", () => {

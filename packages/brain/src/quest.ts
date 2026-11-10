@@ -22,6 +22,8 @@ export interface QuestDeps {
   /** Progress, for whoever is watching. */
   emit?(event: QuestEvent): void;
   signal?: AbortSignal;
+  /** How to wait before asking a model again (tests pass one that doesn't). */
+  sleep?(ms: number): Promise<void>;
 }
 
 export interface QuestOptions {
@@ -70,9 +72,17 @@ export type QuestEvent =
   | { type: "format"; step: number; problem: string }
   | { type: "submitted"; summary: string }
   | { type: "review"; verdict: "pass" | "revise"; notes: string; model: string }
+  | { type: "retry"; role: QuestRole; attempt: number; error: string; waitMs: number }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
+
+/**
+ * A model call that fails (an outage, a reply cut off mid-stream, every model in the role
+ * busy) is asked again after these pauses; only then does the error end the quest. Asking
+ * again is safe: a reply is used only once it's complete.
+ */
+export const ASK_RETRY_DELAYS_MS = [15_000, 60_000, 180_000] as const;
 
 /* ---------- the protocol ---------- */
 
@@ -209,12 +219,29 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const check = (): void => {
     if (deps.signal?.aborted) throw new Stopped();
   };
+  const pause =
+    deps.sleep ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        deps.signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+      }));
   // Every message is redacted before it goes to a model: command output can contain anything.
   const ask = async (role: QuestRole, messages: ChatMessage[]) => {
-    check();
-    const reply = await deps.ask(role, messages.map((m) => ({ role: m.role, content: redact(m.content) })));
-    check();
-    return reply;
+    const redacted = messages.map((m) => ({ role: m.role, content: redact(m.content) }));
+    for (let attempt = 0; ; attempt++) {
+      check();
+      try {
+        const reply = await deps.ask(role, redacted);
+        check();
+        return reply;
+      } catch (error) {
+        if (error instanceof Stopped || deps.signal?.aborted || attempt >= ASK_RETRY_DELAYS_MS.length) throw error;
+        const waitMs = ASK_RETRY_DELAYS_MS[attempt]!;
+        emit({ type: "retry", role, attempt: attempt + 1, error: redact(String((error as Error).message ?? error)).slice(0, 300), waitMs });
+        await pause(waitMs);
+      }
+    }
   };
 
   let plan = "";
