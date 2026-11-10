@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptySky, localHours, skyAt } from "./daynight.ts";
+import { applyWeather, emptyHeavens, emptySky, type Heavens, heavensAt, skyFor, TIME_PRESETS } from "./daynight.ts";
 import { Walker } from "./path.ts";
 import { Boids, criticalDamping, moveOnGround, Particles, rng, springStep } from "./physics.ts";
 import { chooseTier, lowerTier, ResolutionGovernor, TIERS } from "./tiers.ts";
@@ -143,8 +143,9 @@ describe("quality tiers", () => {
     expect(second((t += 1100), 10)).toBe("none");
     expect(g.dpr).toBe(2);
     // Fill-bound, and slow even at the floor: each step down helps, but not enough.
-    for (let i = 0; i < 20; i++) actions.push(second((t += 1100), () => 15 + 40 * (g.dpr / 2) ** 2));
-    expect(actions.filter((a) => a !== "none")).toEqual(["dpr", "dpr", "dpr", "dpr", "drop-shadows", "drop-grass"]);
+    for (let i = 0; i < 26; i++) actions.push(second((t += 1100), () => 15 + 40 * (g.dpr / 2) ** 2));
+    expect(actions.filter((a) => a !== "none")).toEqual(["drop-post", "drop-post", "drop-post", "dpr", "dpr", "dpr", "dpr", "drop-shadows", "drop-grass"]);
+    expect(g.post).toEqual({ ao: false, shafts: false, bloom: false });
     expect(g.dpr).toBe(TIERS.high.minDpr);
     for (let i = 0; i < 12; i++) second((t += 1100), 5);
     expect(g.dpr).toBeGreaterThan(TIERS.high.minDpr);
@@ -170,9 +171,43 @@ describe("quality tiers", () => {
     };
     for (let i = 0; i < 4; i++) second(10);
     const actions: string[] = [];
-    for (let i = 0; i < 12; i++) actions.push(second(26));
-    expect(actions.filter((a) => a !== "none")).toEqual(["dpr", "dpr", "drop-shadows", "drop-grass"]);
+    for (let i = 0; i < 18; i++) actions.push(second(26));
+    expect(actions.filter((a) => a !== "none")).toEqual(["drop-post", "drop-post", "drop-post", "dpr", "dpr", "drop-shadows", "drop-grass"]);
     expect(g.dpr).toBe(2);
+  });
+
+  test("post effects are shed first, dearest first, before the picture gets any blurrier or loses its shadows", () => {
+    const g = new ResolutionGovernor(TIERS.high, 2);
+    let t = 0;
+    const second = (ms: number) => {
+      t += 1100;
+      let action = "none";
+      for (let s = 0; s <= 1000; s += 1000 / 30) {
+        const a = g.frame(t + s, ms);
+        if (a !== "none") action = a;
+      }
+      return action;
+    };
+    for (let i = 0; i < 4; i++) second(10);
+    // Two slow seconds per step: ambient occlusion goes, then the sun's shafts, then bloom; shadows and sharpness stay.
+    const steps: { post: string; dpr: number; shadows: boolean }[] = [];
+    for (let i = 0; i < 3; i++) {
+      second(30);
+      expect(second(30)).toBe("drop-post");
+      steps.push({ post: JSON.stringify(g.post), dpr: g.dpr, shadows: g.shadows });
+    }
+    expect(steps.map((s) => s.post)).toEqual([
+      JSON.stringify({ ao: false, shafts: true, bloom: true }),
+      JSON.stringify({ ao: false, shafts: false, bloom: true }),
+      JSON.stringify({ ao: false, shafts: false, bloom: false }),
+    ]);
+    expect(steps.every((s) => s.dpr === 2 && s.shadows)).toBe(true);
+    // Only then the pixel ratio.
+    second(30);
+    expect(second(30)).toBe("dpr");
+    // Phones and low tiers have none to shed.
+    expect(TIERS.medium.post).toEqual({ ao: false, shafts: false, bloom: false });
+    expect(TIERS.low.post).toEqual({ ao: false, shafts: false, bloom: false });
   });
 
   test("a lower pixel ratio that helps is kept", () => {
@@ -184,7 +219,7 @@ describe("quality tiers", () => {
     };
     for (let i = 0; i < 4; i++) second(() => 10);
     // Fill-bound: frame time follows the pixel count.
-    for (let i = 0; i < 12; i++) second(() => Math.max(12, 30 * (g.dpr / 2) ** 2));
+    for (let i = 0; i < 18; i++) second(() => Math.max(12, 30 * (g.dpr / 2) ** 2));
     expect(g.dpr).toBeLessThan(2);
     expect(g.dpr).toBeGreaterThanOrEqual(TIERS.high.minDpr);
   });
@@ -194,49 +229,126 @@ describe("quality tiers", () => {
   });
 });
 
-describe("day and night", () => {
+describe("day and night, by the real sun", () => {
   const sky = emptySky();
+  const h = emptyHeavens();
+  const DEG = Math.PI / 180;
+  const at = (iso: string) => skyFor(heavensAt(Date.parse(iso), h), sky);
+  const lum = (c: number) => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
+  const warmth = (c: number) => ((c >> 16) & 255) - (c & 255);
 
-  test("the sun rises in the east, is high and south at noon, sets in the west, and is down at night", () => {
-    skyAt(6.5, sky);
-    expect(sky.sun[0]).toBeGreaterThan(0.5);
+  test("the sun rises in the east, is south at noon, sets in the west, and is down at night", () => {
+    at("2026-06-21T03:30:00Z");
+    expect(sky.sun[0]).toBeGreaterThan(0.3);
     expect(sky.sun[2]).toBeGreaterThan(0);
-    skyAt(12.5, sky);
+    expect(sky.evening).toBeLessThan(0.2);
+    at("2026-06-21T11:11:00Z");
     expect(sky.sun[2]).toBeGreaterThan(0.8);
     expect(sky.sun[1]).toBeLessThan(0);
-    skyAt(18.5, sky);
-    expect(sky.sun[0]).toBeLessThan(-0.5);
-    skyAt(1, sky);
+    at("2026-06-21T18:30:00Z");
+    expect(sky.sun[0]).toBeLessThan(-0.3);
+    expect(sky.evening).toBeGreaterThan(0.8);
+    at("2026-12-21T22:00:00Z");
     expect(sky.sun[2]).toBeLessThan(0);
-    expect(sky.moon[2]).toBeGreaterThan(0.3);
     expect(sky.night).toBe(1);
     expect(sky.stars).toBeGreaterThan(0.9);
     expect(sky.lightFromSun).toBe(false);
+    expect(sky.lamps).toBe(1);
   });
 
-  test("days are bright and starless, golden hour is warm, nights are dark; colours change smoothly", () => {
-    skyAt(12.5, sky);
+  test("a winter noon is a long golden hour: low, warm and bright, never drab", () => {
+    at("2026-12-21T11:08:00Z");
+    expect(sky.sunElevation / DEG).toBeLessThan(12);
     expect(sky.night).toBe(0);
-    expect(sky.stars).toBe(0);
-    const noon = sky.lightIntensity;
-    skyAt(18.6, sky);
-    expect(sky.golden).toBeGreaterThan(0.3);
-    expect(((sky.light >> 16) & 255) - (sky.light & 255)).toBeGreaterThan(60);
-    skyAt(23, sky);
-    expect(sky.lightIntensity).toBeLessThan(noon / 3);
-    const lum = (c: number) => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
+    expect(sky.golden).toBeGreaterThan(0.5);
+    expect(sky.lightIntensity).toBeGreaterThan(2);
+    expect(warmth(sky.light)).toBeGreaterThan(40);
+    expect(sky.lamps).toBeLessThan(0.05);
+    // Its light is nearly as strong as a summer noon's, only warmer.
+    const winter = { intensity: sky.lightIntensity, warmth: warmth(sky.light) };
+    at("2026-06-21T11:11:00Z");
+    expect(sky.golden).toBe(0);
+    expect(winter.intensity).toBeGreaterThan(sky.lightIntensity * 0.85);
+    expect(winter.warmth).toBeGreaterThan(warmth(sky.light));
+  });
+
+  test("winter days are short and summer nights stay in twilight", () => {
+    // 16:30 CET in December is dusk going on dark; at the same clock time in June it's broad day.
+    at("2026-12-21T15:30:00Z");
+    expect(sky.night).toBeGreaterThan(0.3);
+    at("2026-06-21T14:30:00Z");
+    expect(sky.night).toBe(0);
+    // Midsummer midnight: the sun is down, but the sky isn't the dead of a winter night.
+    at("2026-06-21T23:15:00Z");
+    expect(sky.lightFromSun).toBe(false);
+    const june = lum(sky.horizon);
+    at("2026-12-21T23:15:00Z");
+    expect(june).toBeGreaterThan(lum(sky.horizon));
+  });
+
+  test("dusk goes golden, then peach and lavender, then deep blue night; smoothly, minute by minute", () => {
+    at("2026-11-10T14:40:00Z");
+    expect(sky.golden).toBeGreaterThan(0.5);
+    expect(warmth(sky.light)).toBeGreaterThan(60);
+    at("2026-11-10T15:40:00Z");
+    expect(sky.lightFromSun).toBe(false);
+    expect(warmth(sky.horizon)).toBeGreaterThan(20);
+    at("2026-11-10T17:40:00Z");
+    expect(sky.night).toBe(1);
     expect(lum(sky.zenith)).toBeLessThan(100);
-    let prev = lum(skyAt(0, sky).horizon);
-    for (let h = 0.05; h < 24; h += 0.05) {
-      const now = lum(skyAt(h, sky).horizon);
-      expect(Math.abs(now - prev)).toBeLessThan(60);
+    const start = Date.parse("2026-11-10T00:00:00Z");
+    let prev = lum(skyFor(heavensAt(start, h), sky).horizon);
+    for (let m = 2; m < 24 * 60; m += 2) {
+      const now = lum(skyFor(heavensAt(start + m * 60_000, h), sky).horizon);
+      expect(Math.abs(now - prev)).toBeLessThan(25);
       prev = now;
     }
-    expect(skyAt(24, sky).zenith).toBe(skyAt(0, sky).zenith);
   });
 
-  test("the local hour comes from the viewer's clock", () => {
-    expect(localHours(new Date(2026, 0, 1, 18, 30))).toBeCloseTo(18.5, 9);
+  test("the night light is the moon when it's up, brighter when it's full, and the sky's glow when it's down", () => {
+    const night = (moonElevation: number, moonLit: number) =>
+      skyFor({ sunElevation: -30 * DEG, sunAzimuth: 0, evening: 1, moonElevation: moonElevation * DEG, moonAzimuth: 180 * DEG, moonLit } satisfies Heavens, sky);
+    night(40, 1);
+    const full = sky.lightIntensity;
+    expect(sky.lightDir[1]).toBeLessThan(-0.5);
+    night(40, 0.05);
+    expect(sky.lightIntensity).toBeLessThan(full);
+    night(-20, 1);
+    expect(sky.moonUp).toBe(0);
+    expect(sky.lightIntensity).toBeGreaterThan(0.2);
+    expect(sky.lightDir[2]).toBeGreaterThan(0.8);
+  });
+
+  test("the presets are places of the sun: dawn low and rising, day high, golden low and sinking, night dark", () => {
+    skyFor(TIME_PRESETS.dawn, sky);
+    expect(sky.evening).toBe(0);
+    expect(sky.golden).toBeGreaterThan(0.5);
+    skyFor(TIME_PRESETS.day, sky);
+    expect(sky.golden).toBe(0);
+    expect(sky.night).toBe(0);
+    skyFor(TIME_PRESETS.golden, sky);
+    expect(sky.golden).toBeGreaterThan(0.8);
+    expect(warmth(sky.light)).toBeGreaterThan(60);
+    skyFor(TIME_PRESETS.night, sky);
+    expect(sky.night).toBe(1);
+    expect(sky.moonUp).toBe(1);
+  });
+
+  test("cloud greys the sky, softens the sun and its shadows, and lowers the exposure; clear changes nothing", () => {
+    skyFor(TIME_PRESETS.day, sky);
+    const clear = { zenith: sky.zenith, light: sky.lightIntensity, exposure: sky.exposure, hemi: sky.hemiIntensity };
+    applyWeather(sky, { cloud: 0.9, rain: 1, mist: 0.2, wetness: 1 });
+    const sat = (c: number) => Math.max((c >> 16) & 255, (c >> 8) & 255, c & 255) - Math.min((c >> 16) & 255, (c >> 8) & 255, c & 255);
+    expect(sat(sky.zenith)).toBeLessThan(sat(clear.zenith) / 2);
+    expect(sky.lightIntensity).toBeLessThan(clear.light / 2);
+    expect(sky.hemiIntensity).toBeGreaterThan(clear.hemi);
+    expect(sky.exposure).toBeLessThan(clear.exposure);
+    expect(sky.shadow).toBeLessThan(0.5);
+    expect(sky.cloud).toBe(0.9);
+    skyFor(TIME_PRESETS.day, sky);
+    const before = JSON.stringify(sky);
+    applyWeather(sky, { cloud: 0, rain: 0, mist: 0, wetness: 0 });
+    expect(JSON.stringify(sky)).toBe(before);
   });
 });
 
