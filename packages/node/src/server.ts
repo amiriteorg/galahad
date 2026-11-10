@@ -1328,10 +1328,12 @@ export function createApp(ctx: AppContext) {
     revokeArm: (input) => ({ revoked: ctx.arms.revoke(input.label) }),
     buildSandboxImage: (input, p) =>
       longRunning(
-        onNode(p, input.on, routes.buildSandboxImage.path, input.lab ? { lab: true } : {}, async () => {
+        onNode(p, input.on, routes.buildSandboxImage.path, input.lab ? { lab: true } : input.gazebo ? { gazebo: true } : {}, async () => {
           const result = input.lab
             ? await ctx.sandbox!.build(`${ctx.sandboxContext!}/lab`, undefined, "galahad/lab:1")
-            : await ctx.sandbox!.build(ctx.sandboxContext!);
+            : input.gazebo
+              ? await ctx.sandbox!.build(`${ctx.sandboxContext!}/gazebo`, undefined, "galahad/gazebo:1")
+              : await ctx.sandbox!.build(ctx.sandboxContext!);
           if (!result.ok) throw new HttpError(500, `image build failed: ${result.output.slice(-400)}`);
           return { ok: true };
         }),

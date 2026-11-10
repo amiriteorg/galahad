@@ -31,7 +31,7 @@ export interface SceneBody {
   shape: BodyShape;
   /** #rrggbb */
   color?: string;
-  /** Never moves (the ground, a table): drawn once. */
+  /** Never moves (the ground, a table): its pose comes in the first frame only (none yet: the plot's origin). */
   fixed?: boolean;
   label?: string;
   /** Leave a trail behind it (aircraft, rockets, an end effector). */
@@ -67,7 +67,7 @@ export interface ExperimentView {
 /** Position x,y,z (metres) and orientation as a unit quaternion w,x,y,z. */
 export type Pose = [number, number, number, number, number, number, number];
 
-/** One frame: every moving body's pose at simulation time t (seconds). */
+/** One frame: every moving body's pose at simulation time t (seconds); the first frame also poses the fixed ones. */
 export interface ExperimentFrame {
   experiment: string;
   t: number;

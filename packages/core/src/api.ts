@@ -69,8 +69,10 @@ export const SandboxRequest = z.strictObject({
    * online sandboxes where the host has microVMs, container otherwise.
    */
   isolation: z.enum(["container", "vm"]).optional(),
-  /** The Lab image: mathematics, physics and engineering (FEniCSx, OpenFOAM, OpenCascade, MuJoCo, ngspice, …). */
+  /** The Lab image: mathematics, physics and engineering (FEniCSx, OpenFOAM, OpenCascade, MuJoCo, JSBSim, RocketPy, ngspice, …). */
   lab: z.boolean().optional(),
+  /** The Gazebo image: robotics simulation (gz-sim 8, headless, DART physics). */
+  gazebo: z.boolean().optional(),
   /** Web search through the gateway (the node's own SearXNG), even without the internet: `websearch <words>`. */
   search: z.boolean().optional(),
 });
@@ -288,7 +290,7 @@ export const routes = {
     method: "POST",
     path: "/api/sandboxes/build",
     scope: "sandbox",
-    input: z.strictObject({ on: NodeRef.optional(), lab: z.boolean().optional() }),
+    input: z.strictObject({ on: NodeRef.optional(), lab: z.boolean().optional(), gazebo: z.boolean().optional() }),
   },
   loops: { method: "GET", path: "/api/loops", scope: "mind:read", input: null },
   setLoop: {

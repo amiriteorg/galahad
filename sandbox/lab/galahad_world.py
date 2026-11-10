@@ -6,8 +6,9 @@
         for t, (x, y, z) in trajectory:
             ex.frame(t, {"bob": (x, y, z, 1, 0, 0, 0)}, metrics={"energy_j": e})
 
-Ready-made: gw.mujoco_run(model) for any MuJoCo model, gw.jsbsim_fly() for an aircraft
-(JSBSim), gw.rocketpy_play(flight) for a RocketPy flight, and gw.demo_arm(),
+Ready-made: gw.mujoco_run(model) for any MuJoCo model, gw.gazebo_run(sdf) for a Gazebo
+world (in the Gazebo image), gw.jsbsim_fly() for an aircraft (JSBSim),
+gw.rocketpy_play(flight) for a RocketPy flight, and gw.demo_arm(), gw.demo_gazebo(),
 gw.demo_plane(), gw.demo_rocket().
 
 Coordinates are metres, z up (x east, y north); orientations are unit quaternions
@@ -31,7 +32,7 @@ import urllib.request
 __all__ = [
     "experiment", "Experiment", "box", "sphere", "capsule", "cylinder", "plane", "mesh", "aircraft", "rocket",
     "quat_from_euler", "quat_multiply", "mujoco_scene", "mujoco_poses", "mujoco_run", "jsbsim_fly", "rocketpy_play",
-    "demo_arm", "demo_plane", "demo_rocket",
+    "gazebo_scene", "gazebo_run", "demo_arm", "demo_plane", "demo_rocket", "demo_gazebo",
 ]
 
 
@@ -321,14 +322,14 @@ def mujoco_scene(model):
     return bodies
 
 
-def mujoco_poses(model, data, scene=None):
-    """Where each moving geom is now (fixed ones are left out)."""
+def mujoco_poses(model, data, scene=None, fixed=False):
+    """Where each moving geom is now; with fixed=True the fixed ones too (the first frame)."""
     import mujoco
 
-    names = None if scene is None else {b["id"] for b in scene if not b.get("fixed")}
+    names = None if scene is None else {b["id"] for b in scene if fixed or not b.get("fixed")}
     poses = {}
     for i in range(model.ngeom):
-        if int(model.geom_bodyid[i]) == 0 or model.geom_rgba[i][3] == 0:
+        if (int(model.geom_bodyid[i]) == 0 and not fixed) or model.geom_rgba[i][3] == 0:
             continue
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i) or f"geom{i}"
         if names is not None and name not in names:
@@ -348,6 +349,7 @@ def mujoco_run(model, data=None, seconds=10.0, control=None, metrics=None, title
     every = max(1, round(1.0 / (fps * model.opt.timestep)))
     extent = float(model.stat.extent) * 2 or None
     with experiment(title, engine="mujoco", scene=scene, extent=extent, plot=plot, speed=speed) as ex:
+        ex.frame(data.time, mujoco_poses(model, data, scene, fixed=True), metrics(model, data) if metrics else None)
         step = 0
         while data.time < seconds:
             if control:
@@ -416,6 +418,199 @@ def demo_arm(seconds=20.0, speed=1.0):
 
     data = mujoco_run(model, data, seconds=seconds, control=control, metrics=metrics, title="Two-link arm tracking a circle", speed=speed, plot="small")
     return data
+
+
+# ---------- Gazebo (gz-sim 8, headless) ----------
+
+def _quat_rotate(q, v):
+    w, x, y, z = q
+    p = quat_multiply(quat_multiply(q, (0.0, *v)), (w, -x, -y, -z))
+    return p[1:]
+
+
+def _pose_of(element):
+    """An SDF <pose> (x y z roll pitch yaw) as (position, quaternion)."""
+    text = element.findtext("pose") if element is not None else None
+    values = [float(v) for v in (text or "").split()] + [0.0] * 6
+    x, y, z, roll, pitch, yaw = values[:6]
+    q = quat_multiply(quat_multiply(_axis(yaw, 0, 0, 1), _axis(pitch, 0, 1, 0)), _axis(roll, 1, 0, 0))
+    return (x, y, z), q
+
+
+def _sdf_color(visual):
+    for tag in ("material/diffuse", "material/ambient"):
+        text = visual.findtext(tag)
+        if text:
+            return _hex([float(v) for v in text.split()][:4])
+    return None
+
+
+def gazebo_scene(sdf_text):
+    """The visuals of an SDF world's inline models as world bodies (<include>d models and meshes aren't drawn), with where each sits on its link."""
+    import xml.etree.ElementTree as ET
+
+    world = ET.fromstring(sdf_text).find("world")
+    if world is None:
+        raise ValueError("no <world> in this SDF")
+    bodies, attach = [], {}
+    for model in world.findall("model"):
+        static = (model.findtext("static") or "").strip() == "true"
+        for link in model.findall("link"):
+            for visual in link.findall("visual"):
+                geometry = visual.find("geometry")
+                if geometry is None or len(geometry) == 0:
+                    continue
+                g = geometry[0]
+                vid = f"{model.get('name')}::{link.get('name')}::{visual.get('name')}"
+                common = {"color": _sdf_color(visual), "fixed": static}
+
+                def nums(tag):
+                    return [float(v) for v in (g.findtext(tag) or "").split()]
+
+                if g.tag == "box":
+                    body = box(vid, *nums("size")[:3], **common)
+                elif g.tag == "sphere":
+                    body = sphere(vid, nums("radius")[0], **common)
+                elif g.tag == "cylinder":
+                    body = cylinder(vid, nums("radius")[0], nums("length")[0], **common)
+                elif g.tag == "capsule":
+                    body = capsule(vid, nums("radius")[0], nums("length")[0], **common)
+                elif g.tag == "plane":
+                    sx, sy = (nums("size") + [20.0, 20.0])[:2]
+                    body = plane(vid, min(sx, 40.0), min(sy, 40.0), **common)
+                else:
+                    continue
+                bodies.append(body)
+                attach[vid] = (model.get("name"), link.get("name"), _pose_of(visual))
+    return bodies, attach
+
+
+def gazebo_run(world, seconds=20.0, title=None, fps=25, speed=1.0, metrics=None, plot="medium", extent=None):
+    """Run a Gazebo world (an SDF file path or SDF text) headlessly for `seconds`, showing its models' visuals in the world. metrics(info, ecm) returns {name: number}."""
+    import tempfile
+    import xml.etree.ElementTree as ET
+
+    # Gazebo writes logs under $HOME; with nowhere writable it crashes, so give it somewhere.
+    if not os.access(os.environ.get("HOME", "/"), os.W_OK):
+        os.environ["HOME"] = tempfile.mkdtemp()
+    import gz.math7  # noqa: F401  (registers the pose types the bindings return)
+    from gz.sim8 import Link, Model, TestFixture, World, world_entity
+
+    inline = world.lstrip().startswith("<")
+    sdf_text = world if inline else open(world, encoding="utf8").read()
+    path = world
+    if inline:
+        handle, path = tempfile.mkstemp(suffix=".sdf")
+        with os.fdopen(handle, "w", encoding="utf8") as f:
+            f.write(sdf_text)
+    scene, attach = gazebo_scene(sdf_text)
+    if not scene:
+        raise ValueError("nothing to draw: the world's models have no box, sphere, cylinder, capsule or plane visuals")
+    root = ET.fromstring(sdf_text).find("world")
+    physics = root.find("physics")
+    step = float(physics.findtext("max_step_size") or 0.001) if physics is not None else 0.001
+    every = max(1, round(1.0 / (fps * step)))
+    iterations = int(round(seconds / step))
+    links, state = {}, {"n": 0, "first": True}
+
+    with experiment(title or f"Gazebo: {root.get('name')}", engine="gazebo", scene=scene, extent=extent or 20.0, plot=plot, speed=speed) as ex:
+        fixture = TestFixture(path)
+
+        def post(info, ecm):
+            state["n"] += 1
+            if not state["first"] and state["n"] % every:
+                return
+            w = World(world_entity(ecm))
+            poses = {}
+            for body in scene:
+                if body.get("fixed") and not state["first"]:
+                    continue
+                model_name, link_name, (vpos, vrot) = attach[body["id"]]
+                key = (model_name, link_name)
+                if key not in links:
+                    links[key] = Link(Model(w.model_by_name(ecm, model_name)).link_by_name(ecm, link_name))
+                pose = links[key].world_pose(ecm)
+                if pose is None:
+                    continue
+                lrot = (pose.rot().w(), pose.rot().x(), pose.rot().y(), pose.rot().z())
+                offset = _quat_rotate(lrot, vpos)
+                poses[body["id"]] = (pose.pos().x() + offset[0], pose.pos().y() + offset[1], pose.pos().z() + offset[2], *quat_multiply(lrot, vrot))
+            state["first"] = False
+            ex.frame(info.sim_time.total_seconds(), poses, metrics(info, ecm) if metrics else None)
+
+        fixture.on_post_update(post)
+        fixture.finalize()
+        fixture.server().run(True, iterations, False)
+    return state["n"]
+
+
+GAZEBO_DEMO = """<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="ramp_and_pendulum">
+    <gravity>0 0 -9.81</gravity>
+    <physics name="2ms" type="ignored"><max_step_size>0.002</max_step_size><real_time_factor>0</real_time_factor></physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <model name="ground"><static>true</static><link name="link">
+      <collision name="c"><geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry></collision>
+      <visual name="v"><geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry><material><diffuse>0.55 0.7 0.55 1</diffuse></material></visual>
+    </link></model>
+    <model name="ramp"><static>true</static><pose>-1 0 0.9 0 0.35 0</pose><link name="link">
+      <collision name="c"><geometry><box><size>4 1.6 0.1</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>4 1.6 0.1</size></box></geometry><material><diffuse>0.85 0.7 0.5 1</diffuse></material></visual>
+    </link></model>
+    PIECES
+    WALLS
+    <model name="post"><static>true</static><pose>3 0 1.25 0 0 0</pose><link name="link">
+      <collision name="c"><geometry><cylinder><radius>0.08</radius><length>2.5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.08</radius><length>2.5</length></cylinder></geometry><material><diffuse>0.4 0.4 0.45 1</diffuse></material></visual>
+    </link></model>
+    <model name="pendulum">
+      <pose>3 0.25 2.4 0 0 0</pose>
+      <link name="upper"><pose>0.35 0 0 0 1.5708 0</pose>
+        <inertial><mass>1</mass><inertia><ixx>0.04</ixx><iyy>0.04</iyy><izz>0.001</izz></inertia></inertial>
+        <visual name="v"><geometry><capsule><radius>0.04</radius><length>0.6</length></capsule></geometry><material><diffuse>0.95 0.6 0.4 1</diffuse></material></visual>
+      </link>
+      <link name="lower"><pose>1.05 0 0 0 1.5708 0</pose>
+        <inertial><mass>1</mass><inertia><ixx>0.04</ixx><iyy>0.04</iyy><izz>0.001</izz></inertia></inertial>
+        <visual name="v"><geometry><capsule><radius>0.04</radius><length>0.6</length></capsule></geometry><material><diffuse>0.7 0.55 0.95 1</diffuse></material></visual>
+      </link>
+      <joint name="hinge" type="revolute"><parent>world</parent><child>upper</child><pose>0 0 -0.35 0 0 0</pose><axis><xyz>0 1 0</xyz></axis></joint>
+      <joint name="knee" type="revolute"><parent>upper</parent><child>lower</child><pose>0 0 -0.35 0 0 0</pose><axis><xyz>0 1 0</xyz></axis></joint>
+    </model>
+  </world>
+</sdf>
+"""
+
+
+def demo_gazebo(seconds=15.0, speed=1.0):
+    """Balls and blocks tumbling down a ramp beside a double pendulum released level, in Gazebo (gz-sim 8, DART physics)."""
+    import random
+
+    rng = random.Random(7)
+    pieces = []
+    colors = ["0.95 0.75 0.4 1", "0.5 0.75 0.95 1", "0.95 0.55 0.65 1", "0.6 0.9 0.7 1"]
+    for i in range(8):
+        x, y, z = -2.4 + 0.35 * i, rng.uniform(-0.5, 0.5), 2.4 + 0.4 * i
+        if i % 2:
+            geometry, inertia = "<box><size>0.25 0.25 0.25</size></box>", "<ixx>0.005</ixx><iyy>0.005</iyy><izz>0.005</izz>"
+        else:
+            geometry, inertia = "<sphere><radius>0.15</radius></sphere>", "<ixx>0.0045</ixx><iyy>0.0045</iyy><izz>0.0045</izz>"
+        pieces.append(
+            f'<model name="piece{i}"><pose>{x:.2f} {y:.2f} {z:.2f} 0 0 0</pose><link name="link">'
+            f"<inertial><mass>0.5</mass><inertia>{inertia}</inertia></inertial>"
+            f'<collision name="c"><geometry>{geometry}</geometry></collision>'
+            f'<visual name="v"><geometry>{geometry}</geometry><material><diffuse>{colors[i % 4]}</diffuse></material></visual></link></model>'
+        )
+    walls = []
+    for name, (x, y, sx, sy) in {"north": (0, 4, 8.2, 0.2), "south": (0, -4, 8.2, 0.2), "east": (4, 0, 0.2, 8.2), "west": (-4, 0, 0.2, 8.2)}.items():
+        size = f"{sx} {sy} 0.4"
+        walls.append(
+            f'<model name="wall_{name}"><static>true</static><pose>{x} {y} 0.2 0 0 0</pose><link name="link">'
+            f'<collision name="c"><geometry><box><size>{size}</size></box></geometry></collision>'
+            f'<visual name="v"><geometry><box><size>{size}</size></box></geometry><material><diffuse>0.78 0.74 0.68 1</diffuse></material></visual></link></model>'
+        )
+    world = GAZEBO_DEMO.replace("PIECES", "\n    ".join(pieces)).replace("WALLS", "\n    ".join(walls))
+    return gazebo_run(world, seconds=seconds, title="Gazebo: a ramp and a double pendulum", speed=speed, extent=9)
 
 
 # ---------- JSBSim: aircraft ----------
@@ -561,8 +756,8 @@ def demo_rocket(speed=1.0):
 
 
 if __name__ == "__main__":
-    demos = {"arm": demo_arm, "plane": demo_plane, "rocket": demo_rocket}
+    demos = {"arm": demo_arm, "plane": demo_plane, "rocket": demo_rocket, "gazebo": demo_gazebo}
     if len(sys.argv) != 2 or sys.argv[1] not in demos:
-        print("usage: python3 -m galahad_world arm|plane|rocket", file=sys.stderr)
+        print("usage: python3 -m galahad_world arm|plane|rocket|gazebo", file=sys.stderr)
         sys.exit(2)
     demos[sys.argv[1]]()

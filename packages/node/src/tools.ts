@@ -85,6 +85,7 @@ const LAB = z
     "The Lab image for mathematics, physics and engineering: numpy/scipy/sympy, FEniCSx (MPI), gmsh, OpenFOAM, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy, Z3. `lab-check` proves each tool.",
   )
   .optional();
+const GAZEBO = z.boolean().describe("The Gazebo image: robotics simulation (gz-sim 8, headless); galahad_world.gazebo_run(sdf) shows a world live").optional();
 const ISOLATION = z
   .enum(["container", "vm"])
   .describe("vm = its own KVM microVM and kernel, for code there's no reason to trust; default: vm for online sandboxes where the host has microVMs")
@@ -227,7 +228,7 @@ export const TOOLS: GalahadTool[] = [
     name: "sandbox_run",
     title: "Run a command in a fresh sandbox",
     description:
-      "Run a shell command in a new, unprivileged, resource-capped container on the fleet's sandbox host, then destroy it. Use for untrusted, heavy or risky code, and for calculations. Optionally give it model access via scoped tokens. Simulations can be shown live in the user's SANDBOX world: Python's galahad_world module (help(galahad_world)) streams MuJoCo models, JSBSim aircraft and RocketPy rockets, or any bodies you pose yourself; `python3 -m galahad_world arm|plane|rocket` runs a demo (lab: true for the simulators; network gateway or online).",
+      "Run a shell command in a new, unprivileged, resource-capped container on the fleet's sandbox host, then destroy it. Use for untrusted, heavy or risky code, and for calculations. Optionally give it model access via scoped tokens. Simulations can be shown live in the user's SANDBOX world: Python's galahad_world module (help(galahad_world)) streams MuJoCo models, JSBSim aircraft and RocketPy rockets, or any bodies you pose yourself; `python3 -m galahad_world arm|plane|rocket` runs a demo (lab: true for MuJoCo, JSBSim and RocketPy; gazebo: true and `python3 -m galahad_world gazebo` for Gazebo; network gateway or online).",
     input: {
       command: z.string().min(1).max(100_000).describe("Shell command, run with sh -c in /work"),
       network: NETWORK,
@@ -235,17 +236,18 @@ export const TOOLS: GalahadTool[] = [
       timeoutSec: z.number().int().min(1).max(3600).optional(),
       isolation: ISOLATION,
       lab: LAB,
+      gazebo: GAZEBO,
       on: NODE,
     },
     routes: ["createSandbox", "execSandbox", "destroySandbox"],
     annotations: { openWorldHint: true },
     flow: "egress",
-    async run(api, { command, network, providers, timeoutSec, isolation, lab, on }) {
+    async run(api, { command, network, providers, timeoutSec, isolation, lab, gazebo, on }) {
       const where = on ? { on } : {};
       const { sandbox } = await api.call<{ sandbox: SandboxView }>("createSandbox", {
         network: network ?? "gateway",
         ...(isolation ? { isolation } : {}),
-        ...(lab ? { lab: true } : {}),
+        ...(lab ? { lab: true } : gazebo ? { gazebo: true } : {}),
         ...(providers?.length ? { providers } : {}),
         ...where,
       });
@@ -269,6 +271,7 @@ export const TOOLS: GalahadTool[] = [
       diskGb: z.number().int().min(1).max(500).describe("Workspace size limit in GB (default 20); /work can't grow past it").optional(),
       isolation: ISOLATION,
       lab: LAB,
+      gazebo: GAZEBO,
       ttlMinutes: z.number().int().min(1).max(1440).optional(),
       providers: z.array(z.string().max(64)).max(8).optional(),
       on: NODE,

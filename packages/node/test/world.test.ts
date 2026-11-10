@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { GatewayTokens } from "@galahad/brain";
 import { STATIONS, type WorldEvent } from "@galahad/core";
-import { gatewayEnv } from "@galahad/sandbox";
+import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
 import { cellAt, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
 
 /*
@@ -135,8 +135,19 @@ describe("galahad_world, in the images", () => {
     const { join } = require("node:path") as typeof import("node:path");
     const repo = join(import.meta.dir, "..", "..", "..");
     const workshop = readFileSync(join(repo, "sandbox", "galahad_world.py"), "utf8");
-    expect(readFileSync(join(repo, "sandbox", "lab", "galahad_world.py"), "utf8")).toBe(workshop);
+    for (const image of ["lab", "gazebo"]) {
+      expect(readFileSync(join(repo, "sandbox", image, "galahad_world.py"), "utf8")).toBe(workshop);
+      expect(readFileSync(join(repo, "sandbox", image, "websearch"), "utf8")).toBe(readFileSync(join(repo, "sandbox", "websearch"), "utf8"));
+    }
     const python = ["python3", "python"].find((p) => Bun.which(p));
-    if (python) expect(Bun.spawnSync([python, "-m", "py_compile", join(repo, "sandbox", "galahad_world.py")]).exitCode).toBe(0);
+    if (python) {
+      for (const file of [join(repo, "sandbox", "galahad_world.py"), join(repo, "sandbox", "gazebo", "gz-check")]) {
+        expect(Bun.spawnSync([python, "-c", `import ast,sys; ast.parse(open(sys.argv[1], encoding="utf8").read())`, file]).exitCode).toBe(0);
+      }
+    }
+  });
+
+  test("Gazebo is one of Galahad's own images: rebuilt when missing, kept from pruning", () => {
+    expect(OWN_IMAGES[GAZEBO_IMAGE]).toEqual({ context: "gazebo", keeper: "galahad-gazebo-image" });
   });
 });

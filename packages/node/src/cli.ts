@@ -77,11 +77,11 @@ Work
                                   open a pull request from a quest's kept changes (the node commits them on
                                   a new branch with the connector's key; the sandbox never holds it)
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
-  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab|--gazebo]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
-  sandbox build [--on ultra] [--lab]   build the sandbox image (or the Lab) on a host
+  sandbox build [--on ultra] [--lab|--gazebo]   build the sandbox image (or the Lab, or Gazebo) on a host
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
@@ -253,6 +253,7 @@ async function main(): Promise<void> {
       vm: { type: "boolean" },
       container: { type: "boolean" },
       lab: { type: "boolean" },
+      gazebo: { type: "boolean" },
       out: { type: "string" },
       workshop: { type: "boolean" },
       gpu: { type: "boolean" },
@@ -1087,9 +1088,9 @@ Evidence: galahad artifact ${i!.artifact}`));
         process.stderr.write(dim(`[exit ${r.exitCode} · ${r.durationMs} ms${r.truncated ? " · output truncated" : ""}]\n`));
       };
       if (sub === "build") {
-        console.log(dim(flags.lab ? "Building the Lab image (the first build takes 10 minutes or more)…" : "Building the sandbox image (first build takes a few minutes)…"));
-        await admin.call("buildSandboxImage", { ...(on ? { on } : {}), ...(flags.lab ? { lab: true } : {}) });
-        console.log(flags.lab ? "Lab image ready." : "Sandbox image ready.");
+        console.log(dim(flags.lab ? "Building the Lab image (the first build takes 10 minutes or more)…" : flags.gazebo ? "Building the Gazebo image (a few minutes the first time)…" : "Building the sandbox image (first build takes a few minutes)…"));
+        await admin.call("buildSandboxImage", { ...(on ? { on } : {}), ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : {}) });
+        console.log(flags.lab ? "Lab image ready." : flags.gazebo ? "Gazebo image ready." : "Sandbox image ready.");
         return;
       }
       const shape = (s: SandboxView) => (s.isolation === "vm" ? "microVM" : "container");

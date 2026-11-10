@@ -447,6 +447,19 @@ A covered call is still filed as an action, so it's in your inbox and the ledger
 | **Projects** | `project.set` / `project.removed` in the mind (LWW by id, full nodes only): a name, instructions, an optional https repository. Setting one needs `brain:write`, which agents can never hold, because its instructions steer Galahad. In a project's chats, the project (name, repository, instructions, its 10 latest memories) goes with every answer after the persona, and what Galahad remembers there is tagged `project:<id>`. Removing a project leaves its chats and memories. |
 | **Surfaces** | The app's Chat (Chats, Temporary, rename, pin, move, delete) and Projects pages; `galahad ask [--project] [--chat] [--temp]`, `galahad chats`, `galahad chat <id>`, `galahad projects`, `galahad project set|rm`. |
 
+## 10⅓. The SANDBOX: Galahad's world ✅
+
+An infinite world in the app where Galahad is visible as he works and every experiment runs on its own plot, live. Details: [WORLD](WORLD.md).
+
+| Part | Where |
+|---|---|
+| Contract | `packages/core/src/world.ts`: world events, experiments, shapes, poses, the keep's stations (fixed coordinates every renderer shares), and the zod checks for what a simulation sends |
+| Hub | `packages/node/src/world-hub.ts`: Galahad's station and doing (from his chats, tools, quests and agents' calls), his last thoughts, experiments on a spiral grid of plots; in memory only |
+| Stream | `GET /api/world`, server-sent events, yours alone (`galahad world [--follow]` in a terminal) |
+| From sandboxes | The `world` gateway scope (every sandbox with a network): start with the sandbox's token, frames with the experiment's own key |
+| In sandboxes | `galahad_world` (Python, in every image): shapes, experiments, MuJoCo, JSBSim and RocketPy adapters (the Lab), Gazebo (its own image, `galahad/gazebo:1`: Ubuntu 24.04, gz-sim 8, headless DART; `gz-check` proves it), demos |
+| Renderer | The app's SANDBOX page (three.js, its own bundle `world.js`, loaded only there) |
+
 ## 10½. The bank, read-only ✅
 
 Your own accounts' balances and transactions, through Enable Banking (PSD2 account information only), for the agents you choose. Setup, the threat model and what couldn't be verified: [BANK](BANK.md).

@@ -7,6 +7,7 @@ import {
   DEFAULT_IMAGE,
   execArgs,
   gatewayEnv,
+  GAZEBO_IMAGE,
   LAB_IMAGE,
   LABEL,
   NETWORKS,
@@ -92,6 +93,8 @@ export interface CreateInput {
   isolation?: "container" | "vm";
   /** The Lab image (mathematics, physics, engineering) instead of the workshop. */
   lab?: boolean;
+  /** The Gazebo image (robotics simulation) instead of the workshop. */
+  gazebo?: boolean;
   /** Web search through the gateway (the node's own SearXNG): `websearch` in the images. */
   search?: boolean;
 }
@@ -247,11 +250,11 @@ export class SandboxHost {
     if (isolation === "vm" && !this.opts.microVMs) {
       throw new SandboxError("this host can't run microVMs: it needs KVM and Kata Containers, which a deploy with sudo installs", 424);
     }
-    const image = input.lab ? LAB_IMAGE : (input.image ?? DEFAULT_IMAGE);
+    const image = input.lab ? LAB_IMAGE : input.gazebo ? GAZEBO_IMAGE : (input.image ?? DEFAULT_IMAGE);
     const own = OWN_IMAGES[image];
     if (own && !(await this.hasImage(image))) {
       // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
-      if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : ""}\``, 424);
+      if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : input.gazebo ? " --gazebo" : ""}\``, 424);
       const built = await this.build(join(this.opts.imageContext, own.context), "rebuilt: the image was missing when a sandbox was needed", image);
       if (!built.ok) throw new SandboxError(`${image} was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
     }

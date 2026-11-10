@@ -403,6 +403,10 @@ bun galahad ask --project rocket "Size the nozzle for 5 kN at sea level"
 bun galahad projects
 ```
 
+## 12¾. Watch Galahad: the SANDBOX
+
+The app's **SANDBOX** page is a world where Galahad walks between the places of his keep as he works, and every experiment he runs stands on its own plot, live. In a terminal: `bun galahad world --follow`. In any sandbox with a network, `python3 -m galahad_world arm|plane|rocket` puts a demo on a plot (the Lab has MuJoCo, JSBSim and RocketPy); `bun galahad sandbox run --gazebo -- python3 -m galahad_world gazebo` runs one in Gazebo. More: [WORLD](WORLD.md).
+
 ## 13. Your bank, read-only
 
 Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:

@@ -108,6 +108,11 @@ The review also confirmed what held up:
 - **The bank stays with those who may see it.** A chat where Galahad read the bank is shown only to devices holding `bank:read`.
 - **Project instructions are yours.** They steer Galahad, so setting them needs `brain:write`, which no agent can hold.
 
+## The SANDBOX world (tested)
+
+- **Watching is yours alone.** `/api/world` carries what Galahad is doing and a line of what he says in your chats now and then, so agents are refused; once the bank is in an answer, nothing more from it reaches the world (`packages/node/test/chat-tools.test.ts`).
+- **Sandboxes reach it narrowly.** Starting an experiment needs the sandbox's own gateway token with the `world` scope; its frames need the experiment's key (constant-time). Everything a simulation sends is validated, with caps on bodies, mesh size, frames per second and request size (`packages/node/test/world.test.ts`). It shows things; it can't change anything else.
+
 ## Galahad's chat tools (tested)
 
 - **An agent's powers, capped by yours.** In chat (the PWA, `galahad ask`) Galahad runs his tools as the agent `galahad`: the caller's scopes minus `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write`. Outward and destructive calls are filed for your approval, memories are `agent`, sandboxes are his own (`packages/node/test/chat-tools.test.ts`). A request from your own device doesn't make the model's choices yours.
