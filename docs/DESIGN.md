@@ -144,7 +144,7 @@ Rules:
 ## Layout and shell
 
 - **Desktop (≥ 960 px):** a sidebar with the wordmark, search (⌘K / Ctrl+K), grouped navigation (Overview, Inbox, Chat · *Mind:* Memory, Activity, Loops · *Bodies:* Fleet, Sandboxes · *Keys & models:* Vault, Models, Connectors), then Settings and this device. It collapses to icons (`[`); the choice is remembered. The top bar carries the fleet status pill and, while Galahad answers, an "Answering… Stop" pill.
-- **Phones:** a solid top bar with the mark (solid, not glass: it sits under the status bar, where see-through content turned into a blur on an iPhone's Home Screen app), and a bottom tab bar with Home, Chat, Inbox and Fleet (or the first four destinations this device may use) plus **More**, a bottom sheet with the rest and search. Safe-area insets are honoured everywhere.
+- **Phones:** a glassy top bar with the mark (in the installed app an opaque strip in the bar's colour covers the status-bar band: iOS 26 colours the status bar from one solid fixed element at the top edge, and draws its own blur over a glass one), and a bottom tab bar with Home, Chat, Inbox and Fleet (or the first four destinations this device may use) plus **More**, a bottom sheet with the rest and search. Safe-area insets are honoured everywhere.
 - The page title appears in the top bar only once the page's own heading has scrolled away (iOS large-title behaviour), so it is never said twice.
 - **Routing** is hash-based (`#/fleet`), so links survive reloads without server routes. `#pair=…` is reserved for invites.
 - **Offline:** the service worker serves the shell; a banner says "You're offline" or "Can't reach Galahad right now" and offers Retry. When a newer app has been fetched in the background, a toast offers **Reload**.

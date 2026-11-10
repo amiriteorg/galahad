@@ -1,13 +1,14 @@
 /*
  * Service worker: keeps the app shell available offline.
- * Shell assets are served from cache and refreshed in the background
- * (stale-while-revalidate), so a new build is picked up on the next load.
+ * The page itself comes from the network first (it carries all the CSS), the
+ * cached copy only when the network is slow or gone. Other shell assets are served
+ * from cache and refreshed in the background (stale-while-revalidate).
  * Anything under /api, /link or /gw is never cached: those are signed,
  * live requests and always go to the network. The pairing bundle (/pair.js)
  * is not cached either: pairing needs the network anyway.
  */
 
-const VERSION = "galahad-shell-v3";
+const VERSION = "galahad-shell-v4";
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 
@@ -72,6 +73,28 @@ async function fromShell(event: FetchEventLike, key: string): Promise<Response> 
   return fresh ?? new Response("Galahad is offline and this page is not cached yet.", { status: 503 });
 }
 
+/** How long opening the app waits for the network before falling back to the cached page. */
+const PAGE_TIMEOUT_MS = 3500;
+
+/**
+ * Opening the app: the page from the network first (it holds all the CSS, so a cached
+ * copy meant the first launch after an update still showed the old look, unannounced),
+ * the cached page when the network is slow or gone.
+ */
+async function page(event: FetchEventLike): Promise<Response> {
+  const cache = await caches.open(VERSION);
+  try {
+    const response = await fetch(event.request, { signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) });
+    if (response.ok) {
+      event.waitUntil(cache.put("/", response.clone()));
+      return response;
+    }
+  } catch {
+    /* slow or offline: the cached page */
+  }
+  return (await cache.match("/")) ?? new Response("Galahad is offline and this page is not cached yet.", { status: 503 });
+}
+
 sw.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -79,7 +102,7 @@ sw.addEventListener("fetch", (event) => {
   if (url.origin !== sw.location.origin) return;
   if (NEVER_CACHE.some((prefix) => url.pathname.startsWith(prefix))) return;
   if (request.mode === "navigate") {
-    event.respondWith(fromShell(event, "/"));
+    event.respondWith(page(event));
     return;
   }
   if (SHELL.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
