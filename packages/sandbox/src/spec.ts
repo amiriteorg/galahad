@@ -58,6 +58,15 @@ export interface SandboxSpec {
 /** A stopped container that keeps the sandbox image in use, so image pruning (Coolify's nightly cleanup) leaves it alone. */
 export const KEEPER = "galahad-sandbox-image";
 
+/** The Lab: mathematics, physics and engineering tools (sandbox/lab/Dockerfile). */
+export const LAB_IMAGE = "galahad/lab:1";
+
+/** Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. */
+export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: string }>> = {
+  [DEFAULT_IMAGE]: { context: ".", keeper: KEEPER },
+  [LAB_IMAGE]: { context: "lab", keeper: "galahad-lab-image" },
+};
+
 export const containerName = (id: string) => `galahad-sbx-${id}`;
 export const volumeName = (id: string) => `galahad-sbx-${id}-work`;
 

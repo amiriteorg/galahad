@@ -162,7 +162,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     try {
       await sandbox.ensureNetworks();
       // Keep the image in use, so pruning (Coolify's nightly cleanup) doesn't take it.
-      void sandbox.keepImage().catch((error) => log(`sandbox image keeper: ${(error as Error).message}`));
+      void sandbox.keepImages().catch((error) => log(`sandbox image keepers: ${(error as Error).message}`));
     } catch (error) {
       log(`sandbox networks unavailable: ${(error as Error).message}`);
       sandbox = null;

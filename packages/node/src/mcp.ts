@@ -69,6 +69,12 @@ const NETWORK = z
   .enum(["isolated", "gateway", "online"])
   .describe("isolated = no network · gateway = model calls only (default) · online = internet + models")
   .optional();
+const LAB = z
+  .boolean()
+  .describe(
+    "The Lab image for mathematics, physics and engineering: numpy/scipy/sympy, FEniCSx (MPI), gmsh, OpenFOAM, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy, Z3. `lab-check` proves each tool.",
+  )
+  .optional();
 const ISOLATION = z
   .enum(["container", "vm"])
   .describe("vm = its own KVM microVM and kernel, for code there's no reason to trust; default: vm for online sandboxes where the host has microVMs")
@@ -192,15 +198,17 @@ export function createMcpServer(opts: McpOptions): McpServer {
         providers: z.array(z.string().max(64)).max(8).describe("Model providers the sandbox may call through the gateway (never raw keys)").optional(),
         timeoutSec: z.number().int().min(1).max(3600).optional(),
         isolation: ISOLATION,
+        lab: LAB,
         on: NODE,
       },
       annotations: { openWorldHint: true },
     },
-    tool(async ({ command, network, providers, timeoutSec, isolation, on }) => {
+    tool(async ({ command, network, providers, timeoutSec, isolation, lab, on }) => {
       const where = on ? { on } : {};
       const { sandbox } = await api.call<{ sandbox: SandboxView }>("createSandbox", {
         network: network ?? "gateway",
         ...(isolation ? { isolation } : {}),
+        ...(lab ? { lab: true } : {}),
         ...(providers?.length ? { providers } : {}),
         ...where,
       });
@@ -229,6 +237,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
         memoryGb: z.number().min(0.25).max(128).optional(),
         diskGb: z.number().int().min(1).max(500).describe("Workspace size limit in GB (default 20); /work can't grow past it").optional(),
         isolation: ISOLATION,
+        lab: LAB,
         ttlMinutes: z.number().int().min(1).max(1440).optional(),
         providers: z.array(z.string().max(64)).max(8).optional(),
         on: NODE,

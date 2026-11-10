@@ -47,10 +47,10 @@ Work
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
-  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
-  sandbox build [--on ultra]      build the sandbox image on a host
+  sandbox build [--on ultra] [--lab]   build the sandbox image (or the Lab) on a host
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
 Loops (work on a schedule, on one node; every run is recorded in the mind)
@@ -206,6 +206,7 @@ async function main(): Promise<void> {
       docker: { type: "boolean" },
       vm: { type: "boolean" },
       container: { type: "boolean" },
+      lab: { type: "boolean" },
       gpu: { type: "boolean" },
       mem: { type: "string" },
       disk: { type: "string" },
@@ -626,13 +627,14 @@ Next:
 
     case "do": {
       const goal = [sub, ...rest].filter(Boolean).join(" ").trim();
-      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
+      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--lab] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
       const network = str("net") ?? "isolated";
       if (!["isolated", "gateway", "online"].includes(network)) fail("--net must be isolated, gateway or online");
       const outcome = await questFromCli(new Admin(home), {
         goal,
         network: network as "isolated" | "gateway" | "online",
         ...(isolation() ? { isolation: isolation() } : {}),
+        ...(flags.lab ? { lab: true } : {}),
         on: str("on"),
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
@@ -666,9 +668,9 @@ Next:
         process.stderr.write(dim(`[exit ${r.exitCode} · ${r.durationMs} ms${r.truncated ? " · output truncated" : ""}]\n`));
       };
       if (sub === "build") {
-        console.log(dim("Building the sandbox image (first build takes a few minutes)…"));
-        await admin.call("buildSandboxImage", { ...(on ? { on } : {}) });
-        console.log("Sandbox image ready.");
+        console.log(dim(flags.lab ? "Building the Lab image (the first build takes 10 minutes or more)…" : "Building the sandbox image (first build takes a few minutes)…"));
+        await admin.call("buildSandboxImage", { ...(on ? { on } : {}), ...(flags.lab ? { lab: true } : {}) });
+        console.log(flags.lab ? "Lab image ready." : "Sandbox image ready.");
         return;
       }
       const shape = (s: SandboxView) => (s.isolation === "vm" ? "microVM" : "container");
@@ -706,6 +708,7 @@ Next:
           ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
           ...(str("disk") ? { diskGb: Number(str("disk")) } : {}),
           ...(isolation() ? { isolation: isolation() } : {}),
+          ...(flags.lab ? { lab: true } : {}),
           ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),

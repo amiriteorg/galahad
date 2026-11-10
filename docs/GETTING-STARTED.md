@@ -198,6 +198,13 @@ bun galahad sandbox rm <id>
 bun galahad ledger                                              # every action, with the oath's verdict
 ```
 
+For mathematics, physics and engineering, give a sandbox or quest **the Lab** (`--lab`): SciPy and SymPy, FEniCSx with MPI, OpenFOAM, gmsh, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy and Z3. `lab-check` inside it proves each tool against a known answer:
+
+```sh
+bun galahad sandbox run --lab --net isolated -- lab-check
+bun galahad do --lab "Find the first three natural frequencies of a 2 m steel cantilever (IPE 200) with FEniCSx and check them against Euler-Bernoulli theory"
+```
+
 On a server with KVM, the deploy also installs Kata Containers, and **online sandboxes run in their own microVM**: the same sandbox inside a lightweight virtual machine with its own kernel, ready in about two seconds. `--vm` asks for a microVM for any sandbox or quest (`galahad do --vm …`), and `--container` for a plain container; `galahad sandbox ls` shows which each one is.
 
 Each sandbox's `/work` is its own disk of `--disk` GB (20 by default), so a runaway job fills its workspace and never the server's disk. Limits need the small root helper that `deploy.sh --sudo` installs; without it, workspaces are unlimited and the heartbeat warns you. The node also keeps the image in use, so cleanup tools that prune unused images (Coolify's nightly cleanup) leave it alone, and it rebuilds the image if it's gone anyway.

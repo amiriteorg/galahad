@@ -18,6 +18,8 @@ export interface DoOptions {
   network: SandboxNetwork;
   /** container or vm; default: the host decides (online code in a microVM where it can). */
   isolation?: "container" | "vm";
+  /** Work in the Lab (mathematics, physics, engineering) instead of the workshop. */
+  lab?: boolean;
   on?: string;
   maxSteps?: number;
   commandTimeoutSec?: number;
@@ -43,7 +45,12 @@ function environment(sandbox: SandboxView, host: string): string {
   return [
     `a Debian Linux sandbox on ${host}${sandbox.isolation === "vm" ? ", inside its own KVM microVM" : ""}: unprivileged user, no sudo, no package installs via apt.`,
     "Workspace /work (kept for the whole quest); /tmp is scratch.",
-    "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
+    sandbox.image.includes("/lab")
+      ? "The Lab: python3 at /opt/lab with numpy, scipy, sympy, mpmath, pandas, statsmodels, matplotlib (save figures to files), Pint, uncertainties, SALib; " +
+        "FEniCSx (dolfinx, PETSc, MPI: mpirun), gmsh, scikit-fem, OpenSees; build123d on OpenCascade (STEP/STL); MuJoCo; CoolProp, Cantera; " +
+        "python-control, cvxpy, Z3; OpenFOAM (run its commands as `openfoam blockMesh` etc.; tutorials listed by `openfoam`); ngspice; Octave; Maxima; " +
+        "gcc, gfortran, cmake, bun 1.4.4. `lab-check` proves each tool against a known answer."
+      : "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
     `Network: ${NETWORK[sandbox.network]}.`,
     `Limits: ${sandbox.cpus} CPUs, ${sandbox.memoryGb} GB of memory.`,
   ].join(" ");
@@ -103,6 +110,7 @@ export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: 
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
     ...(options.isolation ? { isolation: options.isolation } : {}),
+    ...(options.lab ? { lab: true } : {}),
     quest,
     ...(options.on ? { on: options.on } : {}),
   });

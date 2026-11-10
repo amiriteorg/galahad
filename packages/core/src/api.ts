@@ -64,6 +64,8 @@ export const SandboxRequest = z.strictObject({
    * online sandboxes where the host has microVMs, container otherwise.
    */
   isolation: z.enum(["container", "vm"]).optional(),
+  /** The Lab image: mathematics, physics and engineering (FEniCSx, OpenFOAM, OpenCascade, MuJoCo, ngspice, …). */
+  lab: z.boolean().optional(),
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
@@ -249,7 +251,12 @@ export const routes = {
       quest: z.string().max(64).optional(),
     }),
   },
-  buildSandboxImage: { method: "POST", path: "/api/sandboxes/build", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
+  buildSandboxImage: {
+    method: "POST",
+    path: "/api/sandboxes/build",
+    scope: "sandbox",
+    input: z.strictObject({ on: NodeRef.optional(), lab: z.boolean().optional() }),
+  },
   loops: { method: "GET", path: "/api/loops", scope: "mind:read", input: null },
   setLoop: {
     method: "POST",

@@ -1,3 +1,5 @@
 * text=auto
 *.sh text eol=lf
 sandbox/galahad-workspace text eol=lf
+# Everything under sandbox/ runs on Linux (scripts, Dockerfiles): LF from any checkout.
+sandbox/** text eol=lf

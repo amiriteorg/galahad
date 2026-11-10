@@ -234,6 +234,15 @@ UNIT
   if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
     if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/sandbox:1 "$APP/sandbox" >/dev/null; then
       echo "→ sandbox image ready (galahad/sandbox:1)"
+      # The Lab (mathematics, physics, engineering): long to build the first time, cached after.
+      echo "→ building the Lab image (the first build takes 10 minutes or more)"
+      if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/lab:1 "$APP/sandbox/lab" >/dev/null; then
+        LAB=$(docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 --mount type=volume,dst=/work \
+          --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true --network none galahad/lab:1 lab-check 2>/dev/null | tail -1)
+        echo "→ Lab image ready: ${LAB:-lab-check gave no report}"
+      else
+        echo "Lab image build failed; sandboxes still work, without the Lab" >&2
+      fi
       if [[ -e /usr/local/bin/containerd-shim-kata-v2 ]]; then
         GUEST=$(docker run --rm --runtime io.containerd.kata.v2 --network none --user 1000:1000 galahad/sandbox:1 uname -r 2>&1 | tail -1)
         [[ -n $GUEST && $GUEST != "$(uname -r)" ]] && echo "→ microVM check: a sandbox booted its own kernel ($GUEST)" || echo "microVM check failed: $GUEST" >&2

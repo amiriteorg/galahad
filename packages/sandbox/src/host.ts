@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { type ActionClass, type Decision, decide, type ExecResult, randomBytes, redact, type SandboxView } from "@galahad/core";
 import {
   chooseIsolation,
@@ -6,10 +7,11 @@ import {
   DEFAULT_IMAGE,
   execArgs,
   gatewayEnv,
-  KEEPER,
+  LAB_IMAGE,
   LABEL,
   NETWORKS,
   networkCreateArgs,
+  OWN_IMAGES,
   runArgs,
   type SandboxSpec,
   volumeName,
@@ -62,7 +64,7 @@ export interface SandboxHostOptions {
   maxDiskGb?: number;
   /** Size-limited workspaces; null or absent: /work is an unlimited Docker volume (the heartbeat says so). */
   workspaces?: Workspaces | null;
-  /** Where the sandbox image's Dockerfile lives, so a missing image is rebuilt instead of failing. */
+  /** The sandbox directory (its Dockerfile, and lab/ for the Lab), so a missing image is rebuilt instead of failing. */
   imageContext?: string;
   /** Whether this host runs KVM microVMs (Kata installed, /dev/kvm present). */
   microVMs?: boolean;
@@ -87,6 +89,8 @@ export interface CreateInput {
   diskGb?: number;
   /** container or vm; default: vm for online sandboxes where this host has microVMs. */
   isolation?: "container" | "vm";
+  /** The Lab image (mathematics, physics, engineering) instead of the workshop. */
+  lab?: boolean;
 }
 
 export class SandboxError extends Error {
@@ -138,7 +142,7 @@ export class SandboxHost {
   private readonly tokenStore: SandboxTokenStore;
   /** Workspaces made for a sandbox that hasn't started yet (so a cleanup never takes them). */
   private readonly creating = new Set<string>();
-  private building: Promise<{ ok: boolean; output: string }> | null = null;
+  private readonly building = new Map<string, Promise<{ ok: boolean; output: string }>>();
 
   constructor(private readonly opts: SandboxHostOptions) {
     this.bin = opts.docker ?? "docker";
@@ -180,27 +184,34 @@ export class SandboxHost {
     }
   }
 
-  async build(contextDir: string, why?: string): Promise<{ ok: boolean; output: string }> {
-    // One build at a time: two quests that both find the image missing wait for the same build.
-    this.building ??= (async () => {
-      const result = await this.docker(["build", "--pull", "-t", DEFAULT_IMAGE, contextDir], 20 * 60_000);
-      this.opts.ledger({
-        class: "create",
-        resource: "docker.image",
-        target: DEFAULT_IMAGE,
-        verdict: "allow",
-        ...(result.code === 0 ? (why ? { detail: why } : {}) : { detail: "build failed" }),
-      });
-      if (result.code === 0) await this.keepImage();
-      return { ok: result.code === 0, output: (result.code === 0 ? result.stdout : result.stderr).slice(-4000) };
-    })().finally(() => {
-      this.building = null;
-    });
-    return this.building;
+  async build(contextDir: string, why?: string, image = DEFAULT_IMAGE): Promise<{ ok: boolean; output: string }> {
+    // One build per image at a time: two quests that both find it missing wait for the same build.
+    let pending = this.building.get(image);
+    if (!pending) {
+      pending = (async () => {
+        const result = await this.docker(["build", "--pull", "-t", image, contextDir], 60 * 60_000);
+        this.opts.ledger({
+          class: "create",
+          resource: "docker.image",
+          target: image,
+          verdict: "allow",
+          ...(result.code === 0 ? (why ? { detail: why } : {}) : { detail: "build failed" }),
+        });
+        if (result.code === 0) await this.keepImage(image);
+        return { ok: result.code === 0, output: (result.code === 0 ? result.stdout : result.stderr).slice(-4000) };
+      })().finally(() => this.building.delete(image));
+      this.building.set(image, pending);
+    }
+    return pending;
   }
 
-  private async hasImage(): Promise<boolean> {
-    return (await this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"])).code === 0;
+  private async hasImage(image = DEFAULT_IMAGE): Promise<boolean> {
+    return (await this.docker(["image", "inspect", image, "--format", "{{.Id}}"])).code === 0;
+  }
+
+  /** Keep every one of Galahad's images that's built here. */
+  async keepImages(): Promise<void> {
+    for (const image of Object.keys(OWN_IMAGES)) await this.keepImage(image);
   }
 
   /**
@@ -208,13 +219,15 @@ export class SandboxHost {
    * (Coolify's nightly cleanup prunes every unused image) leaves it alone.
    * Idempotent; points the keeper at the image's current build.
    */
-  async keepImage(): Promise<boolean> {
-    const image = (await this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"])).stdout.trim();
+  async keepImage(tag = DEFAULT_IMAGE): Promise<boolean> {
+    const keeper = OWN_IMAGES[tag]?.keeper;
+    if (!keeper) return false;
+    const image = (await this.docker(["image", "inspect", tag, "--format", "{{.Id}}"])).stdout.trim();
     if (!image) return false;
-    const kept = (await this.docker(["container", "inspect", KEEPER, "--format", "{{.Image}}"])).stdout.trim();
+    const kept = (await this.docker(["container", "inspect", keeper, "--format", "{{.Image}}"])).stdout.trim();
     if (kept === image) return true;
-    if (kept) await this.docker(["rm", "--force", KEEPER]);
-    const made = await this.docker(["create", "--name", KEEPER, "--label", `${LABEL}.keeper=1`, "--network", "none", DEFAULT_IMAGE, "true"]);
+    if (kept) await this.docker(["rm", "--force", keeper]);
+    const made = await this.docker(["create", "--name", keeper, "--label", `${LABEL}.keeper=1`, "--network", "none", tag, "true"]);
     return made.code === 0;
   }
 
@@ -231,12 +244,13 @@ export class SandboxHost {
     if (isolation === "vm" && !this.opts.microVMs) {
       throw new SandboxError("this host can't run microVMs: it needs KVM and Kata Containers, which a deploy with sudo installs", 424);
     }
-    const image = input.image ?? DEFAULT_IMAGE;
-    if (image === DEFAULT_IMAGE && !(await this.hasImage())) {
+    const image = input.lab ? LAB_IMAGE : (input.image ?? DEFAULT_IMAGE);
+    const own = OWN_IMAGES[image];
+    if (own && !(await this.hasImage(image))) {
       // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
-      if (!this.opts.imageContext) throw new SandboxError("the sandbox image is not built on this node yet: run `galahad sandbox build`", 424);
-      const built = await this.build(this.opts.imageContext, "rebuilt: the image was missing when a sandbox was needed");
-      if (!built.ok) throw new SandboxError(`the sandbox image was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
+      if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : ""}\``, 424);
+      const built = await this.build(join(this.opts.imageContext, own.context), "rebuilt: the image was missing when a sandbox was needed", image);
+      if (!built.ok) throw new SandboxError(`${image} was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
     }
     const diskGb = input.diskGb ?? DEFAULT_DISK_GB;
     const maxDiskGb = this.opts.maxDiskGb ?? 200;
