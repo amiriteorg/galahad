@@ -328,7 +328,8 @@ describe("the SANDBOX, live", () => {
     expect((await call("worldReport", report, home.adminToken())).status).toBe(200);
     expect((await call("worldReport", { ...report, session: "x" }, home.adminToken())).status).toBe(400);
     const { reports } = (await (await call("worldReports", undefined, home.adminToken())).json()) as { reports: { device: string; events: unknown[] }[] };
-    expect(reports[0]).toMatchObject({ device: "a terminal", backend: "webgpu", events: [{ kind: "lost" }] });
+    // A terminal's requests are the node's own: the report carries the node's name.
+    expect(reports[0]).toMatchObject({ device: "chat-node", backend: "webgpu", events: [{ kind: "lost" }] });
     const { token } = (await (await call("mintArm", { label: "snoop" }, home.adminToken())).json()) as { token: string };
     expect((await call("worldReports", undefined, token)).status).toBe(403);
   });

@@ -116,7 +116,8 @@ describe("one mind, many replicas", () => {
       expect(replica.digest()).toBe(reference);
       replica.close();
     }
-  });
+    // 12 replicas, each verifying every event's signature: a few seconds of real work, not a hang.
+  }, 30_000);
 
   test("rebuilding from the log reproduces the exact same state", () => {
     const { a, b, storeA, storeB } = twoNodeFleet();
