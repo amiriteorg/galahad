@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { randomId, redact, sha256B64u } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { resolveProvider } from "./providers.ts";
+import { keyHeaders, resolveProvider } from "./providers.ts";
 
 /*
  * The model gateway: how arms (OpenCode, Claude Code, Codex, Hermes, sandboxes)
@@ -135,10 +135,7 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  if (provider.apiKey) {
-    if (provider.kind === "anthropic") headers.set("x-api-key", provider.apiKey);
-    else headers.set("authorization", `Bearer ${provider.apiKey}`);
-  }
+  for (const [name, value] of Object.entries(keyHeaders(provider))) headers.set(name, value);
   const target = `${provider.baseUrl.replace(/\/$/, "")}/${rest}${url.search}`;
   const upstream = await (ctx.fetch ?? fetch)(target, {
     method: request.method,

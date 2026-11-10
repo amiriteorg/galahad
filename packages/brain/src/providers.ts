@@ -27,6 +27,12 @@ export const PRESETS: ProviderPreset[] = [
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },
   {
+    id: "cloudflare-ai",
+    kind: "openai",
+    baseUrl: "",
+    note: "Cloudflare AI Gateway's OpenAI-compatible endpoint: --base-url https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat. The key is the gateway's token; the providers' own keys stay stored in Cloudflare. Models are named <provider>/<model>, e.g. deepseek/deepseek-chat.",
+  },
+  {
     id: "verda",
     kind: "openai",
     baseUrl: "",
@@ -131,15 +137,25 @@ export function providerViews(store: MindStore, vault: Vault): ProviderView[] {
   }));
 }
 
+/** Hosts whose OpenAI-compatible endpoint takes the key in a header of its own. */
+const KEY_HEADERS: Record<string, string> = {
+  // Cloudflare AI Gateway: the gateway's token goes in cf-aig-authorization, and no Authorization
+  // header at all, so Cloudflare adds the provider key you stored with it (an Authorization
+  // header would be forwarded to the provider as its key).
+  "https://gateway.ai.cloudflare.com": "cf-aig-authorization",
+};
+
+/** The headers that carry a provider's key, by its protocol and host. */
+export function keyHeaders(provider: { kind: ProviderKind; baseUrl: string; apiKey: string | null }): Record<string, string> {
+  if (!provider.apiKey) return {};
+  if (provider.kind === "anthropic") return { "x-api-key": provider.apiKey };
+  return { [KEY_HEADERS[originOf(provider.baseUrl) ?? ""] ?? "authorization"]: `Bearer ${provider.apiKey}` };
+}
+
 /** Ask a provider which models it serves (OpenAI-style and Anthropic `/v1/models`). */
 export async function listModels(provider: ResolvedProvider, fetchImpl: typeof fetch = fetch): Promise<string[]> {
   const url = provider.kind === "anthropic" ? `${provider.baseUrl}/v1/models?limit=100` : `${provider.baseUrl}/models`;
-  const headers: Record<string, string> =
-    provider.kind === "anthropic"
-      ? { "x-api-key": provider.apiKey ?? "", "anthropic-version": "2023-06-01" }
-      : provider.apiKey
-        ? { authorization: `Bearer ${provider.apiKey}` }
-        : {};
+  const headers: Record<string, string> = { ...keyHeaders(provider), ...(provider.kind === "anthropic" ? { "anthropic-version": "2023-06-01" } : {}) };
   const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(provider.local ? 1500 : 10_000) });
   if (!response.ok) throw new Error(`${provider.id} /models → ${response.status}`);
   const json = (await response.json()) as { data?: { id: string }[] };

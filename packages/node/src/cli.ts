@@ -989,6 +989,8 @@ Evidence: galahad artifact ${i!.artifact}`));
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),
           ...(on ? { on } : {}),
+          // Web search wherever there's a network (`websearch` in the sandbox).
+          ...((str("net") ?? "gateway") !== "isolated" ? { search: true } : {}),
         });
         const where = on ?? "the best sandbox host";
         process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${shape(sandbox)} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${diskOf(sandbox)}]\n`));

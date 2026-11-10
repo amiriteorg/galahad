@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import type { ResolvedProvider } from "./providers.ts";
+import { keyHeaders, type ResolvedProvider } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -48,7 +48,7 @@ export async function* streamOpenAICompatible(input: CompletionInput): AsyncGene
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(input.provider.apiKey ? { authorization: `Bearer ${input.provider.apiKey}` } : {}),
+      ...keyHeaders(input.provider),
     },
     body: JSON.stringify({
       model: input.model,
