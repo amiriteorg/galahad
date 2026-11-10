@@ -82,6 +82,7 @@ Event kinds today:
 | `notice.raised` / `notice.cleared` / `notice.dismissed` | What needs you (LWW by key) |
 | `connector.set` / `connector.removed` | Connector manifests (LWW by id) |
 | `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
+| `order.set` / `order.revoked` / `order.applied` | Standing orders: signed once and never changed (revoke and sign anew); which order answered which action, re-checked by every replica |
 
 Open-ended parts of an event (a loop's task, a connector's manifest, a call's arguments) are loosely typed in the log and strictly validated by the API and the runner, so what a newer node writes never makes an older one refuse the event.
 
@@ -206,7 +207,7 @@ Live load (CPU, free memory, battery) travels with sync as *presence* and never 
 | delete | **ask**, except cleaning up *ephemeral* things the same quest created |
 | forbidden | **deny** |
 
-Standing orders that you sign can pre-approve a narrow class, for example `git.push` to `amiriteorg/*#feat/*` until a given date. The gate decides every connector call (§10), and its questions wait for you in the inbox. 🔜 Signed standing orders in the mind, and the gate on git pushes made inside sandboxes, are M2.
+The gate decides every connector call (§10), and its questions wait for you in the inbox. **Standing orders** (§10) are answers you give in advance: one tool, narrowed arguments, an expiry, signed into the mind and checked again by every replica. 🔜 The gate on git pushes made inside sandboxes is M2.
 
 **Engineering shape, adopted from T3 Code:**
 
@@ -220,15 +221,21 @@ Any node with Docker is a **sandbox host**; ultra is the first. A sandbox is whe
 
 | Property | How |
 |---|---|
-| **Unprivileged** | uid 1000, `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`, its own workspace volume. No host mounts and no Docker socket. |
-| **Bounded** | CPU, memory (no swap) and process limits. Every command runs under an in-container `timeout --signal=KILL`, so a stuck task can't outlive its deadline. |
+| **Unprivileged** | uid 1000, `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`, its own workspace. No other host path and no Docker socket. |
+| **Bounded** | CPU, memory (no swap), process and **disk** limits. `/work` is the sandbox's own fixed-size ext4 image (20 GB by default; sparse, so it takes only what's written), so a runaway job fills its own workspace, never the host's disk. Every command runs under an in-container `timeout --signal=KILL`, so a stuck task can't outlive its deadline. |
 | **Networked by intent** | `isolated`: no network. **`gateway`** (the default): a Docker `--internal` network whose only reachable host service is a sandbox-only model gateway on the bridge IP. UFW allows exactly one port on `galahad0`. `online`: egress plus the gateway. Sandboxes can't reach each other: inter-container traffic is disabled on both networks. |
 | **Keys stay home** | A sandbox that may use models gets a gateway token scoped to the providers you chose. It expires with the sandbox and is revoked on destroy. The sandbox never holds a provider key. |
 | **Accountable** | Every create, exec and destroy is a signed `ledger.recorded` event in the mind, readable from any device (`galahad ledger`). |
 | **Oath-gated cleanup** | The TTL reaper may destroy *ephemeral* sandboxes on behalf of the quest that created them. Destroying a *persistent* sandbox asks first. A request from you counts as the approval. |
 | **Fleet-wide** | `galahad sandbox run -- …` on any device is placed on the best sandbox host, or pinned with `--on ultra`. It's forwarded as a signed node-to-node request. A forwarded request always runs where it lands, so work can never bounce between nodes. |
 
-Network reachability was verified on ultra before it was built. From an internal-network container, the gateway port is reachable only once the UFW rule exists. The internet, Coolify (8080) and Galahad's local port (7777) all stay blocked. 🔜 Next: KVM microVMs for code we have no reason to trust, per-sandbox disk quotas, and an egress allowlist for `online`.
+Network reachability was verified on ultra before it was built. From an internal-network container, the gateway port is reachable only once the UFW rule exists. The internet, Coolify (8080) and Galahad's local port (7777) all stay blocked.
+
+**Disk.** Mounting a workspace image needs root, and the node has none: its service runs with `NoNewPrivileges` and a read-only view of the system. So `deploy.sh --sudo` installs a small root helper, `galahad-workspace` (in `sandbox/`), that systemd starts once per connection on `/run/galahad-workspace.sock`, a socket only the galahad user may open. It accepts four commands (create, remove, stats, ping), takes nothing but a 10-hex-digit id and a size, and builds every path itself under a root-only directory. An unmounted mountpoint is mode 000, so a container started without its workspace can't write to the host's disk through it. A **budget** guards the host: a sandbox is created only if every workspace could still fill up to its limit and 10 % of the disk (at least 20 GB) would stay free. Without the helper, workspaces are unlimited Docker volumes, and the heartbeat says so.
+
+**The image stays.** Coolify's nightly cleanup prunes every image no container uses, and it took the sandbox image once. A stopped keeper container (`galahad-sandbox-image`) now keeps it in use, and a sandbox that finds the image missing anyway rebuilds it rather than failing its quest.
+
+🔜 Next: KVM microVMs for code we have no reason to trust, and an egress allowlist for `online`.
 
 ## 8¾. A mind for every arm (MCP) ✅
 
@@ -288,7 +295,9 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 | A device signed two histories (equivocation: its key may be stolen) | alert |
 | A role with no usable model (no key, no running local runtime) | warn for planner, engineer, reviewer; info for others |
 | A sandbox the reaper missed; a loop that's orphaned or failed three times running | warn |
+| This node hosts sandboxes without disk limits; its sandbox image is missing | warn / info |
 | A connector whose key is missing or pinned elsewhere; a manifest that no longer validates | info / warn |
+| A standing order whose tool changed since you signed it; one that expires within 3 days | warn / info |
 | Low disk on this node | warn, alert under 3 % |
 
 Findings become **notices** in your inbox, keyed so the same problem never repeats. A notice clears itself when its cause goes away, a dismissed one stays quiet until it changes, and an unchanged finding writes nothing. Notices about one node's body (its disk, its vault) are only cleared by that node. Optionally, a **checklist** you write is read by the `swift` role each beat with the findings and recent activity (as data); it answers `HEARTBEAT_OK`, or two or three lines for you, which become a notice.
@@ -321,7 +330,29 @@ Every call goes through the oath gate and into the ledger:
 
 Built in (`galahad connector add <id>`): **GitHub** (repos, issues, pulls, Actions runs, notifications; creating a branch is free, opening an issue or commenting asks), **Cloudflare** (accounts, zones, DNS, Workers, R2; creating a bucket is free, deleting one asks) and **Home Assistant** (at your address; reading state is free, calling any service asks every time). Your own connector is a JSON manifest: `galahad connector add --manifest my.json`.
 
-Coding agents use connectors through MCP (`connectors`, `connector_call`) with the new `connect` scope, which arm tokens hold by default. They never see a key, and an outward call returns an action id instead of a result.
+Coding agents use connectors through MCP (`connectors`, `connector_call`) with the `connect` scope, which arm tokens hold by default. They never see a key, and an outward call returns an action id instead of a result.
+
+**Remote MCP servers.** A connector can also be an MCP server you reach over streamable HTTP (`galahad connector add <id> --mcp https://…/mcp`). The node is the MCP client:
+
+| Property | How |
+|---|---|
+| **Listed once, by you** | Installing (or refreshing) lists the server's tools and stores them in the manifest: each tool's arguments, summarized from its schema, and a digest of the server's definition. Agents see the stored tools, not whatever the server says today, and a refresh reports what changed. |
+| **Your classes** | The server's hints only *propose* a class: read-only → read, destructive → delete, anything else → **outward**, which asks you. You choose (`--class tool=read`), and your choice survives refreshes. |
+| **Same fences** | Every request stays on the pinned origin, redirects are refused, answers are capped and redacted, the key is injected only if pinned to that origin for that connector, and a URL with a query or credentials in it is refused (keys go in the vault). The client declares no capabilities, so a server can't ask Galahad to run a model, list files or prompt you. |
+| **Same outbox** | An outward MCP call is an action request like any other: approved once, sent once, receipt recorded. A server that needs a key installs without tools and asks for the key; refresh once it's in. |
+
+**Standing orders.** Some things you'd approve every time: pull requests from `feat/*` branches of your repos, release notes to one channel, re-creating one scratch bucket. A standing order is that answer given in advance (`galahad order add`, or **Approve and allow similar** in the inbox):
+
+| Rule | Why |
+|---|---|
+| One connector tool, and only tools that would ask (outward, delete) | The rest need no order |
+| Arguments narrowed with patterns (`*` = any run of characters); every path parameter named and at least one pinned exactly | An order says *where*, never "anywhere" |
+| A delete names exactly one thing: no `*` anywhere, every required argument pinned | "Never delete without approval" keeps its meaning |
+| Optionally only for some callers (`claude-code`, `loop.release`) | Least privilege for agents and loops |
+| Expires, at most a year out; you can revoke it any time | Orders are scoped narrowly and expire ([OATH](OATH.md)) |
+| Pinned to the tool as you signed it (a digest of origin, path and parameters) | If the connector's tool changes, the order stops applying and the heartbeat says so |
+
+A covered call is still filed as an action, so it's in your inbox and the ledger. The node that filed it records which order answered it (`order.applied`), and **every replica checks again on replay** that the order existed, was unrevoked and unexpired at that moment, and covers that exact call, before it counts as approved. Only you sign orders (`fleet:admin`, from a terminal or a paired device); agents and nodes never can.
 
 ## 11. Growth & scale 🔜
 
@@ -363,8 +394,8 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 |---|---|---|
 | **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (the PWA paired and ran in headless Edge, November 2026) |
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
-| **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox | ✅ |
-| **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, signed standing orders, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
+| **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits | ✅ |
+| **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
 | **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🔜 |
 | **M5: Secure self-update** | Signed releases (your key), provenance, canary node, automatic rollback | 🔜 |

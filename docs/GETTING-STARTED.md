@@ -191,12 +191,14 @@ A server deployed with `scripts/deploy.sh` is a sandbox host: the deploy builds 
 bun galahad sandbox run -- sh -c 'id; uname -a'               # placed on the best host, destroyed afterwards
 bun galahad sandbox run --net online -- git clone https://github.com/amiriteorg/galahad
 bun galahad sandbox run --providers deepseek -- sh -c 'echo $OPENAI_BASE_URL'   # models via a scoped token
-bun galahad sandbox run --keep --cpus 8 --mem 16 --ttl 240 -- true             # keep a workspace around
+bun galahad sandbox run --keep --cpus 8 --mem 16 --disk 40 --ttl 240 -- true   # keep a workspace around
 bun galahad sandbox exec <id> -- bun test
-bun galahad sandbox ls --on ultra
+bun galahad sandbox ls --on ultra                               # each one's disk: used / limit
 bun galahad sandbox rm <id>
 bun galahad ledger                                              # every action, with the oath's verdict
 ```
+
+Each sandbox's `/work` is its own disk of `--disk` GB (20 by default), so a runaway job fills its workspace and never the server's disk. Limits need the small root helper that `deploy.sh --sudo` installs; without it, workspaces are unlimited and the heartbeat warns you. The node also keeps the image in use, so cleanup tools that prune unused images (Coolify's nightly cleanup) leave it alone, and it rebuilds the image if it's gone anyway.
 
 ### Give Galahad a quest
 
@@ -269,6 +271,35 @@ bun galahad action approve <id>                        # sent once, by the node 
 ```
 
 Reading, creating and modifying just happen (and are ledgered). When *you* call an outward or delete tool, your request is the approval. When an agent or a loop does, it waits for you in the inbox and is sent exactly once if you approve.
+
+### Remote MCP servers
+
+Any MCP server you can reach over HTTP can be a connector. Galahad lists its tools once, you choose what each one is, and from then on it's like any other connector: keys from the vault, reads at once, outward calls ask you.
+
+```sh
+bun galahad connector add deepwiki --mcp https://mcp.deepwiki.com/mcp          # public: no key
+bun galahad connector add tracker --mcp https://mcp.example.com/mcp --auth bearer
+bun galahad secret set tracker --connector tracker                              # then:
+bun galahad connector refresh tracker                                           # list its tools with the key
+bun galahad connector refresh tracker --class search=read --class "*=outward"   # your classes stay on later refreshes
+bun galahad connector call deepwiki.read_wiki_structure --arg repoName=oven-sh/bun
+```
+
+The server's hints only propose a class: read-only becomes read, destructive becomes delete, and anything else becomes outward, which asks you. A refresh tells you which tools changed on the server since you installed them. A server that puts its key in the URL isn't supported, because the URL would replicate in plaintext.
+
+### Standing orders: approve once, for a narrow kind of call
+
+When you'd approve the same kind of request every time, sign a standing order. It names one tool, narrows its arguments (`*` matches anything), and expires:
+
+```sh
+bun galahad order add github.pr.create --arg owner=amiriteorg --arg repo='*' --arg head='feat/*' \
+  --for claude-code --days 30 --label "PRs from feature branches"
+bun galahad order add --from <action-id>     # approve a waiting request, and answer the same way next time
+bun galahad orders                           # what's active, how often it was used
+bun galahad order revoke <id>
+```
+
+In the PWA, **Approve and allow similar…** on any request in the Inbox does the same, and the Connectors page lists your orders. A covered call still shows up in your inbox and the ledger, marked with the order that answered it. Orders that delete name exactly one thing (no `*`), every order names where its calls go, and if the connector's tool changes after you sign, the order stops applying until you sign a new one.
 
 ## Troubleshooting
 

@@ -54,11 +54,20 @@ The review also confirmed what held up:
 - **Manifests are data.** No connector code runs; a manifest can't set credentials, cookies or `Host`, and its HTTP method bounds the oath class it may claim. Installing one needs `brain:write`, which arms never hold.
 - **Only you approve.** Action decisions are accepted only from your terminal or a paired device, never from a node or an agent; the first decision stands on every replica; only the requesting node sends, at most once, even across a crash (`packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).
 - **Loops act as Galahad, not as you.** A loop's quest runs on a short-lived arm token and its connector calls are an agent's calls, so outward actions ask.
-- **Residual risk:** a read tool's query string reaches the connector's own service, so an injected agent could leak data *to that service* (never elsewhere); and answers from services are untrusted data that reach agents.
+- **Standing orders stay narrow, and the log proves them.** Only you sign one (an arm's attempt is refused by scope); it covers one tool that would ask, names where the call goes, pins deletes exactly, expires within a year and stops applying if the tool changes. Every replica re-checks on replay that the order covered the exact call when it was applied, so a node can't record an order-approval the order doesn't support (`packages/core/test/orders.test.ts`, `packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).
+- **Remote MCP servers get the same fences.** Same origin pinning, no redirects, capped and redacted answers, keys only as pinned, no keys in URLs. Tools are listed once and stored, their classes are yours (the server's hints only propose one: no hint means it asks), and the client offers the server no capabilities (no sampling, roots or prompts). Tested against a real MCP server (`packages/node/test/mcp-connectors.e2e.test.ts`).
+- **Residual risk:** a read tool's query string reaches the connector's own service, so an injected agent could leak data *to that service* (never elsewhere); and answers from services are untrusted data that reach agents. An MCP server decides what its tools really do: a tool you class as read that actually acts is the server's lie, so install servers you trust and keep the default (outward) for anything unclear.
+
+## Sandbox disk limits (tested)
+
+- **Each workspace is its own disk.** `/work` is a fixed-size ext4 image (default 20 GB), mounted `nodev,nosuid`, so a runaway job stops at its own limit. Tested on ultra: a 1 GB workspace filled with `dd` stops at "No space left on device", and the host is untouched (`packages/sandbox/test/docker.integration.test.ts`).
+- **The one privileged step is tiny.** The node never gets root. A root helper (`sandbox/galahad-workspace`), started by systemd per connection on a socket only the galahad user may open, accepts four commands, takes only a 10-hex-digit id and a size, and builds every path itself under a root-only directory. The client refuses anything else before it's sent (`packages/sandbox/test/workspaces.test.ts`).
+- **The host keeps a reserve.** A sandbox is created only if every workspace could fill up to its limit and 10 % of the disk (at least 20 GB) stays free.
+- Found by Galahad himself, in a live quest run as a loop, in November 2026.
 
 ## Known limitations
 
-**Sandbox disk.** A sandbox's `/work` volume has no size quota yet, so a runaway job could fill the host's disk (on ultra, the root volume Coolify shares). Galahad found this himself, in a live quest run as a loop, in November 2026. The heartbeat warns on low disk. **Planned:** per-sandbox volume quotas.
+**Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.
 
 **#5: same-user agents.** On a desktop, the daemon and your coding agents (Claude Code and others) run as the same OS user. An agent with shell access can read the admin token and, with the file keystore, the device keys. Arm tokens limit what an agent can do *through Galahad*. They can't stop a same-user process from reading files that user owns.
 - On sandbox hosts (ultra), the daemon runs as the dedicated `galahad` user, and its home directory isn't readable by other users.

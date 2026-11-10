@@ -61,6 +61,11 @@ These cannot be overridden by any instruction. Only a signed amendment changes t
 | **Outward** | Push, merge, deploy, send, post, purchase, change permissions, physical actions | Ask; no answer means **no** |
 | **Forbidden** | Anything that breaks a limit above | Never |
 
-You grant standing orders by signed amendment, and each one is scoped narrowly and expires. For example: "Galahad may push to `feat/*` branches of `amiriteorg/*` until 1 December."
+You grant standing orders by signed amendment, and each one is scoped narrowly and expires. For example: "Galahad may open pull requests from `feat/*` branches of `amiriteorg/*` until 1 December."
+
+- An order covers one tool, only one that would otherwise ask. It names where the calls go, and it lasts at most a year.
+- An order to delete names exactly one thing, never a pattern, so "never delete without approval" keeps its meaning.
+- Only you sign orders, from your terminal or a paired device. Every replica checks again that an order really covered what it approved.
+- If the tool an order was signed for changes, the order stops applying.
 
 *The gate behind these classes, `decide()` in `packages/core/src/oath.ts`, decides every connector call. When it says ask, the request waits in your inbox, is sent at most once after you approve, and is never sent if you decline or don't answer within a day. Loops act as Galahad on his own, never as you: what they want to send asks too. Wiring the gate into every arm's own actions (a `git push` from a sandbox) is milestone M2.*
