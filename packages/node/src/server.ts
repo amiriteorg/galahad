@@ -5,7 +5,12 @@ import {
   ConnectorManifest,
   type ConnectorView,
   type FindingView,
+  type InvestigationView,
   isMcpTool,
+  Preregistration,
+  randomId,
+  redact,
+  registrationDigest,
   isTimeZone,
   type LoopTask,
   type LoopView,
@@ -433,6 +438,38 @@ export function createApp(ctx: AppContext) {
     });
   }
 
+  function investigationViews(): InvestigationView[] {
+    return ctx.store
+      .lwwPrefix<{ id: string; question: string; registration: unknown }>("investigation:")
+      .map((entry) => {
+        const body = entry.value!;
+        const result = ctx.store.lww<{
+          status: InvestigationView["status"];
+          conclusion?: InvestigationView["conclusion"];
+          summary: string;
+          review?: string;
+          artifact?: string;
+          predictions?: InvestigationView["predictions"];
+        }>(`investigation-result:${body.id}`);
+        const registration = Preregistration.safeParse(body.registration);
+        return {
+          id: body.id,
+          question: body.question,
+          registration: registration.success ? registration.data : null,
+          registeredAt: Number(entry.hlc.split(".")[0]),
+          nodeName: ctx.store.device(entry.device)?.name ?? entry.device.slice(0, 12),
+          status: result?.value?.status ?? "running",
+          conclusion: result?.value?.conclusion ?? null,
+          summary: result?.value?.summary ?? null,
+          review: result?.value?.review ?? null,
+          artifact: result?.value?.artifact ?? null,
+          predictions: result?.value?.predictions ?? [],
+          concludedAt: result ? Number(result.hlc.split(".")[0]) : null,
+        };
+      })
+      .sort((a, b) => b.registeredAt - a.registeredAt);
+  }
+
   function noticeViews(): NoticeView[] {
     const rank = { alert: 0, warn: 1, info: 2 } as const;
     return ctx.store
@@ -680,6 +717,37 @@ export function createApp(ctx: AppContext) {
           return ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec);
         }),
       );
+    },
+    investigations: () => ({ investigations: investigationViews() }),
+    registerInvestigation: (input) => {
+      // Recorded before anything runs, with its digest: what was promised can't drift afterwards.
+      guardAgainstSecrets(JSON.stringify(input.registration));
+      const id = `inv_${randomId(16)}`;
+      ctx.store.emit(ctx.identity, "investigation.registered", {
+        id,
+        question: input.registration.question,
+        registration: input.registration as unknown as Record<string, unknown>,
+        digest: registrationDigest(input.registration),
+      });
+      return { id };
+    },
+    concludeInvestigation: (input) => {
+      const registered = ctx.store.lww(`investigation:${input.id}`);
+      if (!registered?.value) throw new HttpError(404, "no such investigation");
+      if (registered.device !== ctx.identity.id) throw new HttpError(409, "only the node that ran an investigation concludes it");
+      if (ctx.store.lww(`investigation-result:${input.id}`)) throw new HttpError(409, "already concluded");
+      if (input.status === "done" && !input.conclusion) throw new HttpError(400, "a finished investigation has a conclusion");
+      guardAgainstSecrets(`${input.summary}\n${input.review ?? ""}`);
+      ctx.store.emit(ctx.identity, "investigation.concluded", {
+        id: input.id,
+        status: input.status,
+        ...(input.conclusion ? { conclusion: input.conclusion } : {}),
+        summary: redact(input.summary).slice(0, 4000),
+        ...(input.review ? { review: redact(input.review).slice(0, 4000) } : {}),
+        ...(input.artifact ? { artifact: input.artifact } : {}),
+        ...(input.predictions?.length ? { predictions: input.predictions } : {}),
+      });
+      return { investigation: investigationViews().find((i) => i.id === input.id) };
     },
     artifacts: () => ({ artifacts: ctx.artifacts.list() }),
     saveArtifact: (input, p) => {

@@ -1,5 +1,5 @@
-import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, redact, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
-import { type QuestEvent, type QuestOutcome, runQuest } from "@galahad/brain";
+import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { investigate, type InvestigationOutcome, type QuestEvent, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
 
 /*
  * `galahad do "<goal>"`: a quest from the terminal. The loop itself is pure
@@ -204,4 +204,156 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));
   }
   return outcome;
+}
+
+/* ---------- investigations: the scientific method, through the same sandbox ---------- */
+
+export interface InvestigateOptions {
+  question: string;
+  network: SandboxNetwork;
+  isolation?: "container" | "vm";
+  /** The Lab unless you say otherwise: investigations are usually mathematics, physics or engineering. */
+  workshop?: boolean;
+  on?: string;
+  maxSteps?: number;
+  commandTimeoutSec?: number;
+  keep?: boolean;
+}
+
+/**
+ * One investigation through a node's API: a fresh Lab sandbox, formulate and register
+ * the hypothesis before anything runs, the experiment, the method review, the results
+ * kept as an artifact, and the conclusion recorded once.
+ */
+export async function runNodeInvestigation(
+  node: NodeClient,
+  options: InvestigateOptions,
+  hooks: NodeQuestHooks = {},
+): Promise<{ result: InvestigationOutcome; artifact: ArtifactView | null; predictions: Results["predictions"] }> {
+  const quest = `inv-${Date.now().toString(36)}`;
+  const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
+    network: options.network,
+    ...(options.isolation ? { isolation: options.isolation } : {}),
+    ...(options.workshop ? {} : { lab: true }),
+    quest,
+    ...(options.on ? { on: options.on } : {}),
+  });
+  const fleet = await node.call<FleetView>("fleet").catch(() => null);
+  const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
+  hooks.started?.({ quest, sandbox, host });
+  const exec = (command: string, timeoutSec: number) =>
+    node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
+
+  let result: InvestigationOutcome;
+  let artifact: ArtifactView | null = null;
+  let predictions: Results["predictions"] = [];
+  try {
+    result = await investigate(
+      {
+        question: options.question,
+        environment: environment(sandbox, host),
+        maxSteps: options.maxSteps ?? 40,
+        commandTimeoutSec: options.commandTimeoutSec ?? 600,
+      },
+      {
+        ask: async (role, messages) => {
+          let text = "";
+          let model = "";
+          for await (const event of node.stream("chat", { role, messages })) {
+            if (event.type === "text") text += event.text;
+            else if (event.type === "model") model = event.ref;
+            else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
+          }
+          return { text, model };
+        },
+        exec,
+        register: async (registration) => (await node.call<{ id: string }>("registerInvestigation", { registration })).id,
+        emit: hooks.emit,
+        signal: hooks.signal,
+      },
+    );
+    const read = await exec("cat /work/out/results.json 2>/dev/null | head -c 200000", 60).catch(() => null);
+    predictions = (read && readResults(read.stdout)?.predictions) || [];
+  } finally {
+    artifact = await node
+      .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: sandbox.id, on: sandbox.node, label: options.question.slice(0, 200) })
+      .then((r) => r.artifact)
+      .catch(() => null);
+    if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
+  }
+
+  if (result.id) {
+    const registered = new Set(result.registration?.predictions.map((p) => p.id) ?? []);
+    await node
+      .call("concludeInvestigation", {
+        id: result.id,
+        status: result.outcome.status === "done" && !result.conclusion ? "unverified" : result.outcome.status,
+        ...(result.conclusion ? { conclusion: result.conclusion } : {}),
+        summary: result.outcome.summary.slice(0, 4000),
+        ...(result.outcome.review ? { review: result.outcome.review.slice(0, 4000) } : {}),
+        ...(artifact ? { artifact: artifact.id } : {}),
+        predictions: predictions
+          .filter((p) => registered.has(p.id))
+          .slice(0, 16)
+          .map((p) => ({
+            id: p.id,
+            verdict: p.verdict,
+            ...(typeof p.value === "number" ? { value: p.value } : {}),
+            ...(typeof p.uncertainty === "number" ? { uncertainty: p.uncertainty } : {}),
+            ...(p.units ? { units: p.units.slice(0, 50) } : {}),
+          })),
+      })
+      .catch(() => {});
+  }
+  // A finding is remembered as untrusted: it's model output shaped by what the sandbox computed.
+  const memory = redact(
+    [
+      `Investigation ${result.id ?? "(not registered)"} (${result.conclusion ?? result.outcome.status}): ${options.question}`,
+      result.registration ? `Hypothesis: ${result.registration.hypothesis}` : "",
+      result.outcome.summary.trim(),
+      result.outcome.review ? `Reviewer: ${result.outcome.review.trim()}` : "",
+      artifact ? `Kept: artifact ${artifact.id} (${artifact.count} file(s))` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  ).slice(0, 20_000);
+  await node.call("remember", { text: memory, tags: ["investigation", ...(result.id ? [result.id] : [])], untrusted: true }).catch(() => {});
+  return { result, artifact, predictions };
+}
+
+const CONCLUSION: Record<string, string> = {
+  supported: "✓ SUPPORTED: the method holds up, and so do the predictions.",
+  refuted: "✗ REFUTED: the method holds up, and a prediction failed as registered.",
+  inconclusive: "△ INCONCLUSIVE: the method holds up, but the evidence can't decide.",
+};
+
+export async function investigateFromCli(node: NodeClient, options: InvestigateOptions): Promise<InvestigationOutcome> {
+  const controller = new AbortController();
+  const onInterrupt = (): void => {
+    controller.abort();
+    process.stderr.write(dim("\n[stopping after this step; Ctrl-C again to quit now]\n"));
+    process.once("SIGINT", () => process.exit(130));
+  };
+  process.once("SIGINT", onInterrupt);
+  try {
+    const { result, artifact, predictions } = await runNodeInvestigation(node, options, {
+      emit: print,
+      signal: controller.signal,
+      started: ({ quest, sandbox, host }) => {
+        console.log(dim(`[investigation ${quest} · ${sandbox.image.includes("/lab") ? "the Lab" : "workshop"} sandbox ${sandbox.id} on ${host} · network ${sandbox.network}]\n`));
+      },
+    });
+    console.log(bold(result.conclusion ? CONCLUSION[result.conclusion]! : VERDICT[result.outcome.status]));
+    if (result.id) console.log(dim(`registered before it ran as ${result.id}`));
+    for (const p of predictions) {
+      const value = typeof p.value === "number" ? `${p.value}${p.units ? ` ${p.units}` : ""}${typeof p.uncertainty === "number" ? ` ± ${p.uncertainty}` : ""}` : "";
+      console.log(`  ${p.id}  ${p.verdict.padEnd(12)} ${value}`);
+    }
+    console.log(indent(result.outcome.summary.trim()));
+    if (result.outcome.review) console.log(`\nReviewer:\n${indent(result.outcome.review.trim())}`);
+    if (artifact) console.log(dim(`\nKept ${artifact.count} file(s): galahad artifact ${artifact.id}`));
+    return result;
+  } finally {
+    process.off("SIGINT", onInterrupt);
+  }
 }

@@ -82,6 +82,7 @@ Event kinds today:
 | `notice.raised` / `notice.cleared` / `notice.dismissed` | What needs you (LWW by key) |
 | `connector.set` / `connector.removed` | Connector manifests (LWW by id) |
 | `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
+| `investigation.registered` / `investigation.concluded` | A pre-registration (with its digest, checked by every replica) recorded before anything ran, and its conclusion, once, by the node that ran it |
 | `artifact.saved` / `artifact.removed` | Work kept from a sandbox: what the files are (paths, sizes, SHA-256s); the files stay on the node that signed it, and only it records their removal |
 | `order.set` / `order.revoked` / `order.applied` | Standing orders: signed once and never changed (revoke and sign anew); which order answered which action, re-checked by every replica |
 
@@ -276,6 +277,20 @@ Guarantees:
 - **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
 
 The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.
+
+### Investigations: the scientific method ✅
+
+`galahad investigate "<question>"` is a quest with the scientific method built in, in the Lab by default:
+
+| Step | What happens |
+|---|---|
+| **Formulate** | The planner turns the question into a **pre-registration**: hypothesis; the alternative to rule out; 1 to 8 falsifiable predictions, each with the quantity and units, the expected value and what would refute it; the method; how every instrument is verified (convergence, analytic limits, units, conservation, a known benchmark); how uncertainty is estimated; and the decision rule. |
+| **Register** | It enters the mind before anything runs (`investigation.registered`), with its SHA-256 digest, which every replica checks. It never changes: predictions can't drift to fit the results. |
+| **Experiment** | The engineer carries out exactly that method in the sandbox, verifies the solvers first, records any deviation and why, and leaves `results.json` (per prediction: value, uncertainty, units, consistent / refuted / undetermined), `report.md`, plots and scripts in `/work/out`. |
+| **Review** | An independent reviewer judges the **method** against the registration, with `results.json` and the report read straight out of the sandbox, not the engineer's summary: SUPPORTED, REFUTED, INCONCLUSIVE, or REVISE when the method falls short (which goes back for work). A refutation is a result, not a failure. |
+| **Conclude** | The node that ran it records the conclusion once (`investigation.concluded`), with the per-prediction outcomes; the evidence is kept as an artifact, and the finding is remembered (as untrusted: it's model output shaped by what the sandbox computed). |
+
+`galahad findings` lists them; `galahad finding <id>` shows the registration beside what was found.
 
 ## 9. Loops and the heartbeat ✅
 

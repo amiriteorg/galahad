@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes, type SandboxView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, type RouteName, routes, type SandboxView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -13,7 +13,7 @@ import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
-import { questFromCli } from "./quest-cli.ts";
+import { investigateFromCli, questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
 
 const VERSION = "0.1.0";
@@ -46,6 +46,10 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
 Work
+  investigate "<question>" [--net isolated|online] [--workshop] [--steps 40] [--timeout 600] [--keep]
+                                  the scientific method: hypothesis and predictions registered before anything
+                                  runs, a verified experiment in the Lab, an independent method review
+  findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
@@ -218,6 +222,7 @@ async function main(): Promise<void> {
       container: { type: "boolean" },
       lab: { type: "boolean" },
       out: { type: "string" },
+      workshop: { type: "boolean" },
       gpu: { type: "boolean" },
       mem: { type: "string" },
       disk: { type: "string" },
@@ -652,6 +657,67 @@ Next:
         keep: Boolean(flags.keep),
       });
       process.exit(outcome.status === "done" ? 0 : 1);
+    }
+
+    case "investigate": {
+      const question = [sub, ...rest].filter(Boolean).join(" ").trim();
+      if (!question) fail('usage: galahad investigate [--net isolated|gateway|online] [--workshop] [--vm|--container] [--on node] [--steps 40] [--timeout 600] [--keep] "<question>"');
+      const network = str("net") ?? "isolated";
+      if (!["isolated", "gateway", "online"].includes(network)) fail("--net must be isolated, gateway or online");
+      const result = await investigateFromCli(new Admin(home), {
+        question,
+        network: network as "isolated" | "gateway" | "online",
+        ...(isolation() ? { isolation: isolation() } : {}),
+        ...(flags.workshop ? { workshop: true } : {}),
+        on: str("on"),
+        maxSteps: str("steps") ? Number(str("steps")) : undefined,
+        commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
+        keep: Boolean(flags.keep),
+      });
+      process.exit(result.conclusion ? 0 : 1);
+    }
+
+    case "findings":
+    case "finding": {
+      const { investigations } = (await new Admin(home).call("investigations")) as { investigations: InvestigationView[] };
+      const mark: Record<string, string> = { supported: "✓", refuted: "✗", inconclusive: "△" };
+      if (command === "findings" || !sub) {
+        if (!investigations.length) console.log('No investigations yet: galahad investigate "<question>"');
+        for (const i of investigations) {
+          const state = i.conclusion ? `${mark[i.conclusion]} ${i.conclusion}` : i.status;
+          console.log(`  ${i.id}  ${state.padEnd(15)} ${dim(new Date(i.registeredAt).toLocaleString())}`);
+          console.log(`      ${i.question.length > 110 ? `${i.question.slice(0, 110)}…` : i.question}`);
+        }
+        return;
+      }
+      const i = investigations.find((x) => x.id === sub);
+      if (!i) fail(`no investigation ${sub}`);
+      const r = i!.registration;
+      console.log(`${bold(i!.question)}
+${dim(`${i!.id} · registered ${new Date(i!.registeredAt).toLocaleString()} on ${i!.nodeName}, before anything ran`)}`);
+      if (r) {
+        console.log(`
+Hypothesis: ${r.hypothesis}
+Alternative: ${r.alternative}`);
+        for (const p of r.predictions) {
+          const got = i!.predictions.find((x) => x.id === p.id);
+          const value = got && typeof got.value === "number" ? ` → ${got.value}${got.units ? ` ${got.units}` : ""}${typeof got.uncertainty === "number" ? ` ± ${got.uncertainty}` : ""}` : "";
+          console.log(`  ${p.id}. ${p.statement}
+      expected ${p.expected}; refuted if ${p.refutedIf}${got ? `
+      ${bold(got.verdict)}${value}` : ""}`);
+        }
+        console.log(`Verification: ${r.verification.join("; ")}`);
+        console.log(`Decision rule: ${r.decision}`);
+      }
+      console.log(`
+${i!.conclusion ? bold(`${mark[i!.conclusion]} ${i!.conclusion.toUpperCase()}`) : bold(i!.status)}${i!.summary ? `
+${i!.summary}` : ""}`);
+      if (i!.review) console.log(`
+Reviewer:
+${i!.review}`);
+      if (i!.artifact) console.log(dim(`
+Evidence: galahad artifact ${i!.artifact}`));
+      return;
     }
 
     case "place": {

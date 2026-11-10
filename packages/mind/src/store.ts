@@ -691,6 +691,24 @@ export class MindStore {
         this.putLww(`action-done:${body.id}`, event, body as Json);
         return null;
       }
+      case "investigation.registered": {
+        if (!isFullNode(signer)) return "only full nodes run investigations";
+        const body = bodyOf(event, "investigation.registered");
+        if (this.lww(`investigation:${body.id}`)) return "already registered";
+        // What was promised before anything ran must be what's stored.
+        if (sha256B64u(canonical(body.registration as Json)) !== body.digest) return "the registration doesn't match its digest";
+        this.putLww(`investigation:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "investigation.concluded": {
+        const body = bodyOf(event, "investigation.concluded");
+        const registered = this.lww(`investigation:${body.id}`);
+        if (!registered?.value) return "no such investigation";
+        if (registered.device !== event.device) return "only the node that ran an investigation concludes it";
+        if (this.lww(`investigation-result:${body.id}`)) return "already concluded";
+        this.putLww(`investigation-result:${body.id}`, event, body as Json);
+        return null;
+      }
       case "artifact.saved": {
         if (!isFullNode(signer)) return "only full nodes keep artifacts";
         const body = bodyOf(event, "artifact.saved");

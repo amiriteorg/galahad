@@ -4,6 +4,7 @@ import { b64u, fromB64u } from "./bytes.ts";
 import { sha256B64u } from "./crypto.ts";
 import { isHlc } from "./hlc.ts";
 import { type DeviceId, domain, isNodeId, type NodeIdentity, verifyDeviceSignature } from "./identity.ts";
+import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
 
@@ -203,6 +204,26 @@ export const Bodies = {
   }),
   /** Recorded by the node that held the files, once they're gone. */
   "artifact.removed": z.strictObject({ id: ArtifactId }),
+  /**
+   * A pre-registered investigation: recorded before anything runs and never changed.
+   * `registration` is open in the log (newer nodes may add fields); `digest` pins it.
+   */
+  "investigation.registered": z.strictObject({
+    id: InvestigationId,
+    question: z.string().min(1).max(2000),
+    registration: Open,
+    digest: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  }),
+  /** How it ended, recorded once by the node that registered it. */
+  "investigation.concluded": z.strictObject({
+    id: InvestigationId,
+    status: InvestigationStatus,
+    conclusion: Conclusion.optional(),
+    summary: z.string().max(4000),
+    review: z.string().max(4000).optional(),
+    artifact: ArtifactId.optional(),
+    predictions: z.array(PredictionOutcome).max(16).optional(),
+  }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

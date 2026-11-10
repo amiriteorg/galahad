@@ -176,6 +176,36 @@ describe("artifacts over the API", () => {
     expect((await send(home.adminToken(), "artifactFile", { id: kept.id, path: "report.md" })).status).toBe(404);
   });
 
+  test("investigations: registered before they run, concluded once, readable by any reader", async () => {
+    const registration = {
+      question: "Does the cantilever's first mode sit near 2.09 Hz?",
+      hypothesis: "Euler–Bernoulli gives 2.0888 Hz.",
+      alternative: "Shear deformation shifts it by more than 1 %.",
+      predictions: [{ id: "P1", statement: "FEM f1 ≈ theory", quantity: "f1 (Hz)", expected: "2.0888 ± 0.1 %", refutedIf: "differs by more than 0.1 %" }],
+      method: "Hermite FEM, 4 to 256 elements",
+      verification: ["convergence order ≈ 4"],
+      uncertainty: "Richardson extrapolation",
+      decision: "Supported if P1 holds on a converged mesh.",
+    };
+    const registered = (await (await send(armToken, "registerInvestigation", { registration })).json()) as { id: string };
+    expect(registered.id).toMatch(/^inv_/);
+    expect((await send(armToken, "registerInvestigation", { registration: { ...registration, predictions: [] } })).status).toBe(400);
+    let list = (await (await send(armToken, "investigations")).json()) as { investigations: { id: string; status: string; registration: unknown }[] };
+    expect(list.investigations.find((i) => i.id === registered.id)).toMatchObject({ status: "running", registration });
+    expect((await send(armToken, "concludeInvestigation", { id: registered.id, status: "done", summary: "no conclusion given" })).status).toBe(400);
+    const concluded = await send(armToken, "concludeInvestigation", {
+      id: registered.id,
+      status: "done",
+      conclusion: "supported",
+      summary: "f1 = 2.08879 Hz, 3e-8 from theory.",
+      predictions: [{ id: "P1", verdict: "consistent", value: 2.088791, units: "Hz" }],
+    });
+    expect(concluded.status).toBe(200);
+    expect((await send(armToken, "concludeInvestigation", { id: registered.id, status: "done", conclusion: "refuted", summary: "changed my mind" })).status).toBe(409);
+    list = (await (await send(armToken, "investigations")).json()) as typeof list;
+    expect(list.investigations.find((i) => i.id === registered.id)).toMatchObject({ status: "done", conclusion: "supported", predictions: [{ id: "P1", value: 2.088791 }] });
+  });
+
   test("this node isn't a sandbox host: saving says so", async () => {
     const response = await send(home.adminToken(), "saveArtifact", { sandbox: "0123456789" });
     expect(response.status).toBe(424);

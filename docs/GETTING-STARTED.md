@@ -231,6 +231,16 @@ bun galahad do --steps 60 --timeout 900 --keep "Build the repo in /work and get 
 
 The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
 
+### Ask Galahad a scientific question
+
+`galahad investigate` runs the scientific method in the Lab. The hypothesis and its falsifiable predictions are recorded in the mind before anything runs, the experiment verifies its own instruments, and an independent reviewer judges the method:
+
+```sh
+bun galahad investigate "Is the first bending mode of a 2 m steel cantilever (50 x 10 mm, weak axis) within 1 % of Euler-Bernoulli theory?"
+bun galahad findings                 # supported, refuted or inconclusive, newest first
+bun galahad finding <id>             # the registration beside what was found, and the evidence's artifact
+```
+
 ## 10. Give your coding agents the mind (MCP)
 
 Any MCP-capable agent can share Galahad's memory and sandboxes: Claude Code, OpenCode, Codex, Hermes, and T3 Code through them.

@@ -6,6 +6,7 @@ export * from "./crypto.ts";
 export * from "./events.ts";
 export * from "./hlc.ts";
 export * from "./identity.ts";
+export * from "./investigations.ts";
 export * from "./oath.ts";
 export * from "./orders.ts";
 export * from "./pairing.ts";

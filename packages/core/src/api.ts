@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
+import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 
@@ -327,6 +328,29 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ id: ActionId, approve: z.boolean(), note: z.string().max(500).optional() }),
   },
+  investigations: { method: "GET", path: "/api/investigations", scope: "mind:read", input: null },
+  /** Record a pre-registration before anything runs (it never changes afterwards). */
+  registerInvestigation: {
+    method: "POST",
+    path: "/api/investigations",
+    scope: "mind:write",
+    input: z.strictObject({ registration: Preregistration }),
+  },
+  /** How it ended, once, by the node that registered it. */
+  concludeInvestigation: {
+    method: "POST",
+    path: "/api/investigations/conclude",
+    scope: "mind:write",
+    input: z.strictObject({
+      id: InvestigationId,
+      status: InvestigationStatus,
+      conclusion: Conclusion.optional(),
+      summary: z.string().max(4000),
+      review: z.string().max(4000).optional(),
+      artifact: z.string().regex(/^art_[A-Za-z0-9_-]{22}$/).optional(),
+      predictions: z.array(PredictionOutcome).max(16).optional(),
+    }),
+  },
   artifacts: { method: "GET", path: "/api/artifacts", scope: "mind:read", input: null },
   /** Keep a sandbox's work products (a directory under /work, by default /work/out) after the sandbox is gone. */
   saveArtifact: {
@@ -627,6 +651,23 @@ export interface ActionView {
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;
   receipt: string | null;
+}
+
+export interface InvestigationView {
+  id: string;
+  question: string;
+  /** The pre-registration, as recorded before anything ran (null if a newer node wrote a shape this one can't read). */
+  registration: Preregistration | null;
+  registeredAt: number;
+  /** The node that ran it. */
+  nodeName: string;
+  status: "running" | z.infer<typeof InvestigationStatus>;
+  conclusion: Conclusion | null;
+  summary: string | null;
+  review: string | null;
+  artifact: string | null;
+  predictions: z.infer<typeof PredictionOutcome>[];
+  concludedAt: number | null;
 }
 
 export interface ArtifactView {

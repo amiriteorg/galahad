@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type GEvent, newNodeIdentity, toolDigest } from "@galahad/core";
+import { b64u, type GEvent, newNodeIdentity, registrationDigest, toolDigest } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, revokeDevice } from "../src/index.ts";
 
 /*
@@ -224,6 +224,52 @@ describe("standing orders in the log", () => {
     expect(storeA.digest()).toBe(storeB.digest());
     const decided = storeA.lww(`action-decision:${actionId(13)}`)?.value ?? null;
     expect(storeB.lww(`action-decision:${actionId(13)}`)?.value ?? null).toEqual(decided);
+  });
+});
+
+describe("investigations in the log", () => {
+  const registration = {
+    question: "Is f1 near 2 Hz?",
+    hypothesis: "Euler–Bernoulli says so.",
+    alternative: "Shear deformation matters.",
+    predictions: [{ id: "P1", statement: "f1 ≈ 2.09 Hz", quantity: "f1 (Hz)", expected: "2.09 ± 1 %", refutedIf: "off by more than 1 %" }],
+    method: "FEM",
+    verification: ["mesh convergence"],
+    uncertainty: "Richardson",
+    decision: "Supported if P1 holds.",
+  };
+  const invId = (n: number) => `inv_${String(n).padStart(22, "0")}`;
+
+  test("registered with its digest, immutable; concluded once, by the node that ran it", () => {
+    const { a, b, storeA, storeB } = fleet();
+    const digest = registrationDigest(registration);
+    expect(() =>
+      storeA.emit(a, "investigation.registered", { id: invId(1), question: "q", registration: { ...registration, decision: "moved goalposts" }, digest }),
+    ).toThrow(/doesn't match its digest/);
+    storeA.emit(a, "investigation.registered", { id: invId(1), question: "q", registration, digest });
+    expect(() => storeA.emit(a, "investigation.registered", { id: invId(1), question: "q", registration, digest })).toThrow(/already registered/);
+    syncInto(storeA, storeB);
+    expect(() => storeB.emit(b, "investigation.concluded", { id: invId(1), status: "done", conclusion: "supported", summary: "s" })).toThrow(/only the node that ran/);
+    storeA.emit(a, "investigation.concluded", { id: invId(1), status: "done", conclusion: "refuted", summary: "P1 off by 4 %" });
+    expect(() => storeA.emit(a, "investigation.concluded", { id: invId(1), status: "done", conclusion: "supported", summary: "second thoughts" })).toThrow(/already concluded/);
+    expect(storeA.lww<{ conclusion: string }>(`investigation-result:${invId(1)}`)?.value?.conclusion).toBe("refuted");
+    expect(() => storeA.emit(a, "investigation.concluded", { id: invId(2), status: "stopped", summary: "" })).toThrow(/no such investigation/);
+  });
+
+  test("any order, one digest", () => {
+    const { a, storeA } = fleet();
+    storeA.emit(a, "investigation.registered", { id: invId(3), question: "q", registration, digest: registrationDigest(registration) });
+    storeA.emit(a, "investigation.concluded", { id: invId(3), status: "done", conclusion: "supported", summary: "ok", predictions: [{ id: "P1", verdict: "consistent", value: 2.089, units: "Hz" }] });
+    const digest = storeA.digest();
+    const events = storeA.eventsSince({}, 100_000).events;
+    for (let seed = 1; seed <= 6; seed++) {
+      const random = rng(seed);
+      const order = [...events].sort(() => random() - 0.5);
+      const replica = new MindStore(":memory:");
+      replica.expectFleet(storeA.fleet!);
+      for (const event of order) replica.ingest([event]);
+      expect(replica.digest()).toBe(digest);
+    }
   });
 });
 
