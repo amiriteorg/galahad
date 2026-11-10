@@ -496,8 +496,12 @@ Next:
       );
       if (!matches.length) fail(`no paired phone or browser matches "${sub}"`);
       // Never guess whom to give powers to: several matches must be told apart by id.
+      const pairedOn = (hlc: string) => {
+        const ms = Number(hlc.slice(0, 15));
+        return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString().slice(0, 10) : "?";
+      };
       if (matches.length > 1 && !matches.some((d) => d.id === sub)) {
-        fail(`"${sub}" matches ${matches.length} devices; name one by its id:\n${matches.map((d) => `  ${d.id.slice(0, 12)}  ${d.name}  paired ${d.enrolledAt.slice(0, 10)}  ${d.scopes.includes("bank:read") ? "(has bank:read)" : ""}`).join("\n")}`);
+        fail(`"${sub}" matches ${matches.length} devices; name one by its id:\n${matches.map((d) => `  ${d.id.slice(0, 12)}  ${d.name}  paired ${pairedOn(d.enrolledAt)}  ${d.scopes.includes("bank:read") ? "(has bank:read)" : ""}`).join("\n")}`);
       }
       const target = matches.find((d) => d.id === sub) ?? matches[0]!;
       const scopes = [...new Set([...target.scopes, ...rest])];

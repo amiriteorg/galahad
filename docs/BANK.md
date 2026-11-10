@@ -190,4 +190,5 @@ Everything was built and tested against a stand-in for Enable Banking with a thr
 5. The limit on background fetches is 4 per account per day, and a 429 or `ASPSP_RATE_LIMIT_EXCEEDED` signals it.
 6. Transactions page with `continuation_key`, and the fields are named as documented (`entry_reference`, `transaction_amount`, `credit_debit_indicator`, `creditor`, `debtor`, `remittance_information`, `balance_after_transaction`). A field under another name comes back empty, not wrong.
 7. `DELETE /sessions/{id}` ends the consent at the bank.
-8. MCP over `tailscale ssh` keeps stdio as it is (the same as any MCP server run over SSH).
+
+Verified on ultra: the callback page is served; an agent granted `bank:read` gets exactly the four bank tools over `tailscale ssh root@ultra galahad mcp --arm …`, and one without it gets none; the file-mode checks run on Linux.
