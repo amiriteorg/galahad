@@ -199,6 +199,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | **Who acts** | In chat, Galahad runs his tools as the agent `galahad`, with the caller's scopes minus what agents may never hold (`vault:write`, `fleet:admin`, `gateway:mint`, `brain:write`). So his memories are `agent`, his sandboxes are his own, and outward or destructive calls are filed for your approval exactly as an agent's are. No agent can be minted under that name. An agent that calls chat keeps its own powers. |
 | **Same checks** | The tools reach the node through the same routes as over HTTP, in process: the route's scope, zod validation of the input, the handler. The model's arguments are checked against the tool's schema before anything runs. |
 | **The bank** | Offered only when the caller holds `bank:read`. Once bank data is in an answer, tools that can carry data out (`web_search`, `connector_call`, `sandbox_run`, `sandbox_exec`, `decide`) are refused for the rest of it. |
+| **Long answers** | An answer cut off by the model's output limit goes on where it stopped (up to 3 times; some providers' default limit is short), and says so if it still didn't finish. A tool result over 30,000 characters is cut with a note that tells the model to ask for less (a filter, a narrower range, the next page). |
 | **Quests** | Their roles keep their own tools (the workshop's shell, the reviewer's reading): they ask for chat without tools (`tools: false`). |
 
 ## 7. Placement: using every body well ✅

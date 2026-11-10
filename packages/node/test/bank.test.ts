@@ -257,6 +257,22 @@ describe("what agents read", () => {
     expect(s.bank.data()).toHaveLength(4);
   });
 
+  test("a range inside one already fetched comes from the cache, cut to it: no bank call", async () => {
+    const tx = (day: string, name: string) => ({ entry_reference: name, booking_date: day, transaction_amount: { currency: "DKK", amount: "1.00" }, credit_debit_indicator: "DBIT", creditor: { name } });
+    const s = await connected({ pages: [[tx("2026-10-02", "early"), tx("2026-10-20", "middle"), tx("2026-11-01", "late"), { ...tx("", "pending"), booking_date: undefined }]] });
+    expect(((await s.service.transactions({ account: ACCOUNT, from: "2026-10-01", to: "2026-11-01" })) as any).data).toHaveLength(4);
+    const calls = s.bank.data().length;
+    const october = (await s.service.transactions({ account: ACCOUNT, from: "2026-10-10", to: "2026-10-31" })) as any;
+    expect(october).toMatchObject({ source: "cache" });
+    expect(october.data.map((t: any) => t.counterparty)).toEqual(["middle"]);
+    const tail = (await s.service.transactions({ account: ACCOUNT, from: "2026-10-15", to: "2026-11-01" })) as any;
+    expect(tail.data.map((t: any) => t.counterparty)).toEqual(["middle", "late", "pending"]);
+    expect(s.bank.data()).toHaveLength(calls);
+    // A range that reaches outside what was fetched asks the bank.
+    await s.service.transactions({ account: ACCOUNT, from: "2026-09-01", to: "2026-11-01" });
+    expect(s.bank.data()).toHaveLength(calls + 1);
+  });
+
   test("a 429 is never retried: a 6-hour pause, the cache meanwhile", async () => {
     let calls = 0;
     const s = await connected({ balances: () => (++calls === 1 ? Response.json({ balances: [] }) : Response.json({ error: "ASPSP_RATE_LIMIT_EXCEEDED" }, { status: 429 })) });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, type ChatTools, MAX_TOOL_ROUNDS, type ToolCall } from "../src/index.ts";
+import { chat, type ChatTools, CONTINUE, MAX_CONTINUATIONS, MAX_TOOL_ROUNDS, type ToolCall } from "../src/index.ts";
 
 /*
  * Galahad's chat with tools: the model calls tools in rounds, sees their outcomes,
@@ -133,6 +133,28 @@ describe("chat with tools (OpenAI-compatible)", () => {
     expect(runs).toHaveLength(MAX_TOOL_ROUNDS);
     expect(events.filter((e) => e.type === "tool_result" && !e.ok)).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ type: "error", error: expect.stringContaining(`${MAX_TOOL_ROUNDS} rounds`) });
+  });
+
+  test("an answer cut off by the model's output limit goes on where it stopped, in the same answer", async () => {
+    const model = scripted([
+      openai({ choices: [{ delta: { content: "The first half of a long list, " } }] }, { choices: [{ delta: {}, finish_reason: "length" }] }),
+      openai({ choices: [{ delta: { content: "and the second half." } }] }, { choices: [{ delta: {}, finish_reason: "stop" }] }),
+    ]);
+    const events = await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("List everything."), tools: fakeTools().tools }));
+    expect(textOf(events)).toBe("The first half of a long list, and the second half.");
+    expect(model.bodies[1].messages.slice(-2)).toEqual([
+      { role: "assistant", content: "The first half of a long list, " },
+      { role: "user", content: CONTINUE },
+    ]);
+  });
+
+  test(`after ${MAX_CONTINUATIONS} continuations it says the answer reached the limit, instead of stopping silently`, async () => {
+    const cut = (text: string) => openai({ choices: [{ delta: { content: text } }] }, { choices: [{ delta: {}, finish_reason: "length" }] });
+    const model = scripted(Array.from({ length: MAX_CONTINUATIONS + 1 }, (_, i) => cut(`part ${i}. `)));
+    const events = await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("Go on forever.") }));
+    expect(model.bodies).toHaveLength(MAX_CONTINUATIONS + 1);
+    expect(textOf(events)).toEndWith("*(This answer reached the model's length limit. Ask me to go on.)*");
+    expect(events.at(-1)).toMatchObject({ type: "done" });
   });
 
   test("without tools, nothing about tools is sent", async () => {

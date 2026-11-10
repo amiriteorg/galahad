@@ -118,7 +118,7 @@ The agent then runs its shell on your laptop and reaches the bank only through t
 | `bank_status` | none | Consent expiry and days left, `reauthorization_required`, the accounts (IBANs masked), each account's fetches left today and cache age |
 | `bank_accounts` | none | uid, name, masked IBAN, currency of each authorised account |
 | `bank_balances` | `account` (a uid), `refresh?` | Each balance's type, name, amount and currency, reference date |
-| `bank_transactions` | `account`, `from`, `to` (YYYY-MM-DD, at most 365 days, not in the future), `refresh?` | Per transaction: id, booking and value dates, status, direction, amount, counterparty, up to 5 remittance lines, reference, note, balance after |
+| `bank_transactions` | `account`, `from`, `to` (YYYY-MM-DD, at most 365 days, not in the future), `search?`, `direction?` (credit, debit), `offset?`, `limit?` (up to 120), `refresh?` | Exact totals in and out of everything that matches, then a page of 100 (newest first): id, dates, status, direction, amount, counterparty, up to 5 remittance lines, reference, note, balance after (empty fields left out), and how to get the next page |
 
 Data comes back in a fixed shape, never the bank's raw reply. Every text field has control, bidirectional and zero-width characters removed and is cut to 200 characters. The whole is wrapped as untrusted:
 
@@ -138,6 +138,7 @@ Data comes back in a fixed shape, never the bank's raw reply. Every text field h
 - **A daily budget.** Galahad's fetches are background fetches (no PSU headers), which banks limit to 4 a day per account. Galahad allows itself 4 per account in any 24 hours, counting each page of transactions. Over budget, the cache answers with a note.
 - **Never in a loop.** A rate limit (429) is never retried: Galahad pauses that account for 6 hours and answers from the cache.
 - **At most 10 pages** per transactions request; a partial answer says so. Banks often keep only 90 days of history for background fetches.
+- **Long ranges cost nothing extra to read.** Searching, filtering and paging work on what was fetched, and a range inside one already fetched is cut from the cache: only a range that reaches outside it asks the bank. 278 transactions (about 120,000 characters) come back as totals plus three pages of about 20,000.
 
 ## Files on the node
 
@@ -195,7 +196,7 @@ Everything was built and tested against a stand-in for Enable Banking with a thr
 3. The bank's return carries `code` and `state` as query parameters; an `error` comes back the same way.
 4. Expired, closed and revoked sessions come back as 401, 403 or one of the documented codes (`EXPIRED_SESSION`, `REVOKED_SESSION`…). Any 401 or 403 is treated as one.
 5. The limit on background fetches is 4 per account per day, and a 429 or `ASPSP_RATE_LIMIT_EXCEEDED` signals it.
-6. Transactions page with `continuation_key`, and the fields are named as documented (`entry_reference`, `transaction_amount`, `credit_debit_indicator`, `creditor`, `debtor`, `remittance_information`, `balance_after_transaction`). A field under another name comes back empty, not wrong.
+6. Transactions page with `continuation_key`. *Confirmed for the fields Lunar fills:* id, booking date, status, direction, amount and payment text on every transaction, the other party on most; it leaves value date, reference, note and balance after empty.
 7. `DELETE /sessions/{id}` ends the consent at the bank.
 
 Confirmed by the first real connection (10 November 2026): 1 to 3. Enable Banking accepted the application's JWT; Lunar is listed as `Lunar` for `DK` (personal), allows 180 days and requires no PSU headers; the PWA finished the authorisation from the bank's return.

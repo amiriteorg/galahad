@@ -1,6 +1,6 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, openAIConversation, type ToolCall, type ToolSpec, ToolsUnsupportedError } from "./adapters.ts";
+import { anthropicConversation, openAIConversation, type ToolCall, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
 import { listModels, resolveProvider } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
@@ -37,6 +37,9 @@ export interface ChatTools {
 
 /** Tool rounds per answer; past it every call is refused, and then the answer ends. */
 export const MAX_TOOL_ROUNDS = 12;
+
+/** How many times an answer cut off by the model's output limit is continued. */
+export const MAX_CONTINUATIONS = 3;
 
 /** Expand `<provider>/*` wildcards into the first model that provider serves on this node. */
 async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
@@ -105,8 +108,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield { type: "model", ref };
       let spoke = false;
       let resumed = false;
+      let continued = 0;
       for (let round = 0; ; round++) {
-        let calls: ToolCall[];
+        let end: TurnEnd;
         try {
           const turn = conversation.turn(offered);
           let next = await turn.next();
@@ -117,7 +121,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             emitted = spoke = true;
             yield { type: "text", text: next.value };
           }
-          calls = next.value;
+          end = next.value;
         } catch (error) {
           // A runtime that can't take tools (some local models): the same model, without them.
           if (error instanceof ToolsUnsupportedError && !emitted) {
@@ -128,7 +132,18 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           }
           throw error;
         }
-        if (!calls.length) break;
+        if (!end.calls.length) {
+          // Cut off by the model's output limit: it goes on where it stopped, in the same answer.
+          if (end.truncated && continued < MAX_CONTINUATIONS) {
+            continued++;
+            conversation.resume();
+            round--;
+            continue;
+          }
+          if (end.truncated) yield { type: "text", text: "\n\n*(This answer reached the model's length limit. Ask me to go on.)*" };
+          break;
+        }
+        const calls: ToolCall[] = end.calls;
         if (round > MAX_TOOL_ROUNDS) throw new Error(`stopped after ${MAX_TOOL_ROUNDS} rounds of tools without an answer`);
         emitted = true;
         const outcomes = [];

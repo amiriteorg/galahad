@@ -38,15 +38,27 @@ export interface ToolOutcome {
   isError?: boolean;
 }
 
+/** How a turn ended: the tools it called (none: the answer is complete), or cut off by the output limit. */
+export interface TurnEnd {
+  calls: ToolCall[];
+  truncated: boolean;
+}
+
+/** What a model is told when its answer was cut off by its output limit. */
+export const CONTINUE =
+  "Your answer was cut off by the output limit. Continue exactly where it stopped (mid-sentence if need be), without repeating anything and without mentioning the cut.";
+
 /**
  * One model, one answer, any number of tool rounds. Each turn streams text and then
- * returns the tools the model called (none: the answer is complete); `answer` hands
- * back their outcomes for the next turn. The provider's own format (Anthropic's
- * thinking blocks with their signatures, OpenAI's tool_calls) stays inside.
+ * says how it ended; `answer` hands back the outcomes of the tools it called, and
+ * `resume` asks it to go on after its output limit cut it off. The provider's own
+ * format (Anthropic's thinking blocks with their signatures, OpenAI's tool_calls)
+ * stays inside.
  */
 export interface Conversation {
-  turn(tools: ToolSpec[]): AsyncGenerator<string, ToolCall[]>;
+  turn(tools: ToolSpec[]): AsyncGenerator<string, TurnEnd>;
   answer(outcomes: ToolOutcome[]): void;
+  resume(): void;
 }
 
 /** Models that accept Anthropic's server-side refusal fallback ("default" routing). */
@@ -57,6 +69,7 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   const client = new Anthropic({ apiKey: input.provider.apiKey ?? "", baseURL: input.provider.baseUrl, maxRetries: 2, ...(input.fetch ? { fetch: input.fetch } : {}) });
   const serverFallback = input.provider.baseUrl === "https://api.anthropic.com" && SERVER_FALLBACK_MODELS.has(input.model);
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
+  let last: Anthropic.Beta.BetaContentBlockParam[] = [];
   return {
     async *turn(tools) {
       if (!input.provider.apiKey) throw new Error(`${input.provider.id} has no API key`);
@@ -86,11 +99,14 @@ export function anthropicConversation(input: CompletionInput): Conversation {
           continue;
         }
         const calls = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-        if (!calls.length) return [];
+        if (!calls.length) {
+          last = final.content as Anthropic.Beta.BetaContentBlockParam[];
+          return { calls: [], truncated: final.stop_reason === "max_tokens" };
+        }
         if (final.stop_reason === "max_tokens") throw new Error(`${input.model} ran out of room in the middle of a tool call`);
         // The whole turn goes back as it came, thinking blocks and signatures included.
         messages.push({ role: "assistant", content: final.content as Anthropic.Beta.BetaContentBlockParam[] });
-        return calls.map((b) => ({ id: b.id, name: b.name, input: b.input }));
+        return { calls: calls.map((b) => ({ id: b.id, name: b.name, input: b.input })), truncated: false };
       }
     },
     answer(outcomes) {
@@ -98,6 +114,10 @@ export function anthropicConversation(input: CompletionInput): Conversation {
         role: "user",
         content: outcomes.map((o) => ({ type: "tool_result" as const, tool_use_id: o.id, content: o.content, ...(o.isError ? { is_error: true } : {}) })),
       });
+    },
+    resume() {
+      if (last.length) messages.push({ role: "assistant", content: last });
+      messages.push({ role: "user", content: CONTINUE });
     },
   };
 }
@@ -114,6 +134,7 @@ interface OpenAIChunk {
       reasoning_content?: string | null;
       tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string | Record<string, unknown> } }[];
     };
+    finish_reason?: string | null;
   }[];
   error?: { message?: string };
 }
@@ -121,6 +142,7 @@ interface OpenAIChunk {
 /** Any OpenAI-compatible endpoint (DeepSeek, Mistral, Cloudflare AI Gateway, Ollama, llama.cpp …), with function calling. */
 export function openAIConversation(input: CompletionInput): Conversation {
   const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
+  let last = "";
   return {
     async *turn(tools) {
       const response = await (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
@@ -143,6 +165,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
       }
       let text = "";
       let reasoning = "";
+      let finish: string | null = null;
       const calls = new Map<number, { id: string; name: string; args: string }>();
       for await (const data of sseData(response.body)) {
         if (data === "[DONE]") break;
@@ -154,6 +177,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
         }
         if (chunk.error) throw new Error(`${input.provider.id}: ${chunk.error.message ?? "stream error"}`);
         const delta = chunk.choices?.[0]?.delta;
+        finish = chunk.choices?.[0]?.finish_reason ?? finish;
         if (delta?.reasoning_content) reasoning += delta.reasoning_content;
         for (const part of delta?.tool_calls ?? []) {
           const index = part.index ?? calls.size;
@@ -169,7 +193,11 @@ export function openAIConversation(input: CompletionInput): Conversation {
           yield delta.content;
         }
       }
-      if (!calls.size) return [];
+      if (!calls.size) {
+        last = text;
+        return { calls: [], truncated: finish === "length" };
+      }
+      if (finish === "length") throw new Error(`${input.provider.id}/${input.model} ran out of room in the middle of a tool call`);
       const list = [...calls.entries()].sort(([a], [b]) => a - b).map(([index, c]) => ({ ...c, id: c.id || `call_${index}`, args: c.args || "{}" }));
       messages.push({
         role: "assistant",
@@ -178,10 +206,14 @@ export function openAIConversation(input: CompletionInput): Conversation {
         ...(reasoning ? { reasoning_content: reasoning } : {}),
         tool_calls: list.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.args } })),
       });
-      return list.map((c) => ({ id: c.id, name: c.name, input: parseArgs(c.args) }));
+      return { calls: list.map((c) => ({ id: c.id, name: c.name, input: parseArgs(c.args) })), truncated: false };
     },
     answer(outcomes) {
       for (const o of outcomes) messages.push({ role: "tool", tool_call_id: o.id, content: o.isError ? `Error: ${o.content}` : o.content });
+    },
+    resume() {
+      if (last) messages.push({ role: "assistant", content: last });
+      messages.push({ role: "user", content: CONTINUE });
     },
   };
 }

@@ -354,7 +354,7 @@ export class BankService {
     if (input.from > isoDay(this.now())) throw new BankError(400, "from is in the future");
     if ((to - from) / DAY_MS > MAX_RANGE_DAYS) throw new BankError(400, `at most ${MAX_RANGE_DAYS} days at a time`);
     const key = `transactions:${input.account}:${input.from}:${input.to}`;
-    const hit = this.cached<TransactionOut[]>(key);
+    const hit = this.cached<TransactionOut[]>(key) ?? this.covering(input.account, input.from, input.to);
     if (hit && !input.refresh && this.now() - hit.at < TRANSACTIONS_TTL_MS) {
       this.audit("bank_transactions", input.account, "cache");
       return this.wrap(hit.body, "cache", hit.at);
@@ -389,6 +389,24 @@ export class BankService {
     if (!note) this.store(key, input.account, out, at);
     this.audit("bank_transactions", input.account, note ? "live-partial" : "live");
     return this.wrap(out, "live", at, note);
+  }
+
+  /** The freshest fetched range that covers this one, cut to it: a range inside it never asks the bank again. */
+  private covering(account: string, from: string, to: string): { at: number; body: TransactionOut[] } | null {
+    const rows = this.cache()
+      .query<{ key: string; fetched_at: number; body: string }, [string]>("SELECT key, fetched_at, body FROM cache WHERE account = ? AND key LIKE 'transactions:%' ORDER BY fetched_at DESC")
+      .all(account);
+    for (const row of rows) {
+      const [, , cachedFrom, cachedTo] = row.key.split(":");
+      if (!cachedFrom || !cachedTo || cachedFrom > from || cachedTo < to) continue;
+      const within = (JSON.parse(row.body) as TransactionOut[]).filter((t) => {
+        const day = t.booking_date ?? t.value_date;
+        // Undated ones (pending) belong to the end of the range they came with.
+        return day ? day >= from && day <= to : to >= cachedTo;
+      });
+      return { at: row.fetched_at, body: within };
+    }
+    return null;
   }
 
   /** Why a live fetch can't happen now (cooling down after a 429, or no budget left), or null. */
