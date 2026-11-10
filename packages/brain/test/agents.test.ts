@@ -109,6 +109,18 @@ describe("running an agent", () => {
     expect(seen.filter((e) => e.type === "tool")).toHaveLength(2);
   });
 
+  test("every command it sends the sandbox is valid shell (seen live: `… & && echo $!` broke the launch)", async () => {
+    const box = sandbox([[LINES.start], [LINES.shell]], null, { forever: true });
+    let t = 0;
+    await runAgent(OPENCODE, { model, prompt: "it's \"quoted\" & $(dangerous)", session: SESSION, deadline: 15_000, workdir: "/work/my repo" }, { exec: box.exec, sleep: noSleep, now: () => (t += 10_000) });
+    const kinds = new Set(box.commands.map((c) => c.split(" ")[0]));
+    expect([...kinds].sort()).toEqual(["kill", "mkdir", "python3", "stat"]);
+    for (const command of box.commands) {
+      const check = Bun.spawnSync(["bash", "-n", "-c", command]);
+      expect({ command: command.slice(0, 120), stderr: check.stderr.toString() }).toEqual({ command: command.slice(0, 120), stderr: "" });
+    }
+  });
+
   test("a failed run says why: its exit, its last error, its stderr", async () => {
     const box = sandbox([[LINES.start]], 1, { stderr: "provider galahad: 401 unknown token" });
     const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, { exec: box.exec, sleep: noSleep });
@@ -172,6 +184,7 @@ describe("a quest with a coding agent", () => {
     expect(second).toContain("Also add a test for negative numbers.");
     // The reviewer saw the evidence from the sandbox.
     expect(commands).toContain("cd /work/repo && git diff --stat");
+    for (const command of commands) expect(Bun.spawnSync(["bash", "-n", "-c", command]).stderr.toString()).toBe("");
     expect(events.some((e) => e.type === "command" && e.command === "shell: python3 test_calc.py")).toBe(true);
   });
 });

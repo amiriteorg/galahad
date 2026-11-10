@@ -169,8 +169,8 @@ export async function runAgent(
       `mkdir -p ${AGENT_DIR} && rm -f ${AGENT_DIR}/exit ${AGENT_DIR}/pid`,
       `printf %s ${quote(prompt)} | base64 -d > ${AGENT_DIR}/prompt.md`,
       `cd ${quote(input.workdir)}`,
-      `setsid bash -c ${quote(`${driver.command(input.model, input.session)} < /dev/null >> ${AGENT_DIR}/events.jsonl 2>> ${AGENT_DIR}/stderr.log; echo $? > ${AGENT_DIR}/exit`)} > /dev/null 2>&1 &`,
-      `echo $! > ${AGENT_DIR}/pid`,
+      // Backgrounded inside braces: `… & && …` isn't shell.
+      `{ setsid bash -c ${quote(`${driver.command(input.model, input.session)} < /dev/null >> ${AGENT_DIR}/events.jsonl 2>> ${AGENT_DIR}/stderr.log; echo $? > ${AGENT_DIR}/exit`)} > /dev/null 2>&1 & echo $! > ${AGENT_DIR}/pid; }`,
     ].join(" && "),
     60,
   );
