@@ -65,6 +65,12 @@ The review also confirmed what held up:
 - **The host keeps a reserve.** A sandbox is created only if every workspace could fill up to its limit and 10 % of the disk (at least 20 GB) stays free.
 - Found by Galahad himself, in a live quest run as a loop, in November 2026.
 
+## Artifacts (tested)
+
+- **What leaves a sandbox is parsed as hostile.** The node streams `docker cp` through its own tar parser: only regular files and directories are written; symlinks, hard links, devices and FIFOs are refused; paths can't climb out or be absolute; bytes and file count are capped mid-stream, so an archive can't fill the disk before a check. Tested with hand-built hostile archives (`packages/sandbox/test/tar.test.ts`), and on ultra against a real container and a real microVM that plant a link to `/etc/passwd` (`packages/sandbox/test/docker.integration.test.ts`).
+- **Serving is fenced.** Only files the manifest lists are opened; HTML and SVG are served as text, never rendered; responses carry `CSP: sandbox` and `nosniff`; downloads are checked against the SHA-256 recorded in the mind (`packages/node/test/artifacts.test.ts`).
+- **Agents keep, you delete.** An arm or a loop can keep only its own sandboxes' work; removing kept work needs `fleet:admin`.
+
 ## MicroVM sandboxes (tested)
 
 - **A kernel of its own.** On a host with KVM, an `online` sandbox runs inside its own Kata microVM by default, so a container escape or kernel exploit lands in a throwaway VM, not on the host. Tested on ultra: the guest runs its own kernel, as uid 1000 with no capabilities, a read-only root, Docker's seccomp filter enforced in the guest, the disk limit holding through the VM, the internet and the model gateway reachable, and the host not (`packages/sandbox/test/docker.integration.test.ts`).

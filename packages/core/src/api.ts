@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ConnectorArgs, ToolName } from "./connectors.ts";
-import { ActionId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
+import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 
@@ -327,6 +327,35 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ id: ActionId, approve: z.boolean(), note: z.string().max(500).optional() }),
   },
+  artifacts: { method: "GET", path: "/api/artifacts", scope: "mind:read", input: null },
+  /** Keep a sandbox's work products (a directory under /work, by default /work/out) after the sandbox is gone. */
+  saveArtifact: {
+    method: "POST",
+    path: "/api/artifacts/save",
+    scope: "sandbox",
+    input: z.strictObject({
+      sandbox: z.string().regex(/^[0-9a-f]{10}$/),
+      path: z
+        .string()
+        .max(256)
+        .regex(/^\/work(\/[A-Za-z0-9._ -]+)*\/?$/, "a directory under /work")
+        .refine((path) => !path.split("/").some((part) => part === "." || part === ".."), "no . or .. in the path")
+        .optional(),
+      label: z.string().min(1).max(200).optional(),
+      on: z.string().min(1).max(128).optional(),
+      /** Set by a full node relaying an arm's request: the arm may only keep its own sandboxes' work. */
+      quest: z.string().max(64).optional(),
+    }),
+  },
+  /** One file of an artifact, as bytes (text and raster images inline, the rest as a download). */
+  artifactFile: {
+    method: "POST",
+    path: "/api/artifacts/file",
+    scope: "mind:read",
+    input: z.strictObject({ id: ArtifactId, path: z.string().min(1).max(512) }),
+  },
+  /** Deleting kept work is yours to decide (the oath: never delete persistent things without approval). */
+  removeArtifact: { method: "POST", path: "/api/artifacts/remove", scope: "fleet:admin", input: z.strictObject({ id: ArtifactId }) },
   orders: { method: "GET", path: "/api/orders", scope: "mind:read", input: null },
   /** Sign a standing order: your answer in advance. Only you (never an agent or another node). */
   setOrder: {
@@ -598,6 +627,23 @@ export interface ActionView {
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;
   receipt: string | null;
+}
+
+export interface ArtifactView {
+  id: string;
+  label: string;
+  quest: string | null;
+  sandbox: string | null;
+  /** The node holding the files. */
+  node: string;
+  nodeName: string;
+  bytes: number;
+  count: number;
+  /** Up to 200 files (the holding node has them all). */
+  files: { path: string; size: number; sha256: string }[];
+  savedAt: number;
+  /** The files are on the node you asked. */
+  here: boolean;
 }
 
 export interface OrderView {

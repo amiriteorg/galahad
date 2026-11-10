@@ -1,4 +1,4 @@
-import { type ChatStreamEvent, type ExecResult, type FleetView, redact, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, redact, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
 import { type QuestEvent, type QuestOutcome, runQuest } from "@galahad/brain";
 
 /*
@@ -44,7 +44,7 @@ const NETWORK: Record<SandboxNetwork, string> = {
 function environment(sandbox: SandboxView, host: string): string {
   return [
     `a Debian Linux sandbox on ${host}${sandbox.isolation === "vm" ? ", inside its own KVM microVM" : ""}: unprivileged user, no sudo, no package installs via apt.`,
-    "Workspace /work (kept for the whole quest); /tmp is scratch.",
+    "Workspace /work (kept for the whole quest); /tmp is scratch. Put what should outlive the sandbox (reports, plots, data, models, code) in /work/out: it's kept, with hashes, when the quest ends.",
     sandbox.image.includes("/lab")
       ? "The Lab: python3 at /opt/lab with numpy, scipy, sympy, mpmath, pandas, statsmodels, matplotlib (save figures to files), Pint, uncertainties, SALib; " +
         "FEniCSx (dolfinx, PETSc, MPI: mpirun), gmsh, scikit-fem, OpenSees; build123d on OpenCascade (STEP/STL); MuJoCo; CoolProp, Cantera; " +
@@ -105,7 +105,11 @@ export interface NodeQuestHooks {
  * outcome remembered. The CLI and loops both run quests this way; the node decides
  * what the caller may do (an arm's or a loop's sandboxes are always its own and ephemeral).
  */
-export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: NodeQuestHooks = {}): Promise<{ outcome: QuestOutcome; quest: string }> {
+export async function runNodeQuest(
+  node: NodeClient,
+  options: DoOptions,
+  hooks: NodeQuestHooks = {},
+): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null }> {
   const quest = `q-${Date.now().toString(36)}`;
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
@@ -120,6 +124,7 @@ export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: 
   hooks.started?.({ quest, sandbox, host });
 
   let outcome: QuestOutcome;
+  let artifact: ArtifactView | null = null;
   try {
     outcome = await runQuest(
       { goal: options.goal, environment: environment(sandbox, host), maxSteps: options.maxSteps, commandTimeoutSec: options.commandTimeoutSec },
@@ -141,16 +146,28 @@ export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: 
       },
     );
   } finally {
+    // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
+    artifact = await node
+      .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: sandbox.id, on: sandbox.node, label: options.goal.slice(0, 200) })
+      .then((r) => r.artifact)
+      .catch(() => null);
     if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
 
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
   const memory = redact(
-    [`Quest (${outcome.status}): ${options.goal}`, outcome.summary.trim(), outcome.review ? `Reviewer: ${outcome.review.trim()}` : ""].filter(Boolean).join("\n"),
+    [
+      `Quest (${outcome.status}): ${options.goal}`,
+      outcome.summary.trim(),
+      outcome.review ? `Reviewer: ${outcome.review.trim()}` : "",
+      artifact ? `Kept: artifact ${artifact.id} (${artifact.count} file(s): ${artifact.files.slice(0, 8).map((f) => f.path).join(", ")})` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest };
+  return { outcome, quest, artifact };
 }
 
 export async function questFromCli(node: NodeClient, options: DoOptions): Promise<QuestOutcome> {
@@ -165,8 +182,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   process.on("SIGINT", onInterrupt);
 
   let outcome: QuestOutcome;
+  let artifact: ArtifactView | null = null;
   try {
-    ({ outcome } = await runNodeQuest(node, options, {
+    ({ outcome, artifact } = await runNodeQuest(node, options, {
       emit: print,
       signal: controller.signal,
       started: ({ quest, sandbox, host }) => {
@@ -181,5 +199,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions`)}`);
   console.log(indent(outcome.summary.trim()));
   if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
+  if (artifact) {
+    const kb = Math.max(1, Math.round(artifact.bytes / 1024));
+    console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));
+  }
   return outcome;
 }

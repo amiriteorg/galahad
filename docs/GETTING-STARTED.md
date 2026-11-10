@@ -198,6 +198,16 @@ bun galahad sandbox rm <id>
 bun galahad ledger                                              # every action, with the oath's verdict
 ```
 
+Sandboxes are disposable; their results aren't. A quest keeps whatever it writes to `/work/out`, and you can keep any sandbox's:
+
+```sh
+bun galahad sandbox save <id> [/work/results] --label "mesh study"
+bun galahad artifacts                          # what quests and sandboxes kept, newest first
+bun galahad artifact <id>                      # its files, sizes and SHA-256s
+bun galahad artifact <id> report.md            # print one
+bun galahad artifact <id> --out ./results      # fetch them all, each checked against its hash
+```
+
 For mathematics, physics and engineering, give a sandbox or quest **the Lab** (`--lab`): SciPy and SymPy, FEniCSx with MPI, OpenFOAM, gmsh, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy and Z3. `lab-check` inside it proves each tool against a known answer:
 
 ```sh

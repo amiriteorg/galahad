@@ -8,6 +8,7 @@ import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
+import { ArtifactStore } from "./artifacts.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
@@ -26,6 +27,7 @@ export interface Daemon {
   sync: SyncEngine;
   loops: LoopRunner;
   connectors: ConnectorService;
+  artifacts: ArtifactStore;
   stop(): Promise<void>;
 }
 
@@ -171,6 +173,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   const startedAt = Date.now();
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch });
+  const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const taskDeps: LoopTaskDeps = {
     store,
     vault,
@@ -216,6 +219,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sandbox,
     sandboxContext,
     connectors,
+    artifacts,
     loops,
     heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
   });
@@ -285,6 +289,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sync,
     loops,
     connectors,
+    artifacts,
     async stop() {
       clearInterval(outbox);
       await loops.stop();

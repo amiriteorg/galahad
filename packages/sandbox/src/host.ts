@@ -16,6 +16,7 @@ import {
   type SandboxSpec,
   volumeName,
 } from "./spec.ts";
+import { type ExtractLimits, type ExtractResult, extractTar } from "./tar.ts";
 import { budgetProblem, DEFAULT_DISK_GB, type Workspaces, type WorkspaceStats } from "./workspaces.ts";
 
 export interface LedgerEntryInput {
@@ -331,6 +332,38 @@ export class SandboxHost {
       detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
     });
     return (await this.get(id))!;
+  }
+
+  /**
+   * Copy a directory out of a sandbox (by default its /work/out) into `dest`, treating
+   * what comes out as hostile: see tar.ts. Null when there's nothing there.
+   */
+  async collect(id: string, from: string, dest: string, limits: ExtractLimits): Promise<ExtractResult | null> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
+    const path = `/${from.split("/").filter(Boolean).join("/")}`;
+    if (!/^\/work(\/|$)/.test(path) || path.split("/").some((part) => part === "." || part === "..")) {
+      throw new SandboxError("only directories under /work can be kept");
+    }
+    const proc = Bun.spawn([this.bin, "cp", `${containerName(id)}:${path}`, "-"], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const timer = setTimeout(() => proc.kill(), 15 * 60_000);
+    try {
+      const [result, err, code] = await Promise.all([
+        extractTar(proc.stdout, dest, limits, 1).catch((error: Error) => {
+          proc.kill();
+          throw error;
+        }),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0) {
+        if (/could not find|no such file/i.test(err)) return null;
+        throw new SandboxError(`could not copy ${path}: ${redact(err.trim()).slice(0, 300)}`, 500);
+      }
+      return result;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async list(): Promise<SandboxView[]> {

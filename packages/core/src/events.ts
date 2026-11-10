@@ -50,6 +50,12 @@ export const LoopName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/, "lowerca
 export const ConnectorId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "lowercase letters, digits and - (max 40)");
 export const NoticeKey = z.string().min(1).max(160).regex(/^[A-Za-z0-9._:-]+$/);
 export const ActionId = z.string().regex(/^a_[A-Za-z0-9_-]{22}$/);
+export const ArtifactId = z.string().regex(/^art_[A-Za-z0-9_-]{22}$/);
+export const ArtifactFile = z.strictObject({
+  path: z.string().min(1).max(512),
+  size: z.number().int().min(0),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
 export const LoopStatus = z.enum(["ok", "attention", "failed", "interrupted"]);
 export const NoticeSeverity = z.enum(["info", "warn", "alert"]);
 /**
@@ -181,6 +187,22 @@ export const Bodies = {
   "order.revoked": z.strictObject({ id: OrderId }),
   /** The node that filed an action records which order answered it; every replica checks the order covers it. */
   "order.applied": z.strictObject({ order: OrderId, action: ActionId }),
+  /**
+   * Work products kept from a sandbox (its /work/out): the files stay on the node that saved them
+   * (the signer); the log records what they are, so any device can see and fetch them.
+   */
+  "artifact.saved": z.strictObject({
+    id: ArtifactId,
+    label: z.string().min(1).max(200),
+    quest: z.string().max(64).optional(),
+    sandbox: z.string().regex(/^[0-9a-f]{10}$/).optional(),
+    bytes: z.number().int().min(0),
+    count: z.number().int().min(0),
+    /** As many as fit; the holding node keeps the full manifest. */
+    files: z.array(ArtifactFile).max(200),
+  }),
+  /** Recorded by the node that held the files, once they're gone. */
+  "artifact.removed": z.strictObject({ id: ArtifactId }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

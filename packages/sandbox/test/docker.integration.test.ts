@@ -168,5 +168,24 @@ describe.if(enabled && microVMsAvailable())("KVM microVMs on real Docker", () =>
     expect(await sh(sb.id, "uname -r")).toBe(release());
     await host.destroy(sb.id, { quest: "it-vm" });
   }, 120_000);
+
+  test("work comes out of a container and a microVM alike; a planted link to the host's files doesn't", async () => {
+    for (const isolation of ["container", "vm"] as const) {
+      const sb = await host.create({ ...base, network: "isolated", isolation, quest: "it-vm" });
+      await sh(sb.id, "mkdir -p /work/out/plots && printf '# report\\n' > /work/out/report.md && head -c 4096 /dev/urandom > /work/out/plots/a.bin && ln -s /etc/passwd /work/out/passwd");
+      const dest = mkdtempSync(join(tmpdir(), "galahad-collect-"));
+      try {
+        const result = await host.collect(sb.id, "/work/out", dest, { maxBytes: 1 << 20, maxFiles: 100 });
+        expect(result!.files.map((f) => f.path).sort()).toEqual(["plots/a.bin", "report.md"]);
+        expect(result!.skipped).toEqual([{ path: "out/passwd", reason: "link" }]);
+        expect(readFileSync(join(dest, "report.md"), "utf8")).toBe("# report\n");
+        expect(existsSync(join(dest, "passwd"))).toBe(false);
+        expect(await host.collect(sb.id, "/work/nothing-here", dest, { maxBytes: 1 << 20, maxFiles: 100 })).toBeNull();
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+        await host.destroy(sb.id, { quest: "it-vm" });
+      }
+    }
+  }, 240_000);
 });
 

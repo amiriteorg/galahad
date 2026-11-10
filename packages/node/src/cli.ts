@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes, type SandboxView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes, type SandboxView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -50,7 +52,9 @@ Work
   sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
+  sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
   sandbox build [--on ultra] [--lab]   build the sandbox image (or the Lab) on a host
+  artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
 Loops (work on a schedule, on one node; every run is recorded in the mind)
@@ -130,6 +134,12 @@ class Admin {
     return response;
   }
 
+  /** A route that answers with bytes (an artifact's file). */
+  async bytes(name: RouteName, input?: unknown): Promise<{ bytes: Uint8Array; type: string }> {
+    const response = await this.request(name, input);
+    return { bytes: new Uint8Array(await response.arrayBuffer()), type: response.headers.get("content-type") ?? "" };
+  }
+
   async call<T = any>(name: RouteName, input?: unknown): Promise<T> {
     const body = await (await this.request(name, input)).json();
     const failed = streamedError(body);
@@ -207,6 +217,7 @@ async function main(): Promise<void> {
       vm: { type: "boolean" },
       container: { type: "boolean" },
       lab: { type: "boolean" },
+      out: { type: "string" },
       gpu: { type: "boolean" },
       mem: { type: "string" },
       disk: { type: "string" },
@@ -693,6 +704,18 @@ Next:
         printResult(result);
         process.exit(result.exitCode);
       }
+      if (sub === "save") {
+        if (!rest[0]) fail("usage: galahad sandbox save <id> [/work/dir] [--label text]");
+        const { artifact } = await admin.call("saveArtifact", {
+          sandbox: rest[0],
+          ...(rest[1] ? { path: rest[1] } : {}),
+          ...(str("label") ? { label: str("label") } : {}),
+          ...(on ? { on } : {}),
+        });
+        if (!artifact) console.log(`Nothing to keep in ${rest[1] ?? "/work/out"}.`);
+        else console.log(`Kept ${artifact.count} file(s), ${Math.max(1, Math.round(artifact.bytes / 1024))} KB: galahad artifact ${artifact.id}`);
+        return;
+      }
       if (sub === "rm") {
         if (!rest[0]) fail("usage: galahad sandbox rm <id>");
         await admin.call("destroySandbox", { id: rest[0], ...(on ? { on } : {}) });
@@ -733,6 +756,49 @@ Next:
         process.exit(code);
       }
       fail("usage: galahad sandbox run|ls|exec|rm|build — see `galahad help`");
+    }
+
+    case "artifacts":
+    case "artifact": {
+      const admin = new Admin(home);
+      const { artifacts } = (await admin.call("artifacts")) as { artifacts: ArtifactView[] };
+      const size = (bytes: number) => (bytes < 2 ** 20 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 2 ** 20).toFixed(1)} MB`);
+      const id = command === "artifact" ? sub : undefined;
+      if (!id) {
+        if (!artifacts.length) console.log("Nothing kept yet. Quests keep /work/out; `galahad sandbox save <id>` keeps any sandbox's.");
+        for (const a of artifacts) {
+          console.log(`  ${a.id}  ${new Date(a.savedAt).toLocaleString()}  ${String(a.count).padStart(4)} file(s) ${size(a.bytes).padStart(8)}  ${a.nodeName}${a.here ? "" : dim(" (elsewhere)")}`);
+          console.log(`      ${a.label}${a.quest ? dim(` · ${a.quest}`) : ""}`);
+        }
+        return;
+      }
+      const artifact = artifacts.find((a) => a.id === id);
+      if (!artifact) fail(`no artifact ${id}`);
+      const file = rest[0];
+      const out = str("out");
+      if (file && !out) {
+        // One file to stdout, as it is.
+        const { bytes } = await admin.bytes("artifactFile", { id, path: file });
+        process.stdout.write(bytes);
+        return;
+      }
+      if (out) {
+        const wanted = file ? artifact!.files.filter((f) => f.path === file) : artifact!.files;
+        for (const f of wanted) {
+          const { bytes } = await admin.bytes("artifactFile", { id, path: f.path });
+          const target = join(out, ...f.path.split("/"));
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, bytes);
+          const sha = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+          if (sha !== f.sha256) fail(`${f.path}: its SHA-256 doesn't match what was recorded`);
+        }
+        console.log(`Saved ${wanted.length} file(s) to ${out}, each checked against its recorded SHA-256.${artifact!.count > artifact!.files.length ? dim(` (${artifact!.count - artifact!.files.length} more aren't listed in the mind; fetch them by name)`) : ""}`);
+        return;
+      }
+      console.log(`${bold(artifact!.label)}  ${dim(`${artifact!.id} · ${artifact!.count} file(s) · ${size(artifact!.bytes)} · on ${artifact!.nodeName}${artifact!.quest ? ` · ${artifact!.quest}` : ""}`)}`);
+      for (const f of artifact!.files) console.log(`  ${f.path.padEnd(48)} ${size(f.size).padStart(8)}  ${dim(f.sha256.slice(0, 12))}`);
+      console.log(dim(`\n  galahad artifact ${id} <file>  ·  galahad artifact ${id} --out ./results`));
+      return;
     }
 
     case "ledger": {

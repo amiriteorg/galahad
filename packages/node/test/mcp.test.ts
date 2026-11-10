@@ -121,6 +121,8 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "artifact_read",
+        "artifacts",
         "connector_call",
         "connectors",
         "fleet",
@@ -135,6 +137,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "sandbox_destroy",
         "sandbox_exec",
         "sandbox_run",
+        "sandbox_save",
       ].sort(),
     );
     const oath = await client.readResource({ uri: "galahad://oath" });

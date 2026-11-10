@@ -50,6 +50,7 @@ import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo,
 import { SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
 import { type ArmTokens, armQuest } from "./arms.ts";
+import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
@@ -66,6 +67,8 @@ export type Listener = "loopback" | "proxied" | "tailnet" | "sandbox";
 
 export interface AppContext {
   identity: NodeIdentity;
+  /** Sandbox work products kept on this node. */
+  artifacts: ArtifactStore;
   nodeName: string;
   port: number;
   store: MindStore;
@@ -677,6 +680,65 @@ export function createApp(ctx: AppContext) {
           return ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec);
         }),
       );
+    },
+    artifacts: () => ({ artifacts: ctx.artifacts.list() }),
+    saveArtifact: (input, p) => {
+      const { on, quest: relayed, ...rest } = input;
+      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
+      return longRunning(
+        onNode(p, on, routes.saveArtifact.path, { ...rest, ...(quest ? { quest } : {}) }, async () => {
+          const sandbox = await ctx.sandbox!.get(rest.sandbox);
+          if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
+          // An arm (or a loop's quest) keeps only its own sandboxes' work.
+          if (quest && sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
+          try {
+            const artifact = await ctx.artifacts.save((id, from, dest, limits) => ctx.sandbox!.collect(id, from, dest, limits), {
+              sandbox: rest.sandbox,
+              ...(rest.path ? { path: rest.path } : {}),
+              ...(rest.label ? { label: rest.label } : {}),
+              quest: sandbox.quest,
+            });
+            return { artifact };
+          } catch (error) {
+            if (error instanceof ArtifactError) throw new HttpError(error.status, error.message);
+            throw error;
+          }
+        }),
+      );
+    },
+    artifactFile: (input) => {
+      let file: ReturnType<ArtifactStore["read"]>;
+      try {
+        file = ctx.artifacts.read(input.id, input.path);
+      } catch (error) {
+        if (error instanceof ArtifactError) throw new HttpError(error.status, error.message);
+        throw error;
+      }
+      const name = file.name.replace(/[^A-Za-z0-9._ -]/g, "_");
+      return new Response(file.bytes, {
+        headers: {
+          "content-type": file.type,
+          "content-length": String(file.bytes.length),
+          "content-disposition": `${file.inline ? "inline" : "attachment"}; filename="${name}"`,
+          "cache-control": "no-store",
+          // Opened directly, a kept file can do nothing on this origin.
+          "content-security-policy": "sandbox; default-src 'none'",
+          ...SECURITY_HEADERS,
+        },
+      });
+    },
+    removeArtifact: async (input, p) => {
+      if (p.kind !== "admin" && p.kind !== "client" && p.kind !== "node") throw new HttpError(403, "only you remove kept work");
+      const artifact = ctx.artifacts.get(input.id);
+      if (!artifact) throw new HttpError(404, "no such artifact");
+      if (artifact.here) {
+        ctx.artifacts.remove(input.id, p.kind === "client" ? `by ${ctx.store.device(p.device)?.name ?? "a paired device"}` : "by you");
+        return { ok: true };
+      }
+      if (p.kind === "node") throw new HttpError(409, "forwarded requests run where they land");
+      const holder = ctx.store.activeDevice(artifact.node);
+      if (!holder) throw new HttpError(409, `${artifact.nodeName} is gone; its files went with it`);
+      return forward(holder, routes.removeArtifact.path, { id: input.id });
     },
     destroySandbox: (input, p) => {
       // A request from you (CLI or a paired device) *is* the approval. A node may relay

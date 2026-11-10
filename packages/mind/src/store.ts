@@ -691,6 +691,22 @@ export class MindStore {
         this.putLww(`action-done:${body.id}`, event, body as Json);
         return null;
       }
+      case "artifact.saved": {
+        if (!isFullNode(signer)) return "only full nodes keep artifacts";
+        const body = bodyOf(event, "artifact.saved");
+        if (this.lww(`artifact:${body.id}`)) return "artifact already recorded";
+        this.putLww(`artifact:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "artifact.removed": {
+        const { id } = bodyOf(event, "artifact.removed");
+        const current = this.lww(`artifact:${id}`);
+        if (!current?.value) return "no such artifact";
+        // The node holding the files says when they're gone; nobody else can declare them gone.
+        if (current.device !== event.device) return "only the node holding an artifact removes it";
+        this.putLww(`artifact:${id}`, event, null);
+        return null;
+      }
       case "order.set": {
         if (!isFullNode(signer)) return "only full nodes may record standing orders";
         const body = bodyOf(event, "order.set");
