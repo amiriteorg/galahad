@@ -321,10 +321,10 @@ function buildStations(p: Parts): void {
       for (const x of [-1, 1]) add(new BoxGeometry(0.08, 0.4, 0.3), C.woodDark, at(x, 0.26, z));
     }
     for (const [x, z, c] of [[-0.8, -0.2, C.cream], [-0.2, 0.25, C.orange], [0.5, -0.15, C.cream], [1, 0.2, C.cream]] as const) mug(solid, m, x, 0.87, z, c);
-    // A teapot and a rolled map.
-    add(new SphereGeometry(0.13, 8, 5), C.cream, at(0.15, 0.98, 0.05, 0, [1, 0.8, 1]), 0.02);
-    add(new CylinderGeometry(0.02, 0.03, 0.14, 5), C.cream, at(0.3, 1.0, 0.05, 0, 1, 0, -0.9), 0);
-    add(new CylinderGeometry(0.05, 0.05, 0.02, 6), C.orange, at(0.15, 1.08, 0.05), 0);
+    // A teapot and a rolled map (clear of Reachy Mini, who sits at 0.25, 0.08: critters.ts).
+    add(new SphereGeometry(0.13, 8, 5), C.cream, at(0.85, 0.98, -0.3, 0, [1, 0.8, 1]), 0.02);
+    add(new CylinderGeometry(0.02, 0.03, 0.14, 5), C.cream, at(1.0, 1.0, -0.3, 0, 1, 0, -0.9), 0);
+    add(new CylinderGeometry(0.05, 0.05, 0.02, 6), C.orange, at(0.85, 1.08, -0.3), 0);
     add(new CylinderGeometry(0.045, 0.045, 0.8, 6), 0xefe2c4, at(-0.5, 0.92, 0.3, 0.3, 1, 0, Math.PI / 2), 0);
     add(new BoxGeometry(0.5, 0.22, 0.3), C.grey, at(-1.05, 0.98, 0.1));
     add(new BoxGeometry(0.52, 0.05, 0.32), C.orange, at(-1.05, 1.09, 0.1), 0);

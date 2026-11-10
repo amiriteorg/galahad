@@ -61,9 +61,23 @@ export class CameraRig {
     const back = t.distance * Math.cos(pitchFor(t.distance));
     const at = (yaw: number, b: number) => clear(t.x - Math.cos(yaw) * b, t.y - Math.sin(yaw) * b);
     if (this.sinceTurn >= 6) {
-      // Behind him, looking where he looks (over his shoulder at his work); his front when his back's to a wall.
+      // Behind him, looking where he looks (over his shoulder at his work). When that's in a building,
+      // from the side, still looking his way; his front only when his back's to a wall all round:
+      // from the front, his work would stand between the camera and him (and dissolve).
       let want = heading - SHOULDER;
-      if (!walking && !at(want, back)) want = heading + Math.PI - SHOULDER;
+      if (!walking && !at(want, back)) {
+        let side: number | null = null;
+        for (let k = 1; k <= 7 && side === null; k++) {
+          for (const sign of [1, -1]) {
+            const yaw = want + sign * k * (Math.PI / 15);
+            if (at(yaw, back)) {
+              side = yaw;
+              break;
+            }
+          }
+        }
+        want = side ?? heading + Math.PI - SHOULDER;
+      }
       t.yaw += angleDiff(t.yaw, want) * (1 - Math.exp(-dt * (walking ? 0.55 : 0.3)));
     }
     if (at(t.yaw, back)) return;

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { STATIONS } from "@galahad/core/world";
+import { Group } from "three/webgpu";
 import { CameraRig, DEFAULT_DISTANCE, pitchFor } from "./camera.ts";
+import { Land } from "./land.ts";
 import { mixColor } from "./daynight.ts";
 import { FootPlanner, solveTwoBone } from "./ik.ts";
 import { CELL, chunkSamples, growLayer, heightAt, KEEP_FLAT, LAYERS, naturalHeight, SEED, STREAM_STEP, streamAt, streamLevel, WATER_LEVEL, waterAt } from "./terrain.ts";
@@ -151,6 +154,17 @@ describe("colour", () => {
   });
 });
 
+describe("the land", () => {
+  test("the keep's ground is level from the start, before any experiment (or none at all)", () => {
+    // A node with no experiments never changes the plots, so nothing else ever levels it:
+    // the council's deck and the observatory were buried under five metres of hill.
+    const land = new Land(new Group(), SEED, false);
+    for (const place of ["keep", "council", "observatory", "library", "treasury", "messenger", "watchtower"] as const) {
+      expect(land.heightAt(STATIONS[place].x, STATIONS[place].y)).toBeCloseTo(0, 5);
+    }
+  });
+});
+
 describe("the camera", () => {
   test("by default it's close and low (he's large in the frame); far out it looks down", () => {
     expect(DEFAULT_DISTANCE).toBeLessThanOrEqual(12);
@@ -168,6 +182,22 @@ describe("the camera", () => {
     rig.trail(-Math.PI / 2, false, 0.016, clear);
     const back = rig.target.distance * Math.cos(pitchFor(rig.target.distance));
     expect(clear(rig.target.x - Math.cos(rig.target.yaw) * back, rig.target.y - Math.sin(rig.target.yaw) * back)).toBe(true);
+  });
+
+  test("blocked behind him at his work, it looks over his shoulder from the side rather than at his face (his work stays in view)", () => {
+    // At the council table: he stands south of it facing north, with the keep's tree behind him.
+    const rig = new CameraRig();
+    rig.lookAt(0, 11.6);
+    rig.target.yaw = Math.PI / 2;
+    const clear = (x: number, y: number) => Math.hypot(x, y) > 7.5;
+    for (let i = 0; i < 600; i++) rig.trail(Math.PI / 2, false, 0.05, clear);
+    const back = rig.target.distance * Math.cos(pitchFor(rig.target.distance));
+    const cx = rig.target.x - Math.cos(rig.target.yaw) * back;
+    const cy = rig.target.y - Math.sin(rig.target.yaw) * back;
+    expect(clear(cx, cy)).toBe(true);
+    // Still looking north-ish: the table (north of him) is beyond him, not between the camera and him.
+    expect(Math.sin(rig.target.yaw)).toBeGreaterThan(0.2);
+    expect(cy).toBeLessThan(11.6);
   });
 
   test("while he walks it swings round behind him, but not right after the viewer turned it", () => {

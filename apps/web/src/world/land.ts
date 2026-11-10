@@ -3,26 +3,7 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, M
 import { toScene } from "./coords.ts";
 import { flatNormals, linear } from "./mesher.ts";
 import { built } from "./path.ts";
-import {
-  CELL,
-  CELLS,
-  CHUNK,
-  type ChunkSamples,
-  chunkKey,
-  chunkSamples,
-  chunksAround,
-  type Flat,
-  flatKey,
-  flatsTouching,
-  growLayer,
-  heightAt,
-  type Layer,
-  BIG,
-  streamAt,
-  streamLevel,
-  WATER_LEVEL,
-  waterAt,
-} from "./terrain.ts";
+import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, type Flat, flatKey, flatsTouching, growLayer, heightAt, KEEP_FLAT, type Layer, streamAt, streamLevel, WATER_LEVEL, waterAt } from "./terrain.ts";
 
 /*
  * The land on the GPU: one mesh per loaded 64 m chunk (faces coloured, flat
@@ -103,7 +84,8 @@ export class Land {
   private readonly waterNear = waterMaterial(true);
   private readonly streamMaterial = waterMaterial(false);
   private readonly waterCell: number;
-  private flats: Flat[] = [];
+  /** The keep's ground is level from the start: plots add theirs (setFlats), and a node with none never calls it. */
+  private flats: Flat[] = [KEEP_FLAT];
   /** Bumped whenever the set of loaded chunks changes. */
   version = 0;
   /** Told of every chunk as it's grown and dropped (the vegetation). */
