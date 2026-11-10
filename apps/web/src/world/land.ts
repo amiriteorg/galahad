@@ -161,9 +161,10 @@ export class Land {
   }
 
   /**
-   * The ground's height at (x, y) as the fine grid draws it, so feet, paws and
-   * contact shadows stand on the faceted surface (from the chunk's fine samples
-   * where it has them, which is wherever anyone walks).
+   * The ground's height at (x, y) as it's drawn, so feet, paws and contact
+   * shadows stand on the faceted surface: the fine grid's triangles where the
+   * chunk is drawn on it (wherever anyone walks), the base grid's elsewhere, and
+   * the fine surface where nothing's loaded yet.
    */
   heightAt(x: number, y: number): number {
     let c = this.last;
@@ -171,9 +172,11 @@ export class Land {
       c = this.chunks.get(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) ?? null;
       this.last = c;
     }
-    const fine = c?.samples.fine;
-    if (c && fine) return surfaceHeight(fine, (x - c.cx * CHUNK) / FINE_CELL, (y - c.cy * CHUNK) / FINE_CELL);
-    return surfaceAt(this.seed, x, y, this.flats);
+    if (!c) return surfaceAt(this.seed, x, y, this.flats);
+    const u = x - c.cx * CHUNK;
+    const v = y - c.cy * CHUNK;
+    const fine = c.fine ? c.samples.fine : undefined;
+    return fine ? surfaceHeight(fine, u / FINE_CELL, v / FINE_CELL) : surfaceHeight(c.samples, u / CELL, v / CELL);
   }
 
   /** The chunk heightAt looked in last (most calls in a frame fall in the same one). */
@@ -241,18 +244,28 @@ export class Land {
 
   /**
    * The fine ring: chunks near the focus swap to the fine grid (nearest first,
-   * one at least when the nearest lacks it, more while the frame's budget
-   * lasts), and those that have left the ring swap back at once. Returns true
-   * while chunks are still to refine.
+   * while the frame's budget lasts, and one step past it when a chunk close to
+   * the focus still lacks it), and those that have left the ring swap back at
+   * once. Returns true while chunks are still to refine.
    */
   private refine(x: number, y: number, deadline: number): boolean {
     const r = this.fineRadius;
     if (r <= 0) return false;
-    // The morph, in the scene's world frame (the root is moved by the floating origin).
+    // The morph, in the scene's world frame (the root is moved by the floating origin); only when the focus has
+    // moved a metre or so (a uniform that changes has to be uploaded, and a metre is nothing to the morph).
     const [fx, , fz] = toScene(x, y);
-    morph.focus.value.set(fx + this.root.position.x, fz + this.root.position.z);
-    morph.near.value = r - fineBand(r);
-    morph.far.value = r;
+    const wx = fx + this.root.position.x;
+    const wz = fz + this.root.position.z;
+    if (Math.abs(wx - morph.focus.value.x) + Math.abs(wz - morph.focus.value.y) > 1 || morph.far.value !== r) {
+      morph.focus.value.set(wx, wz);
+      morph.near.value = r - fineBand(r);
+      morph.far.value = r;
+    }
+    // Flying over the land (the focus moving fast), no step past the budget: the base grid shows a moment
+    // longer, and the frame stays smooth.
+    const fast = Math.hypot(x - this.lastFocusX, y - this.lastFocusY) > FAST_STEP;
+    this.lastFocusX = x;
+    this.lastFocusY = y;
     let best: Chunk | null = null;
     let bestD = Infinity;
     let pending = 0;
@@ -272,8 +285,9 @@ export class Land {
     // The nearest first; then, while there's time, the next nearest (one scan each: there are only a few).
     let done = 0;
     while (best) {
-      // Beyond the first, only within the budget; the first, always if its fine grid would show (inside the morph).
-      if ((done > 0 || bestD >= morph.near.value) && performance.now() > deadline) break;
+      // Within the frame's budget; past it, one step only for a chunk close to the focus (where the base grid
+      // would show at once), so moving fast never piles the work into one frame.
+      if ((done > 0 || fast || bestD >= r * 0.5) && performance.now() > deadline) break;
       this.refineChunk(best);
       done++;
       if (best.fine) pending--;
@@ -291,6 +305,9 @@ export class Land {
     }
     return pending > 0;
   }
+
+  private lastFocusX = Number.NaN;
+  private lastFocusY = Number.NaN;
 
   /** One step towards a chunk's fine grid: its samples (unless it has them), else its mesh. */
   private refineChunk(chunk: Chunk): void {
@@ -459,6 +476,9 @@ export class Land {
 }
 
 const keyOf = (flats: readonly Flat[]): string => flats.map(flatKey).sort().join("|");
+
+/** A focus that moves farther than this between frames (metres) is flying, not walking (he runs at 5 m/s). */
+const FAST_STEP = 0.35;
 
 /** How far a chunk's square is from (x, y), metres (0 inside it). */
 export function chunkDistance(cx: number, cy: number, x: number, y: number): number {

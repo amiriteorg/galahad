@@ -373,9 +373,9 @@ const models = {
       .build({ ao: groundAO(0.6, 0.6, 0.72) });
   },
   // ---- flowers: a handful of shapes, cheap but each its own ----
-  daisy: () => {
+  daisy: (n = 5) => {
     const m = new Mesher();
-    for (const [x, z, h] of [[0, 0, 0.36], [0.13, 0.07, 0.29], [-0.09, 0.11, 0.25], [0.05, -0.12, 0.31], [-0.12, -0.06, 0.22]] as const) {
+    for (const [x, z, h] of ([[0, 0, 0.36], [0.13, 0.07, 0.29], [-0.09, 0.11, 0.25], [0.05, -0.12, 0.31], [-0.12, -0.06, 0.22]] as const).slice(0, n)) {
       blade(m, x, z, x * 9, 0.012, x, h, z, 0x78ad52);
       flowerHead(m, x, h, z, 0.075, 8, 0xfdfcf6, x * 7 + z);
       m.add(new ConeGeometry(0.026, 0.025, 4), 0xf4c143, at(x, h + 0.012, z), 0);
@@ -384,9 +384,9 @@ const models = {
     blade(m, 0, 0, 2.4, 0.04, -0.1, 0.11, 0.06, 0x82b450);
     return m.build({ ao: lowAO, normals: "up" });
   },
-  lupine: () => {
+  lupine: (n = 3) => {
     const m = new Mesher();
-    for (const [x, z, h, hue] of [[0, 0, 0.5, 0], [0.12, 0.06, 0.4, 1], [-0.1, 0.08, 0.44, 2]] as const) {
+    for (const [x, z, h, hue] of ([[0, 0, 0.5, 0], [0.12, 0.06, 0.4, 1], [-0.1, 0.08, 0.44, 2]] as const).slice(0, n)) {
       blade(m, x, z, hue * 1.3, 0.014, x, h, z, 0x76ab50);
       const colors = [[0x9a74d8, 0x8b64ca, 0xb79ae4], [0xc98ad8, 0xb877cc, 0xdba8e4], [0x7f8fe0, 0x6e7fd4, 0xa2aeea]][hue]!;
       // A spike of florets: stacked cones narrowing upwards, darker below.
@@ -408,9 +408,9 @@ const models = {
     }
     return m.build({ ao: lowAO, normals: "up" });
   },
-  buttercup: () => {
+  buttercup: (n = 6) => {
     const m = new Mesher();
-    for (const [x, z, h] of [[0, 0, 0.3], [0.1, 0.08, 0.24], [-0.08, 0.1, 0.27], [0.06, -0.1, 0.21], [-0.11, -0.05, 0.18], [0.14, -0.03, 0.15]] as const) {
+    for (const [x, z, h] of ([[0, 0, 0.3], [0.1, 0.08, 0.24], [-0.08, 0.1, 0.27], [0.06, -0.1, 0.21], [-0.11, -0.05, 0.18], [0.14, -0.03, 0.15]] as const).slice(0, n)) {
       blade(m, x, z, x * 11 + z, 0.01, x, h, z, 0x7fb24f);
       // A little cup: a cone upside down, its yellow rim facing the sky.
       m.add(new ConeGeometry(0.045, 0.04, 5), 0xf7d548, at(x, h + 0.015, z, x * 5, 1, 0, Math.PI), 0);
@@ -418,9 +418,9 @@ const models = {
     for (let i = 0; i < 3; i++) blade(m, 0, 0, i * 2.1, 0.035, Math.cos(i * 2.1) * 0.12, 0.05, Math.sin(i * 2.1) * 0.12, 0x86b955);
     return m.build({ ao: lowAO, normals: "up" });
   },
-  campion: () => {
+  campion: (n = 4) => {
     const m = new Mesher();
-    for (const [x, z, h] of [[0, 0, 0.38], [0.11, 0.06, 0.32], [-0.09, 0.08, 0.28], [0.03, -0.11, 0.25]] as const) {
+    for (const [x, z, h] of ([[0, 0, 0.38], [0.11, 0.06, 0.32], [-0.09, 0.08, 0.28], [0.03, -0.11, 0.25]] as const).slice(0, n)) {
       blade(m, x, z, x * 13, 0.011, x, h, z, 0x7aa84f);
       flowerHead(m, x, h, z, 0.065, 5, 0xf1a2b8, x * 4);
       m.add(new ConeGeometry(0.018, 0.02, 3), 0xc0607e, at(x, h + 0.008, z), 0);
@@ -508,6 +508,29 @@ const models = {
     return m.build({ ao: groundAO(0.7, 0.08, 0.8) });
   },
 };
+
+/** Two built models as one (a patch of two kinds of flower), the second moved by (dx, dz). */
+function together(a: BufferGeometry, b: BufferGeometry, dx: number, dz: number): BufferGeometry {
+  const out = new BufferGeometry();
+  for (const name of ["position", "color", "normal"] as const) {
+    const pa = a.getAttribute(name).array as Float32Array;
+    const pb = (b.getAttribute(name).array as Float32Array).slice();
+    if (name === "position") {
+      for (let i = 0; i < pb.length; i += 3) {
+        pb[i] = pb[i]! + dx;
+        pb[i + 2] = pb[i + 2]! + dz;
+      }
+    }
+    const merged = new Float32Array(pa.length + pb.length);
+    merged.set(pa);
+    merged.set(pb, pa.length);
+    out.setAttribute(name, new BufferAttribute(merged, 3));
+  }
+  a.dispose();
+  b.dispose();
+  out.computeBoundingSphere();
+  return out;
+}
 
 /** Triangles in each tree's models, near to far (for the budgets). */
 export function treeTriangles(): Record<(typeof TREE_KINDS)[number], [number, number]> {
@@ -650,11 +673,10 @@ export class Vegetation {
     make(models.boulder(), rock, cap(tier.rocks, 0.4), "rocks", [0], 4, ALL, shadows, [0.1, 0.03]);
     make(models.rocks(), rock, cap(tier.rocks, 0.4), "rocks", [1], 4, ALL, shadows, [0.1, 0.03]);
     make(models.slab(), rock, cap(tier.rocks, 0.4), "rocks", [2], 4, ALL, shadows, [0.1, 0.03]);
-    make(models.daisy(), small, cap(tier.flowers, 0.32), "flowers", [0], 16, ALL, false, [0.06, 0]);
-    make(models.lupine(), small, cap(tier.flowers, 0.22), "flowers", [1], 16, ALL, false, [0.08, 0]);
+    // Flowers in mixed patches (fewer draw calls): daisies with buttercups, lupines with campions, and lavender.
+    make(together(models.daisy(3), models.buttercup(3), 0.24, 0.08), small, cap(tier.flowers, 0.55), "flowers", [0, 3], 16, ALL, false, [0.06, 0.02]);
+    make(together(models.lupine(2), models.campion(2), -0.2, 0.14), small, cap(tier.flowers, 0.45), "flowers", [1, 4], 16, ALL, false, [0.08, 0.02]);
     make(models.lavender(), small, cap(tier.flowers, 0.2), "flowers", [2], 16, ALL, false, [0.08, 0]);
-    make(models.buttercup(), small, cap(tier.flowers, 0.24), "flowers", [3], 16, ALL, false, [0.06, 0.02]);
-    make(models.campion(), small, cap(tier.flowers, 0.22), "flowers", [4], 16, ALL, false, [0.08, 0.02]);
     make(models.grass(), small, cap(tier.grass, 0.6), "grass", [0], 32, ALL, false, [0.16, 0.08]);
     make(models.lush(), small, cap(tier.grass, 0.36), "grass", [1], 32, ALL, false, [0.14, 0.06]);
     make(models.seeding(), small, cap(tier.grass, 0.16), "grass", [2], 16, ALL, false, [0.12, 0.08]);

@@ -16,7 +16,7 @@ import {
 } from "three/webgpu";
 import { toScene } from "./coords.ts";
 import { C } from "./keep.ts";
-import { at, flatNormals, groundAO, linear, Mesher } from "./mesher.ts";
+import { at, bevelBox, chip, flatNormals, groundAO, linear, lumpy, Mesher, type Paint } from "./mesher.ts";
 import { fbm } from "./noise.ts";
 import { occlusionMask } from "./occlusion.ts";
 import { rng } from "./physics.ts";
@@ -311,14 +311,15 @@ export class Landmarks {
     const S = Landmarks.STATION;
     for (const [dx, dy, r] of [[0, 0, 7], [11, 4, 4.6], [-9, 5, 4]] as const) {
       const [x, y, z] = put(S.x + dx, S.y + dy, -0.3);
-      m.add(new SphereGeometry(r, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xf6f4ef, at(x, y, z), 0.03);
+      // A geodesic dome: its panels picked out in two whites.
+      m.add(new SphereGeometry(r, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), (px, py, pz) => ((Math.floor(Math.atan2(pz - z, px - x) * 3.8) + Math.floor((py - y) * 1.6)) % 2 ? 0xf6f4ef : 0xe9e6de), at(x, y, z), 0.03);
       m.add(new CylinderGeometry(r * 1.01, r * 1.01, 0.5, 14), C.orange, at(x, y + 0.6, z), 0);
       m.add(new CylinderGeometry(r * 1.04, r * 1.04, 0.5, 14), C.greyLight, at(x, y, z), 0);
       this.windows.push([x, y + r * 0.45, z, r * 0.9]);
     }
     {
       const [x, y, z] = put(S.x + 2, S.y - 9, 0);
-      m.add(new BoxGeometry(16, 3, 5), C.cream, at(x, y + 1.5, z), 0.03);
+      m.add(bevelBox(16, 3, 5, 0.08), C.cream, at(x, y + 1.5, z), 0.03);
       m.add(new BoxGeometry(16.4, 0.3, 5.4), C.greyLight, at(x, y + 3.1, z), 0);
       m.add(new BoxGeometry(16.1, 0.4, 5.1), C.orange, at(x, y + 2.4, z), 0);
       for (let i = 0; i < 5; i++) this.windows.push([x - 6 + i * 3, y + 1.6, z + 2.6, 1.6]);
@@ -352,7 +353,9 @@ export class Landmarks {
       const dy = (random() - 0.5) * 22 - 10;
       const r = 6 + random() * 7;
       const [x, y, z] = put(A.x + dx, A.y + dy, r * 0.25);
-      m.add(new DodecahedronGeometry(r, 0), random() < 0.5 ? C.limestone : 0xdfd1b8, at(x, y, z, random() * 3, [1.3, 1 + random() * 0.6, 1]), 0.06);
+      // Limestone in layers, chipped into flat faces.
+      const strata: Paint = (_px, py) => [C.limestone, 0xdfd1b8, 0xd7c5aa][Math.floor(py * 0.9 + i) % 3]!;
+      m.add(chip(lumpy(new DodecahedronGeometry(r, 1), i, 0.1), i, 4, 0.84), strata, at(x, y, z, random() * 3, [1.3, 1 + random() * 0.6, 1]), 0.06);
     }
     {
       const [x, y, z] = put(A.x, A.y + 12, 0);
@@ -360,7 +363,7 @@ export class Landmarks {
       const n = 9;
       for (let i = 0; i <= n; i++) {
         const a = (i / n) * Math.PI;
-        m.add(new BoxGeometry(4.2, 4.2, 5), i % 2 ? C.limestone : 0xe2d5bd, at(x + Math.cos(a) * span * 0.5, y + Math.sin(a) * 14, z, 0, 1, 0, a - Math.PI / 2), 0.06);
+        m.add(chip(lumpy(bevelBox(4.2, 4.2, 5, 0.4), 50 + i, 0.06), 50 + i, 2, 0.9), i % 2 ? C.limestone : 0xe2d5bd, at(x + Math.cos(a) * span * 0.5, y + Math.sin(a) * 14, z, 0, 1, 0, a - Math.PI / 2), 0.06);
       }
       for (const side of [-1, 1]) m.add(new BoxGeometry(5, 6, 6), C.limestone, at(x + side * span * 0.5, y + 1.5, z), 0.06);
     }
