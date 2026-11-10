@@ -1,5 +1,6 @@
 import type { WorldNode } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
+import { float, mix, uniform, vertexColor } from "three/tsl";
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -16,27 +17,31 @@ import {
   type Matrix4,
   Mesh,
   MeshBasicMaterial,
-  MeshLambertMaterial,
+  MeshBasicNodeMaterial,
   MeshLambertNodeMaterial,
   type Object3D,
   OctahedronGeometry,
   PointLight,
   SphereGeometry,
+  TorusGeometry,
 } from "three/webgpu";
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
-import { at, Mesher, within } from "./mesher.ts";
+import { at, between, groundAO, lumpy, Mesher, within } from "./mesher.ts";
+import { occlusionMask } from "./occlusion.ts";
 import { obstacles, PLACES, planPath, standAt, stationFacing } from "./path.ts";
 import { swaying } from "./vegetation.ts";
 
 /*
  * Galahad's keep and its stations, after the treehouse-and-meadow look: a
- * treehouse in a giant tree (deck, stairs, a glass-walled room with solar panels),
- * a deck table with mugs, a telescope platform, a reading nook, a hillside lab with
- * a wide door and glowing screens, a lookout with an antenna mast, a sturdy vault
- * hut, a radio post with an orange banner and a ring of standing stones. Built
- * from primitives into a few merged meshes: the solid one, the giant tree's
- * canopy (swaying), glass (blue by day, warm by night), lamps and screens, plus
- * the oracle's orb, the beacon and the fleet's banners. All original shapes.
+ * treehouse in a giant tree (a deck with railings and potted plants, stairs with
+ * lanterns, a glass-walled room with solar panels), the council's deck table with
+ * mugs and a teapot, a telescope platform, a reading nook, a research bunker in a
+ * limestone hill (a wide door, monitors, a 3D printer glowing at work, pipes), a
+ * lookout with its mast, a vault hut, a radio post with its banner, and a ring of
+ * standing stones with runes. Built from primitives into a few merged meshes (the
+ * solid one with a baked ambient occlusion, the giant tree's swaying canopy, glass
+ * that's sky-blue by day and warm by night, lamps and screens), plus the oracle's
+ * orb, the beacon and the fleet's banners. All original shapes.
  */
 
 type Place = keyof typeof STATIONS;
@@ -50,20 +55,21 @@ export const C = {
   wood: 0xb57c4e,
   woodDark: 0x8b5a39,
   plank: 0xc8915e,
-  trunk: 0x9c6845,
-  trunkDark: 0x7f5236,
-  leaf: 0xa7c94b,
-  leafLight: 0xc2d65c,
-  leafDeep: 0x8db743,
-  stone: 0xdcc6b8,
+  trunk: 0x9a6644,
+  trunkDark: 0x7d5034,
+  leaf: 0xaacd4e,
+  leafLight: 0xc4dc62,
+  leafDeep: 0x8dbb45,
+  stone: 0xdac3b3,
   stoneShade: 0xc9b0a3,
-  limestone: 0xece1cb,
+  limestone: 0xe9ddc8,
   solar: 0x2e4a86,
-  path: 0xd2b48a,
-  plaza: 0xcfb48f,
+  path: 0xd8bb8c,
+  plaza: 0xd2b68e,
   book1: 0x6b8fb8,
   book2: 0xc0644a,
   book3: 0x7aa86a,
+  pot: 0xc9795a,
 };
 
 /** A gable roof: ridge along local x, `w` deep (z), `h` high, `l` long. */
@@ -101,12 +107,27 @@ export const LABEL_HEIGHT: Record<Place, number> = {
   observatory: 6.4,
 };
 
+/** Heights of the ground's layers (tops), so no two ever share a plane: no z-fighting. */
+const PATH_TOP = 0.05;
+const STATION_PLAZA_TOP = 0.075;
+const KEEP_PLAZA_TOP = 0.1;
+
 interface Parts {
   solid: Mesher;
   canopy: Mesher;
   glass: Mesher;
   /** Lamps, screens, printers: vertex-coloured light. */
   lit: Mesher;
+  /** Where the warm lamps and windows glow at night (scene, radius). */
+  warm: [number, number, number, number][];
+  /** Where screens glow (teal). */
+  cool: [number, number, number, number][];
+}
+
+/** A point of a station's local frame in the scene. */
+function scenePoint(m: Matrix4, x: number, y: number, z: number): [number, number, number] {
+  const e = within(m, at(x, y, z)).elements;
+  return [e[12]!, e[13]!, e[14]!];
 }
 
 /** Posts and two rails along a polyline (scene coordinates, at height `y`), skipping segments flagged in `gaps`. */
@@ -114,48 +135,98 @@ function railing(m: Mesher, points: [number, number][], y: number, gaps: Set<num
   for (let i = 0; i < points.length - 1; i++) {
     const [ax, az] = points[i]!;
     const [bx, bz] = points[i + 1]!;
-    m.add(new BoxGeometry(0.1, 1, 0.1), C.woodDark, at(ax, y + 0.5, az));
+    m.add(new BoxGeometry(0.11, 1.05, 0.11), C.woodDark, at(ax, y + 0.52, az));
     if (gaps.has(i)) continue;
     const len = Math.hypot(bx - ax, bz - az);
     const yaw = Math.atan2(bx - ax, bz - az);
-    for (const h of [0.5, 0.95]) m.add(new BoxGeometry(0.07, 0.07, len), C.wood, at((ax + bx) / 2, y + h, (az + bz) / 2, yaw), 0.03);
+    m.add(new BoxGeometry(0.1, 0.08, len + 0.06), C.wood, at((ax + bx) / 2, y + 1.02, (az + bz) / 2, yaw), 0.03);
+    m.add(new BoxGeometry(0.06, 0.06, len), C.wood, at((ax + bx) / 2, y + 0.55, (az + bz) / 2, yaw), 0.03);
+    // Balusters between the posts.
+    const n = Math.max(1, Math.round(len / 0.45));
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      m.add(new BoxGeometry(0.04, 0.48, 0.04), C.wood, at(ax + (bx - ax) * t, y + 0.78, az + (bz - az) * t, yaw), 0);
+    }
   }
 }
 
-function lanternBox(p: Parts, x: number, y: number, z: number): void {
-  p.solid.add(new BoxGeometry(0.3, 0.06, 0.3), C.grey, at(x, y + 0.2, z), 0);
-  p.solid.add(new ConeGeometry(0.24, 0.18, 4), C.grey, at(x, y + 0.31, z, Math.PI / 4), 0);
-  p.lit.add(new BoxGeometry(0.2, 0.3, 0.2), 0xffd9a0, at(x, y, z), 0);
+/** A hanging lantern on a little bracket: a dark cage, a warm light, a glow at night. */
+function lanternBox(p: Parts, x: number, y: number, z: number, glow = 0.95): void {
+  p.solid.add(new BoxGeometry(0.32, 0.06, 0.32), C.grey, at(x, y + 0.2, z), 0);
+  p.solid.add(new ConeGeometry(0.26, 0.2, 4), C.grey, at(x, y + 0.32, z, Math.PI / 4), 0);
+  p.solid.add(new BoxGeometry(0.3, 0.05, 0.3), C.grey, at(x, y - 0.17, z), 0);
+  for (const [dx, dz] of [[-0.13, -0.13], [0.13, -0.13], [0.13, 0.13], [-0.13, 0.13]] as const) p.solid.add(new BoxGeometry(0.03, 0.36, 0.03), C.grey, at(x + dx, y, z + dz), 0);
+  p.lit.add(new BoxGeometry(0.2, 0.28, 0.2), 0xffcf8a, at(x, y, z), 0);
+  p.warm.push([x, y, z, glow]);
+}
+
+/** A terracotta pot with a leafy plant (or a trailing vine) in it. */
+function pottedPlant(p: Parts, x: number, y: number, z: number, size = 1, trailing = false): void {
+  p.solid.add(new CylinderGeometry(0.22 * size, 0.16 * size, 0.34 * size, 8), C.pot, at(x, y + 0.17 * size, z), 0.05);
+  p.solid.add(new CylinderGeometry(0.24 * size, 0.24 * size, 0.05 * size, 8), 0xb86a4d, at(x, y + 0.34 * size, z), 0);
+  p.canopy.add(new IcosahedronGeometry(0.26 * size, 0), C.leafDeep, at(x, y + 0.52 * size, z, x + z, [1, 0.8, 1]), 0.1);
+  p.canopy.add(new IcosahedronGeometry(0.2 * size, 0), C.leaf, at(x + 0.12 * size, y + 0.7 * size, z - 0.05 * size, x * 3, [1, 0.85, 1]), 0.1);
+  if (trailing) for (let i = 0; i < 4; i++) p.canopy.add(new OctahedronGeometry(0.09 * size, 0), i % 2 ? C.leaf : C.leafDeep, at(x + 0.2 * size, y + 0.25 * size - i * 0.16 * size, z + 0.12 * size, i), 0);
+}
+
+/** A mug with a handle. */
+function mug(m: Mesher, mat: Matrix4 | null, x: number, y: number, z: number, color: number): void {
+  const t = (local: Matrix4) => (mat ? within(mat, local) : local);
+  m.add(new CylinderGeometry(0.06, 0.055, 0.12, 8), color, t(at(x, y + 0.06, z)), 0);
+  m.add(new CylinderGeometry(0.048, 0.048, 0.01, 8), 0x6b4a32, t(at(x, y + 0.118, z)), 0);
+  m.add(new TorusGeometry(0.035, 0.012, 4, 6, Math.PI), color, t(at(x + 0.065, y + 0.06, z, 0, 1, 0, -Math.PI / 2)), 0);
+}
+
+/** A vine hanging from (x, y, z): a zigzag of small leaves. */
+function vine(p: Parts, x: number, y: number, z: number, length: number, seed: number): void {
+  const n = Math.round(length / 0.22);
+  for (let i = 0; i < n; i++) {
+    const sway = Math.sin(i * 1.7 + seed) * 0.1;
+    p.canopy.add(new OctahedronGeometry(0.11 - i * 0.004, 0), i % 2 ? C.leaf : C.leafDeep, at(x + sway, y - i * 0.22, z + Math.cos(i * 1.3 + seed) * 0.06, i + seed, [1, 0.6, 1]), 0.06);
+  }
 }
 
 function buildKeep(p: Parts): void {
   // The keep faces south (its local frame is the scene's): a giant tree with a deck and a room.
-  const { solid, canopy, glass } = p;
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + 0.3;
-    solid.add(new ConeGeometry(0.9, 3.4, 5), C.trunkDark, at(Math.sin(a) * 2.2, 0.6, Math.cos(a) * 2.2, a, 1, Math.PI / 2 - 0.35, 0).multiply(at(0, 0, 0, 0, 1, 0, 0)), 0.1);
+  const { solid, canopy, glass, lit } = p;
+  // Roots spreading into the lawn.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.3;
+    solid.add(new ConeGeometry(0.85, 3.6, 5), C.trunkDark, between(Math.sin(a) * 3.1, 0.05, Math.cos(a) * 3.1, Math.sin(a) * 0.8, 2.2, Math.cos(a) * 0.8, 1), 0.1);
   }
-  solid.add(new CylinderGeometry(1.55, 2.4, 9, 7), C.trunk, at(0, 4.5, 0), 0.1);
-  solid.add(new CylinderGeometry(1.1, 1.55, 3.2, 7), C.trunk, at(0.15, 10.4, -0.15, 0.4, 1, -0.04, 0.03), 0.1);
+  solid.add(new CylinderGeometry(1.55, 2.4, 9, 8), C.trunk, at(0, 4.5, 0), 0.1);
+  solid.add(new CylinderGeometry(1.1, 1.55, 3.2, 8), C.trunk, at(0.15, 10.4, -0.15, 0.4, 1, -0.04, 0.03), 0.1);
+  // Bark ridges, so the trunk reads as faceted wood rather than a column.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.2;
+    solid.add(new BoxGeometry(0.34, 6.5, 0.3), i % 2 ? C.trunkDark : C.trunk, at(Math.sin(a) * 1.95, 3.6, Math.cos(a) * 1.95, a, 1, 0.08 * Math.cos(a), 0), 0.08);
+  }
   for (const [rz, ry, len] of [[0.95, 0.3, 7], [-0.9, 1.7, 6.5], [0.85, 3.4, 6], [-0.8, 4.7, 7]] as const) {
     const branch = at(0, 9.6, 0, ry).multiply(at(0, 0, 0, 0, 1, 0, rz)).multiply(at(0, len / 2, 0));
     solid.add(new CylinderGeometry(0.32, 0.55, len, 6), C.trunk, branch, 0.1);
   }
-  // A crown of chunky, faceted leaf clusters.
+  // A crown of chunky, faceted leaf clusters: lighter on top, deeper below.
   const clusters: [number, number, number, number, number][] = [
     [0, 18.5, 0, 4.6, C.leaf], [4.6, 16.8, 1.2, 3.6, C.leafLight], [-4.4, 17.2, -1, 3.8, C.leaf], [1.5, 17, 4.4, 3.4, C.leafDeep],
     [-1.8, 16.8, -4.6, 3.6, C.leafLight], [3.4, 19.6, -3, 3, C.leafDeep], [-3.6, 19.8, 2.6, 3.1, C.leafLight], [6.6, 15.4, -2.4, 2.6, C.leaf],
-    [-6.4, 15.6, 2.2, 2.7, C.leafDeep], [0.4, 21.6, 0.6, 3, C.leafLight],
+    [-6.4, 15.6, 2.2, 2.7, C.leafDeep], [0.4, 21.6, 0.6, 3, C.leafLight], [3.8, 15.2, 4.2, 2.3, C.leafDeep], [-4.2, 15.4, -4.4, 2.4, C.leaf],
+    [5.4, 18.6, 3.2, 2.2, C.leafLight], [-5.6, 18.8, -2.8, 2.3, C.leafLight],
   ];
   for (const [x, y, z, r, color] of clusters) canopy.add(new IcosahedronGeometry(r, 0), color, at(x * 1.15, y - 5.6, z * 1.15, x * 0.7, [1.05, 0.78, 1.05]), 0.08);
+  // Vines trailing from the lowest branches.
+  for (const [x, z, len] of [[4.8, 1.6, 2.6], [-4.4, -1.2, 2.2], [1.6, 4.6, 2.8], [-2.2, 4.0, 2]] as const) vine(p, x * 1.1, 10.2, z * 1.1, len, x);
 
   // The deck round the trunk, on struts, with a railing; a gap where the stairs land.
   const D = 4.2;
   solid.add(new CylinderGeometry(6.3, 6.3, 0.3, 8), C.plank, at(0, D, 0, Math.PI / 8), 0.04);
+  // Joists under it, and a darker rim.
+  solid.add(new CylinderGeometry(6.35, 6.0, 0.18, 8), C.woodDark, at(0, D - 0.24, 0, Math.PI / 8), 0.03);
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    solid.add(new BoxGeometry(0.28, 4.6, 0.28), C.woodDark, at(Math.sin(a) * 3.6, 2.2, Math.cos(a) * 3.6, a, 1, 0.55 * Math.cos(a) * 0, 0));
+    solid.add(new BoxGeometry(0.3, 4.6, 0.3), C.woodDark, at(Math.sin(a) * 3.6, 2.2, Math.cos(a) * 3.6, a));
     solid.add(new BoxGeometry(0.24, 0.24, 4.4), C.woodDark, at(Math.sin(a) * 3.4, D - 0.9, Math.cos(a) * 3.4, a, 1, 0.5));
+    // Iron brackets where the struts meet the deck.
+    solid.add(new BoxGeometry(0.36, 0.3, 0.36), C.grey, at(Math.sin(a) * 3.6, D - 0.45, Math.cos(a) * 3.6, a), 0);
   }
   const octagon: [number, number][] = [];
   for (let i = 0; i <= 8; i++) {
@@ -163,25 +234,35 @@ function buildKeep(p: Parts): void {
     octagon.push([Math.sin(a) * 6.15, Math.cos(a) * 6.15]);
   }
   railing(solid, octagon, D + 0.15, new Set([6]));
-  // Stairs: from the deck's south-west down towards the keep's door, with lanterns at the foot.
+  // Stairs: from the deck's south-west down towards the keep's door, with stringers, handrails and lanterns.
   const top: [number, number] = [-5.4, 3.0];
   const foot: [number, number] = [-1.6, 6.9];
-  const steps = 11;
+  const steps = 12;
   const yaw = Math.atan2(foot[0] - top[0], foot[1] - top[1]);
+  const run = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
+  const pitch = Math.atan2(D, run);
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
-    solid.add(new BoxGeometry(1.3, 0.12, 0.5), C.plank, at(top[0] + (foot[0] - top[0]) * t, D - D * t, top[1] + (foot[1] - top[1]) * t, yaw), 0.05);
+    solid.add(new BoxGeometry(1.4, 0.1, 0.46), C.plank, at(top[0] + (foot[0] - top[0]) * t, D - D * t, top[1] + (foot[1] - top[1]) * t, yaw), 0.05);
   }
-  for (const side of [-0.7, 0.7]) {
+  for (const side of [-0.74, 0.74]) {
     const ox = Math.cos(yaw) * side;
     const oz = -Math.sin(yaw) * side;
-    const run = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
-    const pitch = Math.atan2(D, run);
-    solid.add(new BoxGeometry(0.08, 0.08, Math.hypot(run, D)), C.wood, at((top[0] + foot[0]) / 2 + ox, D / 2 + 0.9, (top[1] + foot[1]) / 2 + oz, yaw, 1, pitch), 0.03);
-    solid.add(new BoxGeometry(0.1, 1, 0.1), C.woodDark, at(foot[0] + ox, 0.5, foot[1] + oz));
+    solid.add(new BoxGeometry(0.1, 0.3, Math.hypot(run, D)), C.woodDark, at((top[0] + foot[0]) / 2 + ox, D / 2 - 0.1, (top[1] + foot[1]) / 2 + oz, yaw, 1, pitch), 0.03);
+    solid.add(new BoxGeometry(0.08, 0.08, Math.hypot(run, D)), C.wood, at((top[0] + foot[0]) / 2 + ox, D / 2 + 0.95, (top[1] + foot[1]) / 2 + oz, yaw, 1, pitch), 0.03);
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      solid.add(new BoxGeometry(0.08, 0.98, 0.08), C.woodDark, at(top[0] + (foot[0] - top[0]) * t + ox, D - D * t + 0.46, top[1] + (foot[1] - top[1]) * t + oz));
+    }
   }
-  lanternBox(p, foot[0] - 0.8, 1.2, foot[1] + 0.2);
-  lanternBox(p, foot[0] + 0.8, 1.2, foot[1] + 0.2);
+  for (const side of [-1, 1]) {
+    const ox = Math.cos(yaw) * side * 0.9;
+    const oz = -Math.sin(yaw) * side * 0.9;
+    solid.add(new CylinderGeometry(0.06, 0.08, 1.5, 6), C.woodDark, at(foot[0] + ox, 0.75, foot[1] + oz), 0);
+    lanternBox(p, foot[0] + ox, 1.7, foot[1] + oz);
+  }
+  // Stepping stones from the stairs to the plaza.
+  for (let i = 0; i < 3; i++) solid.add(lumpy(new CylinderGeometry(0.42, 0.46, 0.08, 7), 20 + i, 0.08), 0xc9beb2, at(foot[0] + 0.3 + i * 0.35, KEEP_PLAZA_TOP + 0.02, foot[1] + 0.8 + i * 0.6, i), 0.05);
 
   // The room: cream panels, an orange stripe, a glass front, a wide roof with solar panels.
   const R = D + 0.15;
@@ -195,37 +276,65 @@ function buildKeep(p: Parts): void {
   glass.add(new BoxGeometry(1.9, 2, 0.06), 0xffffff, at(-0.9, R + 1.35, 5.06), 0);
   glass.add(new BoxGeometry(2.3, 2, 0.06), 0xffffff, at(1.3, R + 1.35, 5.06), 0);
   glass.add(new BoxGeometry(0.06, 1.2, 1.6), 0xffffff, at(2.72, R + 1.5, 3.6), 0);
+  p.warm.push([-0.9, R + 1.4, 5.2, 1.7], [1.3, R + 1.4, 5.2, 1.8]);
+  // Shelves and a lamp inside, seen through the glass.
+  solid.add(new BoxGeometry(1.6, 1.2, 0.3), C.woodDark, at(1.2, R + 0.9, 2.4));
+  for (let b = 0; b < 6; b++) solid.add(new BoxGeometry(0.2, 0.3, 0.22), [C.book1, C.book2, C.book3, C.cream, C.orange, C.book1][b]!, at(0.65 + b * 0.22, R + 1.1, 2.45), 0.04);
+  lit.add(new CylinderGeometry(0.18, 0.26, 0.3, 8), 0xffd59a, at(-1.2, R + 1.75, 2.6), 0);
+  solid.add(new CylinderGeometry(0.03, 0.03, 1.4, 5), C.grey, at(-1.2, R + 0.9, 2.6), 0);
   solid.add(new BoxGeometry(6.2, 0.22, 4.2), C.woodDark, at(0, R + 2.85, 3.55, 0, 1, -0.08));
-  for (const x of [-1.8, 0, 1.8]) solid.add(new BoxGeometry(1.6, 0.06, 2.4), C.solar, at(x, R + 3.02, 3.4, 0, 1, -0.08), 0.02);
+  solid.add(new BoxGeometry(6.3, 0.08, 0.12), C.orange, at(0, R + 2.72, 5.62, 0, 1, -0.08), 0);
+  for (const x of [-1.8, 0, 1.8]) {
+    solid.add(new BoxGeometry(1.6, 0.06, 2.4), C.solar, at(x, R + 3.02, 3.4, 0, 1, -0.08), 0.02);
+    solid.add(new BoxGeometry(1.64, 0.07, 0.05), C.greyLight, at(x, R + 3.04, 3.4, 0, 1, -0.08), 0);
+  }
+  // The deck's furniture: a crate, a bench and a small table with mugs, pots of plants, a toolbox.
   solid.add(new BoxGeometry(0.9, 0.7, 0.5), C.grey, at(-1.6, R + 0.35, 1.5));
   solid.add(new BoxGeometry(0.92, 0.1, 0.52), C.orange, at(-1.6, R + 0.62, 1.5), 0);
-  lanternBox(p, 2.9, R + 2.1, 5.2);
-  // Planters along the railing.
-  for (const [x, z] of [[4.4, 2.6], [4.8, -1.6], [-4.6, -2.2]] as const) {
-    solid.add(new BoxGeometry(0.9, 0.45, 0.5), C.woodDark, at(x, R + 0.22, z, Math.atan2(x, z)));
-    canopy.add(new IcosahedronGeometry(0.42, 0), C.leafDeep, at(x, R + 0.62, z), 0.1);
+  solid.add(new BoxGeometry(2.2, 0.1, 0.55), C.wood, at(3.9, R + 0.46, -2.6, 0.9), 0.03);
+  for (const dx of [-0.9, 0.9]) solid.add(new BoxGeometry(0.1, 0.45, 0.45), C.woodDark, at(3.9 + Math.cos(0.9) * dx, R + 0.22, -2.6 - Math.sin(0.9) * dx, 0.9));
+  solid.add(new BoxGeometry(1.2, 0.08, 0.8), C.wood, at(4.3, R + 0.74, 0.6, 0.3), 0.03);
+  for (const [dx, dz] of [[-0.5, -0.3], [0.5, -0.3], [-0.5, 0.3], [0.5, 0.3]] as const) solid.add(new BoxGeometry(0.07, 0.72, 0.07), C.woodDark, at(4.3 + dx, R + 0.36, 0.6 + dz, 0.3));
+  mug(solid, null, 4.05, R + 0.78, 0.5, C.cream);
+  mug(solid, null, 4.45, R + 0.78, 0.75, C.orange);
+  for (const [x, z, size, trail] of [[4.4, 2.6, 1.2, false], [4.9, -1.4, 1, true], [-4.7, -2.0, 1.1, true], [-3.2, -4.4, 0.9, false], [2.0, -5.4, 1, false], [-5.2, 1.4, 0.9, true]] as const) {
+    pottedPlant(p, x, R, z, size, trail);
   }
+  lanternBox(p, 2.95, R + 2.1, 5.25);
+  lanternBox(p, -2.95, R + 2.1, 5.25);
 }
 
 function buildStations(p: Parts): void {
   const { solid, glass, lit } = p;
   buildKeep(p);
 
-  // ---- council: a low deck with a long table, benches and mugs ----
+  // ---- council: a low deck with a long table, benches, mugs and a teapot, under a parasol ----
   {
     const m = stationMatrix("council");
     const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     add(new BoxGeometry(5.6, 0.16, 4.4), C.plank, at(0, 0.08, 0), 0.05);
+    for (let i = 0; i < 7; i++) add(new BoxGeometry(0.03, 0.02, 4.4), C.woodDark, at(-2.4 + i * 0.8, 0.165, 0), 0);
     add(new BoxGeometry(2.6, 0.1, 1.1), C.wood, at(0, 0.82, 0));
     for (const [x, z] of [[-1.15, -0.45], [1.15, -0.45], [-1.15, 0.45], [1.15, 0.45]] as const) add(new BoxGeometry(0.1, 0.74, 0.1), C.woodDark, at(x, 0.45, z));
-    for (const z of [-1.05, 1.05]) add(new BoxGeometry(2.4, 0.08, 0.4), C.wood, at(0, 0.48, z));
-    for (const [x, z, c] of [[-0.8, -0.2, C.cream], [-0.2, 0.25, C.orange], [0.5, -0.15, C.cream], [1, 0.2, C.cream]] as const) {
-      add(new CylinderGeometry(0.06, 0.055, 0.12, 8), c, at(x, 0.93, z), 0);
+    for (const z of [-1.05, 1.05]) {
+      add(new BoxGeometry(2.4, 0.08, 0.4), C.wood, at(0, 0.48, z));
+      for (const x of [-1, 1]) add(new BoxGeometry(0.08, 0.4, 0.3), C.woodDark, at(x, 0.26, z));
     }
+    for (const [x, z, c] of [[-0.8, -0.2, C.cream], [-0.2, 0.25, C.orange], [0.5, -0.15, C.cream], [1, 0.2, C.cream]] as const) mug(solid, m, x, 0.87, z, c);
+    // A teapot and a rolled map.
+    add(new SphereGeometry(0.13, 8, 5), C.cream, at(0.15, 0.98, 0.05, 0, [1, 0.8, 1]), 0.02);
+    add(new CylinderGeometry(0.02, 0.03, 0.14, 5), C.cream, at(0.3, 1.0, 0.05, 0, 1, 0, -0.9), 0);
+    add(new CylinderGeometry(0.05, 0.05, 0.02, 6), C.orange, at(0.15, 1.08, 0.05), 0);
+    add(new CylinderGeometry(0.045, 0.045, 0.8, 6), 0xefe2c4, at(-0.5, 0.92, 0.3, 0.3, 1, 0, Math.PI / 2), 0);
     add(new BoxGeometry(0.5, 0.22, 0.3), C.grey, at(-1.05, 0.98, 0.1));
     add(new BoxGeometry(0.52, 0.05, 0.32), C.orange, at(-1.05, 1.09, 0.1), 0);
     add(new BoxGeometry(0.06, 2.6, 0.06), C.woodDark, at(2.4, 1.3, -1.8));
     add(new ConeGeometry(1.6, 0.6, 8), C.cream, at(2.4, 2.75, -1.8), 0.03);
+    add(new ConeGeometry(1.62, 0.12, 8), C.orange, at(2.4, 2.5, -1.8), 0);
+    for (const [x, z] of [[-2.5, -1.9], [2.5, 1.9], [-2.5, 1.9]] as const) {
+      const [sx, sy, sz] = scenePoint(m, x, 0.16, z);
+      pottedPlant(p, sx, sy, sz, 1.1);
+    }
   }
   // ---- observatory: a telescope platform on stilts, with a ladder ----
   {
@@ -242,11 +351,15 @@ function buildStations(p: Parts): void {
     }), H + 0.1, new Set([2]));
     for (let i = 0; i < 7; i++) add(new BoxGeometry(0.8, 0.06, 0.08), C.wood, at(0, 0.3 + i * 0.36, 2.05), 0);
     for (const x of [-0.42, 0.42]) add(new BoxGeometry(0.07, H + 0.4, 0.07), C.woodDark, at(x, H / 2, 2.05));
-    // The telescope on its tripod.
+    // The telescope on its tripod, a chest of charts.
     for (let i = 0; i < 3; i++) add(new BoxGeometry(0.04, 1.2, 0.04), C.grey, at(Math.sin((i * Math.PI * 2) / 3) * 0.25, H + 0.6, Math.cos((i * Math.PI * 2) / 3) * 0.25, (i * Math.PI * 2) / 3, 1, 0.22), 0);
     add(new CylinderGeometry(0.12, 0.15, 1.5, 10), C.cream, at(0, H + 1.45, -0.1, 0, 1, -0.75), 0.02);
     add(new CylinderGeometry(0.16, 0.16, 0.12, 10), C.orange, at(0, H + 1.3, 0.02, 0, 1, -0.75), 0);
+    add(new CylinderGeometry(0.1, 0.1, 0.06, 10), 0x1b1d22, at(0, H + 1.98, -0.55, 0, 1, -0.75), 0);
     add(new BoxGeometry(0.6, 0.4, 0.45), C.grey, at(1.1, H + 0.3, -1.1));
+    add(new BoxGeometry(0.62, 0.06, 0.47), C.orange, at(1.1, H + 0.52, -1.1), 0);
+    const [lx, ly, lz] = scenePoint(m, -1.7, H + 1.2, -1.7);
+    lanternBox(p, lx, ly, lz);
   }
   // ---- library: a reading nook with shelves, an armchair and a lamp ----
   {
@@ -269,53 +382,97 @@ function buildStations(p: Parts): void {
     add(new BoxGeometry(1, 0.45, 0.9), C.cream, at(1.3, 0.42, 0.2));
     add(new BoxGeometry(1, 0.8, 0.25), C.cream, at(1.3, 0.85, -0.2));
     add(new BoxGeometry(0.45, 0.35, 0.15), C.orange, at(1.3, 0.85, 0.05), 0);
+    add(new BoxGeometry(0.6, 0.5, 0.6), C.wood, at(0.2, 0.45, 0.6));
+    mug(solid, m, 0.1, 0.7, 0.55, C.orange);
+    add(new BoxGeometry(0.3, 0.06, 0.22), C.book2, at(0.35, 0.73, 0.7, 0.4), 0);
     add(new CylinderGeometry(0.03, 0.03, 1.6, 5), C.grey, at(-1.6, 0.9, 0.6), 0);
-    lit.add(new ConeGeometry(0.28, 0.32, 8), 0xffd9a0, at(-1.6, 1.8, 0.6), 0);
-    glass.add(new BoxGeometry(0.06, 1.1, 1.2), 0xffffff, at(-2.52, 1.8, 0.6), 0);
+    lit.add(new ConeGeometry(0.28, 0.32, 8), 0xffd59a, within(m, at(-1.6, 1.8, 0.6)), 0);
+    p.warm.push([...scenePoint(m, -1.6, 1.75, 0.6), 1.6]);
+    glass.add(new BoxGeometry(0.06, 1.1, 1.2), 0xffffff, within(m, at(-2.52, 1.8, 0.6)), 0);
+    const [px, py, pz] = scenePoint(m, 2.0, 0.2, 1.4);
+    pottedPlant(p, px, py, pz, 1.3);
   }
-  // ---- forge: a research bunker set into a limestone hill: wide door, workbench, screens, printer ----
+  // ---- forge: a research bunker set into a limestone hill: wide door, workbench, monitors, printer, pipes ----
   {
     const m = stationMatrix("forge");
     const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
-    for (const [x, y, z, r] of [[0, 1.6, -3.4, 4.2], [-3.2, 1.2, -2.6, 3], [3.3, 1.1, -2.8, 3.1], [0.6, 3.6, -4.6, 3.2], [-2, 3, -4.8, 2.6]] as const) {
-      add(new DodecahedronGeometry(r, 0), C.limestone, at(x, y, z, x + z, [1, 0.8, 1]), 0.07);
+    for (const [x, y, z, r, k] of [[0, 1.6, -3.4, 4.2, 1], [-3.2, 1.2, -2.6, 3, 2], [3.3, 1.1, -2.8, 3.1, 3], [0.6, 3.6, -4.6, 3.2, 4], [-2, 3, -4.8, 2.6, 5], [3.6, 3.0, -4.4, 2.4, 6]] as const) {
+      add(lumpy(new IcosahedronGeometry(r, 1), k, 0.12), k % 2 ? C.limestone : 0xe2d3be, at(x, y, z, x + z, [1, 0.8, 1]), 0.06);
     }
-    add(new BoxGeometry(5.2, 3.6, 0.6), C.cream, at(0, 1.8, 0.9));
-    add(new BoxGeometry(3.4, 2.7, 0.62), 0x2b2d33, at(0, 1.38, 0.92), 0);
-    for (const x of [-1.85, 1.85]) add(new BoxGeometry(0.3, 2.9, 0.66), C.orange, at(x, 1.45, 0.93), 0.02);
-    add(new BoxGeometry(3.9, 0.28, 0.66), C.grey, at(0, 2.9, 0.93), 0);
-    add(new BoxGeometry(5.6, 0.2, 1.4), C.greyLight, at(0, 3.7, 1.1), 0.02);
-    lit.add(new BoxGeometry(0.9, 0.55, 0.06), 0x6fe8d8, at(-0.8, 1.9, 0.6), 0);
-    lit.add(new BoxGeometry(0.9, 0.55, 0.06), 0x6fe8d8, at(0.25, 1.9, 0.6), 0);
-    lit.add(new BoxGeometry(0.5, 0.42, 0.42), 0xffb35a, at(1.1, 1.05, 0.55), 0);
-    // The workbench in front, and a little crate.
+    // Moss and a little grass on the hill.
+    for (const [x, y, z] of [[0.2, 4.8, -3], [-2.4, 3.6, -2.2], [2.6, 3.4, -2.4]] as const) p.canopy.add(new IcosahedronGeometry(0.8, 0), C.leafDeep, within(m, at(x, y, z, x, [1.4, 0.5, 1.2])), 0.1);
+    // The frame round the wide door: cream panels, orange edges, a grey lintel and a lamp over it.
+    add(new BoxGeometry(5.6, 3.8, 0.6), C.cream, at(0, 1.9, 0.9));
+    for (const x of [-2.2, 2.2]) add(new BoxGeometry(0.06, 3.0, 0.62), C.creamShade, at(x, 1.7, 0.92), 0);
+    for (const x of [-1.95, 1.95]) add(new BoxGeometry(0.32, 3.1, 0.68), C.orange, at(x, 1.5, 0.95), 0.02);
+    add(new BoxGeometry(4.2, 0.3, 0.7), C.grey, at(0, 3.05, 0.95), 0);
+    add(new BoxGeometry(5.9, 0.22, 1.5), C.greyLight, at(0, 3.9, 1.15), 0.02);
+    // Inside the door: the lab's own light (dim by day, warm at night), screens and the printer.
+    lit.add(new BoxGeometry(3.6, 2.85, 0.04), 0x5a4c40, within(m, at(0, 1.45, 1.22)), 0);
+    p.warm.push([...scenePoint(m, 0, 1.6, 1.4), 3.4]);
+    lit.add(new BoxGeometry(0.95, 0.6, 0.03), 0x6fe8d8, within(m, at(-0.9, 1.95, 1.3)), 0);
+    lit.add(new BoxGeometry(0.95, 0.6, 0.03), 0x7fd4f0, within(m, at(0.25, 1.95, 1.3)), 0);
+    for (const x of [-0.9, 0.25]) add(new BoxGeometry(1.05, 0.7, 0.05), C.grey, at(x, 1.95, 1.27), 0);
+    // A desk under the screens.
+    add(new BoxGeometry(2.4, 0.08, 0.5), C.wood, at(-0.35, 0.95, 1.5));
+    for (const x of [-1.45, 0.75]) add(new BoxGeometry(0.07, 0.9, 0.45), C.grey, at(x, 0.47, 1.5), 0);
+    p.cool.push([...scenePoint(m, -0.9, 1.95, 1.5), 0.9], [...scenePoint(m, 0.25, 1.95, 1.5), 0.9]);
+    // The 3D printer: a cream frame with its glowing build window.
+    // (On a shelf above the workbench's back edge, so the arms have the bench to themselves.)
+    add(new BoxGeometry(0.9, 0.06, 0.55), C.grey, at(1.35, 1.1, 1.5), 0);
+    add(new BoxGeometry(0.7, 0.74, 0.52), C.cream, at(1.35, 1.5, 1.5), 0.02);
+    add(new BoxGeometry(0.72, 0.07, 0.54), C.orange, at(1.35, 1.9, 1.5), 0);
+    lit.add(new BoxGeometry(0.5, 0.4, 0.03), 0xffb35a, within(m, at(1.35, 1.5, 1.77)), 0);
+    p.warm.push([...scenePoint(m, 1.35, 1.5, 1.95), 0.9]);
+    // Pipes along the hill face, clamped in orange.
+    add(new CylinderGeometry(0.09, 0.09, 5.2, 6), C.grey, at(-2.75, 2.6, 0.45, 0, 1, 0, Math.PI / 2 - 0.02), 0);
+    add(new CylinderGeometry(0.07, 0.07, 3.6, 6), C.greyLight, at(2.75, 1.8, 0.45), 0);
+    for (const y of [0.8, 1.8, 2.8]) add(new BoxGeometry(0.22, 0.1, 0.22), C.orange, at(2.75, y, 0.45), 0);
+    for (const x of [-4.2, -2.75, -1.3]) add(new BoxGeometry(0.1, 0.24, 0.24), C.orange, at(x, 2.6, 0.45), 0);
+    const [dx, dy, dz] = scenePoint(m, 0, 3.4, 1.55);
+    lanternBox(p, dx, dy, dz, 1.8);
+    // The workbench in front (the arms work on it), a vice, a crate and a cart of instruments.
     add(new BoxGeometry(2, 0.12, 0.8), C.wood, at(1.2, 0.86, 2.2));
     add(new BoxGeometry(1.9, 0.75, 0.7), C.creamShade, at(1.2, 0.4, 2.2));
     for (const x of [0.5, 1.2, 1.9]) add(new BoxGeometry(0.45, 0.05, 0.02), C.orange, at(x, 0.6, 2.56), 0);
-    add(new BoxGeometry(0.3, 0.18, 0.2), C.grey, at(0.6, 1, 2.1));
+    add(new BoxGeometry(0.3, 0.18, 0.2), C.grey, at(0.35, 1.0, 2.1));
+    add(new BoxGeometry(0.12, 0.08, 0.3), C.orange, at(0.35, 1.1, 2.1), 0);
     add(new BoxGeometry(0.7, 0.5, 0.5), C.creamShade, at(-1.6, 0.25, 2.1, 0.3));
     add(new BoxGeometry(0.72, 0.06, 0.52), C.orange, at(-1.6, 0.52, 2.1, 0.3), 0);
-    // A solar panel and a little pipe on the hill.
+    add(new BoxGeometry(0.6, 0.06, 0.45), C.greyLight, at(-2.5, 0.9, 1.9), 0);
+    add(new BoxGeometry(0.6, 0.06, 0.45), C.greyLight, at(-2.5, 0.45, 1.9), 0);
+    for (const [x, z] of [[-2.78, 1.7], [-2.22, 1.7], [-2.78, 2.1], [-2.22, 2.1]] as const) add(new BoxGeometry(0.04, 0.9, 0.04), C.grey, at(x, 0.5, z), 0);
+    add(new BoxGeometry(0.4, 0.25, 0.3), C.cream, at(-2.5, 1.06, 1.9), 0.02);
+    lit.add(new BoxGeometry(0.28, 0.14, 0.02), 0x7ff0c8, within(m, at(-2.5, 1.08, 2.06)), 0);
+    // A solar panel on the hill.
     add(new BoxGeometry(2.2, 0.06, 1.4), C.solar, at(-0.6, 5.3, -2.2, 0.2, 1, -0.4), 0.02);
-    add(new CylinderGeometry(0.08, 0.08, 2.5, 6), C.grey, at(2.6, 2.4, 0.4), 0);
+    add(new BoxGeometry(0.1, 1.2, 0.1), C.greyLight, at(-0.6, 4.7, -2.0), 0);
   }
-  // ---- watchtower: a lookout on braced legs, a roof and an antenna mast ----
+  // ---- watchtower: a lookout on braced legs, a roof, a pennant and an antenna mast ----
   {
     const m = stationMatrix("watchtower");
     const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     const H = 7;
     for (const [x, z] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]] as const) add(new BoxGeometry(0.28, H, 0.28), C.woodDark, at(x * 1.1, H / 2, z * 1.1, 0, 1, z * 0.04, -x * 0.04));
     for (const y of [2.2, 4.6]) for (const z of [-1.35, 1.35]) add(new BoxGeometry(3, 0.12, 0.12), C.wood, at(0, y, z, 0, 1, 0, 0.7), 0.03);
+    for (const y of [2.2, 4.6]) for (const x of [-1.35, 1.35]) add(new BoxGeometry(0.12, 0.12, 3), C.wood, at(x, y, 0, 0, 1, 0.7, 0), 0.03);
     add(new BoxGeometry(3.6, 0.22, 3.6), C.plank, at(0, H, 0), 0.04);
     for (const [x, z] of [[-1.7, -1.7], [1.7, -1.7], [-1.7, 1.7], [1.7, 1.7]] as const) add(new BoxGeometry(0.12, 2.2, 0.12), C.woodDark, at(x, H + 1.1, z));
     add(new BoxGeometry(4.2, 0.2, 4.2), C.woodDark, at(0, H + 2.3, 0, 0, 1, 0.06), 0.03);
     add(new BoxGeometry(3.4, 0.5, 0.08), C.wood, at(0, H + 0.45, 1.75), 0.03);
+    add(new BoxGeometry(3.4, 0.5, 0.08), C.wood, at(0, H + 0.45, -1.75), 0.03);
     add(new BoxGeometry(3.4, 0.08, 0.5), C.orange, at(0, H + 2.42, 0), 0);
     add(new CylinderGeometry(0.05, 0.08, 5, 5), C.grey, at(0.9, H + 4.8, -0.9), 0);
     for (const y of [H + 3.6, H + 5.2]) add(new BoxGeometry(0.9, 0.04, 0.04), C.grey, at(0.9, y, -0.9), 0);
+    // A pennant on the roof's corner.
+    add(new CylinderGeometry(0.03, 0.03, 1.6, 4), C.woodDark, at(-1.9, H + 3.2, 1.9), 0);
+    add(new ConeGeometry(0.4, 1.1, 3), C.orange, at(-1.9 + 0.55, H + 3.7, 1.9, 0, [1, 1, 0.08], 0, -Math.PI / 2), 0);
     add(new CylinderGeometry(0.1, 0.13, 0.8, 8), C.cream, at(-0.6, H + 0.9, 0.6, 0.6, 1, -0.9), 0.02);
     for (let i = 0; i < 10; i++) add(new BoxGeometry(0.7, 0.05, 0.07), C.wood, at(0, 0.4 + i * 0.66, 1.62), 0);
     lit.add(new IcosahedronGeometry(0.12, 0), 0xff9a4a, within(m, at(0.9, H + 7.35, -0.9)), 0);
+    p.warm.push([...scenePoint(m, 0.9, H + 7.35, -0.9), 0.9]);
+    const [lx, ly, lz] = scenePoint(m, 1.4, H + 1.9, 1.4);
+    lanternBox(p, lx, ly, lz);
   }
   // ---- treasury: a small, sturdy vault hut with a round door ----
   {
@@ -325,11 +482,13 @@ function buildStations(p: Parts): void {
     add(new BoxGeometry(4, 3, 3.4), C.creamShade, at(0, 1.8, -0.2), 0.04);
     add(new BoxGeometry(4.5, 0.4, 3.9), C.cream, at(0, 3.45, -0.2), 0.03);
     add(new BoxGeometry(4.05, 0.3, 3.45), C.orange, at(0, 2.9, -0.2), 0);
+    for (const x of [-1.9, 1.9]) add(new BoxGeometry(0.25, 3, 0.25), C.cream, at(x, 1.8, 1.5), 0.02);
     add(new CylinderGeometry(1, 1, 0.3, 16).rotateX(Math.PI / 2), C.grey, at(0, 1.5, 1.55), 0.02);
     add(new CylinderGeometry(0.78, 0.78, 0.34, 16).rotateX(Math.PI / 2), C.greyLight, at(0, 1.5, 1.6), 0);
     for (let i = 0; i < 3; i++) add(new BoxGeometry(1, 0.08, 0.06), C.orange, at(0, 1.5, 1.8, 0, 1, 0, (i * Math.PI) / 3), 0);
     add(new CylinderGeometry(0.12, 0.12, 0.1, 8).rotateX(Math.PI / 2), C.orange, at(0, 1.5, 1.82), 0);
     lit.add(new BoxGeometry(0.5, 0.2, 0.06), 0xffd9a0, within(m, at(0, 2.75, 1.52)), 0);
+    p.warm.push([...scenePoint(m, 0, 2.75, 1.7), 1.1]);
   }
   // ---- messenger's post: a radio mast, a dish, an orange banner and a radio hut ----
   {
@@ -338,6 +497,8 @@ function buildStations(p: Parts): void {
     add(new BoxGeometry(2.2, 2.3, 1.8), C.cream, at(-1.2, 1.15, -0.4));
     add(new BoxGeometry(2.5, 0.18, 2.1), C.grey, at(-1.2, 2.38, -0.4, 0, 1, 0.08));
     add(new BoxGeometry(0.8, 1.7, 0.08), C.orange, at(-1.2, 0.85, 0.52), 0);
+    glass.add(new BoxGeometry(0.06, 0.6, 0.8), 0xffffff, within(m, at(-2.32, 1.4, -0.4)), 0);
+    p.warm.push([...scenePoint(m, -2.4, 1.4, -0.4), 1.2]);
     add(new CylinderGeometry(0.06, 0.16, 8.5, 4), C.grey, at(1.3, 4.25, -0.2, Math.PI / 4), 0);
     for (let i = 1; i < 7; i++) add(new BoxGeometry(0.06, 0.06, 0.7 - i * 0.07), C.greyLight, at(1.3, i * 1.15, -0.2, 0, 1, 0, 0.6), 0);
     add(new BoxGeometry(1.6, 0.08, 0.08), C.grey, at(1.9, 6.4, -0.2), 0);
@@ -345,27 +506,36 @@ function buildStations(p: Parts): void {
     add(new ConeGeometry(0.65, 0.5, 3), C.orange, at(2.0, 3.85, -0.2, 0, [1, 1, 0.08], Math.PI), 0);
     add(new SphereGeometry(0.6, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2.4), C.cream, at(-1.6, 2.9, -0.6, 0.6, 1, 1.0), 0.02);
     lit.add(new IcosahedronGeometry(0.1, 0), 0xff9a4a, within(m, at(1.3, 8.6, -0.2)), 0);
+    p.warm.push([...scenePoint(m, 1.3, 8.6, -0.2), 0.8]);
   }
-  // ---- oracle: a ring of standing stones round an altar ----
+  // ---- oracle: a ring of standing stones with glowing runes round an altar, moss at their feet ----
   {
     const m = stationMatrix("oracle");
     const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + Math.PI / 9;
       if (Math.abs(Math.cos(a) - 1) < 0.15) continue;
-      add(new BoxGeometry(0.95, 2.7 + (i % 3) * 0.4, 0.6), i % 2 ? C.stone : C.stoneShade, at(Math.sin(a) * 4.3, 1.25, Math.cos(a) * 4.3, a, 1, 0.05 * ((i % 3) - 1)), 0.1);
+      const h = 2.7 + (i % 3) * 0.4;
+      const tilt = 0.05 * ((i % 3) - 1);
+      add(lumpy(new BoxGeometry(0.95, h, 0.6, 1, 2, 1), 30 + i, 0.07), i % 2 ? C.stone : C.stoneShade, at(Math.sin(a) * 4.3, 1.25, Math.cos(a) * 4.3, a, 1, tilt), 0.1);
+      // A rune on the inner face.
+      lit.add(new BoxGeometry(0.12, 0.6, 0.02), 0x9fe0ff, within(m, at(Math.sin(a) * 3.98, 1.5, Math.cos(a) * 3.98, a, 1, tilt)), 0);
+      lit.add(new BoxGeometry(0.34, 0.08, 0.02), 0x9fe0ff, within(m, at(Math.sin(a) * 3.98, 1.62, Math.cos(a) * 3.98, a, 1, tilt)), 0);
+      p.cool.push([...scenePoint(m, Math.sin(a) * 3.8, 1.5, Math.cos(a) * 3.8), 0.7]);
+      p.canopy.add(new IcosahedronGeometry(0.4, 0), C.leafDeep, within(m, at(Math.sin(a) * 4.5, 0.12, Math.cos(a) * 4.5, a, [1.4, 0.4, 1.2])), 0.1);
     }
-    add(new DodecahedronGeometry(0.9, 0), C.stone, at(0, 0.45, 0, 0.4, [1.2, 0.6, 0.9]), 0.08);
+    add(lumpy(new DodecahedronGeometry(0.9, 0), 40, 0.1), C.stone, at(0, 0.45, 0, 0.4, [1.2, 0.6, 0.9]), 0.08);
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
-      lit.add(new OctahedronGeometry(0.09, 0), 0xc8e6ff, within(m, at(Math.sin(a) * 2.8, 0.08, Math.cos(a) * 2.8)), 0);
+      lit.add(new OctahedronGeometry(0.09, 0), 0xc8e6ff, within(m, at(Math.sin(a) * 2.8, 0.1, Math.cos(a) * 2.8)), 0);
     }
   }
 
   // ---- paths: from the keep's foot of the stairs to every station, the way he walks ----
   const from = standAt("keep");
   const obs = obstacles();
-  solid.add(new CylinderGeometry(3.2, 3.2, 0.06, 12), C.plaza, at(...toScene(from.x, from.y, 0.03)), 0);
+  // Each layer has its own height, so paths, plazas and the keep's plaza never share a plane.
+  solid.add(new CylinderGeometry(3.4, 3.5, 0.1, 14), C.plaza, at(...toScene(from.x, from.y, KEEP_PLAZA_TOP - 0.05)), 0);
   for (const place of PLACES) {
     if (place === "keep") continue;
     let prev = { x: from.x, y: from.y };
@@ -373,19 +543,20 @@ function buildStations(p: Parts): void {
       const len = Math.hypot(pt.x - prev.x, pt.y - prev.y);
       if (len > 0.01) {
         const [mx, , mz] = toScene((pt.x + prev.x) / 2, (pt.y + prev.y) / 2);
-        solid.add(new BoxGeometry(1.4, 0.04, len + 1.4), C.path, at(mx, 0.04, mz, headingToSceneYaw(Math.atan2(pt.y - prev.y, pt.x - prev.x))), 0);
+        solid.add(new BoxGeometry(1.5, 0.05, len + 1.5), C.path, at(mx, PATH_TOP - 0.025, mz, headingToSceneYaw(Math.atan2(pt.y - prev.y, pt.x - prev.x))), 0);
       }
       prev = pt;
     }
-    solid.add(new CylinderGeometry(1.7, 1.7, 0.05, 10), C.plaza, at(...toScene(prev.x, prev.y, 0.045)), 0);
+    solid.add(new CylinderGeometry(1.8, 1.9, 0.075, 12), C.plaza, at(...toScene(prev.x, prev.y, STATION_PLAZA_TOP - 0.0375)), 0);
   }
 
   // ---- lanterns: a post at every station's standing place (on his left; the dog keeps his right) ----
   for (const place of PLACES) {
     const s = standAt(place);
     const side = s.facing + Math.PI / 2;
-    const [sx, , sz] = toScene(s.x + Math.cos(side) * 1.7, s.y + Math.sin(side) * 1.7, 0);
-    solid.add(new CylinderGeometry(0.06, 0.08, 2.1, 6), C.woodDark, at(sx, 1.05, sz), 0);
+    const [sx, , sz] = toScene(s.x + Math.cos(side) * 1.9, s.y + Math.sin(side) * 1.9, 0);
+    solid.add(new CylinderGeometry(0.06, 0.09, 2.1, 6), C.woodDark, at(sx, 1.05, sz), 0);
+    solid.add(new BoxGeometry(0.4, 0.05, 0.05), C.woodDark, at(sx, 2.05, sz), 0);
     lanternBox(p, sx, 2.3, sz);
   }
 }
@@ -398,10 +569,13 @@ export interface FleetSpot {
 
 export class Keep {
   readonly group = new Group();
-  private readonly solidMaterial = new MeshLambertMaterial({ vertexColors: true });
+  private readonly solidMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
   private readonly canopyMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
-  private readonly glassMaterial = new MeshBasicMaterial({ vertexColors: true });
-  private readonly litMaterial = new MeshBasicMaterial({ vertexColors: true });
+  private readonly nightUniform = uniform(0);
+  private readonly dayGlass = uniform(new Color(0xb9d4e6));
+  private readonly nightGlass = uniform(new Color(0xffc46e));
+  private readonly glassMaterial = new MeshBasicNodeMaterial({ vertexColors: true });
+  private readonly litMaterial = new MeshBasicNodeMaterial({ vertexColors: true });
   private readonly beacon = new Group();
   private readonly orb: Mesh;
   private fleet = new Group();
@@ -409,18 +583,27 @@ export class Keep {
   private night = 0;
   /** At most a few cheap lights; they only light up at night. */
   private readonly lamps: PointLight[] = [];
-  private readonly dayGlass = new Color(0xb9d4e6);
-  private readonly nightGlass = new Color(0xffc874);
   spots: FleetSpot[] = [];
+  /** Where the keep's lamps and windows glow at night (scene, radius), warm and cool (screens, runes). */
+  readonly warmGlows: [number, number, number, number][];
+  readonly coolGlows: [number, number, number, number][];
 
   constructor(shadows: boolean, lights: number) {
-    const parts: Parts = { solid: new Mesher(), canopy: new Mesher(), glass: new Mesher(), lit: new Mesher() };
+    const parts: Parts = { solid: new Mesher(), canopy: new Mesher(), glass: new Mesher(), lit: new Mesher(), warm: [], cool: [] };
     buildStations(parts);
-    const solid = new Mesh(parts.solid.build(), this.solidMaterial);
+    this.warmGlows = parts.warm;
+    this.coolGlows = parts.cool;
+    this.solidMaterial.maskNode = occlusionMask();
+    this.canopyMaterial.maskNode = occlusionMask();
+    // Glass: the sky's pale blue by day, a warm lit room at night (bright enough to bloom past white).
+    this.glassMaterial.colorNode = mix(this.dayGlass, this.nightGlass.mul(1.8), this.nightUniform).mul(vertexColor());
+    // Lamps and screens: lit a little by day, bright at night.
+    this.litMaterial.colorNode = vertexColor().mul(float(0.85).add(this.nightUniform.mul(1.6)));
+    const solid = new Mesh(parts.solid.build({ ao: groundAO(0.58, 1.3, 0.68) }), this.solidMaterial);
     solid.castShadow = shadows;
     solid.receiveShadow = shadows;
     this.canopyMaterial.positionNode = swaying(0.0012);
-    const canopy = new Mesh(parts.canopy.build(), this.canopyMaterial);
+    const canopy = new Mesh(parts.canopy.build({ ao: groundAO(0.6, 1, 0.7) }), this.canopyMaterial);
     canopy.castShadow = shadows;
     this.group.add(solid, canopy, new Mesh(parts.glass.build(), this.glassMaterial), new Mesh(parts.lit.build(), this.litMaterial));
 
@@ -441,9 +624,10 @@ export class Keep {
     // The oracle's orb.
     const oracle = STATIONS.oracle;
     const [ox, , oz] = toScene(oracle.x, oracle.y, 0);
-    this.orb = new Mesh(new IcosahedronGeometry(0.32, 1), new MeshBasicMaterial({ color: 0xcfe9ff }));
+    this.orb = new Mesh(new IcosahedronGeometry(0.32, 1), new MeshBasicMaterial({ color: 0xd6eeff }));
     this.orb.position.set(ox, 1.7, oz);
     this.group.add(this.orb);
+    this.coolGlows.push([ox, 1.7, oz, 1.4]);
 
     // The beacon: a flame on a mast above the room and a column of light, when something needs you.
     const flame = new Mesh(new ConeGeometry(0.4, 1.1, 6), new MeshBasicMaterial({ color: 0xffb347 }));
@@ -463,8 +647,7 @@ export class Keep {
   /** 0 by day, 1 at night: glass turns from sky blue to warm, lamps and screens brighten, lights come on. */
   setNight(night: number): void {
     this.night = night;
-    this.glassMaterial.color.copy(this.dayGlass).lerp(this.nightGlass, night);
-    this.litMaterial.color.setScalar(0.72 + 0.28 * night);
+    this.nightUniform.value = night;
     for (const lamp of this.lamps) lamp.intensity = 8 * night;
   }
 
@@ -513,7 +696,7 @@ export class Keep {
         this.spots.push({ node, label: [x, y, 5.4] });
       }
     });
-    if (!solid.empty) this.fleet.add(new Mesh(solid.build(), this.solidMaterial));
+    if (!solid.empty) this.fleet.add(new Mesh(solid.build({ ao: groundAO(0.6, 1.2, 0.7) }), this.solidMaterial));
     if (!lit.empty) this.fleet.add(new Mesh(lit.build(), this.litMaterial));
     this.group.add(this.fleet);
   }
@@ -556,7 +739,7 @@ function stationPoint(place: Place, lx: number, lz: number, z: number): Vec3 {
 }
 
 /** The lab's workbench in the world (z up), where sparks fly from. */
-export const forgeAnvil = (): Vec3 => stationPoint("forge", 1.2, 2.2, 1.0);
+export const forgeAnvil = (): Vec3 => stationPoint("forge", 0.35, 2.1, 1.05);
 const forgeDoor = (): Vec3 => stationPoint("forge", 0, 1.8, 0);
 
 export const stationLabelPoint = (place: Place): Vec3 => [STATIONS[place].x, STATIONS[place].y, LABEL_HEIGHT[place]];

@@ -3,29 +3,36 @@ import type { PerspectiveCamera } from "three/webgpu";
 import { angleDiff } from "./path.ts";
 
 /*
- * The camera: perspective, orbiting a focus point on the ground, looking down at
- * about 45° at the usual distance; zoomed right in it lowers towards the horizon
- * (the mountains and the sky come into view), zoomed out it looks more straight
- * down. Drag (one finger) pans, the wheel or a pinch zooms, a right-drag or a
- * two-finger twist turns it. Everything eases towards its target, except under
- * reduced motion, where it jumps. Following Galahad keeps the focus on him;
- * panning stops following.
+ * The camera: perspective, orbiting a focus point on the ground. By default it's
+ * a close, low third-person view over Galahad's shoulder (he's large in the
+ * frame, the meadow, the mountains and the sky behind him); zoomed out it rises
+ * towards an overview. Drag (one finger) pans, the wheel or a pinch zooms, a
+ * right-drag or a two-finger twist turns it. Everything eases towards its
+ * target, except under reduced motion, where it jumps. Following Galahad keeps
+ * the focus on him and, while he walks, swings slowly round behind him (unless
+ * you've just turned it yourself); panning stops following. The ground under the
+ * focus is smoothed, so the view doesn't bob over every facet of a hill.
  */
 
-export const MIN_DISTANCE = 8;
+export const MIN_DISTANCE = 5;
 export const MAX_DISTANCE = 130;
-export const DEFAULT_DISTANCE = 30;
+export const DEFAULT_DISTANCE = 10;
+/** Where the views of a station and of a plot start. */
+export const STATION_DISTANCE = 22;
 
 /**
- * The pitch (radians below the horizon) at a distance: 8° right up close, 16° at
+ * The pitch (radians below the horizon) at a distance: 7° right up close, 11° at
  * the default (the mountains and the sky show at the top), rising to an
  * isometric-ish 54° far out, for an overview.
  */
 export function pitchFor(distance: number): number {
-  if (distance <= DEFAULT_DISTANCE) return ((8 + (8 * (distance - 8)) / (DEFAULT_DISTANCE - 8)) * Math.PI) / 180;
-  const t = Math.max(0, Math.min(1, (distance - DEFAULT_DISTANCE) / 80));
-  return ((16 + 38 * t * t * (3 - 2 * t)) * Math.PI) / 180;
+  if (distance <= DEFAULT_DISTANCE) return ((7 + (4 * (distance - MIN_DISTANCE)) / (DEFAULT_DISTANCE - MIN_DISTANCE)) * Math.PI) / 180;
+  const t = Math.max(0, Math.min(1, (distance - DEFAULT_DISTANCE) / 95));
+  return ((11 + 43 * t * t * (3 - 2 * t)) * Math.PI) / 180;
 }
+
+/** How far over his shoulder the following view sits: the camera looks along his heading, turned this much. */
+const SHOULDER = 0.5;
 
 export class CameraRig {
   /** Focus on the ground, world metres. */
@@ -36,6 +43,49 @@ export class CameraRig {
   distance = DEFAULT_DISTANCE;
   target = { x: 0, y: -8, yaw: Math.PI / 2, distance: DEFAULT_DISTANCE };
   follow = true;
+  /** The ground under the focus, smoothed. */
+  private ground = Number.NaN;
+  /** Seconds since the viewer last turned the view (the auto-swing waits for them). */
+  private sinceTurn = Infinity;
+
+  /**
+   * While following him as he walks, swing slowly round behind him (heading:
+   * his, atan2 convention); and whenever the camera would stand inside a
+   * building (`clear` is false where it can't be), turn it to the nearest
+   * clear side instead, or come closer.
+   */
+  trail(heading: number, walking: boolean, dt: number, clear: (x: number, y: number) => boolean): void {
+    this.sinceTurn += dt;
+    if (!this.follow) return;
+    const t = this.target;
+    const back = t.distance * Math.cos(pitchFor(t.distance));
+    const at = (yaw: number, b: number) => clear(t.x - Math.cos(yaw) * b, t.y - Math.sin(yaw) * b);
+    if (this.sinceTurn >= 6) {
+      // Behind him, looking where he looks (over his shoulder at his work); his front when his back's to a wall.
+      let want = heading - SHOULDER;
+      if (!walking && !at(want, back)) want = heading + Math.PI - SHOULDER;
+      t.yaw += angleDiff(t.yaw, want) * (1 - Math.exp(-dt * (walking ? 0.55 : 0.3)));
+    }
+    if (at(t.yaw, back)) return;
+    for (let k = 1; k <= 15; k++) {
+      for (const sign of [1, -1]) {
+        const yaw = t.yaw + sign * k * (Math.PI / 15);
+        if (at(yaw, back)) {
+          t.yaw = yaw;
+          return;
+        }
+      }
+    }
+    // Hemmed in all round: come in closer.
+    t.distance = Math.max(MIN_DISTANCE, t.distance * 0.92);
+  }
+
+  /** The ground under the focus, eased (a hill's facets would make the view bob). */
+  settle(ground: number, dt: number, motion: boolean): number {
+    if (Number.isNaN(this.ground) || !motion || Math.abs(ground - this.ground) > 6) this.ground = ground;
+    else this.ground += (ground - this.ground) * (1 - Math.exp(-dt * 5));
+    return this.ground;
+  }
 
   /** Eases towards the target. Returns true while still moving. */
   update(dt: number, motion: boolean): boolean {
@@ -72,7 +122,7 @@ export class CameraRig {
     const cx = this.x - Math.cos(this.yaw) * back - origin[0];
     const cy = this.y - Math.sin(this.yaw) * back - origin[1];
     // Close in, look at his chest rather than his feet.
-    const lift = Math.max(0, 1.6 - this.distance * 0.03);
+    const lift = Math.max(0, 1.5 - Math.max(0, this.distance - 10) * 0.025);
     // On a tall (portrait) screen, look a little past the focus, so it sits lower and the land ahead shows.
     const ahead = camera.aspect < 1 ? this.distance * 0.3 * (1 - camera.aspect) : 0;
     // Scene axes: (x, z, −y).
@@ -104,6 +154,7 @@ export class CameraRig {
 
   rotateBy(radians: number): void {
     this.target.yaw += radians;
+    this.sinceTurn = 0;
   }
 
   lookAt(x: number, y: number, distance?: number): void {

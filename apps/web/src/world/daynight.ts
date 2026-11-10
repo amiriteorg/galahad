@@ -19,6 +19,8 @@ export interface Sky {
   golden: number;
   zenith: number;
   horizon: number;
+  /** The sky and the haze towards the sun: warm white by day, peach at golden hour. */
+  sunGlow: number;
   /** The directional light: the sun by day, the moon by night. */
   light: number;
   lightIntensity: number;
@@ -29,38 +31,57 @@ export interface Sky {
   /** 0..1: how bright the stars are. */
   stars: number;
   water: number;
+  /** Tone-mapping exposure: a touch more at night, so the dark still reads. */
+  exposure: number;
 }
 
 interface Key {
   h: number;
   zenith: number;
   horizon: number;
+  sunGlow: number;
   light: number;
   lightIntensity: number;
   hemiSky: number;
   hemiGround: number;
   hemiIntensity: number;
   water: number;
+  exposure: number;
 }
 
-/** The look at key hours; between them, colours blend. */
-/** Soft blue to lavender by day, peach and gold at the ends of it, deep blue at night; turquoise water. */
+/**
+ * The look at key hours; between them, colours blend in linear light. After the
+ * references: periwinkle mornings, a pale lavender-blue noon over lime meadows,
+ * a golden hour of warm peach light with lavender in the shade and the sky, and
+ * deep blue nights lit by the moon. The fill (hemisphere) is lavender from above
+ * and a warm green bounce from below, so shadows are coloured, never grey.
+ */
 const KEYS: Key[] = [
-  { h: 0, zenith: 0x070b1d, horizon: 0x16204a, light: 0x8098ff, lightIntensity: 0.7, hemiSky: 0x2c44a0, hemiGround: 0x101a40, hemiIntensity: 0.75, water: 0x173a52 },
-  { h: 4.6, zenith: 0x090e22, horizon: 0x1b2552, light: 0x8098ff, lightIntensity: 0.65, hemiSky: 0x2e46a2, hemiGround: 0x111b42, hemiIntensity: 0.75, water: 0x193d55 },
-  { h: 5.6, zenith: 0x7068b8, horizon: 0xf4b9b0, light: 0xffb48c, lightIntensity: 1, hemiSky: 0xbcaee0, hemiGround: 0x6d5a62, hemiIntensity: 0.85, water: 0x6fb2c4 },
-  { h: 7, zenith: 0x96bdf0, horizon: 0xf2d9e8, light: 0xffe4c4, lightIntensity: 2.3, hemiSky: 0xdcdcf6, hemiGround: 0x8f8466, hemiIntensity: 1.05, water: 0x52cfc6 },
-  { h: 12.5, zenith: 0x8bb8ef, horizon: 0xe4dbf3, light: 0xfff4e2, lightIntensity: 2.9, hemiSky: 0xe0e4f8, hemiGround: 0x958a6a, hemiIntensity: 1.15, water: 0x48d0c8 },
-  { h: 16.5, zenith: 0x92b8ee, horizon: 0xeedbe6, light: 0xffe9cc, lightIntensity: 2.7, hemiSky: 0xe2dcf2, hemiGround: 0x978766, hemiIntensity: 1.1, water: 0x50ccc4 },
-  { h: 18.4, zenith: 0xa49be0, horizon: 0xffc796, light: 0xffaf62, lightIntensity: 2.3, hemiSky: 0xe0c8e6, hemiGround: 0x93705a, hemiIntensity: 1, water: 0x7cc2c8 },
-  { h: 19.5, zenith: 0x4a4488, horizon: 0xe8978e, light: 0xff8d5c, lightIntensity: 0.9, hemiSky: 0x9284b8, hemiGround: 0x4c3c46, hemiIntensity: 0.8, water: 0x4a6f9a },
-  { h: 20.8, zenith: 0x0b1028, horizon: 0x1e2a58, light: 0x8098ff, lightIntensity: 0.7, hemiSky: 0x2c44a0, hemiGround: 0x101a40, hemiIntensity: 0.75, water: 0x183b54 },
-  { h: 24, zenith: 0x070b1d, horizon: 0x16204a, light: 0x8098ff, lightIntensity: 0.7, hemiSky: 0x2c44a0, hemiGround: 0x101a40, hemiIntensity: 0.75, water: 0x173a52 },
+  { h: 0, zenith: 0x080d24, horizon: 0x1c2958, sunGlow: 0x24346a, light: 0x9db0ff, lightIntensity: 0.34, hemiSky: 0x34488f, hemiGround: 0x141c34, hemiIntensity: 0.52, water: 0x1b4060, exposure: 1.0 },
+  { h: 4.6, zenith: 0x0a1028, horizon: 0x22305e, sunGlow: 0x2a3a70, light: 0x9db0ff, lightIntensity: 0.32, hemiSky: 0x364a92, hemiGround: 0x141d36, hemiIntensity: 0.52, water: 0x1d4262, exposure: 1.0 },
+  { h: 5.1, zenith: 0x2c3070, horizon: 0x7a6488, sunGlow: 0xb07a8c, light: 0xb8a8e8, lightIntensity: 0.6, hemiSky: 0x6a6cb8, hemiGround: 0x2e3048, hemiIntensity: 0.65, water: 0x3a5a80, exposure: 1.05 },
+  { h: 5.6, zenith: 0x6e6cbc, horizon: 0xf4bcb6, sunGlow: 0xffb08c, light: 0xffb894, lightIntensity: 1.1, hemiSky: 0xb8b0e6, hemiGround: 0x6c6658, hemiIntensity: 0.85, water: 0x74b4cc, exposure: 1.1 },
+  { h: 7, zenith: 0x92b6f0, horizon: 0xe8d4ea, sunGlow: 0xffe0c4, light: 0xffe2c4, lightIntensity: 2.1, hemiSky: 0xcdd0f4, hemiGround: 0x8c9460, hemiIntensity: 0.95, water: 0x5ccfd0, exposure: 1 },
+  { h: 12.5, zenith: 0x7fb0ee, horizon: 0xcfd6f4, sunGlow: 0xfff2dc, light: 0xfff1de, lightIntensity: 2.5, hemiSky: 0xcbd6f6, hemiGround: 0x8f9c5e, hemiIntensity: 1.0, water: 0x4fd2cc, exposure: 1 },
+  { h: 16.5, zenith: 0x88afec, horizon: 0xdcd4ee, sunGlow: 0xffe4c4, light: 0xffe6c6, lightIntensity: 2.4, hemiSky: 0xd0d0f2, hemiGround: 0x919a5c, hemiIntensity: 0.98, water: 0x55cec8, exposure: 1 },
+  { h: 18.4, zenith: 0x9a9ce6, horizon: 0xf6c6aa, sunGlow: 0xffae74, light: 0xffcc94, lightIntensity: 2.4, hemiSky: 0xd2c4f6, hemiGround: 0xa4ac62, hemiIntensity: 1.35, water: 0x7ccad2, exposure: 1.12 },
+  { h: 19.5, zenith: 0x5250a0, horizon: 0xf0a49a, sunGlow: 0xff9670, light: 0xff9e70, lightIntensity: 0.95, hemiSky: 0x9a8cc8, hemiGround: 0x4e4650, hemiIntensity: 0.8, water: 0x4e74a0, exposure: 1.15 },
+  { h: 20.1, zenith: 0x262a66, horizon: 0x6c5a86, sunGlow: 0x9a6a84, light: 0xa8a6ee, lightIntensity: 0.5, hemiSky: 0x5a5eae, hemiGround: 0x2a2c46, hemiIntensity: 0.6, water: 0x30507a, exposure: 1.05 },
+  { h: 20.8, zenith: 0x0c1230, horizon: 0x243262, sunGlow: 0x2e3e76, light: 0x9db0ff, lightIntensity: 0.34, hemiSky: 0x34488f, hemiGround: 0x141c34, hemiIntensity: 0.52, water: 0x1c4060, exposure: 1.0 },
+  { h: 24, zenith: 0x080d24, horizon: 0x1c2958, sunGlow: 0x24346a, light: 0x9db0ff, lightIntensity: 0.34, hemiSky: 0x34488f, hemiGround: 0x141c34, hemiIntensity: 0.52, water: 0x1b4060, exposure: 1.0 },
 ];
 
-/** Blends two sRGB colours channel by channel. */
+const toLinear = (c: number): number => {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const toSrgb = (v: number): number => Math.round(255 * Math.max(0, Math.min(1, v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)));
+/** sRGB channel → linear light, as a table (the render loop calls mixColor every few seconds; no pow there). */
+const LINEAR = Float64Array.from({ length: 256 }, (_, i) => toLinear(i));
+
+/** Blends two sRGB colours in linear light (as light mixes), back to sRGB. */
 export function mixColor(a: number, b: number, t: number): number {
-  const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t);
+  const ch = (s: number) => toSrgb(LINEAR[(a >> s) & 255]! * (1 - t) + LINEAR[(b >> s) & 255]! * t);
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
@@ -77,6 +98,7 @@ export const emptySky = (): Sky => ({
   golden: 0,
   zenith: 0,
   horizon: 0,
+  sunGlow: 0,
   light: 0,
   lightIntensity: 0,
   lightFromSun: true,
@@ -85,6 +107,7 @@ export const emptySky = (): Sky => ({
   hemiIntensity: 0,
   stars: 0,
   water: 0,
+  exposure: 1,
 });
 
 /** The sky at an hour of the day (0–24, local time), written into `out`. */
@@ -114,6 +137,8 @@ export function skyAt(hours: number, out: Sky): Sky {
   const t = (h - a.h) / (b.h - a.h);
   out.zenith = mixColor(a.zenith, b.zenith, t);
   out.horizon = mixColor(a.horizon, b.horizon, t);
+  out.sunGlow = mixColor(a.sunGlow, b.sunGlow, t);
+  out.exposure = a.exposure + (b.exposure - a.exposure) * t;
   out.light = mixColor(a.light, b.light, t);
   out.lightIntensity = a.lightIntensity + (b.lightIntensity - a.lightIntensity) * t;
   out.hemiSky = mixColor(a.hemiSky, b.hemiSky, t);

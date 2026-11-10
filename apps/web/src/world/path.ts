@@ -32,7 +32,8 @@ const LAYOUT: Record<Place, { r: number; stand: number }> = {
   watchtower: { r: 2.6, stand: 3.6 },
   treasury: { r: 3, stand: 4 },
   messenger: { r: 2.6, stand: 3.4 },
-  forge: { r: 3.4, stand: 4.4 },
+  // At the lab he stands at the workbench's end, within reach of it.
+  forge: { r: 3.1, stand: 3.25 },
   oracle: { r: 0, stand: 1.4 },
   observatory: { r: 2.5, stand: 3.3 },
 };

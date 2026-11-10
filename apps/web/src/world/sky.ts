@@ -1,37 +1,32 @@
-import { dot, max, mix, normalize, positionLocal, pow, smoothstep, uniform } from "three/tsl";
-import {
-  BackSide,
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  Group,
-  IcosahedronGeometry,
-  Mesh,
-  MeshBasicNodeMaterial,
-  Points,
-  PointsNodeMaterial,
-  SphereGeometry,
-  Vector3,
-} from "three/webgpu";
+import { abs, dot, float, fract, max, mix, normalize, positionLocal, pow, screenCoordinate, sin, smoothstep, uniform, vec2 } from "three/tsl";
+import { BackSide, BufferAttribute, BufferGeometry, Color, Group, IcosahedronGeometry, Mesh, MeshBasicNodeMaterial, Points, PointsNodeMaterial, SphereGeometry, Vector3 } from "three/webgpu";
 import type { Sky } from "./daynight.ts";
 import { rng } from "./physics.ts";
 
 /*
- * The sky: a dome drawn in the shader, pastel from horizon to zenith with a
- * bright sun and its glow; stars and a moon at night. It follows the camera, so
- * it's always at the horizon, and it ignores the fog (the fog is tinted to match
- * its horizon instead).
+ * The sky: a dome drawn in the shader, from the horizon's haze to the zenith,
+ * warmed towards the sun (a band of peach along the horizon at golden hour), with
+ * a soft sun and its glow; stars and a moon at night. A fine dither keeps the
+ * long gradients free of banding. It follows the camera, so it's always at the
+ * horizon, and it ignores the fog (the fog is tinted to match it instead).
  */
 
 const RADIUS = 900;
+
+/** Half a step of 8-bit colour, as noise on the screen: no bands in long gradients. */
+export function dither() {
+  return fract(sin(dot(screenCoordinate.xy, vec2(12.9898, 78.233))).mul(43758.5453)).sub(0.5).mul(1 / 255);
+}
 
 export class SkyDome {
   readonly group = new Group();
   private readonly zenith = uniform(new Color(0x86c1f2));
   private readonly horizon = uniform(new Color(0xe0f0f6));
+  private readonly glowColor = uniform(new Color(0xfff2dc));
   private readonly sunDir = uniform(new Vector3(0, 1, 0));
   private readonly sunColor = uniform(new Color(0xfff8ec));
   private readonly sunUp = uniform(1);
+  private readonly golden = uniform(0);
   private readonly starOpacity = uniform(0);
   private readonly moonOpacity = uniform(0);
   private readonly moon: Mesh;
@@ -41,12 +36,16 @@ export class SkyDome {
     const dome = new MeshBasicNodeMaterial({ side: BackSide, depthWrite: false });
     dome.fog = false;
     const dir = normalize(positionLocal);
-    const base = mix(this.horizon, this.zenith, smoothstep(-0.02, 0.6, dir.y));
+    const up = dir.y;
+    const base = mix(this.horizon, this.zenith, pow(smoothstep(-0.03, 0.62, up), float(0.85)));
     const facing = max(dot(dir, this.sunDir), 0);
-    const disc = smoothstep(0.9991, 0.9996, facing);
-    const glow = pow(facing, 48).mul(0.55).add(pow(facing, 6).mul(0.16));
-    dome.colorNode = base.add(this.sunColor.mul(disc.mul(2.2).add(glow)).mul(this.sunUp));
-    const sky = new Mesh(new SphereGeometry(RADIUS, 32, 16), dome);
+    // Towards the sun the haze warms: a broad band along the horizon at golden hour, a soft halo by day.
+    const band = float(1).sub(smoothstep(0, 0.32, abs(up))).mul(pow(facing, 2.5)).mul(this.golden);
+    const warm = mix(base, this.glowColor, band.mul(0.85).add(pow(facing, 10).mul(0.3).mul(this.sunUp)).min(1));
+    const disc = smoothstep(0.9986, 0.9993, facing);
+    const glow = pow(facing, 90).mul(0.7).add(pow(facing, 14).mul(0.12));
+    dome.colorNode = warm.add(this.sunColor.mul(disc.mul(2.4).add(glow)).mul(this.sunUp)).add(dither());
+    const sky = new Mesh(new SphereGeometry(RADIUS, 48, 24), dome);
     sky.renderOrder = -10;
     sky.frustumCulled = false;
 
@@ -67,7 +66,7 @@ export class SkyDome {
     starPoints.renderOrder = -9;
     starPoints.frustumCulled = false;
 
-    const moonMaterial = new MeshBasicNodeMaterial({ color: 0xf2f0e6, transparent: true, depthWrite: false });
+    const moonMaterial = new MeshBasicNodeMaterial({ color: 0xf6f2e4, transparent: true, depthWrite: false });
     moonMaterial.fog = false;
     moonMaterial.opacityNode = this.moonOpacity;
     this.moon = new Mesh(new IcosahedronGeometry(22, 2), moonMaterial);
@@ -80,12 +79,15 @@ export class SkyDome {
 
   /** Takes the sky's colours and the sun and moon (world frame, z up). */
   set(s: Sky): void {
-    this.zenith.value.setHex(s.zenith);
-    this.horizon.value.setHex(s.horizon);
+    // As deep as the fog (scene.ts HAZE), so the land melts into the sky with no seam.
+    this.zenith.value.setHex(s.zenith).multiplyScalar(0.88);
+    this.horizon.value.setHex(s.horizon).multiplyScalar(0.8);
+    this.glowColor.value.setHex(s.sunGlow).multiplyScalar(0.8);
     // Scene axes: (x, z, −y).
     this.sunDir.value.set(s.sun[0], s.sun[2], -s.sun[1]);
     this.sunColor.value.setHex(s.light);
     this.sunUp.value = s.lightFromSun ? Math.min(1, s.sun[2] * 6 + 0.25) : Math.max(0, s.sun[2] * 4 + 0.3);
+    this.golden.value = Math.min(1, s.golden * 1.4);
     this.starOpacity.value = s.stars;
     this.moonOpacity.value = Math.min(1, s.night * 1.2);
     this.moon.position.set(s.moon[0] * RADIUS * 0.85, s.moon[2] * RADIUS * 0.85, -s.moon[1] * RADIUS * 0.85);
