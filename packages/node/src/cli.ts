@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, type RouteName, routes, type SandboxView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, type RouteName, routes, type SandboxView, type TrialView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -15,6 +15,7 @@ import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeC
 import { runMcpServer } from "./mcp.ts";
 import { investigateFromCli, questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
+import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
 const VERSION = "0.1.0";
 
@@ -50,6 +51,10 @@ Work
                                   the scientific method: hypothesis and predictions registered before anything
                                   runs, a verified experiment in the Lab, an independent method review
   findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
+  trial run [problem|domain …] [--repeat 1] [--parallel 3] [--seed n] [--net gateway|online] [--vm|--container]
+                                  problems with exact answers, posed with fresh random parameters, solved in the Lab,
+                                  graded by a program: the Galahad Index
+  trials [--all] | trial <id|run> | trial problems   the Index per run, and each answer against the exact one
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
@@ -263,6 +268,9 @@ async function main(): Promise<void> {
       free: { type: "string", multiple: true },
       days: { type: "string" },
       from: { type: "string" },
+      repeat: { type: "string" },
+      parallel: { type: "string" },
+      seed: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -717,6 +725,92 @@ Reviewer:
 ${i!.review}`);
       if (i!.artifact) console.log(dim(`
 Evidence: galahad artifact ${i!.artifact}`));
+      return;
+    }
+
+    case "trials":
+    case "trial": {
+      const admin = new Admin(home);
+      const suite = "engineering";
+      if (command === "trial" && sub === "problems") {
+        for (const p of chooseProblems(suite, [])) console.log(`  ${p.id.padEnd(26)} ${p.domain.padEnd(11)} ${p.title}`);
+        return;
+      }
+      if (command === "trial" && sub === "run") {
+        const network = str("net") ?? "gateway";
+        if (network !== "gateway" && network !== "online") fail("--net must be gateway (models only, the default) or online: a trial needs models");
+        const whole = (key: string, fallback: number, max: number): number => {
+          const raw = str(key);
+          if (raw === undefined) return fallback;
+          const n = Number(raw);
+          if (!Number.isInteger(n) || n < 1 || n > max) fail(`--${key} must be a whole number from 1 to ${max}`);
+          return n;
+        };
+        const seedRaw = str("seed");
+        const seed = seedRaw === undefined ? undefined : Number(seedRaw);
+        if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)) fail("--seed must be a whole number from 0 to 4294967295");
+        let problems: ReturnType<typeof chooseProblems> = [];
+        try {
+          problems = chooseProblems(suite, [...(sub === "run" ? rest : [])]);
+        } catch (error) {
+          fail((error as Error).message);
+        }
+        const trials = await trialRunFromCli(admin, {
+          suite,
+          problems,
+          repeat: whole("repeat", 1, 20),
+          parallel: whole("parallel", 3, 8),
+          network: network as "gateway" | "online",
+          ...(isolation() ? { isolation: isolation() } : {}),
+          ...(str("on") ? { on: str("on") } : {}),
+          ...(seed !== undefined ? { seed } : {}),
+        });
+        process.exit(trials.length ? 0 : 1);
+      }
+      const { trials } = (await admin.call("trials")) as { trials: TrialView[] };
+      if (command === "trials" || !sub) {
+        if (!trials.length) {
+          console.log("No trials yet: galahad trial run (or galahad trial run cantilever-beam for one)");
+          return;
+        }
+        const runs = new Map<string, TrialView[]>();
+        for (const t of trials) runs.set(t.run, [...(runs.get(t.run) ?? []), t]);
+        for (const [run, ts] of [...runs].slice(0, flags.all ? undefined : 10)) {
+          const models = [...new Set(ts.flatMap((t) => t.models))];
+          console.log(`${bold(run)} ${dim(`${new Date(Math.min(...ts.map((t) => t.recordedAt))).toLocaleString()} · ${ts[0]!.suite} · revision ${ts[0]!.version}${models.length ? ` · ${models.join(", ")}` : ""}`)}`);
+          console.log(`  ${describeIndex(ts)}`);
+        }
+        if (runs.size > 10 && !flags.all) console.log(dim(`  … ${runs.size - 10} older run(s): --all`));
+        console.log(`\n${bold("By problem")} ${dim("(every run)")}`);
+        for (const p of chooseProblems(suite, [])) {
+          const ts = trials.filter((t) => t.problem === p.id && t.status === "scored");
+          if (!ts.length) {
+            console.log(dim(`  ${p.id.padEnd(26)} not tried yet`));
+            continue;
+          }
+          const mean = ts.reduce((sum, t) => sum + t.score, 0) / ts.length;
+          console.log(`  ${p.id.padEnd(26)} ${`${ts.filter((t) => t.score === 1).length}/${ts.length}`.padEnd(6)} solved · mean score ${(100 * mean).toFixed(0)}%`);
+        }
+        return;
+      }
+      const one = trials.find((t) => t.id === sub);
+      if (one) {
+        console.log(`${bold(one.title)} ${dim(`· ${one.domain} · ${one.id}`)}`);
+        console.log(describeTrial(one, true));
+        console.log(
+          dim(
+            `run ${one.run} on ${one.nodeName} · revision ${one.version} · ${new Date(one.recordedAt).toLocaleString()}` +
+              (one.quest ? ` · quest ${one.quest.status}, ${one.quest.steps} commands, ${one.quest.revisions} revisions` : "") +
+              (one.models.length ? `\nmodels: ${one.models.join(", ")}` : "") +
+              (one.artifact ? `\nthe work: galahad artifact ${one.artifact}` : ""),
+          ),
+        );
+        return;
+      }
+      const run = trials.filter((t) => t.run === sub);
+      if (!run.length) fail(`no trial or run ${sub}`);
+      for (const t of [...run].reverse()) console.log(describeTrial(t));
+      console.log(`\n${describeIndex(run)}`);
       return;
     }
 

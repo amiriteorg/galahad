@@ -206,6 +206,37 @@ describe("artifacts over the API", () => {
     expect(list.investigations.find((i) => i.id === registered.id)).toMatchObject({ status: "done", conclusion: "supported", predictions: [{ id: "P1", value: 2.088791 }] });
   });
 
+  test("trials: recorded by you (never by an agent), and only when the marks add up", async () => {
+    const record = {
+      run: "r-api",
+      suite: "engineering",
+      problem: "rlc-step",
+      title: "Step response of a series RLC circuit",
+      domain: "electrical",
+      seed: 9,
+      status: "scored",
+      score: 0.5,
+      answers: [
+        { key: "zeta", units: "1", expected: 0.25, got: 0.2501, tolerance: 0.00075, ok: true },
+        { key: "t_peak_us", units: "µs", expected: 560.9, got: 600, tolerance: 1.68, ok: false },
+      ],
+      models: ["fake/engineer"],
+      version: "abc1234",
+      seconds: 120,
+    };
+    // The thing being measured can't write its own marks.
+    expect((await send(armToken, "recordTrial", record)).status).toBe(403);
+    const inflated = await send(home.adminToken(), "recordTrial", { ...record, score: 1 });
+    expect(inflated.status).toBe(400);
+    expect(await inflated.text()).toMatch(/score doesn't follow/);
+    const ok = await send(home.adminToken(), "recordTrial", record);
+    expect(ok.status).toBe(200);
+    const { trial } = (await ok.json()) as { trial: { id: string } };
+    expect(trial.id).toMatch(/^tr_/);
+    const list = (await (await send(armToken, "trials")).json()) as { trials: { id: string; nodeName: string; score: number }[] };
+    expect(list.trials.find((t) => t.id === trial.id)).toMatchObject({ nodeName: "ultra", score: 0.5 });
+  });
+
   test("this node isn't a sandbox host: saving says so", async () => {
     const response = await send(home.adminToken(), "saveArtifact", { sandbox: "0123456789" });
     expect(response.status).toBe(424);

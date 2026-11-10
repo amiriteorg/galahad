@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type GEvent, newNodeIdentity, registrationDigest, toolDigest } from "@galahad/core";
+import { b64u, type GEvent, newNodeIdentity, registrationDigest, toolDigest, type TrialRecord } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, revokeDevice } from "../src/index.ts";
 
 /*
@@ -268,6 +268,59 @@ describe("investigations in the log", () => {
       const replica = new MindStore(":memory:");
       replica.expectFleet(storeA.fleet!);
       for (const event of order) replica.ingest([event]);
+      expect(replica.digest()).toBe(digest);
+    }
+  });
+});
+
+describe("trials in the log", () => {
+  const trialId = (n: number) => `tr_${String(n).padStart(22, "0")}`;
+  const record = (overrides: Partial<TrialRecord> = {}): TrialRecord => ({
+    run: "r-abc",
+    suite: "engineering",
+    problem: "cantilever-beam",
+    title: "Cantilever",
+    domain: "structures",
+    seed: 42,
+    status: "scored",
+    score: 0.5,
+    answers: [
+      { key: "f1_hz", units: "Hz", expected: 2.0888, got: 2.0889, tolerance: 0.01, ok: true },
+      { key: "tip_deflection_mm", units: "mm", expected: 26.8, got: 2.68, tolerance: 0.134, ok: false },
+    ],
+    models: ["anthropic/claude-opus-5-5"],
+    version: "54594f3abcde",
+    seconds: 300,
+    ...overrides,
+  });
+
+  test("a mark must follow from its numbers; recorded once", () => {
+    const { a, b, storeA, storeB } = fleet();
+    // A verdict the numbers don't support, or a score that isn't the share passed: refused.
+    const inflated = record({ answers: [record().answers[0]!, { ...record().answers[1]!, ok: true }] });
+    expect(() => storeA.emit(a, "trial.scored", { id: trialId(1), ...inflated })).toThrow(/doesn't follow from its numbers/);
+    expect(() => storeA.emit(a, "trial.scored", { id: trialId(1), ...record({ score: 1 }) })).toThrow(/score doesn't follow/);
+    expect(() => storeA.emit(a, "trial.scored", { id: trialId(1), ...record({ status: "crashed" }) })).toThrow(/score doesn't follow/);
+    storeA.emit(a, "trial.scored", { id: trialId(1), ...record() });
+    expect(() => storeA.emit(a, "trial.scored", { id: trialId(1), ...record() })).toThrow(/already recorded/);
+    syncInto(storeA, storeB);
+    expect(storeB.lww<{ score: number }>(`trial:${trialId(1)}`)?.value?.score).toBe(0.5);
+    // Another node records its own trials.
+    storeB.emit(b, "trial.scored", { id: trialId(2), ...record({ status: "crashed", score: 0, answers: [], note: "no sandbox host" }) });
+  });
+
+  test("any order, one digest", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeA.emit(a, "trial.scored", { id: trialId(3), ...record() });
+    storeB.emit(b, "trial.scored", { id: trialId(4), ...record({ run: "r-def", score: 1, answers: [record().answers[0]!] }) });
+    syncInto(storeB, storeA);
+    const digest = storeA.digest();
+    const events = storeA.eventsSince({}, 100_000).events;
+    for (let seed = 1; seed <= 6; seed++) {
+      const random = rng(seed);
+      const replica = new MindStore(":memory:");
+      replica.expectFleet(storeA.fleet!);
+      for (const event of [...events].sort(() => random() - 0.5)) replica.ingest([event]);
       expect(replica.digest()).toBe(digest);
     }
   });

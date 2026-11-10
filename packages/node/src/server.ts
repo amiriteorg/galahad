@@ -29,6 +29,9 @@ import {
   routes,
   type Scope,
   type SecretView,
+  type TrialRecord,
+  trialProblem,
+  type TrialView,
   utf8,
   verifyRequestSignature,
 } from "@galahad/core";
@@ -438,6 +441,13 @@ export function createApp(ctx: AppContext) {
     });
   }
 
+  function trialViews(): TrialView[] {
+    return ctx.store
+      .lwwPrefix<TrialRecord & { id: string }>("trial:")
+      .map((entry) => ({ ...entry.value!, recordedAt: Number(entry.hlc.split(".")[0]), nodeName: ctx.store.device(entry.device)?.name ?? entry.device.slice(0, 12) }))
+      .sort((a, b) => b.recordedAt - a.recordedAt);
+  }
+
   function investigationViews(): InvestigationView[] {
     return ctx.store
       .lwwPrefix<{ id: string; question: string; registration: unknown }>("investigation:")
@@ -748,6 +758,16 @@ export function createApp(ctx: AppContext) {
         ...(input.predictions?.length ? { predictions: input.predictions } : {}),
       });
       return { investigation: investigationViews().find((i) => i.id === input.id) };
+    },
+    trials: () => ({ trials: trialViews() }),
+    recordTrial: (input) => {
+      // Every replica checks this too: verdicts and the score must follow from the numbers.
+      const problem = trialProblem(input);
+      if (problem) throw new HttpError(400, problem);
+      if (input.note) guardAgainstSecrets(input.note);
+      const id = `tr_${randomId(16)}`;
+      ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
+      return { trial: trialViews().find((t) => t.id === id) };
     },
     artifacts: () => ({ artifacts: ctx.artifacts.list() }),
     saveArtifact: (input, p) => {

@@ -83,6 +83,7 @@ Event kinds today:
 | `connector.set` / `connector.removed` | Connector manifests (LWW by id) |
 | `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
 | `investigation.registered` / `investigation.concluded` | A pre-registration (with its digest, checked by every replica) recorded before anything ran, and its conclusion, once, by the node that ran it |
+| `trial.scored` | A graded trial: problem, seed, each answer against the exact one, the score, the revision and models that ran it. Every replica checks the verdicts and the score follow from the numbers |
 | `artifact.saved` / `artifact.removed` | Work kept from a sandbox: what the files are (paths, sizes, SHA-256s); the files stay on the node that signed it, and only it records their removal |
 | `order.set` / `order.revoked` / `order.applied` | Standing orders: signed once and never changed (revoke and sign anew); which order answered which action, re-checked by every replica |
 
@@ -292,6 +293,10 @@ The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sand
 
 `galahad findings` lists them; `galahad finding <id>` shows the registration beside what was found.
 
+### Trials: is he getting better? ✅
+
+`galahad trial run` measures it: problems with exact answers (the engineering suite: structures, civil, mechanical, electrical, aerospace, fluids, thermal, physics, geometry), posed with fresh random parameters, solved as ordinary quests in the Lab with models only, and graded by a program on the node against the exact solution. Each trial is recorded once (`trial.scored`, `brain:write`: never an agent's), with its seed, every answer beside the exact one, the revision and the models; every replica checks that the verdicts and the score follow from the numbers. A run's mean score with its bootstrap interval is the Galahad Index. Details, the problems and how the suite itself was verified: [TRIALS](TRIALS.md).
+
 ## 9. Loops and the heartbeat ✅
 
 A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock) or a five-field cron line read in an IANA time zone (`0 7 * * 1-5` in `Europe/Copenhagen`). Loops live in the mind, so every device sees them and their history, and each names **exactly one node** that runs it, so a loop never runs twice.
@@ -420,7 +425,7 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 | **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits, KVM microVM sandboxes | ✅ |
 | **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
-| **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🔜 |
+| **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🟡 the engineering suite and the Galahad Index ✅; Scout, judges, held-out sets 🔜 |
 | **M5: Secure self-update** | Signed releases (your key), provenance, canary node, automatic rollback | 🔜 |
 | **M6: No VPN** | Iroh transport, partial replicas, E2E relay | 🔜 |
 

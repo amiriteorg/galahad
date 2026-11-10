@@ -4,6 +4,7 @@ import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, Not
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
+import { TrialRecord } from "./trials.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -351,6 +352,12 @@ export const routes = {
       predictions: z.array(PredictionOutcome).max(16).optional(),
     }),
   },
+  trials: { method: "GET", path: "/api/trials", scope: "mind:read", input: null },
+  /**
+   * Record a graded trial, once. brain:write (never an arm's): the Index decides what
+   * Galahad keeps, so the thing being measured can't write its own marks.
+   */
+  recordTrial: { method: "POST", path: "/api/trials", scope: "brain:write", input: TrialRecord },
   artifacts: { method: "GET", path: "/api/artifacts", scope: "mind:read", input: null },
   /** Keep a sandbox's work products (a directory under /work, by default /work/out) after the sandbox is gone. */
   saveArtifact: {
@@ -668,6 +675,13 @@ export interface InvestigationView {
   artifact: string | null;
   predictions: z.infer<typeof PredictionOutcome>[];
   concludedAt: number | null;
+}
+
+export interface TrialView extends TrialRecord {
+  id: string;
+  recordedAt: number;
+  /** The node that ran it. */
+  nodeName: string;
 }
 
 export interface ArtifactView {

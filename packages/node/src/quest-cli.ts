@@ -24,6 +24,14 @@ export interface DoOptions {
   maxSteps?: number;
   commandTimeoutSec?: number;
   keep?: boolean;
+  /** More for the engineer, after the usual instructions (a trial's answer contract). */
+  instructions?: string;
+  /** Commands whose output the reviewer sees too, e.g. `cat /work/out/answer.json`. */
+  evidence?: string[];
+  /** The kept artifact's label (default: the goal). */
+  label?: string;
+  /** Remember the outcome in the mind (default yes; a trial records its own result instead). */
+  remember?: boolean;
 }
 
 const tty = process.stdout.isTTY;
@@ -98,6 +106,8 @@ export interface NodeQuestHooks {
   signal?: AbortSignal;
   /** Once the sandbox exists. */
   started?(info: { quest: string; sandbox: SandboxView; host: string }): void;
+  /** Once the loop has ended, before the work is kept and the sandbox goes: read what it left. */
+  finished?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>): Promise<void>;
 }
 
 /**
@@ -123,11 +133,20 @@ export async function runNodeQuest(
   const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
   hooks.started?.({ quest, sandbox, host });
 
+  const exec = (command: string, timeoutSec: number) =>
+    node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
   try {
     outcome = await runQuest(
-      { goal: options.goal, environment: environment(sandbox, host), maxSteps: options.maxSteps, commandTimeoutSec: options.commandTimeoutSec },
+      {
+        goal: options.goal,
+        environment: environment(sandbox, host),
+        maxSteps: options.maxSteps,
+        commandTimeoutSec: options.commandTimeoutSec,
+        ...(options.instructions ? { instructions: options.instructions } : {}),
+        ...(options.evidence ? { evidence: options.evidence } : {}),
+      },
       {
         ask: async (role, messages) => {
           let text = "";
@@ -139,21 +158,22 @@ export async function runNodeQuest(
           }
           return { text, model };
         },
-        exec: (command, timeoutSec) =>
-          node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node }),
+        exec,
         emit: hooks.emit,
         signal: hooks.signal,
       },
     );
+    await hooks.finished?.(exec);
   } finally {
     // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
     artifact = await node
-      .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: sandbox.id, on: sandbox.node, label: options.goal.slice(0, 200) })
+      .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: sandbox.id, on: sandbox.node, label: (options.label ?? options.goal).slice(0, 200) })
       .then((r) => r.artifact)
       .catch(() => null);
     if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
 
+  if (options.remember === false) return { outcome, quest, artifact };
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
   const memory = redact(

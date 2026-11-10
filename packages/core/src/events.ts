@@ -7,6 +7,7 @@ import { type DeviceId, domain, isNodeId, type NodeIdentity, verifyDeviceSignatu
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
+import { TrialId, TrialRecord } from "./trials.ts";
 
 /*
  * The mind is an append-only log of these events. Each event is content-addressed
@@ -224,6 +225,8 @@ export const Bodies = {
     artifact: ArtifactId.optional(),
     predictions: z.array(PredictionOutcome).max(16).optional(),
   }),
+  /** A trial's score, recorded once by the node that ran it; every replica checks it follows from the numbers (trials.ts). */
+  "trial.scored": TrialRecord.extend({ id: TrialId }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

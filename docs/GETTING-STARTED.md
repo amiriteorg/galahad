@@ -241,6 +241,18 @@ bun galahad findings                 # supported, refuted or inconclusive, newes
 bun galahad finding <id>             # the registration beside what was found, and the evidence's artifact
 ```
 
+### Measure him: the trials
+
+Fourteen mathematics, physics and engineering problems with exact answers, posed with fresh random parameters and graded by a program, not a model:
+
+```sh
+bun galahad trial problems           # what's in the engineering suite
+bun galahad trial run                # all of them, three at a time, in the Lab (models only, no internet)
+bun galahad trial run electrical --repeat 3   # some of them, more samples
+bun galahad trials                   # the Galahad Index per run, and each problem over every run
+bun galahad trial <id|run>           # every answer next to the exact one
+```
+
 ## 10. Give your coding agents the mind (MCP)
 
 Any MCP-capable agent can share Galahad's memory and sandboxes: Claude Code, OpenCode, Codex, Hermes, and T3 Code through them.

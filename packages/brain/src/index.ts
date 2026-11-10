@@ -9,3 +9,5 @@ export * from "./roster.ts";
 export * from "./quest.ts";
 export * from "./mcp-connectors.ts";
 export * from "./investigation.ts";
+export * from "./trials.ts";
+export * from "./trial-suite.ts";

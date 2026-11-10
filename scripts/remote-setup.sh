@@ -304,6 +304,8 @@ echo "→ bun $(bun --version)"
 mkdir -p "$HOME/galahad/releases"
 rm -rf "$HOME/galahad/releases/$REV"
 cp -a "$STAGE" "$HOME/galahad/releases/$REV"
+# The release knows which commit it is (git archive ships no .git): trials record it.
+echo "$REV" > "$HOME/galahad/releases/$REV/REVISION"
 ln -sfn "$HOME/galahad/releases/$REV" "$HOME/galahad/app.next"
 mv -T "$HOME/galahad/app.next" "$HOME/galahad/app" 2>/dev/null || { rm -f "$HOME/galahad/app"; mv "$HOME/galahad/app.next" "$HOME/galahad/app"; }
 APP="$HOME/galahad/app"

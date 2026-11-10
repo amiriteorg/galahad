@@ -21,6 +21,7 @@ import {
   sha256B64u,
   signEvent,
   toolDigest,
+  trialProblem,
   type NodeIdentity,
 } from "@galahad/core";
 
@@ -707,6 +708,16 @@ export class MindStore {
         if (registered.device !== event.device) return "only the node that ran an investigation concludes it";
         if (this.lww(`investigation-result:${body.id}`)) return "already concluded";
         this.putLww(`investigation-result:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "trial.scored": {
+        if (!isFullNode(signer)) return "only full nodes run trials";
+        const body = bodyOf(event, "trial.scored");
+        if (this.lww(`trial:${body.id}`)) return "trial already recorded";
+        // The verdicts and the score must follow from the numbers: nobody inflates a mark.
+        const problem = trialProblem(body);
+        if (problem) return problem;
+        this.putLww(`trial:${body.id}`, event, body as Json);
         return null;
       }
       case "artifact.saved": {
