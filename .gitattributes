@@ -1,5 +1,2 @@
-* text=auto
-*.sh text eol=lf
-sandbox/galahad-workspace text eol=lf
-# Everything under sandbox/ runs on Linux (scripts, Dockerfiles): LF from any checkout.
-sandbox/** text eol=lf
+# Generated robot assets (scripts/robots/build.ts): byte-exact, their URLs are versioned by content.
+apps/web/src/world/assets/robots/** -text
