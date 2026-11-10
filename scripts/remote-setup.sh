@@ -254,6 +254,19 @@ UNIT
 
   systemctl daemon-reload
   systemctl enable galahad.service >/dev/null 2>&1
+  # Restarting the node cuts off any quest or investigation it is driving. Wait for running
+  # ones to finish (their sandboxes go when they end), up to 30 minutes, then go ahead.
+  running_quests() {
+    command -v docker >/dev/null || return 0
+    docker ps --filter label=dev.galahad=1 --format '{{.Label "dev.galahad.quest"}}' 2>/dev/null | grep -c -E '^(q-|inv-|arm\.loop\.)' || true
+  }
+  WAITED=0
+  while [[ $(running_quests) -gt 0 && $WAITED -lt 1800 ]]; do
+    [[ $WAITED == 0 ]] && echo "→ waiting for $(running_quests) running quest(s) to finish before restarting the node (up to 30 min)"
+    sleep 15
+    WAITED=$((WAITED + 15))
+  done
+  [[ $(running_quests) -gt 0 ]] && echo "$(running_quests) quest(s) still running after 30 min; restarting anyway (they'll be cut off)" >&2
   systemctl restart galahad.service
   if [[ $EXPOSE != 0 ]]; then
     # `tailscale serve` blocks while waiting for Serve/HTTPS to be enabled for the
