@@ -54,9 +54,9 @@ export function setTheme(pref: ThemePref): void {
   syncThemeColor();
 }
 
-/** Keeps the browser chrome (status bar, title bar) in step with the canvas. */
+/** Keeps the browser chrome (status bar, title bar) in step with the canvas: exactly --bg. */
 export function syncThemeColor(): void {
-  const color = resolvedTheme() === "dark" ? "#0c0c0f" : "#fafafb";
+  const color = resolvedTheme() === "dark" ? "#08080a" : "#fafafa";
   for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) meta.content = color;
 }
 

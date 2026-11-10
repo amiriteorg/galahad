@@ -8,7 +8,14 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      "default", not "black-translucent": with a translucent status bar, iOS 26 draws its own blur
+      (26.1+: a scrim) over the top of an installed app, and nothing on the page can turn it off.
+      With "default" iOS paints an opaque status bar in the page's colour and the app starts below
+      it. iOS reads this when the app is added to the Home Screen: an existing install keeps the
+      old style until it's removed and added again.
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Galahad" />
     <meta name="referrer" content="no-referrer" />
     <meta name="description" content="Galahad: one mind, many bodies. Your autonomous knight and engineer." />
@@ -184,22 +191,6 @@
         display: flex; align-items: center; gap: var(--sp-2);
         background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
         border-bottom: 1px solid var(--border);
-      }
-      /*
-       * iOS 26 colours the status bar from the page: it samples 4 px inside the top edge and takes the
-       * nearest fixed or sticky element's background, if that's one solid colour over 10 px tall.
-       * A glass bar (translucent, backdrop-blurred) isn't, so iOS drew its own blurred edge effect over
-       * the top of the app instead: the haze. In the installed app, an opaque strip in the bar's colour
-       * covers the status-bar band, so iOS finds one solid colour and the glass bar starts below it.
-       * Since iOS 26.1 the inset can read 0 in an installed app, hence the 12 px floor.
-       */
-      .statusbar-cover { display: none; }
-      @media (display-mode: standalone) and (pointer: coarse) {
-        :root { --safe-top: max(12px, env(safe-area-inset-top, 0px)); }
-        .statusbar-cover {
-          display: block; position: fixed; z-index: 40; top: 0; left: 0; right: 0; height: var(--safe-top);
-          background-color: var(--bg);
-        }
       }
       .topbar .title { font-weight: 600; font-size: var(--fs-15); letter-spacing: -0.01em; transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out); }
       .topbar .title.tucked { opacity: 0; transform: translateY(4px); }
@@ -842,7 +833,6 @@
     </style>
   </head>
   <body>
-    <div class="statusbar-cover" aria-hidden="true"></div>
     <div id="app">
       <div class="boot" role="status" aria-label="Galahad is starting"><img src="/icon.svg" alt="" /></div>
     </div>
