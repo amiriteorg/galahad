@@ -3,6 +3,7 @@ export * from "./bytes.ts";
 export * from "./canonical.ts";
 export * from "./connectors.ts";
 export * from "./crypto.ts";
+export * from "./decisions.ts";
 export * from "./events.ts";
 export * from "./galahad-index.ts";
 export * from "./hlc.ts";

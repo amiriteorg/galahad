@@ -38,6 +38,8 @@ import {
 import {
   CATALOG,
   chat,
+  decide,
+  DecisionError,
   GatewayTokens,
   installedConnector,
   installedConnectors,
@@ -774,6 +776,16 @@ export function createApp(ctx: AppContext) {
       const id = `tr_${randomId(16)}`;
       ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
       return { trial: trialViews().find((t) => t.id === id) };
+    },
+    decide: async (input) => {
+      // The state and questions go to a provider, like chat: nothing credential-shaped.
+      guardAgainstSecrets(JSON.stringify(input));
+      try {
+        return await decide({ store: ctx.store, vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }, input);
+      } catch (error) {
+        if (error instanceof DecisionError) throw new HttpError(error.status, error.message);
+        throw error;
+      }
     },
     webSearch: async (input, p) => {
       try {

@@ -166,6 +166,9 @@ Add an API key once, and every full node can use it. The key never appears in th
 | `engineer` | `anthropic/claude-opus-5-5` | xhigh |
 | `reviewer` | `anthropic/claude-opus-5-5` (set a different model family, e.g. DeepSeek) | high |
 | `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` | low |
+| `decider` | *none until you hire one*, e.g. `cloudflare-ai/typesafe/jev` | low |
+
+The **decider** is a different kind of model: TypeSafe's System One (Jev) answers typed questions about a state (yes/no, a choice among named options, a score on an ordered rubric) with calibrated probabilities instead of text (`galahad decide`, the `decide` route, MCP `decide`). Through Cloudflare AI Gateway it goes to Cloudflare's unified `ai/run` for your account, your gateway named in `cf-aig-gateway-id` and TypeSafe's key stored with Cloudflare; the gateway token, pinned to `gateway.ai.cloudflare.com`, may go to that one route as well, a route fixed in code. With a TypeSafe key of your own it goes to `https://api.typesafe.ai/v1/systemone`.
 
 `<provider>/*` resolves to the first model that runtime serves on this node.
 

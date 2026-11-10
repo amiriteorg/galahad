@@ -125,6 +125,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "artifacts",
         "connector_call",
         "connectors",
+        "decide",
         "fleet",
         "ledger",
         "loops",

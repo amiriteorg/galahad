@@ -32,6 +32,11 @@ export const ROLES: Record<string, RoleSpec> = {
     defaults: ["ollama/*", "llamacpp/*", "anthropic/claude-haiku-5-5"],
     effort: "low",
   },
+  decider: {
+    description: "typed decisions (yes/no, a choice, a score) with calibrated probabilities, from a decision model such as TypeSafe's Jev",
+    defaults: [],
+    effort: "low",
+  },
 };
 
 export function roleModels(store: MindStore, role: string): string[] {

@@ -133,6 +133,26 @@ export function createMcpServer(opts: McpOptions): McpServer {
   );
 
   server.registerTool(
+    "decide",
+    {
+      title: "Decide",
+      description:
+        "Typed answers about a state from Galahad's decision model (TypeSafe's Jev): yes/no questions (type noul: the probability of yes), a choice among named options, or a score on an ordered rubric (lowest first), each with calibrated probabilities. Use it for judgements you'd otherwise eyeball: is this safe, which category, how urgent.",
+      inputSchema: {
+        state: z.string().min(1).max(100_000).describe("What the questions are about"),
+        questions: z
+          .record(z.string(), z.object({ type: z.enum(["noul", "choice", "score"]), instructions: z.string().optional(), criteria: z.any().optional() }))
+          .describe('e.g. {"urgent": {"type": "noul", "instructions": "Is this urgent?"}, "team": {"type": "choice", "criteria": {"billing": "…", "tech": "…"}}}'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    tool(async ({ state, questions }) => {
+      const view = await api.call<{ ref: string; model: string; answers: Record<string, unknown> }>("decide", { state, questions });
+      return JSON.stringify({ model: view.model, answers: view.answers }, null, 2);
+    }),
+  );
+
+  server.registerTool(
     "web_search",
     {
       title: "Search the web",

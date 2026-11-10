@@ -265,6 +265,16 @@ bun galahad findings                 # supported, refuted or inconclusive, newes
 bun galahad finding <id>             # the registration beside what was found, and the evidence's artifact
 ```
 
+### Typed decisions
+
+Hire a decision model (TypeSafe's Jev, through your Cloudflare AI Gateway or with a TypeSafe key) as the `decider`, and ask yes/no, choice or score questions with calibrated probabilities:
+
+```sh
+bun galahad roster set decider cloudflare-ai/typesafe/jev
+bun galahad decide "Help! My payouts have been failing for 3 days." --question "Does this convey urgency?"
+bun galahad decide "…" --question "Which team?" --options billing,technical,sales
+```
+
 ### Search the web
 
 The deploy gives Galahad his own search engine (SearXNG, on the server, loopback only). Quests and investigations use it from their sandbox as `websearch <words>`, even without the internet:

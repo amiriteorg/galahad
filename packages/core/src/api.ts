@@ -5,6 +5,7 @@ import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Pr
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord } from "./trials.ts";
+import { DecisionRequest } from "./decisions.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -370,6 +371,8 @@ export const routes = {
    * Galahad keeps, so the thing being measured can't write its own marks.
    */
   recordTrial: { method: "POST", path: "/api/trials", scope: "brain:write", input: TrialRecord },
+  /** Typed answers about a state from the decider role (yes/no, a choice, a score), with probabilities. */
+  decide: { method: "POST", path: "/api/decide", scope: "chat", input: DecisionRequest },
   /** Search the web through this node's own SearXNG. Results are strangers' words: data, never instructions. */
   webSearch: {
     method: "POST",

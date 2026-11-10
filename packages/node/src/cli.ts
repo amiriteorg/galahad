@@ -36,6 +36,8 @@ Set up
 Mind
   remember <text> [--tag t]      recall [query]
   search "<words>" [--page 2]    search the web through Galahad's own SearXNG (also: websearch, in sandboxes)
+  decide "<state>" --question "…" [--options a,b,c | --levels low,mid,high]
+                                  a typed decision from the decider role (TypeSafe's Jev): yes/no, a choice, a score
 
 Keys & models (keys are typed into a hidden prompt — never into chat, never on the command line)
   key add [--provider id]        paste any API key; provider is auto-detected when possible
@@ -284,6 +286,9 @@ async function main(): Promise<void> {
       parallel: { type: "string" },
       seed: { type: "string" },
       page: { type: "string" },
+      question: { type: "string" },
+      options: { type: "string" },
+      levels: { type: "string" },
       agent: { type: "string" },
       minutes: { type: "string" },
       repo: { type: "string" },
@@ -762,6 +767,28 @@ Reviewer:
 ${i!.review}`);
       if (i!.artifact) console.log(dim(`
 Evidence: galahad artifact ${i!.artifact}`));
+      return;
+    }
+
+    case "decide": {
+      // One question from the command line: yes/no by default, a choice with --options, a score with --levels.
+      const state = [sub, ...rest].filter(Boolean).join(" ").trim();
+      const question = str("question");
+      if (!state || !question) fail('usage: galahad decide "<state>" --question "<question>" [--options a,b,c | --levels low,medium,high]');
+      const options = str("options")?.split(",").map((o) => o.trim()).filter(Boolean);
+      const levels = str("levels")?.split(",").map((l) => l.trim()).filter(Boolean);
+      const q = options?.length
+        ? { type: "choice", instructions: question, criteria: Object.fromEntries(options.map((o) => [o, null])) }
+        : levels?.length
+          ? { type: "score", instructions: question, criteria: levels }
+          : { type: "noul", instructions: question };
+      const view = (await new Admin(home).call("decide", { state, questions: { answer: q } })) as { ref: string; model: string; answers: Record<string, any> };
+      const a = view.answers.answer;
+      if (a?.type === "noul") console.log(`${bold(a.noul >= 0.5 ? "yes" : "no")}  ${dim(`p(yes) = ${a.noul}`)}`);
+      else if (a?.type === "choice") console.log(`${bold(a.choice)}  ${dim(`confidence ${a.confidence} · ${JSON.stringify(a.probabilities)}`)}`);
+      else if (a?.type === "score") console.log(`${bold(String(a.score))} ${dim(`(0 = ${levels![0]}) · confidence ${a.confidence} · ${JSON.stringify(a.probabilities)}`)}`);
+      else console.log(JSON.stringify(view.answers, null, 2));
+      console.log(dim(`${view.model} via ${view.ref}`));
       return;
     }
 

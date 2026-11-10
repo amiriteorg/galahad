@@ -12,3 +12,4 @@ export * from "./investigation.ts";
 export * from "./trials.ts";
 export * from "./trial-suite.ts";
 export * from "./agents.ts";
+export * from "./decisions.ts";
