@@ -24,11 +24,11 @@ import type { Tier } from "./tiers.ts";
 
 /*
  * Everything that grows: six kinds of tree (oaks, pines, round trees, parasols,
- * birches with their banded white bark, and pastel trees in blossom), leafy and
- * flowering bushes and ferns, pinkish boulders, stones and layered slabs with
- * chipped facets, and underfoot grass in tufts, clumps and seed, daisies,
- * lupines, lavender, buttercups, campions, clover and pebbles. Each model is one
- * instanced mesh (a draw call).
+ * birches with their banded white bark, and pastel trees in blossom), leafy
+ * bushes in flower and ferns, pinkish boulders and layered slabs with chipped
+ * facets, and underfoot grass in tufts and lush clumps gone to seed, patches of daisies and
+ * buttercups or lupines, campions and lavender, clover and pebbles. Each model
+ * is one instanced mesh (a draw call), so kinds that grow together share one.
  *
  * Trees come in three levels of detail by distance from the focus, chosen per
  * chunk: near, every crown is a heap of many small facets on a tapering trunk
@@ -308,25 +308,19 @@ const models = {
       .add(new ConeGeometry(1.0, 2.4, 6), PINE_LIGHT, at(0, 3.9, 0, 0.5), 0.08)
       .build({ ao: treeAO }),
   // ---- bushes ----
-  bush: () =>
-    new Mesher()
+  /** A leafy bush, with a few blossoms (white, pink, a touch of yellow) scattered over it. */
+  bush: (blossoms = 6) => {
+    const m = new Mesher()
       .add(lumpy(new IcosahedronGeometry(0.62, 1), 3, 0.14), LIME_DEEP, at(0, 0.42, 0, 0, [1.25, 0.8, 1]), 0.1)
       .add(lumpy(new IcosahedronGeometry(0.46, 0), 5, 0.16), LIME, at(0.48, 0.38, 0.18, 0.7, [1, 0.85, 1]), 0.1)
       .add(lumpy(new IcosahedronGeometry(0.42, 0), 7, 0.16), LIME_TOP, at(-0.38, 0.36, -0.22, 1.3, [1, 0.85, 1]), 0.1)
       .add(lumpy(new IcosahedronGeometry(0.36, 0), 9, 0.16), LEAF_SHADE, at(0.1, 0.3, 0.5, 2.1, [1, 0.8, 1]), 0.1)
-      .add(lumpy(new IcosahedronGeometry(0.3, 0), 13, 0.16), LIME, at(-0.2, 0.62, 0.25, 0.4, [1, 0.85, 1]), 0.1)
-      .build({ ao: groundAO(0.55, 0.9, 0.72) }),
-  flowering: () => {
-    const m = new Mesher()
-      .add(lumpy(new IcosahedronGeometry(0.55, 0), 17, 0.16), LIME_DEEP, at(0, 0.4, 0, 0, [1.2, 0.85, 1.05]), 0.1)
-      .add(lumpy(new IcosahedronGeometry(0.42, 0), 19, 0.16), LIME, at(0.42, 0.36, -0.12, 0.7, [1, 0.85, 1]), 0.1)
-      .add(lumpy(new IcosahedronGeometry(0.4, 0), 21, 0.16), LEAF_SHADE, at(-0.4, 0.34, 0.15, 1.3, [1, 0.85, 1]), 0.1);
-    // Blossoms scattered over it: white, pink, a touch of yellow.
-    for (let i = 0; i < 11; i++) {
+      .add(lumpy(new IcosahedronGeometry(0.3, 0), 13, 0.16), LIME, at(-0.2, 0.62, 0.25, 0.4, [1, 0.85, 1]), 0.1);
+    for (let i = 0; i < blossoms; i++) {
       const a = i * 2.39996;
-      const up = 0.3 + 0.55 * fract(i * 0.618);
-      const r = 0.48 * Math.sqrt(1 - up * up * 0.6) + 0.12;
-      m.add(new OctahedronGeometry(0.07, 0), [0xfdf8f2, BLOSSOM, 0xf6e27a, BLOSSOM_LIGHT][i % 4]!, at(Math.cos(a) * r * 1.15, 0.36 + up * 0.42, Math.sin(a) * r, a, [1, 0.6, 1]), 0.04);
+      const up = 0.35 + 0.5 * fract(i * 0.618);
+      const r = 0.62 * Math.sqrt(1 - up * up * 0.6) + 0.1;
+      m.add(new OctahedronGeometry(0.07, 0), [0xfdf8f2, BLOSSOM, 0xf6e27a, BLOSSOM_LIGHT][i % 4]!, at(Math.cos(a) * r * 1.2, 0.4 + up * 0.38, Math.sin(a) * r, a, [1, 0.6, 1]), 0.04);
     }
     return m.build({ ao: groundAO(0.55, 0.9, 0.72) });
   },
@@ -358,12 +352,6 @@ const models = {
       .add(chip(lumpy(new IcosahedronGeometry(0.42, 0), 5, 0.2), 5, 2, 0.78), ROCK_WARM, at(0.85, 0.1, 0.35, 0.8), 0.08)
       .build({ ao: groundAO(0.55, 0.9, 0.7) });
   },
-  rocks: () =>
-    new Mesher()
-      .add(chip(lumpy(new IcosahedronGeometry(0.7, 1), 7, 0.16), 7, 3, 0.8), ROCK_PALE, at(0, 0.28, 0, 0, [1.25, 0.8, 1.1]), 0.08)
-      .add(chip(lumpy(new IcosahedronGeometry(0.5, 0), 9, 0.22), 9, 2, 0.8), ROCK_WARM, at(0.75, 0.16, -0.2, 0.9, [1.1, 0.75, 1]), 0.08)
-      .add(chip(lumpy(new IcosahedronGeometry(0.34, 0), 11, 0.22), 11, 2, 0.8), ROCK, at(-0.55, 0.1, 0.5, 1.7), 0.08)
-      .build({ ao: groundAO(0.55, 0.7, 0.7) }),
   slab: () => {
     // A low shelf of layered stone: bands of warm and pale rock, its top chipped flat.
     const strata: Paint = (_x, y) => [ROCK_PALE, ROCK, ROCK_WARM][Math.floor((y + 1) * 7) % 3]!;
@@ -395,10 +383,10 @@ const models = {
     for (let i = 0; i < 5; i++) blade(m, 0.02, 0.02, i * 1.26, 0.03, 0.02 + Math.cos(i * 1.26) * 0.14, 0.07, 0.02 + Math.sin(i * 1.26) * 0.14, 0x7cb04e);
     return m.build({ ao: lowAO, normals: "up" });
   },
-  lavender: () => {
+  lavender: (n = 7) => {
     const m = new Mesher();
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
       const lean = 0.22 + (i % 3) * 0.06;
       const h = 0.4 + (i % 2) * 0.08;
       const tx = Math.sin(a) * (0.05 + h * lean);
@@ -447,9 +435,13 @@ const models = {
     }
     return m.build({ ao: groundAO(0.55, 0.5, 1), normals: "up" });
   },
-  lush: () => {
+  lush: (seeds = 0) => {
     const m = new Mesher();
-    // A low, dense clump: short blades bending out all round.
+    // A low, dense clump: short blades bending out all round (and a stalk or two gone to seed).
+    for (const [x, z, h] of ([[0.06, 0.02, 0.62], [-0.05, -0.04, 0.54]] as const).slice(0, seeds)) {
+      blade(m, 0, 0, x * 20, 0.01, x, h, z, 0xb7c97a);
+      m.add(new OctahedronGeometry(0.035, 0), 0xe6dca8, at(x, h + 0.05, z, x * 9, [1, 2.4, 1]), 0);
+    }
     for (let i = 0; i < 8; i++) {
       const a = i * 2.39996;
       const off = 0.03 + 0.05 * fract(i * 0.618);
@@ -460,19 +452,6 @@ const models = {
       blade(m, bx, bz, a, 0.03, bx + Math.sin(a) * lean * h, h, bz + Math.cos(a) * lean * h, [0x8fc24c, 0x9fcd58, 0x83b847, 0xa9d262][i % 4]!);
     }
     return m.build({ ao: groundAO(0.55, 0.35, 1), normals: "up" });
-  },
-  seeding: () => {
-    const m = new Mesher();
-    // Tall grass gone to seed: a few blades and two stalks with pale heads.
-    for (let i = 0; i < 4; i++) {
-      const a = i * 1.7;
-      blade(m, Math.sin(a) * 0.04, Math.cos(a) * 0.04, a, 0.03, Math.sin(a) * 0.2, 0.5 + 0.08 * i, Math.cos(a) * 0.2, i % 2 ? 0xa7cf5c : 0x93c14f);
-    }
-    for (const [x, z, h] of [[0.06, 0.02, 0.78], [-0.05, -0.04, 0.68]] as const) {
-      blade(m, 0, 0, x * 20, 0.01, x, h, z, 0xb7c97a);
-      m.add(new OctahedronGeometry(0.035, 0), 0xe6dca8, at(x, h + 0.05, z, x * 9, [1, 2.4, 1]), 0);
-    }
-    return m.build({ ao: groundAO(0.55, 0.5, 1), normals: "up" });
   },
   // ---- underfoot ----
   clover: () => {
@@ -655,33 +634,35 @@ export class Vegetation {
       return k;
     };
     const shadows = tier.shadows;
-    // A layer's cap is shared among its kinds, each by about its share of the layer (with a little slack).
+    // A layer's cap is shared among its kinds, each by about its share of the layer (the small layers' shares add up to
+    // the layer's cap exactly; the big ones' leave a little slack).
     const cap = (total: number, share: number) => Math.ceil(total * share);
     // Trees: near models (only on tiers that draw them), simpler ones farther, and three far ones.
     const tints: [number, number][] = [[0.12, 0.06], [0.1, 0], [0.12, 0.08], [0.1, 0.06], [0.1, 0.04], [0.08, 0.02]];
     const shares = [0.36, 0.32, 0.14, 0.14, 0.2, 0.12];
     TREE_KINDS.forEach((name, i) => {
       if (tier.treeDetail > 0) make(models[name](1), tree, cap(tier.trees, shares[i]! * 0.5), "trees", [i], 4, 1 << NEAR, shadows, tints[i]!);
-      make(models[name](0), tree, cap(tier.trees, shares[i]!), "trees", [i], 8, 1 << MID, shadows, tints[i]!);
+      // Farther off, a round tree is drawn as a small oak (one draw call fewer; at that distance they're alike).
+      if (name === "round") return;
+      make(models[name](0), tree, cap(tier.trees, shares[i]! + (name === "oak" ? shares[2]! : 0)), "trees", name === "oak" ? [0, 2] : [i], 8, 1 << MID, shadows, tints[i]!);
     });
     make(models.farBroad(), tree, cap(tier.trees, 0.8), "trees", [0, 2, 3, 4], 16, 1 << FAR, false, [0.12, 0.06]);
     make(models.farConifer(), tree, cap(tier.trees, 0.32), "trees", [1], 16, 1 << FAR, false, [0.1, 0]);
     make(models.farBlossom(), tree, cap(tier.trees, 0.12), "trees", [5], 8, 1 << FAR, false, [0.08, 0.02]);
-    make(models.bush(), bush, cap(tier.bushes, 0.55), "bushes", [0], 8, ALL, false, [0.14, 0.05]);
-    make(models.flowering(), bush, cap(tier.bushes, 0.32), "bushes", [1], 4, ALL, false, [0.1, 0.03]);
+    // Bushes: leafy, in flower, and ferns under the trees.
+    make(models.bush(), bush, cap(tier.bushes, 0.85), "bushes", [0, 1], 8, ALL, false, [0.12, 0.05]);
     make(models.fern(), bush, cap(tier.bushes, 0.3), "bushes", [2], 4, ALL, false, [0.12, 0.04]);
-    make(models.boulder(), rock, cap(tier.rocks, 0.4), "rocks", [0], 4, ALL, shadows, [0.1, 0.03]);
-    make(models.rocks(), rock, cap(tier.rocks, 0.4), "rocks", [1], 4, ALL, shadows, [0.1, 0.03]);
+    // Rocks: a boulder with a stone beside it, or a layered slab.
+    make(models.boulder(), rock, cap(tier.rocks, 0.75), "rocks", [0, 1], 4, ALL, shadows, [0.1, 0.03]);
     make(models.slab(), rock, cap(tier.rocks, 0.4), "rocks", [2], 4, ALL, shadows, [0.1, 0.03]);
-    // Flowers in mixed patches (fewer draw calls): daisies with buttercups, lupines with campions, and lavender.
-    make(together(models.daisy(3), models.buttercup(3), 0.24, 0.08), small, cap(tier.flowers, 0.55), "flowers", [0, 3], 16, ALL, false, [0.06, 0.02]);
-    make(together(models.lupine(2), models.campion(2), -0.2, 0.14), small, cap(tier.flowers, 0.45), "flowers", [1, 4], 16, ALL, false, [0.08, 0.02]);
-    make(models.lavender(), small, cap(tier.flowers, 0.2), "flowers", [2], 16, ALL, false, [0.08, 0]);
-    make(models.grass(), small, cap(tier.grass, 0.6), "grass", [0], 32, ALL, false, [0.16, 0.08]);
-    make(models.lush(), small, cap(tier.grass, 0.36), "grass", [1], 32, ALL, false, [0.14, 0.06]);
-    make(models.seeding(), small, cap(tier.grass, 0.16), "grass", [2], 16, ALL, false, [0.12, 0.08]);
-    make(models.pebbles(), pebble, cap(tier.detail, 0.55), "detail", [0], 16, ALL, false, [0.1, 0.02]);
-    make(models.clover(), small, cap(tier.detail, 0.55), "detail", [1], 16, ALL, false, [0.1, 0.04]);
+    // Flowers in mixed patches (fewer draw calls): daisies with buttercups; lupines, campions and lavender.
+    make(together(models.daisy(3), models.buttercup(3), 0.24, 0.08), small, cap(tier.flowers, 0.5), "flowers", [0, 3], 16, ALL, false, [0.06, 0.02]);
+    make(together(together(models.lupine(2), models.campion(2), -0.2, 0.14), models.lavender(4), 0.16, -0.18), small, cap(tier.flowers, 0.5), "flowers", [1, 2, 4], 16, ALL, false, [0.08, 0.02]);
+    // Grass: tufts, and lush clumps with a stalk gone to seed (the layer's cap split between them, as it was one).
+    make(models.grass(), small, cap(tier.grass, 0.55), "grass", [0], 32, ALL, false, [0.16, 0.08]);
+    make(models.lush(1), small, cap(tier.grass, 0.45), "grass", [1, 2], 32, ALL, false, [0.14, 0.07]);
+    make(models.pebbles(), pebble, cap(tier.detail, 0.5), "detail", [0], 16, ALL, false, [0.1, 0.02]);
+    make(models.clover(), small, cap(tier.detail, 0.5), "detail", [1], 16, ALL, false, [0.1, 0.04]);
     // Contact shadows: a soft dark disc under every tree, bush and rock.
     const disc = new CircleGeometry(1, 12).rotateX(-Math.PI / 2);
     const shade = new MeshBasicNodeMaterial({ color: 0x1f2a10, transparent: true, depthWrite: false });
