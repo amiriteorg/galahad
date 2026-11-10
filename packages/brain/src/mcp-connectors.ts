@@ -83,9 +83,10 @@ async function withMcp<T>(ctx: McpContext, manifest: ConnectorManifest, work: (c
     reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1000, maxReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },
   });
   const client = new Client({ name: "galahad", version: "0.1.0" }, { capabilities: {} });
-  const timeout = ctx.timeoutMs ?? 30_000;
+  // MCP tools are often model-backed and slow: two minutes for the call (connecting gets 30 s).
+  const timeout = ctx.timeoutMs ?? 120_000;
   try {
-    await client.connect(transport, { timeout, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+    await client.connect(transport, { timeout: Math.min(timeout, 30_000), ...(ctx.signal ? { signal: ctx.signal } : {}) });
     return { value: await work(client, timeout), key };
   } catch (error) {
     if (error instanceof ConnectorError) throw error;
@@ -201,7 +202,7 @@ export async function callMcpTool(ctx: McpContext, manifest: ConnectorManifest, 
 export interface MergeOptions {
   /** Install only these (server names). */
   only?: string[];
-  /** Your class for a tool (by server or local name); "*" for every tool you don't name. */
+  /** Your class for a tool (by server or local name); "*" for every tool you don't name, including ones classified before. */
   classes?: Record<string, ConnectorManifest["tools"][string]["class"]>;
 }
 
@@ -237,7 +238,8 @@ export function mergeMcpTools(
     const old = before.get(tool.remote);
     const local = old?.local ?? localToolName(tool.remote, taken);
     taken.add(local);
-    const chosen = opts.classes?.[tool.remote] ?? opts.classes?.[local] ?? old?.tool.class ?? opts.classes?.["*"] ?? proposedClass(tool.hints);
+    // Yours, in order: this tool by name, "*" given now, what you chose before; else the hints' proposal.
+    const chosen = opts.classes?.[tool.remote] ?? opts.classes?.[local] ?? opts.classes?.["*"] ?? old?.tool.class ?? proposedClass(tool.hints);
     const description = findSecrets(tool.description).length ? "(the server's description was withheld: it looked like a key)" : tool.description;
     const hints = Object.keys(tool.hints).length ? { hints: tool.hints } : {};
     tools[local] = {

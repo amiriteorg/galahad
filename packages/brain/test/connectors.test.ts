@@ -139,6 +139,12 @@ describe("merging an MCP server's tools", () => {
     expect(all.report.skipped).toBe(1);
   });
 
+  test("on a refresh, * you give now applies to every tool you don't name, old ones too", () => {
+    const first = mergeMcpTools([tool("a"), tool("b"), tool("c")], {});
+    const again = mergeMcpTools([tool("a"), tool("b"), tool("c")], first.tools, { classes: { "*": "read", c: "outward" } });
+    expect(Object.fromEntries(Object.entries(again.tools).map(([k, t]) => [k, t.class]))).toEqual({ a: "read", b: "read", c: "outward" });
+  });
+
   test("a description that looks like a key never enters the log", () => {
     const leaky = { ...tool("leak"), description: "use sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 to call" };
     expect(mergeMcpTools([leaky], {}).tools.leak!.description).toMatch(/withheld/);
