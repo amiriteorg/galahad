@@ -26,7 +26,7 @@ import {
   TorusGeometry,
 } from "three/webgpu";
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
-import { at, between, groundAO, lumpy, Mesher, within } from "./mesher.ts";
+import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
 import { obstacles, PLACES, planPath, standAt, stationFacing } from "./path.ts";
 import { swaying } from "./vegetation.ts";
@@ -41,7 +41,10 @@ import { swaying } from "./vegetation.ts";
  * standing stones with runes. Built from primitives into a few merged meshes (the
  * solid one with a baked ambient occlusion, the giant tree's swaying canopy, glass
  * that's sky-blue by day and warm by night, lamps and screens), plus the oracle's
- * orb, the beacon and the fleet's banners. All original shapes.
+ * orb, the beacon and the fleet's banners. All original shapes, and made the
+ * way a carpenter would: decks and tables of planks, shingled roofs, bevelled
+ * panels with seams, framed windows with sills, capped posts, stones along the
+ * paths.
  */
 
 type Place = keyof typeof STATIONS;
@@ -107,6 +110,10 @@ export const LABEL_HEIGHT: Record<Place, number> = {
   observatory: 6.4,
 };
 
+/** The council table's top and the lab bench's (each station's own frame): Reachy Mini and the SO-101 arms stand on them (critters.ts). */
+export const COUNCIL_TABLE_TOP = 0.87;
+export const LAB_BENCH_TOP = 0.93;
+
 /** Heights of the ground's layers (tops), so no two ever share a plane: no z-fighting. */
 const PATH_TOP = 0.05;
 const STATION_PLAZA_TOP = 0.075;
@@ -135,12 +142,13 @@ function railing(m: Mesher, points: [number, number][], y: number, gaps: Set<num
   for (let i = 0; i < points.length - 1; i++) {
     const [ax, az] = points[i]!;
     const [bx, bz] = points[i + 1]!;
-    m.add(new BoxGeometry(0.11, 1.05, 0.11), C.woodDark, at(ax, y + 0.52, az));
+    m.add(board(0.11, 1.05, 0.11), C.woodDark, at(ax, y + 0.52, az));
+    m.add(new ConeGeometry(0.1, 0.08, 4), C.woodDark, at(ax, y + 1.09, az, Math.PI / 4), 0.03);
     if (gaps.has(i)) continue;
     const len = Math.hypot(bx - ax, bz - az);
     const yaw = Math.atan2(bx - ax, bz - az);
-    m.add(new BoxGeometry(0.1, 0.08, len + 0.06), C.wood, at((ax + bx) / 2, y + 1.02, (az + bz) / 2, yaw), 0.03);
-    m.add(new BoxGeometry(0.06, 0.06, len), C.wood, at((ax + bx) / 2, y + 0.55, (az + bz) / 2, yaw), 0.03);
+    m.add(board(0.12, 0.07, len + 0.06), C.wood, at((ax + bx) / 2, y + 1.02, (az + bz) / 2, yaw), 0.03);
+    m.add(board(0.06, 0.06, len), C.wood, at((ax + bx) / 2, y + 0.55, (az + bz) / 2, yaw), 0.03);
     // Balusters between the posts.
     const n = Math.max(1, Math.round(len / 0.45));
     for (let k = 1; k < n; k++) {
@@ -186,6 +194,66 @@ function vine(p: Parts, x: number, y: number, z: number, length: number, seed: n
   }
 }
 
+/** A board or panel with its edges bevelled (a fifth of its thinnest side, at most 3 cm), so they catch the light. */
+const board = (w: number, h: number, d: number): BufferGeometry => bevelBox(w, h, d, Math.min(0.03, Math.min(w, h, d) * 0.2));
+
+type Add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => void;
+
+/**
+ * A floor of planks `w` wide (x) by `d` deep (z), centred on (x, z), their tops
+ * at `top`: boards along z, `t` thick, with thin gaps, in two shades. `half`
+ * trims each board to a shape (its half-length at its x), for decks that aren't square.
+ */
+function planks(add: Add, x: number, z: number, w: number, d: number, top: number, t = 0.05, half?: (u: number) => number): void {
+  const n = Math.max(1, Math.round(w / 0.26));
+  const bw = w / n;
+  for (let i = 0; i < n; i++) {
+    const u = x - w / 2 + (i + 0.5) * bw;
+    const len = half ? Math.min(d, 2 * half(u - x)) : d;
+    if (len < 0.2) continue;
+    add(board(bw - 0.025, t, len - 0.02), i % 3 === 1 ? C.wood : C.plank, at(u, top - t / 2, z), 0.06);
+  }
+}
+
+/**
+ * A gable roof of shingles: ridge along x, `w` deep (z), `h` high, `l` long,
+ * its eaves at y0 (in the frame `add` builds in): rows of overlapping shingles
+ * on both slopes, every other row offset by half a shingle, over a darker deck.
+ */
+function shingleRoof(add: Add, w: number, h: number, l: number, y0: number, color: number, alt: number): void {
+  add(gable(w, h, l), C.woodDark, at(0, y0, 0), 0.03);
+  const run = w / 2;
+  const slope = Math.hypot(run, h);
+  const pitch = Math.atan2(h, run);
+  const rows = Math.ceil(slope / 0.3);
+  for (const side of [-1, 1]) {
+    for (let r = 0; r < rows; r++) {
+      const t = (r + 0.5) / rows;
+      const n = Math.ceil(l / 0.46);
+      const sw = l / n;
+      for (let i = 0; i < n + (r % 2); i++) {
+        const xs = -l / 2 + (i + (r % 2 ? 0 : 0.5)) * sw;
+        const a = Math.max(-l / 2, xs - sw / 2);
+        const b = Math.min(l / 2, xs + sw / 2);
+        if (b - a < 0.05) continue;
+        // Each shingle lies on the slope a little proud of it, its lower edge tipped out.
+        const zz = side * run * (1 - t);
+        const yy = y0 + h * t + 0.03;
+        add(new BoxGeometry(b - a - 0.02, 0.025, slope / rows + 0.08), (i + r) % 4 === 0 ? alt : color, at((a + b) / 2, yy, zz, 0, 1, -side * (pitch + 0.04)), 0.07);
+      }
+    }
+    // A ridge cap.
+  }
+  add(board(l + 0.1, 0.1, 0.2), C.woodDark, at(0, y0 + h + 0.02, 0, 0, 1, Math.PI / 4), 0.03);
+}
+
+/** A window's frame round a w × h opening centred at (x, y) on a wall facing +z (at z): head, jambs and a sill. */
+function windowFrame(add: Add, x: number, y: number, z: number, w: number, h: number, color = C.woodDark): void {
+  add(board(w + 0.16, 0.08, 0.08), color, at(x, y + h / 2 + 0.04, z));
+  for (const s of [-1, 1]) add(board(0.07, h, 0.07), color, at(x + s * (w / 2 + 0.035), y, z));
+  add(board(w + 0.24, 0.06, 0.16), color, at(x, y - h / 2 - 0.03, z + 0.04));
+}
+
 function buildKeep(p: Parts): void {
   // The keep faces south (its local frame is the scene's): a giant tree with a deck and a room.
   const { solid, canopy, glass, lit } = p;
@@ -194,8 +262,8 @@ function buildKeep(p: Parts): void {
     const a = (i / 7) * Math.PI * 2 + 0.3;
     solid.add(new ConeGeometry(0.85, 3.6, 5), C.trunkDark, between(Math.sin(a) * 3.1, 0.05, Math.cos(a) * 3.1, Math.sin(a) * 0.8, 2.2, Math.cos(a) * 0.8, 1), 0.1);
   }
-  solid.add(new CylinderGeometry(1.55, 2.4, 9, 8), C.trunk, at(0, 4.5, 0), 0.1);
-  solid.add(new CylinderGeometry(1.1, 1.55, 3.2, 8), C.trunk, at(0.15, 10.4, -0.15, 0.4, 1, -0.04, 0.03), 0.1);
+  solid.add(lumpy(new CylinderGeometry(1.55, 2.4, 9, 14, 4), 61, 0.05), C.trunk, at(0, 4.5, 0), 0.1);
+  solid.add(lumpy(new CylinderGeometry(1.1, 1.55, 3.2, 14, 2), 62, 0.05), C.trunk, at(0.15, 10.4, -0.15, 0.4, 1, -0.04, 0.03), 0.1);
   // Bark ridges, so the trunk reads as faceted wood rather than a column.
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 + 0.2;
@@ -212,13 +280,28 @@ function buildKeep(p: Parts): void {
     [-6.4, 15.6, 2.2, 2.7, C.leafDeep], [0.4, 21.6, 0.6, 3, C.leafLight], [3.8, 15.2, 4.2, 2.3, C.leafDeep], [-4.2, 15.4, -4.4, 2.4, C.leaf],
     [5.4, 18.6, 3.2, 2.2, C.leafLight], [-5.6, 18.8, -2.8, 2.3, C.leafLight],
   ];
-  for (const [x, y, z, r, color] of clusters) canopy.add(new IcosahedronGeometry(r, 0), color, at(x * 1.15, y - 5.6, z * 1.15, x * 0.7, [1.05, 0.78, 1.05]), 0.08);
+  // Each cluster a heap of smaller ones, each of many small facets, pushed about so no two match.
+  clusters.forEach(([x, y, z, r, color], i) => {
+    const cx = x * 1.15;
+    const cy = y - 5.6;
+    const cz = z * 1.15;
+    canopy.add(lumpy(new IcosahedronGeometry(r * 0.82, 1), 70 + i, 0.12), color, at(cx, cy, cz, x * 0.7, [1.05, 0.78, 1.05]), 0.08);
+    for (let k = 0; k < 2; k++) {
+      const a = i * 2.1 + k * Math.PI;
+      const tone = k ? C.leafLight : color === C.leafDeep ? C.leaf : C.leafDeep;
+      canopy.add(lumpy(new IcosahedronGeometry(r * 0.52, 1), 90 + i * 2 + k, 0.14), tone, at(cx + Math.cos(a) * r * 0.62, cy + (k ? 0.35 : -0.2) * r, cz + Math.sin(a) * r * 0.62, a, [1.05, 0.8, 1.05]), 0.08);
+    }
+  });
   // Vines trailing from the lowest branches.
   for (const [x, z, len] of [[4.8, 1.6, 2.6], [-4.4, -1.2, 2.2], [1.6, 4.6, 2.8], [-2.2, 4.0, 2]] as const) vine(p, x * 1.1, 10.2, z * 1.1, len, x);
 
   // The deck round the trunk, on struts, with a railing; a gap where the stairs land.
   const D = 4.2;
-  solid.add(new CylinderGeometry(6.3, 6.3, 0.3, 8), C.plank, at(0, D, 0, Math.PI / 8), 0.04);
+  solid.add(new CylinderGeometry(6.3, 6.3, 0.3, 8), C.woodDark, at(0, D, 0, Math.PI / 8), 0.04);
+  // Planks across the octagon (its flat sides face the axes: 5.82 m to a side, its corners cut at 45 degrees).
+  const apothem = 6.3 * Math.cos(Math.PI / 8) - 0.04;
+  const corner = 6.3 * Math.sin(Math.PI / 8);
+  planks((g, c, l, v) => solid.add(g, c, l, v), 0, 0, apothem * 2, apothem * 2, D + 0.17, 0.05, (u) => apothem - Math.max(0, Math.abs(u) - corner));
   // Joists under it, and a darker rim.
   solid.add(new CylinderGeometry(6.35, 6.0, 0.18, 8), C.woodDark, at(0, D - 0.24, 0, Math.PI / 8), 0.03);
   for (let i = 0; i < 4; i++) {
@@ -243,7 +326,7 @@ function buildKeep(p: Parts): void {
   const pitch = Math.atan2(D, run);
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
-    solid.add(new BoxGeometry(1.4, 0.1, 0.46), C.plank, at(top[0] + (foot[0] - top[0]) * t, D - D * t, top[1] + (foot[1] - top[1]) * t, yaw), 0.05);
+    solid.add(board(1.4, 0.09, 0.46), i % 2 ? C.wood : C.plank, at(top[0] + (foot[0] - top[0]) * t, D - D * t, top[1] + (foot[1] - top[1]) * t, yaw), 0.05);
   }
   for (const side of [-0.74, 0.74]) {
     const ox = Math.cos(yaw) * side;
@@ -266,13 +349,19 @@ function buildKeep(p: Parts): void {
 
   // The room: cream panels, an orange stripe, a glass front, a wide roof with solar panels.
   const R = D + 0.15;
-  solid.add(new BoxGeometry(5.4, 2.7, 0.2), C.cream, at(0, R + 1.35, 2.1));
-  solid.add(new BoxGeometry(0.2, 2.7, 3.1), C.cream, at(-2.6, R + 1.35, 3.55));
-  solid.add(new BoxGeometry(0.2, 2.7, 3.1), C.cream, at(2.6, R + 1.35, 3.55));
-  solid.add(new BoxGeometry(0.5, 2.7, 0.22), C.orange, at(-2.2, R + 1.35, 5.05), 0.02);
-  solid.add(new BoxGeometry(5.4, 0.35, 0.22), C.cream, at(0, R + 0.17, 5.05));
-  solid.add(new BoxGeometry(5.4, 0.3, 0.22), C.cream, at(0, R + 2.55, 5.05));
-  for (const x of [-1.9, 0.1, 2.5]) solid.add(new BoxGeometry(0.1, 2.3, 0.24), C.grey, at(x, R + 1.35, 5.06), 0);
+  solid.add(board(5.4, 2.7, 0.2), C.cream, at(0, R + 1.35, 2.1));
+  solid.add(board(0.2, 2.7, 3.1), C.cream, at(-2.6, R + 1.35, 3.55));
+  solid.add(board(0.2, 2.7, 3.1), C.cream, at(2.6, R + 1.35, 3.55));
+  // Seams between the wall's panels, and a plinth.
+  for (const z of [2.55, 3.55, 4.55]) for (const x of [-2.71, 2.71]) solid.add(new BoxGeometry(0.02, 2.6, 0.03), C.creamShade, at(x, R + 1.35, z), 0);
+  for (const x of [-2.6, 2.6]) solid.add(board(0.26, 0.18, 3.16), C.creamShade, at(x, R + 0.09, 3.55), 0.02);
+  solid.add(board(0.5, 2.7, 0.22), C.orange, at(-2.2, R + 1.35, 5.05), 0.02);
+  solid.add(board(5.4, 0.35, 0.22), C.cream, at(0, R + 0.17, 5.05));
+  solid.add(board(5.4, 0.3, 0.22), C.cream, at(0, R + 2.55, 5.05));
+  for (const x of [-1.9, 0.1, 2.5]) solid.add(board(0.1, 2.3, 0.24), C.grey, at(x, R + 1.35, 5.06), 0);
+  // A transom bar across the glass, a sill under it.
+  solid.add(board(4.4, 0.06, 0.2), C.grey, at(0.3, R + 2.05, 5.08), 0);
+  solid.add(board(5.0, 0.07, 0.3), C.creamShade, at(0.3, R + 0.36, 5.12), 0.02);
   glass.add(new BoxGeometry(1.9, 2, 0.06), 0xffffff, at(-0.9, R + 1.35, 5.06), 0);
   glass.add(new BoxGeometry(2.3, 2, 0.06), 0xffffff, at(1.3, R + 1.35, 5.06), 0);
   glass.add(new BoxGeometry(0.06, 1.2, 1.6), 0xffffff, at(2.72, R + 1.5, 3.6), 0);
@@ -282,18 +371,25 @@ function buildKeep(p: Parts): void {
   for (let b = 0; b < 6; b++) solid.add(new BoxGeometry(0.2, 0.3, 0.22), [C.book1, C.book2, C.book3, C.cream, C.orange, C.book1][b]!, at(0.65 + b * 0.22, R + 1.1, 2.45), 0.04);
   lit.add(new CylinderGeometry(0.18, 0.26, 0.3, 8), 0xffd59a, at(-1.2, R + 1.75, 2.6), 0);
   solid.add(new CylinderGeometry(0.03, 0.03, 1.4, 5), C.grey, at(-1.2, R + 0.9, 2.6), 0);
-  solid.add(new BoxGeometry(6.2, 0.22, 4.2), C.woodDark, at(0, R + 2.85, 3.55, 0, 1, -0.08));
-  solid.add(new BoxGeometry(6.3, 0.08, 0.12), C.orange, at(0, R + 2.72, 5.62, 0, 1, -0.08), 0);
+  solid.add(board(6.2, 0.22, 4.2), C.woodDark, at(0, R + 2.85, 3.55, 0, 1, -0.08));
+  solid.add(board(6.3, 0.08, 0.12), C.orange, at(0, R + 2.72, 5.62, 0, 1, -0.08), 0);
+  // Standing seams on the roof, and rafter ends under its eave.
+  for (let k = 0; k < 9; k++) solid.add(new BoxGeometry(0.03, 0.03, 4.1), C.wood, at(-2.8 + k * 0.7, R + 2.97, 3.55, 0, 1, -0.08), 0);
+  for (let k = 0; k < 7; k++) solid.add(board(0.1, 0.14, 0.3), C.woodDark, at(-2.7 + k * 0.9, R + 2.62, 5.5, 0, 1, -0.08), 0.03);
   for (const x of [-1.8, 0, 1.8]) {
-    solid.add(new BoxGeometry(1.6, 0.06, 2.4), C.solar, at(x, R + 3.02, 3.4, 0, 1, -0.08), 0.02);
-    solid.add(new BoxGeometry(1.64, 0.07, 0.05), C.greyLight, at(x, R + 3.04, 3.4, 0, 1, -0.08), 0);
+    // A panel: its frame, and a grid of cells.
+    const tilt = at(x, R + 3.02, 3.4, 0, 1, -0.08);
+    solid.add(board(1.66, 0.07, 2.46), C.greyLight, tilt, 0);
+    solid.add(new BoxGeometry(1.56, 0.07, 2.36), C.solar, within(tilt, at(0, 0.008, 0)), 0.02);
+    for (let k = 1; k < 4; k++) solid.add(new BoxGeometry(1.56, 0.075, 0.015), 0x5b74a8, within(tilt, at(0, 0.01, -1.18 + k * 0.59)), 0);
+    for (let k = 1; k < 3; k++) solid.add(new BoxGeometry(0.015, 0.075, 2.36), 0x5b74a8, within(tilt, at(-0.78 + k * 0.52, 0.01, 0)), 0);
   }
   // The deck's furniture: a crate, a bench and a small table with mugs, pots of plants, a toolbox.
-  solid.add(new BoxGeometry(0.9, 0.7, 0.5), C.grey, at(-1.6, R + 0.35, 1.5));
-  solid.add(new BoxGeometry(0.92, 0.1, 0.52), C.orange, at(-1.6, R + 0.62, 1.5), 0);
-  solid.add(new BoxGeometry(2.2, 0.1, 0.55), C.wood, at(3.9, R + 0.46, -2.6, 0.9), 0.03);
+  solid.add(board(0.9, 0.7, 0.5), C.grey, at(-1.6, R + 0.35, 1.5));
+  solid.add(board(0.92, 0.1, 0.52), C.orange, at(-1.6, R + 0.62, 1.5), 0);
+  for (const dz of [-0.13, 0.13]) solid.add(board(2.2, 0.08, 0.25), C.wood, at(3.9 + Math.sin(0.9) * dz, R + 0.46, -2.6 + Math.cos(0.9) * dz, 0.9), 0.04);
   for (const dx of [-0.9, 0.9]) solid.add(new BoxGeometry(0.1, 0.45, 0.45), C.woodDark, at(3.9 + Math.cos(0.9) * dx, R + 0.22, -2.6 - Math.sin(0.9) * dx, 0.9));
-  solid.add(new BoxGeometry(1.2, 0.08, 0.8), C.wood, at(4.3, R + 0.74, 0.6, 0.3), 0.03);
+  for (const dz of [-0.27, 0, 0.27]) solid.add(board(1.2, 0.07, 0.25), dz ? C.wood : C.plank, at(4.3 + Math.sin(0.3) * dz, R + 0.74, 0.6 + Math.cos(0.3) * dz, 0.3), 0.04);
   for (const [dx, dz] of [[-0.5, -0.3], [0.5, -0.3], [-0.5, 0.3], [0.5, 0.3]] as const) solid.add(new BoxGeometry(0.07, 0.72, 0.07), C.woodDark, at(4.3 + dx, R + 0.36, 0.6 + dz, 0.3));
   mug(solid, null, 4.05, R + 0.78, 0.5, C.cream);
   mug(solid, null, 4.45, R + 0.78, 0.75, C.orange);
@@ -311,16 +407,21 @@ function buildStations(p: Parts): void {
   // ---- council: a low deck with a long table, benches, mugs and a teapot, under a parasol ----
   {
     const m = stationMatrix("council");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
-    add(new BoxGeometry(5.6, 0.16, 4.4), C.plank, at(0, 0.08, 0), 0.05);
-    for (let i = 0; i < 7; i++) add(new BoxGeometry(0.03, 0.02, 4.4), C.woodDark, at(-2.4 + i * 0.8, 0.165, 0), 0);
-    add(new BoxGeometry(2.6, 0.1, 1.1), C.wood, at(0, 0.82, 0));
-    for (const [x, z] of [[-1.15, -0.45], [1.15, -0.45], [-1.15, 0.45], [1.15, 0.45]] as const) add(new BoxGeometry(0.1, 0.74, 0.1), C.woodDark, at(x, 0.45, z));
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    // The deck: joists under a floor of planks, a darker rim.
+    add(new BoxGeometry(5.6, 0.12, 4.4), C.woodDark, at(0, 0.06, 0), 0.05);
+    planks(add, 0, 0, 5.6, 4.4, 0.17);
+    for (const z of [-2.22, 2.22]) add(board(5.7, 0.14, 0.08), C.woodDark, at(0, 0.1, z), 0.03);
+    // The table: five boards on an apron and four bevelled legs.
+    const T = COUNCIL_TABLE_TOP;
+    for (let i = 0; i < 5; i++) add(board(2.6, 0.06, 0.21), i % 2 ? C.wood : C.plank, at(0, T - 0.03, -0.44 + i * 0.22), 0.04);
+    add(board(2.36, 0.09, 0.9), C.woodDark, at(0, T - 0.105, 0), 0.03);
+    for (const [x, z] of [[-1.15, -0.45], [1.15, -0.45], [-1.15, 0.45], [1.15, 0.45]] as const) add(board(0.1, T - 0.17, 0.1), C.woodDark, at(x, 0.17 + (T - 0.17) / 2 - 0.03, z));
     for (const z of [-1.05, 1.05]) {
-      add(new BoxGeometry(2.4, 0.08, 0.4), C.wood, at(0, 0.48, z));
-      for (const x of [-1, 1]) add(new BoxGeometry(0.08, 0.4, 0.3), C.woodDark, at(x, 0.26, z));
+      for (const dz of [-0.1, 0.1]) add(board(2.4, 0.07, 0.19), C.wood, at(0, 0.48, z + dz), 0.04);
+      for (const x of [-1, 1]) add(board(0.08, 0.3, 0.32), C.woodDark, at(x, 0.31, z));
     }
-    for (const [x, z, c] of [[-0.8, -0.2, C.cream], [-0.2, 0.25, C.orange], [0.5, -0.15, C.cream], [1, 0.2, C.cream]] as const) mug(solid, m, x, 0.87, z, c);
+    for (const [x, z, c] of [[-0.8, -0.2, C.cream], [-0.2, 0.25, C.orange], [0.5, -0.15, C.cream], [1, 0.2, C.cream]] as const) mug(solid, m, x, COUNCIL_TABLE_TOP, z, c);
     // A teapot and a rolled map (clear of Reachy Mini, who sits at 0.25, 0.08: critters.ts).
     add(new SphereGeometry(0.13, 8, 5), C.cream, at(0.85, 0.98, -0.3, 0, [1, 0.8, 1]), 0.02);
     add(new CylinderGeometry(0.02, 0.03, 0.14, 5), C.cream, at(1.0, 1.0, -0.3, 0, 1, 0, -0.9), 0);
@@ -329,8 +430,8 @@ function buildStations(p: Parts): void {
     add(new BoxGeometry(0.5, 0.22, 0.3), C.grey, at(-1.05, 0.98, 0.1));
     add(new BoxGeometry(0.52, 0.05, 0.32), C.orange, at(-1.05, 1.09, 0.1), 0);
     add(new BoxGeometry(0.06, 2.6, 0.06), C.woodDark, at(2.4, 1.3, -1.8));
-    add(new ConeGeometry(1.6, 0.6, 8), C.cream, at(2.4, 2.75, -1.8), 0.03);
-    add(new ConeGeometry(1.62, 0.12, 8), C.orange, at(2.4, 2.5, -1.8), 0);
+    add(new ConeGeometry(1.6, 0.6, 16), (x, _y, z) => (Math.floor(Math.atan2(z, x) / (Math.PI / 4) + 8) % 2 ? C.cream : C.creamShade), at(2.4, 2.75, -1.8), 0.03);
+    add(new ConeGeometry(1.62, 0.12, 16, 1, true), C.orange, at(2.4, 2.5, -1.8), 0);
     for (const [x, z] of [[-2.5, -1.9], [2.5, 1.9], [-2.5, 1.9]] as const) {
       const [sx, sy, sz] = scenePoint(m, x, 0.16, z);
       pottedPlant(p, sx, sy, sz, 1.1);
@@ -339,11 +440,12 @@ function buildStations(p: Parts): void {
   // ---- observatory: a telescope platform on stilts, with a ladder ----
   {
     const m = stationMatrix("observatory");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     const H = 2.6;
     for (const [x, z] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]] as const) add(new BoxGeometry(0.22, H, 0.22), C.woodDark, at(x, H / 2, z));
     for (const z of [-1.6, 1.6]) add(new BoxGeometry(3.2, 0.12, 0.12), C.wood, at(0, H * 0.45, z, 0, 1, 0, 0.6));
-    add(new BoxGeometry(3.8, 0.2, 3.8), C.plank, at(0, H, 0), 0.04);
+    add(new BoxGeometry(3.8, 0.16, 3.8), C.woodDark, at(0, H - 0.02, 0), 0.04);
+    planks(add, 0, 0, 3.8, 3.8, H + 0.1);
     const square: [number, number][] = [[-1.85, -1.85], [1.85, -1.85], [1.85, 1.85], [-1.85, 1.85], [-1.85, -1.85]];
     railing(p.solid, square.map(([x, z]) => {
       const v = within(m, at(x, 0, z));
@@ -364,13 +466,17 @@ function buildStations(p: Parts): void {
   // ---- library: a reading nook with shelves, an armchair and a lamp ----
   {
     const m = stationMatrix("library");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
-    add(new BoxGeometry(5, 0.2, 4), C.plank, at(0, 0.1, 0), 0.04);
-    add(new BoxGeometry(5, 3, 0.2), C.cream, at(0, 1.6, -1.9));
-    add(new BoxGeometry(0.2, 3, 4), C.cream, at(-2.4, 1.6, 0));
-    add(new BoxGeometry(0.2, 3, 2), C.cream, at(2.4, 1.6, -1));
-    add(new BoxGeometry(0.4, 3, 0.22), C.orange, at(2.4, 1.6, 0.1), 0.02);
-    add(gable(4.8, 1.4, 5.8), C.woodDark, at(0, 3.1, 0), 0.03);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    add(new BoxGeometry(5, 0.14, 4), C.woodDark, at(0, 0.07, 0), 0.04);
+    planks(add, 0, 0, 5, 4, 0.2);
+    add(board(5, 3, 0.2), C.cream, at(0, 1.6, -1.9));
+    add(board(0.2, 3, 4), C.cream, at(-2.4, 1.6, 0));
+    add(board(0.2, 3, 2), C.cream, at(2.4, 1.6, -1));
+    add(board(0.4, 3, 0.22), C.orange, at(2.4, 1.6, 0.1), 0.02);
+    // Corner posts and a beam along the open front.
+    for (const x of [-2.42, 2.42]) add(board(0.24, 3.1, 0.24), C.woodDark, at(x, 1.6, 1.9));
+    add(board(5.0, 0.2, 0.22), C.woodDark, at(0, 3.0, 1.9));
+    shingleRoof(add, 4.8, 1.4, 5.8, 3.1, C.wood, C.woodDark);
     // Shelves of many-coloured books.
     for (let row = 0; row < 4; row++) {
       add(new BoxGeometry(3.6, 0.06, 0.4), C.woodDark, at(-0.4, 0.5 + row * 0.6, -1.65), 0);
@@ -389,24 +495,32 @@ function buildStations(p: Parts): void {
     lit.add(new ConeGeometry(0.28, 0.32, 8), 0xffd59a, within(m, at(-1.6, 1.8, 0.6)), 0);
     p.warm.push([...scenePoint(m, -1.6, 1.75, 0.6), 1.6]);
     glass.add(new BoxGeometry(0.06, 1.1, 1.2), 0xffffff, within(m, at(-2.52, 1.8, 0.6)), 0);
+    // Its frame, on the west wall (a wall facing +z, turned to face west).
+    windowFrame((g, c, l, v) => add(g, c, at(0, 0, 0, -Math.PI / 2).multiply(l), v), 0.6, 1.8, 2.54, 1.2, 1.1);
     const [px, py, pz] = scenePoint(m, 2.0, 0.2, 1.4);
     pottedPlant(p, px, py, pz, 1.3);
   }
   // ---- forge: a research bunker set into a limestone hill: wide door, workbench, monitors, printer, pipes ----
   {
     const m = stationMatrix("forge");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     for (const [x, y, z, r, k] of [[0, 1.6, -3.4, 4.2, 1], [-3.2, 1.2, -2.6, 3, 2], [3.3, 1.1, -2.8, 3.1, 3], [0.6, 3.6, -4.6, 3.2, 4], [-2, 3, -4.8, 2.6, 5], [3.6, 3.0, -4.4, 2.4, 6]] as const) {
-      add(lumpy(new IcosahedronGeometry(r, 1), k, 0.12), k % 2 ? C.limestone : 0xe2d3be, at(x, y, z, x + z, [1, 0.8, 1]), 0.06);
+      const strata: Paint = (_x, py) => [C.limestone, 0xe2d3be, 0xd9c7ae][Math.floor(py * 2.4 + k) % 3]!;
+      add(chip(lumpy(new IcosahedronGeometry(r, 2), k, 0.1), k, 5, 0.86), strata, at(x, y, z, x + z, [1, 0.8, 1]), 0.06);
     }
     // Moss and a little grass on the hill.
     for (const [x, y, z] of [[0.2, 4.8, -3], [-2.4, 3.6, -2.2], [2.6, 3.4, -2.4]] as const) p.canopy.add(new IcosahedronGeometry(0.8, 0), C.leafDeep, within(m, at(x, y, z, x, [1.4, 0.5, 1.2])), 0.1);
     // The frame round the wide door: cream panels, orange edges, a grey lintel and a lamp over it.
-    add(new BoxGeometry(5.6, 3.8, 0.6), C.cream, at(0, 1.9, 0.9));
+    add(board(5.6, 3.8, 0.6), C.cream, at(0, 1.9, 0.9));
     for (const x of [-2.2, 2.2]) add(new BoxGeometry(0.06, 3.0, 0.62), C.creamShade, at(x, 1.7, 0.92), 0);
-    for (const x of [-1.95, 1.95]) add(new BoxGeometry(0.32, 3.1, 0.68), C.orange, at(x, 1.5, 0.95), 0.02);
-    add(new BoxGeometry(4.2, 0.3, 0.7), C.grey, at(0, 3.05, 0.95), 0);
-    add(new BoxGeometry(5.9, 0.22, 1.5), C.greyLight, at(0, 3.9, 1.15), 0.02);
+    for (const y of [1.0, 2.6]) for (const x of [-2.55, 2.55]) add(new BoxGeometry(0.62, 0.03, 0.62), C.creamShade, at(x, y, 0.92), 0);
+    for (const x of [-1.95, 1.95]) add(board(0.32, 3.1, 0.68), C.orange, at(x, 1.5, 0.95), 0.02);
+    // The door's track and its rollers, bolts down the frame.
+    add(board(4.4, 0.12, 0.2), C.greyLight, at(0, 3.27, 1.3), 0);
+    for (const x of [-1.6, -0.8, 0.8, 1.6]) add(new CylinderGeometry(0.06, 0.06, 0.08, 10).rotateX(Math.PI / 2), C.grey, at(x, 3.27, 1.42), 0);
+    for (const x of [-1.95, 1.95]) for (let k = 0; k < 5; k++) add(new IcosahedronGeometry(0.03, 0), C.greyLight, at(x, 0.4 + k * 0.6, 1.3), 0);
+    add(board(4.2, 0.3, 0.7), C.grey, at(0, 3.05, 0.95), 0);
+    add(board(5.9, 0.22, 1.5), C.greyLight, at(0, 3.9, 1.15), 0.02);
     // Inside the door: the lab's own light (dim by day, warm at night), screens and the printer.
     lit.add(new BoxGeometry(3.6, 2.85, 0.04), 0x5a4c40, within(m, at(0, 1.45, 1.22)), 0);
     p.warm.push([...scenePoint(m, 0, 1.6, 1.4), 3.4]);
@@ -432,9 +546,16 @@ function buildStations(p: Parts): void {
     const [dx, dy, dz] = scenePoint(m, 0, 3.4, 1.55);
     lanternBox(p, dx, dy, dz, 1.8);
     // The workbench in front (the arms work on it), a vice, a crate and a cart of instruments.
-    add(new BoxGeometry(2, 0.12, 0.8), C.wood, at(1.2, 0.86, 2.2));
-    add(new BoxGeometry(1.9, 0.75, 0.7), C.creamShade, at(1.2, 0.4, 2.2));
-    for (const x of [0.5, 1.2, 1.9]) add(new BoxGeometry(0.45, 0.05, 0.02), C.orange, at(x, 0.6, 2.56), 0);
+    // The worktop (the arms stand on it, so its top is exactly LAB_BENCH_TOP), a cabinet of drawers under it.
+    add(board(2, 0.13, 0.8), C.wood, at(1.2, LAB_BENCH_TOP - 0.065, 2.2));
+    add(board(1.9, 0.78, 0.7), C.creamShade, at(1.2, 0.41, 2.2));
+    for (const x of [0.5, 1.2, 1.9]) {
+      for (const y of [0.24, 0.6]) {
+        add(board(0.6, 0.3, 0.03), C.cream, at(x, y, 2.56), 0.02);
+        add(board(0.22, 0.04, 0.04), C.orange, at(x, y + 0.08, 2.585), 0);
+      }
+    }
+    add(new BoxGeometry(1.92, 0.06, 0.72), C.grey, at(1.2, 0.03, 2.2), 0);
     add(new BoxGeometry(0.3, 0.18, 0.2), C.grey, at(0.35, 1.0, 2.1));
     add(new BoxGeometry(0.12, 0.08, 0.3), C.orange, at(0.35, 1.1, 2.1), 0);
     add(new BoxGeometry(0.7, 0.5, 0.5), C.creamShade, at(-1.6, 0.25, 2.1, 0.3));
@@ -451,16 +572,20 @@ function buildStations(p: Parts): void {
   // ---- watchtower: a lookout on braced legs, a roof, a pennant and an antenna mast ----
   {
     const m = stationMatrix("watchtower");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     const H = 7;
     for (const [x, z] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]] as const) add(new BoxGeometry(0.28, H, 0.28), C.woodDark, at(x * 1.1, H / 2, z * 1.1, 0, 1, z * 0.04, -x * 0.04));
     for (const y of [2.2, 4.6]) for (const z of [-1.35, 1.35]) add(new BoxGeometry(3, 0.12, 0.12), C.wood, at(0, y, z, 0, 1, 0, 0.7), 0.03);
     for (const y of [2.2, 4.6]) for (const x of [-1.35, 1.35]) add(new BoxGeometry(0.12, 0.12, 3), C.wood, at(x, y, 0, 0, 1, 0.7, 0), 0.03);
-    add(new BoxGeometry(3.6, 0.22, 3.6), C.plank, at(0, H, 0), 0.04);
+    add(new BoxGeometry(3.6, 0.18, 3.6), C.woodDark, at(0, H - 0.02, 0), 0.04);
+    planks(add, 0, 0, 3.6, 3.6, H + 0.11);
     for (const [x, z] of [[-1.7, -1.7], [1.7, -1.7], [-1.7, 1.7], [1.7, 1.7]] as const) add(new BoxGeometry(0.12, 2.2, 0.12), C.woodDark, at(x, H + 1.1, z));
     add(new BoxGeometry(4.2, 0.2, 4.2), C.woodDark, at(0, H + 2.3, 0, 0, 1, 0.06), 0.03);
-    add(new BoxGeometry(3.4, 0.5, 0.08), C.wood, at(0, H + 0.45, 1.75), 0.03);
-    add(new BoxGeometry(3.4, 0.5, 0.08), C.wood, at(0, H + 0.45, -1.75), 0.03);
+    for (const z of [1.75, -1.75]) {
+      add(board(3.4, 0.08, 0.1), C.wood, at(0, H + 0.95, z), 0.03);
+      add(board(3.4, 0.06, 0.06), C.wood, at(0, H + 0.45, z), 0.03);
+      for (let k = 1; k < 8; k++) add(new BoxGeometry(0.04, 0.5, 0.04), C.wood, at(-1.7 + k * 0.425, H + 0.7, z), 0);
+    }
     add(new BoxGeometry(3.4, 0.08, 0.5), C.orange, at(0, H + 2.42, 0), 0);
     add(new CylinderGeometry(0.05, 0.08, 5, 5), C.grey, at(0.9, H + 4.8, -0.9), 0);
     for (const y of [H + 3.6, H + 5.2]) add(new BoxGeometry(0.9, 0.04, 0.04), C.grey, at(0.9, y, -0.9), 0);
@@ -477,14 +602,16 @@ function buildStations(p: Parts): void {
   // ---- treasury: a small, sturdy vault hut with a round door ----
   {
     const m = stationMatrix("treasury");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     add(new BoxGeometry(4.4, 0.3, 4), C.greyLight, at(0, 0.15, 0), 0.03);
-    add(new BoxGeometry(4, 3, 3.4), C.creamShade, at(0, 1.8, -0.2), 0.04);
-    add(new BoxGeometry(4.5, 0.4, 3.9), C.cream, at(0, 3.45, -0.2), 0.03);
+    add(board(4, 3, 3.4), C.creamShade, at(0, 1.8, -0.2), 0.04);
+    add(board(4.5, 0.4, 3.9), C.cream, at(0, 3.45, -0.2), 0.03);
+    for (const x of [-1, 0, 1]) add(new BoxGeometry(0.03, 2.4, 0.03), C.cream, at(x * 1.35, 1.6, 1.51), 0);
     add(new BoxGeometry(4.05, 0.3, 3.45), C.orange, at(0, 2.9, -0.2), 0);
     for (const x of [-1.9, 1.9]) add(new BoxGeometry(0.25, 3, 0.25), C.cream, at(x, 1.8, 1.5), 0.02);
-    add(new CylinderGeometry(1, 1, 0.3, 16).rotateX(Math.PI / 2), C.grey, at(0, 1.5, 1.55), 0.02);
-    add(new CylinderGeometry(0.78, 0.78, 0.34, 16).rotateX(Math.PI / 2), C.greyLight, at(0, 1.5, 1.6), 0);
+    add(new CylinderGeometry(1, 1, 0.3, 28).rotateX(Math.PI / 2), C.grey, at(0, 1.5, 1.55), 0.02);
+    add(new CylinderGeometry(0.78, 0.78, 0.34, 28).rotateX(Math.PI / 2), C.greyLight, at(0, 1.5, 1.6), 0);
+    for (let k = 0; k < 16; k++) add(new IcosahedronGeometry(0.035, 0), C.greyLight, at(Math.cos((k / 16) * Math.PI * 2) * 0.89, 1.5 + Math.sin((k / 16) * Math.PI * 2) * 0.89, 1.71), 0);
     for (let i = 0; i < 3; i++) add(new BoxGeometry(1, 0.08, 0.06), C.orange, at(0, 1.5, 1.8, 0, 1, 0, (i * Math.PI) / 3), 0);
     add(new CylinderGeometry(0.12, 0.12, 0.1, 8).rotateX(Math.PI / 2), C.orange, at(0, 1.5, 1.82), 0);
     lit.add(new BoxGeometry(0.5, 0.2, 0.06), 0xffd9a0, within(m, at(0, 2.75, 1.52)), 0);
@@ -493,10 +620,12 @@ function buildStations(p: Parts): void {
   // ---- messenger's post: a radio mast, a dish, an orange banner and a radio hut ----
   {
     const m = stationMatrix("messenger");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
-    add(new BoxGeometry(2.2, 2.3, 1.8), C.cream, at(-1.2, 1.15, -0.4));
-    add(new BoxGeometry(2.5, 0.18, 2.1), C.grey, at(-1.2, 2.38, -0.4, 0, 1, 0.08));
-    add(new BoxGeometry(0.8, 1.7, 0.08), C.orange, at(-1.2, 0.85, 0.52), 0);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    add(board(2.2, 2.3, 1.8), C.cream, at(-1.2, 1.15, -0.4));
+    add(board(2.5, 0.18, 2.1), C.grey, at(-1.2, 2.38, -0.4, 0, 1, 0.08));
+    add(board(0.8, 1.7, 0.08), C.orange, at(-1.2, 0.85, 0.52), 0);
+    add(board(0.96, 0.08, 0.1), C.grey, at(-1.2, 1.74, 0.53), 0);
+    add(new IcosahedronGeometry(0.04, 0), C.grey, at(-0.95, 0.85, 0.58), 0);
     glass.add(new BoxGeometry(0.06, 0.6, 0.8), 0xffffff, within(m, at(-2.32, 1.4, -0.4)), 0);
     p.warm.push([...scenePoint(m, -2.4, 1.4, -0.4), 1.2]);
     add(new CylinderGeometry(0.06, 0.16, 8.5, 4), C.grey, at(1.3, 4.25, -0.2, Math.PI / 4), 0);
@@ -511,7 +640,7 @@ function buildStations(p: Parts): void {
   // ---- oracle: a ring of standing stones with glowing runes round an altar, moss at their feet ----
   {
     const m = stationMatrix("oracle");
-    const add = (g: BufferGeometry, color: number, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
+    const add = (g: BufferGeometry, color: number | Paint, local: Matrix4, vary?: number) => solid.add(g, color, within(m, local), vary);
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + Math.PI / 9;
       if (Math.abs(Math.cos(a) - 1) < 0.15) continue;
@@ -543,7 +672,19 @@ function buildStations(p: Parts): void {
       const len = Math.hypot(pt.x - prev.x, pt.y - prev.y);
       if (len > 0.01) {
         const [mx, , mz] = toScene((pt.x + prev.x) / 2, (pt.y + prev.y) / 2);
-        solid.add(new BoxGeometry(1.5, 0.05, len + 1.5), C.path, at(mx, PATH_TOP - 0.025, mz, headingToSceneYaw(Math.atan2(pt.y - prev.y, pt.x - prev.x))), 0);
+        const yaw = headingToSceneYaw(Math.atan2(pt.y - prev.y, pt.x - prev.x));
+        solid.add(new BoxGeometry(1.5, 0.05, len + 1.5), C.path, at(mx, PATH_TOP - 0.025, mz, yaw), 0);
+        // Flat stones half-sunk along both edges, here and there.
+        const [sx0, , sz0] = toScene(prev.x, prev.y);
+        const [sx1, , sz1] = toScene(pt.x, pt.y);
+        for (let k = 0.5; k < len; k += 1.3) {
+          const t = k / len;
+          const side = Math.floor(k / 1.3) % 2 ? 1 : -1;
+          const jitter = Math.sin(k * 7.1 + mx) * 0.12;
+          const px = sx0 + (sx1 - sx0) * t + Math.cos(yaw) * side * (0.8 + jitter);
+          const pz = sz0 + (sz1 - sz0) * t - Math.sin(yaw) * side * (0.8 + jitter);
+          solid.add(chip(lumpy(new IcosahedronGeometry(0.16, 0), k + mx, 0.2), Math.round(k * 3 + mz), 1, 0.7), (k * 5) % 2 > 1 ? C.stone : C.stoneShade, at(px, PATH_TOP - 0.02, pz, k * 2.3, [1.3, 0.35, 1]), 0.06);
+        }
       }
       prev = pt;
     }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Group } from "three/webgpu";
+import { Group, Mesh, Raycaster, Vector3 } from "three/webgpu";
+import { COUNCIL_TABLE_TOP, Keep, LAB_BENCH_TOP, stationMatrix } from "./keep.ts";
 import { chunkDistance, fineBand, Land, SKIRT, surfaceArrays, wantsFine } from "./land.ts";
 import { built } from "./path.ts";
 import { CELL, CELLS, CHUNK, chunkSamples, FINE, FINE_CELL, FINE_CELLS, fineSurface, heightAt, KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, surfaceAt, surfaceHeight } from "./terrain.ts";
@@ -247,5 +248,26 @@ describe("levels of detail and budgets", () => {
     expect(TIERS.low.triangles).toBeLessThan(540_000);
     expect(TIERS.medium.triangles).toBeLessThan(1_070_000);
     expect(TIERS.high.triangles).toBeLessThan(2_000_000);
+  });
+});
+
+describe("the stations, made finer, keep what stands on them", () => {
+  test("Reachy Mini's table top is 0.87 m up and the arms' bench 0.93 m (where critters.ts puts them)", () => {
+    expect(COUNCIL_TABLE_TOP).toBe(0.87);
+    expect(LAB_BENCH_TOP).toBe(0.93);
+    const keep = new Keep(false, 0);
+    const solids = keep.group.children.filter((o): o is Mesh => o instanceof Mesh);
+    const ray = new Raycaster();
+    // Straight down onto a station's spot (its own frame), the first thing hit.
+    const topAt = (place: "council" | "forge", x: number, z: number): number => {
+      const from = new Vector3(x, 3, z).applyMatrix4(stationMatrix(place));
+      ray.set(from, new Vector3(0, -1, 0));
+      const hit = ray.intersectObjects(solids, false)[0];
+      return hit ? hit.point.y : Number.NaN;
+    };
+    // Where Reachy Mini sits, and free spots on the table; both arms' places on the bench, and between them.
+    for (const [x, z] of [[0.25, 0.08], [0, -0.35], [-0.6, 0.4]] as const) expect(topAt("council", x, z)).toBeCloseTo(COUNCIL_TABLE_TOP, 3);
+    for (const x of [0.65, 1.2, 1.75]) expect(topAt("forge", x, 2.0)).toBeCloseTo(LAB_BENCH_TOP, 3);
+    keep.dispose();
   });
 });
