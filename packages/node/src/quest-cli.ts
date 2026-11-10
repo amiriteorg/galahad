@@ -1,5 +1,5 @@
-import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
-import { investigate, type InvestigationOutcome, type QuestEvent, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
+import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { AGENTS, chooseAgentModel, investigate, type InvestigationOutcome, type QuestEvent, type QuestOptions, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
 
 /*
  * `galahad do "<goal>"`: a quest from the terminal. The loop itself is pure
@@ -32,6 +32,11 @@ export interface DoOptions {
   label?: string;
   /** Remember the outcome in the mind (default yes; a trial records its own result instead). */
   remember?: boolean;
+  /**
+   * A coding agent (opencode) does the engineer's part, for up to `minutes`, in a clone of
+   * `repo` if given (which needs --net online). Its model calls go through the gateway.
+   */
+  agent?: { name: string; minutes: number; repo?: string };
 }
 
 const tty = process.stdout.isTTY;
@@ -58,7 +63,7 @@ function environment(sandbox: SandboxView, host: string): string {
         "FEniCSx (dolfinx, PETSc, MPI: mpirun), gmsh, scikit-fem, OpenSees; build123d on OpenCascade (STEP/STL); MuJoCo; CoolProp, Cantera; " +
         "python-control, cvxpy, Z3; OpenFOAM (run its commands as `openfoam blockMesh` etc.; tutorials listed by `openfoam`); ngspice; Octave; Maxima; " +
         "gcc, gfortran, cmake, bun 1.4.4. `lab-check` proves each tool against a known answer."
-      : "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
+      : "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4, OpenCode.",
     `Network: ${NETWORK[sandbox.network]}.`,
     `Limits: ${sandbox.cpus} CPUs, ${sandbox.memoryGb} GB of memory.`,
   ].join(" ");
@@ -124,12 +129,15 @@ export async function runNodeQuest(
   hooks: NodeQuestHooks = {},
 ): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null }> {
   const quest = `q-${Date.now().toString(36)}`;
+  const agent = options.agent ? await agentFor(node, options) : undefined;
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
     ...(options.isolation ? { isolation: options.isolation } : {}),
     ...(options.lab ? { lab: true } : {}),
     quest,
     ...(options.on ? { on: options.on } : {}),
+    // The agent calls models itself, through the gateway, on a token that lives as long as the sandbox.
+    ...(agent ? { providers: [agent.model.provider], ttlMinutes: Math.min(agent.minutes + 30, 7 * 24 * 60) } : {}),
   });
   // Sandboxes name their host by device id; people (and the engineer) know it by name.
   const fleet = await node.call<FleetView>("fleet").catch(() => null);
@@ -141,6 +149,11 @@ export async function runNodeQuest(
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
   try {
+    if (options.agent?.repo) {
+      const cloned = await exec(`git clone -q --depth 50 '${options.agent.repo}' /work/repo 2>&1 | tail -5; test -d /work/repo/.git`, 900);
+      if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
+    }
+    const evidence = options.evidence ?? (agent ? agentEvidence(agent.workdir) : undefined);
     outcome = await runQuest(
       {
         goal: options.goal,
@@ -148,7 +161,8 @@ export async function runNodeQuest(
         maxSteps: options.maxSteps,
         commandTimeoutSec: options.commandTimeoutSec,
         ...(options.instructions ? { instructions: options.instructions } : {}),
-        ...(options.evidence ? { evidence: options.evidence } : {}),
+        ...(evidence ? { evidence } : {}),
+        ...(agent ? { agent } : {}),
       },
       {
         ask: async (role, messages) => {
@@ -166,6 +180,8 @@ export async function runNodeQuest(
         signal: hooks.signal,
       },
     );
+    // A repository's changes are kept as a patch (new files included), ready to apply or review.
+    if (options.agent?.repo) await exec("mkdir -p /work/out && cd /work/repo && git add -A && git diff --cached --binary > /work/out/changes.patch && git reset -q", 120).catch(() => {});
     await hooks.finished?.(exec);
   } finally {
     // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
@@ -192,6 +208,29 @@ export async function runNodeQuest(
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
   return { outcome, quest, artifact };
 }
+
+/** The coding agent for a quest: its driver, and the engineer's first model the gateway can serve to it. */
+async function agentFor(node: NodeClient, options: DoOptions): Promise<NonNullable<QuestOptions["agent"]>> {
+  const wanted = options.agent!;
+  const driver = AGENTS[wanted.name];
+  if (!driver) throw new Error(`no coding agent "${wanted.name}" (there is: ${Object.keys(AGENTS).join(", ")})`);
+  if (options.network === "isolated") throw new Error("a coding agent needs models: use --net gateway (models only) or --net online");
+  if (options.lab) throw new Error("coding agents work in the workshop for now, not the Lab");
+  if (wanted.repo && options.network !== "online") throw new Error("cloning a repository needs --net online");
+  const [{ roster }, { providers }] = await Promise.all([
+    node.call<{ roster: Record<string, { models: string[] }> }>("roster"),
+    node.call<{ providers: ProviderView[] }>("providers"),
+  ]);
+  const model = chooseAgentModel(roster.engineer?.models ?? [], providers);
+  if (!model) throw new Error("no engineer model on an OpenAI-compatible provider with a key: galahad roster set engineer <provider/model> …");
+  return { driver, model, minutes: wanted.minutes, workdir: wanted.repo ? "/work/repo" : "/work" };
+}
+
+/** What the reviewer sees of an agent's work, straight from the sandbox. */
+const agentEvidence = (workdir: string): string[] => [
+  `cd ${workdir} && if [ -d .git ]; then git status --short | head -80; git diff --stat | tail -40; else find . -path ./.agent -prune -o -path ./.local -prune -o -path ./.config -prune -o -path ./.cache -prune -o -type f -newer /work/.agent/prompt.md -print | head -80; fi`,
+  "ls -la /work/out 2>/dev/null | head -40",
+];
 
 export async function questFromCli(node: NodeClient, options: DoOptions): Promise<QuestOutcome> {
   const controller = new AbortController();

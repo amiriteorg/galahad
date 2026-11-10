@@ -78,6 +78,14 @@ The review also confirmed what held up:
 - **A pinned supply chain.** Kata is a fixed release, verified against the SHA-256 GitHub records for it, and installed without touching Docker's configuration.
 - **Residual risk:** gateway and isolated sandboxes stay containers unless you ask (`--vm`), because they run model-written code with no internet; Docker group membership is still root-equivalent on the host (#6 below).
 
+## Coding agents (tested)
+
+- **Keys stay out.** OpenCode in a sandbox reaches models only through the gateway, on a token scoped to one provider that dies with the sandbox; the provider key never enters the sandbox. Its config is written by Galahad and holds only `{env:…}` references.
+- **The sandbox is the boundary.** The agent may use every tool it has (it runs non-interactively), because the sandbox decides what's reachable: models only by default (`--net gateway`), the internet only with `--net online` (then a microVM where the host has KVM). Its working state lives in the sandbox's `/work` and goes with it.
+- **Pinned.** The OpenCode binary is a fixed release, verified against its SHA-256 at image build; self-updates are disabled.
+- **Watched and bounded.** Every command and edit it makes is followed from its event stream and shown; past its time budget, or when you stop the quest, its whole process group is killed; an independent reviewer judges the result from the sandbox, not from the agent's account.
+- **Residual risk:** inside the sandbox the agent can do anything the sandbox user can; what it writes is untrusted, like all model output, and a patch is only a proposal until you apply it.
+
 ## Known limitations
 
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.

@@ -11,3 +11,4 @@ export * from "./mcp-connectors.ts";
 export * from "./investigation.ts";
 export * from "./trials.ts";
 export * from "./trial-suite.ts";
+export * from "./agents.ts";

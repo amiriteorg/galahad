@@ -57,6 +57,9 @@ Work
   trials [--all] | trial <id|run> | trial problems   the Index per run, and each answer against the exact one
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
+  do --agent opencode "<goal>" [--minutes 60] [--repo https://…] [--net gateway|online]
+                                  the same, with a full coding agent doing the work for up to --minutes
+                                  (models through the gateway; --repo clones first and keeps a patch)
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
   sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
@@ -271,6 +274,9 @@ async function main(): Promise<void> {
       repeat: { type: "string" },
       parallel: { type: "string" },
       seed: { type: "string" },
+      agent: { type: "string" },
+      minutes: { type: "string" },
+      repo: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -651,9 +657,16 @@ Next:
 
     case "do": {
       const goal = [sub, ...rest].filter(Boolean).join(" ").trim();
-      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--lab] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
-      const network = str("net") ?? "isolated";
+      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--lab] [--on node] [--steps 30] [--timeout 300] [--keep] [--agent opencode --minutes 60 --repo url] "<goal>"');
+      const agentName = str("agent");
+      // An agent calls models itself, so it needs at least the gateway.
+      const network = str("net") ?? (agentName ? "gateway" : "isolated");
       if (!["isolated", "gateway", "online"].includes(network)) fail("--net must be isolated, gateway or online");
+      const minutes = Number(str("minutes") ?? 60);
+      if (agentName && (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60)) fail("--minutes must be a whole number from 1 to 10080");
+      const repo = str("repo");
+      if (repo && !agentName) fail("--repo goes with --agent");
+      if (repo && !/^https:\/\/[A-Za-z0-9._~:/?#@!$&()*+,;=%-]+$/.test(repo)) fail("--repo must be an https:// URL");
       const outcome = await questFromCli(new Admin(home), {
         goal,
         network: network as "isolated" | "gateway" | "online",
@@ -663,6 +676,7 @@ Next:
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
         keep: Boolean(flags.keep),
+        ...(agentName ? { agent: { name: agentName, minutes, ...(repo ? { repo } : {}) } } : {}),
       });
       process.exit(outcome.status === "done" ? 0 : 1);
     }

@@ -276,6 +276,20 @@ Guarantees:
 - **Bounded.** A step budget (default 30 commands), a per-command time limit (300 s) and two revisions at most. Older observations shrink to excerpts so long quests stay affordable.
 - **Contained.** The default network is `isolated`; `--net gateway` or `--net online` is your explicit choice. The sandbox is destroyed afterwards unless `--keep`. Ctrl-C stops after the current step and still cleans up.
 - **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
+- **An outage isn't the end.** A model call that fails (a provider down, a reply cut off mid-stream, which the roster can't fall back from) is asked again after 15 s, 60 s and 3 minutes; only then does the error stand.
+
+### Coding agents: stamina for real codebases ✅
+
+`galahad do --agent opencode "<goal>" [--minutes 60] [--repo https://…]` keeps the plan and the independent review, and hands the work to a full coding agent: **OpenCode** (v2.2.6, pinned and checksummed in the workshop image), with its own file viewer and editor, search and shell, working for up to `--minutes` instead of one command per turn.
+
+| | How |
+|---|---|
+| **Models** | The agent calls models itself, through Galahad's gateway: the engineer's first model on an OpenAI-compatible provider with a key, on a token scoped to that provider and to the sandbox's lifetime. It never sees a key. |
+| **Runs long** | It runs headless in the background inside the sandbox (its own process group, stdin closed), so no single command's time limit applies; Galahad follows its event stream every 10 s, so every command and edit it makes appears as it happens. Past `--minutes`, or on Ctrl-C, its whole process group is stopped. |
+| **Reviewed** | When it ends, the `reviewer` judges its work from the sandbox (`git status` and `git diff --stat`, what's in `/work/out`) and its last 40 commands. A REVISE continues **the agent's own session** with the notes, at most twice. |
+| **Kept** | With `--repo`, the repository is cloned first (`--net online`) and its changes are kept as `/work/out/changes.patch`, new files included, in the quest's artifact. |
+
+The driver is pure orchestration over `exec` (`packages/brain/src/agents.ts`), tested against OpenCode's real event stream and a fake sandbox. Claude Code joins once there's an Anthropic key in the vault.
 
 The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.
 

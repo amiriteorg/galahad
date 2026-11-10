@@ -13,6 +13,16 @@ ENV BUN_INSTALL=/opt/bun
 ENV PATH=/opt/bun/bin:$PATH
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4" && chmod -R a+rX /opt/bun
 
+# OpenCode, the coding agent for long quests (galahad do --agent opencode). Pinned, and
+# checked against its SHA-256; it reaches models only through Galahad's gateway.
+ARG OPENCODE_VERSION=2.2.6
+ARG OPENCODE_SHA256=08bb21d6326ce740d91cce7ebe88a6536933f6e1e30353b91a06b01f25da306c
+RUN curl -fsSL -o /tmp/opencode.tgz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz" \
+ && echo "${OPENCODE_SHA256}  /tmp/opencode.tgz" | sha256sum -c - \
+ && mkdir -p /opt/opencode/bin && tar -xzf /tmp/opencode.tgz -C /opt/opencode/bin opencode \
+ && chmod 0755 /opt/opencode/bin/opencode && rm /tmp/opencode.tgz
+ENV PATH=/opt/opencode/bin:$PATH
+
 RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
  && mkdir -p /work && chown 1000:1000 /work
 

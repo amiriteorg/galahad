@@ -231,6 +231,15 @@ bun galahad do --steps 60 --timeout 900 --keep "Build the repo in /work and get 
 
 The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
 
+For bigger work, let a full coding agent do it. OpenCode works for up to `--minutes`, with models through the gateway (it never sees a key), and the independent review still decides:
+
+```sh
+bun galahad do --agent opencode --minutes 90 "Write a small HTTP JSON API in Bun with tests, and get them green"
+bun galahad do --agent opencode --net online --repo https://github.com/you/project "Fix the failing tests"
+```
+
+With `--repo`, the changes are kept as a patch (`changes.patch`) in the quest's artifact.
+
 ### Ask Galahad a scientific question
 
 `galahad investigate` runs the scientific method in the Lab. The hypothesis and its falsifiable predictions are recorded in the mind before anything runs, the experiment verifies its own instruments, and an independent reviewer judges the method:
