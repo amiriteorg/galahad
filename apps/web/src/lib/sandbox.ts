@@ -6,6 +6,15 @@ import { gb } from "./text.ts";
  * says it plainly before you create one. Pure, so unit-tested.
  */
 
+/** The two images: the workshop (everyday work) and the Lab (mathematics, physics, engineering). */
+export const IMAGES = {
+  workshop: "A shell with git, Python, Bun, build tools, ripgrep and jq.",
+  lab: "SciPy and SymPy, FEniCSx with MPI, OpenFOAM, gmsh, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy and Z3. lab-check proves each tool against a known answer.",
+} as const;
+
+/** A Lab sandbox: its image is galahad/lab, whatever the version. */
+export const isLab = (image: string): boolean => /^galahad\/lab(:|$)/.test(image);
+
 export type Isolation = "container" | "vm";
 export type IsolationChoice = "auto" | Isolation;
 

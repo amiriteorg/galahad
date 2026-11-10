@@ -182,7 +182,9 @@
         position: sticky; top: 0; z-index: 20; height: calc(var(--topbar-h) + var(--safe-top));
         padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
         display: flex; align-items: center; gap: var(--sp-2);
-        background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+        /* Solid, not glass: it reaches up under the status bar, and on an iPhone's Home Screen app (iOS 26
+           adds its own edge blur there) anything showing through turned the whole top into a blur. */
+        background: var(--bg);
         border-bottom: 1px solid var(--border);
       }
       .topbar .title { font-weight: 600; font-size: var(--fs-15); letter-spacing: -0.01em; transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out); }
@@ -335,6 +337,10 @@
       .rows > .item { display: flex; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); min-width: 0; align-items: flex-start; }
       .rows > .item:first-child { border-top: 0; }
       .rows > .item.center { align-items: center; }
+      /* A whole row that opens something (an artifact). */
+      .rows > .item-button { width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--border); font: inherit; color: inherit; cursor: pointer; align-items: center; }
+      .rows > .item-button:first-child { border-top: 0; }
+      .rows > .item-button:hover { background: var(--surface-2); }
       .rows > .item .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-2); color: var(--text-3); font-size: var(--fs-12); margin-top: 6px; }
       .rows > .item .item-actions { display: flex; gap: var(--sp-1); align-items: center; flex: none; }
       @media (hover: hover) {

@@ -67,10 +67,29 @@ async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", pa
   return response;
 }
 
+/** A file the node sent as bytes, with how it said to treat them. */
+export interface Bytes {
+  data: Uint8Array;
+  /** The node's content type (it decides what may be shown inline). */
+  type: string;
+}
+
 export interface Api {
   get<T>(path: string, signal?: AbortSignal): Promise<T>;
   post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T>;
+  /** A POST whose answer is bytes (an artifact's file), not JSON. */
+  bytes(path: string, body: unknown, signal?: AbortSignal): Promise<Bytes>;
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
+}
+
+/**
+ * A long-running answer (creating a sandbox, keeping its work) has already sent
+ * 200 when the work fails, so the failure arrives as exactly `{ error, status }`.
+ */
+function lateError(payload: unknown): ApiError | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as { error?: unknown; status?: unknown };
+  return Object.keys(p).length === 2 && typeof p.error === "string" && typeof p.status === "number" ? new ApiError(p.status, p.error) : null;
 }
 
 export function apiFor(identity: BrowserIdentity): Api {
@@ -79,7 +98,14 @@ export function apiFor(identity: BrowserIdentity): Api {
       return (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
     },
     async post<T>(path: string, body: unknown = {}, signal?: AbortSignal) {
-      return (await (await signedFetch(identity, "POST", path, body, signal)).json()) as T;
+      const payload = await (await signedFetch(identity, "POST", path, body, signal)).json();
+      const late = lateError(payload);
+      if (late) throw late;
+      return payload as T;
+    },
+    async bytes(path: string, body: unknown, signal?: AbortSignal) {
+      const response = await signedFetch(identity, "POST", path, body, signal);
+      return { data: new Uint8Array(await response.arrayBuffer()), type: response.headers.get("content-type") ?? "application/octet-stream" };
     },
     async *chat(body: unknown, signal: AbortSignal) {
       const response = await signedFetch(identity, "POST", "/api/chat", body, signal);

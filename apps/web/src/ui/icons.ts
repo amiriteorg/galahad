@@ -93,6 +93,12 @@ const ICONS = {
   repeat: ["M16.5 3.5l3 3-3 3", "M4.5 11.25V10a3.5 3.5 0 0 1 3.5-3.5h11.5", "M7.5 20.5l-3-3 3-3", "M19.5 12.75V14a3.5 3.5 0 0 1-3.5 3.5H4.5"],
   /** Connectors: how Galahad plugs into the services you use. */
   plug: ["M9.25 3.5v4M14.75 3.5v4", "M6.5 7.5h11v3.75a5.5 5.5 0 0 1-5.5 5.5 5.5 5.5 0 0 1-5.5-5.5z", "M12 16.75v3.75"],
+  /** Artifacts: a sandbox's work, kept in a box after it's gone. */
+  archive: [rect(3.5, 4.5, 17, 4.5, 1.25), "M5 9v9a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V9", "M10 12.75h4"],
+  file: ["M6.5 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z", "M13.5 3.5V8H18"],
+  download: ["M12 4v11", "M7.5 10.5 12 15l4.5-4.5", "M4.5 19.5h15"],
+  /** The Lab: mathematics, physics and engineering. */
+  flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoIsolation, diskUse, isolationPlan } from "./sandbox.ts";
+import { autoIsolation, diskUse, isLab, isolationPlan } from "./sandbox.ts";
 import { gb } from "./text.ts";
 
 const ultra = { name: "ultra", vm: true };
@@ -33,6 +33,16 @@ describe("sandbox isolation", () => {
     expect(refused).toMatchObject({ isolation: "container", vmAvailable: false, vmReason: "laptop can't run microVMs (it needs KVM and Kata)." });
     // Falls back to Automatic rather than asking for what the node would refuse (424).
     expect(refused.send).toBeUndefined();
+  });
+});
+
+describe("the Lab", () => {
+  test("a Lab sandbox is told by its image", () => {
+    expect(isLab("galahad/lab:1")).toBe(true);
+    expect(isLab("galahad/lab:2")).toBe(true);
+    expect(isLab("galahad/sandbox:latest")).toBe(false);
+    expect(isLab("someone/galahad/lab:1")).toBe(false);
+    expect(isLab("galahad/laboratory:1")).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 import type { FleetView, ProviderView, SandboxView } from "@galahad/core";
 import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { diskUse, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
+import { diskUse, IMAGES, isLab, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
 import { gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
 import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
@@ -11,6 +11,7 @@ import { h, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
+import { openKeepWork } from "./artifacts.ts";
 import { isOnline } from "./fleet.ts";
 
 /*
@@ -68,6 +69,7 @@ export function openCreateSandbox(ctx: Ctx): void {
   const maxMemory = Math.max(4, ...nodes.map((n) => n.memoryGb));
   let network: NetworkMode = "gateway";
   let isolation: IsolationChoice = "auto";
+  let lab = false;
   let persistent = false;
   const providers = new Set<string>();
 
@@ -123,6 +125,9 @@ export function openCreateSandbox(ctx: Ctx): void {
       isolationControl.set("auto");
     }
     isolationNote.textContent = p.note;
+    imageNote.textContent = lab ? IMAGES.lab : IMAGES.workshop;
+    image.disabled = lab;
+    image.placeholder = lab ? "the Lab's own image" : "default image";
     vmNote.textContent = p.vmReason ? `MicroVM isn't available: ${p.vmReason}` : "";
     vmNote.hidden = !p.vmReason;
     const isolated = network === "isolated";
@@ -131,7 +136,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     replace(
       summary,
       icon(NETWORK[network].icon),
-      `${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${gb(DISK_STEPS[disk.value()] ?? DISK_DEFAULT)} disk · ${NETWORK[network].label.toLowerCase()} · ${ISOLATION[p.isolation].label} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
+      `${lab ? "Lab · " : ""}${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${gb(DISK_STEPS[disk.value()] ?? DISK_DEFAULT)} disk · ${NETWORK[network].label.toLowerCase()} · ${ISOLATION[p.isolation].label} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
     );
   }
 
@@ -145,6 +150,19 @@ export function openCreateSandbox(ctx: Ctx): void {
     { label: "Network", block: true },
   );
 
+  const imageNote = h("p", { class: "tiny subtle", "aria-live": "polite" });
+  const imageControl = segmented<"workshop" | "lab">(
+    [
+      { value: "workshop", label: "Workshop", icon: "terminal" },
+      { value: "lab", label: "Lab", icon: "flask" },
+    ],
+    "workshop",
+    (value) => {
+      lab = value === "lab";
+      sync();
+    },
+    { label: "Image", small: true },
+  );
   const isolationNote = h("p", { class: "tiny subtle", "aria-live": "polite" });
   const vmNote = h("p", { class: "tiny subtle" });
   const isolationControl = segmented<IsolationChoice>(
@@ -178,7 +196,7 @@ export function openCreateSandbox(ctx: Ctx): void {
           ...(plan().send ? { isolation: plan().send } : {}),
           ...(persistent ? { persistent: true } : { ttlMinutes: TTL_STEPS[ttl.value()] ?? 60 }),
           ...(network !== "isolated" && providers.size ? { providers: [...providers] } : {}),
-          ...(image.value.trim() ? { image: image.value.trim() } : {}),
+          ...(lab ? { lab: true } : image.value.trim() ? { image: image.value.trim() } : {}),
           ...(quest.value.trim() ? { quest: quest.value.trim() } : {}),
           ...(where.value ? { on: where.value } : {}),
         };
@@ -195,6 +213,7 @@ export function openCreateSandbox(ctx: Ctx): void {
       },
     },
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Network"), networkControl.el, explain),
+    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Image"), h("div", {}, imageControl.el), imageNote),
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Isolation"), h("div", {}, isolationControl.el), h("div", { class: "stack", style: "gap:2px" }, isolationNote, vmNote)),
     h("div", { class: "fields" }, cpus.el, memory.el),
     h("div", { class: "stack tight" }, disk.el, h("p", { class: "tiny subtle" }, "Its workspace can't grow past this. On a machine that can't cap disks, the sandbox says so.")),
@@ -379,6 +398,7 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         { class: "chips" },
         h("span", { class: "chip" }, icon("cpu"), plural(sandbox.cpus, "CPU")),
         h("span", { class: "chip" }, icon("ram"), gb(sandbox.memoryGb)),
+        isLab(sandbox.image) ? h("span", { class: "chip on", title: IMAGES.lab }, icon("flask"), "Lab") : null,
         h("span", { class: "chip mono" }, icon("layers"), sandbox.image),
         ...sandbox.providers.map((p) => h("span", { class: "chip" }, icon("models"), p)),
       ),
@@ -387,6 +407,9 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         "div",
         { class: "row" },
         button("Console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, sandbox, on) }),
+        /run|up/i.test(sandbox.status) && ctx.can("sandbox")
+          ? button("Keep work…", { size: "sm", icon: "archive", title: "Keep its /work/out (or another folder) after it's gone", onClick: () => openKeepWork(ctx, sandbox, on) })
+          : null,
         h("span", { class: "spacer" }),
         button("Destroy", { size: "sm", variant: "danger", icon: "trash", onClick: () => void destroy(ctx, sandbox, on) }),
       ),

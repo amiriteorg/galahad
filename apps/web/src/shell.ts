@@ -14,6 +14,7 @@ import { icon, type IconName } from "./ui/icons.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
+import { artifactsView } from "./views/artifacts.ts";
 import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
@@ -46,6 +47,7 @@ const ROUTES: RouteSpec[] = [
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
   { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
+  { id: "artifacts", label: "Artifacts", icon: "archive", group: "mind", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], view: artifactsView },
   { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
   // Owner devices see Sandboxes even before they hold the new scope, so the feature can be found;
   // the page explains what's missing instead of offering actions that would be refused.

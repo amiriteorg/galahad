@@ -144,7 +144,7 @@ Rules:
 ## Layout and shell
 
 - **Desktop (≥ 960 px):** a sidebar with the wordmark, search (⌘K / Ctrl+K), grouped navigation (Overview, Inbox, Chat · *Mind:* Memory, Activity, Loops · *Bodies:* Fleet, Sandboxes · *Keys & models:* Vault, Models, Connectors), then Settings and this device. It collapses to icons (`[`); the choice is remembered. The top bar carries the fleet status pill and, while Galahad answers, an "Answering… Stop" pill.
-- **Phones:** a glassy top bar with the mark, and a bottom tab bar with Home, Chat, Inbox and Fleet (or the first four destinations this device may use) plus **More**, a bottom sheet with the rest and search. Safe-area insets are honoured everywhere.
+- **Phones:** a solid top bar with the mark (solid, not glass: it sits under the status bar, where see-through content turned into a blur on an iPhone's Home Screen app), and a bottom tab bar with Home, Chat, Inbox and Fleet (or the first four destinations this device may use) plus **More**, a bottom sheet with the rest and search. Safe-area insets are honoured everywhere.
 - The page title appears in the top bar only once the page's own heading has scrolled away (iOS large-title behaviour), so it is never said twice.
 - **Routing** is hash-based (`#/fleet`), so links survive reloads without server routes. `#pair=…` is reserved for invites.
 - **Offline:** the service worker serves the shell; a banner says "You're offline" or "Can't reach Galahad right now" and offers Retry. When a newer app has been fetched in the background, a toast offers **Reload**.
@@ -177,7 +177,8 @@ Rules:
 - **Connectors** shows the installed and available connectors with the origin each is pinned to, its key state in plain words, a sealed key field, and its tools with their oath class (outward and delete say they ask you).
   - **Standing orders** come first: each order's tool, its constraints in plain words ("starts with feat/", "any"), who may use it, its expiry and use count, and Revoke. A stale order (its tool changed since you signed) says so and why; expired and revoked ones fold away. A tool row with an active order carries a badge.
   - **Add an MCP server** takes the server's address, an id and whether it needs a key (the sealed key field appears in the same dialog). The tools it lists show the server's claim and its description quoted as the server's words (data, never instructions), with a class picker that starts from the proposed class. Making a tool run unasked is confirmed first. MCP cards add **Refresh tools**, which shows what's new, changed and gone.
-- **Sandboxes** show how each sandbox is isolated (a green **microVM** badge, or a quieter "container"), its disk use against its limit as a meter (amber from 85 %), or a "no disk limit" badge with one callout per host that can't limit disk. The create form has a disk size and an **Isolation** choice: Automatic (it says what it will pick on that host: online gets its own microVM where it can), Container, or MicroVM, disabled with a reason on hosts without microVMs. Fleet cards show a "microVMs" chip on hosts that have them.
+- **Artifacts** (under Mind, `G` then `W`) lists what quests and sandboxes kept. An artifact's files show their size and short SHA-256; text previews in monospace (Markdown rendered, HTML and SVG only as source), raster images inline. Every fetched file is checked against its recorded hash with WebCrypto, with a clear warning on a mismatch; downloads are always saved, never opened in the app; "Download all" builds one `.tar` in the browser; removing kept work makes you type its name.
+- **Sandboxes** show how each sandbox is isolated (a green **microVM** badge, or a quieter "container"), its disk use against its limit as a meter (amber from 85 %), or a "no disk limit" badge with one callout per host that can't limit disk. Running sandboxes offer **Keep work…** (a folder under `/work`, by default `/work/out`). Lab sandboxes carry a "Lab" chip, and the create form chooses Workshop or Lab. The create form has a disk size and an **Isolation** choice: Automatic (it says what it will pick on that host: online gets its own microVM where it can), Container, or MicroVM, disabled with a reason on hosts without microVMs. Fleet cards show a "microVMs" chip on hosts that have them.
 - **Autonomy view:** what Galahad may do alone (read; create and modify, logged), what asks (outward, delete) and what's denied (forbidden), with the last 24 hours' counts once the ledger exists. It sits on Overview and Activity.
 - **Everything is visible:** the Activity timeline lists every classified action with its verdict and reason, filterable by class and verdict and grouped by day.
 - **Permissions in the UI, not in settings:** Settings shows this device's scopes as granted or not; invites let you choose what a new phone may do (Everything / Chat & read / Custom); pages explain why an action is missing instead of failing.
@@ -213,7 +214,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | Keys | Action |
 |---|---|
 | ⌘K / Ctrl+K, `/` | Search and commands |
-| `G` then `O I C M A R F S V L N ,` | Go to Overview, Inbox, Chat, Memory, Activity, Loops, Fleet, Sandboxes, Vault, Models, Connectors, Settings |
+| `G` then `O I C M A R W F S V L N ,` | Go to Overview, Inbox, Chat, Memory, Activity, Loops, Artifacts, Fleet, Sandboxes, Vault, Models, Connectors, Settings |
 | `[` | Collapse or expand the sidebar |
 | `?` | Show shortcuts |
 | Enter / Shift+Enter | Send / new line (chat) |
@@ -224,7 +225,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~225 KB, ~77 KB gzipped) | Always; cached by the service worker |
+| `/app.js` | The app (~242 KB, ~83 KB gzipped) | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 

@@ -5,7 +5,7 @@ import type { AnyScope, WhoAmI } from "./types.ts";
 import type { Scope } from "./ui/dom.ts";
 import type { Signal } from "./ui/signal.ts";
 
-export type Route = "overview" | "inbox" | "chat" | "activity" | "loops" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "connectors" | "settings";
+export type Route = "overview" | "inbox" | "chat" | "activity" | "loops" | "artifacts" | "memory" | "fleet" | "sandboxes" | "vault" | "models" | "connectors" | "settings";
 
 export interface NavigateOptions {
   /** A secret detected in chat or memory, handed to the vault form. Kept in memory only, never in the URL. */
