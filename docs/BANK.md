@@ -191,4 +191,6 @@ Everything was built and tested against a stand-in for Enable Banking with a thr
 6. Transactions page with `continuation_key`, and the fields are named as documented (`entry_reference`, `transaction_amount`, `credit_debit_indicator`, `creditor`, `debtor`, `remittance_information`, `balance_after_transaction`). A field under another name comes back empty, not wrong.
 7. `DELETE /sessions/{id}` ends the consent at the bank.
 
+Confirmed by the first real connection (10 November 2026): 1 to 3. Enable Banking accepted the application's JWT; Lunar is listed as `Lunar` for `DK` (personal), allows 180 days and requires no PSU headers; the PWA finished the authorisation from the bank's return.
+
 Verified on ultra: the callback page is served; an agent granted `bank:read` gets exactly the four bank tools over `tailscale ssh root@ultra galahad mcp --arm …`, and one without it gets none; the file-mode checks run on Linux.
