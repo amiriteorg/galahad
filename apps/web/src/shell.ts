@@ -17,6 +17,7 @@ import { activityView } from "./views/activity.ts";
 import { artifactsView } from "./views/artifacts.ts";
 import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
 import { connectorsView } from "./views/connectors.ts";
+import { findingsView } from "./views/findings.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
 import { inboxView } from "./views/inbox.ts";
 import { loopsView, openLoopSheet } from "./views/loops.ts";
@@ -25,6 +26,7 @@ import { modelsView } from "./views/models.ts";
 import { overviewView } from "./views/overview.ts";
 import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
+import { trialsView } from "./views/trials.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
 interface RouteSpec {
@@ -48,6 +50,8 @@ const ROUTES: RouteSpec[] = [
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
   { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
   { id: "artifacts", label: "Artifacts", icon: "archive", group: "mind", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], view: artifactsView },
+  { id: "findings", label: "Findings", icon: "flask", group: "mind", scope: "mind:read", key: "e", keywords: ["investigations", "experiments", "hypotheses", "science", "conclusions", "predictions"], view: findingsView },
+  { id: "trials", label: "Trials", icon: "gauge", group: "mind", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], view: trialsView },
   { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
   // Owner devices see Sandboxes even before they hold the new scope, so the feature can be found;
   // the page explains what's missing instead of offering actions that would be refused.

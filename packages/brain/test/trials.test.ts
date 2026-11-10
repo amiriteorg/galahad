@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { trialProblem } from "@galahad/core";
-import { ENGINEERING_SUITE, ellipticK, galahadIndex, grade, pose, readAnswers, seededRandom, tolerance, type TrialProblem } from "../src/index.ts";
+import { galahadIndex, seededRandom, trialProblem } from "@galahad/core";
+import { ENGINEERING_SUITE, ellipticK, grade, pose, readAnswers, tolerance, type TrialProblem } from "../src/index.ts";
 
 /*
  * The trial suite: problems posed from a seed, exact answers, and a grader that

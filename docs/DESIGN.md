@@ -178,6 +178,8 @@ Rules:
   - **Standing orders** come first: each order's tool, its constraints in plain words ("starts with feat/", "any"), who may use it, its expiry and use count, and Revoke. A stale order (its tool changed since you signed) says so and why; expired and revoked ones fold away. A tool row with an active order carries a badge.
   - **Add an MCP server** takes the server's address, an id and whether it needs a key (the sealed key field appears in the same dialog). The tools it lists show the server's claim and its description quoted as the server's words (data, never instructions), with a class picker that starts from the proposed class. Making a tool run unasked is confirmed first. MCP cards add **Refresh tools**, which shows what's new, changed and gone.
 - **Artifacts** (under Mind, `G` then `W`) lists what quests and sandboxes kept. An artifact's files show their size and short SHA-256; text previews in monospace (Markdown rendered, HTML and SVG only as source), raster images inline. Every fetched file is checked against its recorded hash with WebCrypto, with a clear warning on a mismatch; downloads are always saved, never opened in the app; "Download all" builds one `.tar` in the browser; removing kept work makes you type its name.
+- **Findings** (under Mind, `G` then `E`) lists what investigations concluded, each with a Supported / Refuted / Inconclusive badge and how many of its predictions held. Opening one shows the pre-registration exactly as recorded before anything ran (hypothesis, the alternative, each prediction with what would refute it, how the instruments were checked, the decision rule) beside what was found for each prediction, the summary, the reviewer's judgement of the method, and **Open the evidence** (its artifact).
+- **Trials** (under Mind, `G` then `T`) shows whether Galahad is getting better. Three tiles for the latest run (the Galahad Index with its 90 % interval, how many were solved outright, the revision and models), then every run as a row with its Index on a meter, and each problem over every run. Opening a trial shows each answer beside the exact one with its tolerance and how far off it was ("within 0.05 %", "off by 12 %"), the seed that poses it again, the quest's outcome, and **Open its work**. The Index is computed by the same function as the CLI (`@galahad/core/galahad-index`, no dependencies). Runs start from a terminal, so an empty page shows the command to copy.
 - **Sandboxes** show how each sandbox is isolated (a green **microVM** badge, or a quieter "container"), its disk use against its limit as a meter (amber from 85 %), or a "no disk limit" badge with one callout per host that can't limit disk. Running sandboxes offer **Keep work…** (a folder under `/work`, by default `/work/out`). Lab sandboxes carry a "Lab" chip, and the create form chooses Workshop or Lab. The create form has a disk size and an **Isolation** choice: Automatic (it says what it will pick on that host: online gets its own microVM where it can), Container, or MicroVM, disabled with a reason on hosts without microVMs. Fleet cards show a "microVMs" chip on hosts that have them.
 - **Autonomy view:** what Galahad may do alone (read; create and modify, logged), what asks (outward, delete) and what's denied (forbidden), with the last 24 hours' counts once the ledger exists. It sits on Overview and Activity.
 - **Everything is visible:** the Activity timeline lists every classified action with its verdict and reason, filterable by class and verdict and grouped by day.
@@ -214,7 +216,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | Keys | Action |
 |---|---|
 | ⌘K / Ctrl+K, `/` | Search and commands |
-| `G` then `O I C M A R W F S V L N ,` | Go to Overview, Inbox, Chat, Memory, Activity, Loops, Artifacts, Fleet, Sandboxes, Vault, Models, Connectors, Settings |
+| `G` then `O I C M A R W E T F S V L N ,` | Go to Overview, Inbox, Chat, Memory, Activity, Loops, Artifacts, Findings, Trials, Fleet, Sandboxes, Vault, Models, Connectors, Settings |
 | `[` | Collapse or expand the sidebar |
 | `?` | Show shortcuts |
 | Enter / Shift+Enter | Send / new line (chat) |
@@ -225,7 +227,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~242 KB, ~83 KB gzipped) | Always; cached by the service worker |
+| `/app.js` | The app (~246 KB, ~84 KB gzipped) | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 

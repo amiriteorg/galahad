@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SandboxNetwork, TrialRecord, TrialView } from "@galahad/core";
-import { galahadIndex, grade, pose, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
+import { galahadIndex, type SandboxNetwork, type TrialRecord, type TrialView } from "@galahad/core";
+import { grade, pose, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
 
 /*

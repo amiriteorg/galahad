@@ -4,6 +4,7 @@ export * from "./canonical.ts";
 export * from "./connectors.ts";
 export * from "./crypto.ts";
 export * from "./events.ts";
+export * from "./galahad-index.ts";
 export * from "./hlc.ts";
 export * from "./identity.ts";
 export * from "./investigations.ts";
