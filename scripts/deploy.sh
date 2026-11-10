@@ -53,7 +53,9 @@ REV=$(git rev-parse --short=12 HEAD)
 STAGE="/tmp/galahad-$REV"
 
 echo "→ shipping $REV to $TARGET"
-git archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
+# The repository's own bytes: with core.autocrlf (Git for Windows' default) and a .gitattributes,
+# git archive would turn every script into CRLF, and bash on the target refuses it.
+git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
 
 echo "→ setting up the node on $TARGET"
 "${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL"
