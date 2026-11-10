@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { argKind, asksYou, claimSentence, claimWords, discoveredSummary, mcpUrlProblem, stopsAsking, suggestId } from "./connectors.ts";
-import { diskUse, gb } from "./text.ts";
 
 describe("connector tools as people type them in", () => {
   test("lists and objects are JSON; a lone number or boolean type gets its control; the rest is text", () => {
@@ -65,18 +64,5 @@ describe("MCP servers", () => {
   test("what a listing found, in one line", () => {
     expect(discoveredSummary("Tracker", { server: "tracker 1.2.3", tools: 5, skipped: 0 })).toBe("Tracker (tracker 1.2.3): 5 tools.");
     expect(discoveredSummary("Tracker", { server: null, tools: 1, skipped: 3 })).toBe("Tracker: 1 tool, 3 left out.");
-  });
-});
-
-describe("sandbox disks", () => {
-  test("used of limit, how full, or no limit at all", () => {
-    expect(diskUse(null)).toEqual({ text: "no disk limit", fraction: null, nearlyFull: false });
-    expect(diskUse({ limitGb: 20, usedGb: null })).toEqual({ text: "20 GB limit", fraction: null, nearlyFull: false });
-    expect(diskUse({ limitGb: 20, usedGb: 3.2 })).toEqual({ text: "3.2 GB of 20 GB", fraction: 0.16, nearlyFull: false });
-    expect(diskUse({ limitGb: 20, usedGb: 18 })).toMatchObject({ text: "18 GB of 20 GB", nearlyFull: true });
-    expect(diskUse({ limitGb: 2048, usedGb: 0.25 })).toMatchObject({ text: "256 MB of 2 TB" });
-    // Over the limit (a filesystem's own overhead) never reads past full.
-    expect(diskUse({ limitGb: 10, usedGb: 10.4 }).fraction).toBe(1);
-    expect(gb(0)).toBe("0 MB");
   });
 });

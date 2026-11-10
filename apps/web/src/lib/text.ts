@@ -111,15 +111,3 @@ export function gb(value: number): string {
   if (value < 1) return `${Math.round(value * 1024)} MB`;
   return `${Number.isInteger(value) ? value : value.toFixed(1)} GB`;
 }
-
-/**
- * A sandbox's disk as people read it: "3.2 GB of 20 GB" with how full it is,
- * "20 GB limit" when the use isn't known, or "no disk limit" when its host can't
- * cap it (its workspace shares the machine's disk). Nearly full from 85%.
- */
-export function diskUse(disk: { limitGb: number; usedGb: number | null } | null): { text: string; fraction: number | null; nearlyFull: boolean } {
-  if (!disk) return { text: "no disk limit", fraction: null, nearlyFull: false };
-  if (disk.usedGb === null) return { text: `${gb(disk.limitGb)} limit`, fraction: null, nearlyFull: false };
-  const fraction = disk.limitGb > 0 ? Math.min(1, Math.max(0, disk.usedGb / disk.limitGb)) : 1;
-  return { text: `${gb(disk.usedGb)} of ${gb(disk.limitGb)}`, fraction, nearlyFull: fraction >= 0.85 };
-}

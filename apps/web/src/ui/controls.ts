@@ -208,13 +208,16 @@ export interface SegmentOption<T extends string> {
   title?: string;
 }
 
-/** A radiogroup that looks like a segmented control, with a sliding thumb. Arrow keys move. */
+/**
+ * A radiogroup that looks like a segmented control, with a sliding thumb. Arrow
+ * keys move, skipping options that are disabled (with the reason as their tooltip).
+ */
 export function segmented<T extends string>(
   options: SegmentOption<T>[],
   value: T,
   onChange: (value: T) => void,
   config: { label: string; block?: boolean; small?: boolean } = { label: "Options" },
-): { el: HTMLElement; set(value: T): void } {
+): { el: HTMLElement; set(value: T): void; disable(value: T, disabled: boolean, reason?: string): void } {
   const thumb = h("span", { class: "thumb", "aria-hidden": "true" });
   let current = value;
   const buttons = options.map((option) =>
@@ -257,7 +260,10 @@ export function segmented<T extends string>(
       const delta = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
       if (!delta) return;
       event.preventDefault();
-      const next = (i + delta + buttons.length) % buttons.length;
+      let next = i;
+      do next = (next + delta + buttons.length) % buttons.length;
+      while (buttons[next]!.disabled && next !== i);
+      if (next === i) return;
       set(options[next]!.value, true);
       buttons[next]!.focus();
     });
@@ -265,7 +271,17 @@ export function segmented<T extends string>(
   set(value);
   // Measure once laid out, and whenever the control resizes.
   new ResizeObserver(position).observe(el);
-  return { el, set: (v: T) => set(v) };
+  return {
+    el,
+    set: (v: T) => set(v),
+    disable(v: T, disabled: boolean, reason?: string) {
+      const i = options.findIndex((o) => o.value === v);
+      const b = buttons[i];
+      if (!b) return;
+      b.disabled = disabled;
+      b.title = disabled && reason ? reason : (options[i]!.title ?? options[i]!.label);
+    },
+  };
 }
 
 export function switchControl(label: Child, checked: boolean, onChange: (checked: boolean) => void, options: { hint?: Child; disabled?: boolean } = {}): HTMLElement {

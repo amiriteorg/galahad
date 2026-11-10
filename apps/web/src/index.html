@@ -463,6 +463,7 @@
         transition: color var(--d-1) var(--ease-out);
       }
       .segmented button:hover { color: var(--text); }
+      .segmented button:disabled { color: var(--text-3); opacity: 0.6; cursor: not-allowed; }
       .segmented button[aria-checked="true"] { color: var(--text); }
       .segmented button[aria-checked="true"] svg { color: var(--seg-tone, var(--accent)); }
       .segmented.block { display: grid; width: 100%; }

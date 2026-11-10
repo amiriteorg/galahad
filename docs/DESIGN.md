@@ -177,7 +177,7 @@ Rules:
 - **Connectors** shows the installed and available connectors with the origin each is pinned to, its key state in plain words, a sealed key field, and its tools with their oath class (outward and delete say they ask you).
   - **Standing orders** come first: each order's tool, its constraints in plain words ("starts with feat/", "any"), who may use it, its expiry and use count, and Revoke. A stale order (its tool changed since you signed) says so and why; expired and revoked ones fold away. A tool row with an active order carries a badge.
   - **Add an MCP server** takes the server's address, an id and whether it needs a key (the sealed key field appears in the same dialog). The tools it lists show the server's claim and its description quoted as the server's words (data, never instructions), with a class picker that starts from the proposed class. Making a tool run unasked is confirmed first. MCP cards add **Refresh tools**, which shows what's new, changed and gone.
-- **Sandboxes** show each sandbox's disk use against its limit as a meter (amber from 85 %), or a "no disk limit" badge with one callout per host that can't limit disk. The create form has a disk size.
+- **Sandboxes** show how each sandbox is isolated (a green **microVM** badge, or a quieter "container"), its disk use against its limit as a meter (amber from 85 %), or a "no disk limit" badge with one callout per host that can't limit disk. The create form has a disk size and an **Isolation** choice: Automatic (it says what it will pick on that host: online gets its own microVM where it can), Container, or MicroVM, disabled with a reason on hosts without microVMs. Fleet cards show a "microVMs" chip on hosts that have them.
 - **Autonomy view:** what Galahad may do alone (read; create and modify, logged), what asks (outward, delete) and what's denied (forbidden), with the last 24 hours' counts once the ledger exists. It sits on Overview and Activity.
 - **Everything is visible:** the Activity timeline lists every classified action with its verdict and reason, filterable by class and verdict and grouped by day.
 - **Permissions in the UI, not in settings:** Settings shows this device's scopes as granted or not; invites let you choose what a new phone may do (Everything / Chat & read / Custom); pages explain why an action is missing instead of failing.
@@ -224,7 +224,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~223 KB, ~76 KB gzipped) | Always; cached by the service worker |
+| `/app.js` | The app (~225 KB, ~77 KB gzipped) | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 

@@ -63,6 +63,7 @@ export function capChips(caps: Caps | null): HTMLElement[] {
   const models = (caps.localModels ?? []).flatMap((r) => r.models);
   if (models.length) out.push(chip("models", `${plural(models.length, "local model")}`, true, models.join(", ")));
   if (caps.docker || caps.vm?.kvm || caps.vm?.tools.length) out.push(chip("shield-check", "Sandbox-ready", true));
+  if (caps.sandbox?.vm) out.push(chip("shield", "microVMs", true, "Sandboxes can run in their own KVM microVM, with their own kernel (Kata)"));
   if (caps.hasBattery) out.push(chip("battery", "Battery"));
   return out;
 }

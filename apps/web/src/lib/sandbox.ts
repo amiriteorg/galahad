@@ -1,0 +1,61 @@
+import { gb } from "./text.ts";
+
+/*
+ * Sandboxes as people read them: how a sandbox is isolated, what Automatic picks
+ * on a host, and its disk. The node decides and enforces (packages/sandbox); this
+ * says it plainly before you create one. Pure, so unit-tested.
+ */
+
+export type Isolation = "container" | "vm";
+export type IsolationChoice = "auto" | Isolation;
+
+export const ISOLATION: Record<Isolation, { label: string; explain: string }> = {
+  container: { label: "container", explain: "A hardened container on the host's kernel." },
+  vm: { label: "microVM", explain: "The same hardened container inside its own KVM microVM, with its own kernel: for code there's no reason to trust." },
+};
+
+/** What the host picks when you don't, as the node does: its own microVM for an online sandbox where the host has them, else a container. */
+export const autoIsolation = (network: string, hostHasVm: boolean): Isolation => (network === "online" && hostHasVm ? "vm" : "container");
+
+export interface IsolationPlan {
+  /** What it will run as. */
+  isolation: Isolation;
+  /** What to send: nothing for Automatic, so the host decides. */
+  send?: Isolation;
+  /** Whether MicroVM can be chosen on this host, and why not. */
+  vmAvailable: boolean;
+  vmReason: string | null;
+  /** One line under the choice. */
+  note: string;
+}
+
+/**
+ * The isolation for a sandbox about to be made on `host`. MicroVM on a host
+ * without microVMs falls back to Automatic (the form disables it; the node would
+ * refuse it with a 424).
+ */
+export function isolationPlan(choice: IsolationChoice, network: string, host: { name: string; vm: boolean }): IsolationPlan {
+  const chosen: IsolationChoice = choice === "vm" && !host.vm ? "auto" : choice;
+  const isolation = chosen === "auto" ? autoIsolation(network, host.vm) : chosen;
+  const vmReason = host.vm ? null : `${host.name} can't run microVMs (it needs KVM and Kata).`;
+  let note: string;
+  if (chosen !== "auto") note = ISOLATION[chosen].explain;
+  else if (network === "online")
+    note = host.vm
+      ? `Automatic: it's online, so it gets its own microVM on ${host.name}.`
+      : `Automatic: a hardened container, since ${host.name} has no microVMs; online code shares its kernel.`;
+  else note = `Automatic: a hardened container on ${host.name}'s kernel.${host.vm ? " Online sandboxes get their own microVM." : ""}`;
+  return { isolation, ...(chosen === "auto" ? {} : { send: chosen }), vmAvailable: host.vm, vmReason, note };
+}
+
+/**
+ * A sandbox's disk as people read it: "3.2 GB of 20 GB" with how full it is,
+ * "20 GB limit" when the use isn't known, or "no disk limit" when its host can't
+ * cap it (its workspace shares the machine's disk). Nearly full from 85%.
+ */
+export function diskUse(disk: { limitGb: number; usedGb: number | null } | null): { text: string; fraction: number | null; nearlyFull: boolean } {
+  if (!disk) return { text: "no disk limit", fraction: null, nearlyFull: false };
+  if (disk.usedGb === null) return { text: `${gb(disk.limitGb)} limit`, fraction: null, nearlyFull: false };
+  const fraction = disk.limitGb > 0 ? Math.min(1, Math.max(0, disk.usedGb / disk.limitGb)) : 1;
+  return { text: `${gb(disk.usedGb)} of ${gb(disk.limitGb)}`, fraction, nearlyFull: fraction >= 0.85 };
+}

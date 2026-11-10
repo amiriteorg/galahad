@@ -1,7 +1,8 @@
 import type { FleetView, ProviderView, SandboxView } from "@galahad/core";
 import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { diskUse, gb, parseCommand, plural } from "../lib/text.ts";
+import { diskUse, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
+import { gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
 import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
 import { badge, busy, button, callout, empty, errorState, field, meter, pageHead, rangeControl, section, segmented, skeletonBlock, switchControl, type Tone } from "../ui/controls.ts";
@@ -48,13 +49,13 @@ const sandboxesChanged = signal(0);
 
 const statusTone = (status: string): Tone => (/run|ready|up/i.test(status) ? "ok" : /start|creat|pull/i.test(status) ? "info" : /err|fail|dead/i.test(status) ? "danger" : "neutral");
 
-function sandboxNodes(fleet: FleetView | null): { name: string; cores: number; memoryGb: number }[] {
+function sandboxNodes(fleet: FleetView | null): { name: string; cores: number; memoryGb: number; vm: boolean }[] {
   if (!fleet) return [];
   return fleet.devices
     .filter((d) => d.kind === "node" && !d.revokedAt && isOnline(fleet, d))
     .map((d) => ({ d, caps: asCaps(d.caps) }))
     .filter(({ caps }) => caps && (caps.docker || caps.vm?.kvm || caps.vm?.tools.length))
-    .map(({ d, caps }) => ({ name: d.name, cores: caps?.cores ?? 4, memoryGb: caps?.memoryGb ?? 8 }));
+    .map(({ d, caps }) => ({ name: d.name, cores: caps?.cores ?? 4, memoryGb: caps?.memoryGb ?? 8, vm: Boolean(caps?.sandbox?.vm) }));
 }
 
 export function openCreateSandbox(ctx: Ctx): void {
@@ -66,6 +67,7 @@ export function openCreateSandbox(ctx: Ctx): void {
   const maxCores = Math.max(2, ...nodes.map((n) => n.cores), 2);
   const maxMemory = Math.max(4, ...nodes.map((n) => n.memoryGb));
   let network: NetworkMode = "gateway";
+  let isolation: IsolationChoice = "auto";
   let persistent = false;
   const providers = new Set<string>();
 
@@ -105,15 +107,31 @@ export function openCreateSandbox(ctx: Ctx): void {
     ...nodes.map((n) => h("option", { value: n.name }, `On ${n.name}`)),
   );
 
+  // Without a choice, it's made on the node this device talks to.
+  const host = () => {
+    const name = where.value || ctx.whoami.nodeName;
+    return { name, vm: nodes.find((n) => n.name === name)?.vm ?? false };
+  };
+  const plan = () => isolationPlan(isolation, network, host());
+
   function sync(): void {
     replace(explain, h("div", { class: "net-explain", "data-tone": NETWORK[network].tone }, icon(NETWORK[network].icon, { size: 16 }), h("div", {}, h("strong", {}, NETWORK[network].label), ". ", NETWORK[network].explain)));
+    const p = plan();
+    isolationControl.disable("vm", !p.vmAvailable, p.vmReason ?? undefined);
+    if (isolation === "vm" && !p.vmAvailable) {
+      isolation = "auto";
+      isolationControl.set("auto");
+    }
+    isolationNote.textContent = p.note;
+    vmNote.textContent = p.vmReason ? `MicroVM isn't available: ${p.vmReason}` : "";
+    vmNote.hidden = !p.vmReason;
     const isolated = network === "isolated";
     for (const chip of providersBox.querySelectorAll<HTMLButtonElement>("button")) chip.disabled = isolated;
     providersHint.textContent = isolated ? "An isolated sandbox can't reach any model." : providers.size ? "Only these providers' models are reachable, through the gateway." : "None chosen: every configured provider is reachable through the gateway.";
     replace(
       summary,
       icon(NETWORK[network].icon),
-      `${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${gb(DISK_STEPS[disk.value()] ?? DISK_DEFAULT)} disk · ${NETWORK[network].label.toLowerCase()} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
+      `${plural(cpus.value(), "CPU")} · ${gb(memory.value())} · ${gb(DISK_STEPS[disk.value()] ?? DISK_DEFAULT)} disk · ${NETWORK[network].label.toLowerCase()} · ${ISOLATION[p.isolation].label} · ${persistent ? "persistent" : `expires in ${minutesLabel(TTL_STEPS[ttl.value()] ?? 60)}`}`,
     );
   }
 
@@ -126,6 +144,23 @@ export function openCreateSandbox(ctx: Ctx): void {
     },
     { label: "Network", block: true },
   );
+
+  const isolationNote = h("p", { class: "tiny subtle", "aria-live": "polite" });
+  const vmNote = h("p", { class: "tiny subtle" });
+  const isolationControl = segmented<IsolationChoice>(
+    [
+      { value: "auto", label: "Automatic" },
+      { value: "container", label: "Container" },
+      { value: "vm", label: "MicroVM", icon: "shield" },
+    ],
+    isolation,
+    (value) => {
+      isolation = value;
+      sync();
+    },
+    { label: "Isolation", small: true },
+  );
+  where.addEventListener("change", () => sync());
 
   const status = h("div");
   const create = button("Create sandbox", { variant: "primary", type: "submit", icon: "sandbox" });
@@ -140,6 +175,7 @@ export function openCreateSandbox(ctx: Ctx): void {
           cpus: cpus.value(),
           memoryGb: memory.value(),
           diskGb: DISK_STEPS[disk.value()] ?? DISK_DEFAULT,
+          ...(plan().send ? { isolation: plan().send } : {}),
           ...(persistent ? { persistent: true } : { ttlMinutes: TTL_STEPS[ttl.value()] ?? 60 }),
           ...(network !== "isolated" && providers.size ? { providers: [...providers] } : {}),
           ...(image.value.trim() ? { image: image.value.trim() } : {}),
@@ -159,6 +195,7 @@ export function openCreateSandbox(ctx: Ctx): void {
       },
     },
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Network"), networkControl.el, explain),
+    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Isolation"), h("div", {}, isolationControl.el), h("div", { class: "stack", style: "gap:2px" }, isolationNote, vmNote)),
     h("div", { class: "fields" }, cpus.el, memory.el),
     h("div", { class: "stack tight" }, disk.el, h("p", { class: "tiny subtle" }, "Its workspace can't grow past this. On a machine that can't cap disks, the sandbox says so.")),
     ttl.el,
@@ -283,6 +320,13 @@ async function destroy(ctx: Ctx, sandbox: SandboxView, on: string | null): Promi
   }
 }
 
+/** How it's isolated: its own microVM stands out; a container is the quiet default. */
+function isolationBadge(sandbox: SandboxView): HTMLElement | null {
+  if (sandbox.isolation === "vm") return h("span", { title: ISOLATION.vm.explain }, badge(ISOLATION.vm.label, "ok", "shield-check"));
+  if (sandbox.isolation === "container") return h("span", { class: "badge outline", title: ISOLATION.container.explain }, ISOLATION.container.label);
+  return null;
+}
+
 /** Disk used of its limit, with a meter; or a plain warning when its machine can't cap it. */
 function diskLine(sandbox: SandboxView): HTMLElement {
   const use = diskUse(sandbox.disk ?? null);
@@ -316,7 +360,14 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
       h(
         "div",
         { class: "grow" },
-        h("div", { class: "row wrap" }, h("span", { class: "node-name mono" }, sandbox.name), badge(sandbox.status, statusTone(sandbox.status)), net ? badge(net.label, net.tone, net.icon) : badge(sandbox.network)),
+        h(
+          "div",
+          { class: "row wrap" },
+          h("span", { class: "node-name mono" }, sandbox.name),
+          badge(sandbox.status, statusTone(sandbox.status)),
+          net ? badge(net.label, net.tone, net.icon) : badge(sandbox.network),
+          isolationBadge(sandbox),
+        ),
         h("div", { class: "node-sub" }, sandbox.quest ? h("span", {}, sandbox.quest) : h("span", {}, "no quest"), h("span", {}, "·"), expires, ...(sandbox.ephemeral || sandbox.expiresAt ? [h("span", {}, "·"), h("span", {}, sandbox.ephemeral ? "ephemeral" : "persistent")] : [])),
       ),
     ),
@@ -426,7 +477,18 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
         "div",
         { class: "grid" },
         ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) =>
-          h("div", { class: "net-explain", "data-tone": NETWORK[mode].tone }, icon(NETWORK[mode].icon, { size: 16 }), h("div", { class: "small" }, h("strong", {}, NETWORK[mode].label), h("div", { class: "muted" }, NETWORK[mode].explain))),
+          h(
+            "div",
+            { class: "net-explain", "data-tone": NETWORK[mode].tone },
+            icon(NETWORK[mode].icon, { size: 16 }),
+            h(
+              "div",
+              { class: "small" },
+              h("strong", {}, NETWORK[mode].label),
+              h("div", { class: "muted" }, NETWORK[mode].explain),
+              mode === "online" ? h("div", { class: "muted", style: "margin-top:4px" }, "It runs in its own microVM where the host supports it.") : null,
+            ),
+          ),
         ),
       ),
       body,
