@@ -17,11 +17,12 @@ import {
   Quaternion,
   SphereGeometry,
   type SkinnedMesh,
+  TorusGeometry,
   Vector3,
 } from "three/webgpu";
 import { STAR, STAR_CENTER } from "../brand.ts";
 import { FootPlanner } from "./ik.ts";
-import { at, between, Mesher } from "./mesher.ts";
+import { at, bevelBox, between, Mesher } from "./mesher.ts";
 import { aim, limb, piston, pointIn, Rig } from "./rig.ts";
 
 /*
@@ -42,7 +43,9 @@ import { aim, limb, piston, pointIn, Rig } from "./rig.ts";
  * (two-bone IK from the shoulders: the arm's swing, the hilt, the bench, the
  * chin), the head looks at what he's attending to, and idle, walk, run, work,
  * think and guard blend smoothly. Scene coordinates (y up), facing +z; about
- * 2.1 m tall. All primitives, all original.
+ * 2.1 m tall. Up close he's a machine you could take apart: bevelled plates,
+ * seams, rivets, finely segmented joints, hoses and clipped cables. All
+ * primitives, all original.
  */
 
 const CREAM = 0xf0e8d6;
@@ -212,6 +215,8 @@ export class Knight {
     }
 
     const m = new Mesher();
+    // Armour plates have bevelled edges that catch the light (a fifth of their thinnest side, at most a centimetre and a half).
+    const bv = (w: number, h: number, d: number) => bevelBox(w, h, d, Math.min(0.015, Math.min(w, h, d) * 0.2));
     // A part bound to a bone, placed in the bone's bind frame (offsets from its joint).
     const part = (bone: number, g: BufferGeometry, color: number, local: Matrix4, vary = 0.04, glow = 0) => {
       const p = r.bindPosition(bone);
@@ -221,19 +226,19 @@ export class Knight {
 
     // ---- pelvis: the hip frame, an orange belt, side plates, the scabbard ----
     part(B.pelvis, new BoxGeometry(0.34, 0.16, 0.24), JOINT, at(0, -0.02, 0));
-    part(B.pelvis, new BoxGeometry(0.39, 0.065, 0.28), ORANGE, at(0, 0.06, 0), 0.02);
+    part(B.pelvis, bv(0.39, 0.065, 0.28), ORANGE, at(0, 0.06, 0), 0.02);
     part(B.pelvis, new BoxGeometry(0.09, 0.06, 0.02), CREAM, at(0, 0.06, 0.145), 0);
     for (const s of [1, -1]) {
-      part(B.pelvis, new IcosahedronGeometry(0.078, 0), JOINT, at(s * 0.13, -0.05, 0));
-      part(B.pelvis, new BoxGeometry(0.13, 0.16, 0.21), CREAM, at(s * 0.2, -0.05, 0, 0, 1, 0, s * 0.16));
+      part(B.pelvis, new IcosahedronGeometry(0.078, 1), JOINT, at(s * 0.13, -0.05, 0));
+      part(B.pelvis, bv(0.13, 0.16, 0.21), CREAM, at(s * 0.2, -0.05, 0, 0, 1, 0, s * 0.16));
       part(B.pelvis, new BoxGeometry(0.135, 0.02, 0.215), ORANGE, at(s * 0.205, -0.13, 0, 0, 1, 0, s * 0.16), 0);
     }
     // The scabbard at the left hip, mouth forward, tip back.
     const mouth = SCABBARD_MOUTH;
     const axis = SCABBARD_AXIS;
     part(B.pelvis, new BoxGeometry(0.075, 0.86, 0.042), JOINT, at(mouth[0] - axis[0] * 0.43, mouth[1] - axis[1] * 0.43, mouth[2] - axis[2] * 0.43, 0, 1, 0.3, 0.14));
-    part(B.pelvis, new BoxGeometry(0.088, 0.07, 0.054), ORANGE, at(mouth[0] - axis[0] * 0.02, mouth[1] - axis[1] * 0.02, mouth[2] - axis[2] * 0.02, 0, 1, 0.3, 0.14), 0);
-    part(B.pelvis, new BoxGeometry(0.082, 0.06, 0.05), ORANGE, at(mouth[0] - axis[0] * 0.84, mouth[1] - axis[1] * 0.84, mouth[2] - axis[2] * 0.84, 0, 1, 0.3, 0.14), 0);
+    part(B.pelvis, bv(0.088, 0.07, 0.054), ORANGE, at(mouth[0] - axis[0] * 0.02, mouth[1] - axis[1] * 0.02, mouth[2] - axis[2] * 0.02, 0, 1, 0.3, 0.14), 0);
+    part(B.pelvis, bv(0.082, 0.06, 0.05), ORANGE, at(mouth[0] - axis[0] * 0.84, mouth[1] - axis[1] * 0.84, mouth[2] - axis[2] * 0.84, 0, 1, 0.3, 0.14), 0);
     // ---- the tabard: front and back flaps, the star in cream on the front ----
     part(B.flapF, new BoxGeometry(0.27, 0.34, 0.025), ORANGE, at(0, -0.17, 0), 0.02);
     part(B.flapF, new BoxGeometry(0.27, 0.035, 0.03), CREAM, at(0, -0.33, 0), 0);
@@ -241,30 +246,36 @@ export class Knight {
     part(B.flapB, new BoxGeometry(0.29, 0.3, 0.025), ORANGE, at(0, -0.15, 0), 0.02);
     // ---- the spine: a segmented core with glowing seams, plates and cables ----
     for (let k = 0; k < 3; k++) {
-      part(B.spine, new CylinderGeometry(0.125, 0.135, 0.05, 10), JOINT, at(0, k * 0.065, 0));
-      part(B.spine, new BoxGeometry(0.16, 0.045, 0.05), CREAM_SHADE, at(0, k * 0.065, 0.11), 0.02);
+      part(B.spine, new CylinderGeometry(0.125, 0.135, 0.05, 16), JOINT, at(0, k * 0.065, 0));
+      part(B.spine, bv(0.16, 0.045, 0.05), CREAM_SHADE, at(0, k * 0.065, 0.11), 0.02);
     }
-    for (let k = 0; k < 2; k++) part(B.spine, new CylinderGeometry(0.128, 0.128, 0.012, 10), GLOW, at(0, 0.033 + k * 0.065, 0), 0, 0.9);
+    for (let k = 0; k < 2; k++) part(B.spine, new CylinderGeometry(0.128, 0.128, 0.012, 16), GLOW, at(0, 0.033 + k * 0.065, 0), 0, 0.9);
+    // A bundle of hoses up the back, from the hips into the pack.
+    for (const x of [-0.04, 0, 0.04]) part(B.spine, new CylinderGeometry(0.011, 0.011, 1, 5), x ? JOINT_LIGHT : ORANGE, between(x, -0.03, -0.12, x * 1.3, 0.22, -0.15, 1), 0);
     for (const s of [1, -1]) part(B.spine, new CylinderGeometry(0.014, 0.014, 1, 5), JOINT_LIGHT, between(s * 0.1, -0.04, 0.06, s * 0.13, 0.2, 0.07, 1), 0);
     // ---- the chest: armour with panel lines, the star over an amber core, the collar ----
-    part(B.chest, new BoxGeometry(0.47, 0.34, 0.28), CREAM, at(0, 0.15, 0));
-    part(B.chest, new BoxGeometry(0.4, 0.22, 0.06), CREAM, at(0, 0.2, 0.135, 0, 1, -0.12));
-    part(B.chest, new BoxGeometry(0.42, 0.06, 0.26), CREAM_SHADE, at(0, -0.02, 0));
+    part(B.chest, bv(0.47, 0.34, 0.28), CREAM, at(0, 0.15, 0));
+    part(B.chest, bv(0.4, 0.22, 0.06), CREAM, at(0, 0.2, 0.135, 0, 1, -0.12));
+    part(B.chest, bv(0.42, 0.06, 0.26), CREAM_SHADE, at(0, -0.02, 0));
     for (const s of [1, -1]) {
-      part(B.chest, new BoxGeometry(0.04, 0.2, 0.22), ORANGE, at(s * 0.24, 0.15, 0), 0.02);
+      part(B.chest, bv(0.04, 0.2, 0.22), ORANGE, at(s * 0.24, 0.15, 0), 0.02);
       part(B.chest, new BoxGeometry(0.012, 0.25, 0.012), JOINT, at(s * 0.115, 0.14, 0.172), 0);
       // Vents under the arms.
       for (let k = 0; k < 3; k++) part(B.chest, new BoxGeometry(0.012, 0.018, 0.12), JOINT, at(s * 0.236, 0.06 + k * 0.035, -0.02), 0);
     }
     part(B.chest, new BoxGeometry(0.34, 0.012, 0.012), JOINT, at(0, 0.045, 0.165), 0);
-    part(B.chest, new CylinderGeometry(0.105, 0.11, 0.03, 12).rotateX(Math.PI / 2), JOINT, at(0, 0.21, 0.165), 0);
-    part(B.chest, new CylinderGeometry(0.075, 0.075, 0.034, 12).rotateX(Math.PI / 2), 0xd8742c, at(0, 0.21, 0.168), 0, 0.28);
+    // A seam down the breastplate's middle, rivets at its corners, a grille under the collar.
+    part(B.chest, new BoxGeometry(0.01, 0.07, 0.01), JOINT, at(0, 0.3, 0.168), 0);
+    for (const [x, y] of [[0.17, 0.3], [-0.17, 0.3], [0.17, 0.06], [-0.17, 0.06]] as const) part(B.chest, new IcosahedronGeometry(0.01, 0), JOINT_LIGHT, at(x, y, 0.17), 0);
+    for (let k = 0; k < 4; k++) part(B.chest, new BoxGeometry(0.008, 0.035, 0.01), JOINT, at(-0.045 + k * 0.03, 0.335, 0.15), 0);
+    part(B.chest, new CylinderGeometry(0.105, 0.11, 0.03, 20).rotateX(Math.PI / 2), JOINT, at(0, 0.21, 0.165), 0);
+    part(B.chest, new CylinderGeometry(0.075, 0.075, 0.034, 20).rotateX(Math.PI / 2), 0xd8742c, at(0, 0.21, 0.168), 0, 0.28);
     part(B.chest, starGeometry(0.25), 0xfff3d6, at(0, 0.21, 0.188), 0, 2);
-    part(B.chest, new CylinderGeometry(0.115, 0.15, 0.07, 10), JOINT, at(0, 0.33, 0));
+    part(B.chest, new CylinderGeometry(0.115, 0.15, 0.07, 16), JOINT, at(0, 0.33, 0));
     // The backpack: a frame, vents with an amber glow between the slats, exhausts and an antenna.
-    part(B.chest, new BoxGeometry(0.37, 0.42, 0.18), CREAM_SHADE, at(0, 0.15, -0.24));
+    part(B.chest, bv(0.37, 0.42, 0.18), CREAM_SHADE, at(0, 0.15, -0.24));
     for (const y of [-0.07, 0.37]) part(B.chest, new BoxGeometry(0.39, 0.05, 0.2), JOINT, at(0, y, -0.24));
-    part(B.chest, new BoxGeometry(0.39, 0.06, 0.2), ORANGE, at(0, 0.29, -0.24), 0.02);
+    part(B.chest, bv(0.39, 0.06, 0.2), ORANGE, at(0, 0.29, -0.24), 0.02);
     for (let k = 0; k < 4; k++) {
       part(B.chest, new BoxGeometry(0.25, 0.022, 0.02), JOINT, at(0, 0.02 + k * 0.055, -0.337), 0);
       if (k < 3) part(B.chest, new BoxGeometry(0.23, 0.016, 0.01), GLOW, at(0, 0.047 + k * 0.055, -0.33), 0, 0.75);
@@ -279,47 +290,63 @@ export class Knight {
     part(B.chest, new CylinderGeometry(0.008, 0.008, 0.34, 4), JOINT, at(-0.15, 0.55, -0.3, 0, 1, -0.12), 0);
     part(B.chest, new IcosahedronGeometry(0.02, 0), GLOW, at(-0.15, 0.72, -0.32), 0, 1);
     // ---- the neck: a jointed column with cables ----
-    part(B.neck, new CylinderGeometry(0.065, 0.075, 0.12, 8), JOINT, at(0, 0.04, 0));
-    for (const y of [0, 0.065]) part(B.neck, new CylinderGeometry(0.082, 0.082, 0.016, 8), JOINT_LIGHT, at(0, y, 0), 0);
+    part(B.neck, new CylinderGeometry(0.065, 0.075, 0.12, 12), JOINT, at(0, 0.04, 0));
+    for (const y of [0, 0.065]) part(B.neck, new CylinderGeometry(0.082, 0.082, 0.016, 12), JOINT_LIGHT, at(0, y, 0), 0);
     for (const s of [1, -1]) part(B.neck, new CylinderGeometry(0.011, 0.011, 1, 4), JOINT_LIGHT, between(s * 0.045, -0.03, 0.05, s * 0.035, 0.1, 0.055, 1), 0);
     // ---- the helm: a rounded shell, cheek guards, the black visor with its glowing line and eyes, the crest ----
-    part(B.head, new CylinderGeometry(0.19, 0.205, 0.26, 12), CREAM, at(0, 0.13, -0.005));
-    part(B.head, new SphereGeometry(0.19, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2), CREAM, at(0, 0.26, -0.005, 0, [1, 0.88, 1]));
-    part(B.head, new CylinderGeometry(0.207, 0.212, 0.15, 12, 1, false, -0.95, 1.9), VISOR, at(0, 0.165, 0), 0);
-    part(B.head, new CylinderGeometry(0.214, 0.214, 0.011, 14, 1, true, -0.85, 1.7), GLOW, at(0, 0.185, 0), 0, 1);
+    part(B.head, new CylinderGeometry(0.19, 0.205, 0.26, 20), CREAM, at(0, 0.13, -0.005));
+    part(B.head, new SphereGeometry(0.19, 20, 7, 0, Math.PI * 2, 0, Math.PI / 2), CREAM, at(0, 0.26, -0.005, 0, [1, 0.88, 1]));
+    // A seam round the helm where the dome meets the band, and a raised brow over the visor.
+    part(B.head, new CylinderGeometry(0.2075, 0.2075, 0.012, 20, 1, true), JOINT, at(0, 0.258, -0.005), 0);
+    part(B.head, new CylinderGeometry(0.214, 0.212, 0.03, 20, 1, false, -1.05, 2.1), CREAM_SHADE, at(0, 0.247, 0), 0.02);
+    part(B.head, new CylinderGeometry(0.207, 0.212, 0.15, 20, 1, false, -0.95, 1.9), VISOR, at(0, 0.165, 0), 0);
+    part(B.head, new CylinderGeometry(0.214, 0.214, 0.011, 22, 1, true, -0.85, 1.7), GLOW, at(0, 0.185, 0), 0, 1);
     for (const s of [1, -1]) {
       part(B.head, new BoxGeometry(0.056, 0.03, 0.02), GLOW, at(s * 0.068, 0.168, 0.205, s * 0.32), 0, 1);
-      part(B.head, new BoxGeometry(0.045, 0.17, 0.14), CREAM, at(s * 0.19, 0.1, 0.07, s * 0.35), 0.03);
-      part(B.head, new CylinderGeometry(0.058, 0.058, 0.05, 10).rotateZ(Math.PI / 2), JOINT, at(s * 0.205, 0.15, -0.03), 0);
-      part(B.head, new CylinderGeometry(0.064, 0.064, 0.02, 10).rotateZ(Math.PI / 2), ORANGE, at(s * 0.228, 0.15, -0.03), 0);
-      part(B.head, new IcosahedronGeometry(0.014, 0), GLOW, at(s * 0.24, 0.15, -0.03), 0, 0.8);
+      part(B.head, bv(0.045, 0.17, 0.14), CREAM, at(s * 0.19, 0.1, 0.07, s * 0.35), 0.03);
+      part(B.head, new CylinderGeometry(0.058, 0.058, 0.05, 16).rotateZ(Math.PI / 2), JOINT, at(s * 0.205, 0.15, -0.03), 0);
+      part(B.head, new CylinderGeometry(0.064, 0.064, 0.02, 16).rotateZ(Math.PI / 2), ORANGE, at(s * 0.228, 0.15, -0.03), 0);
+      part(B.head, new CylinderGeometry(0.04, 0.04, 0.012, 16).rotateZ(Math.PI / 2), JOINT_LIGHT, at(s * 0.24, 0.15, -0.03), 0);
+      part(B.head, new IcosahedronGeometry(0.014, 1), GLOW, at(s * 0.247, 0.15, -0.03), 0, 0.8);
+      // Bolts on the cheek guard.
+      for (const y of [0.05, 0.15]) part(B.head, new IcosahedronGeometry(0.008, 0), JOINT_LIGHT, at(s * 0.214, y, 0.1, s * 0.35), 0);
     }
-    part(B.head, new BoxGeometry(0.22, 0.065, 0.1), CREAM_SHADE, at(0, 0.055, 0.14));
+    part(B.head, bv(0.22, 0.065, 0.1), CREAM_SHADE, at(0, 0.055, 0.14));
     for (let k = 0; k < 3; k++) part(B.head, new BoxGeometry(0.11, 0.008, 0.012), JOINT, at(0, 0.035 + k * 0.016, 0.192), 0);
-    part(B.head, new BoxGeometry(0.04, 0.11, 0.36), ORANGE, at(0, 0.335, -0.02, 0, 1, -0.06), 0.02);
-    part(B.head, new BoxGeometry(0.04, 0.09, 0.13), ORANGE, at(0, 0.3, -0.21, 0, 1, 0.5), 0.02);
+    part(B.head, bv(0.04, 0.11, 0.36), ORANGE, at(0, 0.335, -0.02, 0, 1, -0.06), 0.02);
+    part(B.head, bv(0.04, 0.09, 0.13), ORANGE, at(0, 0.3, -0.21, 0, 1, 0.5), 0.02);
     part(B.head, new CylinderGeometry(0.007, 0.007, 1, 4), JOINT, between(0.07, 0.3, -0.12, 0.085, 0.52, -0.17, 1), 0);
     lit(B.head, new IcosahedronGeometry(0.018, 0), at(0.085, 0.53, -0.172));
 
     for (const [i, s] of [[0, 1], [1, -1]] as const) {
       const n = i === 0 ? "L" : "R";
       // ---- shoulder: a socket under a layered pauldron ----
-      part(B[`shoulder${n}`]!, new IcosahedronGeometry(0.085, 0), JOINT, at(0, 0, 0));
-      part(B[`shoulder${n}`]!, new SphereGeometry(0.17, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2), CREAM, at(s * 0.05, 0.02, 0, 0, [1.12, 0.85, 1.1], 0, s * -0.14));
-      part(B[`shoulder${n}`]!, new BoxGeometry(0.24, 0.045, 0.26), ORANGE, at(s * 0.09, -0.05, 0, 0, 1, 0, s * -0.4), 0.02);
-      part(B[`shoulder${n}`]!, new BoxGeometry(0.22, 0.04, 0.24), CREAM_SHADE, at(s * 0.12, -0.11, 0, 0, 1, 0, s * -0.58), 0.02);
-      part(B[`shoulder${n}`]!, new BoxGeometry(0.2, 0.035, 0.22), CREAM, at(s * 0.14, -0.16, 0, 0, 1, 0, s * -0.72), 0.02);
+      part(B[`shoulder${n}`]!, new IcosahedronGeometry(0.085, 1), JOINT, at(0, 0, 0));
+      part(B[`shoulder${n}`]!, new SphereGeometry(0.17, 18, 6, 0, Math.PI * 2, 0, Math.PI / 2), CREAM, at(s * 0.05, 0.02, 0, 0, [1.12, 0.85, 1.1], 0, s * -0.14));
+      // A rolled rim and a row of rivets round the pauldron's dome.
+      part(B[`shoulder${n}`]!, new TorusGeometry(0.17, 0.011, 4, 18), CREAM_SHADE, at(s * 0.05, 0.02, 0, 0, [1.12, 1.1, 1], Math.PI / 2, s * -0.14), 0);
+      for (let k = 0; k < 5; k++) {
+        const a = -0.9 + k * 0.45;
+        part(B[`shoulder${n}`]!, new IcosahedronGeometry(0.009, 0), JOINT_LIGHT, at(s * 0.05 + Math.sin(a) * 0.14, 0.085, Math.cos(a) * 0.14 * 0.95), 0);
+      }
+      part(B[`shoulder${n}`]!, bv(0.24, 0.045, 0.26), ORANGE, at(s * 0.09, -0.05, 0, 0, 1, 0, s * -0.4), 0.02);
+      part(B[`shoulder${n}`]!, bv(0.22, 0.04, 0.24), CREAM_SHADE, at(s * 0.12, -0.11, 0, 0, 1, 0, s * -0.58), 0.02);
+      part(B[`shoulder${n}`]!, bv(0.2, 0.035, 0.22), CREAM, at(s * 0.14, -0.16, 0, 0, 1, 0, s * -0.72), 0.02);
       // ---- upper arm: frame, armour shell, elbow joint ----
-      part(B[`upper${n}`]!, new CylinderGeometry(0.045, 0.04, 0.27, 8), JOINT, at(0, -0.14, 0));
-      part(B[`upper${n}`]!, new BoxGeometry(0.13, 0.21, 0.135), CREAM, at(0, -0.12, 0.012));
+      part(B[`upper${n}`]!, new CylinderGeometry(0.045, 0.04, 0.27, 12), JOINT, at(0, -0.14, 0));
+      part(B[`upper${n}`]!, bv(0.13, 0.21, 0.135), CREAM, at(0, -0.12, 0.012));
       part(B[`upper${n}`]!, new BoxGeometry(0.132, 0.022, 0.137), ORANGE, at(0, -0.03, 0.012), 0);
-      part(B[`upper${n}`]!, new IcosahedronGeometry(0.056, 0), JOINT, at(0, -UPPER, 0));
+      part(B[`upper${n}`]!, new BoxGeometry(0.134, 0.008, 0.139), JOINT, at(0, -0.17, 0.012), 0);
+      part(B[`upper${n}`]!, new IcosahedronGeometry(0.056, 1), JOINT, at(0, -UPPER, 0));
       // ---- forearm: frame, an orange vambrace with a glowing seam, a cream cuff ----
-      part(B[`fore${n}`]!, new CylinderGeometry(0.04, 0.034, 0.25, 8), JOINT, at(0, -0.13, 0));
-      part(B[`fore${n}`]!, new BoxGeometry(0.125, 0.18, 0.13), ORANGE, at(0, -0.14, 0.008), 0.02);
-      part(B[`fore${n}`]!, new BoxGeometry(0.13, 0.045, 0.135), CREAM, at(0, -0.228, 0.008), 0.02);
+      part(B[`fore${n}`]!, new CylinderGeometry(0.04, 0.034, 0.25, 12), JOINT, at(0, -0.13, 0));
+      part(B[`fore${n}`]!, bv(0.125, 0.18, 0.13), ORANGE, at(0, -0.14, 0.008), 0.02);
+      part(B[`fore${n}`]!, bv(0.13, 0.045, 0.135), CREAM, at(0, -0.228, 0.008), 0.02);
       part(B[`fore${n}`]!, new BoxGeometry(0.127, 0.012, 0.133), GLOW, at(0, -0.075, 0.008), 0, 0.85);
-      part(B[`fore${n}`]!, new IcosahedronGeometry(0.04, 0), JOINT, at(0, -FORE, 0));
+      // A cable along the vambrace's inside, clipped at both ends.
+      part(B[`fore${n}`]!, new CylinderGeometry(0.009, 0.009, 0.17, 5), JOINT_LIGHT, at(-s * 0.07, -0.14, -0.03), 0);
+      for (const y of [-0.06, -0.22]) part(B[`fore${n}`]!, new BoxGeometry(0.02, 0.012, 0.02), ORANGE, at(-s * 0.07, y, -0.03), 0);
+      part(B[`fore${n}`]!, new IcosahedronGeometry(0.04, 1), JOINT, at(0, -FORE, 0));
       // ---- hand: a palm and a cream back plate; segmented fingers and thumb ----
       part(B[`hand${n}`]!, new BoxGeometry(0.036, 0.095, 0.088), JOINT, at(0, -0.05, 0));
       part(B[`hand${n}`]!, new BoxGeometry(0.014, 0.07, 0.075), CREAM, at(s * 0.024, -0.05, 0), 0);
@@ -331,34 +358,39 @@ export class Knight {
       part(this.thumbs[i]![0]!, new BoxGeometry(0.024, 0.045, 0.022), JOINT, at(0, -0.02, 0), 0.03);
       part(this.thumbs[i]![1]!, new BoxGeometry(0.021, 0.038, 0.019), JOINT_LIGHT, at(0, -0.018, 0), 0.03);
       // ---- thigh: frame, armour, the hip actuator, the knee joint ----
-      part(B[`thigh${n}`]!, new CylinderGeometry(0.06, 0.05, 0.4, 8), JOINT, at(0, -0.21, 0));
-      part(B[`thigh${n}`]!, new BoxGeometry(0.18, 0.3, 0.19), CREAM, at(0, -0.17, 0.018));
+      part(B[`thigh${n}`]!, new CylinderGeometry(0.06, 0.05, 0.4, 12), JOINT, at(0, -0.21, 0));
+      part(B[`thigh${n}`]!, bv(0.18, 0.3, 0.19), CREAM, at(0, -0.17, 0.018));
       part(B[`thigh${n}`]!, new BoxGeometry(0.182, 0.022, 0.192), ORANGE, at(0, -0.04, 0.018), 0);
       part(B[`thigh${n}`]!, new BoxGeometry(0.012, 0.22, 0.192), JOINT, at(s * 0.06, -0.17, 0.02), 0);
-      part(B[`thigh${n}`]!, new CylinderGeometry(0.034, 0.034, 0.2, 8), JOINT_LIGHT, at(s * 0.085, -0.12, -0.01), 0);
-      part(B[`thigh${n}`]!, new IcosahedronGeometry(0.07, 0), JOINT, at(0, -THIGH, 0));
+      part(B[`thigh${n}`]!, new CylinderGeometry(0.034, 0.034, 0.2, 12), JOINT_LIGHT, at(s * 0.085, -0.12, -0.01), 0);
+      for (const y of [-0.03, -0.21]) part(B[`thigh${n}`]!, new CylinderGeometry(0.04, 0.04, 0.015, 12), ORANGE, at(s * 0.085, y, -0.01), 0);
+      part(B[`thigh${n}`]!, new BoxGeometry(0.184, 0.008, 0.194), JOINT, at(0, -0.24, 0.018), 0);
+      part(B[`thigh${n}`]!, new IcosahedronGeometry(0.07, 1), JOINT, at(0, -THIGH, 0));
       // ---- shin: frame, a greave with an orange stripe, a knee cap, the calf actuator ----
-      part(B[`shin${n}`]!, new CylinderGeometry(0.05, 0.04, 0.38, 8), JOINT, at(0, -0.21, 0));
-      part(B[`shin${n}`]!, new BoxGeometry(0.16, 0.3, 0.16), CREAM, at(0, -0.21, 0.02));
+      part(B[`shin${n}`]!, new CylinderGeometry(0.05, 0.04, 0.38, 12), JOINT, at(0, -0.21, 0));
+      part(B[`shin${n}`]!, bv(0.16, 0.3, 0.16), CREAM, at(0, -0.21, 0.02));
       part(B[`shin${n}`]!, new BoxGeometry(0.055, 0.23, 0.012), ORANGE, at(0, -0.21, 0.104), 0);
-      part(B[`shin${n}`]!, new BoxGeometry(0.135, 0.1, 0.07), CREAM_SHADE, at(0, -0.02, 0.09), 0.02);
-      part(B[`shin${n}`]!, new CylinderGeometry(0.03, 0.03, 0.22, 6), JOINT_LIGHT, at(0, -0.19, -0.07), 0);
+      part(B[`shin${n}`]!, bv(0.135, 0.1, 0.07), CREAM_SHADE, at(0, -0.02, 0.09), 0.02);
+      part(B[`shin${n}`]!, new CylinderGeometry(0.03, 0.03, 0.22, 10), JOINT_LIGHT, at(0, -0.19, -0.07), 0);
+      part(B[`shin${n}`]!, new BoxGeometry(0.162, 0.008, 0.162), JOINT, at(0, -0.12, 0.02), 0);
+      for (const z of [0.065, -0.025]) part(B[`shin${n}`]!, new IcosahedronGeometry(0.009, 0), JOINT_LIGHT, at(s * 0.081, -0.27, z), 0);
       part(B[`shin${n}`]!, new BoxGeometry(0.132, 0.01, 0.132), GLOW, at(0, -0.33, 0.02), 0, 0.7);
-      part(B[`shin${n}`]!, new IcosahedronGeometry(0.046, 0), JOINT, at(0, -SHIN, 0));
+      part(B[`shin${n}`]!, new IcosahedronGeometry(0.046, 1), JOINT, at(0, -SHIN, 0));
       // ---- foot: a dark sole, cream toe cap and upper, an orange heel ----
       part(B[`foot${n}`]!, new BoxGeometry(0.165, 0.055, 0.32), JOINT, at(0, -0.072, 0.05));
-      part(B[`foot${n}`]!, new BoxGeometry(0.155, 0.07, 0.12), CREAM, at(0, -0.04, 0.15));
-      part(B[`foot${n}`]!, new BoxGeometry(0.15, 0.1, 0.17), CREAM_SHADE, at(0, -0.02, 0));
-      part(B[`foot${n}`]!, new BoxGeometry(0.155, 0.045, 0.045), ORANGE, at(0, -0.055, -0.1), 0);
+      part(B[`foot${n}`]!, bv(0.155, 0.07, 0.12), CREAM, at(0, -0.04, 0.15));
+      part(B[`foot${n}`]!, bv(0.15, 0.1, 0.17), CREAM_SHADE, at(0, -0.02, 0));
+      part(B[`foot${n}`]!, bv(0.155, 0.045, 0.045), ORANGE, at(0, -0.055, -0.1), 0);
       // ---- pistons: a housing on one side of the joint, a rod sliding in it from the other ----
       for (const [h, len, r] of [[`kneeH${n}`, 0.28, 0.027], [`elbowH${n}`, 0.18, 0.022]] as const) {
-        part(B[h]!, new CylinderGeometry(r, r, len, 6), JOINT_LIGHT, at(0, -len / 2, 0), 0);
-        part(B[h]!, new CylinderGeometry(r * 1.2, r * 1.2, 0.03, 6), ORANGE, at(0, -0.02, 0), 0);
-        part(B[h]!, new CylinderGeometry(r * 1.1, r * 1.1, 0.012, 6), GLOW, at(0, -len + 0.01, 0), 0, 0.7);
+        part(B[h]!, new CylinderGeometry(r, r, len, 10), JOINT_LIGHT, at(0, -len / 2, 0), 0);
+        part(B[h]!, new CylinderGeometry(r * 1.2, r * 1.2, 0.03, 10), ORANGE, at(0, -0.02, 0), 0);
+        part(B[h]!, new CylinderGeometry(r * 1.15, r * 1.15, 0.008, 10), JOINT, at(0, -len * 0.55, 0), 0);
+        part(B[h]!, new CylinderGeometry(r * 1.1, r * 1.1, 0.012, 10), GLOW, at(0, -len + 0.01, 0), 0, 0.7);
       }
       for (const [h, len, r] of [[`kneeR${n}`, 0.3, 0.012], [`elbowR${n}`, 0.2, 0.01]] as const) {
-        part(B[h]!, new CylinderGeometry(r, r, len, 5), STEEL, at(0, len / 2, 0), 0);
-        part(B[h]!, new IcosahedronGeometry(r * 1.9, 0), JOINT, at(0, 0, 0), 0);
+        part(B[h]!, new CylinderGeometry(r, r, len, 8), STEEL, at(0, len / 2, 0), 0);
+        part(B[h]!, new IcosahedronGeometry(r * 1.9, 1), JOINT, at(0, 0, 0), 0);
       }
     }
     this.mesh = this.rig.mesh(m.build(), this.material);
@@ -370,10 +402,10 @@ export class Knight {
 
     // The sword (its own mesh): grip at the origin, blade along +y, a faint glowing fuller.
     const s = new Mesher()
-      .add(new CylinderGeometry(0.018, 0.02, 0.15, 6), JOINT, at(0, 0, 0), 0)
-      .add(new IcosahedronGeometry(0.03, 0), ORANGE, at(0, -0.095, 0), 0)
+      .add(new CylinderGeometry(0.018, 0.02, 0.15, 10, 4), (_x, y) => (Math.round(y * 40) % 2 ? JOINT : JOINT_LIGHT), at(0, 0, 0), 0)
+      .add(new IcosahedronGeometry(0.03, 1), ORANGE, at(0, -0.095, 0), 0)
       .add(new BoxGeometry(0.23, 0.035, 0.05), JOINT, at(0, 0.088, 0), 0)
-      .add(new BoxGeometry(0.06, 0.042, 0.056), ORANGE, at(0, 0.088, 0), 0)
+      .add(bv(0.06, 0.042, 0.056), ORANGE, at(0, 0.088, 0), 0)
       .add(new BoxGeometry(0.055, 0.8, 0.014), STEEL, at(0, 0.5, 0), 0.02)
       .add(new ConeGeometry(0.028, 0.09, 4), STEEL, at(0, 0.945, 0, Math.PI / 4, [1, 1, 0.26]), 0)
       .glow(1)

@@ -1,8 +1,8 @@
 import { attribute, uniform } from "three/tsl";
-import { BoxGeometry, type BufferGeometry, CircleGeometry, Color, CylinderGeometry, Euler, Group, IcosahedronGeometry, type Matrix4, Mesh, MeshBasicMaterial, MeshLambertNodeMaterial, Quaternion, type SkinnedMesh, Vector3 } from "three/webgpu";
+import { BoxGeometry, type BufferGeometry, CircleGeometry, Color, CylinderGeometry, Euler, Group, IcosahedronGeometry, type Matrix4, Mesh, MeshBasicMaterial, MeshLambertNodeMaterial, Quaternion, type SkinnedMesh, TorusGeometry, Vector3 } from "three/webgpu";
 import { headingToSceneYaw } from "./coords.ts";
 import { FootPlanner } from "./ik.ts";
-import { at, Mesher } from "./mesher.ts";
+import { at, bevelBox, Mesher } from "./mesher.ts";
 import { angleDiff, turnTowards } from "./path.ts";
 import { criticalDamping, type Ground, moveOnGround, rng, type Spring, springStep } from "./physics.ts";
 import { limb, pointIn, Rig } from "./rig.ts";
@@ -14,7 +14,8 @@ import { limb, pointIn, Rig } from "./rig.ts";
  * still a while it wanders off to sniff at things, never far. Its legs are
  * two-bone IK chains whose feet stay planted where they land (a trot: diagonal
  * pairs together), so it never slides; sitting folds its hind legs under it. One
- * skinned mesh. Its lens glows brighter at night. Scene coordinates (y up),
+ * skinned mesh, its shell in bevelled plates with seams and bolts, its lens a
+ * ringed camera eye. Its lens glows brighter at night. Scene coordinates (y up),
  * facing +z; about 0.6 m tall.
  */
 
@@ -109,32 +110,49 @@ export class RobotDog {
       const p = r.bindPosition(bone);
       m.bone(bone).glow(glow).add(g, color, at(p.x, p.y, p.z).multiply(local), vary);
     };
-    // The body: cream shell, orange side panels, a dark belly, a vent on its back.
-    part(B.body, new BoxGeometry(0.34, 0.25, 0.56), PANEL, at(0, 0, 0));
-    part(B.body, new BoxGeometry(0.36, 0.14, 0.3), STRIPE, at(0, -0.01, 0.04), 0.02);
-    part(B.body, new BoxGeometry(0.3, 0.06, 0.48), JOINT, at(0, -0.14, 0), 0);
-    part(B.body, new BoxGeometry(0.2, 0.03, 0.2), PANEL, at(0, 0.14, -0.08), 0);
+    // Plates have bevelled edges that catch the light.
+    const bv = (w: number, h: number, d: number) => bevelBox(w, h, d, Math.min(0.018, Math.min(w, h, d) * 0.2));
+    // The body: a cream shell, orange side panels, a dark belly, a vent on its back, seams and bolts.
+    part(B.body, bv(0.34, 0.25, 0.56), PANEL, at(0, 0, 0));
+    part(B.body, bv(0.36, 0.14, 0.3), STRIPE, at(0, -0.01, 0.04), 0.02);
+    part(B.body, bv(0.3, 0.06, 0.48), JOINT, at(0, -0.14, 0), 0);
+    part(B.body, bv(0.2, 0.03, 0.2), PANEL, at(0, 0.14, -0.08), 0);
     for (let k = 0; k < 3; k++) part(B.body, new BoxGeometry(0.16, 0.012, 0.02), JOINT, at(0, 0.157, -0.14 + k * 0.05), 0);
-    for (const [x, z] of HIPS) part(B.body, new IcosahedronGeometry(0.055, 0), JOINT, at(x * 1.05, -0.06, z), 0);
-    // The head: mostly one big camera lens, an orange brow, a short antenna with a glowing tip.
-    part(B.head, new BoxGeometry(0.3, 0.26, 0.26), PANEL, at(0, 0, 0));
-    part(B.head, new BoxGeometry(0.31, 0.06, 0.22), STRIPE, at(0, 0.1, -0.02), 0);
-    part(B.head, new CylinderGeometry(0.105, 0.11, 0.06, 16).rotateX(Math.PI / 2), VISOR, at(0, -0.005, 0.14), 0);
-    part(B.head, new CylinderGeometry(0.07, 0.07, 0.02, 16).rotateX(Math.PI / 2), 0xffb547, at(0, -0.005, 0.17), 0, 1);
-    part(B.head, new CylinderGeometry(0.03, 0.03, 0.012, 12).rotateX(Math.PI / 2), 0x0d1b22, at(0, -0.005, 0.182), 0);
-    part(B.head, new CylinderGeometry(0.008, 0.01, 0.16, 4), JOINT, at(0.09, 0.2, -0.06), 0);
-    part(B.head, new IcosahedronGeometry(0.018, 0), 0xffb547, at(0.09, 0.285, -0.06), 0, 1);
+    for (const s of [1, -1]) {
+      // Seams across the flank, bolts at the panel's corners, a small status light.
+      for (const z of [-0.17, 0.21]) part(B.body, new BoxGeometry(0.008, 0.2, 0.01), JOINT, at(s * 0.171, 0.0, z), 0);
+      for (const [y, z] of [[0.045, -0.08], [0.045, 0.16], [-0.06, -0.08], [-0.06, 0.16]] as const) part(B.body, new IcosahedronGeometry(0.008, 0), JOINT_LIGHT, at(s * 0.182, y, z), 0);
+      part(B.body, new BoxGeometry(0.01, 0.02, 0.035), 0xffb547, at(s * 0.181, 0.085, 0.2), 0, 0.8);
+    }
+    part(B.body, new BoxGeometry(0.34, 0.008, 0.01), JOINT, at(0, 0.11, 0.28), 0);
+    for (const [x, z] of HIPS) part(B.body, new IcosahedronGeometry(0.055, 1), JOINT, at(x * 1.05, -0.06, z), 0);
+    // The head: mostly one big camera lens in a ringed bezel, an orange brow, ear vents, a short antenna with a glowing tip.
+    part(B.head, bv(0.3, 0.26, 0.26), PANEL, at(0, 0, 0));
+    part(B.head, bv(0.31, 0.06, 0.22), STRIPE, at(0, 0.1, -0.02), 0);
+    part(B.head, new CylinderGeometry(0.105, 0.11, 0.06, 24).rotateX(Math.PI / 2), VISOR, at(0, -0.005, 0.14), 0);
+    part(B.head, new TorusGeometry(0.108, 0.014, 6, 24), JOINT_LIGHT, at(0, -0.005, 0.171), 0);
+    part(B.head, new CylinderGeometry(0.07, 0.07, 0.02, 24).rotateX(Math.PI / 2), 0xffb547, at(0, -0.005, 0.17), 0, 1);
+    part(B.head, new TorusGeometry(0.052, 0.006, 4, 20), 0x2a2d33, at(0, -0.005, 0.181), 0);
+    part(B.head, new CylinderGeometry(0.03, 0.03, 0.012, 16).rotateX(Math.PI / 2), 0x0d1b22, at(0, -0.005, 0.182), 0);
+    part(B.head, new IcosahedronGeometry(0.009, 0), 0xfff4dc, at(0.022, 0.016, 0.19), 0, 1);
+    for (const s of [1, -1]) {
+      part(B.head, bv(0.03, 0.12, 0.12), JOINT, at(s * 0.158, 0.0, -0.03), 0);
+      for (let k = 0; k < 3; k++) part(B.head, new BoxGeometry(0.012, 0.012, 0.09), JOINT_LIGHT, at(s * 0.175, -0.035 + k * 0.035, -0.03), 0);
+    }
+    part(B.head, new CylinderGeometry(0.008, 0.01, 0.16, 6), JOINT, at(0.09, 0.2, -0.06), 0);
+    part(B.head, new CylinderGeometry(0.016, 0.016, 0.02, 8), STRIPE, at(0.09, 0.13, -0.06), 0);
+    part(B.head, new IcosahedronGeometry(0.018, 1), 0xffb547, at(0.09, 0.285, -0.06), 0, 1);
     // The tail: a little stalk with an orange tip.
-    part(B.tail, new CylinderGeometry(0.015, 0.02, 0.16, 5), JOINT, at(0, 0.08, 0), 0);
-    part(B.tail, new BoxGeometry(0.05, 0.05, 0.05), STRIPE, at(0, 0.17, 0), 0);
-    // Legs: an upper segment with a cream guard, a lower one, a rubber foot.
+    part(B.tail, new CylinderGeometry(0.015, 0.02, 0.16, 6), JOINT, at(0, 0.08, 0), 0);
+    part(B.tail, bv(0.05, 0.05, 0.05), STRIPE, at(0, 0.17, 0), 0);
+    // Legs: an upper segment with a bevelled cream guard, a knee joint, a lower one with an orange band, a rubber foot.
     for (let i = 0; i < 4; i++) {
       part(B.upper[i]!, new BoxGeometry(0.075, UPPER, 0.085), JOINT, at(0, -UPPER / 2, 0));
-      part(B.upper[i]!, new BoxGeometry(0.08, UPPER * 0.6, 0.07), PANEL, at(0, -UPPER * 0.42, 0.012), 0.02);
-      part(B.upper[i]!, new IcosahedronGeometry(0.036, 0), JOINT_LIGHT, at(0, -UPPER, 0), 0);
-      part(B.lower[i]!, new BoxGeometry(0.055, LOWER, 0.055), JOINT, at(0, -LOWER / 2, 0), 0);
-      part(B.lower[i]!, new BoxGeometry(0.058, 0.04, 0.058), STRIPE, at(0, -LOWER * 0.75, 0), 0);
-      part(B.foot[i]!, new BoxGeometry(0.085, FOOT, 0.11), JOINT_LIGHT, at(0, -FOOT / 2, 0.015), 0);
+      part(B.upper[i]!, bv(0.08, UPPER * 0.6, 0.07), PANEL, at(0, -UPPER * 0.42, 0.012), 0.02);
+      part(B.upper[i]!, new IcosahedronGeometry(0.036, 1), JOINT_LIGHT, at(0, -UPPER, 0), 0);
+      part(B.lower[i]!, new CylinderGeometry(0.026, 0.022, LOWER, 8), JOINT, at(0, -LOWER / 2, 0), 0);
+      part(B.lower[i]!, new CylinderGeometry(0.032, 0.032, 0.04, 8), STRIPE, at(0, -LOWER * 0.75, 0), 0);
+      part(B.foot[i]!, bv(0.085, FOOT, 0.11), JOINT_LIGHT, at(0, -FOOT / 2, 0.015), 0);
     }
     this.mesh = this.rig.mesh(m.build(), this.material);
     this.material.emissiveNode = this.eyeColor.mul(attribute("glow", "float")).mul(2.2);
