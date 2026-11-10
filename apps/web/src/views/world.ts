@@ -15,6 +15,7 @@ import {
   type StreamStatus,
   stationLabel,
   type WorldModel,
+  weatherLabel,
   worldSummary,
 } from "../lib/world.ts";
 import { relativeTime } from "../lib/time.ts";
@@ -38,7 +39,7 @@ import { toast } from "../ui/toast.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 2;
+const WORLD_API = 3;
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
 type TierName = NonNullable<Parameters<WorldModule["mountWorld"]>[1]["tier"]>;
@@ -51,6 +52,8 @@ const TIME_CHOICES = [
 ] as const;
 type TimeChoice = (typeof TIME_CHOICES)[number]["value"];
 const WEATHER_CHOICES = [
+  // Denmark's weather now (DMI's model at Copenhagen, from the node); clear while it isn't known.
+  { value: "live", label: "Live", icon: "globe" },
   { value: "clear", label: "Clear", icon: "sun" },
   { value: "mist", label: "Mist", icon: "mist" },
   { value: "rain", label: "Rain", icon: "rain" },
@@ -62,9 +65,9 @@ const WEATHER_KEY = "galahad.world.weather";
 function storedWeather(): WeatherChoice {
   try {
     const v = localStorage.getItem(WEATHER_KEY);
-    return WEATHER_CHOICES.some((c) => c.value === v) ? (v as WeatherChoice) : "clear";
+    return WEATHER_CHOICES.some((c) => c.value === v) ? (v as WeatherChoice) : "live";
   } catch {
-    return "clear";
+    return "live";
   }
 }
 
@@ -160,9 +163,18 @@ export const worldView: View = (root, ctx, { scope }) => {
     showClock();
   }
 
+  /** The chosen weather to the world: a preset, or Denmark's real weather when it's known (clear until then). */
+  function applyWeather(snap = false): void {
+    if (!handle || !mod) return;
+    if (weatherChoice !== "live") handle.setWeather(weatherChoice);
+    else if (model.weather) handle.aimWeather(mod.liveTarget(model.weather), snap);
+    else handle.setWeather("clear");
+  }
+
   function setWeather(choice: WeatherChoice): void {
     weatherChoice = choice;
-    handle?.setWeather(choice);
+    applyWeather();
+    showClock();
     try {
       localStorage.setItem(WEATHER_KEY, choice);
     } catch {
@@ -173,8 +185,10 @@ export const worldView: View = (root, ctx, { scope }) => {
   /** The time in Denmark, whatever the device's zone; a preset says it's showing another light. */
   function showClock(): void {
     if (!mod) return;
-    const now = `${mod.danishTime(Date.now())} in Denmark`;
+    const w = weatherChoice === "live" ? model.weather : null;
+    const now = `${mod.danishTime(Date.now())} in Denmark${w ? ` · ${weatherLabel(w).toLowerCase()}, ${Math.round(w.temperature)} °C` : ""}`;
     clock.textContent = timeChoice === "now" ? now : `${now} · showing ${TIME_CHOICES.find((c) => c.value === timeChoice)!.label.toLowerCase()}`;
+    clock.title = w ? `${w.place}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${w.source}` : "";
   }
   scope.interval(showClock, 15_000);
 
@@ -188,6 +202,10 @@ export const worldView: View = (root, ctx, { scope }) => {
     if (next === model) return;
     model = next;
     handle?.update(model, event);
+    if ((event.type === "weather" || event.type === "hello") && weatherChoice === "live") {
+      applyWeather();
+      showClock();
+    }
     if (event.type !== "frame" || selected === event.frame.experiment) scheduleHud();
   }
 
@@ -504,7 +522,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       const mounted = await mod.mountWorld(stage, {
         tier,
         forceWebGL,
-        weather: weatherChoice,
+        weather: weatherChoice === "live" ? "clear" : weatherChoice,
         onSelect: (id) => select(id),
         onFollow: (on) => {
           following = on;
@@ -526,7 +544,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       handle.select(selected);
       handle.setFollow(following);
       handle.setTimeOfDay(timeChoice === "now" ? null : timeChoice);
-      handle.setWeather(weatherChoice);
+      applyWeather(true);
       showClock();
       updateBeacon();
       scope.add(() => handle?.dispose());

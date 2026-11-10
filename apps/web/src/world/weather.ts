@@ -79,11 +79,23 @@ export class Weather {
   /** What the weather should become (it eases there). */
   set(kind: WeatherKind): void {
     this.kind = kind;
+    this.custom = null;
+  }
+
+  /** What the weather should become, as cloud, rain and mist of its own (the real weather in Denmark); it eases there. */
+  aim(target: Target): void {
+    this.custom = { cloud: target.cloud, rain: target.rain, mist: target.mist };
+  }
+
+  private custom: Target | null = null;
+
+  private target(): Target {
+    return this.custom ?? TARGETS[this.kind];
   }
 
   /** Straight to the kind's look (first sight): no easing, and wet ground if it rains. */
   snap(elevationDeg: number, evening: number): WeatherState {
-    const t = TARGETS[this.kind];
+    const t = this.target();
     this.state.cloud = t.cloud;
     this.state.rain = t.rain;
     this.state.wetness = t.rain > 0 ? Math.min(1, 0.5 + t.rain * 0.5) : 0;
@@ -93,13 +105,13 @@ export class Weather {
 
   /** The mist straight to what this sun and weather bring (the time of day jumped: a preset). */
   settleMist(elevationDeg: number, evening: number): void {
-    this.state.mist = this.mistTarget(TARGETS[this.kind], elevationDeg, evening);
+    this.state.mist = this.mistTarget(this.target(), elevationDeg, evening);
   }
 
   /** Moves the weather on by `dt` seconds, given the sun (degrees above the horizon, and morning 0 → evening 1). */
   step(dt: number, elevationDeg: number, evening: number): WeatherState {
     const s = this.state;
-    const t = TARGETS[this.kind];
+    const t = this.target();
     s.cloud = ease(s.cloud, t.cloud, dt, t.cloud > s.cloud ? CLOUD_IN : CLOUD_OUT);
     // Rain only falls from a sky that has clouded over.
     const rainTarget = t.rain * smooth(0.45, 0.8, s.cloud);

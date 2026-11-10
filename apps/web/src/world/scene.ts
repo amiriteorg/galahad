@@ -25,6 +25,7 @@ import { dither, SkyDome } from "./sky.ts";
 import { KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
 import { Vegetation, wind } from "./vegetation.ts";
+import type { WeatherTarget } from "./live-weather.ts";
 import { Weather, type WeatherKind } from "./weather.ts";
 import { only, weatherUniforms } from "./wet.ts";
 
@@ -102,6 +103,8 @@ export interface WorldHandle {
   setTimeOfDay(preset: TimePreset | null): void;
   /** The weather to ease towards. */
   setWeather(kind: WeatherKind): void;
+  /** The real weather (Denmark's, now) to ease towards, as cloud, rain and mist; `snap` goes straight there (first sight). */
+  aimWeather(target: WeatherTarget, snap?: boolean): void;
   stats(): WorldStats;
   dispose(): void;
 }
@@ -1087,8 +1090,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       applySky();
     },
     setWeather(kind) {
-      if (weather.kind === kind) return;
       weather.set(kind);
+      dirty = true;
+    },
+    aimWeather(target, snap = false) {
+      weather.aim(target);
+      if (snap) weather.snap(heavens.sunElevation * DEG, heavens.evening);
       dirty = true;
     },
     stats() {

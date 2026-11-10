@@ -86,6 +86,25 @@ describe("the weather", () => {
     expect(w.state.mist).toBeLessThan(0.08);
   });
 
+  test("aimed at the real weather it eases there, snaps there on first sight, and a preset takes over again", () => {
+    const w = new Weather("clear");
+    w.aim({ cloud: 0.92, rain: 0.6, mist: 0.2 });
+    const last = run(w, 180).at(-1)!;
+    expect(last.cloud).toBeCloseTo(0.92, 2);
+    expect(last.rain).toBeCloseTo(0.6, 2);
+    expect(last.wetness).toBeGreaterThan(0.9);
+    const first = new Weather("clear");
+    first.aim({ cloud: 0.92, rain: 0.6, mist: 0.2 });
+    const snapped = first.snap(30, 0.5);
+    expect(snapped.cloud).toBe(0.92);
+    expect(snapped.rain).toBe(0.6);
+    expect(snapped.wetness).toBeGreaterThan(0.5);
+    w.set("clear");
+    const cleared = run(w, 400).at(-1)!;
+    expect(cleared.rain).toBe(0);
+    expect(cleared.cloud).toBeLessThan(0.01);
+  });
+
   test("is deterministic: the same steps give the same weather", () => {
     const a = new Weather("clear");
     const b = new Weather("clear");
