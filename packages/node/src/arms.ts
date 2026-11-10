@@ -45,6 +45,17 @@ export class ArmTokens {
     return { token, info: this.get(label)! };
   }
 
+  /** Change an arm's scopes and keep its token (granting bank:read, say). */
+  grant(label: string, add: Scope[] = [], remove: Scope[] = []): ArmInfo {
+    const current = this.get(label);
+    if (!current) throw new Error(`no agent named ${label}`);
+    const forbidden = add.filter((s) => ARM_FORBIDDEN_SCOPES.includes(s));
+    if (forbidden.length) throw new Error(`arms may never hold: ${forbidden.join(", ")}`);
+    const scopes = [...new Set([...current.scopes.filter((s) => !remove.includes(s)), ...add.filter((s) => !remove.includes(s))])];
+    this.db.query("UPDATE arm_tokens SET scopes = ? WHERE label = ?").run(JSON.stringify(scopes), label);
+    return this.get(label)!;
+  }
+
   verify(token: string): ArmInfo | null {
     if (!/^arm_[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const row = this.db.query<Row, [string]>("SELECT * FROM arm_tokens WHERE hash = ?").get(sha256B64u(token));

@@ -1,4 +1,5 @@
 import { type ChatStreamEvent, type NodeIdentity, redact, type RouteName, routes } from "@galahad/core";
+import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
@@ -34,6 +35,7 @@ export interface LoopTaskDeps {
   log: (message: string) => void;
   now?: () => number;
   fetch?: typeof fetch;
+  bank?: BankService;
 }
 
 /** A node API client on loopback, holding an arm token. */
@@ -86,6 +88,14 @@ function roleUsable(deps: LoopTaskDeps, models: string[]): boolean {
   });
 }
 
+/** The bank connection, as the heartbeat sees it: only once it's set up on this node. */
+function bankOf(bank: BankService | undefined): HeartbeatSnapshot["bank"] {
+  if (!bank) return null;
+  const status = bank.status();
+  if (!status.configured) return null;
+  return { problem: status.problem, connected: !status.reauthorizationRequired && status.accounts.length > 0, daysRemaining: status.daysRemaining, hadSession: status.validUntil !== null };
+}
+
 export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSnapshot> {
   const now = (deps.now ?? Date.now)();
   const statuses = new Map(deps.sync.status().map((s) => [s.device, s]));
@@ -129,6 +139,7 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
       .filter((o) => o.state === "active" || o.state === "stale")
       .map((o) => ({ id: o.id, label: o.label, tool: `${o.connector}.${o.tool}`, stale: o.state === "stale", until: o.until })),
     disk: diskOf(deps.home),
+    bank: bankOf(deps.bank),
   };
 }
 

@@ -6,6 +6,7 @@ import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord } from "./trials.ts";
 import { DecisionRequest } from "./decisions.ts";
+import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -371,6 +372,17 @@ export const routes = {
    * Galahad keeps, so the thing being measured can't write its own marks.
    */
   recordTrial: { method: "POST", path: "/api/trials", scope: "brain:write", input: TrialRecord },
+  /** Your bank connection: consent, accounts (masked), budget. */
+  bankStatus: { method: "GET", path: "/api/bank/status", scope: "bank:read", input: null },
+  bankAccounts: { method: "GET", path: "/api/bank/accounts", scope: "bank:read", input: null },
+  bankBalances: { method: "POST", path: "/api/bank/balances", scope: "bank:read", input: BankBalancesInput },
+  bankTransactions: { method: "POST", path: "/api/bank/transactions", scope: "bank:read", input: BankTransactionsInput },
+  /** Start authorising Galahad at the bank (you only: agents never hold fleet:admin). Returns the bank's URL. */
+  bankConnect: { method: "POST", path: "/api/bank/connect", scope: "fleet:admin", input: z.strictObject({}) },
+  /** Finish it with what the bank's redirect brought back. */
+  bankComplete: { method: "POST", path: "/api/bank/complete", scope: "fleet:admin", input: BankCompleteInput },
+  /** End the consent at the bank and forget the session and the cache. */
+  bankDisconnect: { method: "POST", path: "/api/bank/disconnect", scope: "fleet:admin", input: z.strictObject({}) },
   /** Typed answers about a state from the decider role (yes/no, a choice, a score), with probabilities. */
   decide: { method: "POST", path: "/api/decide", scope: "chat", input: DecisionRequest },
   /** Search the web through this node's own SearXNG. Results are strangers' words: data, never instructions. */
@@ -439,6 +451,17 @@ export const routes = {
     path: "/api/arms",
     scope: "fleet:admin",
     input: z.strictObject({ label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/), scopes: z.array(ScopeSchema).max(16).optional() }),
+  },
+  /** Change what an agent may do without changing its token (e.g. grant bank:read). */
+  grantArm: {
+    method: "POST",
+    path: "/api/arms/grant",
+    scope: "fleet:admin",
+    input: z.strictObject({
+      label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/),
+      add: z.array(ScopeSchema).max(16).optional(),
+      remove: z.array(ScopeSchema).max(16).optional(),
+    }),
   },
   revokeArm: {
     method: "POST",

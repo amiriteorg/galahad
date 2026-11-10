@@ -41,6 +41,8 @@ export interface HeartbeatSnapshot {
   /** Standing orders that are still meant to apply (not revoked, not expired). */
   orders: { id: string; label: string; tool: string; stale: boolean; until: number }[];
   disk: { freeGb: number; totalGb: number } | null;
+  /** The bank connection on this node (null: not set up here). */
+  bank?: { problem: string | null; connected: boolean; daysRemaining: number | null; hadSession: boolean } | null;
 }
 
 /** How long an always-on node may be silent before it's worth telling you. */
@@ -182,6 +184,16 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
         title: `Standing order "${order.label}" expires ${new Date(order.until).toISOString().slice(0, 10)}`,
         body: `After that, ${order.tool} asks you again. Sign a new one if you want it to continue.`,
       });
+    }
+  }
+
+  if (s.bank) {
+    if (s.bank.problem) {
+      out.push({ key: `bank-off:${s.self.id}`, severity: "warn", title: "Bank access is off", body: `${s.bank.problem}. Agents can't read the bank until it's fixed (galahad bank status on ${s.self.name}).`, node: s.self.id });
+    } else if (s.bank.hadSession && !s.bank.connected) {
+      out.push({ key: `bank-consent:${s.self.id}`, severity: "warn", title: "The bank consent has ended", body: "Re-authorize Galahad at the bank (Bank → Re-authorize) to give your agents read access again.", node: s.self.id });
+    } else if (s.bank.connected && s.bank.daysRemaining !== null && s.bank.daysRemaining <= 7) {
+      out.push({ key: `bank-expiring:${s.self.id}`, severity: "info", title: `The bank consent ends in ${s.bank.daysRemaining} day${s.bank.daysRemaining === 1 ? "" : "s"}`, body: "Re-authorize before then (Bank → Re-authorize) so your agents keep read access.", node: s.self.id });
     }
   }
 

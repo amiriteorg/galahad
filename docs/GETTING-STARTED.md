@@ -307,7 +307,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `web_search`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.
@@ -383,6 +383,20 @@ bun galahad order revoke <id>
 ```
 
 In the PWA, **Approve and allow similar…** on any request in the Inbox does the same, and the Connectors page lists your orders. A covered call still shows up in your inbox and the ledger, marked with the order that answered it. Orders that delete name exactly one thing (no `*`), every order names where its calls go, and if the connector's tool changes after you sign, the order stops applying until you sign a new one.
+
+## 13. Your bank, read-only
+
+Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:
+
+```sh
+galahad bank setup --app-id <application id> \
+  --key /var/lib/galahad/.galahad/bank/enablebanking.pem \
+  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback
+galahad bank status
+galahad arms grant claude-code bank:read     # one agent may read it
+```
+
+Then authorise in the PWA (**Bank → Connect**, in the paired browser), and again every 89 days: the inbox reminds you a week before.
 
 ## Troubleshooting
 

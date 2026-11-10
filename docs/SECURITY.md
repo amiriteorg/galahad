@@ -101,6 +101,14 @@ The review also confirmed what held up:
 - **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Every search is ledgered.
 - **Residual risk:** search results and the pages behind them are written by strangers and can carry prompt injection; quests treat them as data, and anything outward still asks you.
 
+## Bank access (tested)
+
+- **Read-only by construction.** The Enable Banking client knows 7 method and path pairs and none of them is a payment; the authorisation asks only for `valid_until`. Agents get four typed tools (an account uid and dates, nothing like a path), only once you grant them `bank:read`. Authorising, disconnecting and granting need `fleet:admin`, which agents can never hold (`packages/node/test/bank.test.ts`, `mcp.test.ts`).
+- **Your key stays yours.** It's a 600 file of the node's user, read only to sign; anything looser, or another owner, keeps bank access off. The session id never leaves the node; errors carry a status and a code, never the bank's body; the audit log has no amounts, names, IBANs or codes.
+- **The callback is checked.** 256-bit state kept as a hash, compared in constant time, single use, 15 minutes; the code leaves the address bar at once.
+- **Bank text is data.** Merchant names, remittance lines and notes come back cleaned, cut to 200 characters and wrapped as `untrusted_data`, with a test that an injection comes through inert.
+- **Residual risk:** whoever is root or the node's user on that node can read the key and the session. Details and the full table: [BANK](BANK.md#threat-model).
+
 ## Known limitations
 
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.

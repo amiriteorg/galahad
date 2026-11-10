@@ -15,6 +15,7 @@ import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
 import { artifactsView } from "./views/artifacts.ts";
+import { bankView } from "./views/bank.ts";
 import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -58,6 +59,7 @@ const ROUTES: RouteSpec[] = [
   { id: "sandboxes", label: "Sandboxes", icon: "sandbox", group: "bodies", scope: "sandbox", alsoFor: "fleet:admin", key: "s", keywords: ["containers", "vm", "console"], view: sandboxesView },
   { id: "vault", label: "Vault", icon: "vault", group: "keys", scope: "vault:read", key: "v", keywords: ["keys", "secrets", "api key"], view: vaultView },
   { id: "models", label: "Models", icon: "models", group: "keys", scope: "mind:read", key: "l", keywords: ["providers", "roster", "llm"], view: modelsView },
+  { id: "bank", label: "Bank", icon: "bank", group: "keys", scope: "bank:read", key: "b", keywords: ["lunar", "accounts", "balances", "transactions", "enable banking", "money", "finance"], view: bankView },
   { id: "connectors", label: "Connectors", icon: "plug", group: "keys", scope: "mind:read", key: "n", keywords: ["github", "cloudflare", "home assistant", "integrations", "services", "tools"], view: connectorsView },
   { id: "settings", label: "Settings", icon: "settings", group: "keys", scope: null, key: ",", keywords: ["preferences", "theme", "device"], view: settingsView },
 ];

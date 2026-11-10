@@ -6,6 +6,8 @@ import { renderClockSkew, renderInsecure, renderPairFailed, renderRevoked, rende
 import { renderShell } from "./shell.ts";
 import type { WhoAmI } from "./types.ts";
 import { toast } from "./ui/toast.ts";
+import { readBankCallback } from "./lib/bank.ts";
+import { handBankCallback } from "./views/bank.ts";
 
 /*
  * Boot: secure context → device key → (pairing | welcome | the app).
@@ -40,6 +42,13 @@ function renderRefused(root: HTMLElement, error: ApiError): void {
   else renderRevoked(root);
 }
 
+/**
+ * The bank's redirect back (/bank/callback?code=…&state=…): read once, then the code
+ * leaves the address bar and history at once; the Bank page finishes it.
+ */
+const bankReturn = location.pathname === "/bank/callback" ? readBankCallback(location.search) : null;
+if (bankReturn) history.replaceState(null, "", "/#/bank");
+
 async function boot(): Promise<void> {
   const root = document.getElementById("app")!;
   if (!isSecureContext || !crypto?.subtle) {
@@ -64,6 +73,9 @@ async function boot(): Promise<void> {
       return;
     }
   }
+  if (!identity?.enrolled && bankReturn) {
+    toast("This browser isn't paired with Galahad", { description: "It can't finish connecting the bank. Pair it first, then connect again from here.", duration: 0 });
+  }
   if (!identity?.enrolled) {
     // A pasted invite: the way an app on the Home Screen pairs (links open in the browser, not in it).
     renderWelcome(root, identity, (invite) => {
@@ -83,6 +95,7 @@ async function boot(): Promise<void> {
     else renderUnreachable(root, errorMessage(error), () => void boot());
     return;
   }
+  if (bankReturn) handBankCallback(bankReturn);
   const shell = renderShell(root, { api, identity, whoami });
 
   // One refused request isn't proof of revocation: ask once more before leaving the app.

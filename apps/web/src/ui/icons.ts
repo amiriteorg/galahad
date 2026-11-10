@@ -98,6 +98,7 @@ const ICONS = {
   file: ["M6.5 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z", "M13.5 3.5V8H18"],
   download: ["M12 4v11", "M7.5 10.5 12 15l4.5-4.5", "M4.5 19.5h15"],
   /** The Lab: mathematics, physics and engineering. */
+  bank: ["M3.5 9.5 12 4.5l8.5 5", "M5 9.5v8M9.67 9.5v8M14.33 9.5v8M19 9.5v8", "M3.5 19.5h17"],
   gauge: ["M4.75 18.5a8.5 8.5 0 1 1 14.5 0", "M12 15l3.75-4.25", circle(12, 15, 1.25)],
   flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
 } as const satisfies Record<string, readonly string[]>;

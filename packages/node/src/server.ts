@@ -64,6 +64,7 @@ import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
+import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
@@ -102,6 +103,8 @@ export interface AppContext {
   loops: LoopRunner;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
+  /** Read-only bank access (Enable Banking), on the node that holds the key. */
+  bank: BankService;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
@@ -777,6 +780,21 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
       return { trial: trialViews().find((t) => t.id === id) };
     },
+    bankStatus: () => ctx.bank.status(),
+    bankAccounts: () => bankErrors(async () => ctx.bank.accounts()),
+    bankBalances: (input) => bankErrors(() => ctx.bank.balances(input)),
+    bankTransactions: (input) => bankErrors(() => ctx.bank.transactions(input)),
+    // Yours alone: fleet:admin, which agents can never hold.
+    bankConnect: () => bankErrors(() => ctx.bank.connect()),
+    bankComplete: (input) => bankErrors(() => ctx.bank.complete(input)),
+    bankDisconnect: () => bankErrors(() => ctx.bank.disconnect()),
+    grantArm: (input) => {
+      try {
+        return { arm: ctx.arms.grant(input.label, input.add ?? [], input.remove ?? []) };
+      } catch (error) {
+        throw new HttpError(400, (error as Error).message);
+      }
+    },
     decide: async (input) => {
       // The state and questions go to a provider, like chat: nothing credential-shaped.
       guardAgainstSecrets(JSON.stringify(input));
@@ -1007,6 +1025,16 @@ export function createApp(ctx: AppContext) {
         }),
       ),
   };
+
+  /** Bank failures as plain HTTP errors: a status and a sentence, never the bank's body. */
+  async function bankErrors<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof BankError) throw new HttpError(error.status, error.message);
+      throw new HttpError(500, "bank access failed");
+    }
+  }
 
   const routeTable = new Map(Object.entries(routes).map(([name, r]) => [`${r.method} ${r.path}`, name as RouteName]));
 

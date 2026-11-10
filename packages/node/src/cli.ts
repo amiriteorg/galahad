@@ -15,6 +15,8 @@ import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeC
 import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
+import { BankService } from "./bank/service.ts";
+import type { BankStatusView } from "@galahad/core";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -105,6 +107,13 @@ Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
   order add <connector>.<tool> --arg key=pattern … [--for loop.name] [--days 30] --label "…"
   order add --from <action-id> [--arg key=pattern] [--free key]   approve it, and answer alike next time
                                   * matches anything; deletes are pinned exactly; at most a year
+
+Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
+  bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
+  bank status | bank connect | bank complete | bank disconnect
+                                  connect gives the bank's link (or use the PWA: Bank → Connect);
+                                  complete takes the URL the bank sent you back to, in a hidden prompt
+  arms grant <agent> bank:read    let one agent read the bank (arms ungrant <agent> bank:read to stop)
 
 Agents (MCP)
   mcp install claude|opencode|codex|hermes [--label name] [--apply]
@@ -287,6 +296,11 @@ async function main(): Promise<void> {
       seed: { type: "string" },
       page: { type: "string" },
       question: { type: "string" },
+      "app-id": { type: "string" },
+      key: { type: "string" },
+      "redirect-url": { type: "string" },
+      country: { type: "string" },
+      aspsp: { type: "string" },
       options: { type: "string" },
       levels: { type: "string" },
       agent: { type: "string" },
@@ -477,10 +491,15 @@ Next:
       if (!sub || !rest.length) fail("usage: galahad grant <device name or id> <scope…>  (e.g. galahad grant iphone sandbox)");
       const admin = new Admin(home);
       const fleet = await admin.call<FleetView>("fleet");
-      const target = fleet.devices.find(
+      const matches = fleet.devices.filter(
         (d) => !d.revokedAt && d.kind === "client" && (d.id === sub || d.id.startsWith(sub) || d.name.toLowerCase().includes(sub.toLowerCase())),
       );
-      if (!target) fail(`no paired phone or browser matches "${sub}"`);
+      if (!matches.length) fail(`no paired phone or browser matches "${sub}"`);
+      // Never guess whom to give powers to: several matches must be told apart by id.
+      if (matches.length > 1 && !matches.some((d) => d.id === sub)) {
+        fail(`"${sub}" matches ${matches.length} devices; name one by its id:\n${matches.map((d) => `  ${d.id.slice(0, 12)}  ${d.name}  paired ${d.enrolledAt.slice(0, 10)}  ${d.scopes.includes("bank:read") ? "(has bank:read)" : ""}`).join("\n")}`);
+      }
+      const target = matches.find((d) => d.id === sub) ?? matches[0]!;
       const scopes = [...new Set([...target.scopes, ...rest])];
       await admin.call("setDeviceScopes", { device: target.id, scopes });
       console.log(`${target.name} may now: ${scopes.join(", ")}`);
@@ -1137,8 +1156,75 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     }
 
+    case "bank": {
+      const admin = new Admin(home);
+      if (sub === "setup") {
+        // Written by this process, the node's own user, into the node's home: private (600) from the start.
+        const service = new BankService({ dir: join(home.dir, "bank") });
+        try {
+          const config = service.setup({
+            appId: str("app-id") ?? "",
+            keyPath: str("key") ?? "",
+            redirectUrl: str("redirect-url") ?? "",
+            ...(str("country") ? { country: str("country") } : {}),
+            ...(str("aspsp") ? { aspsp: str("aspsp") } : {}),
+          });
+          console.log(`Bank set up: app ${config.appId}, ${config.aspsp} (${config.country}), consent ${config.consentDays} days, callback ${config.redirectUrl}`);
+        } catch (error) {
+          fail(`bank setup: ${(error as Error).message}\nusage: galahad bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback`);
+        }
+        const problem = service.problem();
+        console.log(problem ? `${bold("Not ready yet:")} ${problem}` : "Key and files are private to this node's user. Next: galahad bank connect (or the PWA: Bank → Connect).");
+        return;
+      }
+      if (sub === "connect") {
+        const { url, aspsp, validUntil } = (await admin.call("bankConnect", {})) as { url: string; aspsp: string; validUntil: string };
+        console.log(`Open this to authorise ${aspsp} (read-only, until ${validUntil.slice(0, 10)}); it's good for 15 minutes:\n\n  ${url}\n`);
+        console.log(dim("The bank sends you back to the PWA, which finishes it. Without the PWA: galahad bank complete"));
+        return;
+      }
+      if (sub === "complete") {
+        const pasted = await readSecret("Paste the URL the bank sent you back to (hidden): ");
+        let code: string | null = null;
+        let state: string | null = null;
+        try {
+          const url = new URL(pasted.trim());
+          code = url.searchParams.get("code");
+          state = url.searchParams.get("state");
+        } catch {
+          fail("that isn't a URL");
+        }
+        if (!code || !state) fail("the URL has no code and state: copy the whole address the bank sent you back to");
+        const done = (await admin.call("bankComplete", { code, state })) as { accounts: number; ibans: string[]; validUntil: string };
+        console.log(`Connected: ${done.accounts} account(s) (${done.ibans.join(", ")}), until ${done.validUntil.slice(0, 10)}.`);
+        return;
+      }
+      if (sub === "disconnect") {
+        if (!flags.yes && !confirm("End the bank consent and forget the session and the cache?")) return;
+        const { ended } = (await admin.call("bankDisconnect", {})) as { ended: boolean };
+        console.log(ended ? "Ended at the bank, and forgotten here." : "Forgotten here (the bank didn't confirm ending it; it expires on its own).");
+        return;
+      }
+      const status = (await admin.call("bankStatus")) as BankStatusView;
+      console.log(status.message);
+      for (const a of status.accounts) {
+        const b = status.budget.find((x) => x.account === a.uid);
+        console.log(`  ${a.name || "(unnamed)"} ${a.iban ?? ""} ${a.currency ?? ""}  ${dim(`${a.uid} · ${b ? `${b.remaining}/${b.perDay} background fetches left` : ""}${b?.cacheAgeSeconds != null ? ` · cache ${Math.round(b.cacheAgeSeconds / 60)} min old` : ""}`)}`);
+      }
+      if (status.daysRemaining !== null) console.log(dim(`${status.daysRemaining} day(s) of consent left.`));
+      return;
+    }
+
     case "arms": {
       const admin = new Admin(home);
+      if (sub === "grant" || sub === "ungrant") {
+        const [label, ...scopes] = rest;
+        if (!label || !scopes.length) fail(`usage: galahad arms ${sub} <agent> <scope…>   e.g. galahad arms grant claude-code bank:read`);
+        const { arm } = (await admin.call("grantArm", sub === "grant" ? { label, add: scopes } : { label, remove: scopes })) as { arm: { label: string; scopes: string[] } };
+        console.log(`${arm.label}: ${arm.scopes.join(", ")}`);
+        console.log(dim("Its MCP server offers the tools at its next start (restart the agent)."));
+        return;
+      }
       if (sub === "revoke") {
         if (!rest[0]) fail("usage: galahad arms revoke <label>");
         const { revoked } = await admin.call("revokeArm", { label: rest[0] });

@@ -49,6 +49,8 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     const html = readFileSync(join(src, "index.html"));
     files.set("/", { body: html, type: "text/html; charset=utf-8" });
     files.set("/index.html", { body: html, type: "text/html; charset=utf-8" });
+    // Where the bank sends you back after authorising: the app itself finishes it.
+    files.set("/bank/callback", { body: html, type: "text/html; charset=utf-8" });
     files.set("/manifest.webmanifest", {
       body: readFileSync(join(src, "manifest.webmanifest")),
       type: "application/manifest+json",

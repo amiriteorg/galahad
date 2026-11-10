@@ -427,6 +427,21 @@ Coding agents use connectors through MCP (`connectors`, `connector_call`) with t
 
 A covered call is still filed as an action, so it's in your inbox and the ledger. The node that filed it records which order answered it (`order.applied`), and **every replica checks again on replay** that the order existed, was unrevoked and unexpired at that moment, and covers that exact call, before it counts as approved. Only you sign orders (`fleet:admin`, from a terminal or a paired device); agents and nodes never can.
 
+## 10½. The bank, read-only ✅
+
+Your own accounts' balances and transactions, through Enable Banking (PSD2 account information only), for the agents you choose. Setup, the threat model and what couldn't be verified: [BANK](BANK.md).
+
+| Part | Where | What it does |
+|---|---|---|
+| Client | `packages/node/src/bank/eb-client.ts` | Signs each request with a fresh RS256 JWT (`kid` = your application, 10 minutes), reading the key only to sign. Only `https://api.enablebanking.com` and an allowlist of 7 method and path pairs (no payments), redirects refused, a timeout and a size cap. Errors keep the status and the error code, never the body |
+| Service | `packages/node/src/bank/service.ts` | Checks the files' modes and owner before anything; authorising (state, 89 days or the bank's cap) and completing (single use, hashed state, 15 minutes); the account allowlist; the cache (1 h balances, 6 h transactions); a budget of 4 bank fetches per account in any 24 hours; 6 hours' pause on a 429; `reauthorization_required` for an ended consent; the audit log |
+| Shaping | `packages/node/src/bank/sanitize.ts` | A fixed output shape; text cleaned of control, bidirectional and zero-width characters and cut to 200 characters; everything wrapped as `untrusted_data` |
+| Routes | `packages/core/src/api.ts` | `bankStatus`, `bankAccounts`, `bankBalances`, `bankTransactions` need `bank:read`; `bankConnect`, `bankComplete`, `bankDisconnect` and `grantArm` need `fleet:admin`, which agents never hold |
+| Agents | `packages/node/src/mcp.ts` | `bank_status`, `bank_accounts`, `bank_balances`, `bank_transactions`, offered only to an arm granted `bank:read` (`galahad arms grant <agent> bank:read`, or the Bank page) |
+| You | PWA **Bank**, `galahad bank …` | Connect and re-authorise (the bank returns to `/bank/callback`, which the PWA finishes), disconnect, who may read; the heartbeat warns 7 days before the consent ends |
+
+No bank data enters the mind: the session, the cache and the audit log are files of the node that holds the bank, not events. Nothing about your accounts replicates (only the heartbeat's reminders become notices), and convergence is untouched.
+
 ## 11. Growth & scale 🔜
 
 Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**
