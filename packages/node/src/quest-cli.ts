@@ -63,7 +63,7 @@ function environment(sandbox: SandboxView, host: string): string {
         "FEniCSx (dolfinx, PETSc, MPI: mpirun), gmsh, scikit-fem, OpenSees; build123d on OpenCascade (STEP/STL); MuJoCo; CoolProp, Cantera; " +
         "python-control, cvxpy, Z3; OpenFOAM (run its commands as `openfoam blockMesh` etc.; tutorials listed by `openfoam`); ngspice; Octave; Maxima; " +
         "gcc, gfortran, cmake, bun 1.4.4. `lab-check` proves each tool against a known answer."
-      : "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4, OpenCode.",
+      : "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
     `Network: ${NETWORK[sandbox.network]}.`,
     `Limits: ${sandbox.cpus} CPUs, ${sandbox.memoryGb} GB of memory.`,
   ].join(" ");
