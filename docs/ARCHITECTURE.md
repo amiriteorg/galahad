@@ -284,7 +284,7 @@ Guarantees:
 
 | | How |
 |---|---|
-| **Models** | The agent calls models itself, through Galahad's gateway: the engineer's first model on an OpenAI-compatible provider with a key, on a token scoped to that provider and to the sandbox's lifetime. It never sees a key. |
+| **Models** | The agent calls models itself, through Galahad's gateway: the engineer's models on OpenAI-compatible providers with a key, in the roster's order, on a token scoped to those providers and to the sandbox's lifetime. It never sees a key. If a model fails (an outage, a provider's content filter), the next carries on the same session. |
 | **Runs long** | It runs headless in the background inside the sandbox (its own process group, stdin closed), so no single command's time limit applies; Galahad follows its event stream every 10 s, so every command and edit it makes appears as it happens. Past `--minutes`, or on Ctrl-C, its whole process group is stopped. |
 | **Reviewed** | When it ends, the `reviewer` judges its work from the sandbox (`git status` and `git diff --stat`, what's in `/work/out`) and its last 40 commands. A REVISE continues **the agent's own session** with the notes, at most twice. |
 | **Kept** | With `--repo`, the repository is cloned first (`--net online`) and its changes are kept as `/work/out/changes.patch`, new files included, in the quest's artifact. |

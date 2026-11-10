@@ -1,6 +1,6 @@
 import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
-import { AGENTS, chooseAgentModel, investigate, type InvestigationOutcome, type QuestEvent, type QuestOptions, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
+import { AGENTS, chooseAgentModels, investigate, type InvestigationOutcome, type QuestEvent, type QuestOptions, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
 
 /*
  * `galahad do "<goal>"`: a quest from the terminal. The loop itself is pure
@@ -205,7 +205,7 @@ export async function runNodeQuest(
     quest,
     ...(options.on ? { on: options.on } : {}),
     // The agent calls models itself, through the gateway, on a token that lives as long as the sandbox.
-    ...(agent ? { providers: [agent.model.provider], ttlMinutes: Math.min(agent.minutes + 30, 7 * 24 * 60) } : {}),
+    ...(agent ? { providers: [...new Set(agent.models.map((m) => m.provider))], ttlMinutes: Math.min(agent.minutes + 30, 7 * 24 * 60) } : {}),
   });
   // Sandboxes name their host by device id; people (and the engineer) know it by name.
   const fleet = await node.call<FleetView>("fleet").catch(() => null);
@@ -341,9 +341,9 @@ async function agentFor(node: NodeClient, options: DoOptions): Promise<NonNullab
     node.call<{ roster: Record<string, { models: string[] }> }>("roster"),
     node.call<{ providers: ProviderView[] }>("providers"),
   ]);
-  const model = chooseAgentModel(roster.engineer?.models ?? [], providers);
-  if (!model) throw new Error("no engineer model on an OpenAI-compatible provider with a key: galahad roster set engineer <provider/model> …");
-  return { driver, model, minutes: wanted.minutes, workdir: wanted.repo ? "/work/repo" : "/work" };
+  const models = chooseAgentModels(roster.engineer?.models ?? [], providers);
+  if (!models.length) throw new Error("no engineer model on an OpenAI-compatible provider with a key: galahad roster set engineer <provider/model> …");
+  return { driver, models, minutes: wanted.minutes, workdir: wanted.repo ? "/work/repo" : "/work" };
 }
 
 /** What the reviewer sees of an agent's work, straight from the sandbox. */

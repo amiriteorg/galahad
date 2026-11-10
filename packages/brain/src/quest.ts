@@ -49,7 +49,7 @@ export interface QuestOptions {
    * command per turn, bounded by time rather than a command count. The reviewer's notes
    * continue the agent's own session.
    */
-  agent?: { driver: AgentDriver; model: AgentModel; minutes: number; workdir: string };
+  agent?: { driver: AgentDriver; models: AgentModel[]; minutes: number; workdir: string };
 }
 
 export interface QuestReview {
@@ -306,23 +306,25 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const agentWork = async (agent: NonNullable<Resolved["agent"]>): Promise<QuestOutcome> => {
     const deadline = Date.now() + agent.minutes * 60_000;
     const trail: Step[] = [];
-    for (const [path, content] of Object.entries(agent.driver.files(agent.model))) {
+    for (const [path, content] of Object.entries(agent.driver.files(agent.models))) {
       const written = await deps.exec(`mkdir -p "$(dirname '${path}')" && printf %s '${Buffer.from(content, "utf8").toString("base64")}' | base64 -d > '${path}'`, 30);
       if (written.exitCode !== 0) return finish({ status: "gave-up", summary: `Couldn't set up ${agent.driver.name}: ${written.stderr || written.stdout}` });
     }
     let prompt = agentBriefing(o, plan);
     let session: string | null = null;
+    let current = 0;
     for (;;) {
       check();
+      const model = agent.models[current]!;
       const run = await runAgent(
         agent.driver,
-        { model: agent.model, prompt, session, deadline, workdir: agent.workdir },
+        { model, prompt, session, deadline, workdir: agent.workdir },
         {
           exec: deps.exec,
           signal: deps.signal,
           sleep: pause,
           event: (event) => {
-            if (event.type === "text") emit({ type: "thought", step: steps, text: event.text, model: `${agent.driver.name} · ${agent.model.provider}/${agent.model.model}` });
+            if (event.type === "text") emit({ type: "thought", step: steps, text: event.text, model: `${agent.driver.name} · ${model.provider}/${model.model}` });
             if (event.type === "tool") {
               steps += 1;
               const command = `${event.tool}: ${event.input}`;
@@ -335,6 +337,14 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       );
       session = run.session ?? session;
       if (run.status === "stopped") return finish({ status: "stopped", summary: "Stopped at your request." });
+      // A model that fails (an outage, a provider's filter) hands over to the next, which carries on the same session.
+      if (run.status === "failed" && current + 1 < agent.models.length) {
+        current += 1;
+        const next = agent.models[current]!;
+        emit({ type: "retry", role: "engineer", attempt: current, error: `${model.provider}/${model.model}: ${run.error ?? "failed"}`.slice(0, 300), waitMs: 0 });
+        if (session) prompt = `Your last run stopped with an error (${(run.error ?? "").split("\n").find(Boolean) ?? "unknown"}); you're now on ${next.provider}/${next.model}. Continue the quest from where you left off.`;
+        continue;
+      }
       if (run.status !== "finished") {
         const why = `${agent.driver.name} ${run.status === "timeout" ? `ran out of time (${agent.minutes} minutes)` : "failed"}: ${run.error ?? ""}`;
         return finish({ status: "gave-up", summary: [run.summary, why].filter(Boolean).join("\n\n") });

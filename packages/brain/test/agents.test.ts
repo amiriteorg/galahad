@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExecResult } from "@galahad/core";
-import { AGENT_DIR, type AgentEvent, chooseAgentModel, OPENCODE, runAgent } from "../src/agents.ts";
+import { AGENT_DIR, type AgentEvent, chooseAgentModels, OPENCODE, runAgent } from "../src/agents.ts";
 import { type QuestEvent, type QuestRole, runQuest } from "../src/quest.ts";
 
 /*
@@ -40,31 +40,44 @@ describe("reading OpenCode", () => {
       { type: "text", text: "`python3 test_calc.py` now passes. The bug was `a - b`; it's `a + b` now." },
     ]);
     expect(OPENCODE.read(LINES.start)).toEqual([{ type: "session", id: SESSION }]);
+    // As seen live: a provider's filter is a failure with a reason.
+    expect(OPENCODE.read(JSON.stringify({ type: "provider.content-filter", message: "Provider blocked the response" }))).toEqual([{ type: "error", message: "Provider blocked the response" }]);
     expect(OPENCODE.read("not json")).toEqual([]);
   });
 
-  test("its config: the model through the gateway (never a key), no self-updates, every tool allowed", () => {
-    const files = OPENCODE.files({ provider: "orcarouter", model: "anthropic/claude-opus-5.5" });
+  test("its config: every model through the gateway (never a key), no self-updates, every tool allowed", () => {
+    const files = OPENCODE.files([
+      { provider: "orcarouter", model: "anthropic/claude-opus-5.5" },
+      { provider: "deepseek", model: "deepseek-v4-pro" },
+    ]);
     const config = JSON.parse(files["/work/.config/opencode/opencode.json"]!);
-    expect(config.model).toBe("galahad/anthropic/claude-opus-5.5");
+    expect(config.model).toBe("g-orcarouter/anthropic/claude-opus-5.5");
     expect(config.update).toBe("disable");
-    expect(config.providers.galahad.settings).toEqual({ baseURL: "{env:OPENAI_BASE_URL}", apiKey: "{env:OPENAI_API_KEY}" });
+    expect(config.providers["g-orcarouter"].settings).toEqual({ baseURL: "{env:GALAHAD_GATEWAY}/orcarouter", apiKey: "{env:OPENAI_API_KEY}" });
+    expect(config.providers["g-deepseek"].settings).toEqual({ baseURL: "{env:GALAHAD_GATEWAY}/deepseek", apiKey: "{env:OPENAI_API_KEY}" });
+    expect(Object.keys(config.providers["g-deepseek"].models)).toEqual(["deepseek-v4-pro"]);
     expect(config.permissions).toEqual([{ action: "*", resource: "*", effect: "allow" }]);
   });
 
-  test("its model: the engineer's first on an OpenAI-compatible provider with a key", () => {
+  test("its models: the engineer's, in the roster's order, on OpenAI-compatible providers with a key", () => {
     const providers = [
       { id: "anthropic", kind: "anthropic", hasKey: true },
       { id: "orcarouter", kind: "openai", hasKey: true },
       { id: "deepseek", kind: "openai", hasKey: false },
     ];
-    expect(chooseAgentModel(["anthropic/claude-opus-5-5", "ollama/*", "deepseek/v4", "orcarouter/anthropic/claude-opus-5.5"], providers)).toEqual({ provider: "orcarouter", model: "anthropic/claude-opus-5.5" });
-    expect(chooseAgentModel(["anthropic/claude-opus-5-5"], providers)).toBeNull();
+    const withDeepseek = providers.map((p) => (p.id === "deepseek" ? { ...p, hasKey: true } : p));
+    expect(chooseAgentModels(["anthropic/claude-opus-5-5", "ollama/*", "orcarouter/anthropic/claude-opus-5.5", "deepseek/deepseek-v4-pro"], withDeepseek)).toEqual([
+      { provider: "orcarouter", model: "anthropic/claude-opus-5.5" },
+      { provider: "deepseek", model: "deepseek-v4-pro" },
+    ]);
+    expect(chooseAgentModels(["deepseek/v4", "orcarouter/x"], providers)).toEqual([{ provider: "orcarouter", model: "x" }]);
+    expect(chooseAgentModels(["anthropic/claude-opus-5-5"], providers)).toEqual([]);
   });
 
   test("a run continues its session when there is one", () => {
     expect(OPENCODE.command({ provider: "p", model: "m" }, null)).not.toContain("--session");
     expect(OPENCODE.command({ provider: "p", model: "m" }, SESSION)).toContain(`--session '${SESSION}'`);
+    expect(OPENCODE.command({ provider: "orcarouter", model: "anthropic/claude-opus-5.5" }, null)).toContain("--model 'g-orcarouter/anthropic/claude-opus-5.5'");
   });
 });
 
@@ -163,7 +176,7 @@ describe("a quest with a coding agent", () => {
     const asked: QuestRole[] = [];
     const events: QuestEvent[] = [];
     const outcome = await runQuest(
-      { goal: "make the test pass", environment: "a sandbox", evidence: ["cd /work/repo && git diff --stat"], agent: { driver: OPENCODE, model, minutes: 30, workdir: "/work/repo" } },
+      { goal: "make the test pass", environment: "a sandbox", evidence: ["cd /work/repo && git diff --stat"], agent: { driver: OPENCODE, models: [model], minutes: 30, workdir: "/work/repo" } },
       {
         ask: async (role) => {
           asked.push(role);
@@ -186,5 +199,45 @@ describe("a quest with a coding agent", () => {
     expect(commands).toContain("cd /work/repo && git diff --stat");
     for (const command of commands) expect(Bun.spawnSync(["bash", "-n", "-c", command]).stderr.toString()).toBe("");
     expect(events.some((e) => e.type === "command" && e.command === "shell: python3 test_calc.py")).toBe(true);
+  });
+});
+
+describe("an agent's model fails", () => {
+  test("the next model carries on the same session (seen live: a provider's content filter ended the quest)", async () => {
+    const replies: Record<QuestRole, string[]> = { planner: ["1. Count files."], engineer: [], reviewer: ["PASS"] };
+    const filtered = JSON.stringify({ type: "provider.content-filter", message: "Provider blocked the response" });
+    let runs = 0;
+    const launches: string[] = [];
+    const exec = async (command: string): Promise<ExecResult> => {
+      const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
+      if (command.startsWith("mkdir -p /work/.agent")) {
+        runs += 1;
+        launches.push(command);
+        return ok();
+      }
+      if (command.startsWith("python3 -c")) {
+        return ok(JSON.stringify(runs === 1 ? { alive: false, exit: 1, next: 10, lines: [LINES.start, LINES.shell, filtered] } : { alive: false, exit: 0, next: 20, lines: [LINES.edit, LINES.text] }));
+      }
+      return ok(command.startsWith("stat") ? "0" : "");
+    };
+    const events: QuestEvent[] = [];
+    const outcome = await runQuest(
+      {
+        goal: "inventory",
+        environment: "a sandbox",
+        agent: { driver: OPENCODE, models: [model, { provider: "deepseek", model: "deepseek-v4-pro" }], minutes: 30, workdir: "/work/repo" },
+      },
+      { ask: async (role) => ({ text: replies[role].shift()!, model: `test/${role}` }), exec, emit: (e) => events.push(e), sleep: noSleep },
+    );
+    expect(outcome.status).toBe("done");
+    expect(launches).toHaveLength(2);
+    expect(launches[0]).toContain("g-orcarouter/anthropic/claude-opus-5.5");
+    expect(launches[1]).toContain("g-deepseek/deepseek-v4-pro");
+    expect(launches[1]).toContain("--session");
+    expect(launches[1]).toContain(SESSION);
+    const second = Buffer.from(launches[1]!.match(/printf %s '([A-Za-z0-9+/=]+)'/)![1]!, "base64").toString("utf8");
+    expect(second).toContain("Continue the quest from where you left off");
+    expect(second).toContain("Provider blocked the response");
+    expect(events.find((e) => e.type === "retry")).toMatchObject({ role: "engineer", attempt: 1 });
   });
 });

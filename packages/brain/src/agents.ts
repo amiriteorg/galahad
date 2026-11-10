@@ -26,9 +26,9 @@ export type AgentEvent =
 
 export interface AgentDriver {
   name: string;
-  /** Files written before the first run (absolute path → content). */
-  files(model: AgentModel): Record<string, string>;
-  /** The command for one run, reading its message from AGENT_DIR/prompt.md (a session id continues one). */
+  /** Files written before the first run (absolute path → content): every model it may fall back to. */
+  files(models: readonly AgentModel[]): Record<string, string>;
+  /** The command for one run on one model, reading its message from AGENT_DIR/prompt.md (a session id continues one). */
   command(model: AgentModel, session: string | null): string;
   /** One line of the event stream, or null if it's nothing to report. */
   read(line: string): AgentEvent[];
@@ -48,31 +48,42 @@ const brief = (value: unknown, max: number): string => {
  * under the sandbox's HOME (/work). Every tool is allowed: the sandbox is the boundary,
  * and its network decides what's reachable.
  */
+/** OpenCode's name for a gateway provider: g-<provider>. */
+const ocProvider = (model: AgentModel) => `g-${model.provider.replace(/[^A-Za-z0-9-]/g, "-")}`;
+
 export const OPENCODE: AgentDriver = {
   name: "opencode",
-  files: (model) => ({
-    "/work/.config/opencode/opencode.json": JSON.stringify(
-      {
-        $schema: "https://opencode.ai/config.json",
-        update: "disable",
-        model: `galahad/${model.model}`,
-        providers: {
-          galahad: {
-            name: `Galahad gateway (${model.provider})`,
-            env: ["OPENAI_API_KEY"],
-            package: "@opencode/ai/providers/openai-compatible",
-            settings: { baseURL: "{env:OPENAI_BASE_URL}", apiKey: "{env:OPENAI_API_KEY}" },
-            models: { [model.model]: { name: model.model } },
-          },
+  files: (models) => {
+    // One provider per gateway provider, all on the sandbox's one token: each model the
+    // roster offers is a fallback the next run can continue the session on.
+    const providers: Record<string, unknown> = {};
+    for (const m of models) {
+      const id = ocProvider(m);
+      const entry = (providers[id] ??= {
+        name: `Galahad gateway (${m.provider})`,
+        env: ["OPENAI_API_KEY"],
+        package: "@opencode/ai/providers/openai-compatible",
+        settings: { baseURL: `{env:GALAHAD_GATEWAY}/${m.provider}`, apiKey: "{env:OPENAI_API_KEY}" },
+        models: {},
+      }) as { models: Record<string, { name: string }> };
+      entry.models[m.model] = { name: m.model };
+    }
+    return {
+      "/work/.config/opencode/opencode.json": JSON.stringify(
+        {
+          $schema: "https://opencode.ai/config.json",
+          update: "disable",
+          model: `${ocProvider(models[0]!)}/${models[0]!.model}`,
+          providers,
+          permissions: [{ action: "*", resource: "*", effect: "allow" }],
         },
-        permissions: [{ action: "*", resource: "*", effect: "allow" }],
-      },
-      null,
-      2,
-    ),
-  }),
-  command: (_model, session) =>
-    `opencode run --standalone --auto --format json --title galahad${session ? ` --session ${quote(session)}` : ""} "$(cat ${AGENT_DIR}/prompt.md)"`,
+        null,
+        2,
+      ),
+    };
+  },
+  command: (model, session) =>
+    `opencode run --standalone --auto --format json --title galahad --model ${quote(`${ocProvider(model)}/${model.model}`)}${session ? ` --session ${quote(session)}` : ""} "$(cat ${AGENT_DIR}/prompt.md)"`,
   read(line) {
     let event: any;
     try {
@@ -96,7 +107,8 @@ export const OPENCODE: AgentDriver = {
       });
     }
     if (event.type === "step_finish" && part.tokens) out.push({ type: "tokens", input: Number(part.tokens.input) || 0, output: Number(part.tokens.output) || 0 });
-    if (/error/i.test(String(event.type))) out.push({ type: "error", message: brief(event.error ?? event.message ?? event, 1000) });
+    // Failures come as their own event types: "error", "provider.content-filter", …
+    if (/error|filter|fail|denied|refus/i.test(String(event.type))) out.push({ type: "error", message: brief(event.message ?? event.error ?? event, 1000) });
     return out;
   },
 };
@@ -211,7 +223,7 @@ export async function runAgent(
     if (!poll.alive) {
       if (poll.exit !== 0 || (!run.summary && lastError)) {
         const stderr = (await deps.exec(`tail -c 2000 ${AGENT_DIR}/stderr.log 2>/dev/null`, 30).catch(() => null))?.stdout ?? "";
-        return { ...run, status: "failed", error: redact([poll.exit === null ? "it stopped without an exit code" : `it exited with ${poll.exit}`, lastError, stderr.trim()].filter(Boolean).join("\n")).slice(0, 3000) };
+        return { ...run, status: "failed", error: redact([lastError, poll.exit === null ? "it stopped without an exit code" : `it exited with ${poll.exit}`, stderr.trim()].filter(Boolean).join("\n")).slice(0, 3000) };
       }
       return run;
     }
@@ -228,10 +240,12 @@ export async function runAgent(
 }
 
 /**
- * The agent's model: the engineer's first model on a provider the gateway can reach with
- * a key, speaking the OpenAI-compatible API (the protocol the agent's config uses here).
+ * The agent's models, in the roster's order: the engineer's models on providers the gateway
+ * can reach with a key, speaking the OpenAI-compatible API (the protocol the agent's config
+ * uses here). The first does the work; the others are fallbacks, as for every role.
  */
-export function chooseAgentModel(engineer: readonly string[], providers: readonly { id: string; kind: string; hasKey: boolean }[]): AgentModel | null {
+export function chooseAgentModels(engineer: readonly string[], providers: readonly { id: string; kind: string; hasKey: boolean }[], max = 3): AgentModel[] {
+  const out: AgentModel[] = [];
   for (const ref of engineer) {
     const slash = ref.indexOf("/");
     if (slash <= 0) continue;
@@ -239,7 +253,7 @@ export function chooseAgentModel(engineer: readonly string[], providers: readonl
     const model = ref.slice(slash + 1);
     if (!model || model === "*") continue;
     const known = providers.find((p) => p.id === provider);
-    if (known?.hasKey && known.kind === "openai") return { provider, model };
+    if (known?.hasKey && known.kind === "openai" && out.length < max) out.push({ provider, model });
   }
-  return null;
+  return out;
 }
