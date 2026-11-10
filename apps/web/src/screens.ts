@@ -32,12 +32,53 @@ export function trustStrip(): HTMLElement {
 
 const footer = () => h("footer", { class: "solo-foot" }, h("span", {}, "Galahad · one mind, many bodies"));
 
-export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | null): void {
+/** The invite inside whatever was pasted: a whole #pair= link, or just the invite itself. */
+export function inviteFrom(text: string): string | null {
+  const trimmed = text.trim();
+  const fromLink = trimmed.match(/[#&]pair=([A-Za-z0-9._-]+)/)?.[1];
+  if (fromLink) return fromLink;
+  return /^gi\d+\.[A-Za-z0-9_-]+$/.test(trimmed) ? trimmed : null;
+}
+
+/** Running as an app added to the Home Screen (which keeps its own storage, apart from the browser's). */
+const installed = () => matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+
+export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | null, onInvite?: (invite: string) => void): void {
   document.title = "Welcome · Galahad";
+  const field = h("input", { class: "input", type: "url", id: "invite-link", placeholder: "https://…#pair=gi1.…", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+  const problem = h("div", { class: "hint", "aria-live": "polite" });
+  const pasteForm = onInvite
+    ? h(
+        "form",
+        {
+          class: "stack",
+          onsubmit: (event: Event) => {
+            event.preventDefault();
+            const invite = inviteFrom(field.value);
+            if (!invite) {
+              problem.textContent = "That isn't an invite link. Copy the whole link `galahad invite --client` prints.";
+              return;
+            }
+            onInvite(invite);
+          },
+        },
+        h("label", { for: "invite-link", class: "strong" }, "Have an invite? Paste the link"),
+        field,
+        problem,
+        button("Continue", { variant: "primary", type: "submit", block: true }),
+      )
+    : null;
   replace(
     root,
     solo(
-      hero(`${greeting()}.`, "This browser isn't part of your fleet yet. Pairing takes a minute and needs one of your nodes."),
+      hero(`${greeting()}.`, installed() ? "This app isn't part of your fleet yet." : "This browser isn't part of your fleet yet. Pairing takes a minute and needs one of your nodes."),
+      installed()
+        ? callout(
+            "info",
+            "An app on your Home Screen keeps its own key, apart from the browser's, so it pairs on its own even if the browser already did. Links open in the browser, not here: paste the invite below instead.",
+            { title: "Pair this app itself" },
+          )
+        : null,
       h(
         "section",
         { class: "card", "aria-label": "How to pair" },
@@ -45,15 +86,17 @@ export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | nul
           "ol",
           { class: "steps-num" },
           h("li", {}, h("div", {}, h("span", { class: "strong", style: "color:var(--text)" }, "On any of your nodes, run"), copyField("galahad invite --client"))),
-          h("li", {}, h("div", {}, h("span", {}, "Open the link it prints ", h("strong", {}, "on this device"), ". It works once and expires in ten minutes."))),
+          h("li", {}, h("div", {}, h("span", {}, installed() ? "Copy the link it prints and paste it below. It works once and expires in ten minutes." : ["Open the link it prints ", h("strong", {}, "on this device"), ", or paste it below. It works once and expires in ten minutes."]))),
           h("li", {}, h("div", {}, h("span", {}, "Both screens show a six-digit code. Approve on the node ", h("strong", {}, "only if the codes match"), "."))),
         ),
-        identity ? h("p", { class: "tiny subtle", style: "text-align:center" }, "This browser's key ", h("span", { class: "mono" }, shortId(identity.device, 12))) : null,
+        pasteForm,
+        identity ? h("p", { class: "tiny subtle", style: "text-align:center" }, installed() ? "This app's key " : "This browser's key ", h("span", { class: "mono" }, shortId(identity.device, 12))) : null,
       ),
       trustStrip(),
       footer(),
     ),
   );
+  if (installed()) field.focus();
 }
 
 export function renderRevoked(root: HTMLElement): void {

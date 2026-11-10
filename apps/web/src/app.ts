@@ -65,7 +65,11 @@ async function boot(): Promise<void> {
     }
   }
   if (!identity?.enrolled) {
-    renderWelcome(root, identity);
+    // A pasted invite: the way an app on the Home Screen pairs (links open in the browser, not in it).
+    renderWelcome(root, identity, (invite) => {
+      history.replaceState(null, "", `${location.pathname}${location.search}#pair=${invite}`);
+      void boot();
+    });
     return;
   }
 

@@ -52,3 +52,14 @@ describe("pairing requests never wait forever", () => {
     expect(await nodeReachable(1000)).toBe(false);
   });
 });
+
+describe("pairing an app on the Home Screen by pasting the invite", () => {
+  test("the invite is found in a whole link, or taken as it is; anything else is refused", async () => {
+    const { inviteFrom } = await import("./screens.ts");
+    expect(inviteFrom("https://ultra.tail719902.ts.net:8443/#pair=gi1.eyJhIjoxfQ")).toBe("gi1.eyJhIjoxfQ");
+    expect(inviteFrom("  gi1.eyJhIjoxfQ\n")).toBe("gi1.eyJhIjoxfQ");
+    expect(inviteFrom("https://ultra/#/overview&pair=gi1.abc-_")).toBe("gi1.abc-_");
+    expect(inviteFrom("https://example.com/")).toBeNull();
+    expect(inviteFrom("gi1.<script>")).toBeNull();
+  });
+});
