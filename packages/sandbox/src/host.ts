@@ -229,7 +229,7 @@ export class SandboxHost {
     if (input.memoryGb > this.opts.maxMemoryGb) throw new SandboxError(`at most ${this.opts.maxMemoryGb} GB memory per sandbox on this node`);
     const isolation = chooseIsolation(input.network, input.isolation, !!this.opts.microVMs);
     if (isolation === "vm" && !this.opts.microVMs) {
-      throw new SandboxError("this host can't run microVMs (it needs /dev/kvm and Kata: deploy with --sudo)", 424);
+      throw new SandboxError("this host can't run microVMs: it needs KVM and Kata Containers, which a deploy with sudo installs", 424);
     }
     const image = input.image ?? DEFAULT_IMAGE;
     if (image === DEFAULT_IMAGE && !(await this.hasImage())) {
