@@ -34,14 +34,15 @@ export function valueNoise(seed: number, x: number, y: number): number {
 const F2 = 0.5 * (Math.sqrt(3) - 1);
 const G2 = (3 - Math.sqrt(3)) / 6;
 /** Twelve gradient directions, evenly around the circle. */
-const GRAD = Array.from({ length: 12 }, (_, i) => [Math.cos((i / 12) * Math.PI * 2), Math.sin((i / 12) * Math.PI * 2)] as const);
+const GX = Float64Array.from({ length: 12 }, (_, i) => Math.cos((i / 12) * Math.PI * 2));
+const GY = Float64Array.from({ length: 12 }, (_, i) => Math.sin((i / 12) * Math.PI * 2));
 
 function corner(seed: number, i: number, j: number, x: number, y: number): number {
   const t = 0.5 - x * x - y * y;
   if (t <= 0) return 0;
-  const g = GRAD[Math.floor(hash2(seed, i, j) * 12)]!;
+  const g = Math.floor(hash2(seed, i, j) * 12);
   const t2 = t * t;
-  return t2 * t2 * (g[0] * x + g[1] * y);
+  return t2 * t2 * (GX[g]! * x + GY[g]! * y);
 }
 
 /** 2D simplex noise in about [-1, 1]. */
@@ -52,7 +53,9 @@ export function simplex(seed: number, x: number, y: number): number {
   const t = (i + j) * G2;
   const x0 = x - (i - t);
   const y0 = y - (j - t);
-  const [i1, j1] = x0 > y0 ? [1, 0] : [0, 1];
+  // No array here: simplex runs some ten thousand times per chunk.
+  const i1 = x0 > y0 ? 1 : 0;
+  const j1 = 1 - i1;
   const x1 = x0 - i1 + G2;
   const y1 = y0 - j1 + G2;
   const x2 = x0 - 1 + 2 * G2;

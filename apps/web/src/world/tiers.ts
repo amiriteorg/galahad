@@ -22,6 +22,8 @@ export interface Tier {
   flowers: number;
   grass: number;
   rocks: number;
+  /** Pebbles and clover underfoot. */
+  detail: number;
   birds: number;
   deer: number;
   rabbits: number;
@@ -34,10 +36,18 @@ export interface Tier {
   lights: number;
   /** Land is loaded this far round the camera's focus at most (metres); fog hides its edge. */
   radius: number;
-  /** Grass and flowers only this near the focus. */
+  /** Grass, flowers, pebbles and clover only this near the focus. */
   grassRadius: number;
-  /** Chunks grown per frame at most. */
+  /** Beyond this (metres from the focus) trees are drawn with their simpler model. */
+  treeLod: number;
+  /** Chunks started per frame at most, and the milliseconds a frame may spend growing land. */
   chunkBudget: number;
+  chunkMs: number;
+  /** The water's grid near the camera (cells a side): gentle waves need vertices. */
+  waterGrid: number;
+  /** Soft glows round lamps and windows at night. */
+  halos: number;
+  /** Multisampling (cheap on the tile-based GPUs of phones). */
   antialias: boolean;
 }
 
@@ -50,9 +60,10 @@ export const TIERS: Record<TierName, Tier> = {
     shadowMapSize: 0,
     trees: 1500,
     bushes: 600,
-    flowers: 0,
-    grass: 0,
+    flowers: 400,
+    grass: 1200,
     rocks: 400,
+    detail: 600,
     birds: 10,
     deer: 2,
     rabbits: 3,
@@ -62,8 +73,12 @@ export const TIERS: Record<TierName, Tier> = {
     particles: 96,
     lights: 1,
     radius: 200,
-    grassRadius: 0,
+    grassRadius: 36,
+    treeLod: 60,
     chunkBudget: 1,
+    chunkMs: 3,
+    waterGrid: 32,
+    halos: 24,
     antialias: false,
   },
   medium: {
@@ -74,9 +89,10 @@ export const TIERS: Record<TierName, Tier> = {
     shadowMapSize: 0,
     trees: 3000,
     bushes: 1500,
-    flowers: 1500,
-    grass: 5000,
+    flowers: 2200,
+    grass: 7000,
     rocks: 900,
+    detail: 2500,
     birds: 24,
     deer: 4,
     rabbits: 6,
@@ -86,9 +102,13 @@ export const TIERS: Record<TierName, Tier> = {
     particles: 192,
     lights: 2,
     radius: 280,
-    grassRadius: 64,
+    grassRadius: 60,
+    treeLod: 90,
     chunkBudget: 2,
-    antialias: false,
+    chunkMs: 4,
+    waterGrid: 56,
+    halos: 48,
+    antialias: true,
   },
   high: {
     name: "high",
@@ -98,9 +118,10 @@ export const TIERS: Record<TierName, Tier> = {
     shadowMapSize: 2048,
     trees: 6000,
     bushes: 3000,
-    flowers: 4000,
-    grass: 14000,
+    flowers: 5000,
+    grass: 16000,
     rocks: 1800,
+    detail: 6000,
     birds: 48,
     deer: 8,
     rabbits: 12,
@@ -110,8 +131,12 @@ export const TIERS: Record<TierName, Tier> = {
     particles: 384,
     lights: 3,
     radius: 380,
-    grassRadius: 110,
-    chunkBudget: 4,
+    grassRadius: 100,
+    treeLod: 140,
+    chunkBudget: 3,
+    chunkMs: 6,
+    waterGrid: 80,
+    halos: 96,
     antialias: true,
   },
 };

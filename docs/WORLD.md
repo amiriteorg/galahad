@@ -42,6 +42,23 @@ The little machines about the keep are real open-source robots, built from their
 
 `bun scripts/robots/build.ts` fetches each robot's URDF and meshes at a pinned commit, merges rigidly fixed links, simplifies the meshes to a budget (Open Duck 25 000 triangles, SO-101 15 000, Reachy Mini 30 000) and writes a manifest and a binary per robot (each under 300 KB) into `apps/web/src/world/assets/robots/`, with `NOTICE.txt` and the Apache-2.0 licence. The files are committed, so builds never fetch. The node serves them at `/world-assets/robots/`, cached for good (their URLs carry their content's version). The world fetches them after its first frame; until they arrive, or if they can't, it draws simple stand-ins, so it never breaks. Hover a robot for its name.
 
+## How it's drawn
+
+Low-poly and pastel, every shape procedural (`apps/web/src/world/`). three.js on WebGPU, or WebGL2 where WebGPU isn't there.
+
+| | |
+|---|---|
+| Galahad | A knightly cyborg: cream panels, orange accents, dark joints, a helm with a black visor, a glowing visor line and amber eyes, a crest, pauldrons, a short tabard, the lodestar glowing on his chest, a backpack with vents. Pistons slide at his knees and elbows, his fingers are jointed, his seams glow. One skinned mesh (`knight.ts`, `rig.ts`). His feet are planted where they land (two-bone IK from the hips, `ik.ts`), his hands reach for the hilt, the bench or his chin, his head turns to his work, and idle, walk, run, work, think and guard blend. He draws his sword at the lab, where its tip is his tool at the bench, and out at an experiment, where he stands guard |
+| His dog | The same rig: four IK legs that trot in diagonal pairs and never slide, hind legs folding when it sits (`dog.ts`) |
+| The picture | AgX tone mapping, its exposure set by the hour; colours blended in linear light; a sun with a lavender-and-green hemisphere fill; ambient occlusion baked into the vertex colours; a haze that warms towards the sun, dithered so it never bands; multisampling on medium and high tiers and on phones; a reversed depth buffer on WebGPU (`scene.ts`, `daynight.ts`) |
+| The land | Trees with faceted trunks and layered lime canopies (a simpler model far off), pinkish boulders, and near the camera grass, daisies, lupines, lavender, clover and pebbles. Every tree, bush and rock casts a soft contact shadow. Streams come down from the hills in pools and waterfalls. The water waves, faceted, with foam where it laps the shore (`vegetation.ts`, `land.ts`, `terrain.ts`) |
+| The distance | Three hazy lavender mountain ranges, drifting low-poly clouds, and wind turbines and research domes at the horizon (`scenery.ts`, `sky.ts`) |
+| At night | Lit windows, lanterns, screens and runes glow warm or cool (`glows.ts`), and a few point lights by tier |
+| The camera | Close and low over his shoulder, so he's large in the frame. While he walks it swings slowly round behind him, and never stands inside a building. Whatever would hide him dissolves in a fine dither (`camera.ts`, `occlusion.ts`) |
+| Steadiness | Land and plants grow within a few milliseconds a frame, nearest first. Plant instances live in pages, so a chunk uploads only its own and turning the view uploads nothing. Shaders compile before the first frame. Frames are paced to the display, shadows snap to texels, and labels ease onto device pixels after the camera moves |
+
+Each tier (`tiers.ts`) caps every count and effect; the resolution governor lowers the pixel ratio, then drops shadows, then grass, to hold the frame time. A lower pixel ratio that doesn't make frames faster is put back at once (a blurrier picture that buys nothing), and phones never go below 1. Frames that grow land aren't judged.
+
 ## Running an experiment
 
 In a sandbox with a network (`gateway` or `online`), Python's `galahad_world` module streams to the node through the sandbox's gateway. Use the Lab (`lab: true`) for the simulators.

@@ -1,22 +1,25 @@
 import type { Station, WorldEvent } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { DirectionalLight, Fog, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
+import { cameraPosition, dot, float, fog, max, mix, normalize, positionWorld, pow, rangeFogFactor, smoothstep, uniform } from "three/tsl";
+import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
-import { attachInput, CameraRig } from "./camera.ts";
+import { attachInput, CameraRig, DEFAULT_DISTANCE, STATION_DISTANCE } from "./camera.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { emptySky, localHours, skyAt } from "./daynight.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
+import { Glows } from "./glows.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
-import { HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
-import { Land } from "./land.ts";
+import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
+import { Land, waterUniforms } from "./land.ts";
+import { occlusion } from "./occlusion.ts";
 import { readThemeColors } from "./palette.ts";
 import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
 import { originUniform, Plots } from "./plots.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
-import { SkyDome } from "./sky.ts";
+import { dither, SkyDome } from "./sky.ts";
 import { KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
 import { Vegetation, wind } from "./vegetation.ts";
@@ -28,10 +31,20 @@ import { Vegetation, wind } from "./vegetation.ts";
  * fireflies, a sky that follows the viewer's clock, and HTML labels and a speech
  * bubble projected from 3D. A quality tier chosen at start caps everything; the
  * resolution governor holds the frame time (pixel ratio first, then effects).
- * It renders at most 60 frames a second (idle life at 30, less on low tiers),
- * pauses while the page is hidden, allocates nothing per frame in its own code,
- * and gives every GPU resource back when disposed. If the GPU device is lost it
- * says so through `onLost`, and the page decides (a restart, or the text summary).
+ *
+ * The picture: AgX tone mapping (exposure by the time of day) over linear-light
+ * colours; a sun and a lavender-and-green hemisphere fill, ambient occlusion
+ * baked into the geometry, a haze that warms towards the sun, dithered so its
+ * gradients never band; multisampling where it's cheap; a reversed depth buffer
+ * on WebGPU (no flicker far away). Steady: land grows within a time budget per
+ * frame, frames are paced to the display (none dropped for a fraction of a
+ * millisecond), the camera follows on a smoothed ground, shadows are snapped to
+ * their texels, labels are projected after the camera moves and eased onto
+ * device pixels. It renders at most 60 frames a second (idle life at 30, less on
+ * low tiers), pauses while the page is hidden, allocates nothing per frame in
+ * its own code, and gives every GPU resource back when disposed. If the GPU
+ * device is lost it says so through `onLost`, and the page decides (a restart,
+ * or the text summary).
  */
 
 export type GoTo = { kind: "galahad" } | { kind: "station"; station: Exclude<Station, "field"> } | { kind: "experiment"; id: string };
@@ -82,6 +95,12 @@ export interface WorldHandle {
 
 const REBASE_M = 2048;
 const ZERO: [number, number] = [0, 0];
+/** A frame is due this long after the last (a 60 Hz frame, less a margin so rAF jitter never skips one). */
+const FRAME_MIN_MS = 1000 / 60 - 3;
+/** The world's exposure under AgX: pastel colours at about the brightness they were painted. */
+const EXPOSURE = 1.55;
+/** The haze and the sky's horizon, a little below the painted colour (AgX lifts pale colours towards white). */
+export const HAZE = 0.8;
 
 interface Label {
   el: HTMLElement;
@@ -89,9 +108,12 @@ interface Label {
   point: (out: Vec3) => boolean;
   /** Fade out beyond this many camera distances. */
   fade: number;
-  /** Last written screen position, to skip unchanged style writes. */
+  /** Eased screen position (CSS px), and the last one written. */
+  sx: number;
+  sy: number;
   x: number;
   y: number;
+  opacity: number;
   shown: boolean;
 }
 
@@ -123,12 +145,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const tierName = options.tier ?? chooseTier(device);
   const tier: Tier = TIERS[tierName];
   const small = Math.min(innerWidth, innerHeight) < 600;
-  const renderer = new WebGPURenderer({ antialias: tier.antialias, alpha: false, forceWebGL: options.forceWebGL ?? false });
+  // Multisampling: by tier, and on phones and tablets (tile-based GPUs resolve it on chip, nearly free).
+  const antialias = tier.antialias || (device.coarse && !device.fallbackAdapter);
+  const renderer = new WebGPURenderer({ antialias, alpha: false, forceWebGL: options.forceWebGL ?? false, reversedDepthBuffer: device.webgpu });
   const startDpr = Math.min(devicePixelRatio || 1, tier.maxDpr, small ? 1.5 : 2);
   const governor = new ResolutionGovernor(tier, startDpr);
   renderer.setPixelRatio(governor.dpr);
   renderer.shadowMap.enabled = tier.shadows;
   renderer.shadowMap.type = PCFShadowMap;
+  renderer.toneMapping = AgXToneMapping;
+  renderer.toneMappingExposure = EXPOSURE;
   await renderer.init();
   const backend: WorldStats["backend"] = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "webgpu" : "webgl2";
 
@@ -140,7 +166,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   container.append(canvas, overlay);
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(45, 1, 0.4, 1600);
+  const camera = new PerspectiveCamera(45, 1, 0.5, 2000);
   const worldRoot = new Group();
   scene.add(worldRoot);
   const hemi = new HemisphereLight(0xffffff, 0x888888, 1);
@@ -148,32 +174,52 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const sunTarget = new Object3D();
   sun.target = sunTarget;
   let shadows = tier.shadows;
+  const SHADOW_FAR = 260;
   if (shadows) {
     sun.castShadow = true;
     sun.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
-    sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.04;
+    // Small biases (the shadow camera's range is tight): no acne on the facets, and no shadows floating off their feet.
+    sun.shadow.bias = -0.00018;
+    sun.shadow.normalBias = 0.025;
   }
   scene.add(hemi, sun, sunTarget);
-  scene.fog = new Fog(0xffffff, 60, 300);
+
+  // The haze: thicker low down, warmer towards the sun (peach at golden hour), dithered against banding.
+  const fogNear = uniform(60);
+  const fogFar = uniform(300);
+  const fogColor = uniform(new Color(0xffffff));
+  const fogSun = uniform(new Color(0xffffff));
+  const fogSunDir = uniform(new Vector3(0, 1, 0));
+  const fogWarm = uniform(0.2);
+  const view = normalize(positionWorld.sub(cameraPosition));
+  const towards = pow(max(dot(view, fogSunDir), 0), 5);
+  const thin = float(1).sub(smoothstep(4, 70, positionWorld.y).mul(0.35));
+  scene.fogNode = fog(mix(fogColor, fogSun, towards.mul(fogWarm)), rangeFogFactor(fogNear, fogFar).mul(thin).add(dither().mul(2)).clamp(0, 1));
 
   const sky = new SkyDome(tier.name === "low" ? 300 : 900);
   const horizon = new Horizon();
   scene.add(sky.group, horizon.group);
-  const land = new Land(worldRoot, SEED, shadows);
-  const vegetation = new Vegetation(worldRoot, tier);
+  const land = new Land(worldRoot, SEED, shadows, tier.waterGrid);
+  const vegetation = new Vegetation(worldRoot, tier, (x, y) => land.heightAt(x, y), (chunk, layer) => land.smallLayer(chunk, layer));
+  land.onGrow = (chunk) => vegetation.addChunk(chunk);
+  land.onDrop = (chunk) => vegetation.removeChunk(chunk);
   const keep = new Keep(shadows, tier.lights);
   const knight = new Knight(shadows);
   const dog = new RobotDog(shadows);
   let colors = readThemeColors();
   const landmarks = new Landmarks((x, y) => land.heightAt(x, y), shadows);
   worldRoot.add(keep.group, knight.root, dog.root, landmarks.group);
+  const glows = new Glows(worldRoot, tier.halos);
+  glows.set("keep", keep.warmGlows, 0xffb866);
+  glows.set("screens", keep.coolGlows, 0x8fe2ff);
+  glows.set("landmarks", landmarks.windows, 0xffc27a);
 
   // ---------- the ground, as each kind of walker sees it ----------
   let stationObstacles: Obstacle[] = obstacles();
   let plotsNow: { x: number; y: number; size: number }[] = [];
   const height = (x: number, y: number): number => land.heightAt(x, y);
-  const wet = (x: number, y: number): boolean => land.heightAt(x, y) < WATER_LEVEL + 0.05;
+  /** In water: a lake, or a stream's pool. */
+  const wet = (x: number, y: number): boolean => land.heightAt(x, y) < land.waterAt(x, y) + 0.05;
   const insideAny = (list: Obstacle[], x: number, y: number): boolean => {
     for (let i = 0; i < list.length; i++) if (Math.hypot(x - list[i]!.x, y - list[i]!.y) < list[i]!.r) return true;
     return false;
@@ -200,6 +246,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     },
   };
   const critters = new Critters(worldRoot, tier.microducks, duckGround, shadows);
+  /** Where the camera may stand: not inside the keep's tree and deck, the lab's hill, a building. */
+  const CAMERA_KEEP_OUT = PLACES.map((p) => ({ x: STATIONS[p].x, y: STATIONS[p].y, r: p === "keep" ? 9.5 : p === "forge" ? 7.5 : p === "oracle" ? 0 : p === "council" ? 3.4 : 4.6 }));
+  const cameraClear = (x: number, y: number): boolean => {
+    for (let i = 0; i < CAMERA_KEEP_OUT.length; i++) {
+      const o = CAMERA_KEEP_OUT[i]!;
+      if (Math.hypot(x - o.x, y - o.y) < o.r) return false;
+    }
+    return true;
+  };
   const galahadLead = { x: 0, y: 0, heading: 0 };
   const dogLead = { x: 0, y: 0, heading: 0 };
   worldRoot.add(plots.group);
@@ -219,7 +274,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   let sparkTimer = 0;
   const anvil = forgeAnvil();
-  const knightState: KnightState = { moving: false, running: false, working: false, thinking: false, armed: false };
+  const knightState: KnightState = { moving: false, running: false, working: false, thinking: false, armed: false, bench: false };
+  const attention: Attention = { x: 0, y: 0, z: 0, on: false };
   const master = { x: 0, y: 0, heading: 0, moving: false, running: false, working: false };
 
   const root = document.documentElement;
@@ -241,15 +297,22 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     skyAt(hours, skyState);
     const s = skyState;
     sky.set(s);
-    horizon.set(s.light, s.horizon, s.night);
-    (scene.fog as Fog).color.setHex(s.horizon);
+    horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden);
+    fogColor.value.setHex(s.horizon).multiplyScalar(HAZE);
+    fogSun.value.setHex(s.sunGlow).multiplyScalar(HAZE);
+    fogSunDir.value.set(s.sun[0], Math.max(0, s.sun[2]), -s.sun[1]).normalize();
+    fogWarm.value = 0.25 + s.golden * 0.6;
     hemi.color.setHex(s.hemiSky);
     hemi.groundColor.setHex(s.hemiGround);
     hemi.intensity = s.hemiIntensity;
     sun.color.setHex(s.light);
     sun.intensity = s.lightIntensity;
-    land.setWaterColor(s.water);
-    keep.setNight(s.night);
+    renderer.toneMappingExposure = EXPOSURE * s.exposure;
+    land.setWaterColor(s.water, s.horizon);
+    // Lamps come on with the evening, before it's fully dark.
+    const lamps = Math.min(1, s.night * 1.25 + (s.hours > 16 || s.hours < 8 ? s.golden * 0.35 : 0));
+    keep.setNight(lamps);
+    glows.setStrength(lamps);
     knight.setNight(s.night);
     dog.setNight(s.night);
     dirty = true;
@@ -285,15 +348,22 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // ---------- labels ----------
   const labels = new Map<string, Label>();
+  /** The same labels as a list, walked every frame without an iterator. */
+  const labelList: Label[] = [];
   const addLabel = (key: string, el: HTMLElement, point: (out: Vec3) => boolean, fade = 4.5): void => {
-    labels.get(key)?.el.remove();
+    removeLabel(key);
     el.style.visibility = "hidden";
     overlay.append(el);
-    labels.set(key, { el, point, fade, x: Number.NaN, y: Number.NaN, shown: false });
+    const label: Label = { el, point, fade, sx: Number.NaN, sy: Number.NaN, x: Number.NaN, y: Number.NaN, opacity: -1, shown: false };
+    labels.set(key, label);
+    labelList.push(label);
   };
   const removeLabel = (key: string): void => {
-    labels.get(key)?.el.remove();
+    const label = labels.get(key);
+    if (!label) return;
+    label.el.remove();
     labels.delete(key);
+    labelList.splice(labelList.indexOf(label), 1);
   };
   const div = (className: string, text?: string): HTMLElement => {
     const el = document.createElement("div");
@@ -408,6 +478,32 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     dirty = true;
   }
 
+  /** What he looks at (and works on): the bench at the lab, his experiment's plot, the station he's at. */
+  function attend(): void {
+    const g = model?.galahad;
+    attention.on = false;
+    if (!g || walker.moving) return;
+    if (g.station === "forge") {
+      attention.x = anvil[0];
+      attention.y = anvil[1];
+      attention.z = anvil[2] + 0.02;
+      attention.on = true;
+    } else if (g.station === "field") {
+      const e = g.experiment ? plots.get(g.experiment)?.exp : undefined;
+      if (!e) return;
+      attention.x = e.plot.x;
+      attention.y = e.plot.y;
+      attention.z = 1.2;
+      attention.on = true;
+    } else if (g.doing && !g.model && g.station !== "keep") {
+      const s = STATIONS[g.station];
+      attention.x = s.x;
+      attention.y = s.y;
+      attention.z = 1.3;
+      attention.on = true;
+    }
+  }
+
   // ---------- input ----------
   const raycaster = new Raycaster();
   const groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -468,7 +564,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     return raycaster.ray.intersectPlane(groundPlane, hit) !== null;
   }
 
-  // ---------- hover labels: "Microduck (Pollen Robotics)", "SO-101 arm (LeRobot)" ----------
+  // ---------- hover labels: "Open Duck Mini (Antoine Pirrone)", "SO-101 arm (LeRobot)" ----------
   const hoverLabel = div("world-label hover");
   hoverLabel.style.visibility = "hidden";
   overlay.append(hoverLabel);
@@ -512,13 +608,41 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   resizeObserver.observe(container);
   resize();
 
+  // Every material's pipeline compiled before the first frame (and the night's glows with them), so
+  // nothing stalls later when a chunk's grass or the lamps first appear.
+  {
+    const hidden: Object3D[] = [];
+    scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    rig.apply(camera, origin, 0);
+    camera.updateMatrixWorld();
+    try {
+      await renderer.compileAsync(scene, camera);
+    } catch {
+      /* compiling ahead is an optimisation: the first frames compile what's left */
+    }
+    for (const o of hidden) o.visible = false;
+  }
+
   // ---------- the loop ----------
   const projected = new Vector3();
   const point: Vec3 = [0, 0, 0];
-  function placeLabels(): void {
+  /**
+   * Projects every label with the camera as it is this frame, eases it there
+   * (screen space, quickly: it smooths sub-pixel wobble without lagging) and
+   * snaps it to device pixels, writing styles only when they change.
+   */
+  function placeLabels(dt: number): void {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    for (const label of labels.values()) {
+    const dpr = devicePixelRatio || 1;
+    const ease = 1 - Math.exp(-dt * 28);
+    for (let i = 0; i < labelList.length; i++) {
+      const label = labelList[i]!;
       if (label.el.hidden) continue;
       let visible = label.point(point);
       let opacity = 0;
@@ -537,8 +661,18 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         }
         continue;
       }
-      const x = Math.round(((projected.x + 1) / 2) * w);
-      const y = Math.round(((1 - projected.y) / 2) * h);
+      const tx = ((projected.x + 1) / 2) * w;
+      const ty = ((1 - projected.y) / 2) * h;
+      // A label that just appeared, or jumped (a cut), goes straight there.
+      if (!label.shown || Number.isNaN(label.sx) || Math.abs(tx - label.sx) + Math.abs(ty - label.sy) > 60) {
+        label.sx = tx;
+        label.sy = ty;
+      } else {
+        label.sx += (tx - label.sx) * ease;
+        label.sy += (ty - label.sy) * ease;
+      }
+      const x = Math.round(label.sx * dpr) / dpr;
+      const y = Math.round(label.sy * dpr) / dpr;
       if (!label.shown) {
         label.el.style.visibility = "visible";
         label.shown = true;
@@ -548,8 +682,44 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         label.y = y;
         label.el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -100%)`;
       }
-      label.el.style.opacity = opacity < 0.995 ? opacity.toFixed(2) : "1";
+      const o = opacity < 0.995 ? Math.round(opacity * 50) / 50 : 1;
+      if (o !== label.opacity) {
+        label.opacity = o;
+        label.el.style.opacity = o === 1 ? "1" : String(o);
+      }
     }
+  }
+
+  /** Keeps the sun's shadow over the focus, its frame snapped to whole shadow-map texels (no shimmering as it moves). */
+  const lightRight = new Vector3();
+  const lightUp = new Vector3();
+  const lightDir = new Vector3();
+  const focus = new Vector3();
+  function placeSun(fx: number, fy: number, fz: number, dir: readonly [number, number, number]): void {
+    lightDir.set(dir[0], Math.max(0.15, dir[2]), -dir[1]).normalize();
+    focus.set(fx, fy, fz);
+    if (shadows) {
+      // A radius in whole steps of 4 m (zooming doesn't swim either), and the focus on the texel grid in the light's frame.
+      const r = Math.ceil((rig.distance * 1.6 + 20) / 4) * 4;
+      const texel = (2 * r) / tier.shadowMapSize;
+      lightRight.set(0, 1, 0).cross(lightDir).normalize();
+      lightUp.crossVectors(lightDir, lightRight).normalize();
+      const u = focus.dot(lightRight);
+      const v = focus.dot(lightUp);
+      focus.addScaledVector(lightRight, Math.round(u / texel) * texel - u).addScaledVector(lightUp, Math.round(v / texel) * texel - v);
+      const cam = sun.shadow.camera;
+      if (cam.right !== r) {
+        cam.left = -r;
+        cam.right = r;
+        cam.top = r;
+        cam.bottom = -r;
+        cam.near = 1;
+        cam.far = SHADOW_FAR;
+        cam.updateProjectionMatrix();
+      }
+    }
+    sunTarget.position.copy(focus);
+    sun.position.copy(focus).addScaledVector(lightDir, 110);
   }
 
   let raf = 0;
@@ -573,10 +743,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     const motion = !reduced();
     wind.value = motion ? 1 : 0;
+    waterUniforms.waves.value = motion ? 1 : 0;
     const dt = Math.min(0.1, (now - lastTick) / 1000);
     lastTick = now;
     let active = walker.step(dt, galahadGround);
-    if (rig.follow) rig.lookAt(walker.x, walker.y);
+    if (rig.follow) {
+      rig.lookAt(walker.x, walker.y);
+      rig.trail(walker.heading, walker.moving, dt, cameraClear);
+    }
     active = rig.update(dt, motion) || active;
     active = plots.animate(now, skyState.horizon) || active;
     const ambient = motion && now - lastRender >= idleInterval;
@@ -584,17 +758,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       renderedLast = false;
       return;
     }
-    if (now - lastRender < 1000 / 61) return;
+    if (now - lastRender < FRAME_MIN_MS) return;
+    const started = performance.now();
     const renderDt = Math.min(0.1, (now - lastRender) / 1000);
-    // Only frames rendered back to back, at full rate, say anything about how long a frame takes.
-    if (renderedLast && (active || dirty)) {
-      const action = governor.frame(now, now - lastRender);
-      if (action === "dpr") {
-        renderer.setPixelRatio(governor.dpr);
-        resize();
-      } else if (action === "drop-shadows") setShadows(false);
-      else if (action === "drop-grass") vegetation.dropGrass();
-    }
     frames++;
     frameMsSum += now - lastRender;
     if (now - windowStart >= 1000) {
@@ -604,6 +770,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       frameMsSum = 0;
       windowStart = now;
     }
+    const judged = renderedLast && (active || dirty);
+    const interval = now - lastRender;
     lastRender = now;
     renderedLast = true;
     dirty = false;
@@ -614,16 +782,19 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       origin = [Math.round(rig.x / 64) * 64, Math.round(rig.y / 64) * 64];
       worldRoot.position.set(-origin[0], 0, origin[1]);
       originScene.set(origin[0], 0, -origin[1]);
-      vegetation.place(originScene);
+      vegetation.place(origin[0], origin[1]);
       fauna.place(originScene);
       critters.place(originScene);
       originUniform.value.set(origin[0], origin[1]);
     }
-    const loadRadius = Math.min(tier.radius, Math.max(150, rig.distance * 1.7 + 70));
-    if (land.update(rig.x, rig.y, loadRadius, tier.chunkBudget)) dirty = true;
-    const fog = scene.fog as Fog;
-    fog.far = loadRadius * 0.92;
-    fog.near = Math.min(fog.far * 0.5, rig.distance * 1.2 + 20);
+    // Land and what grows on it: nearest first, within this frame's budget.
+    const deadline = started + tier.chunkMs;
+    const loadRadius = Math.min(tier.radius, Math.max(tier.radius * 0.75, rig.distance * 1.7 + 70));
+    const growing = land.update(rig.x, rig.y, loadRadius, deadline, tier.chunkBudget);
+    const filling = vegetation.update(rig.x, rig.y, deadline);
+    if (growing || filling) dirty = true;
+    fogFar.value = loadRadius * 0.94;
+    fogNear.value = Math.max(fogFar.value * 0.3, rig.distance * 1.5 + 30);
 
     // Galahad and his dog.
     const g = model?.galahad;
@@ -633,29 +804,30 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     knightState.working = atWork;
     knightState.thinking = !walker.moving && Boolean(g?.model);
     knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
+    knightState.bench = g?.station === "forge";
+    attend();
     const gz = groundAt(walker.x, walker.y);
     // Characters sit in the world root at their absolute place (only instanced things are origin-relative).
     knight.root.position.set(walker.x, gz, -walker.y);
     knight.root.rotation.y = headingToSceneYaw(walker.heading);
-    knight.animate(renderDt, t, knightState, motion);
+    knight.animate(renderDt, t, knightState, walker.x, walker.y, gz, walker.heading, groundAt, attention, motion);
     master.x = walker.x;
     master.y = walker.y;
     master.heading = walker.heading;
     master.moving = walker.moving;
     master.running = walker.running;
     master.working = atWork || knightState.thinking;
-    dog.step(renderDt, t, master, dogGround, motion);
+    dog.step(renderDt, t, master, dogGround, motion, groundAt);
     dog.apply(groundAt(dog.x, dog.y), ZERO);
     keep.animate(t, motion);
     landmarks.animate(t, motion);
 
-    // Sparks fly at the lab's workbench while he works there.
+    // Sparks fly from the bench where his blade's tip works.
     if (motion && atWork && g?.station === "forge") {
       sparkTimer -= renderDt;
       if (sparkTimer <= 0) {
-        sparkTimer = 0.28;
-
-        fauna.sparksAt(anvil[0], anvil[1], anvil[2], 4);
+        sparkTimer = 0.22;
+        fauna.sparksAt(anvil[0], anvil[1], anvil[2], 3);
       }
     }
     const dusk = Math.min(1, skyState.night * 1.4) * (skyState.hours > 17 || skyState.hours < 3 ? 1 : 0.4);
@@ -667,34 +839,32 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     dogLead.y = dog.y;
     dogLead.heading = dog.heading;
     critters.step(renderDt, t, galahadLead, dogLead, groundAt, atWork && g?.station === "forge", origin, motion);
-    placeHover();
 
-    const focusGround = Math.max(0, groundAt(rig.x, rig.y));
+    // The camera, over a smoothed ground; then everything that depends on where it is.
+    const focusGround = rig.settle(Math.max(0, groundAt(rig.x, rig.y)), renderDt, motion);
     rig.apply(camera, origin, focusGround);
     camera.updateMatrixWorld();
-    vegetation.update(land, camera, rig.x, rig.y, origin);
+    occlusion.from.value.copy(camera.position);
+    occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
+    occlusion.floor.value = gz;
+    occlusion.on.value = rig.follow ? 1 : 0;
     sky.follow(camera.position);
     horizon.follow(camera.position, t, motion);
     // The light: from the sun by day, the moon by night, kept over the focus.
-    const dir = skyState.lightFromSun ? skyState.sun : skyState.moon;
-    const fx = rig.x - origin[0];
-    const fz = -(rig.y - origin[1]);
-    sunTarget.position.set(fx, focusGround, fz);
-    sun.position.set(fx + dir[0] * 90, focusGround + Math.max(0.15, dir[2]) * 90, fz - dir[1] * 90);
-    if (shadows) {
-      const r = rig.distance * 0.9 + 12;
-      const cam = sun.shadow.camera;
-      cam.left = -r;
-      cam.right = r;
-      cam.top = r;
-      cam.bottom = -r;
-      cam.near = 1;
-      cam.far = 260;
-      cam.updateProjectionMatrix();
-    }
+    placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightFromSun ? skyState.sun : skyState.moon);
     renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
-    placeLabels();
+    placeLabels(renderDt);
+    placeHover();
+    // Only frames rendered back to back, at full rate, and not growing land, say how long a frame takes.
+    if (judged && !growing && !filling) {
+      const action = governor.frame(now, interval);
+      if (action === "dpr") {
+        renderer.setPixelRatio(governor.dpr);
+        resize();
+      } else if (action === "drop-shadows") setShadows(false);
+      else if (action === "drop-grass") vegetation.dropGrass();
+    }
   }
   raf = requestAnimationFrame(frame);
   const visibility = () => {
@@ -737,8 +907,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (!prev) {
         // First sight: put him (and the dog) where he is at once, and the camera on him.
         walker.go(targetFor(next.galahad, next.experiments), stationObstacles, true);
-        dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true });
+        knight.place(walker.x, walker.y, walker.heading, groundAt);
+        dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
+        // A three-quarter view of his front to begin with (he turns his back as he walks off, and the view swings round).
         rig.lookAt(walker.x, walker.y);
+        rig.target.yaw = walker.heading + Math.PI - 0.6;
+        rig.trail(walker.heading, false, 0, cameraClear);
         rig.update(0, false);
       }
     },
@@ -751,15 +925,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (target.kind === "galahad") {
         rig.follow = true;
         options.onFollow(true);
-        rig.lookAt(walker.x, walker.y, 26);
+        rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
       } else {
         stopFollowing();
         if (target.kind === "station") {
           const s = STATIONS[target.station];
-          rig.lookAt(s.x, s.y, 30);
+          rig.lookAt(s.x, s.y, STATION_DISTANCE);
         } else {
           const e = plots.get(target.id)?.exp;
-          if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(30, e.plot.size * 1.7));
+          if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(28, e.plot.size * 1.6));
         }
       }
       dirty = true;
@@ -826,6 +1000,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       critters.dispose();
       plots.dispose();
       landmarks.dispose();
+      glows.dispose();
       sky.dispose();
       horizon.dispose();
       sun.dispose();
@@ -836,4 +1011,3 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     },
   };
 }
-

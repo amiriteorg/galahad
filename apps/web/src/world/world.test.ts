@@ -86,12 +86,12 @@ describe("terrain", () => {
       for (let cy = -3; cy <= 1; cy++) {
         const s = chunkSamples(SEED, cx, cy, flats, built);
         for (const layer of LAYERS) {
-          const packed = s.layers[layer];
+          const packed = s.layers[layer]!;
           expect(packed.length % STRIDE).toBe(0);
-          const lawn = layer === "grass" || layer === "flowers";
+          const lawn = layer === "grass" || layer === "flowers" || layer === "detail";
           for (let i = 0; i < packed.length; i += STRIDE) {
             const [x, y] = [packed[i]!, packed[i + 1]!];
-            // Grass and flowers grow on the keep's lawn, but never on a path or a building; nothing else does.
+            // Grass, flowers, pebbles and clover grow on the keep's lawn, but never on a path or a building; nothing else does.
             if (lawn) expect(built(x, y)).toBe(false);
             else expect(Math.hypot(x, y)).toBeGreaterThan(KEEP_RADIUS);
             expect(onPlot(plot, x, y, lawn ? 0 : 3)).toBe(false);
