@@ -47,7 +47,7 @@ Work
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
-  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox build [--on ultra]      build the sandbox image on a host
@@ -205,6 +205,7 @@ async function main(): Promise<void> {
       max: { type: "string" },
       docker: { type: "boolean" },
       vm: { type: "boolean" },
+      container: { type: "boolean" },
       gpu: { type: "boolean" },
       mem: { type: "string" },
       disk: { type: "string" },
@@ -251,6 +252,8 @@ async function main(): Promise<void> {
   const [command, sub, ...rest] = positionals;
   const home = Home.resolve(flags.home as string | undefined);
   const str = (key: string) => flags[key] as string | undefined;
+  /** --vm or --container: how a sandbox is isolated (default: the host decides). */
+  const isolation = (): "vm" | "container" | undefined => (flags.vm ? "vm" : flags.container ? "container" : undefined);
 
   if (!command || flags.help || command === "help") {
     console.log(HELP);
@@ -623,12 +626,13 @@ Next:
 
     case "do": {
       const goal = [sub, ...rest].filter(Boolean).join(" ").trim();
-      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
+      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--on node] [--steps 30] [--timeout 300] [--keep] "<goal>"');
       const network = str("net") ?? "isolated";
       if (!["isolated", "gateway", "online"].includes(network)) fail("--net must be isolated, gateway or online");
       const outcome = await questFromCli(new Admin(home), {
         goal,
         network: network as "isolated" | "gateway" | "online",
+        ...(isolation() ? { isolation: isolation() } : {}),
         on: str("on"),
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
@@ -667,6 +671,7 @@ Next:
         console.log("Sandbox image ready.");
         return;
       }
+      const shape = (s: SandboxView) => (s.isolation === "vm" ? "microVM" : "container");
       const diskOf = (s: SandboxView) => (s.disk ? `disk ${s.disk.usedGb ?? "?"}/${s.disk.limitGb} GB` : "disk unlimited");
       if (sub === "ls") {
         const { node, sandboxes } = await admin.call("sandboxes", { ...(on ? { on } : {}) });
@@ -674,7 +679,7 @@ Next:
         for (const s of sandboxes) {
           const left = Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000));
           console.log(
-            `  ${s.id}  ${s.status.padEnd(8)} ${s.network.padEnd(8)} ${String(s.cpus).padStart(3)} cpu ${String(s.memoryGb).padStart(4)} GB  ${diskOf(s)}  ${s.ephemeral ? `${left} min left` : "persistent"}  ${dim(s.quest)}`,
+            `  ${s.id}  ${s.status.padEnd(8)} ${shape(s).padEnd(9)} ${s.network.padEnd(8)} ${String(s.cpus).padStart(3)} cpu ${String(s.memoryGb).padStart(4)} GB  ${diskOf(s)}  ${s.ephemeral ? `${left} min left` : "persistent"}  ${dim(s.quest)}`,
           );
         }
         return;
@@ -700,13 +705,14 @@ Next:
           ...(str("cpus") ? { cpus: Number(str("cpus")) } : {}),
           ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
           ...(str("disk") ? { diskGb: Number(str("disk")) } : {}),
+          ...(isolation() ? { isolation: isolation() } : {}),
           ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),
           ...(on ? { on } : {}),
         });
         const where = on ?? "the best sandbox host";
-        process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${diskOf(sandbox)}]\n`));
+        process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${shape(sandbox)} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${diskOf(sandbox)}]\n`));
         let code = 1;
         try {
           const result = await admin.call("execSandbox", {

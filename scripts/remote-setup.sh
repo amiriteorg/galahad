@@ -186,10 +186,58 @@ UNIT
     systemctl restart galahad-workspace.socket && echo "→ sandbox workspaces: each sandbox gets its own fixed-size disk (galahad-workspace.socket)"
   fi
 
+  # KVM microVMs for code there's no reason to trust: Kata Containers, pinned and checksum-verified
+  # (the digest GitHub records for the release asset). Docker uses Kata's shim by name
+  # (--runtime io.containerd.kata.v2, found on containerd's PATH), so Docker's own configuration is
+  # never touched and nothing restarts. Hardened: the guest enforces each sandbox's seccomp filter,
+  # and QEMU runs under its own seccomp sandbox as an unprivileged user.
+  KATA_VERSION=4.3.1
+  KATA_SHA256=66b35b06f6b41b56f8606ddf3ed3e5660b0971d1e309d903457c4056a0b9eff0
+  if [[ -e /dev/kvm && $(uname -m) == x86_64 ]] && command -v docker >/dev/null; then
+    if [[ $(/opt/kata/bin/kata-runtime --version 2>/dev/null | head -1) != *" $KATA_VERSION" ]]; then
+      command -v zstd >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zstd >/dev/null
+      mkdir -p /var/cache/galahad
+      KATA_TAR=/var/cache/galahad/kata-go-static-$KATA_VERSION-amd64.tar.zst
+      if ! echo "$KATA_SHA256  $KATA_TAR" | sha256sum -c --quiet - >/dev/null 2>&1; then
+        echo "→ downloading Kata Containers $KATA_VERSION (about 1.3 GB, once)"
+        curl -fsSL -o "$KATA_TAR.part" "https://github.com/kata-containers/kata-containers/releases/download/$KATA_VERSION/kata-go-static-$KATA_VERSION-amd64.tar.zst" &&
+          mv "$KATA_TAR.part" "$KATA_TAR"
+      fi
+      if echo "$KATA_SHA256  $KATA_TAR" | sha256sum -c --quiet - >/dev/null 2>&1; then
+        rm -rf /opt/kata.new && mkdir -p /opt/kata.new && tar --zstd -xf "$KATA_TAR" -C /opt/kata.new ./opt/kata &&
+          rm -rf /opt/kata && mv /opt/kata.new/opt/kata /opt/kata && rm -rf /opt/kata.new &&
+          echo "→ Kata Containers $KATA_VERSION installed in /opt/kata"
+      else
+        rm -f "$KATA_TAR.part"
+        echo "Kata Containers didn't download or failed its checksum: not installed (sandboxes stay containers)" >&2
+      fi
+    fi
+    if [[ -x /opt/kata/bin/containerd-shim-kata-v2 ]]; then
+      mkdir -p /etc/kata-containers
+      sed -e 's/^disable_guest_seccomp = true$/disable_guest_seccomp = false/' \
+        -e 's/^seccompsandbox = ""$/seccompsandbox = "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"/' \
+        -e 's/^rootless = false$/rootless = true/' \
+        /opt/kata/share/defaults/kata-containers/configuration-qemu.toml >/etc/kata-containers/configuration.toml.new
+      if [[ $(grep -c -E '^(disable_guest_seccomp = false|seccompsandbox = "on,|rootless = true)' /etc/kata-containers/configuration.toml.new) == 3 ]]; then
+        mv /etc/kata-containers/configuration.toml.new /etc/kata-containers/configuration.toml
+        ln -sf /opt/kata/bin/containerd-shim-kata-v2 /usr/local/bin/containerd-shim-kata-v2
+        echo "→ sandboxes can run as KVM microVMs (Kata: rootless QEMU, its seccomp sandbox, seccomp in the guest)"
+      else
+        # Never run microVMs with weaker settings than these: leave the shim off the PATH instead.
+        rm -f /etc/kata-containers/configuration.toml.new /usr/local/bin/containerd-shim-kata-v2
+        echo "Kata's configuration changed shape; microVMs left off until the hardening applies" >&2
+      fi
+    fi
+  fi
+
   # Sandbox host: build (or refresh, from cache) the squires' image before the node starts.
   if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
     if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/sandbox:1 "$APP/sandbox" >/dev/null; then
       echo "→ sandbox image ready (galahad/sandbox:1)"
+      if [[ -e /usr/local/bin/containerd-shim-kata-v2 ]]; then
+        GUEST=$(docker run --rm --runtime io.containerd.kata.v2 --network none --user 1000:1000 galahad/sandbox:1 uname -r 2>&1 | tail -1)
+        [[ -n $GUEST && $GUEST != "$(uname -r)" ]] && echo "→ microVM check: a sandbox booted its own kernel ($GUEST)" || echo "microVM check failed: $GUEST" >&2
+      fi
     else
       echo "sandbox image build failed; the node will run without sandbox hosting" >&2
     fi

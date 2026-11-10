@@ -95,7 +95,7 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
   const sandboxes = deps.sandbox ? await deps.sandbox.list().catch(() => null) : null;
   const sandboxHost = deps.sandbox
     ? await Promise.all([deps.sandbox.diskLimited().catch(() => false), deps.sandbox.status().then((s) => s.image).catch(() => true)]).then(
-        ([diskLimited, image]) => ({ diskLimited, image }),
+        ([diskLimited, image]) => ({ diskLimited, image, kvm: !!deps.caps()?.vm.kvm, microVMs: !!deps.caps()?.sandbox?.vm }),
       )
     : null;
   return {

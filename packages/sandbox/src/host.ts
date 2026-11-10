@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { type ActionClass, type Decision, decide, type ExecResult, randomBytes, redact, type SandboxView } from "@galahad/core";
 import {
+  chooseIsolation,
   containerName,
   DEFAULT_IMAGE,
   execArgs,
@@ -62,6 +64,10 @@ export interface SandboxHostOptions {
   workspaces?: Workspaces | null;
   /** Where the sandbox image's Dockerfile lives, so a missing image is rebuilt instead of failing. */
   imageContext?: string;
+  /** Whether this host runs KVM microVMs (Kata installed, /dev/kvm present). */
+  microVMs?: boolean;
+  /** The resolv.conf online microVMs get (see vmResolvConf). */
+  resolvConf?: string;
   tokenStore?: SandboxTokenStore;
   docker?: string;
   now?: () => number;
@@ -79,6 +85,8 @@ export interface CreateInput {
   quest?: string;
   /** The workspace's size limit (default 20 GB). */
   diskGb?: number;
+  /** container or vm; default: vm for online sandboxes where this host has microVMs. */
+  isolation?: "container" | "vm";
 }
 
 export class SandboxError extends Error {
@@ -219,6 +227,10 @@ export class SandboxHost {
     if (!(await this.available())) throw new SandboxError("docker is not available on this node", 424);
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);
     if (input.memoryGb > this.opts.maxMemoryGb) throw new SandboxError(`at most ${this.opts.maxMemoryGb} GB memory per sandbox on this node`);
+    const isolation = chooseIsolation(input.network, input.isolation, !!this.opts.microVMs);
+    if (isolation === "vm" && !this.opts.microVMs) {
+      throw new SandboxError("this host can't run microVMs (it needs /dev/kvm and Kata: deploy with --sudo)", 424);
+    }
     const image = input.image ?? DEFAULT_IMAGE;
     if (image === DEFAULT_IMAGE && !(await this.hasImage())) {
       // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
@@ -265,6 +277,8 @@ export class SandboxHost {
       providers,
       createdAt: this.now(),
       env,
+      isolation,
+      ...(this.opts.resolvConf ? { resolvConf: this.opts.resolvConf } : {}),
       ...(tokenHash ? { tokenHash } : {}),
     };
 
@@ -294,16 +308,13 @@ export class SandboxHost {
       this.creating.delete(id);
     }
     if (tokenHash) this.tokenStore.put(id, tokenHash);
-    if (input.network === "online") {
-      await this.docker(["network", "connect", NETWORKS.gateway.name, containerName(id)]);
-    }
     this.opts.ledger({
       class: "create",
       resource: "docker.container",
       target: containerName(id),
       verdict: "allow",
       quest,
-      detail: `${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
+      detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
     });
     return (await this.get(id))!;
   }
@@ -434,8 +445,16 @@ export class SandboxHost {
 
 }
 
+/** Where Kata's shim may be: on containerd's PATH (installed by scripts/remote-setup.sh). */
+const KATA_SHIMS = ["/usr/local/bin/containerd-shim-kata-v2", "/usr/bin/containerd-shim-kata-v2"];
+
+/** Whether this machine can run sandboxes as KVM microVMs: /dev/kvm and Kata's shim. */
+export function microVMsAvailable(exists: (path: string) => boolean = existsSync): boolean {
+  return process.platform === "linux" && exists("/dev/kvm") && KATA_SHIMS.some((path) => exists(path));
+}
+
 /** Cheap readiness probe for capability reporting (no side effects). */
-export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; networks: boolean } | null> {
+export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; networks: boolean; vm: boolean } | null> {
   if (!Bun.which(bin)) return null;
   const check = async (args: string[]) => {
     try {
@@ -453,7 +472,7 @@ export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; ne
     check(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"]),
     check(["network", "inspect", NETWORKS.gateway.name, "--format", "{{.Id}}"]),
   ]);
-  return { image, networks: gw };
+  return { image, networks: gw, vm: microVMsAvailable() };
 }
 
 function toView(labels: Record<string, string>, image: string, status: string, usage: WorkspaceStats | null): SandboxView | null {
@@ -476,5 +495,6 @@ function toView(labels: Record<string, string>, image: string, status: string, u
     ephemeral: labels[`${LABEL}.ephemeral`] !== "false",
     providers: (labels[`${LABEL}.providers`] ?? "").split(",").filter(Boolean),
     disk: limit > 0 ? { limitGb: limit, usedGb: used === undefined ? null : Math.round((used / 2 ** 30) * 10) / 10 } : null,
+    isolation: labels[`${LABEL}.isolation`] === "vm" ? "vm" : "container",
   };
 }

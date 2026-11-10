@@ -1,11 +1,12 @@
 import { Database } from "bun:sqlite";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, type NodeIdentity } from "@galahad/core";
 import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, WorkspaceHelper } from "@galahad/sandbox";
+import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
@@ -139,6 +140,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   let sandbox: SandboxHost | null = null;
   const sandboxContext = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox");
   if (caps.sandbox !== undefined && caps.sandbox !== null) {
+    // Online microVMs can't use Docker's DNS (it lives on the host side): they get the host's resolvers.
+    const resolvConf = join(home.dir, "sandbox-resolv.conf");
+    const readIf = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : null);
+    writeFileSync(resolvConf, vmResolvConf(readIf("/run/systemd/resolve/resolv.conf"), readIf("/etc/resolv.conf")), { mode: 0o644 });
     sandbox = new SandboxHost({
       node: identity.id,
       tokens,
@@ -150,6 +155,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // unlimited Docker volumes, and the heartbeat says so.
       workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET),
       imageContext: sandboxContext,
+      // Online sandboxes run in KVM microVMs where Kata is installed (scripts/remote-setup.sh).
+      microVMs: caps.sandbox.vm ?? microVMsAvailable(),
+      resolvConf,
     });
     try {
       await sandbox.ensureNetworks();

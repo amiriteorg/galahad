@@ -123,6 +123,12 @@ describe("the heartbeat's checks", () => {
     expect(found[0]!.node).toBe("n_self"); // about this node's body
   });
 
+  test("a host with KVM but without microVMs says it could have them", () => {
+    expect(keys(calm({ sandboxHost: { diskLimited: true, image: true, kvm: true, microVMs: true } }))).toEqual([]);
+    expect(keys(calm({ sandboxHost: { diskLimited: true, image: true, kvm: false, microVMs: false } }))).toEqual([]);
+    expect(keys(calm({ sandboxHost: { diskLimited: true, image: true, kvm: true, microVMs: false } }))).toEqual(["sandbox-vm:n_self"]);
+  });
+
   test("standing orders: one that went stale warns, one about to expire informs", () => {
     const DAY = 24 * 60 * 60_000;
     const found = assess(

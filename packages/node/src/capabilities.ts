@@ -23,7 +23,8 @@ export interface Capabilities {
   localModels: { runtime: string; models: string[] }[];
   tailscale: { ip: string | null; dnsName: string | null } | null;
   /** Present when this node can host sandboxes (Docker reachable). */
-  sandbox?: { image: boolean; networks: boolean } | null;
+  /** vm: it can also run sandboxes as KVM microVMs (Kata). */
+  sandbox?: { image: boolean; networks: boolean; vm?: boolean } | null;
 }
 
 const TOOLS = [

@@ -65,6 +65,13 @@ The review also confirmed what held up:
 - **The host keeps a reserve.** A sandbox is created only if every workspace could fill up to its limit and 10 % of the disk (at least 20 GB) stays free.
 - Found by Galahad himself, in a live quest run as a loop, in November 2026.
 
+## MicroVM sandboxes (tested)
+
+- **A kernel of its own.** On a host with KVM, an `online` sandbox runs inside its own Kata microVM by default, so a container escape or kernel exploit lands in a throwaway VM, not on the host. Tested on ultra: the guest runs its own kernel, as uid 1000 with no capabilities, a read-only root, Docker's seccomp filter enforced in the guest, the disk limit holding through the VM, the internet and the model gateway reachable, and the host not (`packages/sandbox/test/docker.integration.test.ts`).
+- **A smaller, unprivileged hypervisor.** QEMU runs under its own seccomp sandbox and as an unprivileged random user (Kata's `rootless`). The installer refuses to enable microVMs at all if those settings can't be applied.
+- **A pinned supply chain.** Kata is a fixed release, verified against the SHA-256 GitHub records for it, and installed without touching Docker's configuration.
+- **Residual risk:** gateway and isolated sandboxes stay containers unless you ask (`--vm`), because they run model-written code with no internet; Docker group membership is still root-equivalent on the host (#6 below).
+
 ## Known limitations
 
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.

@@ -223,6 +223,7 @@ Any node with Docker is a **sandbox host**; ultra is the first. A sandbox is whe
 |---|---|
 | **Unprivileged** | uid 1000, `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`, its own workspace. No other host path and no Docker socket. |
 | **Bounded** | CPU, memory (no swap), process and **disk** limits. `/work` is the sandbox's own fixed-size ext4 image (20 GB by default; sparse, so it takes only what's written), so a runaway job fills its own workspace, never the host's disk. Every command runs under an in-container `timeout --signal=KILL`, so a stuck task can't outlive its deadline. |
+| **Its own kernel, for untrusted code** | On a host with KVM, a sandbox can be a **microVM**: the same hardened container inside its own lightweight virtual machine with its own kernel ([Kata Containers](https://katacontainers.io)), so a kernel exploit lands in a throwaway VM, not on the host. `online` sandboxes (code and content from the internet) are microVMs by default wherever the host has them; you can choose either for any sandbox (`--vm`, `--container`). |
 | **Networked by intent** | `isolated`: no network. **`gateway`** (the default): a Docker `--internal` network whose only reachable host service is a sandbox-only model gateway on the bridge IP. UFW allows exactly one port on `galahad0`. `online`: egress plus the gateway. Sandboxes can't reach each other: inter-container traffic is disabled on both networks. |
 | **Keys stay home** | A sandbox that may use models gets a gateway token scoped to the providers you chose. It expires with the sandbox and is revoked on destroy. The sandbox never holds a provider key. |
 | **Accountable** | Every create, exec and destroy is a signed `ledger.recorded` event in the mind, readable from any device (`galahad ledger`). |
@@ -235,7 +236,9 @@ Network reachability was verified on ultra before it was built. From an internal
 
 **The image stays.** Coolify's nightly cleanup prunes every image no container uses, and it took the sandbox image once. A stopped keeper container (`galahad-sandbox-image`) now keeps it in use, and a sandbox that finds the image missing anyway rebuilds it rather than failing its quest.
 
-🔜 Next: KVM microVMs for code we have no reason to trust, and an egress allowlist for `online`.
+**MicroVMs.** `deploy.sh --sudo` installs Kata Containers on a host with `/dev/kvm`: a pinned release whose SHA-256 is checked against the digest GitHub records for it. Docker reaches Kata's shim by name (`--runtime io.containerd.kata.v2`, found on containerd's `PATH`), so Docker's configuration is never edited and nothing restarts: Coolify doesn't notice. Every flag above still applies inside the VM, and three Kata settings harden it further: the guest enforces each sandbox's seccomp filter, QEMU runs under its own seccomp sandbox, and QEMU runs as an unprivileged random user, never root. If a newer Kata changes its configuration so these can't be applied, microVMs stay off rather than run weaker. Two details make the networks work: an online sandbox joins both of its networks when it starts (a VM can't be given one later), and since Docker's DNS lives on the host side, an online microVM gets a read-only `resolv.conf` with the host's upstream resolvers. Measured on ultra: a microVM sandbox is ready in about 1.7 s, with 2 GB of memory and one vCPU on top of its limits.
+
+🔜 Next: an egress allowlist for `online`.
 
 ## 8¾. A mind for every arm (MCP) ✅
 
@@ -295,7 +298,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 | A device signed two histories (equivocation: its key may be stolen) | alert |
 | A role with no usable model (no key, no running local runtime) | warn for planner, engineer, reviewer; info for others |
 | A sandbox the reaper missed; a loop that's orphaned or failed three times running | warn |
-| This node hosts sandboxes without disk limits; its sandbox image is missing | warn / info |
+| This node hosts sandboxes without disk limits; its sandbox image is missing; it has KVM but no microVMs | warn / info / info |
 | A connector whose key is missing or pinned elsewhere; a manifest that no longer validates | info / warn |
 | A standing order whose tool changed since you signed it; one that expires within 3 days | warn / info |
 | Low disk on this node | warn, alert under 3 % |
@@ -394,7 +397,7 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 |---|---|---|
 | **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (the PWA paired and ran in headless Edge, November 2026) |
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
-| **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits | ✅ |
+| **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits, KVM microVM sandboxes | ✅ |
 | **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
 | **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🔜 |

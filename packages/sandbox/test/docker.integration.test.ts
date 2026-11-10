@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { release, tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomId } from "@galahad/core";
-import { type LedgerEntryInput, SandboxHost, WORKSPACE_SOCKET, WorkspaceHelper } from "../src/index.ts";
+import { type LedgerEntryInput, microVMsAvailable, SandboxHost, vmResolvConf, WORKSPACE_SOCKET, WorkspaceHelper } from "../src/index.ts";
 
 /*
  * Real Docker, real containers. Opt-in (GALAHAD_DOCKER_TESTS=1) and meant for a
@@ -118,5 +120,53 @@ describe.if(enabled && existsSync(WORKSPACE_SOCKET))("size-limited workspaces on
     const image = inspect(["image", "inspect", "galahad/sandbox:1", "--format", "{{.Id}}"]);
     expect(inspect(["container", "inspect", "galahad-sandbox-image", "--format", "{{.Image}} {{.State.Status}}"])).toBe(`${image} created`);
   }, 60_000);
+});
+
+/* With Kata installed (deploy --sudo on a host with /dev/kvm): online code runs in its own KVM microVM. */
+describe.if(enabled && microVMsAvailable())("KVM microVMs on real Docker", () => {
+  const node = `n_it_${randomId(6)}`;
+  const tokens = { mint: () => ({ token: `gw_${randomId(32)}`, info: { hash: randomId(16) } }), revoke: () => true };
+  const dir = mkdtempSync(join(tmpdir(), "galahad-vm-it-"));
+  const resolvConf = join(dir, "resolv.conf");
+  const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : null);
+  writeFileSync(resolvConf, vmResolvConf(read("/run/systemd/resolve/resolv.conf"), read("/etc/resolv.conf")), { mode: 0o644 });
+  const workspaces = existsSync(WORKSPACE_SOCKET) ? new WorkspaceHelper() : null;
+  const host = new SandboxHost({ node, tokens, ledger: () => {}, maxCpus: 4, maxMemoryGb: 4, microVMs: true, resolvConf, workspaces });
+  const base = { cpus: 1, memoryGb: 1, ttlMinutes: 5, persistent: false } as const;
+  const sh = async (id: string, script: string) => (await host.exec(id, ["sh", "-c", script])).stdout.trim();
+
+  afterAll(async () => {
+    for (const s of await host.list()) await host.destroy(s.id, { approvedBy: "test-cleanup" });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("its own kernel, the same hardening inside, and its disk limit through the VM", async () => {
+    const sb = await host.create({ ...base, network: "isolated", isolation: "vm", quest: "it-vm", diskGb: 1 });
+    expect(sb.isolation).toBe("vm");
+    expect(await sh(sb.id, "uname -r")).not.toBe(release());
+    expect(await sh(sb.id, "id -u")).toBe("1000");
+    expect(await sh(sb.id, "grep CapEff /proc/self/status")).toContain("0000000000000000");
+    expect(await sh(sb.id, "grep Seccomp: /proc/self/status")).toMatch(/2$/); // Docker's filter, enforced in the guest
+    expect((await host.exec(sb.id, ["sh", "-c", "touch /etc/pwned"])).exitCode).not.toBe(0);
+    if (workspaces) expect(await sh(sb.id, "dd if=/dev/zero of=/work/f bs=1M count=2000 2>&1 | head -1")).toMatch(/No space left on device/);
+    expect((await host.exec(sb.id, ["sleep", "30"], 1)).exitCode).toBe(137);
+    await host.destroy(sb.id, { quest: "it-vm" });
+  }, 180_000);
+
+  test("online goes to a microVM by default: the internet (DNS through the host's resolvers) and the gateway, never the host", async () => {
+    const sb = await host.create({ ...base, network: "online", quest: "it-vm" });
+    expect(sb.isolation).toBe("vm");
+    expect(await sh(sb.id, "curl -s -m 10 -o /dev/null -w '%{http_code}' https://example.com")).toBe("200");
+    expect(await sh(sb.id, "curl -s -m 4 -o /dev/null -w '%{http_code}' http://172.31.250.1:7779/ || true")).not.toBe("000");
+    expect((await host.exec(sb.id, ["sh", "-c", "curl -s -m 3 http://172.31.249.1:7777/ >/dev/null"])).exitCode).not.toBe(0);
+    await host.destroy(sb.id, { quest: "it-vm" });
+  }, 180_000);
+
+  test("gateway and isolated stay containers unless you ask", async () => {
+    const sb = await host.create({ ...base, network: "gateway", quest: "it-vm" });
+    expect(sb.isolation).toBe("container");
+    expect(await sh(sb.id, "uname -r")).toBe(release());
+    await host.destroy(sb.id, { quest: "it-vm" });
+  }, 120_000);
 });
 

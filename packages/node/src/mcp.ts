@@ -69,6 +69,10 @@ const NETWORK = z
   .enum(["isolated", "gateway", "online"])
   .describe("isolated = no network · gateway = model calls only (default) · online = internet + models")
   .optional();
+const ISOLATION = z
+  .enum(["container", "vm"])
+  .describe("vm = its own KVM microVM and kernel, for code there's no reason to trust; default: vm for online sandboxes where the host has microVMs")
+  .optional();
 
 export interface McpOptions {
   base: string;
@@ -187,14 +191,16 @@ export function createMcpServer(opts: McpOptions): McpServer {
         network: NETWORK,
         providers: z.array(z.string().max(64)).max(8).describe("Model providers the sandbox may call through the gateway (never raw keys)").optional(),
         timeoutSec: z.number().int().min(1).max(3600).optional(),
+        isolation: ISOLATION,
         on: NODE,
       },
       annotations: { openWorldHint: true },
     },
-    tool(async ({ command, network, providers, timeoutSec, on }) => {
+    tool(async ({ command, network, providers, timeoutSec, isolation, on }) => {
       const where = on ? { on } : {};
       const { sandbox } = await api.call<{ sandbox: SandboxView }>("createSandbox", {
         network: network ?? "gateway",
+        ...(isolation ? { isolation } : {}),
         ...(providers?.length ? { providers } : {}),
         ...where,
       });
@@ -205,7 +211,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
           ...(timeoutSec ? { timeoutSec } : {}),
           ...where,
         });
-        return formatExec(result, `sandbox ${sandbox.id} (${sandbox.network}, destroyed afterwards)`);
+        return formatExec(result, `sandbox ${sandbox.id} (${sandbox.isolation === "vm" ? "microVM, " : ""}${sandbox.network}, destroyed afterwards)`);
       } finally {
         await api.call("destroySandbox", { id: sandbox.id, ...where }).catch(() => {});
       }
@@ -222,6 +228,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
         cpus: z.number().min(0.25).max(32).optional(),
         memoryGb: z.number().min(0.25).max(128).optional(),
         diskGb: z.number().int().min(1).max(500).describe("Workspace size limit in GB (default 20); /work can't grow past it").optional(),
+        isolation: ISOLATION,
         ttlMinutes: z.number().int().min(1).max(1440).optional(),
         providers: z.array(z.string().max(64)).max(8).optional(),
         on: NODE,
@@ -233,7 +240,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
         Object.fromEntries(Object.entries({ ...args, network: args.network ?? "gateway" }).filter(([, v]) => v !== undefined)),
       );
       const disk = sandbox.disk ? `${sandbox.disk.limitGb} GB disk` : "disk not limited on this host";
-      return `Sandbox ${sandbox.id} ready (${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${disk} · expires ${new Date(sandbox.expiresAt).toISOString()}).`;
+      return `Sandbox ${sandbox.id} ready (${sandbox.isolation === "vm" ? "KVM microVM" : "container"} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${disk} · expires ${new Date(sandbox.expiresAt).toISOString()}).`;
     }),
   );
 

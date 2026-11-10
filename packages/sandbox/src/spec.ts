@@ -8,6 +8,11 @@ import type { SandboxNetwork } from "@galahad/core";
 
 export const LABEL = "dev.galahad";
 export const DEFAULT_IMAGE = "galahad/sandbox:1";
+/**
+ * Kata Containers' shim: the container runs inside its own KVM microVM with its own kernel.
+ * Docker finds `containerd-shim-kata-v2` on containerd's PATH, so Docker's config never changes.
+ */
+export const KATA_RUNTIME = "io.containerd.kata.v2";
 /** Port of the sandbox-only model gateway listener on the gateway network's bridge IP. */
 export const SANDBOX_GATEWAY_PORT = 7779;
 
@@ -41,6 +46,13 @@ export interface SandboxSpec {
   workspace?: string;
   /** The workspace's limit, when it has one. */
   diskGb?: number;
+  /** container: the host's kernel · vm: its own KVM microVM (Kata). */
+  isolation: "container" | "vm";
+  /**
+   * A microVM can't use Docker's embedded DNS (127.0.0.11 is the guest's own loopback), so an online
+   * VM gets this resolv.conf: the host's upstream resolvers, read-only.
+   */
+  resolvConf?: string;
 }
 
 /** A stopped container that keeps the sandbox image in use, so image pruning (Coolify's nightly cleanup) leaves it alone. */
@@ -63,6 +75,7 @@ export function labels(spec: SandboxSpec): Record<string, string> {
     [`${LABEL}.cpus`]: String(spec.cpus),
     [`${LABEL}.memory`]: String(spec.memoryGb),
     [`${LABEL}.disk`]: spec.workspace && spec.diskGb ? String(spec.diskGb) : "none",
+    [`${LABEL}.isolation`]: spec.isolation,
     // The gateway token's hash is deliberately NOT a label: images can carry labels of
     // their own, so anything security-relevant lives in node-local state instead.
   };
@@ -107,8 +120,17 @@ export function runArgs(spec: SandboxSpec): string[] {
     String(spec.pidsLimit),
     "--ulimit",
     "nofile=8192:8192",
-    "--network",
-    spec.network === "isolated" ? "none" : spec.network === "gateway" ? NETWORKS.gateway.name : NETWORKS.online.name,
+    // Online sandboxes join both networks at start (egress first, so it holds the default route):
+    // a microVM can't be given a network after it boots.
+    ...(spec.network === "isolated"
+      ? ["--network", "none"]
+      : spec.network === "gateway"
+        ? ["--network", NETWORKS.gateway.name]
+        : ["--network", NETWORKS.online.name, "--network", NETWORKS.gateway.name]),
+    ...(spec.isolation === "vm" ? ["--runtime", KATA_RUNTIME] : []),
+    ...(spec.isolation === "vm" && spec.network === "online" && spec.resolvConf
+      ? ["--mount", `type=bind,src=${spec.resolvConf},dst=/etc/resolv.conf,readonly`]
+      : []),
   ];
   for (const [key, value] of Object.entries(labels(spec))) args.push("--label", `${key}=${value}`);
   for (const [key, value] of Object.entries(spec.env)) args.push("--env", `${key}=${value}`);
@@ -160,3 +182,29 @@ export function networkCreateArgs(kind: keyof typeof NETWORKS): string[] {
     n.name,
   ];
 }
+
+/**
+ * Where a sandbox runs when you don't say: online sandboxes (code and content from the
+ * internet, the least trusted) in a microVM where the host has them; the rest in a container.
+ */
+export function chooseIsolation(network: SandboxNetwork, asked: "container" | "vm" | undefined, microVMs: boolean): "container" | "vm" {
+  if (asked) return asked;
+  return network === "online" && microVMs ? "vm" : "container";
+}
+
+/**
+ * A resolv.conf for online microVMs from the host's own: its upstream nameservers (never a
+ * loopback stub such as systemd-resolved's 127.0.0.53, which a VM can't reach), else public ones.
+ */
+export function vmResolvConf(...sources: (string | null | undefined)[]): string {
+  for (const text of sources) {
+    const servers = (text ?? "")
+      .split("\n")
+      .map((line) => line.trim().match(/^nameserver\s+([0-9a-fA-F.:]+)\s*$/)?.[1])
+      .filter((ip): ip is string => !!ip && !/^(127\.|::1$|0\.0\.0\.0$)/.test(ip))
+      .slice(0, 3);
+    if (servers.length) return `${servers.map((ip) => `nameserver ${ip}`).join("\n")}\noptions timeout:2 attempts:2\n`;
+  }
+  return "nameserver 1.1.1.1\nnameserver 9.9.9.9\noptions timeout:2 attempts:2\n";
+}
+

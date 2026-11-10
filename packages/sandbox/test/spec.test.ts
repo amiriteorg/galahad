@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SandboxRequest } from "@galahad/core";
-import { execArgs, gatewayEnv, NETWORKS, networkCreateArgs, runArgs, type SandboxSpec } from "../src/index.ts";
+import { chooseIsolation, execArgs, gatewayEnv, KATA_RUNTIME, microVMsAvailable, NETWORKS, networkCreateArgs, runArgs, type SandboxSpec, vmResolvConf } from "../src/index.ts";
 
 const base: SandboxSpec = {
   id: "0123456789",
@@ -16,6 +16,7 @@ const base: SandboxSpec = {
   providers: [],
   createdAt: 1_000,
   env: {},
+  isolation: "container",
 };
 
 const pair = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
@@ -50,10 +51,52 @@ describe("sandbox hardening", () => {
     expect(pair(args, "--pids-limit")).toBe("1024");
   });
 
-  test("network modes map to none / internal gateway net / egress net", () => {
-    expect(pair(runArgs({ ...base, network: "isolated" }), "--network")).toBe("none");
-    expect(pair(runArgs({ ...base, network: "gateway" }), "--network")).toBe(NETWORKS.gateway.name);
-    expect(pair(runArgs({ ...base, network: "online" }), "--network")).toBe(NETWORKS.online.name);
+  test("network modes map to none / internal gateway net / egress net (plus the gateway, from the start)", () => {
+    const networks = (spec: SandboxSpec) => runArgs(spec).filter((_, i, all) => all[i - 1] === "--network");
+    expect(networks({ ...base, network: "isolated" })).toEqual(["none"]);
+    expect(networks({ ...base, network: "gateway" })).toEqual([NETWORKS.gateway.name]);
+    // Egress first, so it holds the default route; a microVM can't be given a network after it boots.
+    expect(networks({ ...base, network: "online" })).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
+  });
+
+  test("a microVM is the same hardened container on Kata's runtime, with its own kernel", () => {
+    const vm = runArgs({ ...base, isolation: "vm", network: "online", resolvConf: "/var/lib/galahad/.galahad/sandbox-resolv.conf" });
+    expect(pair(vm, "--runtime")).toBe(KATA_RUNTIME);
+    for (const flag of ["--read-only", "--init"]) expect(vm).toContain(flag);
+    expect(pair(vm, "--cap-drop")).toBe("ALL");
+    expect(pair(vm, "--user")).toBe("1000:1000");
+    expect(vm).toContain("dev.galahad.isolation=vm");
+    // Docker's DNS lives on the host side; an online VM gets the host's resolvers, read-only.
+    expect(vm).toContain("type=bind,src=/var/lib/galahad/.galahad/sandbox-resolv.conf,dst=/etc/resolv.conf,readonly");
+    expect(runArgs({ ...base, isolation: "vm", network: "gateway", resolvConf: "/x" }).join(" ")).not.toContain("resolv.conf");
+    expect(args).not.toContain("--runtime");
+    expect(args).toContain("dev.galahad.isolation=container");
+  });
+
+  test("online code runs in a microVM where the host has them; you can always choose", () => {
+    expect(chooseIsolation("online", undefined, true)).toBe("vm");
+    expect(chooseIsolation("online", undefined, false)).toBe("container");
+    expect(chooseIsolation("gateway", undefined, true)).toBe("container");
+    expect(chooseIsolation("gateway", "vm", true)).toBe("vm");
+    expect(chooseIsolation("online", "container", true)).toBe("container");
+  });
+
+  test("microVMs need /dev/kvm and Kata's shim", () => {
+    const linux = process.platform === "linux";
+    expect(microVMsAvailable((p) => ["/dev/kvm", "/usr/local/bin/containerd-shim-kata-v2"].includes(p))).toBe(linux);
+    expect(microVMsAvailable((p) => p === "/dev/kvm")).toBe(false);
+    expect(microVMsAvailable((p) => p === "/usr/local/bin/containerd-shim-kata-v2")).toBe(false);
+  });
+
+  test("a VM's resolv.conf: the host's upstream resolvers, never a loopback stub", () => {
+    const lines = (...l: string[]) => `${l.join("\n")}\n`;
+    const resolved = lines("# systemd-resolved", "nameserver 45.82.93.131", "nameserver 45.82.93.132", "search lan");
+    expect(vmResolvConf(null, resolved)).toBe(lines("nameserver 45.82.93.131", "nameserver 45.82.93.132", "options timeout:2 attempts:2"));
+    expect(vmResolvConf(lines("nameserver 127.0.0.53", "options edns0"), "nameserver 192.168.1.1")).toBe(
+      lines("nameserver 192.168.1.1", "options timeout:2 attempts:2"),
+    );
+    expect(vmResolvConf("nameserver 127.0.0.53", undefined)).toBe(lines("nameserver 1.1.1.1", "nameserver 9.9.9.9", "options timeout:2 attempts:2"));
+    expect(vmResolvConf("nameserver 1.2.3.4; rm -rf /")).toMatch(/^nameserver 1\.1\.1\.1/);
   });
 
   test("is labelled for ownership, quest, expiry and ephemerality", () => {

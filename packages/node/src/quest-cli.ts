@@ -16,6 +16,8 @@ export interface NodeClient {
 export interface DoOptions {
   goal: string;
   network: SandboxNetwork;
+  /** container or vm; default: the host decides (online code in a microVM where it can). */
+  isolation?: "container" | "vm";
   on?: string;
   maxSteps?: number;
   commandTimeoutSec?: number;
@@ -39,7 +41,7 @@ const NETWORK: Record<SandboxNetwork, string> = {
 
 function environment(sandbox: SandboxView, host: string): string {
   return [
-    `a Debian Linux sandbox on ${host}: unprivileged user, no sudo, no package installs via apt.`,
+    `a Debian Linux sandbox on ${host}${sandbox.isolation === "vm" ? ", inside its own KVM microVM" : ""}: unprivileged user, no sudo, no package installs via apt.`,
     "Workspace /work (kept for the whole quest); /tmp is scratch.",
     "Tools: bash, git, curl, jq, ripgrep, python3 (use a venv for pip), gcc and make, bun 1.4.4.",
     `Network: ${NETWORK[sandbox.network]}.`,
@@ -100,6 +102,7 @@ export async function runNodeQuest(node: NodeClient, options: DoOptions, hooks: 
   const quest = `q-${Date.now().toString(36)}`;
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
+    ...(options.isolation ? { isolation: options.isolation } : {}),
     quest,
     ...(options.on ? { on: options.on } : {}),
   });

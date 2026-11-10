@@ -34,7 +34,7 @@ export interface HeartbeatSnapshot {
   /** null when this node is not a sandbox host. */
   sandboxes: { id: string; expiresAt: number; ephemeral: boolean }[] | null;
   /** This node as a sandbox host: whether workspaces are size-limited and the image is there (null: not a host). */
-  sandboxHost: { diskLimited: boolean; image: boolean } | null;
+  sandboxHost: { diskLimited: boolean; image: boolean; kvm?: boolean; microVMs?: boolean } | null;
   loops: { name: string; runner: string | null; recent: string[] }[];
   forks: { id: string; name: string }[];
   connectors: { id: string; label: string; key: string; problem: string | null }[];
@@ -145,6 +145,15 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
       severity: "warn",
       title: `Sandboxes on ${s.self.name} have no disk limit`,
       body: "Their workspaces share this machine's disk, so a runaway job could fill it. Deploy with --sudo to install the workspace helper; each sandbox then gets its own fixed-size disk.",
+      node: s.self.id,
+    });
+  }
+  if (s.sandboxHost?.kvm && !s.sandboxHost.microVMs) {
+    out.push({
+      key: `sandbox-vm:${s.self.id}`,
+      severity: "info",
+      title: `${s.self.name} could run sandboxes as microVMs`,
+      body: "It has KVM, but Kata isn't installed, so online sandboxes share its kernel. Deploy with --sudo to install it; online code then runs in its own VM.",
       node: s.self.id,
     });
   }

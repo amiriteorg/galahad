@@ -81,8 +81,9 @@ export function place(needs: PlacementNeeds, candidates: Candidate[]): Placement
       reasons.push("you are here");
     }
     if (needs.untrusted) {
-      score += caps.vm.kvm ? 10 : 5;
-      reasons.push(caps.vm.kvm ? "VM isolation available" : "container isolation");
+      const microVMs = !!caps.sandbox?.vm;
+      score += microVMs ? 15 : caps.vm.kvm ? 10 : 5;
+      reasons.push(microVMs ? "KVM microVMs" : caps.vm.kvm ? "VM isolation available" : "container isolation");
       if (caps.sandbox?.image && caps.sandbox.networks) {
         score += 15;
         reasons.push("sandbox host ready");

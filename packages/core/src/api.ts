@@ -58,6 +58,12 @@ export const SandboxRequest = z.strictObject({
   quest: z.string().max(64).regex(/^[A-Za-z0-9._:-]+$/).optional(),
   /** The workspace's size limit in GB (default 20). /work can't grow past it. */
   diskGb: z.number().int().min(1).max(2048).optional(),
+  /**
+   * container: a hardened container on the host's kernel. vm: the same container inside its own
+   * KVM microVM with its own kernel (Kata), for code there's no reason to trust. Default: vm for
+   * online sandboxes where the host has microVMs, container otherwise.
+   */
+  isolation: z.enum(["container", "vm"]).optional(),
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
@@ -459,6 +465,8 @@ export interface SandboxView {
   providers: string[];
   /** The workspace's limit and what it uses now; null when this host can't limit disk (see the heartbeat). */
   disk: { limitGb: number; usedGb: number | null } | null;
+  /** container (the host's kernel) or vm (its own KVM microVM and kernel). */
+  isolation: "container" | "vm";
 }
 
 export interface ExecResult {
