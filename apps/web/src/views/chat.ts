@@ -27,6 +27,18 @@ interface Step {
   text: string;
   detail?: string;
   state: StepState;
+  /** A tool call's id (tool steps only). */
+  tool?: string;
+}
+
+/** Which icon a tool's step shows. */
+function toolIcon(name: string): IconName {
+  if (name.startsWith("bank_")) return "bank";
+  if (name.startsWith("sandbox_")) return "sandbox";
+  if (name.startsWith("connector")) return "plug";
+  if (name.startsWith("artifact")) return "archive";
+  const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key" };
+  return icons[name] ?? "zap";
 }
 
 interface Turn {
@@ -92,6 +104,8 @@ export function startNewChat(): void {
   toast("Conversation cleared", { action: { label: "Undo", run: restore } });
 }
 
+const toolCount = (turn: Turn): number => turn.steps.filter((s) => s.tool).length;
+
 function step(turn: Turn, next: Step): void {
   const last = turn.steps.at(-1);
   if (last?.state === "active") last.state = "done";
@@ -119,8 +133,17 @@ async function run(api: Api, turn: Turn): Promise<void> {
           last.text = `${event.from} didn't answer`;
           last.detail = event.error;
         } else step(turn, { icon: "alert", text: `${event.from} didn't answer`, detail: event.error, state: "warn" });
+      } else if (event.type === "tool") {
+        step(turn, { icon: toolIcon(event.name), text: event.title, ...(event.input ? { detail: event.input } : {}), state: "active", tool: event.id });
+      } else if (event.type === "tool_result") {
+        const s = turn.steps.find((x) => x.tool === event.id);
+        if (s) {
+          s.state = event.ok ? "done" : "warn";
+          s.detail = [s.detail, event.summary].filter(Boolean).join(" → ");
+        }
       } else if (event.type === "text") {
-        if (!turn.content) step(turn, { icon: "chat", text: "Answering", state: "active" });
+        const last = turn.steps.at(-1);
+        if (!(last?.text === "Answering" && last.state === "active")) step(turn, { icon: "chat", text: "Answering", state: "active" });
         turn.content += event.text;
       } else if (event.type === "done") {
         turn.model = event.ref;
@@ -250,7 +273,13 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     const current = turn.steps.at(-1);
     const summaryText = live
       ? (current?.text ?? "Starting…")
-      : [turn.as, turn.model, turn.endedAt ? duration(turn.endedAt - turn.startedAt) : null, turn.fallbacks ? `${turn.fallbacks} fallback${turn.fallbacks > 1 ? "s" : ""}` : null]
+      : [
+          turn.as,
+          turn.model,
+          turn.endedAt ? duration(turn.endedAt - turn.startedAt) : null,
+          toolCount(turn) ? `${toolCount(turn)} tool${toolCount(turn) > 1 ? "s" : ""}` : null,
+          turn.fallbacks ? `${turn.fallbacks} fallback${turn.fallbacks > 1 ? "s" : ""}` : null,
+        ]
           .filter(Boolean)
           .join(" · ");
     const details = h(

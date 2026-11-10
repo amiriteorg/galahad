@@ -173,6 +173,8 @@ export const routes = {
       role: Name.optional(),
       model: ModelRef.optional(),
       messages: z.array(ChatMessage).min(1).max(500),
+      /** Galahad's tools, within the caller's scopes (default). Quests turn them off: their roles have their own. */
+      tools: z.boolean().optional(),
     }),
   },
   createInvite: {
@@ -772,6 +774,10 @@ export interface OrderView {
 export type ChatStreamEvent =
   | { type: "model"; ref: string }
   | { type: "text"; text: string }
+  /** Galahad calls one of his tools (input: a short summary of the arguments). */
+  | { type: "tool"; id: string; name: string; title: string; input: string }
+  /** How it went, in a line (never the whole result). */
+  | { type: "tool_result"; id: string; name: string; ok: boolean; summary: string }
   | { type: "fallback"; from: string; error: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };

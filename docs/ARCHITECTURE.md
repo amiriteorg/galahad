@@ -191,6 +191,16 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 - **Fallback chain:** a model that fails *before* producing text is skipped (missing key, outage, rate limit, refusal), and the next model answers. Each skip is reported to the client.
 - **Persona and context:** the standing persona prompt is byte-stable, so it caches well. Relevant memories are appended after it, labelled with their trust level.
 
+**One Galahad on every surface.** Chat in the PWA and `galahad ask` have the same tools agents get over MCP (§8¾), defined once in `packages/node/src/tools.ts`:
+
+| | How |
+|---|---|
+| **The loop** | `chat()` in `packages/brain/src/chat.ts`: the model calls tools in rounds (at most 12), sees each outcome, then answers. The client gets `tool` and `tool_result` events between the text. Anthropic goes through the SDK's tool use: thinking blocks go back with their signatures, and a refusal never runs that turn's tools. OpenAI-compatible providers use function calling, and DeepSeek's reasoning goes back within the loop. A runtime without tools (some local models) answers without them. A model that fails before anything happened falls back to the next; after a tool ran, a failure ends the answer, so nothing is repeated. |
+| **Who acts** | In chat, Galahad runs his tools as the agent `galahad`, with the caller's scopes minus what agents may never hold (`vault:write`, `fleet:admin`, `gateway:mint`, `brain:write`). So his memories are `agent`, his sandboxes are his own, and outward or destructive calls are filed for your approval exactly as an agent's are. No agent can be minted under that name. An agent that calls chat keeps its own powers. |
+| **Same checks** | The tools reach the node through the same routes as over HTTP, in process: the route's scope, zod validation of the input, the handler. The model's arguments are checked against the tool's schema before anything runs. |
+| **The bank** | Offered only when the caller holds `bank:read`. Once bank data is in an answer, tools that can carry data out (`web_search`, `connector_call`, `sandbox_run`, `sandbox_exec`, `decide`) are refused for the rest of it. |
+| **Quests** | Their roles keep their own tools (the workshop's shell, the reviewer's reading): they ask for chat without tools (`tools: false`). |
+
 ## 7. Placement: using every body well ✅
 
 `place(needs, nodes)` applies **hard filters**: online, docker, VM, GPU, memory, tools, local models, and "untrusted work only where it can be sandboxed". It then ranks the remaining nodes with **soft scores**, and every decision carries its reasons.
@@ -262,7 +272,7 @@ Network reachability was verified on ultra before it was built. From an internal
 | **Contained** | Every sandbox an arm creates belongs to the quest `arm.<label>` and is always ephemeral. The arm can execute in and clean up only those. That holds across nodes too: forwarding relays the quest, never your approval. |
 | **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |
 
-Tools: `recall`, `remember`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy`, `ledger`, `request_secret`. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
+Tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices`, and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
 
 ## 8⅞. Quests: the first agent loop ✅
 

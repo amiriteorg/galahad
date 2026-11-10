@@ -682,6 +682,8 @@ Next:
       })) {
         if (event.type === "text") process.stdout.write(event.text);
         else if (event.type === "model") process.stderr.write(dim(`[${event.ref}]\n`));
+        else if (event.type === "tool") process.stderr.write(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
+        else if (event.type === "tool_result") process.stderr.write(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
         else if (event.type === "fallback") process.stderr.write(dim(`[skipped ${event.from}: ${event.error}]\n`));
         else if (event.type === "error") fail(event.error);
       }

@@ -101,6 +101,13 @@ The review also confirmed what held up:
 - **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Every search is ledgered.
 - **Residual risk:** search results and the pages behind them are written by strangers and can carry prompt injection; quests treat them as data, and anything outward still asks you.
 
+## Galahad's chat tools (tested)
+
+- **An agent's powers, capped by yours.** In chat (the PWA, `galahad ask`) Galahad runs his tools as the agent `galahad`: the caller's scopes minus `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write`. Outward and destructive calls are filed for your approval, memories are `agent`, sandboxes are his own (`packages/node/test/chat-tools.test.ts`). A request from your own device doesn't make the model's choices yours.
+- **Same gate as HTTP.** Tools reach the node through the routes, in process, with each route's scope check and input validation; the model's arguments are checked against the tool's schema first. Failures reach the model as the API would word them, never an internal error's detail.
+- **Bank data stays in.** Once the bank's data is in an answer, the tools that can carry data out are refused for the rest of it, so text planted in a transaction can't send your balance to a search engine or a service. Residual risk: an earlier answer in the same conversation can still contain bank data that a later message sends out on your request.
+- **Where your words go.** Like any chat, tool results go to the model that answers, chosen by your roster (`galahad roster`); the steps show which.
+
 ## Bank access (tested)
 
 - **Read-only by construction.** The Enable Banking client knows 7 method and path pairs and none of them is a payment; the authorisation asks only for `valid_until`. Agents get four typed tools (an account uid and dates, nothing like a path), only once you grant them `bank:read`. Authorising, disconnecting and granting need `fleet:admin`, which agents can never hold (`packages/node/test/bank.test.ts`, `mcp.test.ts`).

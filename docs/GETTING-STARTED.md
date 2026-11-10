@@ -307,7 +307,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `web_search`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.

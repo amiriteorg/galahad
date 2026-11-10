@@ -13,6 +13,9 @@ import { randomId, type Scope, sha256B64u } from "@galahad/core";
 
 export const ARM_DEFAULT_SCOPES: Scope[] = ["mind:read", "mind:write", "sandbox", "vault:read", "chat", "connect"];
 export const ARM_FORBIDDEN_SCOPES: Scope[] = ["vault:write", "fleet:admin", "gateway:mint", "brain:write"];
+
+/** Galahad himself, when his own chat runs tools: an agent's name no minted agent may take. */
+export const GALAHAD_ARM = "galahad";
 export const ARM_LABEL = /^[a-z0-9][a-z0-9._-]{0,47}$/;
 
 export interface ArmInfo {
@@ -33,6 +36,7 @@ export class ArmTokens {
   /** Mint (or re-mint, replacing the old token) a credential for one arm. */
   mint(label: string, scopes: Scope[] = ARM_DEFAULT_SCOPES): { token: string; info: ArmInfo } {
     if (!ARM_LABEL.test(label)) throw new Error("arm labels are lowercase letters, digits, . _ - (max 48)");
+    if (label === GALAHAD_ARM) throw new Error(`"${GALAHAD_ARM}" is Galahad himself (his tools in chat); choose another name`);
     const forbidden = scopes.filter((s) => ARM_FORBIDDEN_SCOPES.includes(s));
     if (forbidden.length) throw new Error(`arms may never hold: ${forbidden.join(", ")}`);
     const token = `arm_${randomId(32)}`;
