@@ -10,7 +10,8 @@
     "./identity": "./src/identity.ts",
     "./pairing": "./src/pairing.ts",
     "./request-auth": "./src/request-auth.ts",
-    "./secret-scan": "./src/secret-scan.ts"
+    "./secret-scan": "./src/secret-scan.ts",
+    "./world": "./src/world.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

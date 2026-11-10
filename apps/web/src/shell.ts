@@ -17,6 +17,7 @@ import { activityView } from "./views/activity.ts";
 import { artifactsView } from "./views/artifacts.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
+import { worldView } from "./views/world.ts";
 import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -48,6 +49,7 @@ const ROUTES: RouteSpec[] = [
   { id: "overview", label: "Overview", icon: "overview", group: "main", scope: null, key: "o", keywords: ["home", "dashboard", "health"], view: overviewView },
   { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
+  { id: "world", label: "SANDBOX", icon: "landscape", group: "main", scope: "mind:read", key: "x", keywords: ["sandbox", "world", "3d", "experiments", "simulation", "galahad", "playground"], view: worldView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },

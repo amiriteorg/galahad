@@ -33,6 +33,8 @@ export interface Daemon {
   connectors: ConnectorService;
   artifacts: ArtifactStore;
   bank: BankService;
+  /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
+  world: WorldHub;
   stop(): Promise<void>;
 }
 
@@ -307,6 +309,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectors,
     artifacts,
     bank,
+    world,
     async stop() {
       clearInterval(outbox);
       bank.close();

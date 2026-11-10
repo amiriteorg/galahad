@@ -1,0 +1,228 @@
+/*
+ * How much world a device can carry. A tier is chosen once at start from the GPU
+ * (WebGPU adapter, or the WebGL2 fallback) and the screen; it caps every
+ * instance count and effect. While running, the resolution governor holds the
+ * frame time: it lowers the pixel ratio first, and only when that's at its floor
+ * does it drop effects (shadows, then grass). Pure, so unit-tested.
+ */
+
+export type TierName = "low" | "medium" | "high";
+
+export interface Tier {
+  name: TierName;
+  /** Pixel ratio: the most it starts at, and the floor the governor may lower it to. */
+  maxDpr: number;
+  minDpr: number;
+  /** One directional sun shadow near the camera; otherwise blob shadows under characters. */
+  shadows: boolean;
+  shadowMapSize: number;
+  /** Hard caps on instances. */
+  trees: number;
+  bushes: number;
+  flowers: number;
+  grass: number;
+  rocks: number;
+  birds: number;
+  deer: number;
+  rabbits: number;
+  ducks: number;
+  /** Microducks, the little biped duck robots round the keep. */
+  microducks: number;
+  fireflies: number;
+  particles: number;
+  /** Cheap point lights at night (the forge first). */
+  lights: number;
+  /** Land is loaded this far round the camera's focus at most (metres); fog hides its edge. */
+  radius: number;
+  /** Grass and flowers only this near the focus. */
+  grassRadius: number;
+  /** Chunks grown per frame at most. */
+  chunkBudget: number;
+  antialias: boolean;
+}
+
+export const TIERS: Record<TierName, Tier> = {
+  low: {
+    name: "low",
+    maxDpr: 1,
+    minDpr: 0.6,
+    shadows: false,
+    shadowMapSize: 0,
+    trees: 1500,
+    bushes: 600,
+    flowers: 0,
+    grass: 0,
+    rocks: 400,
+    birds: 10,
+    deer: 2,
+    rabbits: 3,
+    ducks: 3,
+    microducks: 4,
+    fireflies: 16,
+    particles: 96,
+    lights: 1,
+    radius: 200,
+    grassRadius: 0,
+    chunkBudget: 1,
+    antialias: false,
+  },
+  medium: {
+    name: "medium",
+    maxDpr: 1.5,
+    minDpr: 0.75,
+    shadows: false,
+    shadowMapSize: 0,
+    trees: 3000,
+    bushes: 1500,
+    flowers: 1500,
+    grass: 5000,
+    rocks: 900,
+    birds: 24,
+    deer: 4,
+    rabbits: 6,
+    ducks: 5,
+    microducks: 5,
+    fireflies: 40,
+    particles: 192,
+    lights: 2,
+    radius: 280,
+    grassRadius: 64,
+    chunkBudget: 2,
+    antialias: false,
+  },
+  high: {
+    name: "high",
+    maxDpr: 2,
+    minDpr: 1,
+    shadows: true,
+    shadowMapSize: 2048,
+    trees: 6000,
+    bushes: 3000,
+    flowers: 4000,
+    grass: 14000,
+    rocks: 1800,
+    birds: 48,
+    deer: 8,
+    rabbits: 12,
+    ducks: 8,
+    microducks: 8,
+    fireflies: 80,
+    particles: 384,
+    lights: 3,
+    radius: 380,
+    grassRadius: 110,
+    chunkBudget: 4,
+    antialias: true,
+  },
+};
+
+export interface DeviceInfo {
+  /** A WebGPU adapter was found (otherwise the WebGL2 backend runs). */
+  webgpu: boolean;
+  /** The adapter is a software fallback. */
+  fallbackAdapter: boolean;
+  /** Touch is the main pointer (phones, tablets). */
+  coarse: boolean;
+  /** The screen's shorter side, CSS pixels. */
+  minScreen: number;
+  /** navigator.deviceMemory (GB), when the browser says. */
+  memory: number | null;
+  /** navigator.hardwareConcurrency, when the browser says. */
+  cores: number | null;
+}
+
+/** The tier for a device: phones top out at medium; a software adapter or a small, weak device gets low. */
+export function chooseTier(d: DeviceInfo): TierName {
+  if (d.fallbackAdapter) return "low";
+  if ((d.memory !== null && d.memory < 4) || (d.cores !== null && d.cores <= 2)) return "low";
+  if (d.coarse || d.minScreen < 600) return d.webgpu && (d.memory === null || d.memory >= 4) ? "medium" : "low";
+  return d.webgpu ? "high" : "medium";
+}
+
+/** One lower, for a restart after the device was lost. */
+export const lowerTier = (t: TierName): TierName => (t === "high" ? "medium" : "low");
+
+export type GovernorAction = "none" | "dpr" | "drop-shadows" | "drop-grass";
+
+/**
+ * Holds the frame time near the budget by changing the pixel ratio: two slow
+ * seconds in a row lower it a step (down to the tier's floor); several fast
+ * seconds in a row raise it again (up to the tier's ceiling). At the floor and
+ * still slow, it drops shadows, then grass, once each. A second is judged by its
+ * median frame (a shader compiling once is not a slow device), and the first
+ * seconds after a start or a pause aren't judged at all.
+ */
+export class ResolutionGovernor {
+  dpr: number;
+  shadows: boolean;
+  grass: boolean;
+  private readonly times = new Float32Array(256);
+  private samples = 0;
+  private windowStart = -1;
+  private started = -1;
+  private fastWindows = 0;
+  private slowWindows = 0;
+
+  constructor(
+    private readonly tier: Tier,
+    startDpr: number,
+    /** Frame-time target: about 55 fps, so 60 Hz screens that are holding up aren't punished. */
+    private readonly budgetMs = 1000 / 55,
+    private readonly warmupMs = 3000,
+  ) {
+    this.dpr = Math.max(tier.minDpr, Math.min(tier.maxDpr, startDpr));
+    this.shadows = tier.shadows;
+    this.grass = tier.grass > 0;
+  }
+
+  /** Records one rendered frame's time; every second, maybe acts. Only frames rendered back to back count. */
+  frame(now: number, ms: number): GovernorAction {
+    if (this.started < 0) this.started = now;
+    if (now - this.started < this.warmupMs) return "none";
+    if (this.windowStart < 0) this.windowStart = now;
+    if (this.samples < this.times.length) this.times[this.samples++] = ms;
+    if (now - this.windowStart < 1000) return "none";
+    const n = this.samples;
+    const window = this.times.subarray(0, n).sort();
+    const median = n ? window[n >> 1]! : 0;
+    this.samples = 0;
+    this.windowStart = now;
+    if (n < 20) return "none";
+    if (median > this.budgetMs * 1.15) {
+      this.fastWindows = 0;
+      if (++this.slowWindows < 2) return "none";
+      this.slowWindows = 0;
+      if (this.dpr > this.tier.minDpr + 1e-6) {
+        this.dpr = Math.max(this.tier.minDpr, Math.round((this.dpr - 0.25) * 100) / 100);
+        return "dpr";
+      }
+      if (this.shadows) {
+        this.shadows = false;
+        return "drop-shadows";
+      }
+      if (this.grass) {
+        this.grass = false;
+        return "drop-grass";
+      }
+      return "none";
+    }
+    this.slowWindows = 0;
+    if (median < this.budgetMs * 0.7) {
+      this.fastWindows++;
+      if (this.fastWindows >= 4 && this.dpr < this.tier.maxDpr - 1e-6) {
+        this.fastWindows = 0;
+        this.dpr = Math.min(this.tier.maxDpr, Math.round((this.dpr + 0.25) * 100) / 100);
+        return "dpr";
+      }
+    } else this.fastWindows = 0;
+    return "none";
+  }
+
+  /** Forget the current window (after a pause: the first frames back aren't representative). */
+  reset(): void {
+    this.samples = 0;
+    this.windowStart = -1;
+    this.started = -1;
+    this.slowWindows = 0;
+  }
+}

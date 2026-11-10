@@ -5,12 +5,16 @@
  * from cache and refreshed in the background (stale-while-revalidate).
  * Anything under /api, /link or /gw is never cached: those are signed,
  * live requests and always go to the network. The pairing bundle (/pair.js)
- * is not cached either: pairing needs the network anyway.
+ * is not cached either: pairing needs the network anyway. The SANDBOX bundle
+ * (/world.js, three.js and the world, the biggest file) is cached the first time
+ * that page is opened, not on install, and refreshed like the shell.
  */
 
 const VERSION = "galahad-shell-v4";
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
+/** Cached on first use rather than on install. */
+const LAZY = ["/world.js"];
 
 interface ExtendableEventLike extends Event {
   waitUntil(promise: Promise<unknown>): void;
@@ -57,7 +61,7 @@ async function announceUpdate(): Promise<void> {
 async function fromShell(event: FetchEventLike, key: string): Promise<Response> {
   const cache = await caches.open(VERSION);
   const cached = await cache.match(key);
-  const before = key === "/app.js" ? cached?.clone() : undefined;
+  const before = key === "/app.js" || key === "/world.js" ? cached?.clone() : undefined;
   const refresh = fetch(event.request)
     .then(async (response) => {
       if (response.ok) {
@@ -105,5 +109,5 @@ sw.addEventListener("fetch", (event) => {
     event.respondWith(page(event));
     return;
   }
-  if (SHELL.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
+  if (SHELL.includes(url.pathname) || LAZY.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
 });

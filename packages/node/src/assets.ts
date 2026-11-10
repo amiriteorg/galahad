@@ -35,9 +35,10 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
   try {
     // Each entrypoint is self-contained (no shared chunks), so the service worker can cache the
     // shell by fixed names: app.js (the app), boot.js (theme before first paint), sw.js, and
-    // pair.js (the pairing flow with the invite schema, fetched only when a #pair= link opens).
+    // pair.js (the pairing flow with the invite schema, fetched only when a #pair= link opens), and
+    // world.js (the SANDBOX: three.js and the 3D world, fetched only when that page opens).
     const result = await Bun.build({
-      entrypoints: [join(src, "app.ts"), join(src, "boot.ts"), join(src, "pair.ts"), join(src, "sw.ts")],
+      entrypoints: [join(src, "app.ts"), join(src, "boot.ts"), join(src, "pair.ts"), join(src, "sw.ts"), join(src, "world.ts")],
       target: "browser",
       minify: true,
       naming: "[name].[ext]",

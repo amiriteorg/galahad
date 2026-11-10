@@ -80,6 +80,8 @@ export interface Api {
   /** A POST whose answer is bytes (an artifact's file), not JSON. */
   bytes(path: string, body: unknown, signal?: AbortSignal): Promise<Bytes>;
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
+  /** A signed GET that answers with server-sent events (the world): each `data:` frame, parsed as JSON. Unchecked: callers read it at their boundary. */
+  stream(path: string, signal: AbortSignal): AsyncGenerator<unknown>;
 }
 
 /**
@@ -113,6 +115,17 @@ export function apiFor(identity: BrowserIdentity): Api {
       for await (const data of sseData(response.body)) {
         try {
           yield JSON.parse(data) as ChatStreamEvent;
+        } catch {
+          /* ignore malformed frames */
+        }
+      }
+    },
+    async *stream(path: string, signal: AbortSignal) {
+      const response = await signedFetch(identity, "GET", path, undefined, signal);
+      if (!response.body) return;
+      for await (const data of sseData(response.body)) {
+        try {
+          yield JSON.parse(data) as unknown;
         } catch {
           /* ignore malformed frames */
         }
