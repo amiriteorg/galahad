@@ -119,15 +119,44 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
   }
 }
 
-/** Unauthenticated pairing endpoints (the invite proof is the credential). */
-export async function pairPost<T>(path: "/link/pair/request" | "/link/pair/status", body: unknown): Promise<T> {
-  const response = await fetch(`${location.origin}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+/** How long a pairing request may take before the page says it can't reach the node. */
+export const PAIR_TIMEOUT_MS = 12_000;
+
+/**
+ * Unauthenticated pairing endpoints (the invite proof is the credential). Never waits
+ * forever: a stalled connection (Tailscale reconnecting, a phone changing networks) or
+ * an unreachable node becomes ApiError(0), which callers treat as "retry, and say so".
+ */
+export async function pairPost<T>(path: "/link/pair/request" | "/link/pair/status", body: unknown, timeoutMs = PAIR_TIMEOUT_MS): Promise<T> {
+  let response: Response;
+  let payload: T & { error?: string };
+  try {
+    response = await fetch(`${location.origin}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  } catch (error) {
+    const timedOut = error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError");
+    throw new ApiError(0, timedOut ? `No answer from ${location.host} within ${Math.round(timeoutMs / 1000)} s` : `Can't reach ${location.host}`);
+  }
   if (!response.ok) throw new ApiError(response.status, payload.error ?? `${response.status}`);
   return payload;
+}
+
+/**
+ * Can this device reach the node right now? A deliberately empty status request: any
+ * answer at all (it's refused as malformed) proves the path works. Never cached (POST),
+ * so a page the service worker served from cache can't pretend to be connected.
+ */
+export async function nodeReachable(timeoutMs = 6000): Promise<boolean> {
+  try {
+    await pairPost("/link/pair/status", {}, timeoutMs);
+    return true;
+  } catch (error) {
+    return !(error instanceof ApiError && error.status === 0);
+  }
 }

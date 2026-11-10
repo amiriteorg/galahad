@@ -1,6 +1,6 @@
 import { fromB64u } from "@galahad/core/bytes";
 import { approvalProof, decodeInvite, type Invite, pairProof, type PairRequestFields, proofMatches, sasCode, statusProof } from "@galahad/core/pairing";
-import { ApiError, apiFor, pairPost } from "./api.ts";
+import { ApiError, apiFor, nodeReachable, pairPost } from "./api.ts";
 import { errorMessage } from "./context.ts";
 import { type BrowserIdentity, forgetIdentity, saveIdentity } from "./identity.ts";
 import { hero, renderPairFailed, solo, trustStrip } from "./screens.ts";
@@ -55,7 +55,38 @@ export function renderPairing(root: HTMLElement, identity: BrowserIdentity, invi
   const nameInput = h("input", { class: "input", type: "text", id: "device-name", value: identity.name, maxlength: 64, autocomplete: "off" });
   const status = h("div", { "aria-live": "polite", class: "stack" });
   const join = button("Ask to join", { variant: "primary", type: "submit", size: "lg", block: true });
+  const reach = h("div", { "aria-live": "polite" });
   let polling = false;
+
+  /**
+   * Say plainly whether this device can reach the node. A page the service worker served
+   * from cache looks fine even with no route to the node; this is what tells the difference.
+   */
+  function unreachable(): HTMLElement {
+    return callout("warn", [
+      h("p", {}, `This device can't reach ${location.host} right now.`),
+      h(
+        "p",
+        { class: "small" },
+        "Your fleet is on your tailnet only. On a phone, open the Tailscale app and check it says Connected (with MagicDNS on); on a computer, check Tailscale is running. Then try again.",
+      ),
+    ], {
+      title: "No connection to your node",
+      actions: button("Try again", { size: "sm", onClick: () => void checkReach() }),
+    });
+  }
+
+  async function checkReach(): Promise<boolean> {
+    replace(reach, h("p", { class: "tiny subtle row", style: "justify-content:center" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Checking the connection to ${location.host}…`));
+    const ok = await nodeReachable();
+    replace(
+      reach,
+      ok
+        ? h("p", { class: "tiny subtle row", style: "justify-content:center" }, icon("link", { size: 14 }), `Connected to ${location.host}`)
+        : unreachable(),
+    );
+    return ok;
+  }
 
   function showCode(name: string, note = "Waiting for your approval…"): void {
     join.hidden = true;
@@ -182,6 +213,12 @@ export function renderPairing(root: HTMLElement, identity: BrowserIdentity, invi
         return;
       }
       if (error instanceof ApiError && error.status === 409) return ended(error.message);
+      // No answer at all: nothing is lost (the invite still holds), so say why and let them retry.
+      if (error instanceof ApiError && error.status === 0) {
+        replace(status);
+        replace(reach, unreachable());
+        return;
+      }
       replace(status, callout("danger", errorMessage(error)));
     }
   }
@@ -196,11 +233,13 @@ export function renderPairing(root: HTMLElement, identity: BrowserIdentity, invi
         h("div", { class: "field" }, h("label", { for: "device-name" }, "Name this device"), nameInput, h("div", { class: "hint" }, "How it appears in your fleet's device list.")),
         join,
         status,
-        h("p", { class: "tiny subtle row", style: "justify-content:center" }, icon("link", { size: 14 }), `Talking to ${location.host}`),
+        reach,
       ),
       trustStrip(),
     ),
   );
+
+  void checkReach();
 
   // Resume quietly if this browser already asked (or was approved) before a reload.
   pairPost<StatusResult>("/link/pair/status", statusBody())
