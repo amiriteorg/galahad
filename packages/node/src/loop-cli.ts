@@ -228,16 +228,21 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         const id = str(flags, "id") ?? rest[0] ?? new URL(mcp).hostname.split(".").filter((p) => !["mcp", "api", "www"].includes(p))[0]?.replace(/[^a-z0-9-]/g, "-");
         if (!id) throw new Error("give it an id: galahad connector add <id> --mcp <url>");
         const auth = str(flags, "auth");
-        const { connector, discovered } = await api.call<{ connector: ConnectorView; discovered: Parameters<typeof printDiscovered>[1] }>("setConnector", {
-          id,
-          mcp: {
-            url: mcp,
-            ...(str(flags, "label") ? { label: str(flags, "label") } : {}),
-            ...(auth ? { auth: auth.startsWith("header") ? "header" : auth, ...(auth.startsWith("header:") ? { header: auth.slice(7) } : {}) } : {}),
-            ...(str(flags, "only") ? { only: str(flags, "only")!.split(",").filter(Boolean) } : {}),
-            ...(classFlags(flags) ? { classes: classFlags(flags) } : {}),
-          },
-        });
+        const { connector, discovered } = await api
+          .call<{ connector: ConnectorView; discovered: Parameters<typeof printDiscovered>[1] }>("setConnector", {
+            id,
+            mcp: {
+              url: mcp,
+              ...(str(flags, "label") ? { label: str(flags, "label") } : {}),
+              ...(auth ? { auth: auth.startsWith("header") ? "header" : auth, ...(auth.startsWith("header:") ? { header: auth.slice(7) } : {}) } : {}),
+              ...(str(flags, "only") ? { only: str(flags, "only")!.split(",").filter(Boolean) } : {}),
+              ...(classFlags(flags) ? { classes: classFlags(flags) } : {}),
+            },
+          })
+          .catch((error: Error) => {
+            if (/needs a key/.test(error.message)) error.message += ` (here: --auth bearer, or --auth header:<name>)`;
+            throw error;
+          });
         printDiscovered(connector, discovered);
         return;
       }
