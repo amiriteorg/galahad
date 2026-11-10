@@ -1,6 +1,6 @@
 import type { Station, WorldEvent } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { cameraPosition, dot, exp, float, fog, length, max, mix, normalize, positionWorld, pow, rangeFogFactor, select, sin, smoothstep, uniform } from "three/tsl";
+import { cameraPosition, dot, exp, float, fog, length, max, mix, normalize, positionWorld, pow, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform } from "three/tsl";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, type Node, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { attachInput, CameraRig, DEFAULT_DISTANCE, STATION_DISTANCE } from "./camera.ts";
@@ -203,12 +203,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   scene.add(hemi, sun, sunTarget);
 
   // The haze: thicker low down, warmer towards the sun (peach at golden hour), dithered against banding.
-  const fogNear = uniform(60);
-  const fogFar = uniform(300);
-  const fogColor = uniform(new Color(0xffffff));
-  const fogSun = uniform(new Color(0xffffff));
-  const fogSunDir = uniform(new Vector3(0, 1, 0));
-  const fogWarm = uniform(0.2);
+  // Its uniforms are every material's, so they live in the render's shared group (uploaded once a render, not per draw).
+  const fogNear = uniform(60).setGroup(renderGroup);
+  const fogFar = uniform(300).setGroup(renderGroup);
+  const fogColor = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const fogSun = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const fogSunDir = uniform(new Vector3(0, 1, 0)).setGroup(renderGroup);
+  const fogWarm = uniform(0.2).setGroup(renderGroup);
   const view = normalize(positionWorld.sub(cameraPosition));
   const towards = pow(max(dot(view, fogSunDir), 0), 5);
   const thin = float(1).sub(smoothstep(4, 70, positionWorld.y).mul(0.35));
@@ -216,9 +217,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // The mist: fog that thins with height above the water (so it lies in hollows and over lakes), summed
   // along the line of sight in closed form, in slow drifting banks (two warped sines: cheap). Behind a
   // branch on its density, so a clear day costs nothing for it.
-  const mistDensity = uniform(0);
-  const mistColor = uniform(new Color(0xffffff));
-  const mistDrift = uniform(0);
+  const mistDensity = uniform(0).setGroup(renderGroup);
+  const mistColor = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const mistDrift = uniform(0).setGroup(renderGroup);
   const mist = only(mistDensity.greaterThan(1e-5), float(0) as unknown as Node<"float">, () => {
     const k = 1 / MIST_HEIGHT;
     const above = (y: Node<"float">) => y.sub(WATER_LEVEL).max(-1.5);
@@ -804,11 +805,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const lastWeather = { cloud: -1, rain: -1, mist: -1, wetness: -1 };
   function stepWeather(dt: number, motion: boolean, now: number): boolean {
     const w = weather.step(dt, skyState.sunElevation * DEG, heavens.evening);
+    // Clocks move only while there's something for them to move: every change is an upload for each
+    // material that reads it, which a phone pays for on a dry, clear day for nothing.
     if (motion) {
       // Wrapped so the GPU's floats stay precise in a page left open for days (2000 s: the ripples' phase is whole there).
-      weatherUniforms.time.value = (weatherUniforms.time.value + dt) % 2000;
-      sky.drift.value += dt * 0.004 * (1 + w.cloud);
-      mistDrift.value = (mistDrift.value + dt * 0.006) % 10_000;
+      if (w.rain > 0.001) weatherUniforms.time.value = (weatherUniforms.time.value + dt) % 2000;
+      if (w.cloud > 0.002) sky.drift.value += dt * 0.004 * (1 + w.cloud);
+      if (w.mist > 0.001) mistDrift.value = (mistDrift.value + dt * 0.006) % 10_000;
     }
     const moved = Math.abs(w.cloud - lastWeather.cloud) + Math.abs(w.rain - lastWeather.rain) + Math.abs(w.mist - lastWeather.mist) + Math.abs(w.wetness - lastWeather.wetness) > 2e-4;
     if (moved && now - lastSkyAt > 100) {

@@ -117,7 +117,8 @@ export class Weather {
 
   private mistTarget(t: Target, elevationDeg: number, evening: number): number {
     // After rain the wet ground steams: mist while it's wet and no longer raining.
-    const afterRain = this.state.wetness * (1 - smooth(0.05, 0.4, this.state.rain)) * 0.55;
+    const wet = this.state.wetness;
+    const afterRain = wet * wet * (1 - smooth(0.05, 0.4, this.state.rain)) * 0.45;
     return clamp01(Math.max(t.mist, naturalMist(elevationDeg, evening) * (1 - t.cloud * 0.4), afterRain));
   }
 }

@@ -1,4 +1,4 @@
-import { abs, cameraPosition, clamp, dot, float, floor, Fn, fract, If, length, max, mix, normalize, normalWorld, positionWorld, pow, sin, smoothstep, step, uniform, vec2, vec3, vertexColor } from "three/tsl";
+import { abs, cameraPosition, clamp, dot, float, floor, Fn, fract, If, length, max, mix, normalize, normalWorld, positionWorld, pow, renderGroup, sin, smoothstep, step, uniform, vec2, vec3, vertexColor } from "three/tsl";
 import { Color, type Node } from "three/webgpu";
 
 /*
@@ -11,15 +11,19 @@ import { Color, type Node } from "three/webgpu";
  * skips them: a phone pays for rain only while it rains.
  */
 
+/**
+ * The same for every object, so in the render's shared group: uploaded once a
+ * render, not once per draw (three's default), which would cost phones CPU.
+ */
 export const weatherUniforms = {
   /** 0 dry .. 1 soaked. */
-  wetness: uniform(0),
+  wetness: uniform(0).setGroup(renderGroup),
   /** 0 .. 1: how hard it's raining (ripples). */
-  rain: uniform(0),
+  rain: uniform(0).setGroup(renderGroup),
   /** The rain's clock, seconds (it stops under reduced motion). */
-  time: uniform(0),
+  time: uniform(0).setGroup(renderGroup),
   /** The sky's colour overhead, for the sheen on wet surfaces (linear). */
-  sky: uniform(new Color(0.6, 0.65, 0.75)),
+  sky: uniform(new Color(0.6, 0.65, 0.75)).setGroup(renderGroup),
 };
 
 type F = Node<"float">;

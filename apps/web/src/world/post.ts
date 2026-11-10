@@ -30,7 +30,7 @@ export class Post {
   private readonly aspect = uniform(1);
   private readonly shaftStrength = uniform(0);
   private readonly shaftColor = uniform(new Color(1, 0.9, 0.75));
-  private readonly bloomStrength = uniform(0.2);
+  private readonly bloomStrength = uniform(0.15);
   private flags: PostFlags = { ao: false, shafts: false, bloom: false };
   private scenePass: ReturnType<typeof pass> | null = null;
   private readonly projected = new Vector3();
@@ -83,7 +83,7 @@ export class Post {
       out = out.add(shafts.rgb.mul(this.shaftColor).mul(this.shaftStrength));
     }
     if (flags.bloom) {
-      const glow = bloom(color, 1, 0.45, 0.9);
+      const glow = bloom(color, 1, 0.4, 0.95);
       out = out.add(glow.rgb.mul(this.bloomStrength));
     }
     this.pipeline.outputNode = vec4(out, 1);

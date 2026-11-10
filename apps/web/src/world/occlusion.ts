@@ -1,4 +1,4 @@
-import { float, fract, mix, positionWorld, screenCoordinate, smoothstep, step, uniform } from "three/tsl";
+import { float, fract, mix, positionWorld, renderGroup, screenCoordinate, smoothstep, step, uniform } from "three/tsl";
 import { Vector3 } from "three/webgpu";
 
 /*
@@ -9,15 +9,16 @@ import { Vector3 } from "three/webgpu";
  * (scene coordinates); materials that can stand in the way use the mask.
  */
 
+/** (The same for every object: in the render's shared group, uploaded once a render rather than per draw.) */
 export const occlusion = {
   /** The camera. */
-  from: uniform(new Vector3()),
+  from: uniform(new Vector3()).setGroup(renderGroup),
   /** His chest. */
-  to: uniform(new Vector3()),
+  to: uniform(new Vector3()).setGroup(renderGroup),
   /** His feet's height: the ground near him never dissolves. */
-  floor: uniform(0),
+  floor: uniform(0).setGroup(renderGroup),
   /** 0 when not following him (nothing dissolves), 1 when following. */
-  on: uniform(0),
+  on: uniform(0).setGroup(renderGroup),
 };
 
 /** A material's maskNode: false (discarded) for the dithered part of whatever stands in the way. */

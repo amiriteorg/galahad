@@ -46,7 +46,7 @@ describe("the weather", () => {
     expect(w.state.cloud).toBeGreaterThan(0.3);
     expect(w.state.wetness).toBeGreaterThan(0.85);
     // Steaming after rain.
-    expect(Math.max(...seen.map((s) => s.mist))).toBeGreaterThan(0.3);
+    expect(Math.max(...seen.map((s) => s.mist))).toBeGreaterThan(0.25);
     run(w, 120);
     expect(w.state.cloud).toBeLessThan(0.01);
     expect(w.state.wetness).toBeGreaterThan(0);
