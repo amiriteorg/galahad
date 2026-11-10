@@ -1,11 +1,11 @@
 import type { Station, WorldEvent } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { cameraPosition, dot, float, fog, max, mix, normalize, positionWorld, pow, rangeFogFactor, smoothstep, uniform } from "three/tsl";
-import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
+import { cameraPosition, dot, exp, float, fog, length, max, mix, normalize, positionWorld, pow, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform } from "three/tsl";
+import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, type Node, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { attachInput, CameraRig, DEFAULT_DISTANCE, STATION_DISTANCE } from "./camera.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
-import { emptySky, localHours, skyAt } from "./daynight.ts";
+import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
@@ -18,25 +18,32 @@ import { readThemeColors } from "./palette.ts";
 import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
 import { originUniform, Plots } from "./plots.ts";
+import { Post } from "./post.ts";
+import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
 import { dither, SkyDome } from "./sky.ts";
 import { KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
 import { Vegetation, wind } from "./vegetation.ts";
+import { Weather, type WeatherKind } from "./weather.ts";
+import { only, weatherUniforms } from "./wet.ts";
 
 /*
  * The SANDBOX's renderer, on three.js's WebGPU renderer (its WebGL2 backend where
  * WebGPU isn't available): the land and what grows on it, the treehouse keep and
  * its stations, the plots, Galahad and his dog, birds, deer, rabbits, ducks and
- * fireflies, a sky that follows the viewer's clock, and HTML labels and a speech
- * bubble projected from 3D. A quality tier chosen at start caps everything; the
- * resolution governor holds the frame time (pixel ratio first, then effects).
+ * fireflies, a sky under the real sun and moon over Denmark, weather (cloud,
+ * mist, rain), and HTML labels and a speech bubble projected from 3D. A quality
+ * tier chosen at start caps everything; the resolution governor holds the frame
+ * time (post effects first, then the pixel ratio, then shadows and grass).
  *
- * The picture: AgX tone mapping (exposure by the time of day) over linear-light
- * colours; a sun and a lavender-and-green hemisphere fill, ambient occlusion
- * baked into the geometry, a haze that warms towards the sun, dithered so its
- * gradients never band; multisampling where it's cheap; a reversed depth buffer
- * on WebGPU (no flicker far away). Steady: land grows within a time budget per
+ * The picture: AgX tone mapping (exposure by the sun and the weather) over
+ * linear-light colours; a sun and a lavender-and-green hemisphere fill, ambient
+ * occlusion baked into the geometry, a haze that warms towards the sun and a
+ * height-bound mist that lies in hollows and over water, dithered so their
+ * gradients never band; rain streaks, ripples and wet, darker ground; on the
+ * high tier, GTAO, sun shafts and bloom (post.ts); multisampling where it's
+ * cheap; a reversed depth buffer on WebGPU (no flicker far away). Steady: land grows within a time budget per
  * frame, frames are paced to the display (none dropped for a fraction of a
  * millisecond), the camera follows on a smoothed ground, shadows are snapped to
  * their texels, labels are projected after the camera moves and eased onto
@@ -60,6 +67,8 @@ export interface WorldOptions {
   tier?: TierName;
   /** Use the WebGL2 backend even where WebGPU is available (a restart after the WebGPU device was lost). */
   forceWebGL?: boolean;
+  /** The weather at first sight (it's there at once, not eased into). */
+  weather?: WeatherKind;
 }
 
 export interface WorldStats {
@@ -71,6 +80,8 @@ export interface WorldStats {
   frameMs: number;
   drawCalls: number;
   shadows: boolean;
+  /** The post effects still on (high tier), e.g. ["ao", "shafts", "bloom"]. */
+  effects: string[];
   instances: Record<string, number>;
 }
 
@@ -87,8 +98,10 @@ export interface WorldHandle {
   pan(right: number, forward: number): void;
   select(id: string | null): void;
   setBeacon(on: boolean): void;
-  /** A fixed hour to look at (0–24), or null for the viewer's own clock. */
-  setTimeOfDay(hours: number | null): void;
+  /** A fixed look (a place of the sun), or null for the real sky over Denmark now. */
+  setTimeOfDay(preset: TimePreset | null): void;
+  /** The weather to ease towards. */
+  setWeather(kind: WeatherKind): void;
   stats(): WorldStats;
   dispose(): void;
 }
@@ -101,6 +114,11 @@ const FRAME_MIN_MS = 1000 / 60 - 3;
 const EXPOSURE = 1.55;
 /** The haze and the sky's horizon, a little below the painted colour (AgX lifts pale colours towards white). */
 export const HAZE = 0.8;
+/** The mist thins by e every this many metres above the water. */
+const MIST_HEIGHT = 1.7;
+/** The mist's density at the water (per metre) when it's thickest. */
+const MIST_DENSITY = 0.075;
+const DEG = 180 / Math.PI;
 
 interface Label {
   el: HTMLElement;
@@ -185,18 +203,47 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   scene.add(hemi, sun, sunTarget);
 
   // The haze: thicker low down, warmer towards the sun (peach at golden hour), dithered against banding.
-  const fogNear = uniform(60);
-  const fogFar = uniform(300);
-  const fogColor = uniform(new Color(0xffffff));
-  const fogSun = uniform(new Color(0xffffff));
-  const fogSunDir = uniform(new Vector3(0, 1, 0));
-  const fogWarm = uniform(0.2);
+  // Its uniforms are every material's, so they live in the render's shared group (uploaded once a render, not per draw).
+  const fogNear = uniform(60).setGroup(renderGroup);
+  const fogFar = uniform(300).setGroup(renderGroup);
+  const fogColor = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const fogSun = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const fogSunDir = uniform(new Vector3(0, 1, 0)).setGroup(renderGroup);
+  const fogWarm = uniform(0.2).setGroup(renderGroup);
   const view = normalize(positionWorld.sub(cameraPosition));
   const towards = pow(max(dot(view, fogSunDir), 0), 5);
   const thin = float(1).sub(smoothstep(4, 70, positionWorld.y).mul(0.35));
-  scene.fogNode = fog(mix(fogColor, fogSun, towards.mul(fogWarm)), rangeFogFactor(fogNear, fogFar).mul(thin).add(dither().mul(2)).clamp(0, 1));
+  const haze = rangeFogFactor(fogNear, fogFar).mul(thin);
+  // The mist: fog that thins with height above the water (so it lies in hollows and over lakes), summed
+  // along the line of sight in closed form, in slow drifting banks (two warped sines: cheap). Behind a
+  // branch on its density, so a clear day costs nothing for it.
+  const mistDensity = uniform(0).setGroup(renderGroup);
+  const mistColor = uniform(new Color(0xffffff)).setGroup(renderGroup);
+  const mistDrift = uniform(0).setGroup(renderGroup);
+  const mist = only(mistDensity.greaterThan(1e-5), float(0) as unknown as Node<"float">, () => {
+    const k = 1 / MIST_HEIGHT;
+    const above = (y: Node<"float">) => y.sub(WATER_LEVEL).max(-1.5);
+    const yc = above(cameraPosition.y);
+    const yp = above(positionWorld.y);
+    const ec = exp(yc.mul(-k));
+    const ep = exp(yp.mul(-k));
+    const dy = yp.sub(yc);
+    const steep = dy.abs().greaterThan(0.05);
+    const along = select(steep, ec.sub(ep).div(select(steep, dy, float(1)).mul(k)), ep);
+    const px = positionWorld.x;
+    const pz = positionWorld.z;
+    const banks = sin(px.mul(0.021).add(sin(pz.mul(0.017).add(mistDrift)).mul(1.7)).add(mistDrift.mul(0.6)))
+      .mul(sin(pz.mul(0.026).add(sin(px.mul(0.013)).mul(1.3)).sub(mistDrift.mul(0.4))))
+      .mul(0.7)
+      .add(1);
+    return float(1).sub(exp(mistDensity.mul(length(positionWorld.sub(cameraPosition))).mul(along).mul(banks).negate())) as unknown as Node<"float">;
+  });
+  const hazeColor = mix(fogColor, fogSun, towards.mul(fogWarm));
+  const total = float(1).sub(float(1).sub(haze).mul(float(1).sub(mist)));
+  scene.fogNode = fog(mix(hazeColor, mistColor, mist.div(haze.add(mist).max(1e-4))), total.add(dither().mul(2)).clamp(0, 1));
 
   const sky = new SkyDome(tier.name === "low" ? 300 : 900);
+  const rain = new Rain(scene, tier.rain);
   const horizon = new Horizon();
   scene.add(sky.group, horizon.group);
   const land = new Land(worldRoot, SEED, shadows, tier.waterGrid);
@@ -269,8 +316,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let dirty = true;
   let disposed = false;
   let lost = false;
-  let override: number | null = null;
+  let override: TimePreset | null = null;
   const skyState = emptySky();
+  const heavens = emptyHeavens();
+  const weather = new Weather(options.weather ?? "clear");
+  /** How far the haze reaches (1 clear; rain and cloud bring it in). */
+  let hazeReach = 1;
 
   let sparkTimer = 0;
   const anvil = forgeAnvil();
@@ -292,12 +343,19 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     options.onLost(info.message || "The graphics device was reset.");
   };
 
-  // ---------- sky, light and theme ----------
-  function applySky(hours: number): void {
-    skyAt(hours, skyState);
+  // ---------- sky, light, weather and theme ----------
+  /** The sun and moon: the real ones over Denmark now, or a preset's. */
+  function placeHeavens(): void {
+    if (override) Object.assign(heavens, TIME_PRESETS[override]);
+    else heavensAt(Date.now(), heavens);
+  }
+  function applySky(): void {
+    skyFor(heavens, skyState);
+    applyWeather(skyState, weather.state);
     const s = skyState;
+    const w = weather.state;
     sky.set(s);
-    horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden);
+    horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud);
     fogColor.value.setHex(s.horizon).multiplyScalar(HAZE);
     fogSun.value.setHex(s.sunGlow).multiplyScalar(HAZE);
     fogSunDir.value.set(s.sun[0], Math.max(0, s.sun[2]), -s.sun[1]).normalize();
@@ -307,12 +365,21 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     hemi.intensity = s.hemiIntensity;
     sun.color.setHex(s.light);
     sun.intensity = s.lightIntensity;
+    sun.shadow.intensity = s.shadow;
     renderer.toneMappingExposure = EXPOSURE * s.exposure;
     land.setWaterColor(s.water, s.horizon);
-    // Lamps come on with the evening, before it's fully dark.
-    const lamps = Math.min(1, s.night * 1.25 + (s.hours > 16 || s.hours < 8 ? s.golden * 0.35 : 0));
-    keep.setNight(lamps);
-    glows.setStrength(lamps);
+    // The mist takes the haze's colour, lit a little by the low sun (rosy at dawn, white by day, blue at night).
+    mistColor.value.copy(fogColor.value).lerp(fogSun.value, 0.3 * (1 - s.cloud)).multiplyScalar(1.04);
+    mistDensity.value = s.mist * MIST_DENSITY;
+    hazeReach = 1 - 0.3 * w.rain - 0.12 * w.cloud - 0.15 * s.mist;
+    // Wet things take the sky's colour as a sheen.
+    weatherUniforms.sky.value.setHex(s.zenith).lerp(fogColor.value, 0.5).multiplyScalar(1.1);
+    weatherUniforms.wetness.value = w.wetness;
+    weatherUniforms.rain.value = w.rain;
+    rain.set(w.rain, s.light, s.night, !reduced());
+    // Lamps come on as the sun gets low, before it's fully dark (sooner under cloud).
+    keep.setNight(s.lamps);
+    glows.setStrength(s.lamps);
     knight.setNight(s.night);
     dog.setNight(s.night);
     dirty = true;
@@ -327,13 +394,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const schemeQuery = matchMedia("(prefers-color-scheme: dark)");
   schemeQuery.addEventListener("change", applyTheme);
   const motionChanged = () => {
-    dirty = true;
+    applySky();
   };
   motionQuery.addEventListener("change", motionChanged);
   const clock = () => {
     if (override !== null) return;
-    applySky(localHours(new Date()));
+    placeHeavens();
+    applySky();
   };
+  placeHeavens();
+  weather.snap(heavens.sunElevation * DEG, heavens.evening);
   clock();
   const clockTimer = setInterval(clock, 30_000);
 
@@ -608,6 +678,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   resizeObserver.observe(container);
   resize();
 
+  // The high tier's finish: ambient occlusion, sun shafts, bloom (WebGPU only; none on phones or WebGL2).
+  const post = backend === "webgpu" && (tier.post.ao || tier.post.shafts || tier.post.bloom) ? new Post(renderer, scene, camera, governor.post) : null;
+
   // Every material's pipeline compiled before the first frame (and the night's glows with them), so
   // nothing stalls later when a chunk's grass or the lamps first appear.
   {
@@ -622,6 +695,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     camera.updateMatrixWorld();
     try {
       await renderer.compileAsync(scene, camera);
+      // Through the post pipeline too: its passes, and every material again for its own render target.
+      if (post?.active) {
+        post.render();
+        await post.compile();
+      }
     } catch {
       /* compiling ahead is an optimisation: the first frames compile what's left */
     }
@@ -722,6 +800,39 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     sun.position.copy(focus).addScaledVector(lightDir, 110);
   }
 
+  /** Moves the weather on, re-lighting the sky at most ten times a second while it changes; true while it rains (every frame wanted). */
+  let lastSkyAt = 0;
+  const lastWeather = { cloud: -1, rain: -1, mist: -1, wetness: -1 };
+  function stepWeather(dt: number, motion: boolean, now: number): boolean {
+    const w = weather.step(dt, skyState.sunElevation * DEG, heavens.evening);
+    // Clocks move only while there's something for them to move: every change is an upload for each
+    // material that reads it, which a phone pays for on a dry, clear day for nothing.
+    if (motion) {
+      // Wrapped so the GPU's floats stay precise in a page left open for days (2000 s: the ripples' phase is whole there).
+      if (w.rain > 0.001) weatherUniforms.time.value = (weatherUniforms.time.value + dt) % 2000;
+      if (w.cloud > 0.002) sky.drift.value += dt * 0.004 * (1 + w.cloud);
+      if (w.mist > 0.001) mistDrift.value = (mistDrift.value + dt * 0.006) % 10_000;
+    }
+    const moved = Math.abs(w.cloud - lastWeather.cloud) + Math.abs(w.rain - lastWeather.rain) + Math.abs(w.mist - lastWeather.mist) + Math.abs(w.wetness - lastWeather.wetness) > 2e-4;
+    if (moved && now - lastSkyAt > 100) {
+      lastSkyAt = now;
+      lastWeather.cloud = w.cloud;
+      lastWeather.rain = w.rain;
+      lastWeather.mist = w.mist;
+      lastWeather.wetness = w.wetness;
+      applySky();
+    }
+    // (Re-lighting marks the frame dirty; falling rain wants every frame.)
+    return motion && w.rain > 0.01;
+  }
+  /** How strongly the sun's shafts show: low suns, mist and rain make them; cloud and night take them away. */
+  function shaftStrength(): number {
+    const s = skyState;
+    if (!s.lightFromSun) return 0;
+    const low = 1 - Math.min(1, Math.max(0, (s.sunElevation * DEG - 5) / 35));
+    return (0.25 + 0.35 * low + 0.45 * s.mist + 0.25 * weather.state.rain) * (1 - 0.85 * s.cloud) * Math.min(1, s.sunElevation * DEG / 1.5);
+  }
+
   let raf = 0;
   let lastTick = performance.now();
   let lastRender = 0;
@@ -747,6 +858,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const dt = Math.min(0.1, (now - lastTick) / 1000);
     lastTick = now;
     let active = walker.step(dt, galahadGround);
+    // The weather moves on (re-lighting marks the frame dirty); while it rains, every frame is drawn.
+    if (stepWeather(dt, motion, now)) active = true;
     if (rig.follow) {
       rig.lookAt(walker.x, walker.y);
       rig.trail(walker.heading, walker.moving, dt, cameraClear);
@@ -793,8 +906,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const growing = land.update(rig.x, rig.y, loadRadius, deadline, tier.chunkBudget);
     const filling = vegetation.update(rig.x, rig.y, deadline);
     if (growing || filling) dirty = true;
-    fogFar.value = loadRadius * 0.94;
-    fogNear.value = Math.max(fogFar.value * 0.3, rig.distance * 1.5 + 30);
+    fogFar.value = loadRadius * 0.94 * hazeReach;
+    fogNear.value = Math.max(fogFar.value * 0.3, Math.min(fogFar.value * 0.8, rig.distance * 1.5 + 30));
 
     // Galahad and his dog.
     const g = model?.galahad;
@@ -830,7 +943,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         fauna.sparksAt(anvil[0], anvil[1], anvil[2], 3);
       }
     }
-    const dusk = Math.min(1, skyState.night * 1.4) * (skyState.hours > 17 || skyState.hours < 3 ? 1 : 0.4);
+    const dusk = Math.min(1, skyState.night * 1.4) * (skyState.evening > 0.5 ? 1 : 0.4) * (1 - weather.state.rain);
     fauna.step(renderDt, rig.x, rig.y, origin, skyState.night, dusk, motion);
     galahadLead.x = walker.x;
     galahadLead.y = walker.y;
@@ -851,8 +964,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     sky.follow(camera.position);
     horizon.follow(camera.position, t, motion);
     // The light: from the sun by day, the moon by night, kept over the focus.
-    placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightFromSun ? skyState.sun : skyState.moon);
-    renderer.render(scene, camera);
+    placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightDir);
+    if (post?.active) {
+      post.update(skyState.sun, shaftStrength(), skyState.sunGlow, camera.aspect);
+      post.render();
+    } else renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
     placeLabels(renderDt);
     placeHover();
@@ -862,7 +978,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (action === "dpr") {
         renderer.setPixelRatio(governor.dpr);
         resize();
-      } else if (action === "drop-shadows") setShadows(false);
+      } else if (action === "drop-post") post?.set(governor.post);
+      else if (action === "drop-shadows") setShadows(false);
       else if (action === "drop-grass") vegetation.dropGrass();
     }
   }
@@ -963,9 +1080,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       keep.setBeacon(on);
       dirty = true;
     },
-    setTimeOfDay(hours) {
-      override = hours;
-      applySky(hours ?? localHours(new Date()));
+    setTimeOfDay(preset) {
+      override = preset;
+      placeHeavens();
+      weather.settleMist(heavens.sunElevation * DEG, heavens.evening);
+      applySky();
+    },
+    setWeather(kind) {
+      if (weather.kind === kind) return;
+      weather.set(kind);
+      dirty = true;
     },
     stats() {
       return {
@@ -976,6 +1100,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         frameMs: Math.round(frameMs * 10) / 10,
         drawCalls,
         shadows,
+        effects: post?.active ? Object.entries(governor.post).filter(([, on]) => on).map(([name]) => name) : [],
         instances: vegetation.counts(),
       };
     },
@@ -1001,6 +1126,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       plots.dispose();
       landmarks.dispose();
       glows.dispose();
+      rain.dispose();
+      post?.dispose();
       sky.dispose();
       horizon.dispose();
       sun.dispose();

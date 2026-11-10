@@ -249,8 +249,8 @@ export class Horizon {
     this.group.add(ring, this.cloudGroup, settlements, rotors);
   }
 
-  /** Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze. */
-  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number): void {
+  /** Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze; `overcast` greys and darkens the clouds. */
+  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0): void {
     const l = this.scratch.setHex(light);
     this.tint.value.setRGB(1, 1, 1).lerp(l, 0.3).multiplyScalar(1 - night * 0.72);
     this.haze.value.setHex(horizon).multiplyScalar(0.8);
@@ -260,6 +260,11 @@ export class Horizon {
     const g = this.scratch2.setHex(glow);
     this.cloudLit.value.setRGB(1, 1, 1).lerp(l, 0.35 + golden * 0.25).lerp(g, golden * 0.3).multiplyScalar(1 - night * 0.78);
     this.cloudShade.value.setHex(0xcfc6ee).lerp(this.haze.value, 0.35).multiplyScalar(1 - night * 0.7);
+    if (overcast > 0) {
+      this.cloudLit.value.lerp(this.haze.value, overcast * 0.6).multiplyScalar(1 - overcast * 0.25);
+      this.cloudShade.value.lerp(this.haze.value, overcast * 0.4).multiplyScalar(1 - overcast * 0.35);
+      this.hazeBoost.value += overcast * 0.2;
+    }
   }
 
   /** Rides with the camera; clouds drift; rotors turn (not under reduced motion). */
