@@ -44,10 +44,12 @@ export function decisionCall(provider: Pick<ResolvedProvider, "baseUrl" | "apiKe
   };
 }
 
-/** System One's answer, bare or wrapped by Cloudflare ({ result: … }). */
+/** System One's answer, bare or wrapped by Cloudflare (live: { result: { state, result: … } }). */
 export function readDecision(json: unknown): { model: string; answers: Record<string, DecisionAnswer> } | null {
-  const body = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-  const inner = body && typeof body.result === "object" && body.result && "answers" in (body.result as object) ? (body.result as Record<string, unknown>) : body;
+  let inner = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+  for (let depth = 0; inner && !("answers" in inner) && depth < 3; depth++) {
+    inner = inner.result && typeof inner.result === "object" ? (inner.result as Record<string, unknown>) : null;
+  }
   if (!inner || typeof inner.answers !== "object" || !inner.answers) return null;
   return { model: typeof inner.model === "string" ? inner.model : "", answers: inner.answers as Record<string, DecisionAnswer> };
 }

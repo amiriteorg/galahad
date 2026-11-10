@@ -45,6 +45,8 @@ describe("where a decision goes", () => {
   test("answers bare or wrapped by Cloudflare", () => {
     expect(readDecision(ANSWER)).toEqual(ANSWER);
     expect(readDecision({ success: true, result: ANSWER })).toEqual(ANSWER);
+    // As Cloudflare's ai/run answers live: wrapped twice, the inner one with a state.
+    expect(readDecision({ result: { state: "Completed", result: ANSWER }, success: true, errors: [], messages: [] })).toEqual(ANSWER);
     expect(readDecision({ success: false, errors: [] })).toBeNull();
   });
 
