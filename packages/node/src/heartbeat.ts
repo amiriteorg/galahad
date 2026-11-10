@@ -33,9 +33,13 @@ export interface HeartbeatSnapshot {
   roles: { role: string; usable: boolean; models: string[] }[];
   /** null when this node is not a sandbox host. */
   sandboxes: { id: string; expiresAt: number; ephemeral: boolean }[] | null;
+  /** This node as a sandbox host: whether workspaces are size-limited and the image is there (null: not a host). */
+  sandboxHost: { diskLimited: boolean; image: boolean } | null;
   loops: { name: string; runner: string | null; recent: string[] }[];
   forks: { id: string; name: string }[];
   connectors: { id: string; label: string; key: string; problem: string | null }[];
+  /** Standing orders that are still meant to apply (not revoked, not expired). */
+  orders: { id: string; label: string; tool: string; stale: boolean; until: number }[];
   disk: { freeGb: number; totalGb: number } | null;
 }
 
@@ -131,6 +135,43 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
           connector.key === "missing"
             ? "Its secret isn't in the vault yet. Add it from the Vault page or with galahad secret set."
             : "Its secret is pinned to another origin, so it's never sent. Set it again for this connector.",
+      });
+    }
+  }
+
+  if (s.sandboxHost && !s.sandboxHost.diskLimited) {
+    out.push({
+      key: `sandbox-disk:${s.self.id}`,
+      severity: "warn",
+      title: `Sandboxes on ${s.self.name} have no disk limit`,
+      body: "Their workspaces share this machine's disk, so a runaway job could fill it. Deploy with --sudo to install the workspace helper; each sandbox then gets its own fixed-size disk.",
+      node: s.self.id,
+    });
+  }
+  if (s.sandboxHost && !s.sandboxHost.image) {
+    out.push({
+      key: `sandbox-image:${s.self.id}`,
+      severity: "info",
+      title: `The sandbox image is missing on ${s.self.name}`,
+      body: "Something removed it (image pruning?). Galahad rebuilds it the next time a sandbox is needed, or now with galahad sandbox build.",
+      node: s.self.id,
+    });
+  }
+
+  for (const order of s.orders) {
+    if (order.stale) {
+      out.push({
+        key: `order-stale:${order.id}`,
+        severity: "warn",
+        title: `Standing order "${order.label}" no longer applies`,
+        body: `${order.tool} changed after you signed it (another path, parameters or origin), so those calls ask you again. Revoke it, and sign a new one if you still want it.`,
+      });
+    } else if (order.until - s.now < 3 * 24 * 60 * 60_000) {
+      out.push({
+        key: `order-expiring:${order.id}`,
+        severity: "info",
+        title: `Standing order "${order.label}" expires ${new Date(order.until).toISOString().slice(0, 10)}`,
+        body: `After that, ${order.tool} asks you again. Sign a new one if you want it to continue.`,
       });
     }
   }

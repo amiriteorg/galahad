@@ -146,6 +146,46 @@ UNIT
     systemctl restart galahad-firewall.service && echo "→ sandbox firewall: only 7779/tcp on galahad0; galahad1 → host blocked (independent of UFW)"
   fi
 
+  # Sandbox workspaces: each sandbox gets its own fixed-size disk, so a runaway job can't fill
+  # this machine's. Mounting needs root and the node has none (NoNewPrivileges), so systemd
+  # starts the helper as root, once per connection, on a socket only the service user can open.
+  # No namespacing options on the helper: its mounts must be visible to Docker.
+  if command -v docker >/dev/null && command -v mkfs.ext4 >/dev/null && command -v losetup >/dev/null && [[ -f $APP/sandbox/galahad-workspace ]]; then
+    install -m 0755 -o root -g root "$APP/sandbox/galahad-workspace" /usr/local/sbin/galahad-workspace
+    cat >/etc/systemd/system/galahad-workspace.socket <<UNIT
+[Unit]
+Description=Galahad sandbox workspaces (root helper; only $SVC may connect)
+Before=galahad.service
+
+[Socket]
+ListenStream=/run/galahad-workspace.sock
+SocketUser=$SVC
+SocketGroup=$SVC
+SocketMode=0600
+Accept=yes
+MaxConnections=8
+
+[Install]
+WantedBy=sockets.target
+UNIT
+    cat >/etc/systemd/system/galahad-workspace@.service <<'UNIT'
+[Unit]
+Description=Galahad sandbox workspace helper (one request)
+
+[Service]
+ExecStart=/usr/local/sbin/galahad-workspace
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=300
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+UNIT
+    systemctl daemon-reload
+    systemctl enable galahad-workspace.socket >/dev/null 2>&1
+    systemctl restart galahad-workspace.socket && echo "→ sandbox workspaces: each sandbox gets its own fixed-size disk (galahad-workspace.socket)"
+  fi
+
   # Sandbox host: build (or refresh, from cache) the squires' image before the node starts.
   if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
     if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/sandbox:1 "$APP/sandbox" >/dev/null; then

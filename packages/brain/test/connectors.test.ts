@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildRequest, ConnectorManifest, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { CATALOG, excerpt, keyState, MAX_RESPONSE_BYTES, sendConnectorRequest } from "../src/index.ts";
+import { CATALOG, type DiscoveredTool, excerpt, keyState, MAX_RESPONSE_BYTES, mergeMcpTools, sendConnectorRequest } from "../src/index.ts";
 
 function vault() {
   const identity = newNodeIdentity();
@@ -109,5 +109,38 @@ describe("excerpts", () => {
     expect(excerpt(result(page, "text/html; charset=utf-8"))).toBe("503 503 Service Unavailable");
     expect(excerpt(result('{\n  "a": 1\n}', "application/json"))).toBe('503 {"a":1}');
     expect(excerpt(result("line one\n\nline two", "text/plain"), 8)).toBe("503 line one…");
+  });
+});
+
+describe("merging an MCP server's tools", () => {
+  const tool = (remote: string, hints: DiscoveredTool["hints"] = {}, schema = `s-${remote}`): DiscoveredTool => ({
+    remote,
+    description: `${remote} does things`,
+    params: {},
+    hints,
+    schema,
+  });
+
+  test("new tools start from the hints; your classes win; what you chose before stays", () => {
+    const first = mergeMcpTools([tool("search", { readOnly: true }), tool("sendMail"), tool("dropTable", { destructive: true })], {}, { classes: { sendMail: "modify" } });
+    expect(Object.fromEntries(Object.entries(first.tools).map(([k, t]) => [k, t.class]))).toEqual({ search: "read", send_mail: "modify", drop_table: "delete" });
+    expect(first.report).toEqual({ added: ["search", "send_mail", "drop_table"], changed: [], removed: [], skipped: 0 });
+
+    // Later: the server changed sendMail and dropped dropTable; your class for send_mail stays.
+    const again = mergeMcpTools([tool("search", { readOnly: true }), tool("sendMail", {}, "s-new"), tool("newThing")], first.tools);
+    expect(again.tools.send_mail!.class).toBe("modify");
+    expect(again.tools.new_thing!.class).toBe("outward");
+    expect(again.report).toEqual({ added: ["new_thing"], changed: ["send_mail"], removed: ["drop_table"], skipped: 0 });
+  });
+
+  test("* sets the class of tools you don't name; only narrows what's installed", () => {
+    const all = mergeMcpTools([tool("a"), tool("b"), tool("c")], {}, { classes: { "*": "read", c: "outward" }, only: ["a", "c"] });
+    expect(Object.fromEntries(Object.entries(all.tools).map(([k, t]) => [k, t.class]))).toEqual({ a: "read", c: "outward" });
+    expect(all.report.skipped).toBe(1);
+  });
+
+  test("a description that looks like a key never enters the log", () => {
+    const leaky = { ...tool("leak"), description: "use sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 to call" };
+    expect(mergeMcpTools([leaky], {}).tools.leak!.description).toMatch(/withheld/);
   });
 });

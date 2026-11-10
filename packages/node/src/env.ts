@@ -13,6 +13,8 @@ const Env = z.object({
   GALAHAD_KEYSTORE: z.enum(["os", "file"]).optional(),
   /** Override the tailnet address this node advertises and binds, e.g. 100.118.201.75. */
   GALAHAD_ADVERTISE: z.string().min(1).optional(),
+  /** The sandbox workspace helper's socket (default /run/galahad-workspace.sock). */
+  GALAHAD_WORKSPACE_SOCKET: z.string().startsWith("/").optional(),
 });
 
 export type Env = z.infer<typeof Env>;

@@ -1,18 +1,37 @@
 import type { Database } from "bun:sqlite";
 import {
   type ActionView,
+  argStrings,
   type ArgValue,
-  buildRequest,
+  buildCall,
   ConnectorArgs,
   ConnectorError,
-  type ConnectorManifest,
+  ConnectorManifest,
+  type ConnectorRequest,
   decide,
+  decodeHlc,
   findSecrets,
+  MAX_ORDER_DAYS,
   type NodeIdentity,
+  orderCovers,
+  orderProblems,
+  type OrderTerms,
+  type OrderView,
   randomId,
   redact,
+  toolDigest,
 } from "@galahad/core";
-import { type ConnectorResult, excerpt, installedConnector, keyState, sendConnectorRequest } from "@galahad/brain";
+import {
+  callMcpTool,
+  type ConnectorResult,
+  discoverMcpTools,
+  excerpt,
+  installedConnector,
+  keyState,
+  type MergeReport,
+  mergeMcpTools,
+  sendConnectorRequest,
+} from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 
@@ -28,13 +47,20 @@ import type { LedgerEntryInput } from "@galahad/sandbox";
  * only one that sends it, it marks the send in local storage before the request
  * goes out, and writes the receipt to the mind afterwards. A crash in between is
  * reported as "outcome unknown", never retried: an approval sends at most once.
+ *
+ * A standing order is your answer given in advance. An agent's call that one covers
+ * is still filed as an action (so you see it), answered by the order on the spot,
+ * and sent through the same outbox.
  */
 
 export type Caller = { kind: "owner"; device: string } | { kind: "agent"; by: string; quest?: string };
 
 export type CallOutcome =
-  | { status: "done"; class: string; target: string; result: ConnectorResult }
+  | { status: "done"; class: string; target: string; result: ConnectorResult; order?: { id: string; label: string }; action?: string }
   | { status: "asked"; action: string; class: string; target: string; expires: number };
+
+type StoredOrder = OrderTerms & { id: string; revoked: boolean; signedHlc: string; via?: string };
+const DAY_MS = 24 * 60 * 60_000;
 
 export class ConnectorCallError extends Error {
   constructor(
@@ -62,6 +88,8 @@ export const ACTION_TTL_MS = 24 * 60 * 60_000;
 export class ConnectorService {
   private readonly now: () => number;
   private draining: Promise<void> | null = null;
+  /** Sends under way in this process; an outbox row marked "sending" that isn't here is a crash. */
+  private readonly inFlight = new Set<string>();
 
   constructor(private readonly o: ConnectorServiceOptions) {
     this.now = o.now ?? Date.now;
@@ -77,15 +105,13 @@ export class ConnectorService {
   async call(input: { connector: string; tool: string; args?: Record<string, ArgValue>; why?: string }, caller: Caller): Promise<CallOutcome> {
     const manifest = this.manifest(input.connector);
     const args = ConnectorArgs.parse(input.args ?? {});
-    // Arguments leave this machine (and approvals replicate in plaintext): no keys in them.
-    for (const value of Object.values(args)) {
-      if (typeof value === "string" && findSecrets(value).length) {
-        throw new ConnectorCallError(422, "an argument looks like a credential; connectors take keys from the vault, never from arguments");
-      }
+    // Arguments leave this machine (and approvals replicate in plaintext): no keys in them, however deep.
+    if (argStrings(args).some((text) => findSecrets(text).length)) {
+      throw new ConnectorCallError(422, "an argument looks like a credential; connectors take keys from the vault, never from arguments");
     }
-    let request: ReturnType<typeof buildRequest>;
+    let request: ConnectorRequest;
     try {
-      request = buildRequest(manifest, input.tool, args);
+      request = buildCall(manifest, input.tool, args);
     } catch (error) {
       throw new ConnectorCallError(400, (error as Error).message);
     }
@@ -97,6 +123,10 @@ export class ConnectorService {
     if (decision.verdict === "ask" && caller.kind === "agent") {
       const id = `a_${randomId(16)}`;
       const expires = this.now() + ACTION_TTL_MS;
+      const digest = toolDigest(manifest, input.tool);
+      const order = this.activeOrders().find((o) =>
+        orderCovers(o, { connector: manifest.id, tool: input.tool, class: request.class, args, by: caller.by, digest }, this.now()),
+      );
       this.o.store.emit(this.o.identity, "action.requested", {
         id,
         connector: manifest.id,
@@ -108,6 +138,19 @@ export class ConnectorService {
         ...(input.why ? { why: redact(input.why).slice(0, 500) } : {}),
         expires,
       });
+      if (order) {
+        try {
+          this.o.store.emit(this.o.identity, "order.applied", { order: order.id, action: id });
+        } catch (error) {
+          this.o.log(`order ${order.id} not applied to ${id}: ${(error as Error).message}`);
+        }
+        const filed = this.actions(10_000).find((a) => a.id === id);
+        if (filed?.state === "approved") {
+          const sent = await this.sendApproved(filed, `under your standing order "${order.label}"`);
+          if (!sent.result) throw new ConnectorCallError(sent.status ?? 502, sent.receipt);
+          return { status: "done", class: request.class, target: request.target, result: sent.result, order: { id: order.id, label: order.label }, action: id };
+        }
+      }
       this.o.ledger({ class: request.class, resource, target: request.target, verdict: "ask", reason: decision.reason, quest, detail: `action ${id}, asked by ${caller.by}` });
       return { status: "asked", action: id, class: request.class, target: request.target, expires };
     }
@@ -126,9 +169,10 @@ export class ConnectorService {
     return { status: "done", class: request.class, target: request.target, result };
   }
 
-  private async send(manifest: ConnectorManifest, request: ReturnType<typeof buildRequest>): Promise<ConnectorResult> {
+  private async send(manifest: ConnectorManifest, request: ConnectorRequest): Promise<ConnectorResult> {
     try {
-      return await sendConnectorRequest({ vault: this.o.vault, fetch: this.o.fetch }, manifest, request);
+      const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}) };
+      return request.kind === "mcp" ? await callMcpTool(ctx, manifest, request) : await sendConnectorRequest(ctx, manifest, request);
     } catch (error) {
       if (error instanceof ConnectorError) {
         // Missing key: ask for it once, in the vault, never in chat.
@@ -162,7 +206,9 @@ export class ConnectorService {
           why?: string;
           expires: number;
         };
-        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string }>(`action-decision:${body.id}`);
+        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string; order?: string }>(`action-decision:${body.id}`);
+        const orderId = decision?.value?.order;
+        const order = orderId ? this.o.store.lww<StoredOrder>(`order:${orderId}`)?.value : null;
         const done = this.o.store.lww<{ ok: boolean; receipt: string }>(`action-done:${body.id}`)?.value ?? null;
         let state: ActionView["state"];
         if (done) state = done.ok ? "done" : "failed";
@@ -182,6 +228,7 @@ export class ConnectorService {
           expires: body.expires,
           state,
           decidedVia: decision?.value?.via ?? decision?.device ?? null,
+          order: orderId ? { id: orderId, label: order?.label ?? orderId } : null,
           receipt: done?.receipt ?? null,
         };
       })
@@ -226,38 +273,252 @@ export class ConnectorService {
   private async drainOnce(): Promise<void> {
     const mine = this.actions(10_000).filter((a) => a.node === this.o.identity.id && a.state === "approved");
     for (const action of mine) {
+      if (this.inFlight.has(action.id)) continue;
       const row = this.o.local.query<{ state: string }, [string]>("SELECT state FROM outbox WHERE id = ?").get(action.id);
       if (row) {
         // Marked before sending and never cleared: the node stopped mid-send. Don't guess, don't resend.
         if (row.state === "sending") this.receipt(action.id, false, undefined, "outcome unknown: this node stopped while sending it, so it was not retried");
         continue;
       }
-      this.o.local.query("INSERT INTO outbox (id, state, at) VALUES (?, 'sending', ?)").run(action.id, this.now());
-      let ok = false;
-      let status: number | undefined;
-      let receipt: string;
-      try {
-        const manifest = this.manifest(action.connector);
-        const request = buildRequest(manifest, action.tool, ConnectorArgs.parse(action.args));
-        if (request.target !== action.target) throw new ConnectorCallError(409, "the connector changed since you approved this; not sent");
-        const result = await this.send(manifest, request);
-        ok = result.ok;
-        status = result.status;
-        receipt = excerpt(result, 1500);
-      } catch (error) {
-        receipt = `not sent: ${(error as Error).message}`.slice(0, 2000);
-      }
-      this.o.local.query("UPDATE outbox SET state = 'sent' WHERE id = ?").run(action.id);
-      this.receipt(action.id, ok, status, receipt);
-      this.o.ledger({
-        class: action.class as LedgerEntryInput["class"],
-        resource: `connector.${action.connector}`,
-        target: action.target,
-        verdict: "approved",
-        reason: ok ? "sent after your approval" : "failed after your approval",
-        detail: `action ${action.id} · ${receipt}`.slice(0, 2000),
-      });
+      await this.sendApproved(action, "after your approval");
     }
+  }
+
+  /** Send one approved action at most once, through the outbox, and write its receipt. */
+  private async sendApproved(action: ActionView, why: string): Promise<{ ok: boolean; status?: number; receipt: string; result?: ConnectorResult }> {
+    if (this.inFlight.has(action.id) || this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
+      return { ok: false, status: 409, receipt: "already sent or being sent" };
+    }
+    this.inFlight.add(action.id);
+    this.o.local.query("INSERT INTO outbox (id, state, at) VALUES (?, 'sending', ?)").run(action.id, this.now());
+    let ok = false;
+    let status: number | undefined;
+    let receipt: string;
+    let result: ConnectorResult | undefined;
+    try {
+      const manifest = this.manifest(action.connector);
+      const request = buildCall(manifest, action.tool, ConnectorArgs.parse(action.args));
+      if (request.target !== action.target) throw new ConnectorCallError(409, "the connector changed since you approved this; not sent");
+      result = await this.send(manifest, request);
+      ok = result.ok;
+      status = result.status;
+      receipt = excerpt(result, 1500);
+    } catch (error) {
+      if (error instanceof ConnectorCallError) status = error.status;
+      receipt = `not sent: ${(error as Error).message}`.slice(0, 2000);
+    }
+    this.o.local.query("UPDATE outbox SET state = 'sent' WHERE id = ?").run(action.id);
+    this.inFlight.delete(action.id);
+    this.receipt(action.id, ok, result?.status, receipt);
+    this.o.ledger({
+      class: action.class as LedgerEntryInput["class"],
+      resource: `connector.${action.connector}`,
+      target: action.target,
+      verdict: "approved",
+      reason: ok ? `sent ${why}` : `failed ${why}`,
+      detail: `action ${action.id}, asked by ${action.by} · ${receipt}`.slice(0, 2000),
+    });
+    return { ok, ...(status !== undefined ? { status } : {}), receipt, ...(result ? { result } : {}) };
+  }
+
+  // ---- MCP servers ----------------------------------------------------------
+
+  /**
+   * Install (or refresh) a remote MCP server as a connector: list its tools now and
+   * keep what you decided before. Without its key yet, it installs with no tools and
+   * asks for the key; refresh once the key is in.
+   */
+  async installMcp(
+    id: string,
+    input: {
+      url: string;
+      label?: string;
+      description?: string;
+      auth?: "none" | "bearer" | "header";
+      header?: string;
+      only?: string[];
+      classes?: Record<string, ConnectorManifest["tools"][string]["class"]>;
+    },
+  ): Promise<{ server: string | null; tools: number; needsKey: boolean } & MergeReport> {
+    let url: URL;
+    try {
+      url = new URL(input.url);
+    } catch {
+      throw new ConnectorCallError(400, "not a URL");
+    }
+    if (url.username || url.password || url.search || url.hash) {
+      throw new ConnectorCallError(400, "give the server's address without a query or credentials: keys go in the vault, never in a URL");
+    }
+    const previous = installedConnector(this.o.store, id);
+    if (previous && !previous.mcp) throw new ConnectorCallError(409, `${id} is a request-template connector, not an MCP server`);
+    const same = previous && previous.origin === url.origin && previous.mcp!.path === (url.pathname || "/");
+    const auth =
+      input.auth === "none"
+        ? undefined
+        : input.auth
+          ? { secret: id, scheme: input.auth, ...(input.auth === "header" ? { header: input.header ?? "x-api-key" } : {}) }
+          : previous?.auth;
+    const only = input.only ?? previous?.mcp?.only;
+    const draft = {
+      id,
+      label: input.label ?? previous?.label ?? id,
+      ...((input.description ?? previous?.description) ? { description: input.description ?? previous?.description } : {}),
+      origin: url.origin,
+      ...(auth ? { auth } : {}),
+      ...(previous?.headers ? { headers: previous.headers } : {}),
+      mcp: { path: url.pathname || "/", ...(only?.length ? { only } : {}) },
+      // Another address is another server: nothing carries over.
+      tools: same ? previous!.tools : {},
+    };
+    const base = ConnectorManifest.safeParse(draft);
+    if (!base.success) throw new ConnectorCallError(400, base.error.issues.map((i) => `${i.path.join(".") || "connector"}: ${i.message}`).join("; "));
+
+    if (keyState(this.o.vault, base.data) === "missing") {
+      // Listing tools usually needs the key too: install what we have, ask for the key.
+      this.o.store.emit(this.o.identity, "connector.set", { id, manifest: base.data as unknown as Record<string, unknown> });
+      if (!this.o.vault.requests().some((r) => r.name === auth!.secret)) {
+        try {
+          this.o.vault.request(auth!.secret, `The ${base.data.label} MCP server needs its key (for ${url.origin}).`, id);
+        } catch {
+          /* a request is a courtesy */
+        }
+      }
+      return { server: null, tools: Object.keys(base.data.tools).length, needsKey: true, added: [], changed: [], removed: [], skipped: 0 };
+    }
+
+    let discovered: Awaited<ReturnType<typeof discoverMcpTools>>;
+    try {
+      discovered = await discoverMcpTools({ vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}) }, base.data);
+    } catch (error) {
+      if (error instanceof ConnectorError) {
+        const hint = !auth && /401/.test(error.message) ? " Give it a key: --auth bearer (or header), then add the key." : "";
+        throw new ConnectorCallError(424, `${error.message}.${hint}`);
+      }
+      throw new ConnectorCallError(502, `${base.data.label} unreachable: ${redact(String((error as Error).message ?? error))}`);
+    }
+    const { tools, report } = mergeMcpTools(discovered.tools, same ? previous!.tools : {}, { ...(only ? { only } : {}), ...(input.classes ? { classes: input.classes } : {}) });
+    if (Object.keys(tools).length > 64) {
+      throw new ConnectorCallError(413, `${base.data.label} has ${Object.keys(tools).length} tools; install up to 64 with only (the ones you need)`);
+    }
+    const manifest = ConnectorManifest.safeParse({ ...base.data, tools });
+    if (!manifest.success) throw new ConnectorCallError(400, manifest.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).slice(0, 5).join("; "));
+    if (JSON.stringify(manifest.data).length > 48 * 1024) {
+      throw new ConnectorCallError(413, `${base.data.label}'s tool list is too large to keep in the mind; install fewer with only`);
+    }
+    this.o.store.emit(this.o.identity, "connector.set", { id, manifest: manifest.data as unknown as Record<string, unknown> });
+    this.o.ledger({
+      class: "modify",
+      resource: "connector.mcp",
+      target: id,
+      verdict: "allow",
+      reason: previous ? "refreshed an MCP server's tools" : "installed an MCP server",
+      detail: `${url.origin}${url.pathname} · ${Object.keys(tools).length} tools${report.changed.length ? ` · changed: ${report.changed.join(", ")}` : ""}`.slice(0, 2000),
+    });
+    return { server: discovered.server, tools: Object.keys(tools).length, needsKey: false, ...report };
+  }
+
+  // ---- standing orders ------------------------------------------------------
+
+  /** Orders that can answer a call right now: unrevoked, unexpired, and pinned to the tool as it is. */
+  private activeOrders(): StoredOrder[] {
+    const active = new Set(this.orders().filter((o) => o.state === "active").map((o) => o.id));
+    return this.o.store
+      .lwwPrefix<StoredOrder>("order:")
+      .map((entry) => entry.value!)
+      .filter((order) => active.has(order.id));
+  }
+
+  orders(): OrderView[] {
+    const now = this.now();
+    const uses = new Map<string, { count: number; last: number }>();
+    for (const entry of this.o.store.lwwPrefix<{ order?: string }>("action-decision:")) {
+      const id = entry.value?.order;
+      if (!id) continue;
+      const seen = uses.get(id) ?? { count: 0, last: 0 };
+      uses.set(id, { count: seen.count + 1, last: Math.max(seen.last, decodeHlc(entry.hlc).ms) });
+    }
+    return this.o.store
+      .lwwPrefix<StoredOrder>("order:")
+      .map((entry): OrderView => {
+        const order = entry.value!;
+        const manifest = installedConnector(this.o.store, order.connector);
+        const digest = manifest ? toolDigest(manifest, order.tool) : null;
+        const state: OrderView["state"] = order.revoked ? "revoked" : order.until <= now ? "expired" : digest !== order.digest ? "stale" : "active";
+        const used = uses.get(order.id);
+        return {
+          id: order.id,
+          label: order.label,
+          connector: order.connector,
+          tool: order.tool,
+          class: order.class,
+          args: order.args,
+          callers: order.callers ?? null,
+          until: order.until,
+          state,
+          signedAt: decodeHlc(order.signedHlc ?? entry.hlc).ms,
+          signedVia: order.via ?? null,
+          uses: used?.count ?? 0,
+          lastUsed: used?.last ?? null,
+        };
+      })
+      .sort((a, b) => b.signedAt - a.signedAt);
+  }
+
+  /** Sign a standing order (you, from a terminal or a paired device). `approve` also answers the action it was made from. */
+  sign(
+    input: { connector: string; tool: string; args: Record<string, string>; callers?: string[]; days?: number; label: string; approve?: string },
+    via: string | null,
+  ): { order: OrderView; action?: ActionView } {
+    const manifest = this.manifest(input.connector);
+    const tool = Object.hasOwn(manifest.tools, input.tool) ? manifest.tools[input.tool] : undefined;
+    if (!tool) throw new ConnectorCallError(400, `${manifest.id} has no tool "${input.tool}"`);
+    const now = this.now();
+    const terms = {
+      connector: manifest.id,
+      tool: input.tool,
+      class: tool.class as OrderTerms["class"],
+      args: input.args,
+      ...(input.callers?.length ? { callers: input.callers } : {}),
+      until: now + Math.min(input.days ?? 30, MAX_ORDER_DAYS) * DAY_MS,
+    };
+    const problems = orderProblems(terms, manifest, now);
+    if (problems.length) throw new ConnectorCallError(400, problems.join("; "));
+    for (const text of [input.label, ...Object.values(input.args), ...(input.callers ?? [])]) {
+      if (findSecrets(text).length) throw new ConnectorCallError(422, "that looks like a credential; orders replicate in plaintext, keys belong in the vault");
+    }
+    const waiting = input.approve ? this.actions(10_000).find((a) => a.id === input.approve) : undefined;
+    if (input.approve && waiting?.state !== "waiting") throw new ConnectorCallError(409, "that action isn't waiting for an answer");
+    if (waiting && (waiting.connector !== manifest.id || waiting.tool !== input.tool)) throw new ConnectorCallError(400, "that action is for another tool");
+    const id = `o_${randomId(16)}`;
+    const label = input.label.slice(0, 128);
+    this.o.store.emit(this.o.identity, "order.set", { id, ...terms, digest: toolDigest(manifest, input.tool)!, label }, { trust: "owner", ...(via ? { via } : {}) });
+    this.o.ledger({
+      class: "modify",
+      resource: "oath.order",
+      target: `${manifest.id}.${input.tool}`,
+      verdict: "allow",
+      reason: "you signed a standing order",
+      detail: `${id} · ${label} · until ${new Date(terms.until).toISOString().slice(0, 10)}`,
+    });
+    const order = this.orders().find((o) => o.id === id)!;
+    if (!waiting) return { order };
+    return { order, action: this.decide(waiting.id, true, via, `and signed the standing order "${label}"`) };
+  }
+
+  revoke(id: string): OrderView {
+    const order = this.orders().find((o) => o.id === id);
+    if (!order) throw new ConnectorCallError(404, "no such order");
+    if (order.state === "revoked") throw new ConnectorCallError(409, "already revoked");
+    this.o.store.emit(this.o.identity, "order.revoked", { id });
+    this.o.ledger({
+      class: "modify",
+      resource: "oath.order",
+      target: `${order.connector}.${order.tool}`,
+      verdict: "allow",
+      reason: "you revoked a standing order",
+      detail: `${id} · ${order.label}`,
+    });
+    return this.orders().find((o) => o.id === id)!;
   }
 
   private receipt(id: string, ok: boolean, status: number | undefined, receipt: string): void {

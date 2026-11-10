@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { randomId } from "@galahad/core";
-import { type LedgerEntryInput, SandboxHost } from "../src/index.ts";
+import { type LedgerEntryInput, SandboxHost, WORKSPACE_SOCKET, WorkspaceHelper } from "../src/index.ts";
 
 /*
  * Real Docker, real containers. Opt-in (GALAHAD_DOCKER_TESTS=1) and meant for a
@@ -77,3 +78,45 @@ describe.if(enabled)("sandbox host on real Docker", () => {
     expect(await host.get(kept.id)).not.toBeNull();
   }, 120_000);
 });
+
+/* With the workspace helper installed (deploy --sudo): every workspace is its own fixed-size disk. */
+describe.if(enabled && existsSync(WORKSPACE_SOCKET))("size-limited workspaces on real Docker", () => {
+  const node = `n_it_${randomId(6)}`;
+  const tokens = { mint: () => ({ token: `gw_${randomId(32)}`, info: { hash: randomId(16) } }), revoke: () => true };
+  const workspaces = new WorkspaceHelper();
+  const host = new SandboxHost({ node, tokens, ledger: () => {}, maxCpus: 4, maxMemoryGb: 4, maxDiskGb: 4096, workspaces });
+  const base = { cpus: 1, memoryGb: 1, ttlMinutes: 5, persistent: false, network: "isolated" } as const;
+
+  afterAll(async () => {
+    for (const s of await host.list()) await host.destroy(s.id, { approvedBy: "test-cleanup" });
+  });
+
+  test("a squire fills its own workspace and stops there; the host's disk is untouched", async () => {
+    const sb = await host.create({ ...base, quest: "it-disk", diskGb: 1 });
+    expect(sb.disk).toMatchObject({ limitGb: 1 });
+    const size = Number((await host.exec(sb.id, ["sh", "-c", "df -k /work | tail -1 | awk '{print $2}'"])).stdout.trim());
+    expect(size).toBeGreaterThan(900 * 1024);
+    expect(size).toBeLessThan(1100 * 1024);
+    const fill = await host.exec(sb.id, ["sh", "-c", "dd if=/dev/zero of=/work/fill bs=1M count=3000 2>&1; echo done"]);
+    expect(fill.stdout).toMatch(/No space left on device/);
+    expect((await host.get(sb.id))!.disk!.usedGb).toBeGreaterThan(0.8);
+    // It's still the squire's own, writable workspace, owned by the squire.
+    expect((await host.exec(sb.id, ["sh", "-c", "rm /work/fill && echo ok > /work/f && stat -c %u /work/f"])).stdout.trim()).toBe("1000");
+    await host.destroy(sb.id, { quest: "it-disk" });
+    expect((await workspaces.stats()).images.some((i) => i.id === sb.id)).toBe(false);
+  }, 180_000);
+
+  test("a workspace that doesn't fit the disk's budget is refused before anything is made", async () => {
+    const before = (await workspaces.stats()).images.length;
+    await expect(host.create({ ...base, quest: "it-disk", diskGb: 4096 })).rejects.toThrow(/doesn't fit/);
+    expect((await workspaces.stats()).images.length).toBe(before);
+  }, 60_000);
+
+  test("the image stays in use (a stopped keeper container), so `docker image prune -a` leaves it alone", async () => {
+    expect(await host.keepImage()).toBe(true);
+    const inspect = (args: string[]) => new TextDecoder().decode(Bun.spawnSync(["docker", ...args]).stdout).trim();
+    const image = inspect(["image", "inspect", "galahad/sandbox:1", "--format", "{{.Id}}"]);
+    expect(inspect(["container", "inspect", "galahad-sandbox-image", "--format", "{{.Image}} {{.State.Status}}"])).toBe(`${image} created`);
+  }, 60_000);
+});
+

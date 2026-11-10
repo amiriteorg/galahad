@@ -5,6 +5,7 @@ import {
   ConnectorManifest,
   type ConnectorView,
   type FindingView,
+  isMcpTool,
   isTimeZone,
   type LoopTask,
   type LoopView,
@@ -396,20 +397,29 @@ export function createApp(ctx: AppContext) {
       const tools = Object.entries(manifest?.tools ?? {}).map(([name, tool]) => ({
         name,
         description: tool.description,
-        method: tool.method,
+        method: isMcpTool(tool) ? "MCP" : tool.method,
+        path: isMcpTool(tool) ? null : tool.path,
         class: tool.class,
         asks: tool.class === "outward" || tool.class === "delete",
         params: Object.fromEntries(
           Object.entries(tool.params ?? {}).map(([pname, param]) => [
             pname,
-            { type: param.type, required: !!param.required || tool.path.includes(`{${pname}}`), description: param.description ?? null, enum: param.enum ?? null },
+            {
+              type: param.type,
+              required: !!param.required || (!isMcpTool(tool) && tool.path.includes(`{${pname}}`)),
+              description: param.description ?? null,
+              enum: param.enum ?? null,
+            },
           ]),
         ),
+        ...(isMcpTool(tool) ? { remote: tool.remote, hints: tool.hints ?? null } : {}),
       }));
       return {
         id,
         label: manifest?.label ?? id,
         description: manifest?.description ?? null,
+        kind: manifest?.mcp ? ("mcp" as const) : ("http" as const),
+        url: manifest?.mcp ? `${manifest.origin}${manifest.mcp.path}` : null,
         origin: manifest?.origin ?? null,
         installed: !!mine,
         key: mine?.manifest ? keyState(ctx.vault, mine.manifest) : manifest?.auth ? "missing" : "none-needed",
@@ -742,7 +752,12 @@ export function createApp(ctx: AppContext) {
     },
     heartbeat: async () => ({ node: ctx.nodeName, findings: await ctx.heartbeatCheck() }),
     connectors: () => ({ connectors: connectorViews() }),
-    setConnector: (input) => {
+    setConnector: async (input) => {
+      if (input.mcp) {
+        if (input.manifest || input.origin) throw new HttpError(400, "give an MCP server's url, or a manifest, not both");
+        const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, input.mcp!));
+        return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
+      }
       let manifest: ConnectorManifest;
       if (input.manifest) {
         const parsed = ConnectorManifest.safeParse(input.manifest);
@@ -787,6 +802,13 @@ export function createApp(ctx: AppContext) {
       if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can answer an action request");
       return connectorErrors(() => ({ action: ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note) }));
     },
+    orders: () => ({ orders: ctx.connectors.orders() }),
+    setOrder: (input, p) => {
+      // A standing order is an answer given in advance: only you give it, like any answer.
+      if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can sign a standing order");
+      return connectorErrors(() => ctx.connectors.sign(input, p.kind === "client" ? p.device : null));
+    },
+    revokeOrder: (input) => connectorErrors(() => ({ order: ctx.connectors.revoke(input.id) })),
     arms: () => ({ arms: ctx.arms.list() }),
     mintArm: (input) => {
       try {

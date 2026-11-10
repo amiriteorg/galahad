@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { ActionView, ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, NoticeView, RouteName } from "@galahad/core";
+import type { ActionView, ArgValue, ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, NoticeView, OrderView, RouteName } from "@galahad/core";
 
 /*
  * The terminal side of loops, the heartbeat, notices, connectors and approvals.
@@ -37,21 +37,61 @@ function printRun(run: LoopRunView, loop?: string): void {
 }
 
 /** `--arg key=value` pairs, typed by the tool's declared params. */
-async function toolArgs(api: Api, connector: string, tool: string, flags: Flags): Promise<Record<string, string | number | boolean>> {
+async function toolArgs(api: Api, connector: string, tool: string, flags: Flags): Promise<Record<string, ArgValue>> {
   const pairs = list(flags, "arg");
   if (!pairs.length) return {};
   const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
   const params = connectors.find((c) => c.id === connector)?.tools.find((t) => t.name === tool)?.params ?? {};
-  const args: Record<string, string | number | boolean> = {};
+  const args: Record<string, ArgValue> = {};
   for (const pair of pairs) {
     const at = pair.indexOf("=");
     if (at < 1) throw new Error(`--arg takes key=value, not "${pair}"`);
     const key = pair.slice(0, at);
     const raw = pair.slice(at + 1);
-    const type = params[key]?.type;
-    args[key] = type === "integer" || type === "number" ? Number(raw) : type === "boolean" ? raw === "true" : raw;
+    const types = (params[key]?.type ?? "string").split("|");
+    if (types.includes("array") || types.includes("object")) {
+      // Lists and objects (MCP tools) are given as JSON: --arg labels='["bug","sandbox"]'
+      try {
+        args[key] = JSON.parse(raw) as ArgValue;
+      } catch {
+        throw new Error(`--arg ${key} takes JSON (it's ${types.join(" or ")})`);
+      }
+    } else if (types.includes("integer") || types.includes("number")) args[key] = Number(raw);
+    else if (types.includes("boolean")) args[key] = raw === "true";
+    else args[key] = raw;
   }
   return args;
+}
+
+const CLASSES = ["read", "create", "modify", "outward", "delete"];
+
+/** `--class name=read …` → { name: "read" }. */
+function classFlags(flags: Flags): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const pair of list(flags, "class")) {
+    const at = pair.lastIndexOf("=");
+    const cls = pair.slice(at + 1);
+    if (at < 1 || !CLASSES.includes(cls)) throw new Error(`--class takes tool=${CLASSES.join("|")} (or *=class for the rest), not "${pair}"`);
+    out[pair.slice(0, at)] = cls;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function printDiscovered(connector: ConnectorView, d: { server: string | null; tools: number; needsKey: boolean; added: string[]; changed: string[]; removed: string[]; skipped: number }): void {
+  if (d.needsKey) {
+    console.log(`Installed ${connector.label} (${connector.url}) without tools yet: it needs its key first.`);
+    console.log(`  galahad secret set ${connector.secret} --connector ${connector.id}   then   galahad connector refresh ${connector.id}`);
+    return;
+  }
+  console.log(`${connector.label}${d.server ? ` (${d.server})` : ""}: ${d.tools} tools${d.skipped ? `, ${d.skipped} left out` : ""}.`);
+  if (d.added.length) console.log(`  new: ${d.added.join(", ")}`);
+  if (d.changed.length) console.log(bold(`  changed on the server since you installed it: ${d.changed.join(", ")} (your classes stay; orders on them stop applying)`));
+  if (d.removed.length) console.log(`  gone: ${d.removed.join(", ")}`);
+  for (const t of connector.tools) {
+    const claimed = t.hints?.readOnly ? "says read-only" : t.hints?.destructive ? "says destructive" : "no hints";
+    console.log(`  ${t.name.padEnd(28)} ${(t.asks ? bold(`${t.class}: asks you`) : t.class).padEnd(tty ? 26 : 18)} ${dim(claimed)}`);
+  }
+  console.log(dim(`\n  The server's hints only propose a class. Change one: galahad connector refresh ${connector.id} --class <tool>=read|create|modify|outward|delete`));
 }
 
 async function taskFrom(api: Api, flags: Flags): Promise<LoopTask | undefined> {
@@ -183,12 +223,45 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         if (connector.secret && connector.key !== "ready") console.log(`Its key: galahad secret set ${connector.secret} --connector ${connector.id}`);
         return;
       }
-      if (!rest[0]) throw new Error("usage: galahad connector add <id> [--origin url] | galahad connector add --manifest file.json");
+      const mcp = str(flags, "mcp");
+      if (mcp) {
+        const id = str(flags, "id") ?? rest[0] ?? new URL(mcp).hostname.split(".").filter((p) => !["mcp", "api", "www"].includes(p))[0]?.replace(/[^a-z0-9-]/g, "-");
+        if (!id) throw new Error("give it an id: galahad connector add <id> --mcp <url>");
+        const auth = str(flags, "auth");
+        const { connector, discovered } = await api.call<{ connector: ConnectorView; discovered: Parameters<typeof printDiscovered>[1] }>("setConnector", {
+          id,
+          mcp: {
+            url: mcp,
+            ...(str(flags, "label") ? { label: str(flags, "label") } : {}),
+            ...(auth ? { auth: auth.startsWith("header") ? "header" : auth, ...(auth.startsWith("header:") ? { header: auth.slice(7) } : {}) } : {}),
+            ...(str(flags, "only") ? { only: str(flags, "only")!.split(",").filter(Boolean) } : {}),
+            ...(classFlags(flags) ? { classes: classFlags(flags) } : {}),
+          },
+        });
+        printDiscovered(connector, discovered);
+        return;
+      }
+      if (!rest[0]) throw new Error("usage: galahad connector add <id> [--origin url] | --manifest file.json | --mcp <url>");
       const { connector } = await api.call<{ connector: ConnectorView }>("setConnector", { id: rest[0], ...(str(flags, "origin") ? { origin: str(flags, "origin") } : {}) });
       console.log(`Installed ${connector.label} (${connector.tools.length} tools) for ${connector.origin}.`);
       if (connector.secret && connector.key !== "ready") {
         console.log(`Its key${connector.key === "optional-missing" ? " (optional; public reads work without it)" : ""}: galahad secret set ${connector.secret} --connector ${connector.id}${connector.keyHelp ? dim(`\n  (${connector.keyHelp})`) : ""}`);
       }
+      return;
+    }
+    case "refresh": {
+      const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
+      const c = connectors.find((x) => x.id === rest[0] && x.installed);
+      if (!c?.url) throw new Error(`usage: galahad connector refresh <id> (an installed MCP server)`);
+      const { connector, discovered } = await api.call<{ connector: ConnectorView; discovered: Parameters<typeof printDiscovered>[1] }>("setConnector", {
+        id: c.id,
+        mcp: {
+          url: c.url,
+          ...(str(flags, "only") ? { only: str(flags, "only")!.split(",").filter(Boolean) } : {}),
+          ...(classFlags(flags) ? { classes: classFlags(flags) } : {}),
+        },
+      });
+      printDiscovered(connector, discovered);
       return;
     }
     case "rm": {
@@ -201,8 +274,9 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
       const c = connectors.find((x) => x.id === rest[0]);
       if (!c) throw new Error(`no connector "${rest[0]}"`);
+      if (c.url) console.log(dim(`  MCP server ${c.url}: tool descriptions come from the server (untrusted text)`));
       for (const t of c.tools) {
-        const params = Object.entries(t.params).map(([k, p]) => (p.required ? k : `[${k}]`)).join(" ");
+        const params = Object.entries(t.params).map(([k, p]) => `${p.required ? k : `[${k}]`}${p.type !== "string" ? `:${p.type}` : ""}`).join(" ");
         console.log(`  ${bold(`${c.id}.${t.name}`)} ${params}  ${t.asks ? bold(`(${t.class}: asks you)`) : dim(`(${t.class})`)}\n      ${t.description}`);
       }
       return;
@@ -212,7 +286,13 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       const tool = toolParts.join(".");
       if (!connector || !tool) throw new Error("usage: galahad connector call <id>.<tool> [--arg key=value …]");
       const args = await toolArgs(api, connector, tool, flags);
-      const outcome = await api.call<{ status: string; action?: string; target: string; result?: { status: number; body: string; truncated: boolean } }>("callConnector", {
+      const outcome = await api.call<{
+        status: string;
+        action?: string;
+        target: string;
+        order?: { label: string };
+        result?: { ok: boolean; status: number; body: string; truncated: boolean; mcp?: boolean };
+      }>("callConnector", {
         connector,
         tool,
         args,
@@ -223,7 +303,8 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         return;
       }
       const result = outcome.result!;
-      console.error(dim(`${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}`));
+      if (outcome.order) console.error(dim(`Sent under your standing order "${outcome.order.label}".`));
+      console.error(dim(`${outcome.target} → ${result.mcp ? (result.ok ? "ok" : "tool error") : result.status}${result.truncated ? " (truncated)" : ""}`));
       let body = result.body;
       try {
         body = JSON.stringify(JSON.parse(body), null, 2);
@@ -234,7 +315,7 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       return;
     }
     default:
-      throw new Error("usage: galahad connector ls | add | rm | tools | call");
+      throw new Error("usage: galahad connector ls | add | refresh | rm | tools | call");
   }
 }
 
@@ -250,9 +331,90 @@ export async function actionCommand(api: Api, sub: string | undefined, rest: str
   if (!shown.length) console.log(flags.all ? "No actions yet." : "Nothing is waiting for you. (--all shows history)");
   for (const a of shown) {
     console.log(`  ${bold(a.id)}  ${a.state.padEnd(8)} ${a.class.padEnd(7)} ${a.connector}.${a.tool}  ${dim(`asked by ${a.by}`)}`);
-    console.log(`      ${a.target}${a.why ? dim(`  · ${a.why}`) : ""}${a.receipt ? `\n      ${dim(a.receipt.slice(0, 200))}` : ""}`);
+    const answered = a.order ? dim(`  · answered by your standing order "${a.order.label}"`) : "";
+    console.log(`      ${a.target}${a.why ? dim(`  · ${a.why}`) : ""}${answered}${a.receipt ? `\n      ${dim(a.receipt.slice(0, 200))}` : ""}`);
   }
-  if (shown.some((a) => a.state === "waiting")) console.log(dim("\n  galahad action approve <id> · galahad action deny <id>"));
+  if (shown.some((a) => a.state === "waiting")) {
+    console.log(dim("\n  galahad action approve <id> · galahad action deny <id> · galahad order add --from <id>  (approve, and answer the same way next time)"));
+  }
+}
+
+const ORDER_STATE: Record<OrderView["state"], string> = { active: "active", expired: "expired", revoked: "revoked", stale: "stale: the tool changed since you signed" };
+
+export function describeOrder(o: Pick<OrderView, "connector" | "tool" | "args" | "callers">): string {
+  const args = Object.entries(o.args).map(([k, v]) => `${k}=${v}`).join(" ");
+  return `${o.connector}.${o.tool}${args ? ` ${args}` : ""}${o.callers ? ` · only ${o.callers.join(", ")}` : " · any of Galahad's agents"}`;
+}
+
+/** Standing orders: your answers given in advance, narrow and expiring. */
+export async function orderCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
+  switch (sub) {
+    case undefined:
+    case "ls": {
+      const { orders } = await api.call<{ orders: OrderView[] }>("orders");
+      const shown = flags.all ? orders : orders.filter((o) => o.state === "active" || o.state === "stale");
+      if (!shown.length) console.log(flags.all ? "No standing orders yet." : "No standing orders: everything outward or deleting asks you. (--all shows old ones)");
+      for (const o of shown) {
+        console.log(`  ${bold(o.id)}  ${o.class.padEnd(7)} ${bold(o.label)}  ${dim(ORDER_STATE[o.state])}`);
+        console.log(`      ${describeOrder(o)}`);
+        console.log(dim(`      until ${new Date(o.until).toLocaleDateString()} · used ${o.uses}× ${o.lastUsed ? `(last ${when(o.lastUsed)})` : ""}`));
+      }
+      if (shown.length) console.log(dim("\n  galahad order revoke <id>"));
+      return;
+    }
+    case "add": {
+      const from = str(flags, "from");
+      let connector: string;
+      let tool: string;
+      let args: Record<string, string> = {};
+      if (from) {
+        // Start from a request that waits for you: the same call, pinned exactly; loosen with --arg key=pattern.
+        const { actions } = await api.call<{ actions: ActionView[] }>("actions");
+        const action = actions.find((a) => a.id === from);
+        if (!action) throw new Error(`no action ${from}`);
+        connector = action.connector;
+        tool = action.tool;
+        args = Object.fromEntries(Object.entries(action.args).map(([k, v]) => [k, String(v)]));
+      } else {
+        const ref = rest[0] ?? "";
+        const dot = ref.indexOf(".");
+        if (dot < 1) throw new Error('usage: galahad order add <connector>.<tool> --arg key=pattern … [--for loop.name] [--days 30] --label "…"');
+        connector = ref.slice(0, dot);
+        tool = ref.slice(dot + 1);
+      }
+      for (const pair of list(flags, "arg")) {
+        const at = pair.indexOf("=");
+        if (at < 1) throw new Error(`--arg takes key=pattern, not "${pair}"`);
+        args[pair.slice(0, at)] = pair.slice(at + 1);
+      }
+      for (const key of list(flags, "free")) delete args[key];
+      const days = str(flags, "days");
+      const callers = list(flags, "for");
+      const label = str(flags, "label") ?? `${connector}.${tool}`;
+      const { order, action } = await api.call<{ order: OrderView; action?: ActionView }>("setOrder", {
+        connector,
+        tool,
+        args,
+        label,
+        ...(callers.length ? { callers } : {}),
+        ...(days ? { days: Number(days) } : {}),
+        ...(from ? { approve: from } : {}),
+      });
+      console.log(`Signed ${bold(order.id)}: ${describeOrder(order)}, until ${new Date(order.until).toLocaleDateString()}.`);
+      if (action) console.log(`Approved ${action.target}: the node that asked sends it once.`);
+      console.log(dim("Calls it covers go out without asking (each is still in your inbox and the ledger). galahad order revoke <id> ends it."));
+      return;
+    }
+    case "revoke":
+    case "rm": {
+      if (!rest[0]) throw new Error("usage: galahad order revoke <id>");
+      const { order } = await api.call<{ order: OrderView }>("revokeOrder", { id: rest[0] });
+      console.log(`Revoked "${order.label}". Those calls ask you again.`);
+      return;
+    }
+    default:
+      throw new Error("usage: galahad order ls [--all] | order add … | order revoke <id>");
+  }
 }
 
 /** One line for `galahad status`: loops, what needs you, what waits for your answer. */

@@ -54,6 +54,8 @@ export interface ConnectorResult {
   body: string;
   truncated: boolean;
   durationMs: number;
+  /** An MCP tool's answer: there is no status of its own, only ok or a tool error. */
+  mcp?: boolean;
 }
 
 export const MAX_RESPONSE_BYTES = 512 * 1024;
@@ -87,23 +89,28 @@ export interface SendContext {
   signal?: AbortSignal;
 }
 
+/**
+ * The auth header for this connector, if its key may be used: only when the vault
+ * pinned it to this connector's origin, for this connector. Throws otherwise.
+ */
+export function authFor(vault: Vault, manifest: ConnectorManifest): { headers: Record<string, string>; key: string | null } {
+  const state = keyState(vault, manifest);
+  if (state === "missing") throw new ConnectorError(`${manifest.id} needs its key: add the secret "${manifest.auth!.secret}" for ${manifest.origin}`);
+  if (state === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth!.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
+  if (state !== "ready" || !manifest.auth) return { headers: {}, key: null };
+  const key = vault.reveal(manifest.auth.secret);
+  if (manifest.auth.scheme === "bearer") return { headers: { authorization: `Bearer ${key}` }, key };
+  if (manifest.auth.scheme === "basic") return { headers: { authorization: `Basic ${Buffer.from(key).toString("base64")}` }, key };
+  return { headers: { [manifest.auth.header!]: key }, key };
+}
+
 export async function sendConnectorRequest(ctx: SendContext, manifest: ConnectorManifest, request: BuiltRequest): Promise<ConnectorResult> {
   const headers = new Headers({ accept: "application/json", "user-agent": "galahad/0.1 (+https://galahad.bot)" });
   for (const [name, value] of Object.entries(request.headers)) headers.set(name, value);
   if (request.body !== undefined) headers.set("content-type", "application/json");
-
-  let key: string | null = null;
-  const state = keyState(ctx.vault, manifest);
-  if (state === "ready") key = ctx.vault.reveal(manifest.auth!.secret);
-  else if (state === "missing") throw new ConnectorError(`${manifest.id} needs its key: add the secret "${manifest.auth!.secret}" for ${manifest.origin}`);
-  else if (state === "wrong-origin") {
-    throw new ConnectorError(`the secret "${manifest.auth!.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
-  }
-  if (key && manifest.auth) {
-    if (manifest.auth.scheme === "bearer") headers.set("authorization", `Bearer ${key}`);
-    else if (manifest.auth.scheme === "basic") headers.set("authorization", `Basic ${Buffer.from(key).toString("base64")}`);
-    else headers.set(manifest.auth.header!, key);
-  }
+  const auth = authFor(ctx.vault, manifest);
+  for (const [name, value] of Object.entries(auth.headers)) headers.set(name, value);
+  const key = auth.key;
 
   const started = performance.now();
   const timeout = AbortSignal.timeout(ctx.timeoutMs ?? 30_000);
@@ -151,6 +158,6 @@ export function excerpt(result: ConnectorResult, max = 600): string {
       .replace(/&gt;/g, ">");
   }
   if (!json) body = body.replace(/\s+/g, " ").trim();
-  const head = `${result.status}${result.truncated ? " (truncated)" : ""}`;
+  const head = `${result.mcp ? (result.ok ? "ok" : "tool error") : result.status}${result.truncated ? " (truncated)" : ""}`;
   return `${head} ${body.length > max ? `${body.slice(0, max)}…` : body}`.trim();
 }

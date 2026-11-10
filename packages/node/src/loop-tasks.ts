@@ -93,6 +93,11 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
   const nameOf = (id: string) => deps.store.device(id)?.name ?? id.slice(0, 12);
   const active = new Set(devices.map((d) => d.id));
   const sandboxes = deps.sandbox ? await deps.sandbox.list().catch(() => null) : null;
+  const sandboxHost = deps.sandbox
+    ? await Promise.all([deps.sandbox.diskLimited().catch(() => false), deps.sandbox.status().then((s) => s.image).catch(() => true)]).then(
+        ([diskLimited, image]) => ({ diskLimited, image }),
+      )
+    : null;
   return {
     now,
     self: { id: deps.identity.id, name: deps.nodeName, startedAt: deps.startedAt },
@@ -106,6 +111,7 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
     vaultUnlocked: deps.vault.unlocked(),
     roles: Object.entries(roster(deps.store)).map(([role, spec]) => ({ role, models: spec.models, usable: roleUsable(deps, spec.models) })),
     sandboxes: sandboxes?.map((s) => ({ id: s.id, expiresAt: s.expiresAt, ephemeral: s.ephemeral })) ?? null,
+    sandboxHost,
     loops: loopRecords(deps.store).map((loop) => ({
       name: loop.name,
       runner: active.has(loop.on) ? loop.on : null,
@@ -118,6 +124,10 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
       key: c.manifest ? keyState(deps.vault, c.manifest) : "none-needed",
       problem: c.problem,
     })),
+    orders: deps.connectors
+      .orders()
+      .filter((o) => o.state === "active" || o.state === "stale")
+      .map((o) => ({ id: o.id, label: o.label, tool: `${o.connector}.${o.tool}`, stale: o.state === "stale", until: o.until })),
     disk: diskOf(deps.home),
   };
 }

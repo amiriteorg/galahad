@@ -1,0 +1,84 @@
+#!/bin/sh
+# galahad-workspace: the one privileged step of a sandbox's workspace.
+#
+# Each sandbox's /work is its own ext4 image of a fixed size, so a runaway squire
+# fills its own workspace and never the host's disk. Mounting needs root; the
+# Galahad node doesn't have it (its service runs with NoNewPrivileges), so systemd
+# starts this script, as root, once per connection on /run/galahad-workspace.sock,
+# a socket only the galahad user may open. It reads one line and does one thing:
+#
+#   ping                 → ok
+#   create <id> <gib>    → ok <mountpoint>   a new, empty, mounted workspace of <gib> GiB
+#   remove <id>          → ok                unmount it and delete its image
+#   stats                → ok <fs-total-bytes> <fs-free-bytes>
+#                          <id> <size-bytes> <used-bytes> <mounted 0|1> <created-epoch-s>   (one per workspace)
+#
+# Nothing else is accepted, ids are 10 hex digits, and every path is built here from
+# a fixed root that only root can enter. Installed by scripts/remote-setup.sh.
+set -u
+set -f  # no globbing: the line is words, never patterns
+umask 077
+ROOT=/var/lib/galahad-workspaces
+SQUIRE=1000:1000
+MAX_GIB=4096
+
+fail() { echo "error $*"; exit 0; }
+
+IFS= read -r line || fail "no command"
+# shellcheck disable=SC2086 # split the one line into words on purpose
+set -- $line
+verb=${1:-}
+id=${2:-}
+
+valid_id() { printf '%s' "$1" | grep -Eqx '[0-9a-f]{10}'; }
+
+mkdir -p "$ROOT" && chown root:root "$ROOT" && chmod 0700 "$ROOT" || fail "cannot prepare $ROOT"
+
+case "$verb" in
+  ping)
+    echo ok ;;
+  create)
+    valid_id "$id" || fail "bad id"
+    gib=${3:-}
+    printf '%s' "$gib" | grep -Eqx '[1-9][0-9]{0,3}' || fail "bad size"
+    [ "$gib" -le "$MAX_GIB" ] || fail "at most $MAX_GIB GiB"
+    img="$ROOT/$id.img" mnt="$ROOT/$id"
+    [ -e "$img" ] || [ -e "$mnt" ] && fail "exists"
+    truncate -s "${gib}G" "$img" || fail "cannot create the image"
+    if ! mkfs.ext4 -q -F -m 0 -L galahad-work -E "root_owner=$SQUIRE,lazy_itable_init=1,lazy_journal_init=1" "$img" >/dev/null 2>&1; then
+      rm -f "$img"; fail "mkfs failed"
+    fi
+    # Unmounted, the mountpoint is a dead end (root-owned, mode 000): a container
+    # started without its workspace can't write to the host's disk through it.
+    mkdir -m 000 "$mnt" || { rm -f "$img"; fail "cannot create the mountpoint"; }
+    if ! mount -o loop,nodev,nosuid,discard "$img" "$mnt"; then
+      rmdir "$mnt"; rm -f "$img"; fail "mount failed"
+    fi
+    echo "ok $mnt" ;;
+  remove)
+    valid_id "$id" || fail "bad id"
+    img="$ROOT/$id.img" mnt="$ROOT/$id"
+    if mountpoint -q "$mnt"; then
+      # The container is gone by now; if something still holds it, detach lazily
+      # (the loop device frees itself when the last user lets go).
+      umount "$mnt" 2>/dev/null || umount -l "$mnt" || fail "cannot unmount"
+    fi
+    [ -d "$mnt" ] && rmdir "$mnt"
+    rm -f "$img"
+    echo ok ;;
+  stats)
+    set -- $(df -B1 --output=size,avail "$ROOT" | tail -n 1)
+    echo "ok $1 $2"
+    set +f
+    for img in "$ROOT"/*.img; do
+      [ -f "$img" ] || continue
+      name=$(basename "$img" .img)
+      valid_id "$name" || continue
+      size=$(stat -c %s "$img")
+      used=$(( $(stat -c %b "$img") * $(stat -c %B "$img") ))
+      if mountpoint -q "$ROOT/$name"; then on=1; else on=0; fi
+      echo "$name $size $used $on $(stat -c %Y "$img")"
+    done ;;
+  *)
+    fail "unknown command" ;;
+esac

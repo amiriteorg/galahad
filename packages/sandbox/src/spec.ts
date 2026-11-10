@@ -37,7 +37,14 @@ export interface SandboxSpec {
   createdAt: number;
   env: Record<string, string>;
   tokenHash?: string;
+  /** Host path of a size-limited workspace (see workspaces.ts); without one, /work is an unlimited Docker volume. */
+  workspace?: string;
+  /** The workspace's limit, when it has one. */
+  diskGb?: number;
 }
+
+/** A stopped container that keeps the sandbox image in use, so image pruning (Coolify's nightly cleanup) leaves it alone. */
+export const KEEPER = "galahad-sandbox-image";
 
 export const containerName = (id: string) => `galahad-sbx-${id}`;
 export const volumeName = (id: string) => `galahad-sbx-${id}-work`;
@@ -55,6 +62,7 @@ export function labels(spec: SandboxSpec): Record<string, string> {
     [`${LABEL}.providers`]: spec.providers.join(","),
     [`${LABEL}.cpus`]: String(spec.cpus),
     [`${LABEL}.memory`]: String(spec.memoryGb),
+    [`${LABEL}.disk`]: spec.workspace && spec.diskGb ? String(spec.diskGb) : "none",
     // The gateway token's hash is deliberately NOT a label: images can carry labels of
     // their own, so anything security-relevant lives in node-local state instead.
   };
@@ -83,7 +91,7 @@ export function runArgs(spec: SandboxSpec): string[] {
     "--tmpfs",
     "/tmp:rw,nosuid,nodev,size=2g,mode=1777",
     "--mount",
-    `type=volume,src=${volumeName(spec.id)},dst=/work`,
+    spec.workspace ? `type=bind,src=${spec.workspace},dst=/work` : `type=volume,src=${volumeName(spec.id)},dst=/work`,
     "--workdir",
     "/work",
     "--env",

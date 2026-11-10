@@ -15,6 +15,8 @@ const calm = (over: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot => ({
   loops: [],
   forks: [],
   connectors: [],
+  orders: [],
+  sandboxHost: null,
   disk: { freeGb: 900, totalGb: 1800 },
   ...over,
 });
@@ -108,6 +110,33 @@ describe("the heartbeat's checks", () => {
       ["connector-key:cloudflare", "info"],
       ["connector-broken:weird", "warn"],
       ["disk:n_self", "alert"],
+    ]);
+  });
+
+  test("a sandbox host without disk limits warns; a missing sandbox image informs", () => {
+    expect(keys(calm({ sandboxHost: { diskLimited: true, image: true } }))).toEqual([]);
+    const found = assess(calm({ sandboxHost: { diskLimited: false, image: false } }));
+    expect(found.map((f) => [f.key, f.severity])).toEqual([
+      ["sandbox-disk:n_self", "warn"],
+      ["sandbox-image:n_self", "info"],
+    ]);
+    expect(found[0]!.node).toBe("n_self"); // about this node's body
+  });
+
+  test("standing orders: one that went stale warns, one about to expire informs", () => {
+    const DAY = 24 * 60 * 60_000;
+    const found = assess(
+      calm({
+        orders: [
+          { id: "o_1", label: "PRs from feat/*", tool: "github.pr.create", stale: true, until: NOW + 30 * DAY },
+          { id: "o_2", label: "Release posts", tool: "forge.post", stale: false, until: NOW + DAY },
+          { id: "o_3", label: "Fine", tool: "forge.post", stale: false, until: NOW + 30 * DAY },
+        ],
+      }),
+    );
+    expect(found.map((f) => [f.key, f.severity])).toEqual([
+      ["order-stale:o_1", "warn"],
+      ["order-expiring:o_2", "info"],
     ]);
   });
 

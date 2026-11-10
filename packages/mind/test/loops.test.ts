@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type GEvent, newNodeIdentity } from "@galahad/core";
+import { b64u, type GEvent, newNodeIdentity, toolDigest } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, revokeDevice } from "../src/index.ts";
 
 /*
@@ -140,6 +140,93 @@ describe("the action outbox in the log", () => {
   });
 });
 
+const PR = {
+  id: "github",
+  label: "GitHub",
+  origin: "https://api.github.com",
+  tools: {
+    "issue.create": {
+      description: "Open an issue.",
+      method: "POST",
+      path: "/repos/{owner}/{repo}/issues",
+      params: { owner: { type: "string" }, repo: { type: "string" }, title: { type: "string", required: true } },
+      class: "outward",
+    },
+  },
+};
+const orderId = (n: number) => `o_${String(n).padStart(22, "0")}`;
+const order = (id: string, patch: Record<string, unknown> = {}) => ({
+  id,
+  connector: "github",
+  tool: "issue.create",
+  class: "outward" as const,
+  args: { owner: "amiriteorg", repo: "*" },
+  until: 4_000_000_000_000,
+  digest: toolDigest(PR as never, "issue.create")!,
+  label: "Issues in our repos",
+  ...patch,
+});
+
+describe("standing orders in the log", () => {
+  test("an order answers the action it covers, and the log says which order did", () => {
+    const { a, storeA } = fleet();
+    storeA.emit(a, "connector.set", { id: "github", manifest: PR });
+    storeA.emit(a, "order.set", order(orderId(1)), { trust: "owner", via: `c_${"P".repeat(43)}` });
+    expect(() => storeA.emit(a, "order.set", order(orderId(1), { label: "changed" }))).toThrow(/already exists/);
+    storeA.emit(a, "action.requested", request(actionId(10)));
+    storeA.emit(a, "order.applied", { order: orderId(1), action: actionId(10) });
+    expect(storeA.lww(`action-decision:${actionId(10)}`)?.value).toMatchObject({ verdict: "approved", order: orderId(1) });
+    // Once answered, nobody answers again, and the order can't be applied twice.
+    expect(() => storeA.emit(a, "action.decided", { id: actionId(10), verdict: "denied" })).toThrow(/already decided/);
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(1), action: actionId(10) })).toThrow(/already decided/);
+    storeA.emit(a, "action.done", { id: actionId(10), ok: true, receipt: "201" });
+  });
+
+  test("replicas refuse an order applied to what it doesn't cover", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeA.emit(a, "connector.set", { id: "github", manifest: PR });
+    storeA.emit(a, "order.set", order(orderId(2), { args: { owner: "amiriteorg", repo: "website" } }));
+    storeA.emit(a, "action.requested", request(actionId(11))); // repo galahad
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(2), action: actionId(11) })).toThrow(/doesn't cover/);
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(9), action: actionId(11) })).toThrow(/no such order/);
+    storeA.emit(a, "order.set", order(orderId(3)));
+    syncInto(storeA, storeB);
+    // Only the node that filed the action applies an order to it.
+    expect(() => storeB.emit(b, "order.applied", { order: orderId(3), action: actionId(11) })).toThrow(/only the node that filed/);
+    // The tool changed after you signed: the order no longer applies.
+    storeA.emit(a, "connector.set", { id: "github", manifest: { ...PR, tools: { "issue.create": { ...PR.tools["issue.create"], path: "/repos/{owner}/{repo}/pulls" } } } });
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(3), action: actionId(11) })).toThrow(/doesn't cover/);
+  });
+
+  test("a revoked order answers nothing, and an expired one neither", () => {
+    const { a, storeA } = fleet();
+    storeA.emit(a, "connector.set", { id: "github", manifest: PR });
+    storeA.emit(a, "order.set", order(orderId(4)));
+    storeA.emit(a, "order.revoked", { id: orderId(4) });
+    expect(() => storeA.emit(a, "order.revoked", { id: orderId(4) })).toThrow(/already revoked/);
+    expect(storeA.lww<{ revoked: boolean; label: string }>(`order:${orderId(4)}`)?.value).toMatchObject({ revoked: true, label: "Issues in our repos" });
+    storeA.emit(a, "action.requested", request(actionId(12)));
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(4), action: actionId(12) })).toThrow(/revoked/);
+    storeA.emit(a, "order.set", order(orderId(5), { until: 1_000 }));
+    expect(() => storeA.emit(a, "order.applied", { order: orderId(5), action: actionId(12) })).toThrow(/doesn't cover/);
+  });
+
+  test("revoked on one node while applied on another: every replica agrees on what stood first", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeA.emit(a, "connector.set", { id: "github", manifest: PR });
+    storeA.emit(a, "order.set", order(orderId(6)));
+    storeA.emit(a, "action.requested", request(actionId(13)));
+    syncInto(storeA, storeB);
+    storeB.emit(b, "order.revoked", { id: orderId(6) });
+    storeA.emit(a, "order.applied", { order: orderId(6), action: actionId(13) });
+    syncInto(storeA, storeB);
+    syncInto(storeB, storeA);
+    expect(storeA.digest()).toBe(storeB.digest());
+    const decided = storeA.lww(`action-decision:${actionId(13)}`)?.value ?? null;
+    expect(storeB.lww(`action-decision:${actionId(13)}`)?.value ?? null).toEqual(decided);
+  });
+});
+
 describe("convergence", () => {
   test("loops, notices, connectors and actions in any order give one digest", () => {
     const { a, b, storeA, storeB } = fleet();
@@ -154,6 +241,14 @@ describe("convergence", () => {
     syncInto(storeB, storeA);
     storeA.emit(a, "action.done", { id: actionId(5), ok: true, receipt: "ok" });
     storeA.emit(a, "loop.ran", { loop: "heartbeat", run: "s1", slot: 1, status: "ok", started: 1, finished: 2, summary: "fine" });
+    storeA.emit(a, "connector.set", { id: "github", manifest: PR });
+    storeB.emit(b, "order.set", order(orderId(7)));
+    syncInto(storeB, storeA);
+    storeA.emit(a, "action.requested", request(actionId(6)));
+    storeA.emit(a, "order.applied", { order: orderId(7), action: actionId(6) });
+    storeB.emit(b, "order.set", order(orderId(8)));
+    syncInto(storeB, storeA);
+    storeA.emit(a, "order.revoked", { id: orderId(8) });
     syncInto(storeA, storeB);
     const digest = storeA.digest();
     expect(storeB.digest()).toBe(digest);

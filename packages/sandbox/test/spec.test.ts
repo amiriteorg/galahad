@@ -33,6 +33,16 @@ describe("sandbox hardening", () => {
     expect(args.join(" ")).not.toMatch(/type=bind|--volume|-v /);
   });
 
+  test("a size-limited workspace is the one host path it sees, mounted at /work", () => {
+    const limited = runArgs({ ...base, workspace: "/var/lib/galahad-workspaces/0123456789", diskGb: 20 });
+    const mounts = limited.filter((_, i) => limited[i - 1] === "--mount" || limited[i - 1] === "--volume" || limited[i - 1] === "-v");
+    expect(mounts).toEqual(["type=bind,src=/var/lib/galahad-workspaces/0123456789,dst=/work"]);
+    expect(limited).toContain("dev.galahad.disk=20");
+    // Without one, /work is a Docker volume, and the label says it has no limit.
+    expect(args.filter((_, i) => args[i - 1] === "--mount")).toEqual(["type=volume,src=galahad-sbx-0123456789-work,dst=/work"]);
+    expect(args).toContain("dev.galahad.disk=none");
+  });
+
   test("is resource-bounded", () => {
     expect(pair(args, "--cpus")).toBe("4");
     expect(pair(args, "--memory")).toBe("8192m");

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
+import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 
 /*
@@ -55,6 +56,8 @@ export const SandboxRequest = z.strictObject({
   /** Persistent sandboxes are not cleaned up automatically; destroying one asks first. */
   persistent: z.boolean().default(false),
   quest: z.string().max(64).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+  /** The workspace's size limit in GB (default 20). /work can't grow past it. */
+  diskGb: z.number().int().min(1).max(2048).optional(),
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
@@ -280,6 +283,21 @@ export const routes = {
       origin: z.string().url().max(256).optional(),
       /** A connector of your own: a full manifest. */
       manifest: z.record(z.string(), z.unknown()).optional(),
+      /** A remote MCP server: Galahad lists its tools now (again, to refresh) and keeps the classes you chose. */
+      mcp: z
+        .strictObject({
+          url: z.string().url().max(512),
+          label: z.string().min(1).max(64).optional(),
+          description: z.string().max(500).optional(),
+          /** How the key is sent, if it needs one: bearer (Authorization) or a header of the server's choosing. */
+          auth: z.enum(["none", "bearer", "header"]).optional(),
+          header: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
+          /** Install only these tools (the server's names). */
+          only: z.array(z.string().min(1).max(128)).max(128).optional(),
+          /** Your class for a tool (server or local name); "*" for the ones you don't name. */
+          classes: z.record(z.string().min(1).max(128), z.enum(["read", "create", "modify", "outward", "delete"])).optional(),
+        })
+        .optional(),
     }),
   },
   removeConnector: { method: "POST", path: "/api/connectors/remove", scope: "brain:write", input: z.strictObject({ id: ConnectorId }) },
@@ -296,6 +314,25 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ id: ActionId, approve: z.boolean(), note: z.string().max(500).optional() }),
   },
+  orders: { method: "GET", path: "/api/orders", scope: "mind:read", input: null },
+  /** Sign a standing order: your answer in advance. Only you (never an agent or another node). */
+  setOrder: {
+    method: "POST",
+    path: "/api/orders",
+    scope: "fleet:admin",
+    input: z.strictObject({
+      connector: ConnectorId,
+      tool: ToolName,
+      args: z.record(z.string().max(40), OrderPattern),
+      callers: z.array(OrderPattern).min(1).max(16).optional(),
+      /** How long it lasts (default 30 days). */
+      days: z.number().int().min(1).max(MAX_ORDER_DAYS).optional(),
+      label: z.string().min(1).max(128),
+      /** Also approve this waiting action, which the order was made from. */
+      approve: ActionId.optional(),
+    }),
+  },
+  revokeOrder: { method: "POST", path: "/api/orders/revoke", scope: "fleet:admin", input: z.strictObject({ id: OrderId }) },
   arms: { method: "GET", path: "/api/arms", scope: "fleet:admin", input: null },
   mintArm: {
     method: "POST",
@@ -420,6 +457,8 @@ export interface SandboxView {
   status: string;
   ephemeral: boolean;
   providers: string[];
+  /** The workspace's limit and what it uses now; null when this host can't limit disk (see the heartbeat). */
+  disk: { limitGb: number; usedGb: number | null } | null;
 }
 
 export interface ExecResult {
@@ -495,7 +534,13 @@ export interface FindingView {
 export interface ConnectorToolView {
   name: string;
   description: string;
+  /** GET, POST… or MCP. */
   method: string;
+  /** The request path with its {placeholders} (where the call goes); null for MCP tools. */
+  path: string | null;
+  /** An MCP tool's name on its server, and what the server claimed about it (hints only). */
+  remote?: string;
+  hints?: { readOnly?: boolean; destructive?: boolean } | null;
   class: "read" | "create" | "modify" | "outward" | "delete";
   /** read, create and modify run freely; outward and delete ask you. */
   asks: boolean;
@@ -506,6 +551,10 @@ export interface ConnectorView {
   id: string;
   label: string;
   description: string | null;
+  /** http: request templates · mcp: a remote MCP server (its tools listed from the server). */
+  kind: "http" | "mcp";
+  /** An MCP server's endpoint. */
+  url: string | null;
   origin: string | null;
   installed: boolean;
   /** none-needed · ready · missing · optional-missing · wrong-origin */
@@ -531,7 +580,27 @@ export interface ActionView {
   expires: number;
   state: "waiting" | "approved" | "denied" | "expired" | "done" | "failed";
   decidedVia: string | null;
+  /** The standing order that answered it, when one did. */
+  order: { id: string; label: string } | null;
   receipt: string | null;
+}
+
+export interface OrderView {
+  id: string;
+  label: string;
+  connector: string;
+  tool: string;
+  class: "outward" | "delete";
+  args: Record<string, string>;
+  callers: string[] | null;
+  until: number;
+  /** active · expired · revoked · stale (the tool changed since you signed, so it no longer applies) */
+  state: "active" | "expired" | "revoked" | "stale";
+  signedAt: number;
+  /** The device you signed it from. */
+  signedVia: string | null;
+  uses: number;
+  lastUsed: number | null;
 }
 
 export type ChatStreamEvent =

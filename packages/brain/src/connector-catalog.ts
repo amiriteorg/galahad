@@ -88,6 +88,21 @@ export const CATALOG: Record<string, CatalogEntry> = {
           params: { owner, repo, title: { type: "string", required: true }, body: { type: "string" } },
           class: "outward",
         },
+        "pr.create": {
+          description: "Open a pull request from head into base. Others see it: Galahad asks first, unless a standing order covers it.",
+          method: "POST",
+          path: "/repos/{owner}/{repo}/pulls",
+          params: {
+            owner,
+            repo,
+            head: { type: "string", required: true, description: "The branch with the changes, e.g. feat/orders" },
+            base: { type: "string", required: true, description: "The branch to merge into, e.g. main" },
+            title: { type: "string", required: true },
+            body: { type: "string" },
+            draft: { type: "boolean" },
+          },
+          class: "outward",
+        },
         "issue.comment": {
           description: "Comment on an issue or pull request. Others see it: Galahad asks first.",
           method: "POST",

@@ -7,3 +7,4 @@ export * from "./persona.ts";
 export * from "./providers.ts";
 export * from "./roster.ts";
 export * from "./quest.ts";
+export * from "./mcp-connectors.ts";

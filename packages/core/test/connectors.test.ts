@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRequest, ConnectorError, ConnectorManifest, isPrivateHost } from "../src/index.ts";
+import { argStrings, buildCall, buildRequest, ConnectorArgs, ConnectorError, ConnectorManifest, isPrivateHost, localToolName, proposedClass } from "../src/index.ts";
 
 const base = {
   id: "forge",
@@ -113,5 +113,68 @@ describe("building a request", () => {
     expect(() => buildRequest(forge, "open", { owner: "a" })).toThrow(/needs title/);
     expect(() => buildRequest(forge, "open", { owner: "a", title: "t", draft: "yes" })).toThrow(/true or false/);
     expect(() => buildRequest(forge, "toString")).toThrow(/has no tool/);
+  });
+});
+
+describe("MCP connectors", () => {
+  const tracker = ConnectorManifest.parse({
+    id: "tracker",
+    label: "Tracker",
+    origin: "https://mcp.tracker.example",
+    mcp: { path: "/mcp" },
+    tools: {
+      create_issue: {
+        remote: "createIssue",
+        description: "Open an issue.",
+        params: { repo: { type: "string", required: true }, labels: { type: "array" }, priority: { type: "integer|null" } },
+        class: "outward",
+        schema: "abc",
+      },
+    },
+  });
+
+  test("an MCP manifest has a path and server tools only; none yet is fine", () => {
+    expect(ConnectorManifest.safeParse({ ...tracker, tools: {} }).success).toBe(true);
+    expect(ConnectorManifest.safeParse({ ...tracker, mcp: { path: "/mcp?key=1" } }).success).toBe(false);
+    expect(ConnectorManifest.safeParse({ ...tracker, basePath: "/v1" }).success).toBe(false);
+    const mixed = { ...tracker, tools: { ...tracker.tools, raw: { description: "x", method: "GET", path: "/x", class: "read" } } };
+    expect(ConnectorManifest.safeParse(mixed).success).toBe(false);
+    // ...and request templates can't carry server tools.
+    const { mcp: _mcp, ...http } = tracker;
+    expect(ConnectorManifest.safeParse(http).success).toBe(false);
+  });
+
+  test("a call is one tools/call with checked arguments; nested values are fine", () => {
+    const call = buildCall(tracker, "create_issue", { repo: "amiriteorg/galahad", labels: ["a", "b"] });
+    expect(call).toEqual({
+      kind: "mcp",
+      remote: "createIssue",
+      args: { repo: "amiriteorg/galahad", labels: ["a", "b"] },
+      class: "outward",
+      target: 'mcp createIssue {"labels":["a","b"],"repo":"amiriteorg/galahad"}',
+    });
+    expect(() => buildCall(tracker, "create_issue", {})).toThrow(/needs repo/);
+    expect(() => buildCall(tracker, "create_issue", { repo: "x", labels: "a" })).toThrow(/labels must be array/);
+    expect(() => buildCall(tracker, "create_issue", { repo: "x", priority: 2 })).not.toThrow();
+    expect(() => buildCall(tracker, "create_issue", { repo: "x", nope: 1 })).toThrow(/takes no "nope"/);
+    expect(() => buildRequest(tracker, "create_issue", { repo: "x" })).toThrow(/MCP server/);
+  });
+
+  test("arguments: bounded in size, and every string is found for the secret scan", () => {
+    expect(ConnectorArgs.safeParse({ text: "x".repeat(40_000) }).success).toBe(false);
+    expect(argStrings({ a: "one", b: [{ c: "two" }, 3] })).toEqual(["a", "one", "b", "c", "two"]);
+  });
+
+  test("server names become safe local names; hints only propose a class", () => {
+    const taken = new Set<string>();
+    expect(localToolName("createIssue", taken)).toBe("create_issue");
+    taken.add("create_issue");
+    expect(localToolName("create-issue!", new Set())).toBe("create-issue_");
+    expect(localToolName("createIssue", taken)).toBe("create_issue_2");
+    expect(localToolName("42", new Set())).toBe("tool");
+    expect(proposedClass({ readOnly: true })).toBe("read");
+    expect(proposedClass({ destructive: true })).toBe("delete");
+    expect(proposedClass({})).toBe("outward");
+    expect(proposedClass(undefined)).toBe("outward");
   });
 });

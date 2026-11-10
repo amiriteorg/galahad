@@ -4,6 +4,8 @@ import {
   bodyOf,
   canonical,
   compareEvents,
+  type ConnectorManifest,
+  decodeHlc,
   type DeviceId,
   type EventKind,
   type GEvent,
@@ -11,11 +13,14 @@ import {
   isKnownKind,
   isNodeId,
   type Json,
+  orderCovers,
+  type OrderTerms,
   parseEvent,
   type Prov,
   type Scope,
   sha256B64u,
   signEvent,
+  toolDigest,
   type NodeIdentity,
 } from "@galahad/core";
 
@@ -684,6 +689,40 @@ export class MindStore {
         if (this.lww<{ verdict: string }>(`action-decision:${body.id}`)?.value?.verdict !== "approved") return "action was not approved";
         if (this.lww(`action-done:${body.id}`)) return "action already done";
         this.putLww(`action-done:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "order.set": {
+        if (!isFullNode(signer)) return "only full nodes may record standing orders";
+        const body = bodyOf(event, "order.set");
+        // Orders never change: what you signed is what applies. Revoke and sign a new one instead.
+        if (this.lww(`order:${body.id}`)) return "order already exists";
+        this.putLww(`order:${body.id}`, event, { ...body, revoked: false, signedHlc: event.hlc, ...(event.prov?.via ? { via: event.prov.via } : {}) } as Json);
+        return null;
+      }
+      case "order.revoked": {
+        if (!isFullNode(signer)) return "only full nodes may revoke standing orders";
+        const { id } = bodyOf(event, "order.revoked");
+        const current = this.lww<Record<string, Json>>(`order:${id}`);
+        if (!current?.value) return "no such order";
+        if (current.value.revoked) return "order already revoked";
+        this.putLww(`order:${id}`, event, { ...current.value, revoked: true });
+        return null;
+      }
+      case "order.applied": {
+        const body = bodyOf(event, "order.applied");
+        const request = this.lww<BodyOf<"action.requested">>(`action:${body.action}`);
+        if (!request?.value) return "no such action";
+        if (request.device !== event.device) return "only the node that filed an action applies an order to it";
+        if (this.lww(`action-decision:${body.action}`)) return "action already decided";
+        const order = this.lww<OrderTerms & { id: string; revoked: boolean }>(`order:${body.order}`)?.value;
+        if (!order) return "no such order";
+        if (order.revoked) return "order was revoked";
+        // Replayed in log order, the connector view here is the manifest as it stood when the order was applied.
+        const manifest = this.lww<Pick<ConnectorManifest, "origin" | "basePath" | "tools">>(`connector:${request.value.connector}`)?.value;
+        const digest = manifest && typeof manifest === "object" && manifest.tools ? toolDigest(manifest, request.value.tool) : null;
+        const covered = orderCovers(order, { ...request.value, digest }, decodeHlc(event.hlc).ms);
+        if (!covered) return "the order doesn't cover this action";
+        this.putLww(`action-decision:${body.action}`, event, { id: body.action, verdict: "approved", order: body.order, note: `standing order: ${order.label}` });
         return null;
       }
       default:

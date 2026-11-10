@@ -4,6 +4,7 @@ import { b64u, fromB64u } from "./bytes.ts";
 import { sha256B64u } from "./crypto.ts";
 import { isHlc } from "./hlc.ts";
 import { type DeviceId, domain, isNodeId, type NodeIdentity, verifyDeviceSignature } from "./identity.ts";
+import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
 
 /*
@@ -175,6 +176,11 @@ export const Bodies = {
   "action.decided": z.strictObject({ id: ActionId, verdict: z.enum(["approved", "denied"]), note: z.string().max(500).optional() }),
   /** The receipt, written once by the node that asked, after it sent the request exactly once. */
   "action.done": z.strictObject({ id: ActionId, ok: z.boolean(), status: z.number().int().optional(), receipt: z.string().max(2000) }),
+  /** A standing order: your answer in advance to calls that match it (see orders.ts). Immutable: revoke and sign anew. */
+  "order.set": OrderTerms.extend({ id: OrderId }),
+  "order.revoked": z.strictObject({ id: OrderId }),
+  /** The node that filed an action records which order answered it; every replica checks the order covers it. */
+  "order.applied": z.strictObject({ order: OrderId, action: ActionId }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

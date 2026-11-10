@@ -5,7 +5,7 @@ import { canonical, type NodeIdentity } from "@galahad/core";
 import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost } from "@galahad/sandbox";
+import { type LedgerEntryInput, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, presence, probeCapabilities } from "./capabilities.ts";
@@ -137,6 +137,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   // Sandbox host: only when Docker is reachable on this machine.
   let sandbox: SandboxHost | null = null;
+  const sandboxContext = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox");
   if (caps.sandbox !== undefined && caps.sandbox !== null) {
     sandbox = new SandboxHost({
       node: identity.id,
@@ -145,9 +146,15 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ledger,
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
+      // Size-limited workspaces when the root helper is installed (scripts/remote-setup.sh); otherwise
+      // unlimited Docker volumes, and the heartbeat says so.
+      workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET),
+      imageContext: sandboxContext,
     });
     try {
       await sandbox.ensureNetworks();
+      // Keep the image in use, so pruning (Coolify's nightly cleanup) doesn't take it.
+      void sandbox.keepImage().catch((error) => log(`sandbox image keeper: ${(error as Error).message}`));
     } catch (error) {
       log(`sandbox networks unavailable: ${(error as Error).message}`);
       sandbox = null;
@@ -199,7 +206,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     presence,
     log,
     sandbox,
-    sandboxContext: resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox"),
+    sandboxContext,
     connectors,
     loops,
     heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),

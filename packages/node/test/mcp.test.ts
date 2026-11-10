@@ -200,6 +200,15 @@ describe("galahad mcp (official MCP client over stdio)", () => {
       const outward = text(await client.callTool({ name: "connector_call", arguments: { connector: "forge", tool: "post", args: { text: "hi" }, why: "say hi" } }));
       expect(outward).toMatch(/Filed for the user's approval as action a_/);
       expect(seen).toHaveLength(1);
+
+      // A standing order the user signed: the agent sees it, and a covered call goes straight out.
+      const signed = await call("setOrder", { connector: "forge", tool: "post", args: { text: "status: *" }, label: "Status posts" }, home.adminToken());
+      expect(signed.status).toBe(200);
+      expect(text(await client.callTool({ name: "connectors", arguments: {} }))).toMatch(/standing order "Status posts" \(no need to ask\): forge\.post text=status: \*/);
+      const covered = text(await client.callTool({ name: "connector_call", arguments: { connector: "forge", tool: "post", args: { text: "status: green" } } }));
+      expect(covered).toMatch(/Sent under the user's standing order "Status posts"/);
+      expect(covered).toContain("POST /posts → 200");
+      expect(seen).toHaveLength(2);
     } finally {
       service.stop(true);
     }

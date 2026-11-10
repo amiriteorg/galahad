@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ActionView, type ConnectorView, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type RouteName, routes } from "@galahad/core";
+import { type ActionView, type ConnectorView, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type OrderView, type RouteName, routes } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { ConnectorService } from "../src/connectors.ts";
@@ -216,6 +216,94 @@ describe("connectors", () => {
     expect(posts()).toHaveLength(2);
     const { entries } = (await admin<{ entries: { verdict: string; reason: string }[] }>("ledger")).body;
     expect(entries[0]).toMatchObject({ verdict: "approved", reason: "you asked for it" });
+  });
+});
+
+describe("standing orders", () => {
+  test("only you sign them, and they must be narrow", async () => {
+    expect((await arm("setOrder", { connector: "forge", tool: "post", args: {}, label: "anything" })).status).toBe(403);
+    const wide = await admin("setOrder", { connector: "forge", tool: "bucket.delete", args: { name: "galahad-*" }, label: "scratch buckets" });
+    expect(wide.status).toBe(400);
+    expect(wide.body.error).toMatch(/names exactly one thing/);
+    const reads = await admin("setOrder", { connector: "forge", tool: "me", args: {}, label: "reads" });
+    expect(reads.body.error).toMatch(/needs no order/);
+    const secret = await admin("setOrder", { connector: "forge", tool: "post", args: { text: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789" }, label: "x" });
+    expect(secret.status).toBe(422);
+  });
+
+  test("a call an order covers is sent at once, recorded as answered by that order; others still ask", async () => {
+    const signed = await admin<{ order: OrderView }>("setOrder", {
+      connector: "forge",
+      tool: "post",
+      args: { text: "Release notes: *" },
+      callers: ["test-arm"],
+      days: 7,
+      label: "Post release notes",
+    });
+    expect(signed.status).toBe(200);
+    expect(signed.body.order).toMatchObject({ state: "active", class: "outward", uses: 0, callers: ["test-arm"] });
+    const before = posts().length;
+
+    const covered = await arm<{ status: string; order: { label: string }; action: string; result: { status: number } }>("callConnector", {
+      connector: "forge",
+      tool: "post",
+      args: { text: "Release notes: 0.3" },
+    });
+    expect(covered.body).toMatchObject({ status: "done", order: { label: "Post release notes" }, result: { status: 201 } });
+    expect(posts()).toHaveLength(before + 1);
+    const action = (await admin<{ actions: ActionView[] }>("actions")).body.actions.find((a) => a.id === covered.body.action)!;
+    expect(action).toMatchObject({ state: "done", order: { id: signed.body.order.id, label: "Post release notes" } });
+    const { entries } = (await admin<{ entries: { reason: string }[] }>("ledger")).body;
+    expect(entries[0]!.reason).toBe('sent under your standing order "Post release notes"');
+    expect((await admin<{ orders: OrderView[] }>("orders")).body.orders.find((o) => o.id === signed.body.order.id)).toMatchObject({ uses: 1 });
+
+    // Off-pattern, or a caller the order doesn't name: still asks, nothing sent.
+    const off = await arm<{ status: string }>("callConnector", { connector: "forge", tool: "post", args: { text: "Buy now!" } });
+    expect(off.body.status).toBe("asked");
+    const other = (await admin<{ token: string }>("mintArm", { label: "other-arm" })).body.token;
+    expect((await as<{ status: string }>(other, "callConnector", { connector: "forge", tool: "post", args: { text: "Release notes: 0.4" } })).body.status).toBe("asked");
+    expect(posts()).toHaveLength(before + 1);
+
+    // Revoked: asks again.
+    const revoked = await admin<{ order: OrderView }>("revokeOrder", { id: signed.body.order.id });
+    expect(revoked.body.order.state).toBe("revoked");
+    expect((await arm<{ status: string }>("callConnector", { connector: "forge", tool: "post", args: { text: "Release notes: 0.5" } })).body.status).toBe("asked");
+    expect(posts()).toHaveLength(before + 1);
+  });
+
+  test("change the tool and the order goes stale: it no longer answers", async () => {
+    const signed = await admin<{ order: OrderView }>("setOrder", { connector: "forge", tool: "post", args: {}, label: "Any post" });
+    const changed = manifest();
+    changed.tools.post = { ...changed.tools.post, path: "/posts/everyone" };
+    await admin("setConnector", { id: "forge", manifest: changed });
+    expect((await admin<{ orders: OrderView[] }>("orders")).body.orders.find((o) => o.id === signed.body.order.id)!.state).toBe("stale");
+    expect((await arm<{ status: string }>("callConnector", { connector: "forge", tool: "post", args: { text: "hi" } })).body.status).toBe("asked");
+    await admin("setConnector", { id: "forge", manifest: manifest() });
+    expect((await admin<{ orders: OrderView[] }>("orders")).body.orders.find((o) => o.id === signed.body.order.id)!.state).toBe("active");
+    await admin("revokeOrder", { id: signed.body.order.id });
+  });
+
+  test("approve and sign in one go: the waiting action is approved and sent, the order covers the next one", async () => {
+    const asked = await arm<{ status: string; action: string }>("callConnector", { connector: "forge", tool: "bucket.delete", args: { name: "galahad-tmp" } });
+    expect(asked.body.status).toBe("asked");
+    const signed = await admin<{ order: OrderView; action: ActionView }>("setOrder", {
+      connector: "forge",
+      tool: "bucket.delete",
+      args: { name: "galahad-tmp" },
+      label: "Recreate galahad-tmp",
+      approve: asked.body.action,
+    });
+    expect(signed.status).toBe(200);
+    expect(signed.body.action.state).toBe("approved");
+    await daemon.connectors.drain();
+    const deletes = () => hits.filter((h) => h.method === "DELETE" && h.path === "/buckets/galahad-tmp");
+    await until(() => deletes().length === 1);
+    const again = await arm<{ status: string }>("callConnector", { connector: "forge", tool: "bucket.delete", args: { name: "galahad-tmp" } });
+    expect(again.body.status).toBe("done");
+    expect(deletes()).toHaveLength(2);
+    // A different bucket isn't covered.
+    expect((await arm<{ status: string }>("callConnector", { connector: "forge", tool: "bucket.delete", args: { name: "galahad-prod" } })).body.status).toBe("asked");
+    await admin("revokeOrder", { id: signed.body.order.id });
   });
 });
 

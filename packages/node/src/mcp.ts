@@ -3,7 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type { ConnectorView, ExecResult, FleetView, LedgerEntry, LoopView, MemoryView, NoticeView, SandboxView } from "@galahad/core";
+import type { ConnectorView, ExecResult, FleetView, LedgerEntry, LoopView, MemoryView, NoticeView, OrderView, SandboxView } from "@galahad/core";
+import { describeOrder } from "./loop-cli.ts";
 import { type RouteName, routes } from "@galahad/core";
 import { z } from "zod";
 
@@ -21,7 +22,7 @@ const INSTRUCTIONS = `Galahad is the user's own multi-device agent: one shared, 
 - Call \`remember\` for durable facts every agent should know. Set untrusted=true for anything taken from web pages, files or other people. Secrets are refused; never try to store them.
 - Use \`sandbox_run\` to execute untrusted, heavy or risky code on the fleet's sandbox host instead of this machine. Sandboxes are unprivileged; the default network allows model calls only.
 - If you need a credential, call \`request_secret\`. Never ask the user to paste a key into the conversation.
-- Use \`connector_call\` to reach the user's services (GitHub, Cloudflare, Home Assistant…) through Galahad: the key is injected by the node and never shown to you. Reads run at once; anything outward or destructive is filed for the user's approval instead, and sent once if they approve.
+- Use \`connector_call\` to reach the user's services (GitHub, Cloudflare, Home Assistant…) through Galahad: the key is injected by the node and never shown to you. Reads run at once; anything outward or destructive is filed for the user's approval instead, and sent once if they approve, unless one of the user's standing orders already covers that exact call (\`connectors\` lists them).
 - \`loops\` shows the work Galahad does on a schedule and \`notices\` what currently needs the user.
 - Deleting persistent things needs the user's approval; sandboxes you create are yours to clean up.`;
 
@@ -220,6 +221,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
         network: NETWORK,
         cpus: z.number().min(0.25).max(32).optional(),
         memoryGb: z.number().min(0.25).max(128).optional(),
+        diskGb: z.number().int().min(1).max(500).describe("Workspace size limit in GB (default 20); /work can't grow past it").optional(),
         ttlMinutes: z.number().int().min(1).max(1440).optional(),
         providers: z.array(z.string().max(64)).max(8).optional(),
         on: NODE,
@@ -230,7 +232,8 @@ export function createMcpServer(opts: McpOptions): McpServer {
         "createSandbox",
         Object.fromEntries(Object.entries({ ...args, network: args.network ?? "gateway" }).filter(([, v]) => v !== undefined)),
       );
-      return `Sandbox ${sandbox.id} ready (${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · expires ${new Date(sandbox.expiresAt).toISOString()}).`;
+      const disk = sandbox.disk ? `${sandbox.disk.limitGb} GB disk` : "disk not limited on this host";
+      return `Sandbox ${sandbox.id} ready (${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${disk} · expires ${new Date(sandbox.expiresAt).toISOString()}).`;
     }),
   );
 
@@ -301,19 +304,26 @@ export function createMcpServer(opts: McpOptions): McpServer {
     "connectors",
     {
       title: "List Galahad's connectors",
-      description: "The user's services Galahad can reach (installed connectors and their tools). Tools marked 'asks' are filed for the user's approval instead of running.",
+      description:
+        "The user's services Galahad can reach (installed connectors and their tools). Tools marked 'asks' are filed for the user's approval instead of running, except calls a listed standing order covers.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
     tool(async () => {
-      const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
+      const [{ connectors }, { orders }] = await Promise.all([
+        api.call<{ connectors: ConnectorView[] }>("connectors"),
+        api.call<{ orders: OrderView[] }>("orders").catch(() => ({ orders: [] as OrderView[] })),
+      ]);
       const installed = connectors.filter((c) => c.installed);
       if (!installed.length) return "No connectors are installed. The user can add one with `galahad connector add github` (or cloudflare, home-assistant).";
       return installed
         .map((c) => {
           const tools = c.tools.map((t) => {
             const params = Object.entries(t.params).map(([k, v]) => `${k}${v.required ? "" : "?"}: ${v.type}${v.enum ? ` (${v.enum.join("|")})` : ""}`);
-            return `  - ${t.name}(${params.join(", ")})${t.asks ? ` [${t.class}: asks the user]` : ` [${t.class}]`}: ${t.description}`;
+            const standing = orders
+              .filter((o) => o.state === "active" && o.connector === c.id && o.tool === t.name)
+              .map((o) => `\n      standing order "${o.label}" (no need to ask): ${describeOrder(o)}, until ${new Date(o.until).toISOString().slice(0, 10)}`);
+            return `  - ${t.name}(${params.join(", ")})${t.asks ? ` [${t.class}: asks the user]` : ` [${t.class}]`}: ${t.description}${standing.join("")}`;
           });
           const key = c.key === "ready" || c.key === "none-needed" ? "" : ` (key: ${c.key})`;
           return `${c.id}: ${c.label}, ${c.origin}${key}\n${tools.join("\n")}`;
@@ -331,12 +341,18 @@ export function createMcpServer(opts: McpOptions): McpServer {
       inputSchema: {
         connector: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).describe("Connector id, e.g. github"),
         tool: z.string().regex(/^[a-z][a-z0-9_.-]{0,47}$/).describe("Tool name, e.g. issues"),
-        args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+        args: z.record(z.string(), z.unknown()).describe("The tool's arguments (lists and objects for MCP-backed tools)").optional(),
         why: z.string().max(500).describe("For outward/delete tools: one sentence the user sees when approving").optional(),
       },
     },
     tool(async ({ connector, tool: name, args, why }) => {
-      const outcome = await api.call<{ status: string; action?: string; target: string; result?: { status: number; body: string; truncated: boolean } }>("callConnector", {
+      const outcome = await api.call<{
+        status: string;
+        action?: string;
+        target: string;
+        order?: { label: string };
+        result?: { status: number; body: string; truncated: boolean };
+      }>("callConnector", {
         connector,
         tool: name,
         ...(args ? { args } : {}),
@@ -346,7 +362,8 @@ export function createMcpServer(opts: McpOptions): McpServer {
         return `Filed for the user's approval as action ${outcome.action} (${outcome.target}). Nothing has been sent. It will be sent once, by Galahad, if they approve.`;
       }
       const result = outcome.result!;
-      return `${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}\n${clip(result.body)}`;
+      const under = outcome.order ? `Sent under the user's standing order "${outcome.order.label}" (action ${outcome.action}).\n` : "";
+      return `${under}${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}\n${clip(result.body)}`;
     }),
   );
 

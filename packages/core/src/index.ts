@@ -7,6 +7,7 @@ export * from "./events.ts";
 export * from "./hlc.ts";
 export * from "./identity.ts";
 export * from "./oath.ts";
+export * from "./orders.ts";
 export * from "./pairing.ts";
 export * from "./request-auth.ts";
 export * from "./schedule.ts";

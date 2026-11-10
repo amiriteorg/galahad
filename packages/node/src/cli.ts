@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes } from "@galahad/core";
+import { b64u, type ChatStreamEvent, decodeInvite, type FleetView, type RouteName, routes, type SandboxView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -9,7 +9,7 @@ import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
-import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, statusLine } from "./loop-cli.ts";
+import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { questFromCli } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
@@ -47,7 +47,7 @@ Work
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
-  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--ttl 120]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox build [--on ultra]      build the sandbox image on a host
@@ -66,9 +66,18 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
   connector ls | connector tools <id> | connector rm <id>
   connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json
+  connector add <id> --mcp <url> [--auth bearer|header:<name>] [--only a,b] [--class tool=read …]
+                                  a remote MCP server: its tools are listed once; you choose their classes
+  connector refresh <id> [--class tool=class …]   list an MCP server's tools again (your classes stay)
   connector call <id>.<tool> [--arg key=value …] [--why "…"]
   secret set <name> --connector <id>                    a connector's key, pinned to its origin
   action ls [--all] | action approve <id> [--note …] | action deny <id>
+
+Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
+  order ls [--all] | order revoke <id>
+  order add <connector>.<tool> --arg key=pattern … [--for loop.name] [--days 30] --label "…"
+  order add --from <action-id> [--arg key=pattern] [--free key]   approve it, and answer alike next time
+                                  * matches anything; deletes are pinned exactly; at most a year
 
 Agents (MCP)
   mcp install claude|opencode|codex|hermes [--label name] [--apply]
@@ -198,6 +207,7 @@ async function main(): Promise<void> {
       vm: { type: "boolean" },
       gpu: { type: "boolean" },
       mem: { type: "string" },
+      disk: { type: "string" },
       tools: { type: "string" },
       long: { type: "boolean" },
       untrusted: { type: "boolean" },
@@ -226,6 +236,15 @@ async function main(): Promise<void> {
       manifest: { type: "string" },
       all: { type: "boolean" },
       connector: { type: "string" },
+      for: { type: "string", multiple: true },
+      mcp: { type: "string" },
+      id: { type: "string" },
+      auth: { type: "string" },
+      only: { type: "string" },
+      class: { type: "string", multiple: true },
+      free: { type: "string", multiple: true },
+      days: { type: "string" },
+      from: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -648,13 +667,14 @@ Next:
         console.log("Sandbox image ready.");
         return;
       }
+      const diskOf = (s: SandboxView) => (s.disk ? `disk ${s.disk.usedGb ?? "?"}/${s.disk.limitGb} GB` : "disk unlimited");
       if (sub === "ls") {
         const { node, sandboxes } = await admin.call("sandboxes", { ...(on ? { on } : {}) });
         if (!sandboxes.length) console.log(`No sandboxes on ${node}.`);
         for (const s of sandboxes) {
           const left = Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000));
           console.log(
-            `  ${s.id}  ${s.status.padEnd(8)} ${s.network.padEnd(8)} ${String(s.cpus).padStart(3)} cpu ${String(s.memoryGb).padStart(4)} GB  ${s.ephemeral ? `${left} min left` : "persistent"}  ${dim(s.quest)}`,
+            `  ${s.id}  ${s.status.padEnd(8)} ${s.network.padEnd(8)} ${String(s.cpus).padStart(3)} cpu ${String(s.memoryGb).padStart(4)} GB  ${diskOf(s)}  ${s.ephemeral ? `${left} min left` : "persistent"}  ${dim(s.quest)}`,
           );
         }
         return;
@@ -679,13 +699,14 @@ Next:
           network: str("net") ?? "gateway",
           ...(str("cpus") ? { cpus: Number(str("cpus")) } : {}),
           ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
+          ...(str("disk") ? { diskGb: Number(str("disk")) } : {}),
           ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),
           ...(on ? { on } : {}),
         });
         const where = on ?? "the best sandbox host";
-        process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB]\n`));
+        process.stderr.write(dim(`[sandbox ${sandbox.id} on ${where} · ${sandbox.network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB · ${diskOf(sandbox)}]\n`));
         let code = 1;
         try {
           const result = await admin.call("execSandbox", {
@@ -790,6 +811,10 @@ Next:
     case "action":
     case "actions":
       await actionCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "order":
+    case "orders":
+      await orderCommand(new Admin(home), sub, rest, flags);
       return;
 
     case "rebuild": {

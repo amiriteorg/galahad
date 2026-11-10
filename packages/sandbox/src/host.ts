@@ -4,6 +4,7 @@ import {
   DEFAULT_IMAGE,
   execArgs,
   gatewayEnv,
+  KEEPER,
   LABEL,
   NETWORKS,
   networkCreateArgs,
@@ -11,6 +12,7 @@ import {
   type SandboxSpec,
   volumeName,
 } from "./spec.ts";
+import { budgetProblem, DEFAULT_DISK_GB, type Workspaces, type WorkspaceStats } from "./workspaces.ts";
 
 export interface LedgerEntryInput {
   class: ActionClass;
@@ -54,6 +56,12 @@ export interface SandboxHostOptions {
   ledger: (entry: LedgerEntryInput) => void;
   maxCpus: number;
   maxMemoryGb: number;
+  /** The largest workspace one sandbox may have (default 200 GB). */
+  maxDiskGb?: number;
+  /** Size-limited workspaces; null or absent: /work is an unlimited Docker volume (the heartbeat says so). */
+  workspaces?: Workspaces | null;
+  /** Where the sandbox image's Dockerfile lives, so a missing image is rebuilt instead of failing. */
+  imageContext?: string;
   tokenStore?: SandboxTokenStore;
   docker?: string;
   now?: () => number;
@@ -69,6 +77,8 @@ export interface CreateInput {
   providers?: string[];
   persistent: boolean;
   quest?: string;
+  /** The workspace's size limit (default 20 GB). */
+  diskGb?: number;
 }
 
 export class SandboxError extends Error {
@@ -118,6 +128,9 @@ export class SandboxHost {
   private readonly bin: string;
   private readonly now: () => number;
   private readonly tokenStore: SandboxTokenStore;
+  /** Workspaces made for a sandbox that hasn't started yet (so a cleanup never takes them). */
+  private readonly creating = new Set<string>();
+  private building: Promise<{ ok: boolean; output: string }> | null = null;
 
   constructor(private readonly opts: SandboxHostOptions) {
     this.bin = opts.docker ?? "docker";
@@ -159,16 +172,47 @@ export class SandboxHost {
     }
   }
 
-  async build(contextDir: string): Promise<{ ok: boolean; output: string }> {
-    const result = await this.docker(["build", "--pull", "-t", DEFAULT_IMAGE, contextDir], 20 * 60_000);
-    this.opts.ledger({
-      class: "create",
-      resource: "docker.image",
-      target: DEFAULT_IMAGE,
-      verdict: "allow",
-      ...(result.code === 0 ? {} : { detail: "build failed" }),
+  async build(contextDir: string, why?: string): Promise<{ ok: boolean; output: string }> {
+    // One build at a time: two quests that both find the image missing wait for the same build.
+    this.building ??= (async () => {
+      const result = await this.docker(["build", "--pull", "-t", DEFAULT_IMAGE, contextDir], 20 * 60_000);
+      this.opts.ledger({
+        class: "create",
+        resource: "docker.image",
+        target: DEFAULT_IMAGE,
+        verdict: "allow",
+        ...(result.code === 0 ? (why ? { detail: why } : {}) : { detail: "build failed" }),
+      });
+      if (result.code === 0) await this.keepImage();
+      return { ok: result.code === 0, output: (result.code === 0 ? result.stdout : result.stderr).slice(-4000) };
+    })().finally(() => {
+      this.building = null;
     });
-    return { ok: result.code === 0, output: (result.code === 0 ? result.stdout : result.stderr).slice(-4000) };
+    return this.building;
+  }
+
+  private async hasImage(): Promise<boolean> {
+    return (await this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"])).code === 0;
+  }
+
+  /**
+   * Keep the sandbox image in use with a stopped container, so image pruning
+   * (Coolify's nightly cleanup prunes every unused image) leaves it alone.
+   * Idempotent; points the keeper at the image's current build.
+   */
+  async keepImage(): Promise<boolean> {
+    const image = (await this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"])).stdout.trim();
+    if (!image) return false;
+    const kept = (await this.docker(["container", "inspect", KEEPER, "--format", "{{.Image}}"])).stdout.trim();
+    if (kept === image) return true;
+    if (kept) await this.docker(["rm", "--force", KEEPER]);
+    const made = await this.docker(["create", "--name", KEEPER, "--label", `${LABEL}.keeper=1`, "--network", "none", DEFAULT_IMAGE, "true"]);
+    return made.code === 0;
+  }
+
+  /** Whether sandboxes here get size-limited workspaces. */
+  async diskLimited(): Promise<boolean> {
+    return !!this.opts.workspaces && (await this.opts.workspaces.available());
   }
 
   async create(input: CreateInput): Promise<SandboxView> {
@@ -176,8 +220,19 @@ export class SandboxHost {
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);
     if (input.memoryGb > this.opts.maxMemoryGb) throw new SandboxError(`at most ${this.opts.maxMemoryGb} GB memory per sandbox on this node`);
     const image = input.image ?? DEFAULT_IMAGE;
-    if (image === DEFAULT_IMAGE && (await this.docker(["image", "inspect", image, "--format", "{{.Id}}"])).code !== 0) {
-      throw new SandboxError("the sandbox image is not built on this node yet: run `galahad sandbox build`", 424);
+    if (image === DEFAULT_IMAGE && !(await this.hasImage())) {
+      // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
+      if (!this.opts.imageContext) throw new SandboxError("the sandbox image is not built on this node yet: run `galahad sandbox build`", 424);
+      const built = await this.build(this.opts.imageContext, "rebuilt: the image was missing when a sandbox was needed");
+      if (!built.ok) throw new SandboxError(`the sandbox image was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
+    }
+    const diskGb = input.diskGb ?? DEFAULT_DISK_GB;
+    const maxDiskGb = this.opts.maxDiskGb ?? 200;
+    if (diskGb > maxDiskGb) throw new SandboxError(`at most ${maxDiskGb} GB of workspace per sandbox on this node`);
+    const limited = await this.diskLimited();
+    if (limited) {
+      const problem = budgetProblem(await this.opts.workspaces!.stats(), diskGb);
+      if (problem) throw new SandboxError(problem, 507);
     }
     if (input.network !== "isolated") await this.ensureNetworks();
 
@@ -213,13 +268,30 @@ export class SandboxHost {
       ...(tokenHash ? { tokenHash } : {}),
     };
 
-    const volume = await this.docker(["volume", "create", "--label", `${LABEL}=1`, "--label", `${LABEL}.id=${id}`, volumeName(id)]);
-    if (volume.code !== 0) throw new SandboxError(`could not create workspace: ${volume.stderr.trim()}`, 500);
-    const run = await this.docker(runArgs(spec), 10 * 60_000);
-    if (run.code !== 0) {
-      await this.docker(["volume", "rm", "-f", volumeName(id)]);
-      if (tokenHash) this.opts.tokens.revoke(tokenHash);
-      throw new SandboxError(`could not start sandbox: ${redact(run.stderr.trim()).slice(0, 500)}`, 500);
+    this.creating.add(id);
+    try {
+      if (limited) {
+        try {
+          spec.workspace = await this.opts.workspaces!.create(id, diskGb);
+          spec.diskGb = diskGb;
+        } catch (error) {
+          if (tokenHash) this.opts.tokens.revoke(tokenHash);
+          throw new SandboxError(`could not create the workspace: ${(error as Error).message}`, 500);
+        }
+      } else {
+        const volume = await this.docker(["volume", "create", "--label", `${LABEL}=1`, "--label", `${LABEL}.id=${id}`, volumeName(id)]);
+        if (volume.code !== 0) throw new SandboxError(`could not create workspace: ${volume.stderr.trim()}`, 500);
+      }
+      const run = await this.docker(runArgs(spec), 10 * 60_000);
+      if (run.code !== 0) {
+        await this.docker(["rm", "--force", containerName(id)]);
+        if (spec.workspace) await this.opts.workspaces!.remove(id).catch(() => {});
+        else await this.docker(["volume", "rm", "-f", volumeName(id)]);
+        if (tokenHash) this.opts.tokens.revoke(tokenHash);
+        throw new SandboxError(`could not start sandbox: ${redact(run.stderr.trim()).slice(0, 500)}`, 500);
+      }
+    } finally {
+      this.creating.delete(id);
     }
     if (tokenHash) this.tokenStore.put(id, tokenHash);
     if (input.network === "online") {
@@ -231,7 +303,7 @@ export class SandboxHost {
       target: containerName(id),
       verdict: "allow",
       quest,
-      detail: `${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
+      detail: `${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.length ? ` · models: ${providers.join(", ")}` : ""}`,
     });
     return (await this.get(id))!;
   }
@@ -246,10 +318,20 @@ export class SandboxHost {
     const inspected = await this.docker(["inspect", ...ids]);
     if (inspected.code !== 0) return [];
     const containers = JSON.parse(inspected.stdout) as { Config: { Labels: Record<string, string>; Image: string }; State: { Status: string } }[];
+    const usage = await this.workspaceStats();
     return containers
-      .map((c) => toView(c.Config.Labels, c.Config.Image, c.State.Status))
+      .map((c) => toView(c.Config.Labels, c.Config.Image, c.State.Status, usage))
       .filter((v): v is SandboxView => v !== null)
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  private async workspaceStats(): Promise<WorkspaceStats | null> {
+    if (!this.opts.workspaces) return null;
+    try {
+      return await this.opts.workspaces.stats();
+    } catch {
+      return null;
+    }
   }
 
   async get(id: string): Promise<SandboxView | null> {
@@ -307,7 +389,8 @@ export class SandboxHost {
       return decision;
     }
     await this.docker(["rm", "--force", "--volumes", containerName(id)]);
-    await this.docker(["volume", "rm", "--force", volumeName(id)]);
+    if (sandbox.disk) await this.opts.workspaces?.remove(id).catch((error) => this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: id, verdict: "allow", detail: `not removed: ${(error as Error).message}` }));
+    else await this.docker(["volume", "rm", "--force", volumeName(id)]);
     const tokenHash = this.tokenStore.take(id);
     if (tokenHash) this.opts.tokens.revoke(tokenHash);
     this.opts.ledger({
@@ -325,10 +408,26 @@ export class SandboxHost {
   async reap(): Promise<string[]> {
     const now = this.now();
     const reaped: string[] = [];
-    for (const sandbox of await this.list()) {
+    const sandboxes = await this.list();
+    for (const sandbox of sandboxes) {
       if (!sandbox.ephemeral || sandbox.expiresAt > now) continue;
       const decision = await this.destroy(sandbox.id, { quest: sandbox.quest });
       if (decision.verdict === "allow") reaped.push(sandbox.name);
+    }
+    // A workspace whose sandbox is gone (its container removed by hand, a crash mid-create) holds
+    // disk for nothing: its data was the sandbox's, which no longer exists.
+    const stats = await this.workspaceStats();
+    if (stats) {
+      const listed = await this.docker(["ps", "-a", "--filter", `label=${LABEL}=1`, "--format", `{{.Label "${LABEL}.id"}}`]);
+      const alive = new Set(listed.stdout.split("\n").map((s) => s.trim()));
+      for (const image of stats.images) {
+        // Any galahad container on this Docker counts (another node or a test may share the host), and a
+        // young workspace may belong to a sandbox that is still starting in another process.
+        if (listed.code !== 0 || alive.has(image.id) || this.creating.has(image.id) || now - image.createdAt < 10 * 60_000) continue;
+        await this.opts.workspaces!.remove(image.id).catch(() => {});
+        this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: image.id, verdict: "allow", reason: "cleaning up the workspace of a sandbox that no longer exists" });
+        reaped.push(`workspace ${image.id}`);
+      }
     }
     return reaped;
   }
@@ -357,9 +456,11 @@ export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; ne
   return { image, networks: gw };
 }
 
-function toView(labels: Record<string, string>, image: string, status: string): SandboxView | null {
+function toView(labels: Record<string, string>, image: string, status: string, usage: WorkspaceStats | null): SandboxView | null {
   const id = labels[`${LABEL}.id`];
   if (!id || labels[LABEL] !== "1") return null;
+  const limit = Number(labels[`${LABEL}.disk`]);
+  const used = usage?.images.find((i) => i.id === id)?.usedBytes;
   return {
     id,
     name: containerName(id),
@@ -374,5 +475,6 @@ function toView(labels: Record<string, string>, image: string, status: string): 
     status,
     ephemeral: labels[`${LABEL}.ephemeral`] !== "false",
     providers: (labels[`${LABEL}.providers`] ?? "").split(",").filter(Boolean),
+    disk: limit > 0 ? { limitGb: limit, usedGb: used === undefined ? null : Math.round((used / 2 ** 30) * 10) / 10 } : null,
   };
 }
