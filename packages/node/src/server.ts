@@ -8,6 +8,7 @@ import {
   type ConversationSummary,
   type ProjectView,
   type StoredStep,
+  SyncRequest,
   titleFrom,
   ConnectorManifest,
   type ConnectorView,
@@ -32,6 +33,7 @@ import {
   NonceCache,
   OWNER_SCOPES,
   type Presence,
+  PushRequest,
   type RouteName,
   routes,
   type Scope,
@@ -62,7 +64,7 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
+import { answerSync, PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { type LedgerEntryInput, SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
@@ -250,11 +252,6 @@ export function streamedError(body: unknown): { error: string; status: number } 
   return null;
 }
 
-const SyncInput = z.strictObject({
-  have: z.record(z.string().max(100), z.string().max(32)),
-  digests: z.record(z.string().max(100), z.strictObject({ n: z.number().int().min(0), h: z.string().max(64) })).optional(),
-});
-const PushInput = z.strictObject({ events: z.array(z.unknown()).max(500) });
 const StatusInput = z.strictObject({ invite: z.string().max(64), device: z.string().max(100), proof: z.string().max(100) });
 
 const secretView = (s: SecretInfo): SecretView => ({
@@ -1404,10 +1401,9 @@ export function createApp(ctx: AppContext) {
       if (!principal || principal.kind !== "node") throw new HttpError(401, "link requests must come from an enrolled node");
       const payload = JSON.parse(new TextDecoder().decode(body));
       if (path === "/link/sync") {
-        const { have, digests } = SyncInput.parse(payload);
-        return json({ ...ctx.store.eventsSince(have, 500, digests), presence: await ctx.presence() });
+        return json({ ...answerSync(ctx.store, SyncRequest.parse(payload)), presence: await ctx.presence() });
       }
-      const { events } = PushInput.parse(payload);
+      const { events } = PushRequest.parse(payload);
       return json({ added: ctx.store.ingest(events).added });
     }
 

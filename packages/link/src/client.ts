@@ -2,7 +2,6 @@ import {
   approvalProof,
   decodeInvite,
   fromB64u,
-  type GEvent,
   type Invite,
   type NodeIdentity,
   pairProof,
@@ -36,11 +35,7 @@ export async function signedPost<T>(
   return (await response.json()) as T;
 }
 
-export interface SyncPage {
-  events: GEvent[];
-  more: boolean;
-  presence?: import("@galahad/core").Presence;
-}
+export type { SyncPage } from "@galahad/core";
 
 // ---- joining a fleet ---------------------------------------------------------
 

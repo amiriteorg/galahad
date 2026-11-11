@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
-import { adoptChains, enrollDevice, foundFleet, MindStore, revokeDevice } from "../src/index.ts";
+import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
+import { adoptChains, enrollDevice, foundFleet, MindStore, PullState, revokeDevice } from "../src/index.ts";
 
 /*
  * Review findings #1 and #4: every device's events form a hash chain.
@@ -9,12 +9,15 @@ import { adoptChains, enrollDevice, foundFleet, MindStore, revokeDevice } from "
  *  - A device's events that only some replicas received are found by digests.
  */
 
+/** One pull, as the sync engine makes it (PullState), with the peer answering directly. */
 function sync(from: MindStore, to: MindStore, withDigests = true): void {
-  for (let i = 0; i < 100; i++) {
-    const { events, more } = from.eventsSince(to.frontier(), 50, withDigests ? to.deviceDigests() : undefined);
-    to.ingest(events);
-    if (!more) return;
+  const pull = new PullState(to);
+  pull.begin();
+  for (let i = 0; i < 1000; i++) {
+    const { have, sets } = pull.request(withDigests);
+    if (!pull.receive(from.eventsSince(have, 50, sets)).more) return;
   }
+  throw new Error("the pull never ended");
 }
 
 function fleet() {
@@ -158,6 +161,40 @@ describe("hash chains", () => {
     );
     storeA.ingest([v1]);
     expect(storeA.rejection(v1.id)).toMatch(/chained fleet/);
+  });
+
+  test("a sibling refused for its date still forks the chain: the next event is judged as a rebuild would", () => {
+    const { b, storeA, storeB } = fleet();
+    storeB.remember(b, "honest");
+    sync(storeB, storeA);
+    const head = storeA.event(storeA.head(b.id)!)!;
+    const { ms } = decodeHlc(head.hlc);
+    // b signs a child of its head dated *before* it (refused: dated before its predecessor)…
+    const early = forge(storeA, b, "memory.added", { text: "early sibling" }, { hlc: encodeHlc({ ms: ms - 1_000, counter: 0 }), prev: head.id });
+    storeA.ingest([early]);
+    expect(storeA.rejection(early.id)).toMatch(/dated before/);
+    // …then another child of the same head, in order. Two children of one event: a fork.
+    const later = forge(storeA, b, "memory.added", { text: "later sibling" }, { hlc: encodeHlc({ ms: ms + 1_000, counter: 0 }), prev: head.id });
+    storeA.ingest([later]);
+    const live = storeA.digest();
+    expect(storeA.rejection(later.id)).toMatch(/forked/);
+    storeA.rebuild();
+    expect(storeA.digest()).toBe(live);
+  });
+
+  test("a gap's child dated before the event that fills it keeps the reason a rebuild gives it", () => {
+    const { b, storeA, storeB } = fleet();
+    const first = storeB.remember(b, "first");
+    const second = forge(storeB, b, "memory.added", { text: "second" }, { hlc: encodeHlc({ ms: decodeHlc(first.hlc).ms + 5_000, counter: 0 }), prev: first.id });
+    // A child of `second`, dated between `first` and `second`.
+    const child = forge(storeB, b, "memory.added", { text: "child" }, { hlc: encodeHlc({ ms: decodeHlc(first.hlc).ms + 2_000, counter: 0 }), prev: second.id });
+    storeA.ingest([first]);
+    storeA.ingest([child]); // its predecessor is missing
+    storeA.ingest([second]);
+    const live = storeA.digest();
+    storeA.rebuild();
+    expect(storeA.digest()).toBe(live);
+    expect(storeA.rejection(child.id)).toMatch(/dated before/);
   });
 
   test("a far-future counter from an unknown key cannot wedge the clock (review #3)", () => {
