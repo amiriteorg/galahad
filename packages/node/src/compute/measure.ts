@@ -1,4 +1,4 @@
-import { type BrainContext, chat, isEmbeddingModel } from "@galahad/brain";
+import { type BrainContext, chat, isEmbeddingModel, resolveProvider } from "@galahad/brain";
 import { freeSlots, type NodeCapacity, SELF_ACTION_QUEST } from "@galahad/core";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { Capabilities } from "../capabilities.ts";
@@ -43,13 +43,16 @@ const MODEL_CHARS = 600;
 
 /**
  * Tokens a second (about four characters each) from the first chat model each local runtime serves on this
- * node. A runtime that isn't running, or serves only an embedding model, isn't measured.
+ * node. A runtime that isn't running, or serves only an embedding model, isn't measured. Nor is one whose
+ * provider no longer points at this machine (someone repointed "ollama" at a service elsewhere): measuring
+ * himself never calls out, and never spends a provider's quota.
  */
 export async function modelSpeed(ctx: BrainContext, caps: Capabilities | null, enter: Governor["enterModel"]): Promise<{ runtime: string; model: string; tps: number }[]> {
   const out: { runtime: string; model: string; tps: number }[] = [];
   for (const runtime of caps?.localModels ?? []) {
     const model = runtime.models.find((m) => !isEmbeddingModel(m));
     if (!model) continue;
+    if (resolveProvider(ctx.store, ctx.vault, runtime.runtime)?.local !== true) continue;
     const stop = new AbortController();
     const timer = setTimeout(() => stop.abort(), MODEL_MS);
     const leave = await enter({ wait: true }, stop.signal).catch(() => null);

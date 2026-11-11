@@ -1,4 +1,6 @@
-import type { DeviceView, FleetView, PairingView, PeerStatus } from "@galahad/core";
+import type { ComputeNodeView, ComputeView, DeviceView, FleetView, PairingView, PeerStatus } from "@galahad/core";
+import { isAbort } from "../api.ts";
+import { capacityBlock, computeBody, slotsTile } from "./fleet-compute.ts";
 import { encodeQr, qrPath } from "@galahad/core/qr";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { gb, plural, shortId } from "../lib/text.ts";
@@ -29,7 +31,7 @@ import { type Child, debounce, h, keepPlace, replace, type Scope } from "../ui/d
 import { icon, type IconName } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 
-/* Every body that shares the one mind: nodes, client devices, pairing, placement. */
+/* Every body that shares the one mind: nodes (and what each can carry), client devices, pairing, placement. */
 
 export const SCOPE_INFO: { scope: AnyScope; label: string }[] = [
   { scope: "chat", label: "Talk to Galahad" },
@@ -110,7 +112,7 @@ async function revoke(ctx: Ctx, d: DeviceView): Promise<void> {
   }
 }
 
-function nodeCard(ctx: Ctx, fleet: FleetView, d: DeviceView): HTMLElement {
+function nodeCard(ctx: Ctx, fleet: FleetView, d: DeviceView, compute: ComputeNodeView | null, changed: () => void): HTMLElement {
   const caps = asCaps(d.caps);
   const peer = peerOf(fleet, d.id);
   const presence = peer?.presence ?? null;
@@ -149,6 +151,8 @@ function nodeCard(ctx: Ctx, fleet: FleetView, d: DeviceView): HTMLElement {
       { class: "node-body" },
       h("div", { class: "chips" }, ...capChips(caps)),
       loads.length ? h("div", { class: "loads" }, ...loads) : null,
+      // What it measured, the ceiling he may not pass, and its slots in use and waiting.
+      compute ? capacityBlock(ctx, compute, changed) : null,
       h("div", { class: "tiny subtle row wrap" }, d.endpoint ? h("span", { class: "mono" }, d.endpoint) : null, h("span", { class: "mono" }, shortId(d.id)), joined ? h("span", {}, `joined ${relativeTime(joined)}`) : null),
     ),
   );
@@ -595,10 +599,34 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
   const clientsBox = h("div", { class: "card" }, skeletonRows(1, { avatar: true }));
   const revokedBox = h("div");
   const errorBox = h("div");
+  // Compute: the census, read beside the fleet and again every few seconds while the page is open.
+  const computeBox = h("div", {}, skeletonBlock(96));
+  const computeSection = section("Compute", { id: "compute" }, computeBox);
+  let compute: ComputeView | null = null;
+  let computeKey = "";
+
+  async function loadCompute(): Promise<void> {
+    try {
+      const next = await ctx.api.get<ComputeView>("/api/compute", scope.signal);
+      if (scope.disposed) return;
+      // Nothing changed: nothing is redrawn (an open "why", a hovered button stay as they are).
+      const key = JSON.stringify(next);
+      if (key === computeKey) return;
+      computeKey = key;
+      compute = next;
+      keepPlace(root, () => render(ctx.live.fleet.value));
+    } catch (error) {
+      if (scope.disposed || isAbort(error)) return;
+      // A node from before compute: the page is what it was.
+      if (!compute) computeSection.hidden = true;
+    }
+  }
 
   function render(fleet: FleetView | null): void {
     if (!fleet) return;
     replace(errorBox);
+    // The "why these numbers" you opened stay open across a redraw.
+    const opened = new Set([...nodesBox.querySelectorAll<HTMLElement>("article[aria-label]")].filter((card) => card.querySelector("details[open]")).map((card) => card.getAttribute("aria-label")));
     const active = fleet.devices.filter((d) => !d.revokedAt);
     const nodes = active.filter((d) => d.kind === "node").sort((a, b) => Number(b.id === fleet.self) - Number(a.id === fleet.self) || a.name.localeCompare(b.name));
     const clients = active.filter((d) => d.kind === "client").sort((a, b) => Number(b.id === ctx.identity.device) - Number(a.id === ctx.identity.device) || a.name.localeCompare(b.name));
@@ -610,8 +638,12 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
       statTile({ label: "Nodes online", icon: "server", value: [String(online), h("span", { class: "of" }, ` / ${nodes.length}`)], note: rtts.length ? `median ${rtts.sort((a, b) => a - b)[Math.floor(rtts.length / 2)]} ms` : "this node only" }),
       statTile({ label: "Client devices", icon: "phone", value: String(clients.length), note: "phones and browsers" }),
       statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: h("span", { class: "mono", title: fleet.digest }, `events · ${fleet.digest.slice(0, 10)}`) }),
+      compute ? slotsTile(compute) : null,
     );
-    replace(nodesBox, ...nodes.map((d) => nodeCard(ctx, fleet, d)));
+    const computeOf = new Map((compute?.nodes ?? []).map((n) => [n.id, n]));
+    replace(nodesBox, ...nodes.map((d) => nodeCard(ctx, fleet, d, computeOf.get(d.id) ?? null, () => void loadCompute())));
+    for (const card of nodesBox.querySelectorAll<HTMLElement>("article[aria-label]")) if (opened.has(card.getAttribute("aria-label"))) card.querySelector("details")?.setAttribute("open", "");
+    if (compute) replace(computeBox, computeBody(ctx, compute, () => void loadCompute()));
     replace(
       clientsBox,
       clients.length
@@ -644,6 +676,7 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
       errorBox,
       stats,
       section("Nodes", {}, nodesBox),
+      computeSection,
       section("Phones and browsers", {}, clientsBox),
       revokedBox,
       agentsSection(ctx, scope),
@@ -655,6 +688,8 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
   ctx.live.refreshFleet().then(() => {
     if (!ctx.live.fleet.value && !scope.disposed) replace(errorBox, errorState("Couldn't load the fleet", new Error("The node didn't answer."), () => void ctx.live.refreshFleet()));
   });
+  void loadCompute();
+  scope.interval(() => void loadCompute(), 5_000);
   if (opts.intent === "invite") openInvite(ctx, "client");
   if (opts.intent === "place") requestAnimationFrame(() => root.querySelector("#placement")?.scrollIntoView({ block: "start", behavior: "smooth" }));
 };

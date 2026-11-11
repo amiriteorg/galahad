@@ -41,6 +41,8 @@ interface Held {
   memoryGb: number;
   /** Not yet a sandbox Docker lists: being created. */
   creating: boolean;
+  /** When it became a sandbox (the governor's own count of such moments): a listing taken before that can't speak for it. */
+  bound: number;
 }
 
 interface Waiting {
@@ -67,6 +69,8 @@ export class Governor {
   private readonly recent: { at: number; cores: number }[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private next = 0;
+  /** Counts sandboxes coming to be: a listing of Docker is only as new as the mark taken before it was asked for. */
+  private bindings = 0;
   private modelCalls = 0;
   private modelBackground = 0;
   private readonly modelWaiting: ModelWaiting[] = [];
@@ -187,7 +191,7 @@ export class Governor {
       this.waiting.shift();
       this.remember();
       const ticket: Ticket = { id: `t${++this.next}` };
-      this.held.set(ticket.id, { ...head.need, creating: true });
+      this.held.set(ticket.id, { ...head.need, creating: true, bound: 0 });
       this.remember();
       head.admit(ticket);
       admitted = true;
@@ -208,7 +212,12 @@ export class Governor {
     const held = this.held.get(ticket.id);
     if (!held) return;
     this.held.delete(ticket.id);
-    this.held.set(sandbox, { ...held, creating: false });
+    this.held.set(sandbox, { ...held, creating: false, bound: ++this.bindings });
+  }
+
+  /** Take this before asking Docker for its list: `adopt` then knows which sandboxes the list is too old to speak for. */
+  mark(): number {
+    return this.bindings;
   }
 
   /** A ticket's sandbox never came to be, or a sandbox is gone: its share is free again. */
@@ -224,17 +233,19 @@ export class Governor {
 
   /**
    * Docker's list of this node's sandboxes is the truth: ones from before a restart are counted, ones that
-   * vanished (reaped, removed by hand) are freed. Sandboxes still being created are kept.
+   * vanished (reaped, removed by hand) are freed. Sandboxes still being created are kept, and so is one
+   * that came to be after the list was asked for (`asOf`: the mark taken before asking): a stale list
+   * never frees the slot of a sandbox that exists.
    */
-  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm" }[]): void {
+  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm" }[], asOf = this.bindings): void {
     const before = JSON.stringify([...this.held.entries()]);
     this.remember();
     const listed = new Set(sandboxes.map((s) => s.id));
-    for (const [key, h] of this.held) if (!h.creating && !listed.has(key)) this.held.delete(key);
+    for (const [key, h] of this.held) if (!h.creating && h.bound <= asOf && !listed.has(key)) this.held.delete(key);
     for (const s of sandboxes) {
       if (this.held.has(s.id)) continue;
       const vm = s.isolation === "vm";
-      this.held.set(s.id, { cpus: s.cpus + (vm ? VM_OVERHEAD.cpus : 0), memoryGb: s.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0), creating: false });
+      this.held.set(s.id, { cpus: s.cpus + (vm ? VM_OVERHEAD.cpus : 0), memoryGb: s.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0), creating: false, bound: 0 });
     }
     this.remember();
     this.pump();

@@ -858,6 +858,25 @@
       .node-card .node-body { padding: 0 var(--sp-4) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
       .node-card .loads { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
       .node-card .load-label { display: flex; justify-content: space-between; font-size: var(--fs-12); color: var(--text-3); margin-bottom: 5px; font-variant-numeric: tabular-nums; }
+      /* A node's capacity: what it measured, the ceiling, its slots. Label, value, action; one column on a phone. */
+      .capacity { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+      .capacity .cap-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-3); align-items: start; font-size: var(--fs-13); }
+      .capacity .cap-label { font-size: var(--fs-12); color: var(--text-3); padding-top: 1px; }
+      .capacity .cap-value { min-width: 0; overflow-wrap: anywhere; }
+      .capacity .cap-action { margin: -5px -6px 0 0; }
+      .capacity .chip { font-variant-numeric: tabular-nums; }
+      .capacity .cap-facts { margin-top: calc(-1 * var(--sp-1)); }
+      .capacity details summary { cursor: pointer; color: var(--text-3); font-size: var(--fs-12); width: fit-content; }
+      .capacity details ul, .plain-list { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); display: flex; flex-direction: column; gap: 4px; }
+      .capacity details ul { font-size: var(--fs-12); }
+      .pips { display: inline-flex; gap: 3px; align-items: center; }
+      .pips > span { width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--border-strong); }
+      .pips > span.on { background: var(--accent-fill); border-color: transparent; }
+      .work-attempts { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+      @media (max-width: 480px) {
+        .capacity .cap-row { grid-template-columns: minmax(0, 1fr) auto; }
+        .capacity .cap-label { grid-column: 1 / -1; }
+      }
       .place-rank { display: flex; flex-direction: column; gap: var(--sp-2); }
       .place-row { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--sp-3); align-items: center; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
       .place-row.first { border-color: var(--accent-border); background: var(--accent-soft); }

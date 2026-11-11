@@ -463,21 +463,32 @@ export function whatMoreBuys(nodes: readonly { name: string; body: ComputeBody; 
   const lines: string[] = [];
   const hosts = nodes.filter((n) => n.body.sandboxHost);
   for (const n of hosts) {
-    const all = Math.min(Math.floor((n.body.cores * (1 - HOST_RESERVE)) / SLOT_CPUS), Math.floor((n.body.memoryGb * (1 - MEMORY_RESERVE)) / SLOT_MEMORY_GB));
-    const threeQuarters = Math.floor((n.body.cores * 0.75) / SLOT_CPUS);
-    if (!n.capacity.measured) lines.push(`${n.name} isn't measured yet, so he counts one slot on it: galahad compute calibrate ${n.name}.`);
-    else if (n.limit?.cores === undefined && threeQuarters > n.capacity.sandboxes) {
-      lines.push(
-        `${n.name}: a ceiling of ${Math.floor(n.body.cores * 0.75)} threads instead of ${ceilingThreads(n.body, n.limit)} would carry up to ${plural(threeQuarters, "sandbox slot")} instead of ${n.capacity.sandboxes} (at most ${all} with all of it), if nothing else there needs them: galahad compute limit ${n.name} --cores ${Math.floor(n.body.cores * 0.75)}.`,
-      );
+    if (!n.capacity.measured) {
+      lines.push(`${n.name} isn't measured yet, so he counts one slot on it: galahad compute calibrate ${n.name}.`);
+      continue;
+    }
+    if (n.limit?.cores !== undefined) continue;
+    // Three quarters of the machine instead of half, at the share of its threads it delivered when measured.
+    const now = ceilingThreads(n.body, n.limit);
+    const more = Math.floor(n.body.cores * 0.75);
+    const delivered = Math.min(1, n.capacity.cores / now);
+    const slots = Math.min(Math.floor(Math.round(delivered * more) / SLOT_CPUS), Math.floor(n.capacity.memoryGb / SLOT_MEMORY_GB));
+    if (more > now && slots > n.capacity.sandboxes) {
+      lines.push(`${n.name}: a ceiling of ${more} threads instead of ${now} would carry about ${plural(slots, "sandbox slot")} instead of ${n.capacity.sandboxes}, if nothing else there needs them: galahad compute limit ${n.name} --cores ${more}.`);
     }
   }
   const slots = hosts.reduce((sum, n) => sum + n.capacity.sandboxes, 0);
   const strongest = [...hosts].sort((a, b) => b.capacity.sandboxes - a.capacity.sandboxes)[0];
   if (strongest) {
-    lines.push(
-      `Another machine like ${strongest.name} would carry ${plural(slots + strongest.capacity.sandboxes, "slot")} instead of ${slots}: the Trials would run ${fixed1((slots + strongest.capacity.sandboxes) / Math.max(1, slots))}× as many problems at once${plan.effort < MAX_EFFORT ? `, and auto could spend effort ${Math.min(MAX_EFFORT, slots + strongest.capacity.sandboxes)} on a quest` : `, and ${Math.floor((slots + strongest.capacity.sandboxes) / MAX_EFFORT)} quests could run at effort ${MAX_EFFORT} together instead of ${Math.floor(slots / MAX_EFFORT)}`}. Enroll it with galahad invite; he calibrates it and adapts.`,
-    );
+    const after = slots + strongest.capacity.sandboxes;
+    const together = Math.floor(after / MAX_EFFORT);
+    const also =
+      plan.effort < MAX_EFFORT
+        ? `, and auto could spend effort ${Math.min(MAX_EFFORT, after)} on a quest`
+        : together > Math.floor(slots / MAX_EFFORT)
+          ? `, and ${plural(together, "quest")} could run at effort ${MAX_EFFORT} together instead of ${Math.floor(slots / MAX_EFFORT)}`
+          : "";
+    lines.push(`Another machine like ${strongest.name} would carry ${plural(after, "slot")} instead of ${slots}: the Trials would run ${fixed1(after / Math.max(1, slots))}× as many problems at once${also}. Enroll it with galahad invite; he calibrates it and adapts.`);
   } else lines.push("A machine with Docker would give him sandboxes: quests, trials and experiments need one. Enroll it with galahad invite.");
   if (!nodes.some((n) => n.body.gpu.length)) lines.push("A node with a GPU would let a local model answer for the swift role (and the Lab's GPU work run), with nothing leaving the fleet.");
   return lines;

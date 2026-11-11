@@ -30,6 +30,10 @@ export class GovernedSandboxHost extends SandboxHost {
   override async create(input: CreateInput, wait: { signal?: AbortSignal } = {}): Promise<SandboxView> {
     const capacity = this.governed.capacity();
     const vm = chooseIsolation(input.network, input.isolation, this.governed.microVMs) === "vm";
+    // A microVM's own kernel and VMM take room on top of the sandbox: a ceiling that can't hold both carries none.
+    if (vm && (capacity.cores < VM_OVERHEAD.cpus + 0.25 || capacity.memoryGb < VM_OVERHEAD.memoryGb + 0.25)) {
+      throw new SandboxError(`this node's ceiling (${capacity.cores} threads, ${capacity.memoryGb} GB) is too small for a microVM, which takes ${VM_OVERHEAD.cpus} thread and ${VM_OVERHEAD.memoryGb} GB of its own`, 409);
+    }
     // What the sandbox itself gets: never more than the ceiling, less a microVM's own overhead.
     const cpus = Math.max(0.25, Math.min(input.cpus, capacity.cores - (vm ? VM_OVERHEAD.cpus : 0)));
     const memoryGb = Math.max(0.25, Math.min(input.memoryGb, capacity.memoryGb - (vm ? VM_OVERHEAD.memoryGb : 0)));
@@ -66,7 +70,9 @@ export class GovernedSandboxHost extends SandboxHost {
   /** Bring the governor in line with Docker's own list (at start, after reaping, now and then). */
   async reconcile(): Promise<void> {
     // When Docker can't say, nothing changes: a list that failed is never read as "no sandboxes" (which would free every slot).
+    // The mark first: a sandbox that comes to be while Docker answers isn't in this list, and keeps its slot.
+    const asOf = this.governed.governor.mark();
     const listed = await this.listed();
-    if (listed) this.governed.governor.adopt(listed.map((s) => ({ id: s.id, cpus: s.cpus, memoryGb: s.memoryGb, isolation: s.isolation })));
+    if (listed) this.governed.governor.adopt(listed.map((s) => ({ id: s.id, cpus: s.cpus, memoryGb: s.memoryGb, isolation: s.isolation })), asOf);
   }
 }

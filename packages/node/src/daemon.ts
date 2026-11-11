@@ -267,6 +267,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     );
     try {
       await sandbox.ensureNetworks();
+      // Sandboxes from before this start hold their slots before anything new is admitted.
+      await sandbox.reconcile();
       // Keep the image in use, so pruning (Coolify's nightly cleanup) doesn't take it.
       void sandbox.keepImages().catch((error) => log(`sandbox image keepers: ${(error as Error).message}`));
     } catch (error) {
@@ -475,8 +477,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       log(`sandbox gateway listener unavailable: ${(error as Error).message}`);
     }
     const host = sandbox;
-    // Sandboxes from before this start hold their slots.
-    void host.reconcile().catch((error) => log(`sandbox slots: ${(error as Error).message}`));
     reaper = setInterval(() => {
       host
         .reap()

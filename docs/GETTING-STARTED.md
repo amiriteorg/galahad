@@ -189,6 +189,26 @@ bun galahad place --interactive            # → laptop: you are here
 bun galahad place --docker --mem 64
 ```
 
+Each answer says why: what the machine **measured** ("measured 18.7 reference cores' worth"), whether it has room ("3 of 4 slots free") or work would wait there ("full: work waits for a slot (2 ahead)").
+
+## 8½. Compute: what he can carry, and your ceiling
+
+Galahad uses the machines you enrolled and never acquires any: nothing here rents, buys or signs up for compute. Each node measures itself when it joins (a few seconds, at the lowest priority), and may use **half of its machine by default**, so whatever else runs there keeps the rest.
+
+```sh
+bun galahad compute                              # the census: what each node measured, its ceiling, slots in use and waiting,
+                                                 # the day's budget, and what more compute would buy
+bun galahad compute calibrate ultra              # measure a node again, now
+bun galahad compute limit ultra --cores 24 --mem 96     # your ceiling: what he may use of that machine, at most
+bun galahad compute limit ultra --sandboxes 2    # or simply how many sandboxes at once (0: none on this node)
+bun galahad compute limit ultra --reset          # back to the default half
+bun galahad compute effort auto --budget 12      # how much he spends on a quest by himself (below), and the day's budget
+```
+
+- **Slots.** From what a node measured inside its ceiling he derives how many sandboxes it carries at once (4 threads and 8 GB each), and says why, a line each. A sandbox that doesn't fit **waits its turn**; it never runs on top of the ceiling, and `galahad compute` and the Fleet page show what waits and why. While other work is busy on the machine he backs off, and a tenth of its threads always stays the host's.
+- **A new machine.** Enroll it (`galahad invite`): it measures itself, sandboxes nobody pinned go to whichever host has room, and after the next heartbeat your Inbox says what changed ("rack joined: 4 sandbox slots…"). Nothing to configure.
+- **Suggestions, never actions.** If a node has a GPU and no local model, or a local model measured well and nobody hired it, he says so in your Inbox with the command. He installs, downloads and hires nothing himself.
+
 ## 9. Run work in a sandbox
 
 A server deployed with `scripts/deploy.sh` is a sandbox host: the deploy builds `galahad/sandbox:1` and opens only the sandbox gateway port. From any device:
@@ -227,7 +247,14 @@ Each sandbox's `/work` is its own disk of `--disk` GB (20 by default), so a runa
 
 ### Give Galahad a quest
 
-`galahad do` plans the work, does it in a fresh sandbox one command at a time, has another model review the evidence, and remembers the outcome:
+`galahad do` plans the work, does it in a fresh sandbox one command at a time, has another model review the evidence, and remembers the outcome. With `--effort` it spends more compute for a better answer: that many attempts at once, each in its own sandbox and each reviewed, and the independent reviewer takes the best on the evidence alone.
+
+```sh
+bun galahad do --effort 3 "<goal>"       # three attempts at once (they wait their turn if fewer slots are free)
+bun galahad do --effort auto "<goal>"    # as many as the free slots and the day's budget allow, up to 3
+```
+
+Each attempt beyond the first counts against the day's budget of extra attempts (12 by default: `galahad compute effort --budget n`). `auto` never goes past it; a level you name yourself stands, and he says when it does.
 
 ```sh
 bun galahad do "Write fizzbuzz.py for 1..30 and prove it correct with a test"
@@ -293,9 +320,12 @@ Fourteen mathematics, physics and engineering problems with exact answers, posed
 
 ```sh
 bun galahad trial problems           # what's in the engineering suite
-bun galahad trial run                # all of them, three at a time, in the Lab (models only, no internet)
+bun galahad trial run                # all of them, across the free slots, in the Lab (models only, no internet)
 bun galahad trial run electrical --repeat 3   # some of them, more samples
-bun galahad trials                   # the Galahad Index per run, and each problem over every run
+bun galahad trial run --effort 1     # a baseline whose effort is on record…
+bun galahad trial run --effort 3     # …and the same suite with three attempts a trial
+bun galahad trials                   # the Galahad Index per run and per effort level (did more compute help?),
+                                     # and each problem over every run
 bun galahad trial <id|run>           # every answer next to the exact one
 ```
 

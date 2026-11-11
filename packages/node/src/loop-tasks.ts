@@ -162,15 +162,27 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
   };
 }
 
+/** Compute never stops a heartbeat: if it can't be read, the beat goes on without it and the log says why. */
+function quietly<T>(deps: LoopTaskDeps, what: string, read: () => T): T | null {
+  try {
+    return read();
+  } catch (error) {
+    deps.log(`${what}: ${(error as Error).message}`);
+    return null;
+  }
+}
+
 /** Compute, as the heartbeat sees it: nodes that should have measured themselves by now, and what he'd suggest. */
 function computeOf(deps: LoopTaskDeps, now: number): HeartbeatSnapshot["compute"] {
-  const nodes = deps.compute!.nodes();
-  return {
-    unmeasured: nodes
-      .filter((n) => n.online && n.body && !n.calibration && now - hlcMs(deps.store.device(n.id)?.enrolledHlc ?? "") > UNMEASURED_AFTER_MS)
-      .map((n) => ({ id: n.id, name: n.name })),
-    suggestions: deps.compute!.suggestions(nodes),
-  };
+  return quietly(deps, "compute (heartbeat)", () => {
+    const nodes = deps.compute!.nodes();
+    return {
+      unmeasured: nodes
+        .filter((n) => n.online && n.body && !n.calibration && now - hlcMs(deps.store.device(n.id)?.enrolledHlc ?? "") > UNMEASURED_AFTER_MS)
+        .map((n) => ({ id: n.id, name: n.name })),
+      suggestions: deps.compute!.suggestions(nodes),
+    };
+  });
 }
 
 /** Recent activity for the checklist model: what Galahad did, as data. */
@@ -248,9 +260,12 @@ export async function selfSnapshot(deps: LoopTaskDeps): Promise<SelfSnapshot> {
 }
 
 function computeSnapshot(deps: LoopTaskDeps, adapts: boolean): SelfSnapshot["compute"] {
-  if (!deps.compute) return null;
-  const drift = deps.compute.planDrift();
-  return { canMeasure: deps.compute.canMeasure(), ...deps.compute.due(), adapts, planDigest: drift.digest, recordedDigest: drift.recorded };
+  const compute = deps.compute;
+  if (!compute) return null;
+  return quietly(deps, "compute (self-action)", () => {
+    const drift = compute.planDrift();
+    return { canMeasure: compute.canMeasure(), ...compute.due(), adapts, planDigest: drift.digest, recordedDigest: drift.recorded };
+  });
 }
 
 /**

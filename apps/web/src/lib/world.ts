@@ -21,6 +21,8 @@ import type {
 } from "@galahad/core/world";
 import { HEARTBEAT_FINDINGS, MAX_PARTNERS, padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
 import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/experiments";
+import type { WorldCompute } from "@galahad/core/world-compute";
+import { helpersLine, readCompute } from "./world-compute.ts";
 
 /*
  * The SANDBOX's model of the world, as the page keeps it: what Galahad is doing,
@@ -59,6 +61,8 @@ export interface WorldModel {
   boardVersion: number;
   /** The experiments the node saved that have ended, newest first: what can be replayed. */
   saved: SavedSummary[];
+  /** Each node's slots and strength, and his helpers at work (null: not said; an older node). */
+  compute: WorldCompute | null;
   /** His heartbeat (null: none yet, or an older node). */
   heartbeat: WorldHeartbeat | null;
   /** The agents working with him now. */
@@ -76,6 +80,7 @@ export const emptyWorld = (): WorldModel => ({
   weather: null,
   boardVersion: -1,
   saved: [],
+  compute: null,
   heartbeat: null,
   partners: [],
 });
@@ -113,6 +118,7 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
         weather: event.weather ?? null,
         boardVersion: event.board?.version ?? state.boardVersion,
         saved: event.saved ?? [],
+        compute: event.compute ?? null,
         heartbeat: event.heartbeat ?? null,
         partners: event.partners ?? [],
       };
@@ -143,6 +149,8 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
     }
     case "fleet":
       return { ...state, at, nodes: event.nodes };
+    case "compute":
+      return { ...state, at, compute: event.compute };
     case "notice":
       return { ...state, at, notice: { at: event.at, severity: event.severity, title: event.title } };
     case "weather":
@@ -447,6 +455,7 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       if (v.weather !== undefined) hello.weather = readWeather(v.weather) ?? null;
       if (isObj(v.board) && num(v.board.version) && v.board.version >= 0) hello.board = { version: v.board.version };
       if (v.saved !== undefined) hello.saved = readSavedList(v.saved);
+      if (v.compute !== undefined) hello.compute = readCompute(v.compute);
       if (v.heartbeat !== undefined) hello.heartbeat = readHeartbeat(v.heartbeat);
       if (v.partners !== undefined) hello.partners = (readList(v.partners, 64, readPartner) ?? []).slice(-MAX_PARTNERS);
       return hello;
@@ -479,6 +488,10 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
     case "fleet": {
       const nodes = readList(v.nodes, LIMITS.nodes, readNode);
       return nodes ? { type: "fleet", at, nodes } : null;
+    }
+    case "compute": {
+      const compute = readCompute(v.compute);
+      return compute ? { type: "compute", at, compute } : null;
     }
     case "notice":
       return typeof v.severity === "string" && SEVERITIES.has(v.severity) && str(v.title) ? { type: "notice", at, severity: v.severity as WorldNotice["severity"], title: v.title } : null;
@@ -628,6 +641,8 @@ export function worldSummary(model: WorldModel): string {
   const parts = [`Galahad is ${where}${g.doing ? `: ${g.doing}` : ""}.`];
   if (g.model) parts.push(`Thinking with ${g.model}.`);
   if (model.weather) parts.push(`In ${model.weather.place}: ${weatherLabel(model.weather).toLowerCase()}, ${Math.round(model.weather.temperature)} °C.`);
+  const helpers = helpersLine(model.compute);
+  if (helpers) parts.push(helpers);
   const heart = heartbeatLine(model.heartbeat);
   if (heart) parts.push(`${heart}.`);
   if (model.partners.length) parts.push(`With him: ${model.partners.map((p) => p.name).join(", ")}.`);

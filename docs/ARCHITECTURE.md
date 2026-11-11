@@ -87,10 +87,15 @@ Event kinds today:
 | `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
 | `investigation.registered` / `investigation.concluded` | A pre-registration (with its digest, checked by every replica) recorded before anything ran, and its conclusion, once, by the node that ran it |
 | `trial.scored` | A graded trial: problem, seed, each answer against the exact one, the score, the revision and models that ran it. Every replica checks the verdicts and the score follow from the numbers |
+| `trial.run` | A trial run's settings (its effort: attempts per trial), recorded once before its first trial by the node that runs it; the first stands. The Index per effort level reads it (§8⅞) |
+| `compute.calibrated` | A node's own measurement of itself (§11): whose it is, is who signed it; its latest stands |
+| `compute.limit` | Your ceiling for one node: threads, memory, sandboxes and model calls he may use there at once (the latest stands; empty: the defaults again) |
+| `compute.policy` | How he spends compute on a quest: the level `auto` may reach and the day's budget of extra attempts (the latest stands) |
+| `compute.adapted` | His defaults, re-derived when the fleet's compute changed, and what changed, a line each (the latest stands) |
 | `artifact.saved` / `artifact.removed` | Work kept from a sandbox: what the files are (paths, sizes, SHA-256s); the files stay on the node that signed it, and only it records their removal |
 | `order.set` / `order.revoked` / `order.applied` | Standing orders: signed once and never changed (revoke and sign anew); which order answered which action, re-checked by every replica |
 
-Open-ended parts of an event (a loop's task, a connector's manifest, a call's arguments) are loosely typed in the log and strictly validated by the API and the runner, so what a newer node writes never makes an older one refuse the event.
+Open-ended parts of an event (a loop's task, a connector's manifest, a call's arguments, what a calibration measured, a ceiling, a plan) are loosely typed in the log and strictly validated by the API and the runner, so what a newer node writes never makes an older one refuse the event.
 
 **Sync:**
 
@@ -244,7 +249,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 
 ## 7. Placement: using every body well ✅
 
-`place(needs, nodes)` applies **hard filters**: online, docker, VM, GPU, memory, tools, local models, and "untrusted work only where it can be sandboxed". It then ranks the remaining nodes with **soft scores**, and every decision carries its reasons.
+`place(needs, nodes)` applies **hard filters**: online, docker, VM, GPU, memory, tools, local models, "untrusted work only where it can be sandboxed", and a node whose ceiling takes no sandboxes. It then ranks the remaining nodes with **soft scores**, and every decision carries its reasons (`galahad place`, the Fleet page's "Where would this run?").
 
 | Body | Gets |
 |---|---|
@@ -252,7 +257,11 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | **Laptop** | Interactive work ("you are here"), the repos you're editing. Avoided for long work while on battery. |
 | **Phone** (PWA) | Chat, approvals, adding keys, pairing |
 
-Live load (CPU, free memory, battery) travels with sync as *presence* and never enters the log. 🔜 Quests checkpoint and migrate when a body sleeps or leaves.
+**Measured, not guessed.** A node's strength in the ranking is what it measured when it calibrated itself (§11), in reference cores' worth ("measured 18.7 reference cores' worth"), so sixteen fast threads can outrank sixty-four slow ones. A node that hasn't measured itself yet is guessed from its thread count at half weight, and its reason says it's a guess. Work that needs local models prefers the node whose model measured faster.
+
+**Capacity-aware.** A node with a sandbox slot free is preferred ("3 of 4 slots free"); a full one is ranked behind, further the longer its queue ("full: work waits for a slot (2 ahead)"); one whose use isn't known says so and is neither favoured nor ruled out. A sandbox nobody pinned to a node goes to the host placement ranks first, this node or another, and what follows (its commands, keeping its work, its end) goes where it went: a second sandbox host is used from the moment it's enrolled, without being told. Work that fits nowhere now **waits** for a slot on its host (§11); it never runs on top of a ceiling.
+
+Live load (CPU, free memory, battery) and what each node's own work holds (slots in use, sandboxes and model calls waiting) travel with sync as *presence* and never enter the log. 🔜 Quests checkpoint and migrate when a body sleeps or leaves.
 
 ## 8. The Oath gate ✅
 
@@ -280,13 +289,14 @@ Any node with Docker is a **sandbox host**; ultra is the first. A sandbox is whe
 | Property | How |
 |---|---|
 | **Unprivileged** | uid 1000, `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`, its own workspace. No other host path and no Docker socket. |
+| **Within the ceiling** | Every sandbox first takes a **slot** on its host (§11): it's admitted only inside the threads and memory you let him use there (by default half the machine) and while the machine itself has room; otherwise it waits its turn, where you can see it. One asking for more CPUs or memory than the ceiling gets the ceiling. There is no other door: the node holds only the governed host, so quests, agents, experiments, a calibration and you all pass through it. |
 | **Bounded** | CPU, memory (no swap), process and **disk** limits. `/work` is the sandbox's own fixed-size ext4 image (20 GB by default; sparse, so it takes only what's written), so a runaway job fills its own workspace, never the host's disk. Every command runs under an in-container `timeout --signal=KILL`, so a stuck task can't outlive its deadline. |
 | **Its own kernel, for untrusted code** | On a host with KVM, a sandbox can be a **microVM**: the same hardened container inside its own lightweight virtual machine with its own kernel ([Kata Containers](https://katacontainers.io)), so a kernel exploit lands in a throwaway VM, not on the host. `online` sandboxes (code and content from the internet) are microVMs by default wherever the host has them; you can choose either for any sandbox (`--vm`, `--container`). |
 | **Networked by intent** | `isolated`: no network. **`gateway`** (the default): a Docker `--internal` network whose only reachable host service is a sandbox-only model gateway on the bridge IP. UFW allows exactly one port on `galahad0`. `online`: egress plus the gateway. Sandboxes can't reach each other: inter-container traffic is disabled on both networks. |
 | **Keys stay home** | A sandbox that may use models gets a gateway token scoped to the providers you chose. It expires with the sandbox and is revoked on destroy. The sandbox never holds a provider key. A request names model providers only, and only ones the fleet has: the gateway's own scopes are the node's to give, `search` through the request's search flag, `world` to every sandbox with a network, `git:…` (one repository) only in a token minted through `gateway:mint`, which agents never hold. Asking for one by name is refused, at the contract and again on the host. |
 | **Accountable** | Every create, exec and destroy is a signed `ledger.recorded` event in the mind, readable from any device (`galahad ledger`). |
 | **Oath-gated cleanup** | The TTL reaper may destroy *ephemeral* sandboxes on behalf of the quest that created them. Destroying a *persistent* sandbox asks first. A request from you counts as the approval. |
-| **Fleet-wide** | `galahad sandbox run -- …` on any device is placed on the best sandbox host, or pinned with `--on ultra`. It's forwarded as a signed node-to-node request. A forwarded request always runs where it lands, so work can never bounce between nodes. |
+| **Fleet-wide** | `galahad sandbox run -- …` on any device is placed on the sandbox host with room that measured strongest (§7), or pinned with `--on ultra`. It's forwarded as a signed node-to-node request. A forwarded request always runs where it lands, so work can never bounce between nodes. |
 
 Network reachability was verified on ultra before it was built. From an internal-network container, the gateway port is reachable only once the UFW rule exists. The internet, Coolify (8080) and Galahad's local port (7777) all stay blocked.
 
@@ -313,7 +323,7 @@ Network reachability was verified on ultra before it was built. From an internal
 | **Contained** | Every sandbox an arm creates belongs to the quest `arm.<label>` and is always ephemeral. The arm can execute in and clean up only those. That holds across nodes too: forwarding relays the quest, never your approval. |
 | **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |
 
-Tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `archive_search`, `archive_read`, `note_idea`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices`, and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
+Tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `compute` (the census, read-only: no tool raises a ceiling, changes the budget or makes a node measure itself), `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `archive_search`, `archive_read`, `note_idea`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices`, and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
 
 ## 8⅞. Quests: the first agent loop ✅
 
@@ -332,6 +342,23 @@ Guarantees:
 - **Contained.** The default network is `isolated`; `--net gateway` or `--net online` is your explicit choice. The sandbox is destroyed afterwards unless `--keep`. Ctrl-C stops after the current step and still cleans up.
 - **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
 - **An outage isn't the end.** A model call that fails (a provider down, a reply cut off mid-stream, which the roster can't fall back from) is asked again after 15 s, 60 s and 3 minutes; only then does the error stand.
+
+### Effort: more compute for a better answer ✅
+
+`galahad do --effort 3 "<goal>"` spends more compute on one quest: **several independent attempts at once**, each in its own sandbox, each planned, worked and reviewed exactly as a quest is; then the independent reviewer takes the best **on the evidence alone**.
+
+| | How |
+|---|---|
+| **Levels** | 1 (one engineer in one sandbox, as ever), 2 or 3 attempts at once, or `auto`. Without `--effort` a quest is one attempt and the node isn't asked. |
+| **Who decides** | The node (`POST /api/compute/effort`, pure `decideEffort` in `packages/core/src/compute.ts`), and it says why. `auto`, and anything an agent or a loop asks for, takes only the slots free now, never goes past the day's **budget** of extra attempts (12 by default; yours to set) nor the level you set as his own. A level you name yourself stands: attempts beyond the free slots wait their turn (never oversubscribe), a spent budget is said, not enforced against you, and never more attempts than the host has slots at all. |
+| **What differs between attempts** | The first attempt is the plain quest. Each further one starts the planner's and the engineer's roster at another model (the rest stay its fallbacks) and is told it isn't alone; the reviewer is the same independent reviewer for all. |
+| **Parallel sub-steps** | With effort, an engineer may send up to that many commands in one reply when they don't depend on each other (separate checks, the cases of a sweep, two methods to compare): they run at the same time in its sandbox, each counting against its step budget and each in the evidence. |
+| **The pick** | One attempt passed its own review: it's taken, and nobody is asked. Several: the reviewer compares them under letters (what each ran, exit codes, output excerpts, what its evidence commands and `/work/out` print now; each engineer's summary marked as a claim), blind to which attempt or model made which, and answers `PICK B`. An unclear answer, or a reviewer that can't be asked, takes the first that passed and says so. |
+| **Honest as ever** | The outcome is the taken attempt's own: `done` only if its own review passed it. None passed: the best status among them, never `done`. Stopped by you: stopped, and nothing is compared. An attempt that can't run (no slot in time, an outage past its retries) is one attempt lost, not the quest. |
+| **Counted** | Each attempt beyond the first is a ledger entry (`compute.attempt`) recorded when the node grants it; the day's budget is an exact count of those across the fleet. The taken attempt's `/work/out` is the quest's kept work; the others' sandboxes go, their commands stay in the ledger. |
+| **Visible** | The census lists quests in hand with their effort and each attempt (`galahad compute`, the Fleet page); the world's stream carries them as his helpers (§11). |
+
+The orchestration is pure (`packages/brain/src/effort.ts`: attempts and reviewer injected) and scripted in `packages/brain/test/effort.test.ts`; `packages/node/test/compute.e2e.test.ts` runs a quest at effort 1 and 3 on a real node with a stand-in Docker and stand-in models: three attempts at once within the ceiling, three models, three reviews, one pick, taken.
 
 ### Coding agents: stamina for real codebases ✅
 
@@ -391,7 +418,7 @@ The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sand
 
 ### Trials: is he getting better? ✅
 
-`galahad trial run` measures it: problems with exact answers (the engineering suite: structures, civil, mechanical, electrical, aerospace, fluids, thermal, physics, geometry), posed with fresh random parameters, solved as ordinary quests in the Lab with models only, and graded by a program on the node against the exact solution. Each trial is recorded once (`trial.scored`, `brain:write`: never an agent's), with its seed, every answer beside the exact one, the revision and the models; every replica checks that the verdicts and the score follow from the numbers. A run's mean score with its bootstrap interval is the Galahad Index. Details, the problems and how the suite itself was verified: [TRIALS](TRIALS.md).
+`galahad trial run` measures it: problems with exact answers (the engineering suite: structures, civil, mechanical, electrical, aerospace, fluids, thermal, physics, geometry), posed with fresh random parameters, solved as ordinary quests in the Lab with models only, and graded by a program on the node against the exact solution. Each trial is recorded once (`trial.scored`, `brain:write`: never an agent's), with its seed, every answer beside the exact one, the revision and the models; every replica checks that the verdicts and the score follow from the numbers. A run's mean score with its bootstrap interval is the Galahad Index. Trials run **in parallel across the fleet's free slots** (`--parallel auto`, the default), so the Index is measured as fast as the compute allows. A run may spend **effort** (`--effort 3`): each trial then makes that many attempts and the reviewer takes one on the evidence before anything is graded (the grader never tells it which was right); the run records its effort (`trial.run`), and `galahad trials` and the Trials page show the **Index per effort level** with the verdict, by the same rule as any change: more effort "measurably helps" only if its interval clears effort 1's, and when it doesn't, the report says more compute hasn't been shown to help on that suite. Details, the problems and how the suite itself was verified: [TRIALS](TRIALS.md).
 
 ## 9. Loops and the heartbeat ✅
 
@@ -423,6 +450,8 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 | This node hosts sandboxes without disk limits; its sandbox image is missing; it has KVM but no microVMs | warn / info / info |
 | A connector whose key is missing or pinned elsewhere; a manifest that no longer validates | info / warn |
 | A standing order whose tool changed since you signed it; one that expires within 3 days | warn / info |
+| A node that joined over an hour ago and still hasn't measured itself (§11) | info |
+| What more compute could do: a GPU with no local model runtime, a local model that measured well and nobody hired. Suggestions with the command that would do it; he installs, downloads and hires nothing himself | info |
 | Low disk on this node | warn, alert under 3 % |
 
 Findings become **notices** in your inbox, keyed so the same problem never repeats. A notice clears itself when its cause goes away, a dismissed one stays quiet until it changes, and an unchanged finding writes nothing. Only you dismiss one (`fleet:admin`, from a terminal or a paired device): agents can read notices but never quiet them. Notices about one node's body (its disk, its vault) are only cleared by that node. Optionally, a **checklist** you write is read by the `swift` role each beat with the findings and recent activity (as data); it answers `HEARTBEAT_OK`, or two or three lines for you, which become a notice.
@@ -434,8 +463,10 @@ Findings become **notices** in your inbox, keyed so the same problem never repea
 | `reap-sandbox` | An ephemeral sandbox on this node past its expiry by the heartbeat's grace (10 minutes): the one the reaper missed | delete | Destroys it through the oath gate on behalf of the quest that made it, the oath's own exception for ephemeral cleanup. A persistent sandbox is never touched; if the gate says ask, nothing is removed |
 | `retry-loop` | A loop on this node that only reads (one connector tool of class read) went wrong once (failed, or its service answered with an error) after a good run, within the last 6 hours, and isn't running | read | Runs it again, once: never after two bad runs in a row, never twice for the same run, never a quest or anything outward |
 | `refresh-weather` | The world's weather isn't known though someone has the world open, and the weather is on (`GALAHAD_WEATHER`) | read | Asks again (the same fixed request; the weather service keeps its own pace) |
+| `calibrate` | This node never measured itself, or its body or ceiling isn't what it measured (a GPU, a local runtime, more memory, a new ceiling). At once the first time and when you change its ceiling; otherwise at most once an hour | create | Measures this node (§11): a few seconds at low priority, on no more threads than its ceiling. Every node does this for itself, at its start and when its body changes, under the same allowlist and switch |
+| `adapt-compute` | The fleet's compute isn't what his recorded plan says (a node joined, left or was measured again, a ceiling changed) | modify | Re-derives his defaults (each node's slots, the effort `auto` may reach, which host takes sandboxes first), records them (`compute.adapted`) and tells you in a line each what changed (a notice). Internal, and a ceiling of yours overrides it |
 
-Each is parsed against the allowlist (anything else, and any extra field, is refused), checked again against a fresh look at the node just before it runs (it must be exactly a fix the plan calls for then), and carried out by the node's own hands: those three, nothing that can reach a connector, the vault, devices, the roster, the bank or anything needing `fleet:admin`. At most eight after one heartbeat; the heartbeat then looks again, so a fixed problem never becomes a notice. Every one is recorded in the ledger as his own (`resource: self-action`, `quest: galahad.self`, the target naming what it was about), shows in the Inbox's history ("Galahad fixed: …") and in the run's summary. **The switch** is yours: on by default; `galahad self-action off` (or the Loops page, or `setSelfAction`, `brain:write`, which agents never hold) writes `selfAction: false` into every heartbeat loop's task, and on removes it again (so the task reads as it always did); giving the heartbeat a new checklist keeps the switch as it was.
+Each is parsed against the allowlist (anything else, and any extra field, is refused), checked again against a fresh look at the node just before it runs (it must be exactly a fix the plan calls for then), and carried out by the node's own hands: those five, nothing that can reach a connector, the vault, devices, the roster, the bank or anything needing `fleet:admin`, and nothing that installs, downloads, rents or spends. At most eight after one heartbeat; the heartbeat then looks again, so a fixed problem never becomes a notice. Every one is recorded in the ledger as his own (`resource: self-action`, `quest: galahad.self`, the target naming what it was about), shows in the Inbox's history ("Galahad fixed: …") and in the run's summary. **The switch** is yours: on by default; `galahad self-action off` (or the Loops page, or `setSelfAction`, `brain:write`, which agents never hold) writes `selfAction: false` into every heartbeat loop's task, and on removes it again (so the task reads as it always did); giving the heartbeat a new checklist keeps the switch as it was.
 
 **The daily reflection** (`reflect`) is created once by the founding node, like the heartbeat (every evening at 21:30 in Denmark, on the heartbeat's node), and never again, so if you remove it, it stays removed. It runs on the cheapest role that can answer (swift, then reviewer, planner, engineer) within a daily **budget** you can see and change (`galahad loop set reflect --budget 6000`, or the loop's page; 4,000 tokens by default, 1,000 to 50,000): what he reads is cut to 70 % of it (each heading in turn, so no source crowds out the rest) and what he writes is stopped at the rest; once a day's reflection is kept there's no second one that day. He reads the day's ledger (never an entry about the bank), the open notices (never the bank's), his loops' runs and the titles of the chats you kept (never a chat where he read the bank); every line is redacted, and a line that looks like a secret is dropped whole. He writes a few lines (Happened, Learned, Next) kept as his own memory (`agent`, tagged `reflection` and `day:<date>`), unless they look like they hold a secret. What he'd like to do next becomes a suggestion in your Inbox (a notice from `reflect`, replaced by the next day's), never an action: he does it only if you ask him to. (The archive's `note_idea` and lessons, being built elsewhere, weren't in the code to write to yet.)
 
@@ -603,13 +634,37 @@ A board that you and Galahad share: you draw on it (the PWA), he and your agents
 | Tools | `board_write` (flow `record`), `board_read` (the picture, or its words), `board_erase` (his own items). They send him to the observatory, where the board stands |
 | Surfaces | The PWA's Chalkboard page and its sheet over the SANDBOX; the board in the world (`apps/web/src/world/board.ts`); `galahad board` and `galahad board clear` |
 
-## 11. Growth & scale 🔜
+## 11. Growth & scale: compute ✅, the rest 🔜
 
-Galahad grows by having resources added to him. **Everything is a resource with a capability descriptor in one registry, the mind:**
+Galahad grows by having resources added to him. **He never acquires any.** A machine is his only when you enrolled it through pairing (§3); nothing in him provisions, rents, buys or signs up for compute, and no tool, self-action or suggestion can. What he does is use what he's given well, and get measurably more capable when you give him more.
+
+### Compute ✅
+
+| | How |
+|---|---|
+| **The census** | `galahad compute`, `GET /api/compute` (`mind:read`), MCP `compute`, the Fleet page: per node its threads, memory, GPUs, sandbox kinds and local runtimes (its profile), what it **measured**, your **ceiling**, its **slots** in use and what waits, the quests in hand with their effort, his plan, the day's budget, and what more compute would buy. |
+| **Calibration** | Each node measures **itself**: a kernel of integer and floating-point work on one thread, then on as many at once as its ceiling allows (on a busy machine, only on what's idle, and it says so and measures again later), memory copied, a file written and read back in its home, how long a sandbox takes to be ready (container and microVM, through its own governed host, only when a slot is free), and the tokens a second of a local model if a local runtime serves one on this machine. A few seconds, in its own process at the lowest priority; nothing leaves the machine and nothing is installed. Taken when a node joins, when its body or ceiling changes, and on demand (`galahad compute calibrate [node]`, `brain:write`: yours to ask, never an agent's). Recorded as a signed `compute.calibrated` event: the signer is the node measured, its latest stands, and what a newer node measures beyond this one's knowledge is kept as written. |
+| **The ceiling** | What he may use of a machine, at most: threads and memory, and how many sandboxes and model calls at once. **By default half of the machine**, so whatever else runs there keeps the rest, and every surface says so. Yours alone to set (`galahad compute limit <node> --cores n --mem gb`, the Fleet page's **Set ceiling**; `compute.limit`, `fleet:admin`, never an agent, never a node on its own). |
+| **Slots** | Derived, never guessed (`deriveCapacity`, pure): the threads he counts are what the ceiling's threads **delivered** when measured (sixteen threads that did 14.2 cores' worth count as 14), a sandbox slot is 4 threads and 8 GB, and the reasons are a line each on every surface. A node that hasn't measured itself counts one sandbox's worth until it has. |
+| **Admission** | A node's **governor** (`packages/node/src/compute/governor.ts`) admits a sandbox only inside the ceiling **and** while the machine has room: load that isn't his own counts against him, a tenth of its threads always stays the host's and a twentieth of its memory stays free, so he backs off while other work is busy. Otherwise the sandbox **waits**, first come first served, visible with the reason (`galahad compute`, the Fleet page); a wait ends after 30 minutes with that reason. Docker's own list is the truth for what's in use (a restart, the reaper), and a list that fails is never read as "none". Background model calls (a quest's, an agent's) take a model-call slot the same way; yours in chat never waits. |
+| **Effort** | More attempts at a quest when there's room and budget (§8⅞). |
+| **Proof** | The Trials run across the free slots, and the Index per effort level says, with its interval, whether more compute made him more capable (§8⅞, [TRIALS](TRIALS.md)). |
+| **Adapting** | When a node joins, leaves or changes, it calibrates itself, and after the next heartbeat he re-derives his defaults (`derivePlan`, pure: each node's slots, the effort `auto` may reach, the host that takes sandboxes first), records them (`compute.adapted`) and tells you in a line each what changed ("rack joined: 4 sandbox slots…", "Default effort 1 → 3…"). Both are self-actions on the allowlist (§9): internal, reversible, in the ledger as his own, under your switch. |
+| **Suggesting, never doing** | Anything that installs, downloads, spends or reaches outward is a suggestion in your Inbox with the command that would do it: a local model for a GPU that has none, hiring a local model that measured well. He does none of it himself. |
+
+The pure parts are in `packages/core/src/compute.ts` (capacity, admission, effort, the plan and what changed, suggestions), the node's in `packages/node/src/compute/` (`bench.ts` the benchmark's own process, `calibrate.ts`, `measure.ts`, `governor.ts`, `governed-host.ts`, `service.ts`), the CLI in `compute-cli.ts`, the page in `apps/web/src/views/fleet-compute.ts`.
+
+**In the world.** The SANDBOX's stream carries a small `compute` view (`packages/core/src/world-compute.ts`; in `hello`, and as a `compute` event when it changes): per node its slots, how many are in use and waiting and its measured strength, and for each running parallel attempt a short label ("Attempt 2 of 3: …"), the station its work is at (the council while it plans, the forge while it works, the observatory while it's reviewed) and the node its sandbox is on. Additive: pages and nodes from before it ignore it.
+
+**What isn't built.** The budget binds what `auto` chooses and what an agent is granted; it isn't a quota on sandboxes or model calls as such (an agent could always run several sandboxes of its own, each within the ceiling). Model calls made by coding agents through the gateway, and by the heartbeat's, the reflection's and the archive's own loops (each under its own budget), don't take model-call slots. Two nodes granting effort in the same instant can each count the day's budget before the other's entries arrive. A calibration doesn't measure a GPU's own throughput, only a local model's tokens a second through its runtime. Quests don't checkpoint or migrate; a sandbox that waits past its limit fails its attempt rather than moving to another host. Loops' quests run at effort 1.
+
+### The rest 🔜
+
+**Everything is a resource with a capability descriptor in one registry, the mind:**
 
 | Resource | Examples | How it's used |
 |---|---|---|
-| Compute | Laptops, servers, desktops, Pis | Enrolled nodes; placement routes work to them |
+| Compute ✅ | Laptops, servers, desktops, Pis | Enrolled nodes, each calibrated, each under your ceiling; placement and slots route work to them (above) |
 | Intelligence | API providers, local runtimes, every modality: text, vision, image/video/audio generation, speech, embeddings | Roles per modality, with fallbacks and eval scores |
 | Credentials | API keys, cloud tokens | The vault, plus brokers that mint scoped, short-lived access |
 | Subscriptions | Claude, ChatGPT, Cursor, Grok through their **official CLIs**, logged in on a specific node | Credentials never leave that node, and work needing that subscription is routed there. Each provider's terms are respected. |
@@ -651,6 +706,7 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
 | **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits, KVM microVM sandboxes | ✅ |
 | **M1¾: The archive** | Everything kept for good on the node, indexed by words and meaning (FTS5 + local embeddings, fused), understood by the swift role, offered back as fenced context; R2 replication | 🟡 local archive ✅; R2 replica 🔜 |
+| **M1⅞: Compute** | The census, calibrations as signed events, your ceiling per node, slots and a queue, capacity-aware placement, effort (parallel attempts, the reviewer's pick), trials across slots and the Index per effort, adapting when the fleet changes | ✅ |
 | **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
 | **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🟡 the engineering suite and the Galahad Index ✅; Scout, judges, held-out sets 🔜 |

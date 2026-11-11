@@ -205,6 +205,33 @@ function print(event: QuestEvent): void {
   }
 }
 
+/** One attempt of several, a line per step: which attempt, and what it did. */
+function printAttempt(attempt: number, event: QuestEvent): void {
+  const tag = dim(`  [${attempt}]`);
+  switch (event.type) {
+    case "plan":
+      console.log(`${tag} planned ${dim(`· ${event.model}`)}`);
+      return;
+    case "command":
+      console.log(`${tag} $ ${firstLines(event.command, 1)}`);
+      return;
+    case "observation":
+      if (event.exitCode !== 0) console.log(`${tag} ${dim(event.output.split("\n")[0] ?? "")}`);
+      return;
+    case "review":
+      console.log(`${tag} ${bold(`review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}`);
+      return;
+    case "retry":
+      console.log(`${tag} ${dim(`the ${event.role} couldn't answer; asking again in ${Math.round(event.waitMs / 1000)} s`)}`);
+      return;
+    case "finished":
+      console.log(`${tag} ${event.outcome.status} ${dim(`· ${event.outcome.steps} commands`)}`);
+      return;
+    default:
+      return;
+  }
+}
+
 const VERDICT: Record<QuestOutcome["status"], string> = {
   done: "✓ Done, and an independent review agrees.",
   unverified: "△ Finished, but the reviewer did not accept it.",
@@ -551,20 +578,31 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
   let shipped: Shipped | undefined;
+  let effort: EffortDone | undefined;
   try {
-    ({ outcome, artifact, shipped } = await runNodeQuest(node, options, {
-      emit: print,
+    ({ outcome, artifact, shipped, effort } = await runNodeQuest(node, options, {
+      // One attempt reads as ever; several are told apart, a line each.
+      emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : print(event)),
       signal: controller.signal,
-      started: ({ quest, sandbox, host }) => {
-        console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
+      started: ({ quest, sandbox, host, attempt }) => {
+        console.log(dim(`[${attempt ? `attempt ${attempt}` : "quest"} ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network}${attempt ? "" : " · Ctrl-C stops after the current step"}]${attempt ? "" : "\n"}`));
         if (options.keep) console.log(dim(`[the sandbox is kept afterwards: galahad sandbox exec ${sandbox.id} --on ${host} -- …]`));
+      },
+      effort: (event) => {
+        if (event.type === "granted") {
+          const g = event.grant;
+          console.log(`${bold(`◇ Effort ${g.attempts}`)} ${dim(`· ${g.attempts === 1 ? "one attempt" : `${g.attempts} attempts at once, each in its own sandbox`}${g.asked === "auto" ? " (auto)" : ""}${g.host ? ` on ${g.host}` : ""} · budget ${g.budget.usedToday} of ${g.budget.perDay} extra attempts used`)}`);
+          for (const reason of g.reasons) console.log(dim(`  ${reason}`));
+        } else if (event.type === "attempt-failed") console.log(dim(`  [${event.index}] didn't run: ${event.error.split("\n")[0]}`));
+        else if (event.type === "picking") console.log(`\n${bold("◇ Choosing")} ${dim(`· the independent reviewer compares attempts ${event.candidates.join(", ")} on the evidence alone`)}`);
+        else if (event.type === "picked" && event.by !== "only") console.log(`${bold(`◇ Taken: attempt ${event.index}`)} ${dim(event.model ? `· ${event.model}` : "")}\n${indent(firstLines(event.reason, 6))}\n`);
       },
     }));
   } finally {
     process.off("SIGINT", onInterrupt);
   }
 
-  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions`)}`);
+  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
   console.log(indent(outcome.summary.trim()));
   if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
   if (artifact) {
