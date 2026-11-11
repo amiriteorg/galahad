@@ -4,7 +4,7 @@
 # Idempotent: re-running ships the current commit, keeps the node's identity and
 # mind, re-runs the test suite on the host, and restarts the service. Each commit
 # lands in its own release directory behind an atomic `app` symlink (rollback =
-# repoint the symlink + restart).
+# repoint the symlink + restart); the current release and the two before it are kept.
 #
 # usage:
 #   scripts/deploy.sh <ssh-target> --found camelot [--name ultra]   first node of a new fleet
@@ -50,12 +50,17 @@ if [[ -n $(git status --porcelain) ]]; then
   exit 1
 fi
 REV=$(git rev-parse --short=12 HEAD)
-STAGE="/tmp/galahad-$REV"
 
 echo "→ shipping $REV to $TARGET"
+# A fresh, private stage directory made on the server (mktemp -d: a name nobody can guess,
+# mode 700, owned by whoever deploys), so no one else on the host can plant or change what
+# root runs from it. It goes when the deploy ends, however it ends.
+STAGE=$("${SSH[@]}" "$TARGET" "mktemp -d /tmp/galahad-stage.XXXXXXXXXX" | tr -d '\r')
+[[ $STAGE =~ ^/tmp/galahad-stage\.[A-Za-z0-9]{10}$ ]] || { echo "the server didn't make a stage directory" >&2; exit 1; }
+trap '"${SSH[@]}" "$TARGET" "rm -rf -- $STAGE" || true' EXIT
 # The repository's own bytes: with core.autocrlf (Git for Windows' default) and a .gitattributes,
 # git archive would turn every script into CRLF, and bash on the target refuses it.
-git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
+git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "tar -x -C $STAGE"
 
 echo "→ setting up the node on $TARGET"
 "${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL"
