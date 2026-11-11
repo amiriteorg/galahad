@@ -67,6 +67,8 @@ describe("in words", () => {
       ],
     });
     expect(heartbeatLine(two)).toBe("Needs you: ultra is low on disk (+1 more)");
+    // While he's tending it, his line says so already: the heartbeat's part is just when it ran.
+    expect(heartbeatLine({ ...two, status: "attention" }, "Needs you: ultra is low on disk")).toBe("Heartbeat △ 12:30");
     expect(heartbeatConcern(two)?.place).toBe("racks");
     // Information only isn't worth leaving his day for.
     expect(heartbeatConcern(beat({ counts: { info: 1, warn: 0, alert: 0 }, findings: [two.findings[2]!] }))).toBeNull();

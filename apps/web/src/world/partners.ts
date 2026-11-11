@@ -27,8 +27,10 @@ export const SQUIRE: Build = { r: 0.34, height: 1.3, step: 0.2, mass: 30 };
 export const KEEP_DOOR = { x: 1.6, y: -9.8 };
 /** How long it takes to appear and to fade (seconds). */
 const FADE = 0.8;
-/** Where each keeps by him: to his left and a little behind, the next further back. */
+/** Where each keeps by him: to his left (the dog keeps to his right) and a little behind, the next further back. */
 const SPOT = (i: number): [number, number] => [-(1.25 + 0.15 * (i % 2)), 0.6 + 0.85 * i];
+/** His footsteps they remember (every half metre), to follow him round what stands between. */
+const TRAIL = 64;
 
 export interface Squire {
   /** The agent it is (empty while the slot's free). */
@@ -61,6 +63,38 @@ export class PartnerFigures {
   private readonly movers: (Mover | null)[] = [];
   private readonly scratch = { x: 0, y: 0 };
   private ground: Ground = { height: () => 0, blocked: () => false };
+  private readonly trail = new Float64Array(TRAIL * 2);
+  private trailCount = 0;
+  private trailHead = 0;
+  private readonly aim = { x: 0, y: 0 };
+
+  /** Remembers where he walks, every half metre. */
+  private footstep(x: number, y: number): void {
+    const last = (this.trailHead + TRAIL - 1) % TRAIL;
+    if (this.trailCount && Math.hypot(this.trail[last * 2]! - x, this.trail[last * 2 + 1]! - y) < 0.5) return;
+    this.trail[this.trailHead * 2] = x;
+    this.trail[this.trailHead * 2 + 1] = y;
+    this.trailHead = (this.trailHead + 1) % TRAIL;
+    this.trailCount = Math.min(TRAIL, this.trailCount + 1);
+  }
+
+  /**
+   * Something solid between a squire and where it wants to be: the newest of his footsteps it can go to straight
+   * (he walked there, so one to the next is clear), into `aim`. False when the way is clear, or none is in sight.
+   */
+  private followFootsteps(mover: Mover, x: number, y: number, tx: number, ty: number): boolean {
+    if (mover.sweep(x, y, tx - x, ty - y, 0, false) >= 1) return false;
+    for (let k = 1; k <= this.trailCount; k++) {
+      const i = (this.trailHead + TRAIL - k) % TRAIL;
+      const px = this.trail[i * 2]!;
+      const py = this.trail[i * 2 + 1]!;
+      if (mover.sweep(x, y, px - x, py - y, 0, false) < 1) continue;
+      this.aim.x = px;
+      this.aim.y = py;
+      return true;
+    }
+    return false;
+  }
 
   constructor() {
     for (let i = 0; i < MAX; i++) this.squires.push({ name: "", x: KEEP_DOOR.x, y: KEEP_DOOR.y, vx: 0, vy: 0, r: 0, heading: Math.PI / 2, shown: 0, here: false, phase: 0, walk: 0 });
@@ -105,6 +139,7 @@ export class PartnerFigures {
   step(dt: number, galahad: Leader, motion: boolean): void {
     const fx = Math.cos(galahad.heading);
     const fy = Math.sin(galahad.heading);
+    if (this.movers.length) this.footstep(galahad.x, galahad.y);
     let slot = 0;
     for (let i = 0; i < this.squires.length; i++) {
       const s = this.squires[i]!;
@@ -115,9 +150,10 @@ export class PartnerFigures {
       let tx = KEEP_DOOR.x;
       let ty = KEEP_DOOR.y;
       if (s.here) {
+        // As the dog's spots are reckoned (dog.ts): a positive side is his right, so these are on his left.
         const [side, back] = SPOT(slot++);
-        tx = galahad.x + fy * -side - fx * back;
-        ty = galahad.y - fx * -side - fy * back;
+        tx = galahad.x + fy * side - fx * back;
+        ty = galahad.y - fx * side - fy * back;
       }
       if (!motion) {
         s.shown = s.here ? 1 : 0;
@@ -141,6 +177,12 @@ export class PartnerFigures {
         s.shown = Math.max(0, s.shown - dt / FADE);
       }
       s.r = s.shown > 0.3 ? SQUIRE.r : 0;
+      const mover0 = this.movers[i];
+      // Round what stands in the way: in his footsteps (going home, straight for the door: he came from there).
+      if (mover0 && s.here && this.followFootsteps(mover0, s.x, s.y, tx, ty)) {
+        tx = this.aim.x;
+        ty = this.aim.y;
+      }
       const sx = s.x;
       const sy = s.y;
       const k = 9;
@@ -292,6 +334,17 @@ export class Partners {
     out[1] = s.y;
     out[2] = 1.25;
     return `${s.name}: an agent working with Galahad`;
+  }
+
+  /** How far the nearest squire that's about is from a point (−1: none), for the page's trace. */
+  gap(x: number, y: number): number {
+    let best = -1;
+    for (const s of this.figures.squires) {
+      if (!s.name || s.shown < 0.5) continue;
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (best < 0 || d < best) best = d;
+    }
+    return best;
   }
 
   /** Where one is, by name (the selector's "Partners"), into `out`; false if it isn't about. */

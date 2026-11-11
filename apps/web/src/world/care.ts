@@ -108,6 +108,9 @@ export const ROUND_PLANE: readonly (readonly [number, number])[] = Array.from({ 
   const a = TIE_DOWN.heading + Math.PI / 2 + (i * Math.PI * 2) / 6;
   return [TIE_DOWN.x + Math.cos(a) * 7, TIE_DOWN.y + Math.sin(a) * 7] as const;
 });
+/** The duck lawn south-east of the keep (where they were born), when the flock's middle is too near the keep or a station. */
+const LAWN = { x: 11, y: -15, min: 14 };
+const PLACES_AT = Object.values(STATIONS);
 const PRINT_STAND: Target = { x: printerX(2), y: FARM.belt.y - 1.15, facing: Math.PI / 2 };
 const ARMS_STAND: Target = { x: LINE.arms[0]!.x + 1.5, y: LINE.arms[0]!.y + 2.1, facing: -Math.PI / 2 };
 const QUAD_STAND: Target = { x: DRONE_PAD.x + 2.4, y: DRONE_PAD.y, facing: Math.PI };
@@ -577,6 +580,17 @@ export class Care {
 
   // ---------- his friends: the Microducks ----------
 
+  /** Where he visits them: the flock's middle, out on open lawn (they keep clear of the keep and its stations). */
+  private lawn(): void {
+    const s = this.flock.middle(this.spot);
+    const r = Math.hypot(s.x, s.y);
+    let clear = r >= LAWN.min;
+    for (const p of PLACES_AT) if (Math.hypot(s.x - p.x, s.y - p.y) < 5) clear = false;
+    if (clear) return;
+    s.x = LAWN.x;
+    s.y = LAWN.y;
+  }
+
   private friends(f: CareFrame): void {
     const flock = this.flock;
     const pose = this.out.pose;
@@ -584,7 +598,7 @@ export class Care {
       case 0: {
         // To the flock; they gather round; he crouches to look one over.
         if (this.sub === 0) {
-          flock.middle(this.spot);
+          this.lawn();
           this.sub = 1;
           this.go(this.aim(this.spot.x - 0.6, this.spot.y - 0.6, this.spot.x, this.spot.y));
         }
@@ -632,7 +646,7 @@ export class Care {
         flock.led = this.stray;
         if (this.sub === 0) {
           this.sub = 1;
-          flock.middle(this.spot);
+          this.lawn();
           this.go(this.aim(this.spot.x + 0.8, this.spot.y - 0.4, this.spot.x, this.spot.y));
         }
         if (this.held(f) < 0) return;

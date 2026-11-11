@@ -405,7 +405,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let beatSeen = -1e9;
   let lastRan: number | null = null;
   /** ?trace=1: where his day is, for a tour to read. */
-  const lifeTrace = { activity: "", intent: "", charge: 0, docked: false, ball: "", beat: 0, force: (a: string | null) => void (care.forced = a && (ACTIVITIES as readonly string[]).includes(a) ? (a as Activity) : null), setCharge: (c: number) => void (care.charge = Math.max(0, Math.min(1, c))) };
+  const lifeTrace = { activity: "", intent: "", charge: 0, docked: false, ball: "", beat: 0, squireGap: -1, force: (a: string | null) => void (care.forced = a && (ACTIVITIES as readonly string[]).includes(a) ? (a as Activity) : null), setCharge: (c: number) => void (care.charge = Math.max(0, Math.min(1, c))) };
   /** The fleet's banners, the beacon and the plots' fences: solids that come and go with the model. */
   let fleetSolids = 0;
   let beaconSolids = 0;
@@ -690,8 +690,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   function syncBubble(m: WorldModel): void {
     const g = m.galahad;
     bubbleDoing.textContent = isIdle(g) ? bubbleLife || g.doing : g.doing;
-    // His heartbeat: "Heartbeat ✓ 12:30", what needs you, or what he fixed himself on its last run.
-    const heart = heartbeatLine(m.heartbeat);
+    // His heartbeat: "Heartbeat ✓ 12:30", what needs you (just when it ran, while he's tending it), what he fixed himself.
+    const heart = heartbeatLine(m.heartbeat, isIdle(g) ? bubbleLife : "");
     const fixed = m.heartbeat?.fixed.length ? ` · fixed ${m.heartbeat.fixed.length === 1 ? "one thing" : `${m.heartbeat.fixed.length} things`} himself` : "";
     bubbleHeart.textContent = heart ? `${heart}${fixed}` : "";
     bubbleHeart.hidden = !heart;
@@ -1212,11 +1212,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     careIntent = life.intent;
     if (idle && life.label !== bubbleLife) {
       bubbleLife = life.label;
+      if (model) syncBubble(model);
       bubbleDoing.textContent = life.label || g?.doing || "";
       bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden;
       remeasure("bubble");
     }
-    if (trace) care.trace(lifeTrace);
+    if (trace) {
+      care.trace(lifeTrace);
+      lifeTrace.squireGap = partners.gap(walker.x, walker.y);
+    }
     // His heartbeat in the lodestar: softly at rest, harder for a few seconds after a heartbeat ran.
     knight.pulse.value = motion ? lodestarPulse(t, (performance.now() - beatSeen) / 1000) : 0.15;
     const atWork = idle ? life.busy && !walker.moving : !walker.moving && Boolean(g?.doing);

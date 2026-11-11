@@ -57,7 +57,7 @@ export function matches(text: string, query: string): boolean {
 export function galahadLine(model: WorldModel, life = ""): string {
   const g = model.galahad;
   const doing = isIdle(g) ? life || g.doing || "At the keep" : g.doing || `At ${stationLabel(g.station).toLowerCase()}`;
-  const heart = heartbeatLine(model.heartbeat);
+  const heart = heartbeatLine(model.heartbeat, doing);
   return heart ? `${doing} · ${heart}` : doing;
 }
 

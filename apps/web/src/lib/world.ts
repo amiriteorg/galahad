@@ -487,16 +487,24 @@ export function heartbeatConcern(h: WorldHeartbeat | null): HeartbeatFinding | n
   return h?.findings.find((f) => f.severity !== "info") ?? null;
 }
 
-/** His heartbeat in a few words: "Heartbeat ✓ 12:30", or what needs you ("Needs you: rack is offline", "+2 more"). */
-export function heartbeatLine(h: WorldHeartbeat | null): string | null {
+/** When it last ran and how: "Heartbeat ✓ 12:30" (△ when it found something, ✗ when it failed), "Heartbeat: not yet". */
+export function heartbeatStamp(h: WorldHeartbeat): string {
+  if (h.ran === null) return "Heartbeat: not yet";
+  return `Heartbeat ${h.status === "failed" ? "✗" : h.status === "attention" ? "△" : "✓"} ${danishClock(h.ran)}`;
+}
+
+/**
+ * His heartbeat in a few words: "Heartbeat ✓ 12:30", or what needs you ("Needs you: rack is offline", "+2 more").
+ * When what he's doing already says what needs you (`doing`: he's tending it), just when it ran.
+ */
+export function heartbeatLine(h: WorldHeartbeat | null, doing = ""): string | null {
   if (!h) return null;
   const concern = heartbeatConcern(h);
-  if (concern) {
+  if (concern && !doing.startsWith("Needs you: ")) {
     const more = h.counts.alert + h.counts.warn - 1;
     return `Needs you: ${concern.title}${more > 0 ? ` (+${more} more)` : ""}`;
   }
-  if (h.ran === null) return "Heartbeat: not yet";
-  return `Heartbeat ${h.status === "failed" ? "✗" : "✓"} ${danishClock(h.ran)}`;
+  return heartbeatStamp(h);
 }
 
 /** Where an experiment stands, in words: "on the proving ground", "in the workshop", "on open land". */
