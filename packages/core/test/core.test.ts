@@ -15,6 +15,7 @@ import {
   newNodeIdentity,
   openSealed,
   pairProof,
+  PairRequestFields,
   parseEvent,
   proofMatches,
   randomBytes,
@@ -185,5 +186,12 @@ describe("pairing", () => {
     expect(proofMatches(proof, pairProof(randomBytes(32), fields))).toBe(false);
     expect(sasCode(secret, fleet, a.id)).toMatch(/^\d{3} \d{3}$/);
     expect(sasCode(secret, fleet, a.id)).not.toBe(sasCode(secret, fleet, b.id));
+  });
+  test("a device's name carries no control characters: a terminal would act on them when it's shown", () => {
+    const fields = { invite: b64u(randomBytes(32)), device: newNodeIdentity().id, kind: "node" as const };
+    for (const name of ["server", "Pixel 9 Pro", "Kontor-PC", "Ærø's Mac", "📱 phone"]) expect(PairRequestFields.safeParse({ ...fields, name }).success).toBe(true);
+    for (const name of ["evil\x1b]0;owned\x07", "two\nlines", "back\rspace", "nul\x00", "del\x7f", "c1\x9b31m", "flip\u202Egnp.exe", "iso\u2066late"]) {
+      expect(PairRequestFields.safeParse({ ...fields, name }).success).toBe(false);
+    }
   });
 });

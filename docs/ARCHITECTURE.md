@@ -126,7 +126,7 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 ## 3. Pairing ✅
 
 1. A trusted node mints a **one-time invite**: a 32-byte secret, valid for 10 minutes, single use, held only in daemon memory. Nodes get `galahad join <invite>`; clients get a URL with the invite in the `#pair=` fragment.
-2. The joining device sends its public keys plus an **HMAC proof** over them, derived from the invite secret. The secret itself never travels.
+2. The joining device sends its public keys plus an **HMAC proof** over them, derived from the invite secret. The secret itself never travels. Its name may not hold control characters, line breaks or bidirectional overrides, which a terminal showing it would act on.
 3. Both sides derive a **6-digit code (SAS)** from (secret, fleet, joining device key). Approve only if the codes match. Someone who intercepted the invite has a different device key, and therefore a different code.
 4. **Conflict lock:** if a second device uses the same invite, the invite is locked and nothing on it can be approved. That pattern suggests interception.
 5. Approval emits `device.enrolled`. For nodes it also emits `vault.grant`. The joining device verifies an **approval proof** (another HMAC) and that the synced genesis matches the fleet id in the invite.
