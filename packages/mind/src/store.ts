@@ -171,8 +171,12 @@ export class MindStore {
   private readonly listeners = new Set<(event: GEvent) => void>();
   /** Set only during a replay: chain verdicts for every event in the log. */
   private validity: Validity | null = null;
-  /** digest(), until the views next change (apply and replay are the only writers). */
-  private stateDigest: string | null = null;
+  /**
+   * digest(), until the views next change: here (apply and replay are the only writers, and
+   * clear it) or on another connection (the CLI's `galahad rebuild` beside the daemon, say),
+   * which moves the database's data_version.
+   */
+  private stateDigest: { version: number; digest: string } | null = null;
 
   /** Called after each event this node writes (e.g. to push it to peers). */
   onEmit(listener: (event: GEvent) => void): () => void {
@@ -1198,7 +1202,9 @@ export class MindStore {
 
   /** Hash of the materialized state. Equal digests ⇒ equal minds. */
   digest(): string {
-    if (this.stateDigest) return this.stateDigest;
+    // Changes only when another connection commits (this one's writes clear the cache instead).
+    const version = this.db.query<{ data_version: number }, []>("PRAGMA data_version").get()!.data_version;
+    if (this.stateDigest?.version === version) return this.stateDigest.digest;
     const dump = {
       state: this.db.query("SELECT k, v FROM v_state WHERE k != 'tail' ORDER BY k").all(),
       devices: this.db.query("SELECT * FROM v_devices ORDER BY id").all(),
@@ -1207,8 +1213,8 @@ export class MindStore {
       grants: this.db.query("SELECT * FROM v_grants ORDER BY kid, device").all(),
       rejected: this.db.query("SELECT * FROM v_rejected ORDER BY id").all(),
     };
-    this.stateDigest = sha256B64u(canonical(dump as unknown as Json));
-    return this.stateDigest;
+    this.stateDigest = { version, digest: sha256B64u(canonical(dump as unknown as Json)) };
+    return this.stateDigest.digest;
   }
 }
 

@@ -509,6 +509,42 @@ describe("ingest", () => {
     const forged = { ...store.remember(a, "another"), id: sha256B64u("not the content") };
     expect(store.ingest([forged]).invalid.length).toBe(1);
   });
+
+  test("a refused emit leaves the running summaries as the log says", () => {
+    const { a, full } = twoNodes();
+    const before = { n: full.eventCount(), d: full.deviceDigests() };
+    expect(() => full.emit(a, "notice.dismissed", { key: "no-such-notice" })).toThrow(/not authorized/);
+    expect({ n: full.eventCount(), d: full.deviceDigests() }).toEqual(before);
+    expect(full.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM events").get()!.n).toBe(before.n);
+  });
+});
+
+describe("the cached state digest", () => {
+  test("another process writing the same replica (galahad rebuild, say) doesn't leave a stale digest behind", () => {
+    // Found by the review: the digest was kept until this connection's views changed.
+    const dir = mkdtempSync(join(tmpdir(), "galahad-digest-"));
+    const { b, full } = twoNodes();
+    const path = join(dir, "mind.db");
+    const daemon = new MindStore(path);
+    let cli: MindStore | null = null;
+    try {
+      daemon.expectFleet(full.fleet!);
+      daemon.ingest(full.eventsSince({}, 1000).events);
+      const cached = daemon.digest();
+      expect(daemon.digest()).toBe(cached); // kept while nothing changes
+      cli = new MindStore(path);
+      cli.ingest([full.emit(b, "memory.added", { text: "written by another process" })]);
+      const theirs = cli.digest();
+      cli.close();
+      cli = null;
+      expect(daemon.digest()).not.toBe(cached);
+      expect(daemon.digest()).toBe(theirs);
+    } finally {
+      cli?.close();
+      daemon.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("migrating a replica in place", () => {
