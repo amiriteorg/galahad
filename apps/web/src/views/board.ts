@@ -405,7 +405,7 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
   scope.listen(window, "online", () => void flush(true));
   scope.listen(document, "visibilitychange", () => !document.hidden && outbox.failing && void flush(true));
 
-  /** The picture of the board as you see it, for the models that can see, a moment after you stop. */
+  /** The picture of the board as you see it (plain: flat slate, solid chalk), for the models that can see, a moment after you stop. */
   function snapshotSoon(): void {
     if (snapshotTimer) clearTimeout(snapshotTimer);
     snapshotTimer = setTimeout(() => {
@@ -421,7 +421,7 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
     for (const w of SNAPSHOT_SIZES) {
       out.width = w;
       out.height = Math.round((w * 9) / 16);
-      paintBoard(out, scratch, shown());
+      paintBoard(out, scratch, shown(), { plain: true });
       const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
       if (!blob || blob.size > BOARD_LIMITS.snapshotBytes) continue;
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -585,7 +585,11 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
     stage.focus({ preventScroll: true });
     const [x, y] = local(event);
     pointers.set(event.pointerId, { x, y, type: event.pointerType });
-    stage.setPointerCapture(event.pointerId);
+    try {
+      stage.setPointerCapture(event.pointerId);
+    } catch {
+      /* a pointer that's already gone: its moves still reach the stage */
+    }
     if (event.pointerType === "pen") penSeen = true;
     const touches = [...pointers.entries()].filter(([, p]) => p.type === "touch");
     if (touches.length >= 2) {

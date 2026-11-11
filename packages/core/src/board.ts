@@ -213,7 +213,7 @@ export function equationText(text: string): string {
     .replace(/\bsigma\b/g, "σ")
     .replace(/\blambda\b/g, "λ")
     .replace(/\bmu\b/g, "μ")
-    .replace(/(\S)\s*\*\s*(\S)/g, "$1·$2");
+    .replace(/(?<=\S)\s*\*\s*(?=\S)/g, "·");
 }
 
 /** An equation's runs: plain, raised (after ^) or lowered (after _), a run being one character or a {group}. */

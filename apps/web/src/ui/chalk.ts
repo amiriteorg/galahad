@@ -67,9 +67,12 @@ function tile(hex: string, lo: number): HTMLCanvasElement {
 }
 
 const patterns = new WeakMap<Ctx, Map<string, CanvasPattern>>();
+/** Contexts drawn plain: flat slate, solid chalk (the picture for the models: clearer to read, and a small PNG). */
+const plain = new WeakSet<Ctx>();
 
 /** The chalk's pattern for this context, its grain kept at one tile pixel per device pixel whatever the zoom. */
 function chalkStyle(g: Ctx, hex: string, lo: number, deviceScale: number): CanvasPattern | string {
+  if (plain.has(g)) return hex;
   let mine = patterns.get(g);
   if (!mine) patterns.set(g, (mine = new Map()));
   const key = `${hex}:${lo}`;
@@ -95,6 +98,7 @@ export function paintSlate(g: Ctx, width: number, height: number, view: BoardVie
   g.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.x, dpr * view.y);
   g.fillStyle = SLATE_HEX;
   g.fillRect(0, 0, BOARD_W, BOARD_H);
+  if (plain.has(g)) return;
   const random = mulberry(7);
   for (let i = 0; i < 9; i++) {
     const x = random() * BOARD_W;
@@ -323,13 +327,17 @@ export const chalkColor = (c: Chalk): string => CHALK_HEX[c];
  * the models see, and the world's board's face. `chalk` is a scratch canvas the
  * chalk is laid on first (the duster rubs out chalk, never the slate).
  */
-export function paintBoard(out: HTMLCanvasElement, chalk: HTMLCanvasElement, board: Pick<BoardView, "items" | "strokes">, opts: { hide?: ReadonlySet<string> } = {}): void {
+export function paintBoard(out: HTMLCanvasElement, chalk: HTMLCanvasElement, board: Pick<BoardView, "items" | "strokes">, opts: { hide?: ReadonlySet<string>; plain?: boolean } = {}): void {
   const view: BoardViewport = { scale: out.width / BOARD_W, x: 0, y: 0 };
   if (chalk.width !== out.width || chalk.height !== out.height) {
     chalk.width = out.width;
     chalk.height = out.height;
   }
   const g = out.getContext("2d")!;
+  for (const c of [g, chalk.getContext("2d")!]) {
+    if (opts.plain) plain.add(c);
+    else plain.delete(c);
+  }
   paintSlate(g, out.width, out.height, view, 1);
   paintChalk(chalk.getContext("2d")!, board, view, 1, opts);
   g.setTransform(1, 0, 0, 1, 0, 0);

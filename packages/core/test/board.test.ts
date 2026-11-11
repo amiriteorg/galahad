@@ -127,6 +127,7 @@ describe("layout", () => {
 
   test("equations in chalk's symbols, with raised and lowered runs", () => {
     expect(equationText("a >= b -> c != d, 2 * pi")).toBe("a ≥ b → c ≠ d, 2·π");
+    expect(equationText("T = 2 * pi * sqrt(L / g)")).toBe("T = 2·π·√(L / g)");
     expect(equationRuns("x^2 + a_n = y^{10}")).toEqual([
       { text: "x", shift: 0 },
       { text: "2", shift: 1 },
