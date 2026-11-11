@@ -151,11 +151,13 @@ export class ProvingGround implements Place {
     const puddle = only(wet.greaterThan(0.3), float(0) as unknown as F, () => {
       const p = vec2(positionLocal.x, positionLocal.z);
       // Puddles a few metres across where the paving dips, more of them the wetter it gets.
-      const patch = sin(p.x.mul(1.13).add(sin(p.y.mul(0.83)).mul(1.7))).mul(sin(p.y.mul(1.31).add(sin(p.x.mul(0.71)).mul(1.4))));
-      return smoothstep(0.5, 0.78, patch.add(wet.mul(0.3)).sub(0.3)).mul(smoothstep(0.4, 0.9, wet)).mul(smoothstep(0.7, 0.95, gloss)) as unknown as F;
+      // (Two patterns at odd angles and scales: puddles gather unevenly, never in rows.)
+      const small = sin(p.x.mul(1.13).add(sin(p.y.mul(0.83)).mul(1.7))).mul(sin(p.y.mul(1.31).add(sin(p.x.mul(0.71)).mul(1.4))));
+      const broad = sin(p.x.mul(0.21).add(p.y.mul(0.17)).add(sin(p.y.mul(0.13)).mul(2.1))).mul(0.5).add(0.5);
+      return smoothstep(0.45, 0.8, small.mul(broad).add(wet.mul(0.25)).sub(0.25)).mul(smoothstep(0.4, 0.9, wet)).mul(smoothstep(0.7, 0.95, gloss)) as unknown as F;
     });
     ground.colorNode = vertexColor().mul(wetDarken(0.8)).mul(mix(float(1), float(0.55), puddle));
-    ground.emissiveNode = wetSheen(1, () => puddle.mul(0.45).add(ripples(0.7).mul(max(puddle, gloss.mul(0.12)))) as unknown as F)
+    ground.emissiveNode = wetSheen(1, () => puddle.mul(0.15).add(ripples(0.7).mul(max(puddle.mul(0.6), gloss.mul(0.08)))) as unknown as F)
       .mul(gloss.mul(0.8).add(0.2))
       .add(vertexColor().mul(pools()).mul(this.night).mul(WARM));
     const groundMesh = new Mesh(buildGround(detail.ground).build(), ground);
