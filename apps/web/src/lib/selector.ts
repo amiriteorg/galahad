@@ -67,6 +67,18 @@ export function moveActive(items: Shown[], from: number, delta: 1 | -1): number 
 }
 
 /**
+ * Which option is active after the list is drawn again: for a new query, its best match (the
+ * first choosable one); otherwise the same option as before (a toggle redraws the list), else the
+ * one chosen now, else the first choosable one. -1 when nothing can be chosen.
+ */
+export function activeAfter<C extends Choice>(items: Shown<C>[], opts: { query: string; queryChanged: boolean; keep: (shown: Shown<C>) => boolean }): number {
+  let next = opts.queryChanged ? -1 : items.findIndex(opts.keep);
+  if (next < 0 && !opts.query.trim()) next = items.findIndex((i) => i.option.selected && !i.option.disabled);
+  if (next < 0 || items[next]?.option.disabled) next = moveActive(items, -1, 1);
+  return next;
+}
+
+/**
  * Type-ahead: the next choosable option whose label starts with what was typed. A single
  * letter looks past the current one (pressing it again cycles); a longer prefix may stay put.
  */

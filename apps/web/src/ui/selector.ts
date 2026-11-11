@@ -1,4 +1,4 @@
-import { type Choice, type ChoiceGroup, filterChoices, moveActive, optionCount, type Shown, typeahead } from "../lib/selector.ts";
+import { activeAfter, type Choice, type ChoiceGroup, filterChoices, moveActive, optionCount, type Shown, typeahead } from "../lib/selector.ts";
 import { dot, type Tone } from "./controls.ts";
 import { openSheet, type Sheet } from "./dialog.ts";
 import { type Child, h, nextId, prefersReducedMotion, replace, type Scope } from "./dom.ts";
@@ -133,6 +133,7 @@ export function selector(config: SelectorConfig): Selector {
     let active = -1;
     let typed = "";
     let typedAt = 0;
+    let shownQuery: string | null = null;
 
     const mark = (label: string, indices: number[]): Child[] => {
       if (!indices.length) return [label];
@@ -216,11 +217,11 @@ export function selector(config: SelectorConfig): Selector {
       if (!items.length) nodes.push(h("div", { class: "sel-empty" }, "Nothing matches. Try another word."));
       replace(list, ...nodes);
       if (query) status.textContent = `${items.length} result${items.length === 1 ? "" : "s"}`;
-      // Stay on the same option across a re-render; else the first chosen one, else the first.
-      let next = items.findIndex((i) => i.shown.option.value === keep && i.group.id === keepGroup);
-      if (next < 0 && !query) next = items.findIndex((i) => i.shown.option.selected && !i.shown.option.disabled);
-      if (next < 0 || items[next]?.shown.option.disabled) next = moveActive(items.map((i) => i.shown), -1, 1);
-      setActive(next);
+      // A new query: its best match; a toggle: the same option; opening: the one chosen now.
+      const queryChanged = shownQuery === null || query !== shownQuery;
+      shownQuery = query;
+      const kept = new Set(items.filter((i) => i.shown.option.value === keep && i.group.id === keepGroup).map((i) => i.shown));
+      setActive(activeAfter(items.map((i) => i.shown), { query, queryChanged, keep: (s) => kept.has(s) }));
     };
 
     function choose(index: number): void {

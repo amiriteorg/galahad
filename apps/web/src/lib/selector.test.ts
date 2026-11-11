@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ChoiceGroup, choicesSummary, filterChoices, moveActive, optionCount, typeahead } from "./selector.ts";
+import { activeAfter, type ChoiceGroup, choicesSummary, filterChoices, moveActive, optionCount, typeahead } from "./selector.ts";
 
 const roles: ChoiceGroup = {
   id: "role",
@@ -60,6 +60,17 @@ describe("the smart selector", () => {
     expect(typeahead(items, "zz", 0)).toBe(-1);
     // Nothing active yet: the very first option counts.
     expect(typeahead(items, "p", -1)).toBe(0);
+  });
+
+  test("typing a search makes its best match the one Enter chooses, not the one that was active", () => {
+    const planner = (s: { option: { value: string } }) => s.option.value === "planner";
+    const typed = filterChoices([roles], "e").flatMap((g) => g.options);
+    expect(typed[activeAfter(typed, { query: "e", queryChanged: true, keep: planner })]!.option.value).toBe("engineer");
+    // A toggle re-renders without a new query: the same option stays active.
+    const all = filterChoices([roles], "").flatMap((g) => g.options);
+    expect(all[activeAfter(all, { query: "", queryChanged: false, keep: (s) => s.option.value === "swift" })]!.option.value).toBe("swift");
+    // Opening, or clearing the search: the one chosen now.
+    expect(all[activeAfter(all, { query: "", queryChanged: true, keep: () => false })]!.option.value).toBe("planner");
   });
 
   test("a group of toggles says what's chosen in plain words", () => {
