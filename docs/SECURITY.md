@@ -26,7 +26,7 @@ A fresh agent, given only the code and the claims above, audited the whole repos
 | 1 | High | A revoked node's stolen key could backdate events, for example enrolling a device of its own | **Fixed.** Events are hash-chained per device, and revocation pins the chain head. Equivocation (a device forking its own chain) is detected everywhere. `chain.test.ts` |
 | 2 | High | A client with `brain:write` could repoint a provider and have a key sent to its own host. Paired clients also got every scope | **Fixed.** Keys are pinned to the origin they were entered for, and only for their own provider. Phones can't approve new machines. Client invites default to every scope except `gateway:mint` (`CLIENT_DEFAULT_SCOPES` in `packages/core/src/scopes.ts`): your paired devices are your console, not least privilege, so an invite can name fewer. An invite can't carry a scope its maker doesn't hold (refused, not trimmed), so a paired device can't pair itself a stronger one. Tested in e2e |
 | 3 | Medium | A far-future HLC counter could wedge writes fleet-wide | **Fixed.** The counter carries into milliseconds, and only accepted events from known signers move the clock |
-| 4 | Medium | A device's events delivered to only some replicas could fork the mind | **Fixed.** Sync compares per-device digests, and holes below the frontier are filled |
+| 4 | Medium | A device's events delivered to only some replicas could fork the mind | **Fixed.** Sync compares a set hash of each device's log (LtHash, so a forked device can't craft a matching one), and holes below the frontier are walked back a page at a time. `chain.test.ts`, `log.test.ts` |
 | 5 | Medium | An agent with a shell, running as the same OS user, can read `~/.galahad/admin.token` | **Limitation, see below** |
 | 6 | Medium | `docker` group membership makes the sandbox host's node root-equivalent | **Limitation, see below** |
 | 7 | Low–Medium | Arms could forget your memories | **Fixed.** An arm may forget only what it wrote |
@@ -48,11 +48,27 @@ The review also confirmed what held up:
 - the sandbox's Docker flags
 - the PWA's DOM-only rendering
 
+## Secret scanning (tested)
+
+- **What's refused** (422, pointing to the vault): known key formats, private keys, Galahad's own tokens and invites, high-entropy tokens, and a credential's name with a value: `password=`, `DB_PASSWORD=`, `GITHUB_TOKEN=`, `AWS_SECRET_ACCESS_KEY=` and JSON keys like `"password":` (the last four were missed before November 2026). Every chat message is scanned, whoever wrote it, and so is everything that enters memory.
+- **What passes** (since November 2026): a value that only names where a secret is kept: a reference (`${DB_PASSWORD}`, `$TOKEN`, `%TOKEN%`, `{{ api_key }}`, `process.env.API_KEY`, `os.environ["TOKEN"]`), a placeholder (`<your-key-here>`, `YOUR_API_KEY`), a call that fetches it (`request.headers.get(…)`), a masked or redacted value; integrity hashes of exactly their algorithm's length; and on the node, the ids of events in its mind. Without this, one such line in Galahad's own answer refused every later message of a temporary chat, which resends its history.
+- **Kept narrow on purpose:** a bare word, a number, a literal default (`${X:-hunter2}`), a dotted value that isn't read from code (`john.smith1`) and a token of an event id's shape that isn't one are all still refused (`packages/core/test/secret-scan.test.ts`, `packages/node/test/e2e.test.ts`). The PWA's composer runs the same check before sending but has no mind to vouch for event ids, so it still warns on a pasted one.
+
+## Convergence under replay (tested)
+
+Every replica must reach the same state from the same events, whatever the order. While the mind was made to cost the same at any log size (November 2026), its property tests found three cases where the state built event by event differed from a rebuild, so two replicas could disagree. All needed a misbehaving signer, and each has a test in `packages/mind/test/chain.test.ts` that failed before its fix:
+
+- A device's next event beside a sibling refused for its date ("dated before its own predecessor") was accepted; a rebuild sees two children of one event, a fork.
+- A gap's child dated before the event that later filled the gap kept the reason "predecessor missing", where a rebuild says "dated before its own predecessor".
+- What a revoked node signed after its revocation, arriving in order, was refused as "signer is not an active device", where a rebuild says "written after the device was revoked" (its pinned head).
+
+Since then, a device whose chain holds a refused event, and a revoked device, have every later event judged by a replay. **Residual cost:** a stolen key that keeps writing makes each of its events cost a replay, as backdated ones already did.
+
 ## Loops, connectors and approvals (tested)
 
 - **Connector keys go where you said, only.** A key is injected only if it was pinned to the connector's origin and entered for that connector; redirects are never followed; answers are capped and redacted; arguments that look like keys are refused; hostile arguments can't leave their path segment or the origin (`packages/core/test/connectors.test.ts`, `packages/brain/test/connectors.test.ts`).
 - **Manifests are data.** No connector code runs; a manifest can't set credentials, cookies or `Host`, and its HTTP method bounds the oath class it may claim. Installing one needs `brain:write`, which arms never hold.
-- **Only you approve.** Action decisions are accepted only from your terminal or a paired device, never from a node or an agent; the first decision stands on every replica; only the requesting node sends, at most once, even across a crash (`packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).
+- **Only you approve.** Action decisions are accepted only from your terminal or a paired device, never from a node or an agent; the first decision stands on every replica; only the requesting node sends, at most once, even across a crash, and only within 72 hours of your approval: past that it never sends, and the ledger and the inbox say so (`packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).
 - **Only you quiet an alert.** Dismissing a notice (an offline server, a failing loop, the bank consent ending) needs `fleet:admin`, which agents never hold, so an injected agent can read your alerts but can't silence one (`packages/node/test/mcp.test.ts`).
 - **Loops act as Galahad, not as you.** A loop's quest runs on a short-lived arm token and its connector calls are an agent's calls, so outward actions ask.
 - **Standing orders stay narrow, and the log proves them.** Only you sign one (an arm's attempt is refused by scope); it covers one tool that would ask, names where the call goes, pins deletes exactly, expires within a year and stops applying if the tool changes. Every replica re-checks on replay that the order covered the exact call when it was applied, so a node can't record an order-approval the order doesn't support (`packages/core/test/orders.test.ts`, `packages/mind/test/loops.test.ts`, `packages/node/test/connectors.e2e.test.ts`).

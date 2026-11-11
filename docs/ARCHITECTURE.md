@@ -55,7 +55,7 @@ The mind is an **append-only log of signed events**. Each event has the form `{v
 - **Ordered by a hybrid logical clock (HLC):** the format is `<15-digit ms>.<6-digit counter>`, and ties are broken by id. Timestamps more than 5 minutes in the future are refused, so a broken or hostile clock can't win every last-writer-wins race.
 - **State is a pure function of the event set:**
   - Views (devices, memories with FTS5 search, LWW records, vault grants, rejections) are materialized by replaying events in `(hlc, id)` order.
-  - An event that arrives out of order triggers a deterministic replay.
+  - An event that arrives out of order triggers a deterministic replay, unless a replay would apply it the same way (a late ledger entry or loop run from a sound chain, see Sync).
   - So two replicas holding the same events have identical state. `digest()` proves this, and a property test checks it under shuffled delivery with duplicates.
 - **Authorization is part of the log's rules:**
   - Only active full nodes may enroll or revoke devices, write secrets, configure providers or change the roster.
@@ -95,8 +95,42 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 **Sync:**
 
 - Each device's events form an HLC-ordered prefix on every replica. A peer's **frontier** (the highest HLC per device) therefore fully describes what it has.
-- `eventsSince(frontier)` returns exactly the missing events, paginated.
+- `eventsSince(frontier)` returns exactly the missing events, a page at a time (500).
 - Nodes pull from every peer independently every few seconds, and also push fresh events immediately.
+- **Holes below the frontier** (an event that reached only some replicas, a partial delivery) are found by comparing **set hashes**: with each pull goes, per device, how many events this replica holds and an LtHash of their ids (`packages/core/src/set-hash.ts`: 1024 lanes of 16 bits, ChaCha20-expanded, the parameters analysed for 200+ bits of security; a plain XOR or sum would let a forked device hide behind a matching hash). The peer takes its own hash, removes what's above the frontier, and compares. If it holds a different set there and at least as much, it names the device in `repair`, and the puller walks that device's log from its start, a page at a time, until it's past where it was (`PullState` in `packages/mind/src/pull.ts`). No answer is ever more than a page; a walk carries over into the next pull.
+- **Mixed versions:** set hashes travel as `sets`, sent only to a peer that said it compares them (`sets: true` in its answer). Nodes from before set hashes get the frontier alone, and their `digests` are accepted and ignored, so a fleet keeps syncing while it's upgraded (holes are found again once both sides are new).
+
+**Costs that don't grow with the log** (`bun scripts/bench-mind.ts` builds 5k, 40k and 400k-event logs in temp homes and times each):
+
+| What | How |
+|---|---|
+| Frontier, set hashes, event count | Kept per device in `log_devices` (count, newest hlc, set hash), updated in the same transaction as each insert |
+| A peer's pull, in sync or a little behind | One page query per device on `(device, hlc, id)`; the hole check costs one set-hash step per event above the peer's frontier, and waits while it's more than a page behind |
+| Each loop's latest slot | The view `v_slots`, a maximum kept as runs are applied |
+| Loop runs, the ledger | Indexes on `kind` and on loop runs by loop (`events_kind`, `events_loop`) |
+| Events already held | Skipped before their signature is checked (an id is its content's hash) |
+| A late ledger entry or loop run | Applied in place when a replay would decide it the same way: from a node enrolled before it and never revoked, extending its own chain after everything held of that device, and the chain has no refused event (`v_chainbad`). Anything else that arrives late still replays |
+| The state digest | Kept until the views change |
+
+| Operation (ms, median) | 5,000 events | 40,000 | 400,000 | 400,000, before |
+|---|---:|---:|---:|---:|
+| `deviceDigests` (each pull) | 0.2 | 0.1 | 0.2 | 2,671 |
+| `frontier` (each pull) | 0.0 | 0.0 | 0.1 | 117 |
+| `eventsSince`, a peer in sync (each pull it answers) | 0.2 | 0.2 | 0.4 | 1,965 |
+| `eventsSince`, a peer 10 events behind | 0.4 | 0.4 | 0.6 | 2,312 |
+| `eventsSince`, a peer with a hole | 0.3 | 0.2 | 0.3 | 4,328, and 279,674 events in one answer |
+| `lastSlot` (each loop, every tick) | 0.01 | 0.01 | 0.01 | 716 |
+| `loopRuns(name, 1)` | 0.05 | 0.03 | 0.07 | 693 |
+| A late ledger entry | 3.2 | 2.6 | 4.0 | 6,955 (a replay) |
+| 500 events already held | 2 | 2 | 6 | 466 |
+| A late memory (still replays) | 100 | 699 | 5,470 | 6,955 |
+| A hole's repair, end to end (pages of 500; the page that fills it replays) | 212 | 1,236 | 27,985 | one answer, above |
+| First start on a replica from before (migrates once) | 178 | 1,241 | 20,141 | – |
+| `rebuild` (now also recounts) | 200 | 1,520 | 12,988 | 6,643 |
+
+What still grows with the log: a replay (a late memory, notice or action, a revocation, a hole's fill, a fork), a `rebuild`, and the first start on a replica from before schema versions, which migrates it once.
+
+**Schema versions.** A replica records its version (`PRAGMA user_version`). On its first start with newer code it migrates in place, in one transaction: version 1 adds `log_devices`, `v_slots`, `v_chainbad` and the indexes, derived from the log and the existing views, and changes neither (tested against a replica the old store wrote, `packages/mind/test/fixtures/mind-v0.db`: the log's bytes, every view and the state digest are unchanged). If an older version wrote to it in between, the next start recounts.
 
 **Planned 🔜:** snapshots, cold segments moved to the blob store, partial replicas on phones, and the compiled-knowledge layer (an LLM wiki, see [DOCTRINE](DOCTRINE.md)).
 
@@ -414,7 +448,7 @@ Every call goes through the oath gate and into the ledger:
 | read, create, modify | runs | runs |
 | outward, delete | runs: your request *is* the approval | an **action request** in your inbox; nothing is sent |
 
-**The outbox.** An action request (`action.requested`) is recorded in the mind before anything is sent. You approve or decline from any device (`fleet:admin`; never a node or an agent on its own behalf), and **the first decision stands** on every replica. Only the node that filed the request sends it: it marks the send in local storage first, sends once, and records the receipt (`action.done`). If it dies mid-send it reports *outcome unknown* and never retries. No answer within 24 hours means no.
+**The outbox.** An action request (`action.requested`) is recorded in the mind before anything is sent. You approve or decline from any device (`fleet:admin`; never a node or an agent on its own behalf), and **the first decision stands** on every replica. Only the node that filed the request sends it: it marks the send in local storage first, sends once, and records the receipt (`action.done`). If it dies mid-send it reports *outcome unknown* and never retries. No answer within 24 hours means no. **An approval is good for 72 hours** from its own recorded time (`APPROVAL_TTL_MS`, `approvalSendBy` in `packages/core/src/api.ts`): the node that filed it sends it within that or never, so a node back after weeks doesn't send what you approved back then. It says so in the ledger instead, and every device shows the action as expired, never sent (`lapsed`; `sendBy` in the view). An approval recorded after the request had expired is never sent either. Both come from recorded times only, so every replica agrees.
 
 Built in (`galahad connector add <id>`): **GitHub** (repos, issues, pulls, Actions runs, notifications; creating a branch is free, opening an issue or commenting asks), **Cloudflare** (accounts, zones, DNS, Workers, R2; creating a bucket is free, deleting one asks) and **Home Assistant** (at your address; reading state is free, calling any service asks every time). Your own connector is a JSON manifest: `galahad connector add --manifest my.json`.
 
