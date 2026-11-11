@@ -29,7 +29,8 @@ type Place = Exclude<Station, "field">;
 const LAYOUT: Record<Place, { r: number; stand: number }> = {
   // The giant tree, its deck's posts and the stairs; he stands at the foot of the stairs.
   keep: { r: 7.5, stand: 8.5 },
-  council: { r: 1.7, stand: 2.4 },
+  // Clear of the deck the table stands on (it reaches 2.3 m out).
+  council: { r: 1.7, stand: 2.85 },
   library: { r: 3.2, stand: 4.1 },
   watchtower: { r: 2.6, stand: 3.6 },
   treasury: { r: 3, stand: 4 },

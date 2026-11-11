@@ -24,6 +24,13 @@ export const SKIN = 0.01;
 export const CIRCLE = 1;
 export const BOX = 2;
 
+/** What a solid stops (a bit mask): walkers; the camera (it never stands inside one); the line of sight (the camera's arm shortens rather than look through it). */
+export const WALK = 1;
+export const VIEW = 2;
+export const SIGHT = 4;
+/** A wall, a building, a hill: stops everything. */
+export const SOLID = WALK | VIEW | SIGHT;
+
 /** A mover's place: the same object every frame, moved in place. A radius of 0: it's away. */
 export interface Circle {
   x: number;
@@ -209,6 +216,8 @@ export class Solids {
   hi = new Float64Array(256);
   /** No part of it is farther than this from (px, py). */
   reach = new Float64Array(256);
+  /** What it stops (WALK, VIEW, SIGHT). */
+  mask = new Uint8Array(256);
   private link = new Int32Array(256);
   private mark = new Int32Array(256);
   /** One past the highest slot ever used. */
@@ -256,8 +265,8 @@ export class Solids {
   }
 
   /** A circle of radius r, standing on ground at height z, from `bottom` to `top` above it. */
-  circle(x: number, y: number, r: number, z = 0, top = Infinity, bottom = 0): void {
-    if (!(r > 0)) return;
+  circle(x: number, y: number, r: number, z = 0, top = Infinity, bottom = 0, mask = SOLID): void {
+    if (!(r > 0) || !mask) return;
     const i = this.slot();
     this.shape[i] = CIRCLE;
     this.px[i] = x;
@@ -270,12 +279,13 @@ export class Solids {
     this.lo[i] = bottom;
     this.hi[i] = top;
     this.reach[i] = r;
+    this.mask[i] = mask;
     this.index(i, true);
   }
 
   /** A box of half-extents hx by hy, turned by `yaw` (the way its hx points, atan2 convention). */
-  box(x: number, y: number, hx: number, hy: number, yaw = 0, z = 0, top = Infinity, bottom = 0): void {
-    if (!(hx > 0 && hy > 0)) return;
+  box(x: number, y: number, hx: number, hy: number, yaw = 0, z = 0, top = Infinity, bottom = 0, mask = SOLID): void {
+    if (!(hx > 0 && hy > 0) || !mask) return;
     const i = this.slot();
     this.shape[i] = BOX;
     this.px[i] = x;
@@ -288,16 +298,23 @@ export class Solids {
     this.lo[i] = bottom;
     this.hi[i] = top;
     this.reach[i] = Math.hypot(hx, hy);
+    this.mask[i] = mask;
     this.index(i, true);
   }
 
-  /** A batch of colliders, each standing on the ground at its own place. Returns the batch's id. */
-  add(list: readonly Collider[], ground?: (x: number, y: number) => number): number {
+  /**
+   * A batch of colliders, each standing on the ground at its own place. Returns the batch's id. Unless `mask`
+   * says otherwise, they stop walkers and the camera, and the line of sight too where they're wider than
+   * `thin` metres (a post, a mast or a trunk is dissolved by the dither instead).
+   */
+  add(list: readonly Collider[], ground?: (x: number, y: number) => number, mask = SOLID, thin = 0.5): number {
     this.open();
     for (const c of list) {
       const z = ground ? ground(c.x, c.y) : 0;
-      if (c.kind === "circle") this.circle(c.x, c.y, c.r, z, c.top, c.bottom);
-      else this.box(c.x, c.y, c.hx, c.hy, c.yaw, z, c.top, c.bottom);
+      const wide = !c.seeThrough && (c.kind === "circle" ? c.r > thin : Math.min(c.hx, c.hy) > thin / 2 && Math.max(c.hx, c.hy) > thin);
+      const m = (c.stops === "camera" ? mask & ~WALK : c.stops === "walkers" ? mask & WALK : mask) & (wide ? SOLID : ~SIGHT);
+      if (c.kind === "circle") this.circle(c.x, c.y, c.r, z, c.top, c.bottom, m);
+      else this.box(c.x, c.y, c.hx, c.hy, c.yaw, z, c.top, c.bottom, m);
     }
     return this.close();
   }
@@ -311,6 +328,7 @@ export class Solids {
       const next = this.link[i]!;
       this.index(i, false);
       this.shape[i] = 0;
+      this.mask[i] = 0;
       this.spare.push(i);
       this.size--;
       i = next;
@@ -344,9 +362,13 @@ export class Solids {
       b.set(a);
       return b;
     };
-    const shape = new Uint8Array(n);
-    shape.set(this.shape);
-    this.shape = shape;
+    const u8 = (a: Uint8Array) => {
+      const b = new Uint8Array(n);
+      b.set(a);
+      return b;
+    };
+    this.shape = u8(this.shape);
+    this.mask = u8(this.mask);
     this.px = f64(this.px);
     this.py = f64(this.py);
     this.hx = f64(this.hx);
@@ -483,9 +505,9 @@ export class Solids {
     return up === 0 ? side : side === 0 ? up : Math.hypot(side, up);
   }
 
-  /** True when a solid stands in the way of something `height` tall that steps over `step`. */
-  private blocks(i: number, step: number, height: number): boolean {
-    return this.hi[i]! > step && this.lo[i]! < height;
+  /** True when a solid stands in the way of a walker `height` tall that steps over `step`. */
+  blocks(i: number, step: number, height: number): boolean {
+    return (this.mask[i]! & WALK) !== 0 && this.hi[i]! > step && this.lo[i]! < height;
   }
 
   /** The way out of solid i for a circle of radius r at (x, y): a push into (nX, nY) of the length returned (0: not touching). */
@@ -571,11 +593,115 @@ export class Solids {
     return best <= range ? best : Infinity;
   }
 
-  /** True when the point (x, y, z) is inside a solid's volume grown by `pad` (z is the world's, as the solids' grounds are). */
+  /** True when the point (x, y, z) is inside a solid's volume grown by `pad`, of those the camera keeps out of (z is the world's, as the solids' grounds are). */
   inside(x: number, y: number, z: number, pad = 0): boolean {
     const n = this.around(x - pad, y - pad, x + pad, y + pad);
-    for (let k = 0; k < n; k++) if (this.far(this.found[k]!, x, y, z, pad) === 0) return true;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (this.mask[i]! & VIEW && this.far(i, x, y, z, pad) === 0) return true;
+    }
     return false;
+  }
+
+  /**
+   * The camera's arm: a ball of radius `pad` moved from A to B (world, z up). The share of the way (0..1) it
+   * gets before its view is blocked (a SIGHT solid ahead) or before it would end inside something it keeps out
+   * of (a VIEW solid round B: a trunk, a post, a crown); 1 when neither. Solids round A don't count (it can only
+   * leave them). `hit` is what stopped it. Boxes are grown with square corners here: a little room to spare.
+   */
+  view(ax: number, ay: number, az: number, bx: number, by: number, bz: number, pad: number): number {
+    const n = this.along(ax, ay, bx, by, pad);
+    const dx = bx - ax;
+    const dy = by - ay;
+    const dz = bz - az;
+    let best = 1;
+    this.hit = NOTHING;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      const mask = this.mask[i]!;
+      if (!(mask & VIEW)) continue;
+      // Where the segment is level with it (grown by pad).
+      const z0 = this.base[i]! + this.lo[i]! - pad;
+      const z1 = this.base[i]! + this.hi[i]! + pad;
+      let enter = 0;
+      let exit = 1;
+      if (Math.abs(dz) < 1e-9) {
+        if (az < z0 || az > z1) continue;
+      } else {
+        let u0 = (z0 - az) / dz;
+        let u1 = (z1 - az) / dz;
+        if (u0 > u1) {
+          const swap = u0;
+          u0 = u1;
+          u1 = swap;
+        }
+        if (u0 > enter) enter = u0;
+        if (u1 < exit) exit = u1;
+        if (enter > exit) continue;
+      }
+      // Where it's over its footprint (grown by pad).
+      const px = ax - this.px[i]!;
+      const py = ay - this.py[i]!;
+      if (this.shape[i] === CIRCLE) {
+        const R = this.hx[i]! + pad;
+        const a = dx * dx + dy * dy;
+        const b = px * dx + py * dy;
+        const c = px * px + py * py - R * R;
+        if (a < 1e-12) {
+          if (c > 0) continue;
+        } else {
+          const disc = b * b - a * c;
+          if (disc < 0) continue;
+          const root = Math.sqrt(disc);
+          const t0 = (-b - root) / a;
+          const t1 = (-b + root) / a;
+          if (t0 > enter) enter = t0;
+          if (t1 < exit) exit = t1;
+        }
+      } else {
+        const cos = this.cos[i]!;
+        const sin = this.sin[i]!;
+        const lx = px * cos + py * sin;
+        const ly = -px * sin + py * cos;
+        const ldx = dx * cos + dy * sin;
+        const ldy = -dx * sin + dy * cos;
+        const ex = this.hx[i]! + pad;
+        const ey = this.hy[i]! + pad;
+        if (Math.abs(ldx) < 1e-12) {
+          if (Math.abs(lx) > ex) continue;
+        } else {
+          let t0 = (-ex - lx) / ldx;
+          let t1 = (ex - lx) / ldx;
+          if (t0 > t1) {
+            const swap = t0;
+            t0 = t1;
+            t1 = swap;
+          }
+          if (t0 > enter) enter = t0;
+          if (t1 < exit) exit = t1;
+        }
+        if (Math.abs(ldy) < 1e-12) {
+          if (Math.abs(ly) > ey) continue;
+        } else {
+          let t0 = (-ey - ly) / ldy;
+          let t1 = (ey - ly) / ldy;
+          if (t0 > t1) {
+            const swap = t0;
+            t0 = t1;
+            t1 = swap;
+          }
+          if (t0 > enter) enter = t0;
+          if (t1 < exit) exit = t1;
+        }
+      }
+      if (enter > exit || enter >= best) continue;
+      // Round A already: never mind it. Otherwise it stops the view, or (only see-through) B inside it.
+      if (enter <= 0) continue;
+      if (!(mask & SIGHT) && exit < 1) continue;
+      best = enter;
+      this.hit = i;
+    }
+    return best;
   }
 
   /** The top of the tallest thing under (x, y) that's no higher than `step` above its ground (world z); −Infinity: none. */
@@ -584,7 +710,7 @@ export class Solids {
     let top = Number.NEGATIVE_INFINITY;
     for (let k = 0; k < n; k++) {
       const i = this.found[k]!;
-      if (this.lo[i]! > 0 || this.hi[i]! > step || this.gap(i, x, y) > 0) continue;
+      if (!(this.mask[i]! & WALK) || this.lo[i]! > 0 || this.hi[i]! > step || this.gap(i, x, y) > 0) continue;
       top = Math.max(top, this.base[i]! + this.hi[i]!);
     }
     return top;

@@ -9,9 +9,18 @@
  * by what is decided where they're used (collide.ts).
  */
 
-export type Collider =
+export type Collider = (
   | { kind: "circle"; x: number; y: number; r: number; top?: number; bottom?: number }
-  | { kind: "box"; x: number; y: number; hx: number; hy: number; yaw?: number; top?: number; bottom?: number };
+  | { kind: "box"; x: number; y: number; hx: number; hy: number; yaw?: number; top?: number; bottom?: number }
+) & {
+  /**
+   * Who it stops, when not everyone: only the camera (the air under a deck it shouldn't go into, a tree's
+   * crown), or only walkers (a tree's low branches).
+   */
+  stops?: "camera" | "walkers";
+  /** Seen through: dissolved in the dither when it's between the camera and him, rather than looked round. Thin things (a post, a mast) always are. */
+  seeThrough?: boolean;
+};
 
 /** An axis-aligned rectangle: its centre and half-extents (east-west, north-south). */
 export interface Rect {
