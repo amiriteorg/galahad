@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 
 /** The PWA, bundled in memory at daemon start so every node serves the same app it runs. */
 
@@ -21,7 +23,8 @@ const CSP = [
 
 export interface Assets {
   has(path: string): boolean;
-  serve(path: string): Response;
+  /** The file, compressed when the request accepts it, or 304 when it already holds this version. */
+  serve(path: string, request?: Request): Response;
 }
 
 interface Asset {
@@ -30,6 +33,47 @@ interface Asset {
   /** Content-versioned files may be kept for good; everything else is revalidated. */
   immutable?: boolean;
 }
+
+/** Text compresses well; images and the robots' geometry are sent as they are. */
+const COMPRESSIBLE = /^(text\/|application\/(json|manifest\+json)|image\/svg\+xml)/;
+
+/**
+ * What each file is sent as: its validator, and its compressed copies (made on first
+ * request, then kept: daemons that never serve the app never pay for them).
+ */
+interface Prepared {
+  etag: string;
+  bytes: Uint8Array<ArrayBuffer>;
+  br?: Uint8Array<ArrayBuffer>;
+  gzip?: Uint8Array<ArrayBuffer>;
+}
+
+function prepare(asset: Asset): Prepared {
+  const bytes = typeof asset.body === "string" ? new TextEncoder().encode(asset.body) : asset.body;
+  // Weak: the same file, whichever encoding carried it.
+  return { etag: `W/"${createHash("sha256").update(bytes).digest("base64url").slice(0, 27)}"`, bytes: bytes as Uint8Array<ArrayBuffer> };
+}
+
+/** The encoding to send, from the browser's Accept-Encoding: brotli, else gzip, else none. */
+export function pickEncoding(accept: string | null): "br" | "gzip" | null {
+  const offered = new Map(
+    (accept ?? "")
+      .toLowerCase()
+      .split(",")
+      .map((part) => {
+        const [name, ...params] = part.trim().split(";");
+        const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
+        return [name!.trim(), q ? Number(q.slice(2)) : 1] as const;
+      }),
+  );
+  if ((offered.get("br") ?? 0) > 0) return "br";
+  if ((offered.get("gzip") ?? 0) > 0) return "gzip";
+  return null;
+}
+
+/** Does If-None-Match name this version (weak comparison, as RFC 9110 has it for GET)? */
+const holds = (ifNoneMatch: string | null, etag: string): boolean =>
+  Boolean(ifNoneMatch) && (ifNoneMatch!.trim() === "*" || ifNoneMatch!.split(",").some((tag) => tag.trim().replace(/^W\//, "") === etag.replace(/^W\//, "")));
 
 /** The world's robot models (manifests, geometry, their notice and licence), served as files. */
 const ROBOT_TYPES: Record<string, string> = {
@@ -99,20 +143,36 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     const message = String((error as Error).message ?? error).replace(/[<>&]/g, "");
     files.set("/", { body: `<!doctype html><title>Galahad</title><p>The PWA failed to build: ${message}</p>`, type: "text/html" });
   }
+  const prepared = new Map<string, Prepared>();
   return {
     has: (path) => files.has(path),
-    serve: (path) => {
+    serve: (path, request) => {
       const asset = files.get(path)!;
-      return new Response(asset.body, {
-        headers: {
-          "content-type": asset.type,
-          "content-security-policy": CSP,
-          "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
-          "x-content-type-options": "nosniff",
-          "referrer-policy": "no-referrer",
-          "x-frame-options": "DENY",
-        },
-      });
+      let ready = prepared.get(path);
+      if (!ready) prepared.set(path, (ready = prepare(asset)));
+      const compressible = COMPRESSIBLE.test(asset.type);
+      const headers: Record<string, string> = {
+        "content-type": asset.type,
+        "content-security-policy": CSP,
+        "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+        "x-frame-options": "DENY",
+        etag: ready.etag,
+        ...(compressible ? { vary: "Accept-Encoding" } : {}),
+      };
+      // "no-cache" means "ask first": a browser (or the service worker) that has this version gets no body.
+      if (holds(request?.headers.get("if-none-match") ?? null, ready.etag)) return new Response(null, { status: 304, headers });
+      const encoding = compressible ? pickEncoding(request?.headers.get("accept-encoding") ?? null) : null;
+      if (encoding === "br") {
+        ready.br ??= new Uint8Array(brotliCompressSync(ready.bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9, [constants.BROTLI_PARAM_SIZE_HINT]: ready.bytes.length } }));
+        return new Response(ready.br, { headers: { ...headers, "content-encoding": "br" } });
+      }
+      if (encoding === "gzip") {
+        ready.gzip ??= new Uint8Array(gzipSync(ready.bytes, { level: 9 }));
+        return new Response(ready.gzip, { headers: { ...headers, "content-encoding": "gzip" } });
+      }
+      return new Response(ready.bytes, { headers });
     },
   };
 }

@@ -111,4 +111,37 @@ describe("the PWA bundle", () => {
     expect(pair).toContain("invalid_type"); // zod, for the invite schema
     expect(app).not.toContain("invalid_type");
   });
+
+  test("the shell goes compressed to a browser that takes it, and a copy it already has costs a 304", async () => {
+    const assets = await buildAssets();
+    const plain = assets.serve("/app.js");
+    const body = await plain.text();
+    const etag = plain.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(plain.headers.get("vary")).toBe("Accept-Encoding");
+
+    const br = assets.serve("/app.js", new Request("https://node.test/app.js", { headers: { "accept-encoding": "gzip, deflate, br" } }));
+    expect(br.headers.get("content-encoding")).toBe("br");
+    const brBytes = new Uint8Array(await br.arrayBuffer());
+    expect(brBytes.length).toBeLessThan(body.length / 2);
+    const { brotliDecompressSync, gunzipSync } = await import("node:zlib");
+    expect(brotliDecompressSync(brBytes).toString("utf8")).toBe(body);
+    expect(br.headers.get("content-security-policy")).toContain("script-src 'self'");
+
+    const gz = assets.serve("/app.js", new Request("https://node.test/app.js", { headers: { "accept-encoding": "gzip" } }));
+    expect(gz.headers.get("content-encoding")).toBe("gzip");
+    expect(gunzipSync(new Uint8Array(await gz.arrayBuffer())).toString("utf8")).toBe(body);
+
+    // Revalidating what it has: nothing comes back but the headers.
+    const again = assets.serve("/app.js", new Request("https://node.test/app.js", { headers: { "if-none-match": etag!, "accept-encoding": "br" } }));
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe("");
+    expect(again.headers.get("etag")).toBe(etag);
+    // The page itself too (it carries all the CSS), and a changed file has another tag.
+    const page = assets.serve("/");
+    expect(assets.serve("/", new Request("https://node.test/", { headers: { "if-none-match": page.headers.get("etag")! } })).status).toBe(304);
+    expect(assets.serve("/pair.js").headers.get("etag")).not.toBe(etag);
+    // Images are already compressed: they're sent as they are.
+    expect(assets.serve("/icon-192.png", new Request("https://node.test/icon-192.png", { headers: { "accept-encoding": "br" } })).headers.get("content-encoding")).toBeNull();
+  });
 });

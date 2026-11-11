@@ -1383,7 +1383,7 @@ export function createApp(ctx: AppContext) {
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
     }
 
-    if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path);
+    if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path, req);
 
     if (path.startsWith("/gw/")) {
       if (listener !== "loopback") throw new HttpError(404, "not found");
