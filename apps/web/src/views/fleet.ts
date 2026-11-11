@@ -568,7 +568,7 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
   const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat());
   // One node card's height: most fleets have one or two, side by side on a desktop.
   const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(170));
-  const clientsBox = h("div", { class: "card" });
+  const clientsBox = h("div", { class: "card" }, skeletonRows(1, { avatar: true }));
   const revokedBox = h("div");
   const errorBox = h("div");
 
