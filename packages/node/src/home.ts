@@ -11,6 +11,7 @@ import { loadEnv } from "./env.ts";
  *   mind.db       this node's replica of the mind (the log + views)
  *   local.db      node-local state that never replicates (gateway tokens)
  *   admin.token   local CLI credential (0600)
+ *   experiments/  the experiments this node's world showed, saved (node-local; see experiment-store.ts)
  *   keys.json     device private keys, only when the OS keychain is unavailable (0600)
  */
 
@@ -33,6 +34,7 @@ export class Home {
   readonly localPath: string;
   readonly adminTokenPath: string;
   readonly keyFilePath: string;
+  readonly experimentsDir: string;
 
   constructor(readonly dir: string) {
     this.configPath = join(dir, "config.json");
@@ -40,6 +42,7 @@ export class Home {
     this.localPath = join(dir, "local.db");
     this.adminTokenPath = join(dir, "admin.token");
     this.keyFilePath = join(dir, "keys.json");
+    this.experimentsDir = join(dir, "experiments");
   }
 
   static resolve(dir?: string): Home {

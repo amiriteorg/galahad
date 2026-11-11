@@ -117,15 +117,20 @@ describe("the test sites", () => {
 });
 
 describe("an experiment", () => {
-  test("starts, runs on its frames (only with its key), ends; Galahad walks out to watch it", () => {
+  test("starts (being built), runs on its frames (only with its key), ends; Galahad builds it, then goes out to watch it", () => {
     const { world, events } = hub();
     const { id, key } = world.start({ title: "Pendulum", engine: "mujoco", scene: [box] }, origin);
     expect(events.map((e) => e.type)).toEqual(["experiment", "galahad", "thought"]);
+    expect(events[0]).toMatchObject({ experiment: { status: "starting", phase: "building" } });
     expect(events[1]).toMatchObject({ galahad: { station: "field", experiment: id } });
     expect(() => world.frames(id, "A".repeat(43), { frames: [{ t: 0, poses: {} }] })).toThrow(/not yours/);
+    events.length = 0;
     world.frames(id, key, { frames: [{ t: 0.05, poses: { base: [0, 0, 1, 1, 0, 0, 0] }, metrics: { angle: 0.3 } }] });
-    expect(events.filter((e) => e.type === "frame")).toHaveLength(1);
-    expect(events.at(-1)).toMatchObject({ type: "experiment", experiment: { status: "running", metrics: { angle: 0.3 } } });
+    // Its first frame is the test: that's said first, then the frame.
+    expect(events.map((e) => e.type)).toEqual(["experiment", "galahad", "thought", "frame"]);
+    expect(events[0]).toMatchObject({ type: "experiment", experiment: { status: "running", phase: "testing" } });
+    expect(events[1]).toMatchObject({ galahad: { station: "field", experiment: id, doing: "Testing: Pendulum" } });
+    expect((world.hello() as Extract<WorldEvent, { type: "hello" }>).experiments[0]).toMatchObject({ metrics: { angle: 0.3 } });
     const ended = world.end(id, key, { status: "done", summary: "it swung up in 2.1 s" });
     expect(ended).toMatchObject({ status: "done", summary: "it swung up in 2.1 s" });
     expect(() => world.frames(id, key, { frames: [{ t: 1, poses: {} }] })).toThrow(/ended/);

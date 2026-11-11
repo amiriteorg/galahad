@@ -1,33 +1,53 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  ASSEMBLE_MIN_MS,
+  ASSEMBLE_MS,
+  BENCH,
+  type Examination,
+  EXAMINE_MS,
+  ExperimentCode,
+  ExperimentCode as ExperimentCodeSchema,
   ExperimentEnd,
   ExperimentEnd as ExperimentEndSchema,
+  type ExperimentEngine,
   type ExperimentFrame,
   ExperimentFrames,
   ExperimentFrames as ExperimentFramesSchema,
+  type ExperimentPhase,
+  ExperimentPhaseReport,
+  ExperimentPhaseReport as ExperimentPhaseSchema,
   ExperimentStart,
   ExperimentStart as ExperimentStartSchema,
   type ExperimentView,
   type GalahadState,
+  HOLD_MAX_MS,
   PADS,
   padKindFor,
+  type PhaseTimes,
   PLOT_FILL,
+  type Pose,
   SITE_NAMES,
+  type SiteName,
   SITES,
   type Station,
   STATIONS,
+  walkMs,
   type WorldEvent,
   type WorldNode,
   type WorldReport,
   type WorldWeather,
 } from "@galahad/core";
 import type { z } from "zod";
+import { ExperimentError, type ExperimentStore } from "./experiment-store.ts";
 
 /*
  * The SANDBOX, as the node keeps it: what Galahad is doing (from his chats, tools,
- * quests and agents' calls), his last few thoughts, and the experiments running on
- * their plots. In memory: the world is a view of what's happening now, not a record
- * (the ledger, chats and artifacts are the records). Watchers get every change.
+ * quests and agents' calls), his last few thoughts, and the experiments on their
+ * plots, each through its life: built at the workshop's bench, tested where it
+ * belongs, examined at the observatory, then done. The world itself is in memory (a
+ * view of what's happening now); every experiment is also saved as it runs, by the
+ * experiment store (node-local), so it can be listed, examined and replayed after.
+ * Watchers get every change.
  */
 
 const PLOT = { small: 24, medium: 48, large: 96 } as const;
@@ -41,8 +61,12 @@ const IDLE_MS = 25_000;
 const THOUGHT_MAX = 160;
 /** Frames per second accepted per experiment (beyond it frames are dropped, not queued). */
 const MAX_FPS = 60;
+/** Saved experiments the world's hello offers to replay. */
+export const SAVED_IN_HELLO = 24;
 
 interface Running extends ExperimentView {
+  phase: ExperimentPhase;
+  phases: PhaseTimes;
   key: Buffer;
   lastFrameAt: number;
   /** Frames accepted in the current second, to hold MAX_FPS. */
@@ -51,6 +75,16 @@ interface Running extends ExperimentView {
   cell: number;
   /** The pad it stands on (a site's), if any. */
   pad: string | null;
+  /** Where it asked to stand, and how far it spans: its place is chosen again once its simulation says. */
+  site: SiteName | "open" | undefined;
+  extent: number | undefined;
+  /** Prepared by a run (experiment_run) before its simulation started: the simulation's start fills it in. */
+  drafted: boolean;
+  /** When Galahad will be at the bench (node clock), for a build begun before its bodies were known. */
+  arrives: number;
+  /** Holds it at the observatory while he examines it. */
+  timer: ReturnType<typeof setTimeout> | null;
+  waiters: (() => void)[];
 }
 
 export interface ExperimentOrigin {
@@ -108,12 +142,20 @@ export class WorldHub {
   private nodes: () => WorldNode[] = () => [];
   private weather: () => WorldWeather | null = () => null;
   private wakeWeather: () => void = () => {};
+  private readonly examiners = new Set<(examination: Examination | null, experiment: ExperimentView) => void>();
 
-  constructor(private readonly opts: { now?: () => number } = {}) {
+  constructor(private readonly opts: { now?: () => number; store?: ExperimentStore } = {}) {
     this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
     // An experiment that stops sending (its sandbox died, its script hung) ends as failed.
     this.sweep = setInterval(() => this.quiet(), 15_000);
     this.sweep.unref?.();
+    // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
+    opts.store?.onChange(() => this.emit({ type: "saved", at: this.now(), saved: this.saved() }));
+  }
+
+  /** Where experiments are saved (the node always has one; some tests don't). */
+  get store(): ExperimentStore | undefined {
+    return this.opts.store;
   }
 
   /** Where the weather comes from, and how to ask for fresh weather when someone opens the world (the app sets it). */
@@ -127,16 +169,12 @@ export class WorldHub {
     this.nodes = nodes;
   }
 
-  /** Running experiments that haven't sent a frame for 90 seconds have stopped. */
+  /** Running experiments that haven't sent a frame for 90 seconds have stopped (a run's draft waits for its sandbox: the run ends it). */
   quiet(): void {
     const now = this.now();
-    for (const e of this.experiments.values()) {
-      if ((e.status === "starting" || e.status === "running") && now - e.lastFrameAt > 90_000) {
-        e.status = "failed";
-        e.endedAt = now;
-        e.summary = "it stopped sending frames";
-        this.emit({ type: "experiment", at: now, experiment: this.view(e) });
-      }
+    for (const e of [...this.experiments.values()]) {
+      if (e.drafted && !e.scene.length) continue;
+      if (e.endedAt === null && now - e.lastFrameAt > 90_000) this.conclude(e, "failed", "it stopped sending frames");
     }
   }
 
@@ -156,7 +194,7 @@ export class WorldHub {
 
   /** Everything now: what a new watcher sees first. */
   hello(): WorldEvent {
-    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather() };
+    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather(), saved: this.saved() };
   }
 
   watch(fn: (event: WorldEvent) => void): () => void {
@@ -189,9 +227,9 @@ export class WorldHub {
     if (this.idle) clearTimeout(this.idle);
     this.idle = setTimeout(() => {
       this.idle = null;
-      // Out at an experiment that's still running, he stays to watch it.
+      // Building an experiment, out at one being tested or examining one, he stays at it.
       const watching = this.galahad.experiment ? this.experiments.get(this.galahad.experiment) : undefined;
-      if (watching && (watching.status === "running" || watching.status === "starting")) return this.restIn(IDLE_MS);
+      if (watching && (watching.phase === "building" || watching.phase === "testing" || watching.phase === "examining")) return this.restIn(IDLE_MS);
       this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
       this.emit({ type: "galahad", at: this.now(), galahad: this.galahad });
     }, ms);
@@ -224,41 +262,107 @@ export class WorldHub {
   }
 
   private view(e: Running): ExperimentView {
-    const { key: _key, window: _window, cell: _cell, pad: _pad, lastFrameAt: _last, ...view } = e;
-    return view;
+    return {
+      id: e.id,
+      title: e.title,
+      engine: e.engine,
+      status: e.status,
+      plot: e.plot,
+      scale: e.scale,
+      scene: e.scene,
+      startedAt: e.startedAt,
+      endedAt: e.endedAt,
+      nodeName: e.nodeName,
+      sandbox: e.sandbox,
+      quest: e.quest,
+      metrics: e.metrics,
+      summary: e.summary,
+      phase: e.phase,
+      phases: { ...e.phases },
+      assembly: e.assembly ?? null,
+      build: e.build ?? null,
+    };
+  }
+
+  /** What the store keeps of it. */
+  private fields(e: Running): ExperimentView & { phase: ExperimentPhase; phases: PhaseTimes } {
+    return { ...this.view(e), phase: e.phase, phases: { ...e.phases } };
+  }
+
+  /** Tells the store. A disk that fails never stops the world (the store logs its trouble); what the caller did wrong (ExperimentError) is theirs to hear. */
+  private keep(what: (store: ExperimentStore) => void): void {
+    const store = this.opts.store;
+    if (!store) return;
+    try {
+      what(store);
+    } catch (error) {
+      if (error instanceof ExperimentError) throw error;
+    }
+  }
+
+  /** The saved experiments that have ended, newest first, to replay. */
+  private saved() {
+    return this.opts.store?.recent(SAVED_IN_HELLO) ?? [];
   }
 
   /**
-   * A new experiment where it belongs: on a pad of the proving ground or the hall when one of the
-   * right kind is free (an ended experiment still standing there is cleared away), otherwise on the
-   * next free plot of open land. Returns its id and the key its frames must carry.
+   * Where an experiment stands: on a pad of the proving ground or the hall when one of the right kind is
+   * free (an ended experiment still standing there is cleared away), otherwise on the next free plot of
+   * open land. `except` is one being placed again: its own pad or cell doesn't count as taken.
    */
-  start(input: z.infer<typeof ExperimentStart>, origin: ExperimentOrigin): { id: string; key: string; view: ExperimentView } {
-    this.prune();
+  private place(engine: ExperimentEngine, extent: number | undefined, site: SiteName | "open" | undefined, size: keyof typeof PLOT | undefined, except?: string) {
     const at = this.now();
-    const kind = padKindFor(input.engine, input.extent, input.site);
-    const running = new Set([...this.experiments.values()].filter((e) => e.endedAt === null).map((e) => e.pad));
+    const kind = padKindFor(engine, extent, site);
+    const running = new Set([...this.experiments.values()].filter((e) => e.endedAt === null && e.id !== except).map((e) => e.pad));
     const pad = kind ? PADS.find((p) => p.kind === kind && !running.has(p.id)) : undefined;
     let cell = -1;
     let plot: ExperimentView["plot"];
     if (pad) {
       for (const e of [...this.experiments.values()]) {
-        if (e.pad !== pad.id) continue;
+        if (e.pad !== pad.id || e.id === except) continue;
         this.experiments.delete(e.id);
         this.emit({ type: "cleared", at, experiment: e.id });
       }
       plot = { x: pad.x, y: pad.y, size: pad.size };
     } else {
-      const used = new Set([...this.experiments.values()].map((e) => e.cell));
+      const used = new Set([...this.experiments.values()].filter((e) => e.id !== except).map((e) => e.cell));
       cell = 0;
       while (used.has(cell) || cellOnSite(cellAt(cell))) cell++;
-      plot = { ...cellAt(cell), size: PLOT[input.plot ?? "medium"] };
+      plot = { ...cellAt(cell), size: PLOT[size ?? "medium"] };
     }
-    const scale = input.extent ? Math.min(1, (plot.size * PLOT_FILL) / input.extent) : 1;
-    const key = randomBytes(32);
-    const id = `ex_${randomBytes(9).toString("base64url")}`;
+    const scale = extent ? Math.min(1, (plot.size * PLOT_FILL) / extent) : 1;
+    return { plot, cell, pad: pad?.id ?? null, scale };
+  }
+
+  /** About where Galahad is: the station he's at, or the bench or plot of the experiment he's with. */
+  private spot(): { x: number; y: number } {
+    const g = this.galahad;
+    const e = g.experiment ? this.experiments.get(g.experiment) : undefined;
+    if (g.station === "field") return e ? (e.phase === "building" ? BENCH.stand : e.plot) : STATIONS.keep;
+    return STATIONS[g.station];
+  }
+
+  /**
+   * How long, from now, the world shows it put together on the bench: until ASSEMBLE_MS after he's there
+   * (at least ASSEMBLE_MIN_MS, at most HOLD_MAX_MS). With nobody watching, nothing is held.
+   */
+  private buildSpan(arrives: number): { from: number; until: number } {
+    const now = this.now();
+    if (!this.watchers.size) return { from: now, until: now };
+    return { from: now, until: Math.min(now + HOLD_MAX_MS, Math.max(now + ASSEMBLE_MIN_MS, arrives + ASSEMBLE_MS)) };
+  }
+
+  private create(
+    input: { title: string; engine: ExperimentEngine; scene: ExperimentView["scene"]; extent?: number; site?: SiteName | "open"; plot?: keyof typeof PLOT },
+    origin: ExperimentOrigin,
+    drafted: boolean,
+  ): Running {
+    this.prune();
+    const at = this.now();
+    const { plot, cell, pad, scale } = this.place(input.engine, input.extent, input.site, input.plot);
+    const arrives = at + walkMs(this.spot(), BENCH.stand);
     const experiment: Running = {
-      id,
+      id: `ex_${randomBytes(9).toString("base64url")}`,
       title: input.title,
       engine: input.engine,
       status: "starting",
@@ -272,18 +376,75 @@ export class WorldHub {
       quest: origin.quest,
       metrics: {},
       summary: null,
-      key,
+      phase: "building",
+      phases: { building: at, testing: null, examining: null, ended: null },
+      assembly: null,
+      build: input.scene.length ? this.buildSpan(arrives) : null,
+      key: randomBytes(32),
       lastFrameAt: at,
       window: { at, count: 0 },
       cell,
-      pad: pad?.id ?? null,
+      pad,
+      site: input.site,
+      extent: input.extent,
+      drafted,
+      arrives,
+      timer: null,
+      waiters: [],
     };
-    this.experiments.set(id, experiment);
+    this.experiments.set(experiment.id, experiment);
+    this.keep((store) => store.begin(this.fields(experiment)));
     this.emit({ type: "experiment", at, experiment: this.view(experiment) });
-    // He walks out to watch it.
-    this.doing("field", `Running an experiment: ${input.title}`, { experiment: id });
-    this.think(`Let's see how "${input.title}" behaves.`);
-    return { id, key: key.toString("base64url"), view: this.view(experiment) };
+    // He goes to the workshop's bench to build it.
+    this.doing("field", `Building an experiment: ${input.title}`, { experiment: experiment.id });
+    return experiment;
+  }
+
+  /** Seconds its simulation should hold its first frame (the start's answer, `build`): 0, don't. */
+  private holdSeconds(e: Running): number {
+    return e.build ? Math.max(0, Math.round((e.build.until - this.now()) / 100) / 10) : 0;
+  }
+
+  /**
+   * A new experiment where it belongs (see place), being built. Returns its id, the key its frames must
+   * carry, and how long its first frame should wait so the world can show it built (0: no wait). A run's
+   * draft for this sandbox, waiting for its simulation, is filled in instead.
+   */
+  start(input: z.infer<typeof ExperimentStart>, origin: ExperimentOrigin): { id: string; key: string; view: ExperimentView; build: number } {
+    const draft = origin.sandbox ? [...this.experiments.values()].find((e) => e.drafted && !e.scene.length && e.sandbox === origin.sandbox && e.endedAt === null) : undefined;
+    const e = draft ? this.fill(draft, input) : this.create(input, origin, false);
+    this.think(`Let's put "${e.title}" together.`);
+    return { id: e.id, key: e.key.toString("base64url"), view: this.view(e), build: this.holdSeconds(e) };
+  }
+
+  /** A run's draft gets its simulation: its bodies and engine, and its place again if that changed. */
+  private fill(e: Running, input: z.infer<typeof ExperimentStart>): Running {
+    const site = input.site ?? e.site;
+    const extent = input.extent ?? e.extent;
+    if (padKindFor(input.engine, extent, site) !== padKindFor(e.engine, e.extent, e.site) || extent !== e.extent) {
+      const placed = this.place(input.engine, extent, site, input.plot, e.id);
+      Object.assign(e, { plot: placed.plot, cell: placed.cell, pad: placed.pad, scale: placed.scale });
+    }
+    Object.assign(e, { engine: input.engine, scene: input.scene, site, extent, lastFrameAt: this.now(), build: this.buildSpan(e.arrives) });
+    this.keep((store) => store.update(this.fields(e)));
+    this.emit({ type: "experiment", at: this.now(), experiment: this.view(e) });
+    return e;
+  }
+
+  /**
+   * A run (experiment_run) prepares an experiment before its sandbox exists: Galahad goes to the workshop
+   * and starts building while the sandbox spins up; its simulation's start fills it in (`attach` names
+   * the sandbox). The run ends it if the simulation never does.
+   */
+  draft(input: { title: string; engine: ExperimentEngine; extent?: number; site?: SiteName | "open" }, origin: ExperimentOrigin): ExperimentView {
+    return this.view(this.create({ ...input, scene: [] }, origin, true));
+  }
+
+  attach(id: string, sandbox: string): void {
+    const e = this.experiments.get(id);
+    if (!e || e.endedAt !== null) return;
+    e.sandbox = sandbox;
+    this.keep((store) => store.update(this.fields(e)));
   }
 
   /** The experiment, if this key is its own (constant-time). */
@@ -294,56 +455,177 @@ export class WorldHub {
     return e;
   }
 
+  /** The module says where it is: how its bodies stand once built (for the bench), then that the test begins. */
+  phase(id: string, key: string, input: z.infer<typeof ExperimentPhaseReport>): ExperimentView {
+    const e = this.owned(id, key);
+    if (e.endedAt !== null) throw new WorldError(409, "that experiment has ended");
+    if (e.phase === "building") {
+      if (input.phase === "building") {
+        const names = new Set(e.scene.map((b) => b.id));
+        e.assembly = Object.fromEntries(Object.entries(input.poses).filter(([body]) => names.has(body))) as Record<string, Pose>;
+        this.emit({ type: "experiment", at: this.now(), experiment: this.view(e) });
+      } else this.testing(e);
+    }
+    return this.view(e);
+  }
+
+  /** Built: out to where it's tested, and the test begins. */
+  private testing(e: Running): void {
+    const at = this.now();
+    e.phase = "testing";
+    e.status = "running";
+    e.phases.testing = at;
+    e.assembly = null;
+    this.keep((store) => store.update(this.fields(e)));
+    this.emit({ type: "experiment", at, experiment: this.view(e) });
+    this.doing("field", `Testing: ${e.title}`, { experiment: e.id });
+    this.think(`Let's see how "${e.title}" behaves.`);
+  }
+
   frames(id: string, key: string, input: z.infer<typeof ExperimentFrames>): { accepted: number } {
     const e = this.owned(id, key);
     if (e.status === "done" || e.status === "failed") throw new WorldError(409, "that experiment has ended");
     const at = this.now();
     e.lastFrameAt = at;
+    // A module that doesn't say its phases: its first frame is the test.
+    if (e.phase === "building") this.testing(e);
     if (at - e.window.at >= 1000) e.window = { at, count: 0 };
-    let accepted = 0;
+    const accepted: (typeof input.frames)[number][] = [];
     for (const f of input.frames) {
       if (e.window.count >= MAX_FPS) break;
       e.window.count++;
-      accepted++;
+      accepted.push(f);
       const frame: ExperimentFrame = { experiment: id, t: f.t, poses: f.poses, ...(f.metrics ? { metrics: f.metrics } : {}) };
       if (f.metrics) e.metrics = { ...e.metrics, ...f.metrics };
       this.emit({ type: "frame", at, frame });
     }
-    if (e.status === "starting") {
-      e.status = "running";
-      this.emit({ type: "experiment", at, experiment: this.view(e) });
-    }
-    return { accepted };
+    if (accepted.length) this.keep((store) => store.record(id, accepted, at));
+    return { accepted: accepted.length };
   }
 
   end(id: string, key: string, input: z.infer<typeof ExperimentEnd>): ExperimentView {
     const e = this.owned(id, key);
-    if (e.status === "done" || e.status === "failed") return this.view(e);
-    e.status = input.status;
-    e.endedAt = this.now();
-    e.summary = input.summary ?? null;
-    if (input.metrics) e.metrics = { ...e.metrics, ...input.metrics };
-    this.emit({ type: "experiment", at: this.now(), experiment: this.view(e) });
-    this.think(input.summary ? `${e.title}: ${input.summary}` : `${e.title} ${input.status === "done" ? "finished" : "failed"}.`);
-    if (this.galahad.experiment === id) this.rest(8_000);
+    if (e.endedAt === null) this.conclude(e, input.status, input.summary ?? null, input.metrics);
     return this.view(e);
+  }
+
+  /** The code that ran it (the module's own `__main__`). */
+  code(id: string, key: string, input: z.infer<typeof ExperimentCode>): void {
+    this.owned(id, key);
+    this.keep((store) => store.setCode(id, input.name, input.source));
+  }
+
+  /** A run keeps the script it ran with its experiment. */
+  keepCode(id: string, name: string, source: string): void {
+    if (this.experiments.has(id)) this.keep((store) => store.setCode(id, name, source));
+  }
+
+  /**
+   * It ended (done, or failed): it's saved, and Galahad walks to the observatory and examines it. While
+   * someone watches, he takes his time there (the walk, then EXAMINE_MS; at most HOLD_MAX_MS); then it's
+   * done.
+   */
+  private conclude(e: Running, status: "done" | "failed", summary: string | null, metrics?: Record<string, number>): void {
+    const at = this.now();
+    const from = e.phase === "building" ? BENCH.stand : e.plot;
+    e.status = status;
+    e.endedAt = at;
+    e.summary = summary;
+    if (metrics) e.metrics = { ...e.metrics, ...metrics };
+    e.phase = "examining";
+    e.phases.examining = at;
+    e.assembly = null;
+    e.build = null;
+    this.keep((store) => store.finish(this.fields(e)));
+    this.emit({ type: "experiment", at, experiment: this.view(e) });
+    this.think(summary ? `${e.title}: ${summary}` : `${e.title} ${status === "done" ? "finished" : "failed"}.`);
+    // The seam for the observatory's chalkboard: whatever writes the examination up listens (onExamine).
+    const examination = this.examination(e.id);
+    for (const fn of this.examiners) {
+      try {
+        fn(examination, this.view(e));
+      } catch {
+        /* a listener's problem */
+      }
+    }
+    this.doing("observatory", `Examining: ${e.title}`, { experiment: e.id });
+    const hold = this.watchers.size ? Math.min(HOLD_MAX_MS, walkMs(from, STATIONS.observatory) + EXAMINE_MS) : 0;
+    if (!hold) return this.examined(e);
+    e.timer = setTimeout(() => this.examined(e), hold);
+    e.timer.unref?.();
+  }
+
+  /** Examined: done (or failed), and he goes back to rest. */
+  private examined(e: Running): void {
+    if (e.timer) clearTimeout(e.timer);
+    e.timer = null;
+    if (e.phase !== "examining") return;
+    e.phase = e.status === "done" ? "done" : "failed";
+    e.phases.ended = this.now();
+    this.keep((store) => store.update(this.fields(e)));
+    // (Cleared from its pad meanwhile, it's no longer in the world: only its record changes.)
+    if (this.experiments.get(e.id) === e) this.emit({ type: "experiment", at: this.now(), experiment: this.view(e) });
+    const examination = this.examination(e.id);
+    if (examination) this.think(examination.headline);
+    if (this.galahad.experiment === e.id) this.rest(4_000);
+    for (const resolve of e.waiters.splice(0)) resolve();
+  }
+
+  /** What an experiment showed, from what the store kept. */
+  examination(id: string): Examination | null {
+    try {
+      return this.opts.store?.examination(id) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The seam for whatever writes up an examination (the observatory's chalkboard): called as each experiment's examining begins. */
+  onExamine(fn: (examination: Examination | null, experiment: ExperimentView) => void): () => void {
+    this.examiners.add(fn);
+    return () => this.examiners.delete(fn);
+  }
+
+  /** Resolves once it's done or failed (examined), or after `maxMs`. */
+  settled(id: string, maxMs = HOLD_MAX_MS + 5_000): Promise<void> {
+    const e = this.experiments.get(id);
+    if (!e || e.phase === "done" || e.phase === "failed") return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, maxMs);
+      timer.unref?.();
+      e.waiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  /** The experiments a sandbox started (a run reports them). */
+  experimentsOf(sandbox: string): ExperimentView[] {
+    return [...this.experiments.values()].filter((e) => e.sandbox === sandbox).map((e) => this.view(e));
+  }
+
+  current(id: string): ExperimentView | null {
+    const e = this.experiments.get(id);
+    return e ? this.view(e) : null;
+  }
+
+  /** A run's experiment that never got going (its sandbox didn't start, its script failed first) ends, failed, saying why. */
+  abandon(id: string, summary: string): void {
+    const e = this.experiments.get(id);
+    if (e && e.endedAt === null) this.conclude(e, "failed", summary.slice(0, 300));
   }
 
   /** A sandbox that's gone takes its unfinished experiments with it. */
   sandboxGone(sandbox: string): void {
-    for (const e of this.experiments.values()) {
-      if (e.sandbox === sandbox && (e.status === "starting" || e.status === "running")) {
-        e.status = "failed";
-        e.endedAt = this.now();
-        e.summary = "its sandbox stopped before it finished";
-        this.emit({ type: "experiment", at: this.now(), experiment: this.view(e) });
-      }
+    for (const e of [...this.experiments.values()]) {
+      if (e.sandbox === sandbox && e.endedAt === null) this.conclude(e, "failed", "its sandbox stopped before it finished");
     }
   }
 
-  /** Only the most recent ended experiments stay on the map. */
+  /** Only the most recent ended experiments stay on the map (one being examined stays until it's done). */
   private prune(): void {
-    const ended = [...this.experiments.values()].filter((e) => e.endedAt !== null).sort((a, b) => b.endedAt! - a.endedAt!);
+    const ended = [...this.experiments.values()].filter((e) => e.endedAt !== null && !e.timer).sort((a, b) => b.endedAt! - a.endedAt!);
     for (const e of ended.slice(KEEP_ENDED)) this.experiments.delete(e.id);
   }
 
@@ -361,7 +643,9 @@ export class WorldHub {
   close(): void {
     if (this.idle) clearTimeout(this.idle);
     clearInterval(this.sweep);
+    for (const e of this.experiments.values()) if (e.timer) clearTimeout(e.timer);
     this.watchers.clear();
+    this.examiners.clear();
   }
 }
 
@@ -385,11 +669,14 @@ const MAX_BODY = 4_000_000;
 
 /**
  * The world, as a sandbox reaches it through its gateway:
- *   POST /world/experiments                 (Bearer: the sandbox's token, scope "world") → { id, key, plot, scale }
+ *   POST /world/experiments                 (Bearer: the sandbox's token, scope "world") → { id, key, plot, scale, build }
+ *   POST /world/experiments/<id>/phase      (x-experiment-key) { phase: "building", poses } | { phase: "testing" }
+ *   POST /world/experiments/<id>/code       (x-experiment-key) { name, source }
  *   POST /world/experiments/<id>/frames     (x-experiment-key) { frames: [...] }
  *   POST /world/experiments/<id>/end        (x-experiment-key) { status, summary?, metrics? }
- * Starting spends one request of the token; frames carry the experiment's own key instead,
- * so a long simulation doesn't use up the sandbox's budget for models.
+ * Starting spends one request of the token; the rest carry the experiment's own key instead,
+ * so a long simulation doesn't use up the sandbox's budget for models. `build` is how many
+ * seconds the first frame should wait while the world shows it built (0 with nobody watching).
  */
 export async function handleSandboxWorld(
   req: Request,
@@ -415,10 +702,10 @@ export async function handleSandboxWorld(
       if (!input.success) return problem(input.error.issues);
       const label = ctx.tokens.labelOf(token);
       const sandbox = label?.startsWith("sandbox:") ? label.slice("sandbox:".length) : null;
-      const { id, key, view } = ctx.world.start(input.data, { nodeName: ctx.nodeName, sandbox, quest: null });
-      return json(200, { id, key, plot: view.plot, scale: view.scale });
+      const { id, key, view, build } = ctx.world.start(input.data, { nodeName: ctx.nodeName, sandbox, quest: null });
+      return json(200, { id, key, plot: view.plot, scale: view.scale, build });
     }
-    const match = path.match(/^\/world\/experiments\/(ex_[A-Za-z0-9_-]{12})\/(frames|end)$/);
+    const match = path.match(/^\/world\/experiments\/(ex_[A-Za-z0-9_-]{12})\/(frames|end|phase|code)$/);
     if (!match) return json(404, { error: "not found" });
     const key = req.headers.get("x-experiment-key") ?? "";
     if (match[2] === "frames") {
@@ -426,11 +713,23 @@ export async function handleSandboxWorld(
       if (!input.success) return problem(input.error.issues);
       return json(200, ctx.world.frames(match[1]!, key, input.data));
     }
+    if (match[2] === "phase") {
+      const input = ExperimentPhaseSchema.safeParse(body);
+      if (!input.success) return problem(input.error.issues);
+      const view = ctx.world.phase(match[1]!, key, input.data);
+      return json(200, { phase: view.phase });
+    }
+    if (match[2] === "code") {
+      const input = ExperimentCodeSchema.safeParse(body);
+      if (!input.success) return problem(input.error.issues);
+      ctx.world.code(match[1]!, key, input.data);
+      return json(200, { kept: true });
+    }
     const input = ExperimentEndSchema.safeParse(body);
     if (!input.success) return problem(input.error.issues);
     return json(200, { experiment: ctx.world.end(match[1]!, key, input.data) });
   } catch (error) {
-    if (error instanceof WorldError) return json(error.status, { error: error.message });
+    if (error instanceof WorldError || error instanceof ExperimentError) return json(error.status, { error: error.message });
     throw error;
   }
 }

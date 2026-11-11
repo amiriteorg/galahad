@@ -10,6 +10,8 @@
  * doing, never the content.
  */
 
+import type { SavedSummary } from "./experiments.ts";
+
 /** A shape a simulated body is drawn as (metres; local frame, z up). */
 export type BodyShape =
   | { kind: "box"; size: [number, number, number] }
@@ -39,6 +41,28 @@ export interface SceneBody {
 export type ExperimentEngine = "mujoco" | "gazebo" | "isaac" | "jsbsim" | "rocketpy" | "custom";
 export type ExperimentStatus = "starting" | "running" | "done" | "failed";
 
+/**
+ * An experiment's life, as the world shows it: Galahad builds it in the workshop hall (he writes and
+ * starts the simulation, its sandbox spins up, its bodies are put together on the assembly bench), it's
+ * tested where it belongs (live, on its pad or plot), then he examines the results at the observatory;
+ * then it's done, or failed. `status` says how the simulation went; the phase says where Galahad is with it.
+ */
+export type ExperimentPhase = "building" | "testing" | "examining" | "done" | "failed";
+
+/** When each phase began (the node's clock, ms): null until it has. `ended` is when it was done (or failed). */
+export interface PhaseTimes {
+  building: number;
+  testing: number | null;
+  examining: number | null;
+  ended: number | null;
+}
+
+/** An experiment's phase, from a node that says it or, for an older one, from its status. */
+export function phaseOf(e: Pick<ExperimentView, "status" | "phase">): ExperimentPhase {
+  if (e.phase) return e.phase;
+  return e.status === "starting" ? "building" : e.status === "running" ? "testing" : e.status;
+}
+
 /** A simulation running somewhere in the fleet, on its own plot of the world. */
 export interface ExperimentView {
   id: string;
@@ -60,6 +84,13 @@ export interface ExperimentView {
   metrics: Record<string, number>;
   /** How it ended, in a line. */
   summary: string | null;
+  /** Where it is in its life (older nodes don't say: `phaseOf` reads it from the status). */
+  phase?: ExperimentPhase;
+  phases?: PhaseTimes;
+  /** While it's built: how its bodies stand once put together (its first frame's poses), when its simulation has said. */
+  assembly?: Record<string, Pose> | null;
+  /** While it's built: the span over which the world shows it put together on the bench (node clock, ms), once its bodies are known. */
+  build?: { from: number; until: number } | null;
 }
 
 /** Position x,y,z (metres) and orientation as a unit quaternion w,x,y,z. */
@@ -91,7 +122,10 @@ export interface GalahadState {
   station: Station;
   /** One line: "Reading the bank: transactions", "Searching the web: rocket nozzle expansion ratio". */
   doing: string;
-  /** The experiment he's out at, when station is "field". */
+  /**
+   * The experiment he's working on: at "field" he's building it in the workshop (its phase is building)
+   * or out at its plot testing it; at the observatory he's examining it.
+   */
   experiment: string | null;
   /** The model thinking for him, when he's thinking. */
   model: string | null;
@@ -135,8 +169,13 @@ export interface WorldWeather {
 }
 
 export type WorldEvent =
-  /** The whole world as it is now: first, on every (re)connect. `weather` is null when it's unknown or turned off. */
-  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null }
+  /**
+   * The whole world as it is now: first, on every (re)connect. `weather` is null when it's unknown or turned off.
+   * `saved`: the experiments this node keeps that have ended, newest first (at most SAVED_IN_HELLO), to replay.
+   */
+  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null; saved?: SavedSummary[] }
+  /** The node's saved experiments changed (one ended, was pinned or deleted): the newest, as in hello. */
+  | { type: "saved"; at: number; saved: SavedSummary[] }
   /** The weather changed (null: no longer known). */
   | { type: "weather"; at: number; weather: WorldWeather | null }
   /** He moved or started something else. */
@@ -153,7 +192,7 @@ export type WorldEvent =
   /** Something needs you (a notice, an approval waiting). */
   | { type: "notice"; at: number; severity: "info" | "warn" | "error"; title: string };
 
-/** Which station a tool sends him to. */
+/** Which station a tool sends him to. Reading saved experiments is the observatory's work; running one takes him out to it. */
 export function stationForTool(name: string): Station {
   if (name.startsWith("bank_")) return "treasury";
   if (name.startsWith("sandbox_")) return "forge";
@@ -161,6 +200,7 @@ export function stationForTool(name: string): Station {
   if (name === "recall" || name === "remember" || name.startsWith("artifact")) return "library";
   if (name === "web_search") return "watchtower";
   if (name === "decide") return "oracle";
+  if (name === "experiments" || name === "experiment_examine") return "observatory";
   if (name.startsWith("experiment")) return "field";
   return "keep";
 }
@@ -249,4 +289,26 @@ export function padKindFor(engine: ExperimentEngine, extent: number | undefined,
   if (site === "field") return "course";
   const cell = PADS.find((p) => p.kind === "cell")!;
   return extent !== undefined && extent <= cell.size * PLOT_FILL ? "cell" : null;
+}
+
+/*
+ * Built, tested, examined. Galahad builds every experiment at the workshop hall's assembly bench
+ * (north of the aisle, between the printers and the first test cell), tests it where it belongs
+ * (padKindFor) and examines it at the observatory. The bench's place is fixed like the stations', so
+ * the node can tell how long he needs to get there. While someone watches, the node asks a simulation
+ * to hold its first frame until he's there and has put it together, and holds an ended experiment at
+ * the observatory while he examines it; with nobody watching, neither waits. Never longer than
+ * HOLD_MAX_MS either way.
+ */
+export const BENCH = { x: 102.5, y: 11.6, label: "Assembly bench", stand: { x: 102.5, y: 10.35 } } as const;
+/** How long the world shows an experiment put together on the bench once he's there, and examined (ms). */
+export const ASSEMBLE_MS = 8_000;
+export const EXAMINE_MS = 12_000;
+/** The shortest a watched build is shown, however long he's been at the bench. */
+export const ASSEMBLE_MIN_MS = 4_000;
+export const HOLD_MAX_MS = 30_000;
+
+/** About how long Galahad takes from one place to another: at a run (4.5 m/s), a quarter again for the way round things (ms). */
+export function walkMs(from: { x: number; y: number }, to: { x: number; y: number }): number {
+  return Math.round(((Math.hypot(to.x - from.x, to.y - from.y) * 1.25) / 4.5) * 1000) + 1500;
 }
