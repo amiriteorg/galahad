@@ -138,9 +138,10 @@ describe("the season's amounts", () => {
   });
 
   test("parts take their turns: with a narrow width they come one after another, with a wide one together", () => {
-    // Half the leaves fallen: the first in the queue are whole, the last gone.
-    expect(partScale(0.5, 0.3, 0)).toBe(1);
+    // Half the leaves fallen: the first in the queue are all there (smaller, now that fewer are left), the last gone.
+    expect(partScale(0.5, 0.3, 0)).toBeCloseTo(0.825, 9);
     expect(partScale(0.5, 0.3, 0.999)).toBe(0);
+    expect(partScale(0.98, 0.3, 0)).toBeGreaterThan(0.99);
     // Buds: every one a little out, and seen as soon as they break (a tenth of the way to leaf, a fifth of their size).
     expect(partScale(0.3, 1, 0)).toBeCloseTo(partScale(0.3, 1, 0.999), 9);
     expect(partScale(0.1, 1, 0.5)).toBeGreaterThan(0.18);

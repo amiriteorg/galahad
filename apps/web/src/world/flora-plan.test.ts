@@ -64,8 +64,15 @@ describe("what grows, as solids", () => {
     }
   });
 
-  test("deadwood: a log's box holds the log (but for its stub of a branch), a stump's circle the stump; each low enough to see over", () => {
-    const log = vertices("log", 1);
+  test("deadwood: a log's box holds the log (but for its stub of a branch), a circle the stump it broke from; each low enough to see over", () => {
+    const all = vertices("log", 1);
+    // (One model: the trunk, and its stump beyond its butt end.)
+    const part = (stump: boolean) => {
+      const out: number[] = [];
+      for (let i = 0; i < all.length; i += 3) if (all[i]! < -LOG.half - 0.02 === stump) out.push(all[i]! - (stump ? STUMP.x : 0), all[i + 1]!, all[i + 2]! - (stump ? STUMP.z : 0));
+      return out;
+    };
+    const log = part(false);
     let top = 0;
     for (let i = 0; i < log.length; i += 3) {
       const [x, y, z] = [log[i]!, log[i + 1]! - DEADWOOD_SINK, log[i + 2]!];
@@ -80,7 +87,8 @@ describe("what grows, as solids", () => {
       }
     }
     expect(LOG.top).toBeLessThan(top + 0.08);
-    const stump = vertices("stump", 1);
+    const stump = part(true);
+    expect(stump.length).toBeGreaterThan(90);
     let high = 0;
     let wide = 0;
     for (let i = 0; i < stump.length; i += 3) {
@@ -98,12 +106,13 @@ describe("what grows, as solids", () => {
     expect(deadwoodScale(0.6)).toBeGreaterThan(0.8);
     expect(deadwoodScale(2.4)).toBeLessThan(1.3);
     const solids = new Solids();
-    addPlants(solids, undefined, Float64Array.from([0, 0, 0, 1, 0.7, 3, 10, 0, 0, 1, 0, 4]));
+    addPlants(solids, undefined, Float64Array.from([0, 0, 0, 1, 0.7, 3]));
     expect(solids.size).toBe(2);
-    // Along the log there's no standing in it; a stride to its side there is.
+    // Along the log there's no standing in it; a stride to its side there is; and its stump stands beyond its butt end.
+    const d = deadwoodScale(1);
     expect(solids.overlaps(Math.cos(0.7) * 1.2, Math.sin(0.7) * 1.2, 0.1, 0.12, 2.5)).toBe(true);
     expect(solids.overlaps(-Math.sin(0.7) * 0.8, Math.cos(0.7) * 0.8, 0.1, 0.12, 2.5)).toBe(false);
-    expect(solids.overlaps(10, 0, 0.1, 0.12, 2.5)).toBe(true);
+    expect(solids.overlaps((STUMP.x * Math.cos(0.7) + STUMP.z * Math.sin(0.7)) * d, (STUMP.x * Math.sin(0.7) - STUMP.z * Math.cos(0.7)) * d, 0.1, 0.12, 2.5)).toBe(true);
   });
 
   test("a chunk of the real land: each tree a trunk and a crown (a skirt where it hangs low), each rock its circles", () => {
@@ -116,7 +125,7 @@ describe("what grows, as solids", () => {
     const batch = addPlants(solids, trees, rocks);
     let expected = 0;
     for (let i = 0; i < trees.length; i += STRIDE) expected += TREE_SOLIDS[trees[i + 5]!]!.skirt ? 3 : 2;
-    for (let i = 0; i < rocks.length; i += STRIDE) expected += rocks[i + 5]! >= 3 ? 1 : 3;
+    for (let i = 0; i < rocks.length; i += STRIDE) expected += rocks[i + 5]! >= 3 ? 2 : 3;
     expect(solids.size).toBe(expected);
     // A walker can't stand in a trunk; the camera can't stand in a crown; neither in a rock.
     for (let i = 0; i < trees.length; i += STRIDE) {

@@ -134,7 +134,7 @@ const HEATH_AUTUMN = 0xbba878;
 const HEATH_WINTER = 0xb7b28e;
 const LITTER_GOLD = 0xe9d187;
 const LITTER_OLD = 0xdbd1b0;
-const MARSH_STRAW = 0xc9c484;
+const MARSH_STRAW = 0xcdc98c;
 
 /** The year's amounts for the shaders, from the season, into `out`. */
 export function seasonDrivers(s: Season, out: Drivers = emptyDrivers()): Drivers {
@@ -180,7 +180,7 @@ export function seasonDrivers(s: Season, out: Drivers = emptyDrivers()): Drivers
   blend(out.heath, 0.85 * bloom + (1 - bloom) * (0.5 * s.autumn + 0.55 * s.winter), [HEATH_BLOOM, HEATH_AUTUMN, HEATH_WINTER], [bloom * 2, (1 - bloom) * s.autumn, (1 - bloom) * s.winter]);
   // Fallen leaves: gold while the trees are turned, faded by midwinter.
   blend(out.litter, s.litter, [LITTER_GOLD, LITTER_OLD], [s.turn, 1 - s.turn]);
-  blend(out.marsh, 0.6 * tint[TINT.reed]!, [MARSH_STRAW], [1]);
+  blend(out.marsh, 0.75 * tint[TINT.reed]!, [MARSH_STRAW], [1]);
   return out;
 }
 
@@ -190,6 +190,8 @@ export function seasonDrivers(s: Season, out: Drivers = emptyDrivers()): Drivers
  */
 export function partScale(amount: number, width: number, key: number): number {
   const t = clamp((amount - key * (1 - width)) / width);
-  // (Quick out of nothing and easing into its full size: a bud is seen as soon as it breaks.)
-  return t * (2 - t);
+  // Quick out of nothing and easing into its full size: a bud is seen as soon as it breaks. And where the parts take
+  // their turns (leaves falling), those still there are smaller the fewer are left: the last leaves of a crown are
+  // small ones, not a few great shards.
+  return t * (2 - t) * (1 - (1 - width) * 0.5 * (1 - amount));
 }

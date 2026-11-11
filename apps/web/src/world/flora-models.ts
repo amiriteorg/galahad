@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, OctahedronGeometry } from "three/webgpu";
 import { PlantMesher, together } from "./flora-mesher.ts";
+import { STUMP } from "./flora-plan.ts";
 import { GROW, TINT } from "./flora-season.ts";
 import { type AmbientOcclusion, at, between, chip, groundAO, lumpy, type Paint } from "./mesher.ts";
 import { TREE_KINDS } from "./terrain.ts";
@@ -63,15 +64,15 @@ const MOSS = 0x93bd5c;
  * Autumn, in pastel: what each kind's leaves turn to (one of them per leaf). Light and towards yellow on purpose: a
  * shaded orange is a brown, and an autumn wood should glow, not go to mud.
  */
-const GOLD = 0xf8da72;
-const AMBER = 0xf7c468;
-const ORANGE = 0xf6aa6c;
-const CORAL = 0xf29a86;
-const RUSSET = 0xf0b47c;
-const ROSE = 0xf4a9b2;
-const YELLOW = 0xfae886;
-const LEMON = 0xf5ec9e;
-const OLIVE = 0xcdc970;
+const GOLD = 0xf3cb4e;
+const AMBER = 0xf2b044;
+const ORANGE = 0xf0944a;
+const CORAL = 0xea7c60;
+const RUSSET = 0xe69c54;
+const ROSE = 0xec8f9a;
+const YELLOW = 0xf7df60;
+const LEMON = 0xf1e47c;
+const OLIVE = 0xc4c05c;
 const STRAW = 0xdccb8e;
 const STRAW_PALE = 0xe6dcae;
 const AUTUMN = {
@@ -80,8 +81,8 @@ const AUTUMN = {
   parasol: [ORANGE, CORAL, GOLD, AMBER],
   birch: [YELLOW, LEMON, GOLD],
   blossom: [CORAL, ROSE, ORANGE],
-  alder: [OLIVE, 0xbcbd6a, 0xd9d27e],
-  willow: [0xeae37c, GOLD, LEMON],
+  alder: [OLIVE, 0xb4b558, 0xd2ca68],
+  willow: [0xe6dc62, GOLD, LEMON],
   bush: [AMBER, CORAL, GOLD, RUSSET],
 } as const;
 /** The fine twigs of a bare crown: a soft lilac-brown haze (a birch's darker, a willow's golden). */
@@ -553,7 +554,8 @@ export const models = {
   },
   fern: () => {
     const m = new PlantMesher();
-    // Fronds arching out from the middle, each a bent strip of two-sided triangles; bracken-brown by late autumn.
+    // Fronds arching out from the middle, each a bent strip of two-sided triangles; bracken-brown from the autumn
+    // until the new fronds come (the reeds' tint: a leaf's would have it green again by midwinter).
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + (i % 2) * 0.2;
       const len = 0.7 + 0.2 * Math.sin(i * 1.9);
@@ -565,11 +567,11 @@ export const models = {
       const w = 0.09;
       const px = -sa * w;
       const pz = ca * w;
-      m.season(TINT.leaf, GROW.none, { alt: [0xd3a868, 0xc99a62, 0xdbb777][i % 3]!, key: fract(i * 0.23) });
+      m.season(TINT.reed, GROW.none, { alt: [0xd3a868, 0xc99a62, 0xdbb777][i % 3]!, key: fract(i * 0.23) });
       m.triangles([0, 0.05, 0, mid[0]! + px, mid[1]!, mid[2]! + pz, mid[0]! - px, mid[1]!, mid[2]! - pz, 0, 0.05, 0, mid[0]! - px, mid[1]!, mid[2]! - pz, mid[0]! + px, mid[1]!, mid[2]! + pz], color);
       m.triangles([mid[0]! - px, mid[1]!, mid[2]! - pz, mid[0]! + px, mid[1]!, mid[2]! + pz, tip[0]!, tip[1]!, tip[2]!, mid[0]! + px, mid[1]!, mid[2]! + pz, mid[0]! - px, mid[1]!, mid[2]! - pz, tip[0]!, tip[1]!, tip[2]!], color);
     }
-    m.season(TINT.leaf, GROW.none, { alt: 0xc99a62 }).add(lumpy(new IcosahedronGeometry(0.16, 0), 29, 0.2), LEAF_SHADE, at(0, 0.1, 0), 0.1);
+    m.season(TINT.reed, GROW.none, { alt: 0xc99a62 }).add(lumpy(new IcosahedronGeometry(0.16, 0), 29, 0.2), LEAF_SHADE, at(0, 0.1, 0), 0.1);
     return m.build({ ao: groundAO(0.55, 0.6, 0.8) });
   },
   /** Gorse: a dark, spiny mound, flecked with yellow most of the warm year. */
@@ -621,8 +623,10 @@ export const models = {
       .build({ ao: groundAO(0.6, 0.6, 0.72) });
   },
   // ---- deadwood ----
-  /** A fallen trunk: its bark going, pale where it broke, moss along its top, a stub of a branch, bracket fungi on its side. */
-  log: () => {
+  /** A fallen trunk and the stump it broke from: one model (they're always together). */
+  log: () => together(models.trunkDown(), models.stump(), STUMP.x, STUMP.z),
+  /** The trunk: its bark going, pale where it broke, moss along its top, a stub of a branch, bracket fungi on its side. */
+  trunkDown: () => {
     const m = new PlantMesher();
     const bark: Paint = (x, y) => (y > 0.36 ? MOSS : fract(x * 1.7) < 0.2 ? TRUNK : TRUNK_DARK);
     // Along x, 2.6 m, lying a little into the ground.
@@ -637,22 +641,21 @@ export const models = {
     }
     return m.build({ ao: groundAO(0.55, 0.5, 0.75) });
   },
-  /** A stump: cut flat, its rings showing, moss on its roots, a shoot or two of mushrooms beside it in autumn. */
+  /** A stump: cut flat, its rings showing, its roots splayed low, a mushroom beside it in autumn. */
   stump: () => {
     const m = new PlantMesher();
     trunk(m, 0.42, 0.34, 0, 0, 1, 8, TRUNK_DARK, 0, TRUNK_DARK);
     // Its roots, splayed out low (a standing tree's would reach above where it was cut).
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.4;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.4;
       const reach = 0.5 + 0.1 * Math.sin(i * 2.7);
       m.add(new ConeGeometry(0.15, 0.5, 4, 1, true), TRUNK_DARK, between(Math.sin(a) * reach, 0.02, Math.cos(a) * reach, Math.sin(a) * 0.12, 0.3, Math.cos(a) * 0.12, 1), 0.1);
     }
     // Its cut top: the pale wood and a darker heart, as two fans.
     flowerHead(m, 0, 0.422, 0, 0.19, 4, CUT_WOOD, 0.3);
     flowerHead(m, 0.01, 0.428, 0.01, 0.09, 3, 0xd6b88a, 0.9);
-    m.add(lumpy(new IcosahedronGeometry(0.16, 0), 7, 0.2), MOSS, at(0.3, 0.08, 0.12, 0, [1.2, 0.5, 1]), 0.08);
-    for (const [x, z, h] of [[0.44, -0.1, 0.16]] as const) {
-      m.season(TINT.none, GROW.autumn, { pivot: [x, 0, z], key: fract(x * 3.3) });
+    for (const [x, z, h] of [[-0.4, -0.16, 0.16]] as const) {
+      m.season(TINT.none, GROW.autumn, { pivot: [x, 0, z], key: 0.4 });
       m.add(new CylinderGeometry(0.018, 0.024, h, 4, 1, true), 0xf3ead8, at(x, h / 2, z), 0.04);
       m.add(new ConeGeometry(0.07, 0.05, 6, 1, true), 0xe9a07c, at(x, h + 0.02, z), 0.06);
     }
@@ -677,6 +680,12 @@ export const models = {
       // Every other one carries a plume.
       if (i % 3 === 0) m.season(TINT.reed, GROW.none, { alt: 0xefe6cc, key: fract(i * 0.23) }).add(new OctahedronGeometry(0.06, 0), 0xb6a4a8, at(tx + Math.sin(a) * 0.03, h + 0.06, tz + Math.cos(a) * 0.03, a, [1, 3.2, 1], 0.25 * Math.cos(a), -0.25 * Math.sin(a)), 0.06);
     }
+    // And a cattail or two among them: brown, velvet heads on their own stalks.
+    for (const [x, z, h] of [[0.16, -0.2, 1.42], [-0.24, 0.12, 1.2]] as const) {
+      m.season(TINT.reed, GROW.none, { alt: STRAW, key: fract(x * 5.1) });
+      blade(m, x, z, x * 9, 0.016, x, h, z, 0x8fb65c);
+      m.plain().add(new CylinderGeometry(0.038, 0.038, 0.2, 4, 1, true), 0x7d5843, at(x, h - 0.02, z), 0.08);
+    }
     return m.build({ ao: groundAO(0.6, 0.9, 1), normals: "up" });
   },
   /** A stand of reeds far off: a few broad strokes of it. */
@@ -692,28 +701,6 @@ export const models = {
       blade(m, bx, bz, a + 1.2, 0.11, bx + Math.sin(a) * 0.12 * h, h, bz + Math.cos(a) * 0.12 * h, [0x9cc264, 0x8ab65a, 0xa9cb6c][i % 3]!);
     }
     return m.build({ ao: groundAO(0.6, 0.9, 1), normals: "up" });
-  },
-  /** Cattails: broad blades and brown, velvet heads on their stalks. */
-  cattails: () => {
-    const m = new PlantMesher();
-    const greens = [0x8fba5c, 0x7fae54, 0x9bc566];
-    for (let i = 0; i < 8; i++) {
-      const a = i * 2.39996 + 0.5;
-      const off = 0.06 + 0.26 * Math.sqrt(fract(i * 0.618));
-      const h = 1.1 + 0.6 * fract(i * 0.43);
-      const lean = 0.1 + 0.16 * fract(i * 0.71);
-      const bx = Math.sin(a) * off;
-      const bz = Math.cos(a) * off;
-      m.season(TINT.reed, GROW.none, { alt: [STRAW, 0xd3bf84][i % 2]!, key: fract(i * 0.31) });
-      blade(m, bx, bz, a + 1.2, 0.06, bx + Math.sin(a) * lean * h, h, bz + Math.cos(a) * lean * h, greens[i % 3]!);
-    }
-    for (const [x, z, h] of [[0.05, 0.02, 1.5], [-0.14, 0.1, 1.28], [0.12, -0.13, 1.38], [-0.04, -0.2, 1.12]] as const) {
-      m.season(TINT.reed, GROW.none, { alt: STRAW, key: fract(x * 5.1) });
-      blade(m, x, z, x * 9, 0.014, x, h, z, 0x8fb65c);
-      m.plain().add(new CylinderGeometry(0.036, 0.036, 0.2, 5, 1, true), 0x7d5843, at(x, h - 0.02, z), 0.08);
-      m.add(new ConeGeometry(0.012, 0.16, 3, 1, true), 0xb9a878, at(x, h + 0.16, z), 0.04);
-    }
-    return m.build({ ao: groundAO(0.6, 0.8, 1), normals: "up" });
   },
   /** A stand of rushes: stiff, dark, knee-high, with brown tufts near their tips; green the year round. */
   rushes: () => {
@@ -877,10 +864,10 @@ export const models = {
     }
     return m.build({ ao: groundAO(0.55, 0.35, 1), normals: "up" });
   },
-  /** Marram: the dunes' grass, tall, arching, pale blue-green, with a spike or two in seed. */
+  /** Marram: the dunes' grass, tall, arching, pale blue-green, with a spike or two in seed. (Drawn smaller and darker, it's the marsh's tussock too.) */
   marram: () => {
     const m = new PlantMesher();
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 7; i++) {
       const a = i * 2.39996;
       const off = 0.03 + 0.07 * fract(i * 0.618);
       const h = 0.55 + 0.35 * fract(i * 0.37);
@@ -890,27 +877,12 @@ export const models = {
       m.season(TINT.grass, GROW.none, { alt: [0xe2d9a6, 0xd9cf98][i % 2]!, key: fract(i * 0.29) });
       blade(m, bx, bz, a, 0.022, bx + Math.sin(a) * lean * h, h, bz + Math.cos(a) * lean * h, [0xb4cf8c, 0xa6c684, 0xc2d898][i % 3]!);
     }
-    for (const [x, z, h] of [[0.05, 0.03, 0.95], [-0.06, -0.02, 0.82]] as const) {
+    for (const [x, z, h] of [[0.05, 0.03, 0.95]] as const) {
       m.season(TINT.grass, GROW.none, { alt: 0xe6dcae });
       blade(m, 0, 0, x * 20, 0.008, x, h, z, 0xc9cf98);
       m.add(new OctahedronGeometry(0.022, 0), 0xe4d9a8, at(x, h + 0.07, z, x * 9, [1, 4, 1]), 0);
     }
     return m.build({ ao: groundAO(0.6, 0.5, 1), normals: "up" });
-  },
-  /** A tussock of rushes underfoot in the marsh: short, stiff, dark. */
-  tussock: () => {
-    const m = new PlantMesher();
-    for (let i = 0; i < 10; i++) {
-      const a = i * 2.39996;
-      const off = 0.03 + 0.08 * fract(i * 0.618);
-      const h = 0.3 + 0.22 * fract(i * 0.37);
-      const lean = 0.2 + 0.35 * fract(i * 0.71);
-      const bx = Math.sin(a) * off;
-      const bz = Math.cos(a) * off;
-      m.season(TINT.reed, GROW.none, { alt: 0xb4b877, key: fract(i * 0.29) });
-      blade(m, bx, bz, a, 0.02, bx + Math.sin(a) * lean * h, h, bz + Math.cos(a) * lean * h, [0x72a350, 0x7fae57, 0x68984b][i % 3]!);
-    }
-    return m.build({ ao: groundAO(0.55, 0.3, 1), normals: "up" });
   },
   // ---- underfoot ----
   clover: () => {
@@ -941,7 +913,7 @@ export const models = {
   },
   pebbles: () => {
     const m = new PlantMesher();
-    for (const [x, z, r, color, sides] of [[0, 0, 0.09, 0xcfc0b2, 20], [0.16, 0.07, 0.06, 0xb9aea4, 8], [-0.12, 0.1, 0.07, 0xdcccbc, 20], [0.05, -0.15, 0.05, 0xc4b2a6, 8]] as const) {
+    for (const [x, z, r, color, sides] of [[0, 0, 0.09, 0xcfc0b2, 20], [0.16, 0.07, 0.06, 0xb9aea4, 8], [-0.12, 0.1, 0.07, 0xdcccbc, 20]] as const) {
       const stone = sides === 20 ? new IcosahedronGeometry(r, 0) : new OctahedronGeometry(r, 0);
       m.add(chip(lumpy(stone, x * 31 + z, 0.25), x * 13 + 1, 1, 0.75), color, at(x, r * 0.35, z, x * 7, [1.2, 0.6, 1]), 0.06);
     }
@@ -1023,8 +995,8 @@ export const models = {
 export { together };
 
 /** A tree's or a rock's model as it's drawn (so the tests can hold the solids' plan, flora-plan.ts, to it). */
-export function plantModel(name: (typeof TREE_KINDS)[number] | "boulder" | "slab" | "log" | "stump", detail: 0 | 1 = 1): BufferGeometry {
-  return name === "boulder" || name === "slab" || name === "log" || name === "stump" ? models[name]() : models[name](detail);
+export function plantModel(name: (typeof TREE_KINDS)[number] | "boulder" | "slab" | "log", detail: 0 | 1 = 1): BufferGeometry {
+  return name === "boulder" || name === "slab" || name === "log" ? models[name]() : models[name](detail);
 }
 
 /** Triangles in each tree's models, near to far (for the budgets). */

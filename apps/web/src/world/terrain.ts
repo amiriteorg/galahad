@@ -542,7 +542,7 @@ export function shade(color: number, k: number): number {
  */
 export const TREE_KINDS = ["oak", "pine", "round", "parasol", "birch", "blossom", "spruce", "alder", "willow"] as const;
 export const BUSH_KINDS = ["leafy", "flowering", "fern", "gorse", "heather"] as const;
-export const ROCK_KINDS = ["boulder", "stones", "slab", "log", "stump"] as const;
+export const ROCK_KINDS = ["boulder", "stones", "slab", "log"] as const;
 export const REED_KINDS = ["reeds", "cattails", "rushes"] as const;
 export const FLOWER_KINDS = ["daisy", "lupine", "lavender", "buttercup", "campion", "anemone", "heather"] as const;
 export const GRASS_KINDS = ["tuft", "lush", "seed", "marram", "rush"] as const;
@@ -607,8 +607,8 @@ const BUSHES: Record<number, readonly number[]> = {
   [SHORE]: [3, 0.5, 0, 0.5],
   [OUTCROP]: [0, 0.4, 3, 0.3, 4, 0.3],
 };
-// Rocks and deadwood (ROCK_KINDS: 0 a boulder, 1 a few stones, 2 a layered slab, 3 a fallen log, 4 a stump).
-const DEADWOOD: readonly number[] = [0, 0.26, 1, 0.14, 2, 0.12, 3, 0.3, 4, 0.18];
+// Rocks and deadwood (ROCK_KINDS: 0 a boulder, 1 a few stones, 2 a layered slab, 3 a fallen log by its stump).
+const DEADWOOD: readonly number[] = [0, 0.26, 1, 0.14, 2, 0.12, 3, 0.48];
 // Flowers (FLOWER_KINDS: 0 daisies, 1 lupines, 2 lavender, 3 buttercups, 4 campions, 5 wood anemones, 6 heather).
 const MEADOW_FLOWERS: readonly number[] = [0, 0.28, 1, 0.18, 2, 0.16, 3, 0.2, 4, 0.18];
 const FLOWERS: Record<number, readonly number[]> = {
@@ -705,7 +705,7 @@ const RULES: Record<Layer, LayerRule> = {
   },
   detail: {
     grid: 2.1,
-    density: [0, 0.3, 0.2, 0.26, 0.2, 0.5, 0.5, 0.34, 0.34, 0.22],
+    density: [0, 0.3, 0.2, 0.26, 0.2, 0.62, 0.62, 0.34, 0.34, 0.22],
     clearance: 0.3,
     scale: [0.8, 1.5],
     kind: (b, p) => among(DETAIL[b] ?? MEADOW_DETAIL, p),

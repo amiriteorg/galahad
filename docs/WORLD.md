@@ -252,15 +252,15 @@ Every model is original and procedural (`flora-models.ts`), one merged geometry 
 
 | Layer | Kinds | Where it's drawn |
 |---|---|---|
-| Trees | Oak, pine, round, parasol, birch (banded white bark), cherry, spruce (a spire, darker and bluer than a pine), alder (upright, dark-barked), willow (a dome with curtains hanging round its rim) | Out to the land's reach, in three levels of detail: near (`treeDetail` metres, none on the low tier) crowns are heaps of many small facets on tapering trunks with root flares; farther (`treeLod`), simpler; far off, a few facets (five far models: broad, birch, pine, spruce, cherry) |
+| Trees | Oak, pine, round, parasol, birch (banded white bark), cherry, spruce (a spire, darker and bluer than a pine), alder (upright, dark-barked), willow (a dome with curtains hanging round its rim) | Out to the land's reach, in three levels of detail: near (`treeDetail` metres, none on the low tier) crowns are heaps of many small facets on tapering trunks with root flares; farther (`treeLod`), simpler; far off, a few facets (five far models on the high tier: broad, birch, pine, spruce, cherry; three below it, where a far spruce is a far pine and a far birch any broad tree, and spruces, alders and willows have no near model of their own) |
 | Bushes | Leafy, in flower, ferns, gorse, mounds of heather | Out to the land's reach; a leafy bush far off is two heaps of leaves |
-| Rocks and deadwood | Boulders, stones, layered slabs with chipped facets (gathering on crags); in the woods fallen logs and stumps | Out to the land's reach |
-| Reeds | Reeds with plumes, cattails, stands of rushes | Out to the land's reach; far off, a few broad strokes |
+| Rocks and deadwood | Boulders, stones, layered slabs with chipped facets (gathering on crags); in the woods fallen logs, each by the stump it broke from | Out to the land's reach |
+| Reeds | Reeds with plumes and cattails among them; stands of rushes on the wet ground (drawn as reeds below the high tier) | Out to the land's reach; far off, a few broad strokes |
 | Flowers | Daisies with buttercups; lupines, campions and lavender; wood anemones; heather | Near the camera (`grassRadius`) |
-| Grass | Tufts, lush clumps gone to seed, marram, tussocks of rushes | Near the camera |
-| Underfoot | Pebbles, clover, mushrooms, fallen leaves, driftwood, lily pads (afloat: they ride the water's waves) | Near the camera |
+| Grass | Tufts, lush clumps gone to seed, marram (which, smaller and darker, is the marsh's tussock too) | Near the camera |
+| Underfoot | Pebbles, clover, mushrooms, fallen leaves, driftwood (high tier), lily pads (afloat: they ride the water's waves; not on the low tier) | Near the camera |
 
-Trees and rocks are solid, as their models are (`flora-plan.ts`, held to the models by a test): a trunk walkers go round, a crown the camera keeps out of, a skirt where a crown hangs low; a log and a stump are low enough to see over, and a low one he steps onto. Bushes, reeds and the small things aren't. Nothing grows where something is built, in a stream's pool, or (the solid things) on the trail he and the dog walk.
+Trees and rocks are solid, as their models are (`flora-plan.ts`, held to the models by a test): a trunk walkers go round, a crown the camera keeps out of, a skirt where a crown hangs low; a log and its stump are low enough to see over, and a low one he steps onto. A model is a draw call, so kinds that are always together are one model (a log and its stump, reeds and their cattails, a patch of daisies and buttercups), and the lower tiers have fewer models. Bushes, reeds and the small things aren't. Nothing grows where something is built, in a stream's pool, or (the solid things) on the trail he and the dog walk.
 
 ### The seasons
 
@@ -271,7 +271,7 @@ The season is Denmark's, by the real date (`season.ts`): not four switches but a
 | Spring | Buds swelling on every twig at once; blossom on the cherries for a few weeks of April and May; wood anemones white under the bare woods, gone by June; daisies from March; fresh, lighter green |
 | Summer | Full lime crowns; the meadows in flower from late April to September; lily pads in flower on the still water |
 | Late August | The heather flowers: the heaths go mauve, their mounds and sprigs purple |
-| Autumn | Crowns turn leaf by leaf to gold, amber and coral (birches yellow first; alders and willows late and only half; conifers never) and thin as the leaves fall, one after another, so their limbs and fine twigs show through; leaves come down in the wind from the crowns nearest the view, and lie in drifts under the deciduous trees; mushrooms come up; ferns go bracken-brown; grass yellows; reeds go to straw |
+| Autumn | Crowns turn leaf by leaf to gold, amber and coral (birches yellow first; alders and willows late and only half; conifers never) and thin as the leaves fall, one after another (those still there smaller the fewer are left), so their limbs and fine twigs show through; leaves come down in the wind from the crowns nearest the view, and lie under the deciduous trees (strewn leaves near the camera, and a mottling of the wood's floor that leaves the grass showing); mushrooms come up; ferns go bracken-brown (and stay so until the new fronds); grass yellows; reeds go to straw |
 | Winter | Bare crowns: long tapering limbs and a haze of twigs (a birch's dark on its white trunk, a willow's golden); conifers a little deeper; grass a pale sage; reeds and marshes straw; the last leaves on the ground a pale buff. Snow, when the weather brings it, lies on whatever faces up: limbs, boughs, the tiers of the spruces |
 
 A turned leaf lets the sky's light through (its shaded side glows a little by day, not at night), and a thinning crown is drawn from both sides, so its last leaves are seen from under it. The colours are pastel on purpose: light and towards yellow in autumn (a shaded orange is a brown), green all winter, never mud.

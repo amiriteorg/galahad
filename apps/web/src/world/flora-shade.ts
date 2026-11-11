@@ -31,7 +31,7 @@ type F = Node<"float">;
 type V3 = Node<"vec3">;
 
 /** The wind's strength on what grows: 0 under reduced motion, about 1 in a light breeze, 2.6 in a gale. */
-export const wind = uniform(1);
+export const wind = uniform(1).setGroup(renderGroup);
 
 /**
  * The gusts' clocks: how far the broad fronts and the fine ripples have travelled (radians of their waves), and the
@@ -44,9 +44,9 @@ const FRONT = 0.24;
 const RIPPLE = 1.25;
 
 /** The year's amounts (flora-season.ts), as the shaders read them. */
-const tints = uniformArray(new Array<number>(DRIVERS).fill(0), "float");
-const grows = uniformArray(new Array<number>(DRIVERS).fill(1), "float");
-const widths = uniformArray(new Array<number>(DRIVERS).fill(1), "float");
+const tints = uniformArray(new Array<number>(DRIVERS).fill(0), "float").setGroup(renderGroup);
+const grows = uniformArray(new Array<number>(DRIVERS).fill(1), "float").setGroup(renderGroup);
+const widths = uniformArray(new Array<number>(DRIVERS).fill(1), "float").setGroup(renderGroup);
 const fresh = uniform(0).setGroup(renderGroup);
 /** The ground's seasonal colours: rgb (as the land's own colours are, squared) and how much. */
 const ground = {
@@ -101,8 +101,10 @@ export function plantNodes(look: PlantLook): { position: V3; colour: V3; shimmer
   const tint = code.sub(grow.mul(16));
 
   const width = widths.element(grow.toInt()) as unknown as F;
-  const t = clamp((grows.element(grow.toInt()) as unknown as F).sub(key.mul(float(1).sub(width))).div(width), 0, 1);
-  const size = t.mul(float(2).sub(t));
+  const amount = grows.element(grow.toInt()) as unknown as F;
+  const t = clamp(amount.sub(key.mul(float(1).sub(width))).div(width), 0, 1);
+  // (flora-season.ts' partScale, exactly.)
+  const size = t.mul(float(2).sub(t)).mul(float(1).sub(float(1).sub(width).mul(0.5).mul(float(1).sub(amount))));
   const pivot = season.xyz.mul(PIVOT_RANGE);
   const model = pivot.add(positionGeometry.sub(pivot).mul(size));
   const placed = (referenceAttribute("instanceMatrix", "mat4") as unknown as Node<"mat4">).mul(vec4(model, 1)).xyz;
@@ -121,10 +123,9 @@ export function plantNodes(look: PlantLook): { position: V3; colour: V3; shimmer
   const d = clamp((tints.element(tint.toInt()) as unknown as F).mul(1.5).sub(key.mul(0.5)), 0, 1);
   const way = d.mul(d).mul(float(3).sub(d.mul(2)));
   const turned = mix(c.mul(c), other.mul(other), way);
-  // New leaves are lighter and yellower, and a turned one is a little brighter than its paint: the light comes through it
-  // (the three kinds of leaf are tints 1 to 3).
+  // New leaves are lighter and yellower (the three kinds of leaf are tints 1 to 3).
   const leaf = step(0.5, tint).mul(step(tint, 3.5));
-  const colour = varying(turned.mul(mix(vec3(1), vec3(1.2, 1.14, 0.74), fresh.mul(leaf))).mul(way.mul(leaf).mul(0.2).add(1))) as unknown as V3;
+  const colour = varying(turned.mul(mix(vec3(1), vec3(1.2, 1.14, 0.74), fresh.mul(leaf)))) as unknown as V3;
   // How much of the sky's light comes through it: a turned leaf seen from its shaded side still glows.
   const through = varying(way.mul(leaf)) as unknown as F;
   return { position, colour, shimmer, through };
@@ -148,11 +149,11 @@ export function groundSeason(base: V3, cover: Node<"vec4">): V3 {
   let c = mix(base, ground.grass.xyz.mul(own), ground.grass.w.mul(cover.x)) as unknown as V3;
   c = mix(c, ground.heath.xyz.mul(own), ground.heath.w.mul(cover.y)) as unknown as V3;
   c = mix(c, ground.marsh.xyz.mul(own), ground.marsh.w.mul(cover.w)) as unknown as V3;
-  // Fallen leaves lie in drifts, never a floor of them: at most three faces in five, each in its own turn (a number of
-  // its own, from its colour), each a little lighter or darker.
+  // Fallen leaves tint the ground under the trees, never floor it: every face a little, some more than others (a
+  // number of its own, from its colour), so the wood's floor is mottled with them and the grass still shows through.
   const turn = fract(base.x.mul(917.3).add(base.y.mul(531.7)));
-  const lying = clamp(ground.litter.w.mul(cover.z).mul(0.62).sub(turn).mul(8), 0, 1);
-  c = mix(c, ground.litter.xyz.mul(fract(turn.mul(7.3)).mul(0.3).add(0.85)), lying.mul(0.9)) as unknown as V3;
+  const lying = ground.litter.w.mul(cover.z).mul(turn.mul(0.7).add(0.3));
+  c = mix(c, ground.litter.xyz.mul(fract(turn.mul(7.3)).mul(0.3).add(0.85)), lying.mul(0.6)) as unknown as V3;
   const shimmer = gustAt(positionWorld).gust.sub(0.3).mul(gusts.z).mul(0.09).mul(cover.x);
   return c.mul(shimmer.add(1)) as unknown as V3;
 }
