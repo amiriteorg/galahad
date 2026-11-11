@@ -9,7 +9,7 @@ import { PLACES, standAt, stationFacing } from "./path.ts";
  * meshes). What a walker meets is what stands on the ground in his way: the
  * giant tree's trunk and roots, the deck's posts, the stairs, each station's
  * deck, walls, legs, ladder and lantern; what the camera keeps out of is all of
- * it, up to the crowns and roofs, and the air under the keep's deck. Pure data,
+ * it, up to the crowns and roofs. Pure data,
  * so the planner and the tests can read it without the renderer. World metres,
  * x east, y north; heights above the keep's ground (0).
  */
@@ -38,6 +38,16 @@ const DECK = 4.2;
 const DECK_R = 6.4;
 const DECK_UNDER = DECK - 0.45;
 
+/** The giant tree's crown, in layers (from, to, how wide): its heaps of leaves are widest a little above the room's roof. */
+const CROWN: readonly [number, number, number][] = [
+  [7.0, 8.0, 8.4],
+  [8.0, 9.0, 10.0],
+  [9.0, 12.0, 11.0],
+  [12.0, 14.0, 9.8],
+  [14.0, 17.0, 8.6],
+  [17.0, 18.6, 3.6],
+];
+
 /** The giant tree, its deck, the room on it and the stairs (the keep's frame is the scene's: it faces south). */
 function keep(): Collider[] {
   const f = frame("keep");
@@ -46,12 +56,9 @@ function keep(): Collider[] {
     f.circle(0, 0, 2.7, 9),
     f.circle(0, 0, 1.75, 12.2, 9),
     // The crown: heaps of leaves from the deck's roof up; the camera keeps out, and sees through it.
-    f.circle(0, 0, 11.1, 14.5, 7.2, { stops: "camera", seeThrough: true }),
-    f.circle(0, 0, 8.8, 21.8, 14.5, { stops: "camera", seeThrough: true }),
+    ...CROWN.map(([bottom, top, r]) => f.circle(0, 0, r, top, bottom, { stops: "camera", seeThrough: true })),
     // The deck with its rim, joists and railing, and the furniture and plants on it.
     f.circle(0, 0, DECK_R, DECK + 1.5, DECK_UNDER),
-    // The air under the deck: walked through, but no place for the camera (or for looking through).
-    f.circle(0, 0, DECK_R, DECK_UNDER, 0, { stops: "camera" }),
     // The room: its walls, glass front and a wide roof with solar panels.
     f.box(0, 3.55, 3.25, 2.25, DECK + 3.65, DECK + 0.1),
   ];
@@ -64,6 +71,10 @@ function keep(): Collider[] {
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
     out.push(f.circle(Math.sin(a) * 3.55, Math.cos(a) * 3.55, 0.45, DECK, 0));
+    // Its brace, as keep.ts turns it (by a, then pitched about the scene's x): from (c - v) to (c + v), scene axes.
+    const v = [Math.sin(a) * 2.2, -Math.cos(a) * Math.sin(0.5) * 2.2, Math.cos(a) * Math.cos(0.5) * 2.2];
+    const c = [Math.sin(a) * 3.4, DECK - 0.9, Math.cos(a) * 3.4];
+    out.push(f.box(c[0]!, c[2]!, 0.17, Math.hypot(v[0]!, v[2]!) + 0.15, c[1]! + Math.abs(v[1]!) + 0.2, c[1]! - Math.abs(v[1]!) - 0.2, Math.atan2(v[0]!, v[2]!)));
   }
   // The stairs from the deck down to the keep's door, in three flights' worth of height, and a lantern each side of their foot.
   // (Their stringers and handrails are drawn turned a few degrees off the steps, so the solid is a little wider than the steps.)

@@ -211,7 +211,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   container.append(canvas, overlay);
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(45, 1, 0.5, 2000);
+  // Its near plane close in, so the spring arm can bring it near walls and posts without cutting into them (camera.ts).
+  const camera = new PerspectiveCamera(45, 1, 0.25, 2000);
   const worldRoot = new Group();
   scene.add(worldRoot);
   const hemi = new HemisphereLight(0xffffff, 0x888888, 1);

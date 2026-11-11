@@ -69,6 +69,8 @@ const key = (cx: number, cy: number): number => ((cx & 0x7fff) << 15) | (cy & 0x
 // The narrow phase's answer (module scratch: no allocation).
 let nX = 0;
 let nY = 0;
+let spanIn = 0;
+let spanOut = 0;
 const NONE = 2;
 
 /** `hit` when a sweep met nothing. */
@@ -238,6 +240,8 @@ export class Solids {
   hit = NOTHING;
   hitX = 0;
   hitY = 0;
+  /** Scratch for clearAlong: spans along the arm (in, out pairs). */
+  private readonly spans = new Float64Array(128);
   /** Solids a sweep passes straight through (the planner's: what its ends stand in). */
   readonly pass = new Int32Array(8);
   passes = 0;
@@ -604,104 +608,157 @@ export class Solids {
   }
 
   /**
-   * The camera's arm: a ball of radius `pad` moved from A to B (world, z up). The share of the way (0..1) it
-   * gets before its view is blocked (a SIGHT solid ahead) or before it would end inside something it keeps out
-   * of (a VIEW solid round B: a trunk, a post, a crown); 1 when neither. Solids round A don't count (it can only
-   * leave them). `hit` is what stopped it. Boxes are grown with square corners here: a little room to spare.
+   * The camera's arm from A to B (world, z up): the share of the way (0..1) it can have. Its line of sight, a
+   * thin ball of radius `sight`, is blocked where it first meets a SIGHT solid ahead (one round or over A
+   * doesn't count: it can only leave it, and it dissolves); and the camera, a ball of radius `room`, never ends inside a VIEW solid (a
+   * trunk, a post, a crown, a wall): with B inside one, it backs off to where the arm enters it (0 if it starts
+   * in it). With `inside`, only the camera's room counts. With `soft`, the camera's room is kept from wherever
+   * the arm first enters one round something that blocks the view (the comfortable distance it eases to), not
+   * only round B. 1 when nothing stops
+   * it; `hit` is what did. Boxes are grown with square corners here: a little room to spare.
    */
-  view(ax: number, ay: number, az: number, bx: number, by: number, bz: number, pad: number): number {
-    const n = this.along(ax, ay, bx, by, pad);
-    const dx = bx - ax;
-    const dy = by - ay;
-    const dz = bz - az;
+  view(ax: number, ay: number, az: number, bx: number, by: number, bz: number, sight: number, room = sight, inside = false, soft = false): number {
+    const n = this.along(ax, ay, bx, by, Math.max(sight, room));
     let best = 1;
     this.hit = NOTHING;
     for (let k = 0; k < n; k++) {
       const i = this.found[k]!;
       const mask = this.mask[i]!;
       if (!(mask & VIEW)) continue;
-      // Where the segment is level with it (grown by pad).
-      const z0 = this.base[i]! + this.lo[i]! - pad;
-      const z1 = this.base[i]! + this.hi[i]! + pad;
-      let enter = 0;
-      let exit = 1;
-      if (Math.abs(dz) < 1e-9) {
-        if (az < z0 || az > z1) continue;
-      } else {
-        let u0 = (z0 - az) / dz;
-        let u1 = (z1 - az) / dz;
-        if (u0 > u1) {
-          const swap = u0;
-          u0 = u1;
-          u1 = swap;
-        }
-        if (u0 > enter) enter = u0;
-        if (u1 < exit) exit = u1;
-        if (enter > exit) continue;
-      }
-      // Where it's over its footprint (grown by pad).
-      const px = ax - this.px[i]!;
-      const py = ay - this.py[i]!;
-      if (this.shape[i] === CIRCLE) {
-        const R = this.hx[i]! + pad;
-        const a = dx * dx + dy * dy;
-        const b = px * dx + py * dy;
-        const c = px * px + py * py - R * R;
-        if (a < 1e-12) {
-          if (c > 0) continue;
-        } else {
-          const disc = b * b - a * c;
-          if (disc < 0) continue;
-          const root = Math.sqrt(disc);
-          const t0 = (-b - root) / a;
-          const t1 = (-b + root) / a;
-          if (t0 > enter) enter = t0;
-          if (t1 < exit) exit = t1;
-        }
-      } else {
-        const cos = this.cos[i]!;
-        const sin = this.sin[i]!;
-        const lx = px * cos + py * sin;
-        const ly = -px * sin + py * cos;
-        const ldx = dx * cos + dy * sin;
-        const ldy = -dx * sin + dy * cos;
-        const ex = this.hx[i]! + pad;
-        const ey = this.hy[i]! + pad;
-        if (Math.abs(ldx) < 1e-12) {
-          if (Math.abs(lx) > ex) continue;
-        } else {
-          let t0 = (-ex - lx) / ldx;
-          let t1 = (ex - lx) / ldx;
-          if (t0 > t1) {
-            const swap = t0;
-            t0 = t1;
-            t1 = swap;
-          }
-          if (t0 > enter) enter = t0;
-          if (t1 < exit) exit = t1;
-        }
-        if (Math.abs(ldy) < 1e-12) {
-          if (Math.abs(ly) > ey) continue;
-        } else {
-          let t0 = (-ey - ly) / ldy;
-          let t1 = (ey - ly) / ldy;
-          if (t0 > t1) {
-            const swap = t0;
-            t0 = t1;
-            t1 = swap;
-          }
-          if (t0 > enter) enter = t0;
-          if (t1 < exit) exit = t1;
+      const kept = soft && (mask & SIGHT) !== 0;
+      if (this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, room) && (spanOut >= 1 || (kept && spanIn > 0))) {
+        const t = Math.max(0, spanIn);
+        if (t < best && (spanIn > 0 || !soft)) {
+          best = t;
+          this.hit = i;
         }
       }
-      if (enter > exit || enter >= best) continue;
-      // Round A already: never mind it. Otherwise it stops the view, or (only see-through) B inside it.
-      if (enter <= 0) continue;
-      if (!(mask & SIGHT) && exit < 1) continue;
-      best = enter;
-      this.hit = i;
+      if (inside || !(mask & SIGHT) || this.gap(i, ax, ay) < sight) continue;
+      if (this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, sight) && spanIn > 0 && spanIn < best) {
+        best = spanIn;
+        this.hit = i;
+      }
     }
     return best;
+  }
+
+  /**
+   * Along the camera's arm from A to B: the share (lo..hi) nearest `want` where a ball of radius `room` is
+   * inside no VIEW solid, or −1 if there's none. Allocates nothing (the spans are kept in the world's scratch).
+   */
+  clearAlong(ax: number, ay: number, az: number, bx: number, by: number, bz: number, room: number, want: number, lo: number, hi: number): number {
+    const n = this.along(ax, ay, bx, by, room);
+    let m = 0;
+    const spans = this.spans;
+    for (let k = 0; k < n && m < spans.length / 2; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & VIEW) || !this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, room)) continue;
+      if (spanOut <= lo || spanIn >= hi) continue;
+      // Kept in order of where they begin (there are only a few).
+      let j = m++;
+      while (j > 0 && spans[(j - 1) * 2]! > spanIn) {
+        spans[j * 2] = spans[(j - 1) * 2]!;
+        spans[j * 2 + 1] = spans[(j - 1) * 2 + 1]!;
+        j--;
+      }
+      spans[j * 2] = spanIn;
+      spans[j * 2 + 1] = spanOut;
+    }
+    // Walk the gaps between them (within lo..hi) and keep the point nearest `want`.
+    let best = -1;
+    let bestD = Infinity;
+    let from = lo;
+    for (let k = 0; k <= m; k++) {
+      // The gap before span k (or after the last one).
+      const end = k < m ? Math.min(spans[k * 2]!, hi) : hi;
+      if (end >= from && (k === m || spans[k * 2]! > from)) {
+        const t = want < from ? from : want > end ? end : want;
+        const d = Math.abs(t - want);
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
+      }
+      if (k < m && spans[k * 2 + 1]! > from) from = spans[k * 2 + 1]!;
+      if (from > hi) break;
+    }
+    return best;
+  }
+
+  /** How far along the segment from A to B (0..1) it leaves solid i grown by `pad` (0: it's never inside it). */
+  leaves(i: number, ax: number, ay: number, az: number, bx: number, by: number, bz: number, pad: number): number {
+    return this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, pad) ? Math.min(1, spanOut) : 0;
+  }
+
+  /** Where the line from (ax, ay, az) along (dx, dy, dz) is inside solid i grown by `pad`: into spanIn..spanOut (shares of (dx, dy, dz)); false if nowhere ahead. */
+  private span(i: number, ax: number, ay: number, az: number, dx: number, dy: number, dz: number, pad: number): boolean {
+    let enter = Number.NEGATIVE_INFINITY;
+    let exit = Number.POSITIVE_INFINITY;
+    // Level with it.
+    const z0 = this.base[i]! + this.lo[i]! - pad;
+    const z1 = this.base[i]! + this.hi[i]! + pad;
+    if (Math.abs(dz) < 1e-12) {
+      if (az < z0 || az > z1) return false;
+    } else {
+      let u0 = (z0 - az) / dz;
+      let u1 = (z1 - az) / dz;
+      if (u0 > u1) {
+        const swap = u0;
+        u0 = u1;
+        u1 = swap;
+      }
+      if (u0 > enter) enter = u0;
+      if (u1 < exit) exit = u1;
+    }
+    // Over its footprint.
+    const px = ax - this.px[i]!;
+    const py = ay - this.py[i]!;
+    if (this.shape[i] === CIRCLE) {
+      const R = this.hx[i]! + pad;
+      const a = dx * dx + dy * dy;
+      const b = px * dx + py * dy;
+      const c = px * px + py * py - R * R;
+      if (a < 1e-12) {
+        if (c > 0) return false;
+      } else {
+        const disc = b * b - a * c;
+        if (disc < 0) return false;
+        const root = Math.sqrt(disc);
+        const t0 = (-b - root) / a;
+        const t1 = (-b + root) / a;
+        if (t0 > enter) enter = t0;
+        if (t1 < exit) exit = t1;
+      }
+    } else {
+      const cos = this.cos[i]!;
+      const sin = this.sin[i]!;
+      const lx = px * cos + py * sin;
+      const ly = -px * sin + py * cos;
+      const ldx = dx * cos + dy * sin;
+      const ldy = -dx * sin + dy * cos;
+      for (let axis = 0; axis < 2; axis++) {
+        const p = axis ? ly : lx;
+        const d = axis ? ldy : ldx;
+        const e = (axis ? this.hy[i]! : this.hx[i]!) + pad;
+        if (Math.abs(d) < 1e-12) {
+          if (Math.abs(p) > e) return false;
+          continue;
+        }
+        let t0 = (-e - p) / d;
+        let t1 = (e - p) / d;
+        if (t0 > t1) {
+          const swap = t0;
+          t0 = t1;
+          t1 = swap;
+        }
+        if (t0 > enter) enter = t0;
+        if (t1 < exit) exit = t1;
+      }
+    }
+    if (enter > exit || exit < 0) return false;
+    spanIn = enter;
+    spanOut = exit;
+    return true;
   }
 
   /** The top of the tallest thing under (x, y) that's no higher than `step` above its ground (world z); −Infinity: none. */
