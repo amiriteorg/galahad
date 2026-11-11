@@ -4,7 +4,7 @@ import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { Care, type CareFrame, CareLook, DOCK_COLLIDERS, lodestarPulse } from "./care.ts";
-import { ACTIVITIES, type Activity } from "./life.ts";
+import { ACTIVITIES, type Activity } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";

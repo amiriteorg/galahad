@@ -7,7 +7,7 @@ import { DRONE_PAD, START_GATE, TIE_DOWN } from "./field-plan.ts";
 import { FARM, LINE, printerX, RACKS } from "./hall-plan.ts";
 import { DECK_REST } from "./keep-deck.ts";
 import type { Attention, CarePose } from "./knight.ts";
-import { type Activity, ACTIVITY_LABEL, type Block, blockPhase, type Intent, intentFor, lifeAt, roundsStop } from "./life.ts";
+import { type Activity, ACTIVITY_LABEL, type Block, blockPhase, type Intent, intentFor, lifeAt, roundsStop, STILL_LABEL } from "@galahad/core/life";
 import { at, Mesher } from "./mesher.ts";
 import type { MicroduckFlock } from "./microducks.ts";
 import { standAt, type Target } from "./path.ts";
@@ -177,7 +177,7 @@ export class Care {
     attention: { x: 0, y: 0, z: 0, on: false },
     thinking: false,
     busy: false,
-    label: ACTIVITY_LABEL.rest,
+    label: STILL_LABEL,
   };
   /** The dog's battery (0..1), and whether it's on its dock. */
   charge = 0.75;
@@ -189,7 +189,7 @@ export class Care {
   readonly ballAt: [number, number, number] = [0, 0, 0];
 
   private block: Block | null = null;
-  private activity: Activity = "rest";
+  private activity: Activity = "sleep";
   private intent: Intent = "life";
   /** The beat of its activity, when he arrived at its place (−1: on the way), a step within it and when it began. */
   private beat = 0;
@@ -321,7 +321,7 @@ export class Care {
     if (intent === "work") out.label = "";
     else if (intent === "still") {
       this.go(DECK_REST);
-      out.label = ACTIVITY_LABEL.rest;
+      out.label = STILL_LABEL;
     } else if (intent === "concern") this.tend(f.concern!, f);
     else if (intent === "charge") this.toDock(f);
     else this.live(f);
@@ -409,7 +409,11 @@ export class Care {
     const a = this.activity;
     out.label = ACTIVITY_LABEL[a];
     switch (a) {
-      case "rest":
+      case "sleep":
+      case "wake":
+      case "hearth":
+      case "journal":
+      case "ponder":
         this.go(DECK_REST);
         return;
       case "rounds": {
@@ -448,6 +452,7 @@ export class Care {
           this.talk(1);
         }
         return;
+      case "walk":
       case "walk-dog":
         return this.walkDog(f);
       case "friends":

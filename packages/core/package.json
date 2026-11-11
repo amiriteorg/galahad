@@ -10,6 +10,7 @@
     "./experiments": "./src/experiments.ts",
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",
+    "./life": "./src/life.ts",
     "./pairing": "./src/pairing.ts",
     "./qr": "./src/qr.ts",
     "./request-auth": "./src/request-auth.ts",

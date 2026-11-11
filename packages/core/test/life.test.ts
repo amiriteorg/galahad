@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { ACTIVITIES, ACTIVITY_LABEL, type Activity, blockPhase, danishDate, dayPlan, intentFor, LIFE_SEED, lifeAt, ROUNDS, roundsStop } from "./life.ts";
+import { ACTIVITIES, ACTIVITY_LABEL, type Activity, blockPhase, danishDate, dayLog, dayPlan, intentFor, JOURNAL_AT, LIFE_SEED, lifeAt, ROUNDS, roundsStop, withDog } from "../src/life.ts";
 
 /*
  * His day when there's no work: the same plan on every device for the same moment,
- * from Denmark's clock and a seed; covering the day end to end; resting at night;
- * work, then what needs you, then the dog's battery, before the plan; and after work
- * he picks the day up where it would be.
+ * from Denmark's clock and a seed; covering the day end to end; asleep at night, woken
+ * by the dog, his journal before bed; work, then what needs you, then the dog's
+ * battery, before the plan; after work he picks the day up where it would be; and
+ * the day so far, as his journal reads it.
  */
 
 const at = (iso: string) => Date.parse(iso);
@@ -38,18 +39,33 @@ describe("a day's plan", () => {
     }
   });
 
-  test("rest at night, rounds and a walk with the dog in the morning, a walk at noon and at evening", () => {
+  test("asleep at night, woken by the dog, rounds and a walk; fetch at noon, a walk at evening; the fire, his journal, bed", () => {
     for (const day of days) {
       const plan = dayPlan(day);
       const what = (minute: number) => plan.find((b) => minute < b.to)!.activity;
-      expect(what(3 * 60)).toBe("rest");
-      expect(what(23 * 60 + 30)).toBe("rest");
+      expect(what(3 * 60)).toBe("sleep");
+      expect(what(23 * 60 + 30)).toBe("sleep");
       const order = plan.map((b) => b.activity);
-      expect(order.slice(0, 3)).toEqual(["rest", "rounds", "walk-dog"]);
-      expect(order.filter((a) => a === "walk-dog").length).toBe(3);
-      expect(order.slice(-3)).toEqual(["council", "observatory", "rest"]);
-      expect(plan.find((b) => b.activity === "rounds")!.from).toBeGreaterThanOrEqual(6 * 60 + 15);
-      expect(plan.find((b) => b.activity === "rounds")!.from).toBeLessThanOrEqual(6 * 60 + 45);
+      expect(order.slice(0, 4)).toEqual(["sleep", "wake", "rounds", "walk"]);
+      expect(order.filter((a) => a === "walk").length).toBe(2);
+      expect(order.filter((a) => a === "walk-dog").length).toBe(1);
+      expect(order.slice(-6)).toEqual(["walk", "council", "observatory", "hearth", "journal", "sleep"]);
+      const wake = plan.find((b) => b.activity === "wake")!;
+      expect(wake.from).toBeGreaterThanOrEqual(6 * 60 + 15);
+      expect(wake.from).toBeLessThanOrEqual(6 * 60 + 45);
+      const fetch = plan.find((b) => b.activity === "walk-dog")!;
+      expect(fetch.from).toBeGreaterThanOrEqual(12 * 60);
+      expect(fetch.from).toBeLessThan(13 * 60 + 15);
+    }
+  });
+
+  test("he's at his journal when the node's reflection runs (21:30), and for a good while after", () => {
+    for (const day of days) {
+      const journal = dayPlan(day).find((b) => b.activity === "journal")!;
+      expect(journal.from).toBe(JOURNAL_AT);
+      expect(journal.from).toBeLessThan(21 * 60 + 30);
+      expect(journal.to).toBeGreaterThanOrEqual(21 * 60 + 52);
+      expect(journal.to).toBeLessThanOrEqual(22 * 60 + 12);
     }
   });
 
@@ -84,8 +100,8 @@ describe("now", () => {
     expect(a.end).toBeGreaterThan(now);
   });
 
-  test("at night he rests; in the morning, his rounds", () => {
-    expect(lifeAt(at("2026-11-11T02:00:00Z")).activity).toBe("rest");
+  test("at night he sleeps; in the morning, his rounds", () => {
+    expect(lifeAt(at("2026-11-11T02:00:00Z")).activity).toBe("sleep");
     const plan = dayPlan("2026-11-11");
     const rounds = plan.find((b) => b.activity === "rounds")!;
     const midnight = danishDate(at("2026-11-11T12:00:00Z")).midnight;
@@ -123,5 +139,38 @@ describe("work comes first", () => {
     const midnight = danishDate(morning).midnight;
     const minute = (morning + 2 * 60 * 60_000 - midnight) / 60_000;
     expect(back.activity).toBe(plan.find((b) => minute < b.to)!.activity);
+  });
+});
+
+describe("the day so far, for his journal", () => {
+  const midnight = danishDate(at("2026-11-11T12:00:00Z")).midnight;
+  const plan = dayPlan("2026-11-11");
+
+  test("a line a block up to now, with its times in Denmark; the one he's in ends now; nothing of what's still to come", () => {
+    const fetch = plan.find((b) => b.activity === "walk-dog")!;
+    const now = midnight + (fetch.from + 5) * 60_000;
+    const log = dayLog(now);
+    expect(log.length).toBe(plan.indexOf(fetch) + 1);
+    expect(log[0]).toMatch(/^00:00 to 06:\d\d Asleep at his hearth, the dog beside him$/);
+    expect(log[1]).toMatch(/^06:\d\d to 06:\d\d Woken by the dog$/);
+    expect(log.at(-1)).toMatch(/^1[23]:\d\d to 1[23]:\d\d Playing fetch with the dog$/);
+    expect(log.join(" | ")).not.toContain("journal");
+  });
+
+  test("a block the work cut into says so, so the journal never claims a walk the work took", () => {
+    const walk = plan.find((b) => b.activity === "walk")!;
+    const now = midnight + 12 * 60 * 60_000;
+    const log = dayLog(now, [midnight + (walk.from + 3) * 60_000]);
+    const line = log.find((l) => l.includes("Out for a walk"))!;
+    expect(line).toMatch(/\(work came first for part of it\)$/);
+    expect(log.filter((l) => l.includes("work came first")).length).toBe(1);
+  });
+
+  test("the dog by its name, once it has one", () => {
+    expect(withDog("Out for a walk with the dog", "Bors")).toBe("Out for a walk with Bors");
+    expect(withDog("The dog first", " Bors ")).toBe("Bors first");
+    expect(withDog("Out for a walk with the dog", "")).toBe("Out for a walk with the dog");
+    expect(withDog("Out for a walk with the dog", null)).toBe("Out for a walk with the dog");
+    expect(dayLog(midnight + 9 * 60 * 60_000, [], "Bors").join(" | ")).toContain("Woken by Bors");
   });
 });

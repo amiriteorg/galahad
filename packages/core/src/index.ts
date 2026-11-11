@@ -4,6 +4,7 @@ export * from "./bank.ts";
 export * from "./board.ts";
 export * from "./board-input.ts";
 export * from "./chats.ts";
+export * from "./life.ts";
 export * from "./world.ts";
 export * from "./world-input.ts";
 export * from "./experiments.ts";
