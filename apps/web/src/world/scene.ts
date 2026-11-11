@@ -18,6 +18,7 @@ import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
 import { addPlants } from "./flora-plan.ts";
+import { keepSeason, seasonHook, stepGrowth } from "./flora-shade.ts";
 import { ProvingGround } from "./field.ts";
 import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
@@ -495,6 +496,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const trace = /[?&]trace=1(&|$)/.test(location.search) ? { frames: new Float64Array(TRACE * 7), n: 0 } : null;
   if (trace) (globalThis as { __sandboxTrace?: unknown }).__sandboxTrace = trace;
   if (trace) (globalThis as { __sandboxLife?: unknown }).__sandboxLife = lifeTrace;
+  // (And for a tour of the seasons: `__sandboxSeason(name | 0..1 | "live")` looks at one; `__sandboxStats()` says what's drawn.)
+  if (trace) seasonHook();
+  if (trace) (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => ({ fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts() });
+  if (trace) (globalThis as { __sandboxLook?: unknown }).__sandboxLook = (x: number, y: number, distance?: number, yaw?: number) => (stopFollowing(), rig.lookAt(x, y, distance), yaw === undefined || (rig.target.yaw = yaw), (dirty = true));
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
@@ -1221,6 +1226,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     renderedLast = true;
     dirty = false;
     const t = now / 1000;
+    // The season (Denmark's date) on the land and what grows, the gusts crossing them, and the leaves in the air in autumn.
+    keepSeason(Date.now());
+    if (stepGrowth(renderDt, weather.state.wind, motion)) dirty = true;
+    vegetation.animate(renderDt, weather.state.wind, motion);
 
     // Floating origin: far from it, move it (and so the whole world) under the camera.
     if (Math.hypot(rig.x - origin[0], rig.y - origin[1]) > REBASE_M) {

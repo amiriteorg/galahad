@@ -83,13 +83,14 @@ function snowCover(): F {
  * The factor a surface's colour is multiplied by for the weather: darker when
  * wet (porous ground darkens most), and turned to snow where snow lies. A
  * material's colour is its vertex colour times this; `colours` says how many
- * times the vertex colour is multiplied in (the land's goes in twice), so the
- * snow comes out white whatever is under it.
+ * times the vertex colour is multiplied in, so the snow comes out white
+ * whatever is under it. A material whose colour isn't its vertex colour (what
+ * grows, and the land: the season's colour) says what it is (`colour`).
  */
-export function wetDarken(porosity = 1, colours = 1): V3 {
+export function wetDarken(porosity = 1, colours = 1, colour?: V3): V3 {
   const wetFactor = vec3(float(1).sub(weatherUniforms.wetness.mul(0.38 * porosity)));
   return only(snowy(), wetFactor as unknown as V3, () => {
-    const under = max(vertexColor().rgb, vec3(0.03));
+    const under = max(colour ?? vertexColor().rgb, vec3(0.03));
     const white = SNOW.div(colours === 2 ? under.mul(under) : under);
     return mix(wetFactor, white, snowCover()) as unknown as V3;
   });

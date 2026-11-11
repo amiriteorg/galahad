@@ -34,6 +34,10 @@ export interface Tier {
   rocks: number;
   /** Pebbles and clover underfoot. */
   detail: number;
+  /** Reeds, cattails and rushes at the water's edge. */
+  reeds: number;
+  /** Leaves in the air in autumn, at most. */
+  leaves: number;
   birds: number;
   deer: number;
   rabbits: number;
@@ -93,6 +97,8 @@ export const TIERS: Record<TierName, Tier> = {
     grass: 1200,
     rocks: 400,
     detail: 600,
+    reeds: 500,
+    leaves: 48,
     birds: 10,
     deer: 2,
     rabbits: 3,
@@ -128,6 +134,8 @@ export const TIERS: Record<TierName, Tier> = {
     grass: 7000,
     rocks: 900,
     detail: 2500,
+    reeds: 1400,
+    leaves: 160,
     birds: 24,
     deer: 4,
     rabbits: 6,
@@ -163,6 +171,8 @@ export const TIERS: Record<TierName, Tier> = {
     grass: 16000,
     rocks: 1800,
     detail: 6000,
+    reeds: 3200,
+    leaves: 420,
     birds: 48,
     deer: 8,
     rabbits: 12,

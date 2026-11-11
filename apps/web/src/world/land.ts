@@ -1,6 +1,7 @@
 import { abs, attribute, cameraPosition, clamp, float, fract, length, mix, modelWorldMatrix, normalize, positionLocal, positionWorld, pow, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4, vertexColor } from "three/tsl";
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, MeshLambertNodeMaterial, MeshPhongNodeMaterial } from "three/webgpu";
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, MeshLambertNodeMaterial, MeshPhongNodeMaterial, type Node } from "three/webgpu";
 import { toScene } from "./coords.ts";
+import { groundSeason } from "./flora-shade.ts";
 import { flatNormals, linear } from "./mesher.ts";
 import { built } from "./path.ts";
 import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, BASE_FLATS, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
@@ -43,6 +44,15 @@ export interface Chunk {
 /** The water's colour (time of day) and the waves' strength (0 under reduced motion). */
 export const waterUniforms = { color: uniform(new Color(0x4fd2cc)), sky: uniform(new Color(0xdfe4f6)), waves: uniform(1) };
 
+/** How far the water's surface stands over its level at a point of the scene's world, metres: three swells across each other, a gentle, never-repeating chop. */
+export function waterWave(world: Node<"vec4"> | Node<"vec3">): Node<"float"> {
+  const t = time.mul(waterUniforms.waves);
+  return sin(world.x.mul(0.31).add(t.mul(1.1)))
+    .mul(0.05)
+    .add(sin(world.z.mul(0.23).sub(t.mul(0.8)).add(world.x.mul(0.07))).mul(0.045))
+    .add(sin(world.x.mul(0.9).add(world.z.mul(0.7)).add(t.mul(1.9))).mul(0.018)) as unknown as Node<"float">;
+}
+
 /** Water: faceted, waving, a little see-through, tinted towards the sky at a grazing look; falls foam white. */
 function waterMaterial(near: boolean): MeshPhongNodeMaterial {
   const m = new MeshPhongNodeMaterial({ transparent: true, flatShading: true, shininess: 70, depthWrite: true, side: near ? 0 : DoubleSide });
@@ -51,13 +61,7 @@ function waterMaterial(near: boolean): MeshPhongNodeMaterial {
   const world = modelWorldMatrix.mul(vec4(positionLocal, 1));
   // Waves fade towards the sheet's far edge (the vertices there are kilometres apart).
   const reach = near ? float(1).sub(smoothstep(110, 160, abs(positionLocal.x).max(abs(positionLocal.z)))) : float(1).sub(fall);
-  // Three swells across each other: a gentle, never-repeating chop (metres).
-  const t = time.mul(waterUniforms.waves);
-  const wave = sin(world.x.mul(0.31).add(t.mul(1.1)))
-    .mul(0.05)
-    .add(sin(world.z.mul(0.23).sub(t.mul(0.8)).add(world.x.mul(0.07))).mul(0.045))
-    .add(sin(world.x.mul(0.9).add(world.z.mul(0.7)).add(t.mul(1.9))).mul(0.018));
-  m.positionNode = positionLocal.add(vec3(0, wave.mul(reach), 0));
+  m.positionNode = positionLocal.add(vec3(0, waterWave(world).mul(reach), 0));
   const view = normalize(cameraPosition.sub(positionWorld));
   const grazing = pow(float(1).sub(clamp(view.y, 0, 1)), 3).mul(0.55);
   // Rain rings the surface.
@@ -78,14 +82,17 @@ function waterMaterial(near: boolean): MeshPhongNodeMaterial {
 const morph = { focus: uniform(vec2(0, 0)), near: uniform(1e5), far: uniform(2e5) };
 
 /**
- * The land's material: vertex colours, and foam lapping where it meets a water
- * surface (its "water" level). Each vertex eases from its own height to the base
- * grid's under it ("coarse") between the morph's distances; faces are shaded by
- * their own slope (flat shading from the surface's derivatives), so they shade
- * true while they morph.
+ * The land's material: each face's colour, as the season has it (its summer
+ * colour with the year's tints laid over what covers it: grass that pales,
+ * heath in flower, fallen leaves, a marsh gone to straw; and the wind's gusts
+ * crossing its grass), and foam lapping where it meets a water surface (its
+ * "water" level). Each vertex eases from its own height to the base grid's
+ * under it ("coarse") between the morph's distances; faces are shaded by their
+ * own slope (flat shading from the surface's derivatives), so they shade true
+ * while they morph.
  */
 function landMaterial(): MeshLambertNodeMaterial {
-  const m = new MeshLambertNodeMaterial({ vertexColors: true, flatShading: true });
+  const m = new MeshLambertNodeMaterial({ flatShading: true });
   const at = modelWorldMatrix.mul(vec4(positionLocal.x, 0, positionLocal.z, 1));
   const k = smoothstep(morph.near, morph.far, length(at.xz.sub(morph.focus)));
   m.positionNode = vec3(positionLocal.x, mix(positionLocal.y, attribute("coarse", "float"), k), positionLocal.z);
@@ -95,9 +102,10 @@ function landMaterial(): MeshLambertNodeMaterial {
   const above = y.sub(level).sub(lap);
   const foam = smoothstep(0.2, 0.04, above).mul(smoothstep(-0.06, 0.02, above));
   const wet = smoothstep(0.55, 0.15, above).mul(smoothstep(-0.2, 0.0, above));
-  const ground = mix(vertexColor(), vertexColor().mul(0.82), wet);
-  // (The land's colour is its vertex colour twice over: once here, once by the material; the snow needs to know.)
-  m.colorNode = mix(ground.mul(wetDarken(1, 2)), vec3(0.93, 0.98, 0.96), foam.mul(0.8));
+  // (A face's summer colour is its vertex colour twice over, as it always was.)
+  const paint = vertexColor().rgb;
+  const ground = groundSeason(paint.mul(paint).mul(mix(float(1), float(0.82), wet)), attribute("cover", "vec4"));
+  m.colorNode = mix(ground.mul(wetDarken(1, 1, ground)), paint.mul(vec3(0.93, 0.98, 0.96)), foam.mul(0.8));
   // Wet ground takes a sheen of the sky.
   m.emissiveNode = wetSheen(1);
   return m;
@@ -347,6 +355,7 @@ export class Land {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(a.positions, 3));
     geometry.setAttribute("color", new BufferAttribute(a.colors, 3));
+    geometry.setAttribute("cover", new BufferAttribute(a.cover, 4, true));
     // No normals: the material shades each face by its own slope.
     geometry.setAttribute("water", new BufferAttribute(a.water, 1));
     geometry.setAttribute("coarse", new BufferAttribute(a.coarse, 1));
@@ -518,6 +527,8 @@ export interface SurfaceArrays {
   coarse: Float32Array;
   /** The water's level at each vertex (for the foam). */
   water: Float32Array;
+  /** What covers each vertex's face, four bytes: grass, heath, a deciduous wood's floor, marsh (the season tints the ground by them). */
+  cover: Uint8Array;
 }
 
 /**
@@ -536,6 +547,8 @@ export function surfaceArrays(s: Surface, coarse: Float32Array | null, levels: F
   const colors = new Float32Array(tris * 9);
   const under = new Float32Array(tris * 3);
   const water = new Float32Array(tris * 3);
+  const cover = new Uint8Array(tris * 12);
+  let face = 0;
   const target = coarse ?? s.heights;
   let v = 0;
   let r = 0;
@@ -556,19 +569,25 @@ export function surfaceArrays(s: Surface, coarse: Float32Array | null, levels: F
     colors[v * 3 + 2] = b;
     under[v] = target[k]! - drop;
     water[v] = drop ? -1000 : levels[k]!;
+    cover[v * 4] = s.cover[face * 4]!;
+    cover[v * 4 + 1] = s.cover[face * 4 + 1]!;
+    cover[v * 4 + 2] = s.cover[face * 4 + 2]!;
+    cover[v * 4 + 3] = s.cover[face * 4 + 3]!;
     v++;
   };
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const c = SPLITS[s.split[j * cells + i]!]!;
       for (let t = 0; t < 2; t++) {
-        color(s.faces[(j * cells + i) * 2 + t]!);
+        face = (j * cells + i) * 2 + t;
+        color(s.faces[face]!);
         for (let q = 0; q < 3; q++) put(i + c[t * 6 + q * 2]!, j + c[t * 6 + q * 2 + 1]!);
       }
     }
   }
   // Skirts: south and east edges run with the grid, north and west against it, so each faces out.
-  const skirt = (ai: number, aj: number, bi: number, bj: number, face: number, outward: boolean) => {
+  const skirt = (ai: number, aj: number, bi: number, bj: number, of: number, outward: boolean) => {
+    face = of;
     color(s.faces[face]!, 0.8);
     if (outward) {
       put(ai, aj, SKIRT);
@@ -592,5 +611,5 @@ export function surfaceArrays(s: Surface, coarse: Float32Array | null, levels: F
     skirt(k, cells, k + 1, cells, ((cells - 1) * cells + k) * 2 + 1, false);
     skirt(0, k, 0, k + 1, k * cells * 2 + 1, false);
   }
-  return { positions, colors, coarse: under, water };
+  return { positions, colors, coarse: under, water, cover };
 }
