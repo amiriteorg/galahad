@@ -566,7 +566,8 @@ function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
 export const fleetView: View = (root, ctx, { scope, opts }) => {
   const admin = ctx.can("fleet:admin");
   const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat());
-  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(240), skeletonBlock(240));
+  // One node card's height: most fleets have one or two, side by side on a desktop.
+  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(170));
   const clientsBox = h("div", { class: "card" });
   const revokedBox = h("div");
   const errorBox = h("div");
