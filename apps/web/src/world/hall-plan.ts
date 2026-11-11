@@ -1,4 +1,4 @@
-import { PADS, SITES } from "@galahad/core/world";
+import { BENCH as ASSEMBLY_BENCH, PADS, SITES } from "@galahad/core/world";
 import type { Collider, Rect } from "./colliders.ts";
 import type { TierName } from "./tiers.ts";
 
@@ -12,7 +12,8 @@ import type { TierName } from "./tiers.ts";
  *
  * The hall, from the door (west) to the back (east):
  *   front, north of the aisle   the printer farm (desktop printers on a bench over a collector
- *                               belt), a large-format gantry printer, the dispatch table and room
+ *                               belt), a large-format gantry printer, the assembly bench (where
+ *                               Galahad builds each experiment), the dispatch table and room
  *   front, south of the aisle   the assembly line (an indexing conveyor past two six-axis arms and
  *                               an inspection arch), a CNC mill
  *   between them                the cart's lane, crossing the aisle once
@@ -218,6 +219,18 @@ export const DISPATCH = {
   door: { half: 1.1, height: 2.05 },
 };
 
+/**
+ * The assembly bench, between the printers and the first test cell: where Galahad puts each experiment
+ * together before it's tested (core's BENCH fixes its place, so the node knows how far he has to go). Its
+ * top, and the part of it an experiment's bodies are laid out on.
+ */
+export const ASSEMBLY = {
+  bench: { x: ASSEMBLY_BENCH.x, y: ASSEMBLY_BENCH.y, hx: 1.3, hy: 0.6 } as Rect,
+  top: 0.92,
+  /** Where he stands to work at it, facing north. */
+  stand: ASSEMBLY_BENCH.stand,
+};
+
 // ---------- the assembly line ----------
 
 /**
@@ -319,6 +332,7 @@ export const HALL_SOLIDS: Solid[] = (() => {
   out.push(box("Collector belt", { x: (FARM.belt.west + FARM.belt.east) / 2, y: FARM.belt.y, hx: (FARM.belt.east - FARM.belt.west) / 2, hy: FARM.belt.half + 0.06 }, FARM.belt.top + 0.05));
   out.push(box("Large-format printer", GANTRY.frame, GANTRY.height + 0.2));
   out.push(box("Dispatch table", DISPATCH.table, DISPATCH.top + 0.1));
+  out.push(box("Assembly bench", ASSEMBLY.bench, ASSEMBLY.top + 0.5));
   out.push(box("Dispatch", DISPATCH.room, DISPATCH.height));
   out.push(box("Assembly line", { x: (LINE.west + LINE.east) / 2, y: LINE.y, hx: (LINE.east - LINE.west) / 2, hy: LINE.half + 0.1 }, LINE.top + 0.25));
   out.push(box("Assembly line", { x: (LINE.infeed[0] + LINE.infeed[1]) / 2, y: LINE.y, hx: (LINE.infeed[1] - LINE.infeed[0]) / 2, hy: 0.85 }, LINE.tunnel));

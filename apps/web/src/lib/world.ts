@@ -1,5 +1,6 @@
-import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentStatus, ExperimentView, GalahadState, Pose, SceneBody, Station, WeatherKind, WorldEvent, WorldNode, WorldWeather } from "@galahad/core/world";
-import { padAt, SITES, STATIONS } from "@galahad/core/world";
+import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentPhase, ExperimentStatus, ExperimentView, GalahadState, PhaseTimes, Pose, SceneBody, Station, WeatherKind, WorldEvent, WorldNode, WorldWeather } from "@galahad/core/world";
+import { padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
+import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/experiments";
 
 /*
  * The SANDBOX's model of the world, as the page keeps it: what Galahad is doing,
@@ -34,6 +35,8 @@ export interface WorldModel {
   notice: WorldNotice | null;
   /** Denmark's weather now, as the node says (null: unknown, or turned off there). */
   weather: WorldWeather | null;
+  /** The experiments the node saved that have ended, newest first: what can be replayed. */
+  saved: SavedSummary[];
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -45,6 +48,7 @@ export const emptyWorld = (): WorldModel => ({
   thoughts: [],
   notice: null,
   weather: null,
+  saved: [],
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -69,8 +73,10 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
   switch (event.type) {
     case "hello": {
       const { experiments, frames } = prune(dedupe(event.experiments), state.frames);
-      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null };
+      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null, saved: event.saved ?? [] };
     }
+    case "saved":
+      return { ...state, at, saved: event.saved };
     case "galahad":
       return { ...state, at, galahad: event.galahad };
     case "thought": {
@@ -126,12 +132,14 @@ const LIMITS = {
   metrics: 32,
   nodes: 256,
   experiments: 256,
+  saved: 100,
   extent: 1e6,
 } as const;
 
 const STATION_NAMES = new Set<string>([...Object.keys(STATIONS), "field"]);
 const ENGINES = new Set<string>(["mujoco", "gazebo", "isaac", "jsbsim", "rocketpy", "custom"]);
 const STATUSES = new Set<string>(["starting", "running", "done", "failed"]);
+const PHASES = new Set<string>(["building", "testing", "examining", "done", "failed"]);
 const SEVERITIES = new Set<string>(["info", "warn", "error"]);
 const WEATHER_KINDS = new Set<string>(["clear", "cloudy", "overcast", "mist", "drizzle", "rain", "snow", "storm"]);
 
@@ -230,7 +238,18 @@ function readExperiment(v: unknown): ExperimentView | null {
   if (!metrics || !nullable(v.summary, (s): s is string => str(s))) return null;
   // An engine this page doesn't know yet is drawn like any other ("custom").
   const engine = (ENGINES.has(v.engine) ? v.engine : "custom") as ExperimentEngine;
+  // Its phase, when the node says (an older one doesn't; a phase this page doesn't know is read from the status).
+  const phased: Pick<ExperimentView, "phase" | "phases" | "assembly" | "build"> = {};
+  if (typeof v.phase === "string" && PHASES.has(v.phase)) phased.phase = v.phase as ExperimentPhase;
+  const phases = readPhases(v.phases);
+  if (phases) phased.phases = phases;
+  if (isObj(v.assembly)) {
+    const poses = readPoses(v.assembly);
+    if (poses) phased.assembly = poses;
+  }
+  if (isObj(v.build) && num(v.build.from) && num(v.build.until) && v.build.until >= v.build.from) phased.build = { from: v.build.from, until: v.build.until };
   return {
+    ...phased,
     id: v.id,
     title: v.title,
     engine,
@@ -250,15 +269,59 @@ function readExperiment(v: unknown): ExperimentView | null {
 
 const isPose = (v: unknown): v is Pose => Array.isArray(v) && v.length === 7 && v.every((x) => num(x) && Math.abs(x) <= LIMITS.extent);
 
-function readFrame(v: unknown): ExperimentFrame | null {
-  if (!isObj(v) || !id(v.experiment) || !num(v.t) || !isObj(v.poses)) return null;
-  const entries = Object.entries(v.poses);
+function readPoses(v: Obj): Record<string, Pose> | null {
+  const entries = Object.entries(v);
   if (entries.length > LIMITS.bodies) return null;
   const poses: Record<string, Pose> = {};
   for (const [key, pose] of entries) {
     if (!id(key) || !isPose(pose)) return null;
     poses[key] = [pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6]];
   }
+  return poses;
+}
+
+function readPhases(v: unknown): PhaseTimes | null {
+  if (!isObj(v) || !num(v.building)) return null;
+  const at = (x: unknown): x is number | null => x === null || num(x);
+  if (!at(v.testing) || !at(v.examining) || !at(v.ended)) return null;
+  return { building: v.building, testing: v.testing, examining: v.examining, ended: v.ended };
+}
+
+/** A saved experiment in the node's list, checked like an experiment (one this page can't read is left out). */
+function readSaved(v: unknown): SavedSummary | null {
+  if (!isObj(v) || !id(v.id) || !str(v.title, 200) || !str(v.engine, 32) || typeof v.status !== "string" || !STATUSES.has(v.status)) return null;
+  const plot = v.plot;
+  if (!isObj(plot) || !num(plot.x) || !num(plot.y) || !size(plot.size) || !num(v.startedAt) || !nullable(v.endedAt, num) || !str(v.nodeName, 200)) return null;
+  const readouts = readMetrics(v.readouts);
+  if (!readouts || !nullable(v.summary, (s): s is string => str(s)) || !nullable(v.duration, num) || !num(v.frames) || !num(v.bytes)) return null;
+  const status = v.status as ExperimentStatus;
+  return {
+    id: v.id,
+    title: v.title,
+    engine: (ENGINES.has(v.engine) ? v.engine : "custom") as ExperimentEngine,
+    status,
+    phase: typeof v.phase === "string" && PHASES.has(v.phase) ? (v.phase as ExperimentPhase) : phaseOf({ status }),
+    startedAt: v.startedAt,
+    endedAt: v.endedAt,
+    nodeName: v.nodeName,
+    plot: { x: plot.x, y: plot.y, size: plot.size },
+    summary: v.summary,
+    pinned: v.pinned === true,
+    bytes: v.bytes,
+    frames: v.frames,
+    duration: v.duration,
+    readouts,
+    code: v.code === true,
+  };
+}
+
+/** A list of saved ones: whatever can be read of it (one bad entry never loses the rest). */
+const readSavedList = (v: unknown): SavedSummary[] => (Array.isArray(v) ? v.slice(0, LIMITS.saved).map(readSaved).filter((s): s is SavedSummary => s !== null) : []);
+
+function readFrame(v: unknown): ExperimentFrame | null {
+  if (!isObj(v) || !id(v.experiment) || !num(v.t) || !isObj(v.poses)) return null;
+  const poses = readPoses(v.poses);
+  if (!poses) return null;
   const frame: ExperimentFrame = { experiment: v.experiment, t: v.t, poses };
   if (v.metrics !== undefined) {
     const metrics = readMetrics(v.metrics);
@@ -294,9 +357,12 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       const experiments = readList(v.experiments, LIMITS.experiments, readExperiment);
       const thoughts = readList(v.thoughts, 64, (t) => (str(t) ? t : null));
       if (!(galahad && nodes && experiments && thoughts)) return null;
-      // Weather it can't read is unknown weather: never a reason to lose the world.
-      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null };
+      // Weather it can't read is unknown weather, saved ones it can't read are left out: never a reason to lose the world.
+      const saved = v.saved === undefined ? {} : { saved: readSavedList(v.saved) };
+      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts, ...saved } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null, ...saved };
     }
+    case "saved":
+      return Array.isArray(v.saved) ? { type: "saved", at, saved: readSavedList(v.saved) } : null;
     case "galahad": {
       const galahad = readGalahad(v.galahad);
       return galahad ? { type: "galahad", at, galahad } : null;
@@ -388,29 +454,27 @@ export const weatherLabel = (w: WorldWeather): string => WEATHER_LABEL[w.kind];
 export const stationLabel = (station: Station): string => (station === "field" ? "the field" : STATIONS[station].label);
 
 /** Where an experiment stands, in words: "on the proving ground", "in the workshop", "on open land". */
-export function experimentPlace(e: ExperimentView): string {
+export function experimentPlace(e: Pick<ExperimentView, "plot">): string {
   const pad = padAt(e.plot);
   if (!pad) return "on open land";
   return pad.site === "hall" ? `in the ${SITES.hall.label.toLowerCase()}` : `on the ${SITES.field.label.toLowerCase()}`;
 }
 
-/** "altitude_m" → "altitude (m)", "speed_mps" → "speed (m/s)". */
-export function metricLabel(key: string): string {
-  const units: Record<string, string> = { m: "m", mps: "m/s", s: "s", kt: "kt", deg: "°", rad: "rad", n: "N", kn: "kN", kg: "kg", pct: "%", hz: "Hz", ms: "ms" };
-  const match = key.match(/^(.*)_([a-z]+)$/);
-  const unit = match ? units[match[2]!] : undefined;
-  const name = (unit ? match![1]! : key).replace(/_/g, " ");
-  return unit ? `${name} (${unit})` : name;
-}
+/** "altitude_m" → "altitude (m)", "speed_mps" → "speed (m/s)" (the examination's own words, from core). */
+export const metricLabel = readoutLabel;
 
 /** A readout with sensible precision: 1 234, 12.3, 0.0123. */
-export function metricValue(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1000) return Math.round(value).toLocaleString("en-US").replace(/,/g, " ");
-  if (abs >= 100) return value.toFixed(0);
-  if (abs >= 10) return value.toFixed(1);
-  if (abs >= 0.01 || abs === 0) return value.toFixed(2);
-  return value.toExponential(1);
+export const metricValue = readoutValue;
+
+export const PHASE_LABEL: Record<ExperimentPhase, string> = { building: "Being built", testing: "Testing", examining: "Being examined", done: "Done", failed: "Failed" };
+
+/** Where it is in its life, in words: "Being built in the workshop", "Testing on the proving ground", "Done". */
+export function phaseLine(e: ExperimentView): string {
+  const phase = phaseOf(e);
+  if (phase === "building") return "Being built in the workshop";
+  if (phase === "testing") return `Testing ${experimentPlace(e)}`;
+  if (phase === "examining") return "Being examined at the observatory";
+  return `${PHASE_LABEL[phase]}, tested ${experimentPlace(e)}`;
 }
 
 /**
