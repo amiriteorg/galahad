@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { PADS } from "@galahad/core/world";
 import type { Collider } from "./colliders.ts";
+import { BUILDS, Solids } from "./collide.ts";
 import { aircraft, CIRCUIT_HEIGHT, ROUTES, runwayFor, stepAircraft, TAXI_KEEP_CLEAR, TAXI_OUT } from "./field-circuit.ts";
 import { onPaving, rubberStreaks, runwayPaint } from "./field-ground.ts";
 import { launcher, LOWERED, stepLauncher, UPRIGHT } from "./field-launcher.ts";
@@ -14,6 +15,7 @@ import {
   FIELD_NAMES,
   FIELD_OBSTACLES,
   FIELD_RIM,
+  BRIDGE,
   LAUNCH_SLAB,
   LAUNCHER_PARK,
   RUNWAY,
@@ -61,6 +63,21 @@ function* walk(from: Point, path: readonly Point[]): Generator<Point> {
 }
 
 describe("the proving ground's plan", () => {
+  test("the rover course's bridge is walked on as it's drawn: up its ramp within 5 cm of the slope, along its deck at its height", () => {
+    const s = new Solids();
+    s.add(FIELD_COLLIDERS);
+    const B = BRIDGE;
+    let z = 0;
+    for (let u = 0; u <= B.up + B.deck + B.down; u += 0.05) {
+      const x = B.x + Math.cos(B.heading) * u;
+      const y = B.y + Math.sin(B.heading) * u;
+      // What a walker going along it stands on, from where its feet were.
+      z = Math.max(0, s.support(x, y, z, BUILDS.galahad.step));
+      const drawn = u < B.up ? (B.height * u) / B.up : u <= B.up + B.deck ? B.height : (B.height * (B.up + B.deck + B.down - u)) / B.down;
+      expect(Math.abs(z - drawn)).toBeLessThan(0.051);
+    }
+  });
+
   test("everything it builds stands on the field, within its rim", () => {
     const edge = FIELD_RIM + 0.6;
     for (const c of FIELD_COLLIDERS) {

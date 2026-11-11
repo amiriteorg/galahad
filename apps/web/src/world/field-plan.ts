@@ -217,6 +217,36 @@ export const FIELD_OBSTACLES: { x: number; y: number; r: number }[] = [
 const box = (x: number, y: number, hx: number, hy: number, top?: number, yaw?: number): Collider => ({ kind: "box", x, y, hx, hy, ...(yaw === undefined ? {} : { yaw }), ...(top === undefined ? {} : { top }) });
 const circle = (x: number, y: number, r: number, top?: number): Collider => ({ kind: "circle", x, y, r, ...(top === undefined ? {} : { top }) });
 
+/** The rover course's bridge (field-rover.ts drives it, field-build.ts draws it): from (x, y) along `heading`, an earth ramp up, a plank deck, a ramp down. */
+export const BRIDGE = { x: -116, y: 22, heading: Math.PI / 2, half: 1.65, up: 3.6, deck: 5.3, down: 3.6, height: 0.9 };
+
+/**
+ * The bridge as walkers meet it: each earth ramp in nine shallow steps (a foot on it is never 5 cm off its slope),
+ * the deck, and the kerbs along the deck's sides (higher than a walker on it steps over without standing on them).
+ */
+function bridge(): Collider[] {
+  const B = BRIDGE;
+  const c = Math.cos(B.heading);
+  const s = Math.sin(B.heading);
+  const at = (u: number, v: number): [number, number] => [B.x + c * u - s * v, B.y + s * u + c * v];
+  const out: Collider[] = [];
+  const steps = 9;
+  for (const [u0, length, rising] of [[0, B.up, true], [B.up + B.deck, B.down, false]] as const) {
+    for (let k = 0; k < steps; k++) {
+      const [x, y] = at(u0 + ((k + 0.5) * length) / steps, 0);
+      const top = (B.height * (rising ? k + 0.5 : steps - k - 0.5)) / steps;
+      out.push(box(x, y, length / steps / 2, B.half, top, B.heading));
+    }
+  }
+  const [dx, dy] = at(B.up + B.deck / 2, 0);
+  out.push(box(dx, dy, B.deck / 2, B.half, B.height, B.heading));
+  for (const v of [-1, 1]) {
+    const [kx, ky] = at(B.up + B.deck / 2, v * (B.half + 0.12));
+    out.push(box(kx, ky, B.deck / 2 + 0.1, 0.08, B.height + 0.16, B.heading));
+  }
+  return out;
+}
+
 /** What nobody walks through (walls, masts, parked plant, the course's obstacles): precise boxes and circles. */
 export const FIELD_COLLIDERS: Collider[] = (() => {
   const out: Collider[] = [];
@@ -260,7 +290,7 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   out.push(box(SIGN.x, SIGN.y, 0.2, SIGN.half, SIGN.top));
   // The rover course: the start gate's posts, the bridge, the rock garden, the sand pit's frame, the slalom's poles.
   for (const side of [-1, 1]) out.push(circle(START_GATE.x, START_GATE.y + side * START_GATE.half, 0.22, START_GATE.height));
-  out.push(box(-116, 28.25, 1.7, 6.3, 0.9));
+  out.push(...bridge());
   out.push(circle(-124.2, 38.5, 3.2, 0.6));
   out.push(box(-131.3, 38.5, 2.9, 2, 0.25));
   for (const p of SLALOM_POLES) out.push(circle(p.x, p.y, 0.3, 1.6));
