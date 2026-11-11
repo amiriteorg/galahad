@@ -163,6 +163,7 @@ Rules:
 | Switch, range, chip input | `switchControl()`, `rangeControl()`, `chipInput()` | Range shows its value in tabular figures and sets `aria-valuetext`. |
 | Secret field | `secretInput()` | The only way keys are entered (see Safety). |
 | Copy field | `copyField()` | Commands and invite links; never secrets. |
+| Invite QR code | `inviteQr()` in `views/fleet.ts`, encoder `@galahad/core/qr` | A client invite's link as a QR code a camera opens: black on white whatever the theme, built as DOM (no markup strings); the terminal prints the same code for `galahad invite --client`. |
 | SAS code | `sasCode()` | Six digits in two groups of three, large and mono, one accessible label. |
 | Sheet / confirm | `ui/dialog.ts` | `<dialog>.showModal()` (focus trap, inert page, Esc). Centred on desktop, bottom sheet on phones. `confirmAction()` with optional `typeToConfirm`. |
 | Command palette | `ui/palette.ts` | ARIA combobox + listbox, fuzzy ranking (`lib/fuzzy.ts`), grouped when empty, flat when searching, query-driven extras ("Search memory for …", "Ask Galahad: …"). Finds your projects and kept chats by name (a chat also by its project's name) and opens them. An ink rule under the field shows it has focus. |

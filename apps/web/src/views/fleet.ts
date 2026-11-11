@@ -1,4 +1,5 @@
 import type { DeviceView, FleetView, PairingView, PeerStatus } from "@galahad/core";
+import { encodeQr, qrPath } from "@galahad/core/qr";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { gb, plural, shortId } from "../lib/text.ts";
 import { countdown, hlcMs, relativeTime } from "../lib/time.ts";
@@ -262,6 +263,28 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
 // An invite can carry only what this device holds (the node refuses more), so only those are offered.
 const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => ctx.can(s.scope));
 
+/** An invite link as a QR code a phone's camera opens: black on white with its quiet zone, built as DOM (no markup strings). */
+function inviteQr(url: string): HTMLElement {
+  const code = encodeQr(url, "M");
+  const side = code.size + 8;
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${side} ${side}`);
+  svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("aria-hidden", "true");
+  const paper = document.createElementNS(ns, "rect");
+  paper.setAttribute("width", String(side));
+  paper.setAttribute("height", String(side));
+  paper.setAttribute("fill", "#fff");
+  const ink = document.createElementNS(ns, "path");
+  ink.setAttribute("d", qrPath(code, 4));
+  ink.setAttribute("fill", "#000");
+  svg.append(paper, ink);
+  const box = h("div", { class: "invite-qr", role: "img", "aria-label": "A QR code of the invite link: scan it with the new device's camera" });
+  box.append(svg);
+  return box;
+}
+
 export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"): void {
   if (!ctx.can("fleet:admin")) {
     toast("This device can't invite others", { tone: "warn", description: "It needs the fleet:admin scope." });
@@ -370,7 +393,8 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
       h(
         "div",
         { class: "stack tight" },
-        h("div", { class: "label" }, kind === "client" ? "Open this link on the phone or browser" : "Run this on the new machine"),
+        h("div", { class: "label" }, kind === "client" ? "Scan this with the phone's camera, or open the link on it" : "Run this on the new machine"),
+        kind === "client" && invite.url ? inviteQr(invite.url) : null,
         copyField(value, kind === "client" ? "Copy invite link" : "Copy join command"),
         h("div", { class: "row small muted" }, ring, left),
       ),

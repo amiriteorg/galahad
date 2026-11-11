@@ -3,12 +3,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, padAt, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, padAt, qrToTerminal, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { artifactTarget } from "./artifacts.ts";
-import { tailscaleInfo } from "./capabilities.ts";
+import { servedOrigin, tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
@@ -33,7 +33,7 @@ Set up
   join <invite> [--name server] [--port 7777]              join a fleet with an invite
   serve                                                    run this node (daemon)
   expose [--https 443]                                     publish the PWA over HTTPS on your tailnet (tailscale serve)
-  invite [--client] [--origin https://host.ts.net] [--no-wait]
+  invite [--client] [--origin https://host.ts.net:8443] [--no-qr] [--no-wait]
                                                            add a device (prints an invite, then asks you to approve)
   pairings | approve <invite> <device> | reject <invite> <device>
   revoke <device> [--reason text]
@@ -367,7 +367,7 @@ async function main(): Promise<void> {
 Next:
   galahad serve                 start this node
   galahad expose                serve the PWA at https://<this-machine>.<tailnet>.ts.net
-  galahad invite --client       pair your phone or browser
+  galahad invite --client       pair your phone or browser (scan the QR code with it)
   galahad invite                add another machine (then run \`galahad join <invite>\` there)
   galahad key add               paste an API key`);
       return;
@@ -440,19 +440,30 @@ Next:
       const admin = new Admin(home);
       const kind = flags.client ? "client" : "node";
       let origin = str("origin");
+      // A phone opens the PWA where `tailscale serve` publishes it, which may not be 443 (on a server that
+      // keeps 443 for something else, it's whatever `galahad expose --https` chose): ask Tailscale.
+      let unpublished = false;
       if (kind === "client" && !origin) {
-        const ts = await tailscaleInfo();
-        origin = ts?.dnsName ? `https://${ts.dnsName}` : admin.base;
+        const env = loadEnv();
+        const proxyPort = env.GALAHAD_PROXY_PORT ?? (env.GALAHAD_PORT ?? home.readConfig().port) + 1;
+        origin = (await servedOrigin(proxyPort)) ?? undefined;
+        if (!origin) {
+          unpublished = true;
+          const ts = await tailscaleInfo();
+          origin = ts?.dnsName ? `https://${ts.dnsName}` : admin.base;
+        }
       }
       const created = await admin.call<{ invite: string; url: string | null; expiresAt: number; id: string }>("createInvite", {
         kind,
         ...(origin ? { origin } : {}),
       });
-      console.log(
-        kind === "client"
-          ? `Open this on the device you're adding (valid 10 minutes, single use):\n\n  ${created.url}\n`
-          : `On the new machine run (valid 10 minutes, single use):\n\n  galahad join ${created.invite}\n`,
-      );
+      if (kind === "client" && created.url) {
+        console.log("Scan this with the camera of the device you're adding, or open the link on it (valid 10 minutes, single use):\n");
+        // Black on white whatever the terminal's colours, so a phone's camera reads it.
+        if (process.stdout.isTTY && !flags["no-qr"]) console.log(`${qrToTerminal(encodeQr(created.url, "M"))}\n`);
+        console.log(`  ${created.url}\n`);
+        if (unpublished) console.log(dim("The PWA doesn't look published on your tailnet: run `galahad expose` first, or pass --origin https://<where it's served>.\n"));
+      } else console.log(`On the new machine run (valid 10 minutes, single use):\n\n  galahad join ${created.invite}\n`);
       if (flags["no-wait"]) return;
       console.log(dim("Waiting for the device…"));
       const deadline = created.expiresAt;

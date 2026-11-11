@@ -907,6 +907,9 @@
 
       /* ---------- misc ---------- */
       .scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: var(--sp-2); }
+      /* An invite's QR code: white paper whatever the theme (a camera needs the contrast), big enough to scan across a desk. */
+      .invite-qr { align-self: center; width: min(240px, 72vw); aspect-ratio: 1; padding: 0; border-radius: var(--r-md); background: #fff; box-shadow: var(--shadow-1); overflow: hidden; }
+      .invite-qr svg { display: block; width: 100%; height: 100%; }
       .scope { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); font-size: var(--fs-13); }
       .scope svg { margin-top: 2px; }
       .scope.on svg { color: var(--ok); }
