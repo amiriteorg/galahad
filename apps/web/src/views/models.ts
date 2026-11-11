@@ -2,9 +2,9 @@ import type { ProviderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import type { PresetView, RoleSpec } from "../types.ts";
-import { badge, busy, button, callout, copyText, empty, errorState, field, pageHead, section, segmented, skeletonBlock } from "../ui/controls.ts";
+import { badge, busy, button, callout, copyText, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
-import { h, nextId, replace } from "../ui/dom.ts";
+import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 import { openAddKey } from "./vault.ts";
@@ -21,27 +21,46 @@ const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "cod
 
 export const modelsView: View = (root, ctx, { scope }) => {
   const write = ctx.can("brain:write");
-  const rosterBox = h("div", { class: "grid wide", style: "grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr))" }, skeletonBlock(200), skeletonBlock(200));
+  // A role row is three lines: seven skeleton rows are about as tall as five roles.
+  const rosterBox = h("div", { class: "card" }, skeletonRows(7, { avatar: true }));
   const providersBox = h("div", { class: "card" }, skeletonBlock(120));
   const knownModels = h("datalist", { id: nextId("models") });
   let roster: Record<string, RoleSpec> = {};
   let presets: PresetView[] = [];
-  const drafts = new Map<string, string[]>();
 
   function addKnown(refs: string[]): void {
     const have = new Set([...knownModels.options].map((o) => o.value));
     for (const ref of refs) if (!have.has(ref)) knownModels.append(h("option", { value: ref }));
   }
 
-  function roleCard(role: string, spec: RoleSpec): HTMLElement {
-    const list = h("div", { class: "reorder", role: "list", "aria-label": `Models for ${role}` });
-    const foot = h("div", { class: "card-foot", hidden: true });
-    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", spellcheck: "false", "aria-label": `Add a model to ${role}` });
-    const draft = () => drafts.get(role) ?? [...spec.models];
-    const dirty = () => JSON.stringify(draft()) !== JSON.stringify(spec.models);
+  /** A role in one row: who it is, the models it hires in order, and Change. */
+  function roleRow(role: string, spec: RoleSpec): HTMLElement {
+    const chain = spec.models.length
+      ? h("span", { class: "mono small ellipsis", title: spec.models.map((m, i) => `${i + 1}. ${m}`).join("\n") }, spec.models[0], spec.models.length > 1 ? h("span", { class: "subtle" }, ` +${spec.models.length - 1} fallback${spec.models.length > 2 ? "s" : ""}`) : null)
+      : h("span", { class: "small", style: "color:var(--warn)" }, "No model: this role can't answer");
+    return h(
+      "div",
+      { class: "item center role-row" },
+      h("span", { class: "avatar", style: "color:var(--accent)" }, icon(ROLE_ICON[role] ?? "sparkle", { size: 16 })),
+      h(
+        "div",
+        { class: "grow" },
+        h("div", { class: "row", style: "gap:6px" }, h("span", { class: "strong" }, role), spec.configured ? null : badge("default", "neutral")),
+        h("div", { class: "tiny subtle ellipsis" }, spec.description),
+        h("div", { class: "row", style: "margin-top:4px;min-width:0" }, chain),
+      ),
+      write ? h("div", { class: "item-actions" }, button("Change", { size: "sm", icon: "edit", label: `Change the models for ${role}`, onClick: () => openRole(role, spec) })) : null,
+    );
+  }
 
-    function render(): void {
-      const models = draft();
+  /** The role's models in order, in a sheet: move, remove, add, then Save. */
+  function openRole(role: string, spec: RoleSpec): void {
+    let models = [...spec.models];
+    const list = h("div", { class: "reorder", role: "list", "aria-label": `Models for ${role}` });
+    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": `Add a model to ${role}` });
+    const save = button("Save", { variant: "primary", icon: "check" });
+
+    function render(focus?: string): void {
       replace(
         list,
         ...(models.length
@@ -51,34 +70,23 @@ export const modelsView: View = (root, ctx, { scope }) => {
                 { class: "r-item", role: "listitem" },
                 h("span", { class: "r-index", "aria-hidden": "true" }, String(i + 1)),
                 h("span", { class: "mono small grow ellipsis", title: `${ref} · ${i === 0 ? "answers first" : `fallback ${i}`}` }, ref),
-                write
-                  ? [
-                      button(`Move ${ref} up`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-up", disabled: i === 0, onClick: () => move(i, -1) }),
-                      button(`Move ${ref} down`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-down", disabled: i === models.length - 1, onClick: () => move(i, 1) }),
-                      button(`Remove ${ref}`, { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => remove(i) }),
-                    ]
-                  : null,
+                button(`Move ${ref} up`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-up", disabled: i === 0, onClick: () => move(i, -1) }),
+                button(`Move ${ref} down`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-down", disabled: i === models.length - 1, onClick: () => move(i, 1) }),
+                button(`Remove ${ref}`, { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => remove(i) }),
               ),
             )
           : [h("p", { class: "small subtle" }, "No models: this role can't answer.")]),
       );
-      foot.hidden = !dirty();
-    }
-    function set(models: string[]): void {
-      drafts.set(role, models);
-      render();
+      if (focus) list.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(focus)}"]`)?.focus();
     }
     function move(i: number, delta: number): void {
-      const models = draft();
       const [item] = models.splice(i, 1);
       models.splice(i + delta, 0, item!);
-      set(models);
-      list.querySelectorAll<HTMLButtonElement>(".r-item")[i + delta]?.querySelector<HTMLButtonElement>(`button[aria-label^="Move ${CSS.escape(item!)} ${delta < 0 ? "up" : "down"}"]`)?.focus();
+      render(`Move ${item!} ${delta < 0 ? "up" : "down"}`);
     }
     function remove(i: number): void {
-      const models = draft();
       models.splice(i, 1);
-      set(models);
+      render();
     }
     function add(): void {
       const ref = input.value.trim();
@@ -87,61 +95,50 @@ export const modelsView: View = (root, ctx, { scope }) => {
         toast("Use provider/model", { tone: "warn", description: "For example anthropic/claude-opus-5-5, or ollama/* for whatever a local runtime serves." });
         return;
       }
-      if (draft().includes(ref)) return void (input.value = "");
-      set([...draft(), ref]);
+      if (!models.includes(ref)) models = [...models, ref];
       input.value = "";
+      render();
     }
-
-    const save = button("Save", { variant: "primary", size: "sm", icon: "check" });
     save.addEventListener("click", () =>
       void busy(save, async () => {
         try {
-          const result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models: draft() });
+          const result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models });
           roster = result.roster;
-          drafts.delete(role);
-          spec.models = roster[role]?.models ?? draft();
-          spec.configured = true;
-          render();
+          sheet.close();
+          renderRoster();
           toast(`${role} updated on every node`, { tone: "ok" });
         } catch (error) {
           toast("Couldn't save the roster", { tone: "error", description: errorMessage(error) });
         }
       }),
     );
-    replace(foot, h("span", { class: "tiny subtle grow" }, "Unsaved changes"), button("Revert", { size: "sm", variant: "ghost", onClick: () => (drafts.delete(role), render()) }), save);
-
     render();
-    return h(
-      "article",
-      { class: "card" },
-      h(
-        "div",
-        { class: "card-head" },
-        h("span", { style: "color:var(--accent)" }, icon(ROLE_ICON[role] ?? "sparkle", { size: 16 })),
-        h("div", { class: "grow" }, h("h3", {}, role), h("div", { class: "tiny subtle" }, spec.description)),
-        spec.configured ? null : badge("default", "neutral"),
-      ),
-      h(
-        "div",
-        { class: "card-body stack" },
+    const sheet = openSheet({
+      title: `Models for ${role}`,
+      description: "The first answers; the rest are fallbacks, tried in order. provider/* means whatever that local runtime serves.",
+      body: [
         list,
-        write
-          ? h(
-              "form",
-              {
-                class: "row",
-                onsubmit: (event: Event) => {
-                  event.preventDefault();
-                  add();
-                },
-              },
-              h("div", { class: "grow" }, input),
-              button("Add", { size: "sm", type: "submit", icon: "plus" }),
-            )
-          : null,
-      ),
-      foot,
-    );
+        h(
+          "form",
+          {
+            class: "row",
+            onsubmit: (event: Event) => {
+              event.preventDefault();
+              add();
+            },
+          },
+          h("div", { class: "grow" }, input),
+          button("Add", { type: "submit", icon: "plus" }),
+        ),
+      ],
+      footer: [button("Cancel", { onClick: () => sheet.close() }), save],
+      // On a touch screen the keyboard waits until you tap the field.
+      initialFocus: () => (matchMedia("(pointer: coarse)").matches ? (list.querySelector<HTMLElement>("button:not(:disabled)") ?? input) : input),
+    });
+  }
+
+  function renderRoster(): void {
+    keepPlace(rosterBox, () => replace(rosterBox, h("div", { class: "rows" }, ...Object.entries(roster).map(([role, spec]) => roleRow(role, spec)))));
   }
 
   function providerRow(p: ProviderView): HTMLElement {
@@ -226,7 +223,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       presets = providers.presets;
       roster = rosterResponse.roster;
       addKnown(Object.values(roster).flatMap((r) => r.models));
-      replace(rosterBox, ...Object.entries(roster).map(([role, spec]) => roleCard(role, spec)));
+      renderRoster();
       replace(
         providersBox,
         providers.providers.length
@@ -250,7 +247,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       { class: "page" },
       pageHead("Models", "Hired by role, not by vendor. The roster is shared by every node; keys stay sealed in the vault.", write ? button("Add provider", { icon: "plus", onClick: () => openAddProvider(ctx, presets, refresh) }) : null),
       write ? null : callout("quiet", "This device can see the roster but not change it (no brain:write scope)."),
-      section("Roster", {}, rosterBox, h("p", { class: "tiny subtle" }, "The first model answers; the rest are fallbacks, tried in order. ", h("span", { class: "mono" }, "provider/*"), " means whatever that local runtime serves.")),
+      section("Roster", {}, rosterBox),
       section("Providers", {}, providersBox),
       knownModels,
     ),

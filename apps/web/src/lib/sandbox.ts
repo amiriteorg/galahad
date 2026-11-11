@@ -12,6 +12,13 @@ export const IMAGES = {
   lab: "SciPy and SymPy, FEniCSx with MPI, OpenFOAM, gmsh, build123d on OpenCascade, MuJoCo, ngspice, Octave, Maxima, Cantera, CoolProp, OpenSees, cvxpy and Z3. lab-check proves each tool against a known answer.",
 } as const;
 
+/** What a sandbox may reach through its gateway, as a chip says it: the SANDBOX world, web search, or a provider's models. */
+export function gatewayUse(name: string): { kind: "world" | "search" | "models"; label: string; title: string } {
+  if (name === "world") return { kind: "world", label: "SANDBOX world", title: "May show its experiments in the SANDBOX" };
+  if (name === "search") return { kind: "search", label: "web search", title: "May search the web through Galahad's own search engine" };
+  return { kind: "models", label: name, title: `May use ${name}'s models (your key stays in the vault)` };
+}
+
 /** A Lab sandbox: its image is galahad/lab, whatever the version. */
 export const isLab = (image: string): boolean => /^galahad\/lab(:|$)/.test(image);
 

@@ -34,6 +34,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const actions = signal<ActionView[]>([]);
   const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
+  const inboxLoaded = signal(false);
   const inboxCount = signal(0);
   const seen = new Set<string>();
   const seenActions = new Set<string>();
@@ -136,6 +137,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
 
   const refreshInbox = async () => {
     await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices()]);
+    inboxLoaded.set(true);
   };
 
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -167,5 +169,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, notices, online, inboxCount, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, notices, online, inboxLoaded, inboxCount, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
 }

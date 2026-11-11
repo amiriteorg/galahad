@@ -513,7 +513,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
 }
 
 export const connectorsView: View = (root, ctx, { scope }) => {
-  const installedBox = h("div", { class: "grid wide" }, skeletonBlock(160));
+  const installedBox = h("div", { class: "grid wide" }, skeletonBlock(320), skeletonBlock(320));
   const availableBox = h("div", { class: "grid wide" });
   const note = h("div");
   const deps: McpDeps = {

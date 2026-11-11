@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoIsolation, diskUse, isLab, isolationPlan } from "./sandbox.ts";
+import { autoIsolation, diskUse, gatewayUse, isLab, isolationPlan } from "./sandbox.ts";
 import { gb } from "./text.ts";
 
 const ultra = { name: "ultra", vm: true };
@@ -56,5 +56,13 @@ describe("sandbox disks", () => {
     // Over the limit (a filesystem's own overhead) never reads past full.
     expect(diskUse({ limitGb: 10, usedGb: 10.4 }).fraction).toBe(1);
     expect(gb(0)).toBe("0 MB");
+  });
+});
+
+describe("what a sandbox may reach through its gateway", () => {
+  test("the SANDBOX world and web search are named for what they are, not shown as models", () => {
+    expect(gatewayUse("world")).toEqual({ kind: "world", label: "SANDBOX world", title: "May show its experiments in the SANDBOX" });
+    expect(gatewayUse("search")).toEqual({ kind: "search", label: "web search", title: "May search the web through Galahad's own search engine" });
+    expect(gatewayUse("anthropic")).toEqual({ kind: "models", label: "anthropic", title: "May use anthropic's models (your key stays in the vault)" });
   });
 });

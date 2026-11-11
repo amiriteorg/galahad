@@ -433,3 +433,5 @@ Then authorise in the PWA (**Bank → Connect**, in the paired browser), and aga
 | `device keys not found` | The node was initialized with a different keystore; check `keystore` in `~/.galahad/config.json` |
 | Doubt about local state | Stop the daemon, then run `bun galahad rebuild`. It replays the log and confirms the state is identical. |
 | Lost a device | `bun galahad revoke <name>`. This rotates the vault and lists which keys to rotate at the provider. |
+| The app says "Galahad can't be reached just now" | Nothing to do while the node restarts: the page tries again on its own (and at once when the network comes back or you bring the app forward). If it keeps saying so, check `bun galahad status` on the node and `tailscale status`. |
+| The app says "This browser's key can't be read just now" | Reload; if that doesn't help, close the Home Screen app completely and open it again. Don't pair it again first: a new pairing replaces the key. |

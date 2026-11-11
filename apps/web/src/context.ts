@@ -29,6 +29,8 @@ export interface Live {
   /** What the heartbeat found, dismissed ones included (the Inbox shows the open ones). */
   notices: Signal<NoticeView[]>;
   online: Signal<boolean>;
+  /** The inbox has been asked at least once (until then, "nothing needs you" would be a guess). */
+  inboxLoaded: Signal<boolean>;
   inboxCount: Signal<number>;
   refreshFleet(): Promise<void>;
   refreshActions(): Promise<void>;

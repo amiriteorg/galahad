@@ -19,6 +19,8 @@ import {
   section,
   segmented,
   skeletonBlock,
+  skeletonRows,
+  skeletonStat,
   statTile,
 } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -490,11 +492,83 @@ function placementPlayground(ctx: Ctx, scope: Scope): HTMLElement {
   );
 }
 
+interface ArmInfo {
+  label: string;
+  scopes: string[];
+  createdAt?: number;
+}
+
+/**
+ * Agents that hold their own key to Galahad (coding agents over MCP): what each may do, and
+ * Revoke, so one can be cut off from any device. Giving one a key stays at a terminal.
+ */
+function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
+  if (!ctx.can("fleet:admin")) return null;
+  const box = h("div", { class: "card" }, skeletonRows(2, { avatar: true }));
+  const count = h("span", { class: "count-label tnum" });
+
+  async function revoke(arm: ArmInfo): Promise<void> {
+    const ok = await confirmAction({
+      title: `Revoke ${arm.label}?`,
+      body: h("p", {}, "Its key stops working at once: it can no longer read the mind, run sandboxes or use your models. To bring it back, install it again from a terminal."),
+      confirmLabel: "Revoke",
+      typeToConfirm: arm.label,
+    });
+    if (!ok) return;
+    try {
+      await ctx.api.post("/api/arms/revoke", { label: arm.label }, scope.signal);
+      toast(`${arm.label} can't reach Galahad any more`, { tone: "ok" });
+      void load();
+    } catch (error) {
+      toast("Couldn't revoke it", { tone: "error", description: errorMessage(error) });
+    }
+  }
+
+  async function load(): Promise<void> {
+    try {
+      const { arms } = await ctx.api.get<{ arms: ArmInfo[] }>("/api/arms", scope.signal);
+      if (scope.disposed) return;
+      count.textContent = arms.length ? String(arms.length) : "";
+      replace(
+        box,
+        arms.length
+          ? h(
+              "div",
+              { class: "rows" },
+              ...arms.map((arm) =>
+                h(
+                  "div",
+                  { class: "item center" },
+                  h("span", { class: "avatar" }, icon("terminal", { size: 16 })),
+                  h(
+                    "div",
+                    { class: "grow" },
+                    h("div", { class: "strong mono" }, arm.label),
+                    h("div", { class: "meta" }, ...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null),
+                  ),
+                  h("div", { class: "item-actions" }, button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm) })),
+                ),
+              ),
+            )
+          : empty({ icon: "terminal", title: "No agents yet", body: "A coding agent gets Galahad's mind and sandboxes from a terminal on a node.", compact: true }),
+      );
+    } catch (error) {
+      if (!scope.disposed) replace(box, errorState("Couldn't list the agents", error, () => void load()));
+    }
+  }
+
+  void load();
+  const section_ = section("Agents", {}, box, h("p", { class: "tiny subtle" }, "Coding agents with their own key to Galahad. Add one on a node: ", h("span", { class: "mono" }, "galahad mcp install claude"), " (or opencode, codex, hermes)."));
+  section_.querySelector(".section-head h2")?.after(count);
+  return section_;
+}
+
 export const fleetView: View = (root, ctx, { scope, opts }) => {
   const admin = ctx.can("fleet:admin");
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(92), skeletonBlock(92), skeletonBlock(92));
-  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(180), skeletonBlock(180));
-  const clientsBox = h("div", { class: "card" });
+  const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat());
+  // One node card's height: most fleets have one or two, side by side on a desktop.
+  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(170));
+  const clientsBox = h("div", { class: "card" }, skeletonRows(1, { avatar: true }));
   const revokedBox = h("div");
   const errorBox = h("div");
 
@@ -548,6 +622,7 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
       section("Nodes", {}, nodesBox),
       section("Phones and browsers", {}, clientsBox),
       revokedBox,
+      agentsSection(ctx, scope),
       section("Placement", {}, placementPlayground(ctx, scope)),
     ),
   );

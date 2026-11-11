@@ -32,3 +32,11 @@ export function budgetLabel(b: BankStatusView["budget"][number], now = Date.now(
   const cooling = b.coolingDownUntil && Date.parse(b.coolingDownUntil) > now ? ` · the bank asked for a pause until ${new Date(b.coolingDownUntil).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : "";
   return `${b.remaining} of ${b.perDay} background fetches left today · ${age}${cooling}`;
 }
+
+/** Why bank access is off, as one sentence (the node's message may begin by saying it's off). */
+export function offReason(message: string): string {
+  const reason = message.replace(/^\s*bank access is off[:.]?\s*/i, "").trim();
+  if (!reason) return "";
+  const sentence = reason[0]!.toUpperCase() + reason.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}

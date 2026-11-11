@@ -6,7 +6,7 @@ import { startLive } from "./live.ts";
 import { shortId } from "./lib/text.ts";
 import { lastRoute, rememberRoute, setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
-import { button, count, dot, kbd } from "./ui/controls.ts";
+import { button, count, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { cx, h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { emblem } from "./ui/emblem.ts";
@@ -18,7 +18,9 @@ import { artifactsView } from "./views/artifacts.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
 import { worldView } from "./views/world.ts";
-import { chatActivityPill, chatView, startNewChat } from "./views/chat.ts";
+import { chatActivityPill, chatsForPalette, chatView, startNewChat } from "./views/chat.ts";
+import { filterConversations } from "./lib/chats.ts";
+import { keyboardOpen } from "./lib/viewport.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
@@ -119,7 +121,11 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       if (location.hash === `#/${target}`) render();
       else location.hash = `#/${target}`;
     },
-    palette: (query) => openPalette(paletteSource, query),
+    palette: (query) => {
+      // Your chats and projects, so the palette can find them by name.
+      chatsForPalette(base.api, { chat: can("chat"), read: can("mind:read") });
+      openPalette(paletteSource, query);
+    },
   };
 
   // ---------- layout ----------
@@ -213,6 +219,25 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const shell = h("div", { class: "shell" }, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar);
   replace(root, shell);
 
+  // ---------- the on-screen keyboard ----------
+  // iOS keeps the page full height under its keyboard: while you type, the tab bar steps aside so
+  // the chat composer (or whatever you're typing in) sits right above the keyboard, not behind it.
+  const viewport = window.visualViewport;
+  if (viewport) {
+    let fullHeight = window.innerHeight;
+    const syncKeyboard = () => {
+      fullHeight = Math.max(fullHeight, window.innerHeight);
+      const open = keyboardOpen({ coarse: matchMedia("(pointer: coarse)").matches, typing: isTyping(document.activeElement), fullHeight, visibleHeight: viewport.height });
+      if (open) document.documentElement.dataset.keyboard = "open";
+      else delete document.documentElement.dataset.keyboard;
+    };
+    viewport.addEventListener("resize", syncKeyboard, { signal: lifetime.signal });
+    document.addEventListener("focusin", syncKeyboard, { signal: lifetime.signal });
+    document.addEventListener("focusout", () => setTimeout(syncKeyboard, 50), { signal: lifetime.signal });
+    window.addEventListener("orientationchange", () => (fullHeight = 0), { signal: lifetime.signal });
+    lifetime.signal.addEventListener("abort", () => delete document.documentElement.dataset.keyboard);
+  }
+
   // ---------- live chrome ----------
   live.inboxCount.watch((n) => {
     for (const el of inboxBadges) {
@@ -243,7 +268,11 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         h("span", { class: "grow" }, navigator.onLine ? "Can't reach Galahad right now. What you see may be out of date." : "You're offline. The app is cached; live data returns when you reconnect."),
         button("Retry", { size: "sm", onClick: () => void live.refreshFleet() }),
       );
-    } else toast("Reconnected", { tone: "ok", duration: 2000 });
+    } else {
+      // Whatever failed while the node was away is asked again, so the page heals by itself.
+      retryFailed(main);
+      toast("Reconnected", { tone: "ok", duration: 2000 });
+    }
   });
 
   function toggleSidebar(): void {
@@ -372,6 +401,15 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     },
     dynamic(query: string): Command[] {
       const out: Command[] = [];
+      const { chats, projects } = chatsForPalette(base.api, { chat: can("chat"), read: can("mind:read") });
+      const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+      const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+      for (const p of projects.filter((p) => words.every((w) => `${p.name} ${p.id}`.toLowerCase().includes(w))).slice(0, 3)) {
+        out.push({ id: `project:${p.id}`, label: p.name, group: "Projects", icon: "folder", run: () => ctx.navigate("projects", { project: p.id }) });
+      }
+      for (const c of filterConversations(chats, query, projectName).slice(0, 5)) {
+        out.push({ id: `chat:${c.id}`, label: c.title, group: "Chats", icon: c.pinned ? "pin" : "chat", hint: c.project ? projectName(c.project) : undefined, run: () => ctx.navigate("chat", { conversation: c.id }) });
+      }
       if (can("mind:read")) out.push({ id: "q-memory", label: `Search memory for “${query}”`, group: "Search", icon: "memory", run: () => ctx.navigate("memory", { query }) });
       if (can("chat")) out.push({ id: "q-chat", label: `Ask Galahad: “${query}”`, group: "Search", icon: "mark", run: () => ctx.navigate("chat", { query }) });
       return out;

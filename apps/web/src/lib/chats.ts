@@ -24,12 +24,12 @@ export function groupConversations(list: ConversationSummary[], now = Date.now()
   return groups.filter((g) => g.items.length);
 }
 
-/** Every word of the query in the title or the project (any case). */
-export function filterConversations(list: ConversationSummary[], query: string): ConversationSummary[] {
+/** Every word of the query in the title or the project, by its id or the name the row shows (any case). */
+export function filterConversations(list: ConversationSummary[], query: string, projectName: (id: string) => string = (id) => id): ConversationSummary[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return list;
   return list.filter((c) => {
-    const text = `${c.title} ${c.project ?? ""}`.toLowerCase();
+    const text = `${c.title} ${c.project ?? ""} ${c.project ? projectName(c.project) : ""}`.toLowerCase();
     return words.every((w) => text.includes(w));
   });
 }

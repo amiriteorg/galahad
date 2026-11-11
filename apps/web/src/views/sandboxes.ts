@@ -1,7 +1,7 @@
 import type { FleetView, ProviderView, SandboxView } from "@galahad/core";
 import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { diskUse, IMAGES, isLab, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
+import { diskUse, gatewayUse, IMAGES, isLab, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
 import { gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
 import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
@@ -400,7 +400,10 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         h("span", { class: "chip" }, icon("ram"), gb(sandbox.memoryGb)),
         isLab(sandbox.image) ? h("span", { class: "chip on", title: IMAGES.lab }, icon("flask"), "Lab") : null,
         h("span", { class: "chip mono" }, icon("layers"), sandbox.image),
-        ...sandbox.providers.map((p) => h("span", { class: "chip" }, icon("models"), p)),
+        ...sandbox.providers.map((p) => {
+          const use = gatewayUse(p);
+          return h("span", { class: "chip", title: use.title }, icon(use.kind === "world" ? "landscape" : use.kind === "search" ? "globe" : "models"), use.label);
+        }),
       ),
       diskLine(sandbox),
       h(
@@ -436,28 +439,32 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
       );
       return;
     }
-    let local: { node: string; sandboxes: SandboxView[] };
+    let local: { node: string; sandboxes: SandboxView[] } | null = null;
     try {
       local = await ctx.api.post<{ node: string; sandboxes: SandboxView[] }>("/api/sandboxes/list", {}, scope.signal);
     } catch (error) {
       if (scope.disposed) return;
-      replace(
-        body,
-        isUnavailable(error)
-          ? h(
-              "div",
-              { class: "card" },
-              empty({
-                icon: "sandbox",
-                title: "Sandboxes aren't available on this node yet",
-                body: "They arrive with an upcoming update: disposable machines for untrusted or risky work, each with its own network boundary and expiry.",
-              }),
-            )
-          : errorState("Couldn't list sandboxes", error, () => void load()),
-      );
-      return;
+      // This node isn't a sandbox host (no Docker here): the fleet's other hosts are still listed.
+      if (!(error instanceof ApiError && error.status === 424)) {
+        replace(
+          body,
+          isUnavailable(error)
+            ? h(
+                "div",
+                { class: "card" },
+                empty({
+                  icon: "sandbox",
+                  title: "Sandboxes aren't available on this node yet",
+                  body: "They arrive with an upcoming update: disposable machines for untrusted or risky work, each with its own network boundary and expiry.",
+                }),
+              )
+            : errorState("Couldn't list sandboxes", error, () => void load()),
+        );
+        return;
+      }
     }
-    const others = sandboxNodes(ctx.live.fleet.value).filter((n) => n.name !== local.node);
+    const self = local?.node ?? ctx.whoami.nodeName;
+    const others = sandboxNodes(ctx.live.fleet.value).filter((n) => n.name !== self);
     const remote = await Promise.all(
       others.map(async (n) => {
         try {
@@ -483,7 +490,18 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
             : h("div", { class: "card" }, empty({ icon: "sandbox", title: "None running", compact: true }))
           : h("div", { class: "card pad" }, callout("quiet", isUnavailable(error) ? "Not available on this node yet." : `Couldn't reach it: ${errorMessage(error)}`)),
       );
-    replace(body, group(`${local.node} · this node`, local.sandboxes, null, null), ...remote.map((r) => group(r.name, r.result?.sandboxes ?? null, r.error, r.name)));
+    const here = local
+      ? group(`${local.node} · this node`, local.sandboxes, null, null)
+      : section(
+          `${self} · this node`,
+          {},
+          h(
+            "div",
+            { class: "card pad" },
+            callout("quiet", others.length ? "This node doesn't run sandboxes (it has no Docker). Your sandbox hosts are below." : "This node doesn't run sandboxes: it has no Docker, and no other node in the fleet does either. Install Docker on one of your servers and it becomes a sandbox host.", { icon: "sandbox" }),
+          ),
+        );
+    replace(body, here, ...remote.map((r) => group(r.name, r.result?.sandboxes ?? null, r.error, r.name)));
   }
 
   replace(
@@ -496,25 +514,37 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
         "Disposable machines for untrusted or risky work. Each has a clear network boundary and expires on its own.",
         ctx.can("sandbox") ? button("Create sandbox", { variant: "primary", icon: "plus", onClick: () => openCreateSandbox(ctx) }) : null,
       ),
+      body,
+      // What each network boundary means: one line until it's wanted (the create form explains the one you pick).
       h(
-        "div",
-        { class: "grid" },
-        ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) =>
-          h(
-            "div",
-            { class: "net-explain", "data-tone": NETWORK[mode].tone },
-            icon(NETWORK[mode].icon, { size: 16 }),
+        "details",
+        { class: "card disclosure" },
+        h(
+          "summary",
+          {},
+          icon("chevron-right", { size: 14, class: "chev" }),
+          h("span", { class: "grow" }, "How a sandbox reaches the network"),
+          h("span", { class: "row", style: "gap:6px" }, ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) => badge(NETWORK[mode].label, NETWORK[mode].tone, NETWORK[mode].icon))),
+        ),
+        h(
+          "div",
+          { class: "disclosure-body" },
+          ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) =>
             h(
               "div",
-              { class: "small" },
-              h("strong", {}, NETWORK[mode].label),
-              h("div", { class: "muted" }, NETWORK[mode].explain),
-              mode === "online" ? h("div", { class: "muted", style: "margin-top:4px" }, "It runs in its own microVM where the host supports it.") : null,
+              { class: "net-explain", "data-tone": NETWORK[mode].tone },
+              icon(NETWORK[mode].icon, { size: 16 }),
+              h(
+                "div",
+                { class: "small" },
+                h("strong", {}, NETWORK[mode].label),
+                h("div", { class: "muted" }, NETWORK[mode].explain),
+                mode === "online" ? h("div", { class: "muted", style: "margin-top:4px" }, "It runs in its own microVM where the host supports it.") : null,
+              ),
             ),
           ),
         ),
       ),
-      body,
     ),
   );
 

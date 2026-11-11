@@ -72,6 +72,7 @@ import type { ChatStore } from "./chats.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
+import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
 import { BankError, type BankService } from "./bank/service.ts";
@@ -179,6 +180,9 @@ const SECURITY_HEADERS: Record<string, string> = {
   "referrer-policy": "no-referrer",
   "x-frame-options": "DENY",
 };
+
+/** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
+const COMPRESSED_READS = new Set<RouteName>(["recall", "conversation", "sandboxes"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -1383,7 +1387,7 @@ export function createApp(ctx: AppContext) {
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
     }
 
-    if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path);
+    if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path, req);
 
     if (path.startsWith("/gw/")) {
       if (listener !== "loopback") throw new HttpError(404, "not found");
@@ -1421,7 +1425,9 @@ export function createApp(ctx: AppContext) {
       const input = route.input ? route.input.parse(body.length ? JSON.parse(new TextDecoder().decode(body)) : {}) : undefined;
       if (principal.kind === "arm") armActivity(name, input);
       const result = await handlers[name](input, principal, req);
-      return result instanceof Response ? result : json(result);
+      if (result instanceof Response) return result;
+      // What the PWA reads goes compressed. Answers that carry a credential (an invite, a token) never do.
+      return route.method === "GET" || COMPRESSED_READS.has(name) ? compressedJson(result, req, SECURITY_HEADERS) : json(result);
     }
 
     throw new HttpError(404, "not found");

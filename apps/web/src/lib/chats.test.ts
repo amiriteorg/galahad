@@ -46,6 +46,13 @@ describe("your chats", () => {
     expect(filterConversations(list, "  ")).toHaveLength(3);
   });
 
+  test("a chat is found by the project name its row shows, not only the project's id", () => {
+    const list = [chat({ id: "a", title: "Uptime", project: "site" }), chat({ id: "b", title: "Backups", project: "homelab" })];
+    const names: Record<string, string> = { site: "The site", homelab: "Home lab" };
+    expect(filterConversations(list, "home lab", (id) => names[id] ?? id).map((c) => c.id)).toEqual(["b"]);
+    expect(filterConversations(list, "the site", (id) => names[id] ?? id).map((c) => c.id)).toEqual(["a"]);
+  });
+
   test("a kept answer's steps read as they did while it streamed", () => {
     const answer: StoredMessage = {
       id: 2,
