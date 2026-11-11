@@ -32,7 +32,8 @@ Set up
   join <invite> [--name server] [--port 7777]              join a fleet with an invite
   serve                                                    run this node (daemon)
   expose [--https 443]                                     publish the PWA over HTTPS on your tailnet (tailscale serve)
-  invite [--client] [--origin https://host.ts.net]         add a device (prints an invite, then asks you to approve)
+  invite [--client] [--origin https://host.ts.net] [--no-wait]
+                                                           add a device (prints an invite, then asks you to approve)
   pairings | approve <invite> <device> | reject <invite> <device>
   revoke <device> [--reason text]
   grant <device> <scope…>                                   give a paired phone/browser more permissions (e.g. sandbox)
@@ -131,7 +132,8 @@ Agents (MCP)
 Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
 
-Options: --home <dir> (or GALAHAD_HOME), GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>`;
+Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|file and --advertise <tailnet ip>
+Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>`;
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
@@ -1192,7 +1194,7 @@ Evidence: galahad artifact ${i!.artifact}`));
         }
         process.exit(code);
       }
-      fail("usage: galahad sandbox run|ls|exec|rm|build — see `galahad help`");
+      fail("usage: galahad sandbox run|ls|exec|save|rm|build — see `galahad help`");
     }
 
     case "artifacts":

@@ -47,7 +47,7 @@ bun galahad expose     # runs: tailscale serve --bg --https=443 http://127.0.0.1
 
 The PWA is now at `https://wkp-minaltan.<your-tailnet>.ts.net/`, reachable only from your tailnet, over HTTPS with a real certificate.
 
-> The PWA has these views: Chat, Memory, Vault, Models and Fleet. Its build, serving, pairing protocol and signed API calls are tested; it hasn't yet been run in a real browser. Please report anything that looks off.
+> The PWA's build, serving, pairing protocol and signed API calls are tested, and it has paired and run in a real browser (headless Edge, November 2026). Please report anything that looks off.
 
 ## 3. Pair a phone or browser
 
