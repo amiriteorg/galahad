@@ -6,6 +6,7 @@ import { aircraft, restAircraft, stepAircraft } from "./field-circuit.ts";
 import { buildGround, type GroundDetail } from "./field-ground.ts";
 import { launcher, placeLauncher, stepLauncher } from "./field-launcher.ts";
 import { beamMaterial, type MachineDetail, Machines } from "./field-machines.ts";
+import { loadRealRover, type RealRover } from "./field-osr.ts";
 import { BLOCKHOUSE, ENTRANCE_POSTS, FIELD, FIELD_GATE, FIELD_LEVEL, FIELD_NAMES, FLOODLIGHTS, HANGAR, LAUNCH_SLAB, TOWER } from "./field-plan.ts";
 import { quad, restQuad, stepQuad } from "./field-quad.ts";
 import { restRover, roverState, stepRover } from "./field-rover.ts";
@@ -40,13 +41,14 @@ import type { Vec3 } from "./coords.ts";
  */
 
 /** How much of everything each tier gets. */
-export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: BuildDetail; machines: MachineDetail; halos: number; animate: number }> = {
+export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: BuildDetail; machines: MachineDetail; halos: number; animate: number; realRover: boolean }> = {
   high: {
     ground: { turf: 3.5, tile: 8, fine: true },
     build: { bevel: true, seg: 10, ribs: true, interior: true, props: true, lettering: true, fenceStep: 3, edgeStep: 12 },
     machines: { seg: 10, bevel: true },
     halos: 120,
     animate: 300,
+    realRover: true,
   },
   medium: {
     ground: { turf: 5, tile: 12, fine: true },
@@ -54,6 +56,7 @@ export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: Build
     machines: { seg: 7, bevel: false },
     halos: 80,
     animate: 220,
+    realRover: false,
   },
   low: {
     ground: { turf: 7, tile: 18, fine: false },
@@ -61,6 +64,7 @@ export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: Build
     machines: { seg: 6, bevel: false },
     halos: 40,
     animate: 160,
+    realRover: false,
   },
 };
 
@@ -110,6 +114,12 @@ export class ProvingGround implements Place {
   private readonly halos: Glows;
   private readonly range: number;
   private readonly reach: number;
+  /** The real Open Source Rover, once loaded (high tier); until then, and if it can't load, the procedural one. */
+  private real: RealRover | null = null;
+  private wantReal: boolean;
+  private readonly machineMaterial: MeshLambertNodeMaterial;
+  private readonly shadows: boolean;
+  private disposed = false;
 
   private readonly plane = aircraft();
   private readonly rover = roverState();
@@ -129,6 +139,8 @@ export class ProvingGround implements Place {
 
   constructor(ctx: PlaceContext) {
     const detail = FIELD_DETAIL[ctx.tier.name];
+    this.wantReal = detail.realRover;
+    this.shadows = ctx.shadows;
     this.range = detail.animate;
     this.reach = ctx.tier.radius + 80;
 
@@ -179,6 +191,7 @@ export class ProvingGround implements Place {
     const beams = beamMaterial();
     beams.colorNode = vertexColor().mul(this.beamStrength);
     this.machines = new Machines(detail.machines, machine, beams);
+    this.machineMaterial = machine;
     this.machines.mesh.castShadow = ctx.shadows;
     this.machines.mesh.receiveShadow = ctx.shadows;
     this.machines.beams.visible = false;
@@ -216,7 +229,28 @@ export class ProvingGround implements Place {
     this.rested = false;
   }
 
+  /** Fetches the real rover (once, after the first frame, as the keep's robots are), and swaps it in when it's ready. */
+  private loadRover(): void {
+    this.wantReal = false;
+    loadRealRover(this.machineMaterial, this.shadows)
+      .then((rover) => {
+        if (this.disposed) {
+          rover.dispose();
+          return;
+        }
+        this.real = rover;
+        this.group.add(rover.mesh);
+        this.machines.roverHidden = true;
+        this.rested = false;
+        this.pose(this.lampLevel);
+      })
+      .catch(() => {
+        // The procedural rover stays: it has the same measures.
+      });
+  }
+
   animate(f: PlaceFrame): void {
+    if (this.wantReal) this.loadRover();
     // Far away it isn't seen at all; nearer, it's drawn but its machines only move when the camera is close enough to see them.
     const dx = Math.max(0, Math.abs(f.focusX - FIELD.x) - FIELD.hx);
     const dy = Math.max(0, Math.abs(f.focusY - FIELD.y) - FIELD.hy);
@@ -281,6 +315,7 @@ export class ProvingGround implements Place {
     const engine = this.plane.power > 0.03;
     m.poseAircraft(this.plane, engine);
     m.poseRover(this.rover);
+    this.real?.pose(this.rover);
     m.poseQuad(this.drone);
     m.poseLauncher(this.launcher);
     m.poseWindsock(this.sock);
@@ -316,7 +351,10 @@ export class ProvingGround implements Place {
     const p = this.plane;
     if (Math.hypot(x - p.x, y - p.y) < 4.5 && p.z < 3) return label(p.x, p.y, p.z + 3.6, p.phase === "parked" ? "Light aircraft (tied down)" : `Light aircraft: circuits on runway ${p.direction > 0 ? "36" : "18"}`);
     const r = this.rover.pose;
-    if (Math.hypot(x - r.x, y - r.y) < 2) return label(r.x, r.y, 2.4, this.rover.waiting ? "Rover (rocker-bogie): waiting for you to pass" : "Rover (rocker-bogie, after NASA JPL's Open Source Rover)");
+    if (Math.hypot(x - r.x, y - r.y) < 2) {
+      const name = this.real ? "Open Source Rover (NASA JPL)" : "Rover (rocker-bogie, after NASA JPL's Open Source Rover)";
+      return label(r.x, r.y, 2.4, this.rover.waiting ? `${name}: waiting for you to pass` : name);
+    }
     const d = this.drone;
     if (Math.hypot(x - d.x, y - d.y) < 1.6 && d.z < 4) return label(d.x, d.y, d.z + 1.2, d.mode === "charging" ? "Survey quadcopter (charging)" : "Survey quadcopter");
     const l = this.launcher;
@@ -326,6 +364,8 @@ export class ProvingGround implements Place {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.real?.dispose();
     this.halos.dispose();
     disposeTree(this.group);
     for (const m of this.materials) m.dispose();

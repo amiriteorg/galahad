@@ -202,7 +202,8 @@ export const OSR_SCALE = 4;
 
 /** The stand-in rover's measures: the Open Source Rover's (nasa-jpl/osr-rover-code, osr.urdf.xacro), times OSR_SCALE. */
 export const ROVER: RoverGeometry = {
-  wheelRadius: 0.075 * OSR_SCALE,
+  // (Its wheels' grousers reach 80.5 mm from the axle: what they stand on.)
+  wheelRadius: 0.0805 * OSR_SCALE,
   pivot: [0.016 * OSR_SCALE, 0.181 * OSR_SCALE, -0.004 * OSR_SCALE],
   rear: [-0.312 * OSR_SCALE, -0.191 * OSR_SCALE],
   bogie: [0.0996 * OSR_SCALE, -0.0913 * OSR_SCALE],

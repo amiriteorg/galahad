@@ -16,6 +16,7 @@ const BUDGETS: Record<string, { triangles: number; bytes: number }> = {
   "open-duck-mini-v2": { triangles: 25_000, bytes: 300 * 1024 },
   "so-101": { triangles: 15_000, bytes: 300 * 1024 },
   "reachy-mini": { triangles: 30_000, bytes: 300 * 1024 },
+  "open-source-rover": { triangles: 9_000, bytes: 120 * 1024 },
 };
 
 function load(name: string): { manifest: RobotManifest; bin: ArrayBuffer } {

@@ -31,6 +31,7 @@ import { binLayout, type LinkEntry, MANIFEST_FORMAT, parseManifest, type RobotMa
 import { type Indexed, parseStl, type Soup, simplify, transformSoup, weld } from "./mesh.ts";
 import { ROBOTS, type RobotSpec } from "./robots.ts";
 import { type Joint, parseUrdf, type Urdf } from "./urdf.ts";
+import { expandXacro } from "./xacro.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const OUT_DIR = join(REPO_ROOT, "apps/web/src/world/assets/robots");
@@ -239,10 +240,18 @@ export interface Built {
 }
 
 export async function buildRobot(spec: RobotSpec, log: (line: string) => void = () => {}): Promise<Built> {
-  const licence = await fetchRepoFile(spec.repo, spec.commit, "LICENSE");
+  const licence = await fetchRepoFile(spec.repo, spec.commit, spec.license ?? "LICENSE");
   const licenceText = new TextDecoder().decode(licence!);
   if (!/Apache License/.test(licenceText) || !/Version 2\.0/.test(licenceText)) throw new Error(`${spec.repo}: not Apache-2.0`);
-  const urdf = parseUrdf(new TextDecoder().decode((await fetchRepoFile(spec.repo, spec.commit, spec.urdf))!));
+  if (spec.copyright && !licenceText.replace(/\s+/g, " ").includes(spec.copyright)) throw new Error(`${spec.repo}: its licence no longer carries "${spec.copyright}"`);
+  const source = new TextDecoder().decode((await fetchRepoFile(spec.repo, spec.commit, spec.urdf))!);
+  const xacro = spec.xacro;
+  const urdf = parseUrdf(xacro ? expandXacro(source, (name) => xacro[name] ?? ((): never => { throw new Error(`$(find ${name}): unknown package`); })()) : source);
+  for (const [name, free] of Object.entries(spec.free ?? {})) {
+    const j = urdf.joints.find((x) => x.name === name);
+    if (!j) throw new Error(`${spec.repo}: no joint ${name} to free`);
+    Object.assign(j, { type: "revolute", axis: free.axis, lower: free.lower, upper: free.upper });
+  }
   const p = plan(urdf, spec);
 
   // Every mesh file once.
@@ -367,7 +376,7 @@ function notice(specs: readonly RobotSpec[]): string {
     "",
   ];
   for (const s of specs) {
-    lines.push(`${s.title}`, `  Source:  https://github.com/${s.repo}`, `  Commit:  ${s.commit}`, `  Files:   ${s.urdf} and the meshes it names`, "  License: Apache-2.0", "");
+    lines.push(`${s.title}`, `  Source:  https://github.com/${s.repo}`, `  Commit:  ${s.commit}`, `  Files:   ${s.urdf} and the meshes it names`, "  License: Apache-2.0", ...(s.copyright ? [`  ${s.copyright}`] : []), "");
   }
   lines.push(
     "Changes made (Apache-2.0 §4(b)): by scripts/robots/build.ts in the Galahad",
@@ -378,6 +387,8 @@ function notice(specs: readonly RobotSpec[]): string {
     "format.",
     "Reachy Mini's head, carried in the original by a Stewart platform (a closed",
     "chain), is instead hung on yaw, pitch and roll joints about its centre.",
+    "The Open Source Rover's description (xacro) was expanded to plain URDF, and",
+    "its rockers, fixed to the body there, turn on the body as on the real rover.",
     "",
   );
   return lines.join("\n");

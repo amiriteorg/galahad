@@ -149,7 +149,11 @@ export class Machines {
     m.add(new BoxGeometry(0.05, 0.05, 0.03), 0x8fe2ff, at(0.38, 0.27, 0.69), 0);
     m.glow(0);
     // The mast: a pole at the front, a pan-tilt head with two camera eyes.
-    m.add(new CylinderGeometry(0.035, 0.045, 0.95, 6), C.steel, at(0.32, 0.85, 0.48), 0);
+    // (On its own bone, so it stays when the real rover's body takes the procedural one's place.)
+    bone("roverMast", 0, 0, 0);
+    m.bone(this.b.roverMast!);
+    m.add(new CylinderGeometry(0.035, 0.045, 1.05, 6), C.steel, at(0.32, 0.8, 0.48), 0);
+    m.add(new BoxGeometry(0.16, 0.05, 0.16), C.grey, at(0.32, 0.3, 0.48), 0);
     bone("mastPan", 0.32, 1.35, 0.48);
     bone("mastHead", 0.32, 1.42, 0.48);
     m.bone(this.b.mastPan!);
@@ -298,11 +302,15 @@ export class Machines {
     this.beams.renderOrder = 4;
   }
 
+  /** The real rover has taken the procedural one's place (all but its mast): its parts are folded away. */
+  roverHidden = false;
+  private static readonly ROVER_PARTS = /^(rover$|rocker|bogie|knuckle|wheel[FMB])/;
+
   private set(name: string, p: Vector3, rot: Quaternion, scale = 1): void {
     const bone = this.rig.bones[this.b[name]!]!;
     bone.position.copy(p);
     bone.quaternion.copy(rot);
-    bone.scale.setScalar(scale);
+    bone.scale.setScalar(this.roverHidden && Machines.ROVER_PARTS.test(name) ? 1e-4 : scale);
   }
 
   /** A part on its hinge: placed at the machine's (pos, rot) plus its bind offset from the machine's origin, turned by `local`. */
@@ -356,6 +364,7 @@ export class Machines {
     qa.setFromAxisAngle(Z, p.roll);
     q.multiply(qa);
     this.set("rover", v, q);
+    this.set("roverMast", v, q);
     for (const [i, side] of [[0, "L"], [1, "R"]] as const) {
       const rocker = p.rocker[i]!;
       const bog = p.bogie[i]!;

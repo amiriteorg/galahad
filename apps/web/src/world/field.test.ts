@@ -22,7 +22,7 @@ import {
 } from "./field-plan.ts";
 import { MISSIONS, PAD_TOP, quad, stepQuad } from "./field-quad.ts";
 import { sample, routeSample } from "./field-route.ts";
-import { COURSE_ROUTE, courseHeight, ROVER, ROVER_KEEP_CLEAR, roverState, stepRover, wheelHeight } from "./field-rover.ts";
+import { COURSE_ROUTE, courseHeight, OSR_SCALE, ROVER, ROVER_KEEP_CLEAR, roverState, stepRover, wheelHeight } from "./field-rover.ts";
 import { bandFill, sockPose, windsock } from "./field-wind.ts";
 import { obstacles, planPath, plotGate, type Point, standAt } from "./path.ts";
 
@@ -401,5 +401,38 @@ describe("the runway", () => {
       expect(y0).toBeGreaterThanOrEqual(RUNWAY.y - RUNWAY.hy);
       expect(y1).toBeLessThanOrEqual(RUNWAY.y + RUNWAY.hy);
     }
+  });
+});
+
+describe("the real Open Source Rover", () => {
+  test("its description's joints are where the suspension solver puts them (so its wheels stand on the ground)", async () => {
+    const { parseManifest, treeOf } = await import("./robots/manifest.ts");
+    const { Skeleton } = await import("./robots/kinematics.ts");
+    const json = JSON.parse(await Bun.file(new URL("./assets/robots/open-source-rover.json", import.meta.url)).text());
+    const m = parseManifest(json);
+    expect(m.source.license).toBe("Apache-2.0");
+    const sk = new Skeleton(treeOf(m));
+    sk.fk();
+    const base = m.sites.find((s) => s.name === "base_link")!;
+    // A link's origin in the body's frame (base_link), at the field's scale: (forward, left, up).
+    const at = (link: string): [number, number, number] => {
+      const o = sk.linkIndex(link) * 16;
+      return [sk.world[o + 12]! * OSR_SCALE, sk.world[o + 13]! * OSR_SCALE, (sk.world[o + 14]! - base.xyz[2]) * OSR_SCALE];
+    };
+    const near = (a: readonly number[], b: readonly number[]) => a.forEach((v, i) => expect(Math.abs(v - b[i]!)).toBeLessThan(0.004));
+    const pivot = at("rocker_bogie_link_L_1");
+    near(pivot, ROVER.pivot);
+    const bogie = at("rocker_bogie_link_L_2");
+    near([bogie[0] - pivot[0], bogie[2] - pivot[2]], ROVER.bogie);
+    const front = at("front_wheel_link_left");
+    near([front[0] - bogie[0], front[2] - bogie[2]], ROVER.front);
+    const mid = at("middle_wheel_link_left");
+    near([mid[0] - bogie[0], mid[2] - bogie[2]], ROVER.mid);
+    const rear = at("rear_wheel_link_left");
+    near([rear[0] - pivot[0], rear[2] - pivot[2]], ROVER.rear);
+    near([front[1], mid[1], rear[1]], ROVER.track);
+    // Its wheels' reach (their grousers) is the solver's wheel radius.
+    const wheel = m.links.find((l) => l.name === "front_wheel_link_left")!.mesh!;
+    expect(Math.abs(Math.max(wheel.max[0], -wheel.min[0], wheel.max[2], -wheel.min[2]) * OSR_SCALE - ROVER.wheelRadius)).toBeLessThan(0.006);
   });
 });
