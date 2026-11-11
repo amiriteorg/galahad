@@ -21,9 +21,14 @@ import {
   HANGAR_AIRCRAFT,
   LAUNCH_SLAB,
   LAUNCHER_PARK,
+  PAPI_LENS,
+  PAPI_SETTINGS,
+  PAPIS,
+  papiWhite,
   RUNWAY,
   TAXIWAY,
   TIE_DOWN,
+  TOWER,
 } from "./field-plan.ts";
 import { MISSIONS, PAD_TOP, quad, stepQuad } from "./field-quad.ts";
 import { sample, routeSample } from "./field-route.ts";
@@ -442,6 +447,41 @@ describe("the runway", () => {
       expect(x1).toBeLessThanOrEqual(RUNWAY.x + RUNWAY.hx);
       expect(y0).toBeGreaterThanOrEqual(RUNWAY.y - RUNWAY.hy);
       expect(y1).toBeLessThanOrEqual(RUNWAY.y + RUNWAY.hy);
+    }
+  });
+
+  test("each PAPI unit shows red or white by the eye's angle above it, as a real PAPI: two and two on the 3° glide path", () => {
+    // A pilot on the extended centreline, 600 m short of the PAPIs, at an angle above them: what each runway's four show.
+    const seen = (deg: number) =>
+      PAPIS.map((p) => {
+        const ex = RUNWAY.x;
+        const ey = p.y - p.dir * 600;
+        const above = 600 * Math.tan((deg * Math.PI) / 180);
+        return p.xs.map((x, i) => (papiWhite(PAPI_SETTINGS[i]!, Math.hypot(ex - x, ey - p.y), above) ? "W" : "R")).join("");
+      });
+    expect(seen(3)).toEqual(["RRWW", "RRWW"]);
+    expect(seen(3.3)).toEqual(["RWWW", "RWWW"]);
+    expect(seen(2.7)).toEqual(["RRRW", "RRRW"]);
+    expect(seen(4)).toEqual(["WWWW", "WWWW"]);
+    expect(seen(2)).toEqual(["RRRR", "RRRR"]);
+    // From the ground beside them, all red; from the tower's cab, all white.
+    expect(PAPIS[0].xs.map((x, i) => papiWhite(PAPI_SETTINGS[i]!, Math.hypot(x - RUNWAY.x, 40), 1.7 - PAPI_LENS.z))).toEqual([false, false, false, false]);
+    expect(PAPIS[0].xs.map((x, i) => papiWhite(PAPI_SETTINGS[i]!, Math.hypot(x - TOWER.x, PAPIS[0].y - TOWER.y), TOWER.cab - PAPI_LENS.z))).toEqual([true, true, true, true]);
+  });
+
+  test("every PAPI lens is drawn with its own unit's setting (so each shows its own colour), none fixed red or white", async () => {
+    const { buildStatic, PAPI_KIND } = await import("./field-build.ts");
+    const { FIELD_DETAIL } = await import("./field.ts");
+    for (const name of ["high", "low"] as const) {
+      const glow = buildStatic(FIELD_DETAIL[name].build).light.build().getAttribute("glow");
+      const counts = new Map<number, number>();
+      for (let i = 0; i < glow.count; i++) {
+        const k = glow.getX(i);
+        if (k > PAPI_KIND - 0.5) counts.set(Math.round((k - PAPI_KIND) * 100) / 100, (counts.get(Math.round((k - PAPI_KIND) * 100) / 100) ?? 0) + 1);
+      }
+      // Each setting on both runways' units, the same number of vertices each (two lenses a unit).
+      expect([...counts.keys()].sort()).toEqual([...PAPI_SETTINGS].sort());
+      expect(new Set(counts.values()).size).toBe(1);
     }
   });
 });

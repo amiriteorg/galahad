@@ -92,6 +92,16 @@ export const PAPIS = [
   { dir: -1, y: RUNWAY.y + RUNWAY.hy - 20, xs: [-150, -148, -146, -144] },
   { dir: 1, y: RUNWAY.y - RUNWAY.hy + 20, xs: [-170, -172, -174, -176] },
 ] as const;
+/**
+ * Each PAPI unit's setting (degrees above the horizontal), from the one nearest the runway: a unit shows white to an
+ * eye above its setting and red to one below, so on the 3° glide path the two nearest are red and the two farther
+ * white; a little high, three white; high, all four; low, all four red.
+ */
+export const PAPI_SETTINGS = [3.5, 3.17, 2.83, 2.5] as const;
+/** The PAPIs' lenses: their height above the field, and how far ahead of each unit's centre they sit (towards the approach). */
+export const PAPI_LENS = { z: 0.66, ahead: 0.33 } as const;
+/** Whether a PAPI unit (its `setting`, degrees) shows white to an eye `above` metres higher than its lenses and `along` metres from it over the ground. */
+export const papiWhite = (setting: number, along: number, above: number): boolean => above > along * Math.tan((setting * Math.PI) / 180);
 /** Lightning masts at the launch pad's south corners, just off it. */
 export const LIGHTNING_MASTS = [
   { x: -113.2, y: -109.8 },
