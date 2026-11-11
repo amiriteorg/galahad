@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { STATIONS } from "@galahad/core/world";
-import { ARM_SPEED, CAMERA_PAD, CameraRig, pitchFor, type Point3, SpringArm } from "./camera.ts";
+import { PADS, STATIONS } from "@galahad/core/world";
+import { ARM_SPEED, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Point3, SpringArm } from "./camera.ts";
 import { BUILDS, Solids } from "./collide.ts";
 import { ProvingGround } from "./field.ts";
 import { FIELD } from "./field-plan.ts";
 import { addPlants } from "./flora-plan.ts";
 import { Workshop } from "./hall.ts";
 import { HALL } from "./hall-plan.ts";
+import { DECK_REST } from "./keep-deck.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
 import { Planner } from "./nav.ts";
-import { angleDiff, obstacles, PLACES, standAt, Walker } from "./path.ts";
+import { angleDiff, obstacles, PLACES, plotGate, standAt, Walker } from "./path.ts";
 import type { Place } from "./place.ts";
 import { SITE_COLLIDERS } from "./sites.ts";
 import { BASE_FLATS, BIG, CHUNK, chunkSamples, heightAt, SEED } from "./terrain.ts";
@@ -307,6 +308,68 @@ describe("the camera's spring arm", () => {
     }
     expect(faults).toEqual([]);
     expect(pops).toBe(0);
+  });
+
+  test("following him down off the keep's deck and away, it's never left behind (in a pocket it can't get out of by getting nearer)", () => {
+    // He starts on the deck, as the scene puts him (and the camera, a three-quarter view of his front); he walks down
+    // the stairs to a test cell in the hall, a station, the proving ground. The camera on the deck under the crown,
+    // inside the railing, once stayed there while he walked away: no way out of that pocket was a way nearer him.
+    const planner = new Planner(solids);
+    const walker = new Walker(DECK_REST);
+    const mover = solids.join(walker, BUILDS.galahad);
+    walker.join({ planner, mover, wet: null, height: ground });
+    const failures: string[] = [];
+    const dt = 1 / 60;
+    for (const [name, to] of [
+      ["the hall's first test cell", plotGate(PADS.find((p) => p.id === "cell-1")!)],
+      ["the hall's second test cell", plotGate(PADS.find((p) => p.id === "cell-2")!)],
+      ["the forge", standAt("forge")],
+      ["the observatory", standAt("observatory")],
+      ["the proving ground's course", plotGate(PADS.find((p) => p.id === "course")!)],
+    ] as const) {
+      for (const turnBy of [-0.6, 0.6, 2]) {
+        walker.go(DECK_REST, obstacles(), true);
+        const rig = new CameraRig();
+        const arm = new SpringArm();
+        const pivot: Point3 = { x: 0, y: 0, z: 0 };
+        const want: Point3 = { x: 0, y: 0, z: 0 };
+        const clear = (x: number, y: number): boolean => {
+          const t = rig.target;
+          const g = ground(t.x, t.y);
+          const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+          return ground(x, y) + 0.8 < z && solids.view(t.x, t.y, g + 2.3, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+        };
+        rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
+        rig.target.yaw = walker.heading + Math.PI - turnBy;
+        rig.trail(walker.heading, false, 0, clear);
+        rig.update(0, false);
+        rig.wanted(rig.settle(walker.z, 0, false), want, pivot);
+        arm.update(pivot, want, solids, ground, dt, true);
+        // A moment on the deck first, then off.
+        let behind = 0;
+        let longest = 0;
+        let worst = 0;
+        let after = 0;
+        for (let k = 0; k < 60 * 70 && (k < 60 * 2 || walker.moving || walker.waypoints.length || after < 60 * 3); k++) {
+          if (k === 60 * 2) walker.go(to, obstacles());
+          if (k > 60 * 2 && !walker.moving && !walker.waypoints.length) after++;
+          walker.step(dt);
+          rig.lookAt(walker.x, walker.y);
+          rig.trail(walker.heading, walker.moving, dt, clear);
+          rig.update(dt, true);
+          rig.wanted(rig.settle(walker.z, dt, true), want, pivot);
+          arm.update(pivot, want, solids, ground, dt, true);
+          // How much farther from his head than its arm reaches.
+          const over = Math.hypot(arm.x - pivot.x, arm.y - pivot.y, arm.z - pivot.z) - Math.hypot(want.x - pivot.x, want.y - pivot.y, want.z + arm.lift - pivot.z);
+          worst = Math.max(worst, over);
+          behind = over > 4 ? behind + dt : 0;
+          longest = Math.max(longest, behind);
+        }
+        const end = Math.hypot(arm.x - walker.x, arm.y - walker.y);
+        if (longest > 1.5 || end > DEFAULT_DISTANCE + 4) failures.push(`to ${name} (begun ${turnBy} off his front): ${longest.toFixed(1)} s more than 4 m behind its arm (at worst ${worst.toFixed(1)} m), ${end.toFixed(1)} m from him at the end`);
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   test("turned by hand while it follows him, it stays where it's turned, as far out as it was", () => {

@@ -242,6 +242,14 @@ const SETTLE = 1.25;
 const CUT = 6;
 /** Seconds against something it can't slide round before it tries other ways out. */
 const WEDGED = 0.2;
+/**
+ * Left behind: this much farther from his head than the arm reaches (metres), and getting nowhere (within a metre
+ * of where it was) for ASTRAY seconds: caught in a pocket no way out of which is a way nearer him (on the keep's
+ * deck, under its crown and inside its railing, as he walks off down the stairs). Then it's cut to the arm, as
+ * when he jumps. (Sliding along a wall it's held against as the view turns, it gets somewhere: no cut.)
+ */
+const BEHIND = 4;
+const ASTRAY = 1;
 
 /**
  * The spring arm from the focus to the camera, and the camera on it as a
@@ -258,8 +266,10 @@ const WEDGED = 0.2;
  * isn't looked round: it dissolves in the dither (occlusion.ts). It never goes
  * under something he isn't under (collide.ts' cameraAt), so it never wedges
  * beneath eaves or a deck; where it's against something it can't slide round,
- * it tries up, down, in, and to either side. A cut, or reduced motion, puts it
- * straight where the arm wants it. Pure; world metres, z up. No allocation.
+ * it tries up, down, in, and to either side. A cut (he jumped; or it was left
+ * behind, in a pocket where no way out was a way nearer him, a second without
+ * gaining on him), or reduced motion, puts it straight where the arm wants it.
+ * Pure; world metres, z up. No allocation.
  */
 export class SpringArm {
   /** Where the camera is (world, z up). */
@@ -271,12 +281,25 @@ export class SpringArm {
   tilt = 0;
   /** Times it had to be put on the arm at once while moving (something grew round it, more than it could get out of). */
   places = 0;
+  /** Times it was cut to the arm, left behind (BEHIND, ASTRAY). */
+  cuts = 0;
   /** The tilt it eases to. */
   private aimTilt = 0;
   private placed = false;
   /** Seconds it has been against something it can't slide round, and before it tries other ways out again. */
   private jam = 0;
   private rest = 0;
+  /**
+   * Held against something it couldn't slide round or get past on its way to the arm's end (beyond a wall, inside
+   * a building it's outside): then it makes for the arm on its own side, before the arm first meets anything,
+   * until the way to the arm's end is open.
+   */
+  private held = false;
+  /** Seconds it has been left behind and getting nowhere, and where it was when that began. */
+  private astray = 0;
+  private sx = 0;
+  private sy = 0;
+  private sz = 0;
   // The arm last frame: its pivot, the end it wanted, and the lift.
   private lpx = 0;
   private lpy = 0;
@@ -417,14 +440,27 @@ export class SpringArm {
       cy *= budget / carried;
       cz *= budget / carried;
     }
-    this.go(cx, cy, cz, solids, ground);
+    // (Not while it's held: carried round with the turn, it would only slide on along what holds it, away from the
+    // arm; all its budget goes to getting back to it.)
+    if (!this.held) this.go(cx, cy, cz, solids, ground);
     // Then to where the arm wants it, eased, with what's left of the budget (all of it when the carry was blocked:
     // it keeps up with the turn, gliding round what stopped it).
     this.aim(dx, dy, dz, this.tilt);
-    const goal = Math.max(least, this.share(solids, px, py, pz, least, low));
-    const gx = px + this.ax * goal;
-    const gy = py + this.ay * goal;
-    const gz = pz + this.az * goal;
+    let goal = Math.max(least, this.share(solids, px, py, pz, least, low));
+    let gx = px + this.ax * goal;
+    let gy = py + this.ay * goal;
+    let gz = pz + this.az * goal;
+    if (this.held && solids) {
+      // Held: is the way to it open now? If not, the arm on this side of what's in the way.
+      const l = Math.max(1e-6, Math.hypot(gx - this.x, gy - this.y, gz - this.z));
+      if (solids.firstAlong(this.x, this.y, this.z, gx, gy, gz, CAMERA_PAD, Math.min(0.5, (CAMERA_PAD * 0.5) / l)) >= 1) this.held = false;
+      else {
+        goal = Math.max(least, Math.min(goal, solids.firstAlong(px, py, pz, px + this.ax, py + this.ay, pz + this.az, ROOM, least)));
+        gx = px + this.ax * goal;
+        gy = py + this.ay * goal;
+        gz = pz + this.az * goal;
+      }
+    }
     const ex = gx - this.x;
     const ey = gy - this.y;
     const ez = gz - this.z;
@@ -437,11 +473,27 @@ export class SpringArm {
       this.jam = got < want * 0.3 && e > 0.5 ? Math.min(1, this.jam + dt) : Math.max(0, this.jam - dt * 2);
       // (Not every frame: when no way out helped, it waits a little before trying again.)
       this.rest = Math.max(0, this.rest - dt);
-      if (this.jam > WEDGED && this.rest === 0 && !this.unwedge(gx, gy, gz, px, py, pz, Math.min(left - got, 0.5), solids, ground)) this.rest = 0.25;
+      if (this.jam > WEDGED && this.rest === 0 && !this.unwedge(gx, gy, gz, px, py, pz, Math.min(left - got, 0.5), solids, ground)) {
+        this.rest = 0.25;
+        this.held = true;
+      }
     }
     // Over the land, wherever it is.
     const floor = ground(this.x, this.y) + GROUND_CLEAR;
     if (this.z < floor) this.go(0, 0, floor - this.z, solids, ground);
+    // Left behind and getting nowhere: a second of that, and it's cut to the arm.
+    if (Math.hypot(this.x - px, this.y - py, this.z - pz) - Math.hypot(dx, dy, dz) <= BEHIND) this.astray = 0;
+    else if (this.astray === 0 || Math.hypot(this.x - this.sx, this.y - this.sy, this.z - this.sz) > 1) {
+      this.astray = dt;
+      this.sx = this.x;
+      this.sy = this.y;
+      this.sz = this.z;
+    } else if ((this.astray += dt) > ASTRAY) {
+      this.astray = 0;
+      this.cuts++;
+      this.place(px, py, pz, dx, dy, dz, least, low, solids);
+      return;
+    }
     // Something closed round it (he came out from under what it's beside, or a chunk's trees grew): out the
     // shortest way, never far; failing that, where the arm wants it, at once.
     if (solids?.blocked3(this.x, this.y, this.z, CAMERA_PAD * 0.9)) {

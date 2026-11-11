@@ -709,6 +709,21 @@ export class Solids {
   }
 
   /**
+   * Along the camera's arm from A to B: the share (from `lo`) where a ball of radius `room` first meets a VIEW solid
+   * (1 when it meets none): how far out it can go without passing anything. One it's leaving by `lo` doesn't count.
+   */
+  firstAlong(ax: number, ay: number, az: number, bx: number, by: number, bz: number, room: number, lo: number): number {
+    const n = this.along(ax, ay, bx, by, room * Math.SQRT2);
+    let best = 1;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & VIEW) || !this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, room) || spanOut <= lo) continue;
+      if (spanIn < best) best = Math.max(lo, spanIn);
+    }
+    return best;
+  }
+
+  /**
    * Along the camera's arm from A to B: the share (lo..hi) nearest `want` where a ball of radius `room` is
    * inside no VIEW solid, or −1 if there's none. Allocates nothing (the spans are kept in the world's scratch).
    */
