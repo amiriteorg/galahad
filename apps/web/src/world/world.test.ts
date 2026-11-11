@@ -4,6 +4,7 @@ import { applyWorldEvent, emptyWorld, readWorldEvent } from "../lib/world.ts";
 import { fromScene, headingToSceneYaw, onPlot, plotToWorld, toScene, worldToPlot } from "./coords.ts";
 import { createDemo } from "./demo.ts";
 import { fbm, hash2, simplex, valueNoise } from "./noise.ts";
+import { DECK_REST } from "./keep-deck.ts";
 import { angleDiff, built, obstacles, PLACES, paceFor, pathLength, planPath, plotGate, RUN_BEYOND, standAt, targetFor, Walker } from "./path.ts";
 import { axisAngle, interpolatePose, mulQuat, PoseBuffer, type Quat, rotate, slerp } from "./pose.ts";
 import { CELLS, CHUNK, chunkKey, chunkOf, chunkSamples, chunksAround, flatsTouching, heightAt, KEEP_FLAT, KEEP_RADIUS, LAYERS, plotFlat, SEED, STRIDE } from "./terrain.ts";
@@ -234,7 +235,9 @@ describe("where Galahad goes", () => {
     expect(gate.x).toBeCloseTo(100 - 10 - 1.6, 9);
     expect(gate.y).toBeCloseTo(0, 9);
     expect(gate.facing).toBeCloseTo(0, 9); // facing east, into the plot
-    expect(targetFor({ ...g, experiment: "gone" }, [])).toEqual(standAt("keep"));
+    // At the keep (and when the experiment's gone), up on its deck.
+    expect(targetFor({ ...g, experiment: "gone" }, [])).toEqual(DECK_REST);
+    expect(targetFor({ ...g, station: "keep" }, [])).toEqual(DECK_REST);
     expect(targetFor({ ...g, station: "library" }, [])).toEqual(standAt("library"));
     const corner = plotGate({ x: -50, y: -50, size: 20 });
     expect(onPlot({ x: -50, y: -50, size: 20 }, corner.x, corner.y)).toBe(false);

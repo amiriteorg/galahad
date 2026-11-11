@@ -1,4 +1,4 @@
-import { attribute, clamp, min, mix, uniform, vec3 } from "three/tsl";
+import { attribute, clamp, float, min, mix, uniform, vec3, vertexColor } from "three/tsl";
 import {
   BoxGeometry,
   BufferAttribute,
@@ -21,6 +21,7 @@ import {
   Vector3,
 } from "three/webgpu";
 import { STAR, STAR_CENTER } from "../brand.ts";
+import type { indoorLight } from "./hall-materials.ts";
 import { FootPlanner } from "./ik.ts";
 import { at, bevelBox, between, Mesher } from "./mesher.ts";
 import { aim, limb, piston, pointIn, Rig } from "./rig.ts";
@@ -70,6 +71,8 @@ export interface KnightState {
   armed: boolean;
   /** At the lab's bench (he works there with the sword's tip). */
   bench: boolean;
+  /** Writing on the chalkboard: his right hand at the chalk (the attention point), in small strokes. */
+  writing?: boolean;
 }
 
 /** What he's attending to, in the world (z up), or nothing. */
@@ -122,6 +125,23 @@ export class Knight {
   private readonly glowColor = uniform(new Color(GLOW));
   private readonly material = new MeshLambertNodeMaterial({ vertexColors: true });
   private readonly swordMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
+  private glowNode: NonNullable<MeshLambertNodeMaterial["emissiveNode"]> | null = null;
+  /** 0 outdoors, 1 in the workshop hall (eased as he goes in): then he's lit as the hall lights itself (lightIndoors). */
+  readonly indoors = uniform(0);
+
+  /**
+   * Lights him, while `indoors`, as the hall lights its own interior (`irradiance`: hall.ts' light()), not by the
+   * scene's lights: by day the sun would light him under the hall's roof on the tiers with no shadows. Before the
+   * first frame (it builds his materials' lighting once; `indoors` moves it after). hall.ts' insideLight() gives it.
+   */
+  lightIndoors(irradiance: ReturnType<typeof indoorLight>): void {
+    const outside = float(1).sub(this.indoors);
+    const inside = irradiance.mul(this.indoors).mul(1 / Math.PI);
+    this.material.colorNode = vertexColor().mul(outside);
+    this.material.emissiveNode = (this.glowNode ? (this.glowNode as unknown as ReturnType<typeof vec3>) : vec3(0)).add(vertexColor().mul(inside)) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
+    this.swordMaterial.colorNode = vertexColor().mul(outside);
+    this.swordMaterial.emissiveNode = this.swordGlow.mul(attribute("glow", "float")).mul(1.5).add(vertexColor().mul(inside));
+  }
   private readonly swordGlow = uniform(new Color(GLOW));
   private readonly shadow: Mesh;
   private readonly dimGlow = new Color(0xf08a24);
@@ -144,6 +164,7 @@ export class Knight {
   private guard = 0;
   private bench = 0;
   private draw = 0;
+  private write = 0;
   private bow = 0;
   private wasMoving = false;
   private pelvisY = HIP_Y;
@@ -396,7 +417,8 @@ export class Knight {
     this.mesh = this.rig.mesh(m.build(), this.material);
     // The glow mask: up to 1 glows amber (eyes, seams, vents); 2 glows white-hot (the star).
     const glow = attribute("glow", "float");
-    this.material.emissiveNode = mix(this.glowColor, vec3(1, 0.93, 0.8), clamp(glow.sub(1), 0, 1)).mul(min(glow, 1)).mul(1.5);
+    this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), clamp(glow.sub(1), 0, 1)).mul(min(glow, 1)).mul(1.5) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
+    this.material.emissiveNode = this.glowNode;
     this.mesh.castShadow = shadows;
     this.root.add(this.mesh);
 
@@ -470,6 +492,7 @@ export class Knight {
       this.guard = s.armed && !s.bench ? 1 : 0;
       this.bench = s.armed && s.bench ? 1 : 0;
       this.draw = s.armed ? 1 : 0;
+      this.write = s.writing ? 1 : 0;
       this.feet.place(x, y, heading, ground);
       this.vx = this.vy = 0;
     } else {
@@ -482,7 +505,8 @@ export class Knight {
       this.think += ((still && s.thinking ? 1 : 0) - this.think) * e;
       this.guard += ((still && s.armed && !s.bench && !s.thinking ? 1 : 0) - this.guard) * e;
       this.bench += ((still && s.armed && s.bench ? 1 : 0) - this.bench) * e;
-      this.work += ((still && s.working && !s.thinking && !s.armed ? 1 : 0) - this.work) * e;
+      this.work += ((still && s.working && !s.thinking && !s.armed && !s.writing ? 1 : 0) - this.work) * e;
+      this.write += ((still && s.writing ? 1 : 0) - this.write) * e;
       this.draw = Math.max(0, Math.min(1, this.draw + (s.armed && still ? 1 : -1) * dt * 1.5));
       // The feet: a walk (long stance) or a run (flight between steps), the stride with the pace.
       this.feet.duty = 0.62 - 0.24 * runAmount;
@@ -686,6 +710,14 @@ export class Knight {
         this.t2.set(-1, 0, 0.3).normalize();
         blendDir(grip, this.t2, this.bench);
         curl += (0.25 - curl) * this.bench;
+      }
+      // The chalkboard: the right hand at the chalk on the slate, in small strokes as it writes.
+      if (i === 1 && look && this.write > 0.01) {
+        this.t1.copy(look).add(this.t2.set(Math.sin(t * 9) * 0.03, Math.sin(t * 13) * 0.012, -0.04));
+        blend(target, this.t1, this.write);
+        this.t2.set(0, 0.35, 1).normalize();
+        blendDir(grip, this.t2, this.write);
+        curl += (1.1 - curl) * this.write;
       }
       // The right hand and the sword: to the hilt and up into the armed pose, or back.
       if (i === 1) {

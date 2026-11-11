@@ -4,6 +4,7 @@ import { BUILDS, Solids } from "./collide.ts";
 import { ProvingGround } from "./field.ts";
 import { addPlants } from "./flora-plan.ts";
 import { Workshop } from "./hall.ts";
+import { DECK_REST, DECK_TOP, STAIRS, tread } from "./keep-deck.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
 import { Planner } from "./nav.ts";
 import type { Place } from "./place.ts";
@@ -56,7 +57,7 @@ for (let cx = Math.floor(-230 / CHUNK); cx <= Math.floor(150 / CHUNK); cx++) {
 const planner = new Planner(solids);
 const walker = new Walker(standAt("keep"));
 const mover = solids.join(walker, BUILDS.galahad);
-walker.join({ planner, mover, wet, deep });
+walker.join({ planner, mover, wet, deep, height: ground });
 const obs = obstacles(experiments);
 
 interface Walked {
@@ -67,6 +68,10 @@ interface Walked {
   fallbacks: number;
   /** Where he was inside something, or in the water (if ever). */
   wrong: string | null;
+  /** The most his feet rose or fell in a frame, the tops he stood on (to the centimetre), and the highest. */
+  climb: number;
+  tops: Set<number>;
+  highest: number;
 }
 
 function walk(from: Target, to: Target): Walked {
@@ -76,14 +81,27 @@ function walk(from: Target, to: Target): Walked {
   const dt = 1 / 60;
   let time = 0;
   let wrong: string | null = null;
+  let climb = 0;
+  const tops = new Set<number>();
+  let highest = walker.z;
+  let z = walker.z;
   while ((walker.moving || walker.waypoints.length) && time < 120) {
     walker.step(dt);
     time += dt;
-    if (!wrong && solids.overlaps(walker.x, walker.y, walker.r - 0.02, mover.step, mover.height)) wrong = `inside at ${walker.x.toFixed(2)},${walker.y.toFixed(2)}`;
+    // Inside something, as he meets it: from where his feet are (up on a tread, the deck or a rock), or the land.
+    solids.floor = walker.floor;
+    if (!wrong && solids.overlaps(walker.x, walker.y, walker.r - 0.02, mover.step, mover.height)) wrong = `inside at ${walker.x.toFixed(2)},${walker.y.toFixed(2)},${walker.z.toFixed(2)}`;
+    solids.floor = Number.NaN;
     if (!wrong && deep(walker.x, walker.y)) wrong = `in the water at ${walker.x.toFixed(2)},${walker.y.toFixed(2)}`;
+    if (walker.raised) {
+      climb = Math.max(climb, Math.abs(walker.z - z));
+      tops.add(Math.round(walker.z * 100));
+    }
+    highest = Math.max(highest, walker.z);
+    z = walker.z;
   }
   const d = Math.hypot(to.x - from.x, to.y - from.y);
-  return { time, straight: d / paceFor(d).speed, arrived: Math.hypot(walker.x - to.x, walker.y - to.y) < 0.05, fallbacks: walker.fallbacks, wrong };
+  return { time, straight: d / paceFor(d).speed, arrived: Math.hypot(walker.x - to.x, walker.y - to.y) < 0.05, fallbacks: walker.fallbacks, wrong, climb, tops, highest };
 }
 
 const gates: [string, Target][] = [
@@ -93,6 +111,67 @@ const gates: [string, Target][] = [
 ];
 
 describe("Galahad among the solids, on the real land", () => {
+  test("up the keep's stairs to his place on the deck and down again, from every station: a tread at a time, never more than a step, never through the rails or off the edge", () => {
+    const failures: string[] = [];
+    const treads = new Set(Array.from({ length: STAIRS.steps }, (_, i) => Math.round(tread(i).top * 100)));
+    for (const place of PLACES) {
+      for (const [label, from, to] of [[`${place} → the deck`, standAt(place), DECK_REST], [`the deck → ${place}`, DECK_REST, standAt(place)]] as const) {
+        const w = walk(from, to);
+        if (!w.arrived) failures.push(`${label}: not there (at ${walker.x.toFixed(1)},${walker.y.toFixed(1)},${walker.z.toFixed(2)} after ${w.time.toFixed(1)} s)`);
+        if (w.fallbacks) failures.push(`${label}: set down ${w.fallbacks}×`);
+        if (w.wrong) failures.push(`${label}: ${w.wrong}`);
+        // Each frame, his feet rise or fall at most one tread's height (0.35 m), never more than his step.
+        if (w.climb > mover.step) failures.push(`${label}: his feet moved ${w.climb.toFixed(2)} m in a frame`);
+        // He stood on every tread on the way (and on the deck, at its top).
+        const missed = [...treads].filter((t) => !w.tops.has(t));
+        if (missed.length) failures.push(`${label}: never on the treads at ${missed.map((t) => (t / 100).toFixed(2)).join(", ")}`);
+        if (Math.abs(w.highest - DECK_TOP) > 1e-6) failures.push(`${label}: highest ${w.highest.toFixed(2)}`);
+      }
+      if (Math.abs(walker.z - (walker.raised ? DECK_TOP : ground(walker.x, walker.y))) > 1e-6) failures.push(`${place}: ended at ${walker.z.toFixed(2)}`);
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test("anything over his knee still stops him; lower, he steps up onto it and down off it", () => {
+    const s = new Solids();
+    // A row of blocks across his way: 0.3 m, 0.48 m, 0.6 m, 1 m high.
+    s.open();
+    s.box(3, 0, 0.6, 3, 0, 0, 0.3);
+    s.box(6, 0, 0.6, 3, 0, 0, 0.48);
+    s.close();
+    const p = new Planner(s);
+    const w = new Walker({ x: 0, y: 0, facing: 0 });
+    const m = s.join(w, BUILDS.galahad);
+    w.join({ planner: p, mover: m, wet: null });
+    w.go({ x: 9, y: 0, facing: 0 }, []);
+    let top = 0;
+    for (let k = 0; k < 60 * 20 && (w.moving || w.waypoints.length); k++) {
+      w.step(1 / 60);
+      top = Math.max(top, w.z);
+    }
+    expect([w.x, w.y, w.z].map((v) => Math.round(v * 100) / 100)).toEqual([9, 0, 0]);
+    expect(top).toBeCloseTo(0.48, 6);
+    // And a knee-high wall, or a metre's, he goes round.
+    for (const h of [0.6, 1]) {
+      const t = new Solids();
+      t.open();
+      t.box(3, 0, 0.6, 3, 0, 0, h);
+      t.close();
+      const q = new Walker({ x: 0, y: 0, facing: 0 });
+      const n = t.join(q, BUILDS.galahad);
+      q.join({ planner: new Planner(t), mover: n, wet: null });
+      q.go({ x: 6, y: 0, facing: 0 }, []);
+      let most = 0;
+      let through = false;
+      for (let k = 0; k < 60 * 20 && (q.moving || q.waypoints.length); k++) {
+        q.step(1 / 60);
+        most = Math.max(most, q.z);
+        through ||= Math.abs(q.x - 3) < 0.6 && Math.abs(q.y) < 3;
+      }
+      expect([Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, most, through]).toEqual([6, 0, 0, false]);
+    }
+  });
+
   test("every place he goes is clear of everything solid and dry", () => {
     for (const [name, t] of [...PLACES.map((p): [string, Target] => [p, standAt(p)]), ...gates]) {
       expect(solids.overlaps(t.x, t.y, walker.r, mover.step, mover.height) ? name : "clear").toBe("clear");

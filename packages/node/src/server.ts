@@ -72,12 +72,16 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore } from "./chats.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
+import { ExperimentError } from "./experiment-store.ts";
+import { RunError, runExperiment } from "./experiment-run.ts";
 import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
 import { BankError, type BankService } from "./bank/service.ts";
+import { BoardError, type BoardStore } from "./board.ts";
+import { boardVersionForArchive } from "./board-history.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
@@ -122,6 +126,8 @@ export interface AppContext {
   chats: ChatStore;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
+  /** The chalkboard you and Galahad share. */
+  board: BoardStore;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
@@ -186,7 +192,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
-const COMPRESSED_READS = new Set<RouteName>(["recall", "conversation", "sandboxes"]);
+const COMPRESSED_READS = new Set<RouteName>(["recall", "conversation", "sandboxes", "experiment", "experimentRecording"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -539,7 +545,9 @@ export function createApp(ctx: AppContext) {
       } else if (event.type === "tool") {
         const tool = TOOLS.find((t) => t.name === event.name);
         // Once the bank is in the answer, a tool's input may carry it: the world gets only its name.
-        const detail = answer.bank || tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
+        // On the board, what he writes (its title or its first words), not its JSON.
+        const said = event.name.startsWith("board_") ? event.input.match(/"(?:title|text)":"((?:[^"\\]|\\.){1,80})/)?.[1] : undefined;
+        const detail = answer.bank || tool?.flow === "private" || !event.input ? "" : `: ${said ?? event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
         ctx.world.doing(stationForTool(event.name), `${event.title}${detail}`, { model });
       } else if (event.type === "tool_result") {
         thinking();
@@ -566,7 +574,7 @@ export function createApp(ctx: AppContext) {
 
   /** A tool's failure in words the model may see: what the API would say, never an internal error's detail. */
   function explain(error: unknown): string {
-    if (error instanceof HttpError || error instanceof PairingError || error instanceof SandboxError) return error.message;
+    if (error instanceof HttpError || error instanceof PairingError || error instanceof SandboxError || error instanceof BoardError) return error.message;
     if (error instanceof ZodError) return `invalid input: ${error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}`;
     const message = String((error as Error)?.message ?? error);
     if (/not authorized|already|unknown or|refusing|no secret|not configured/.test(message)) return message;
@@ -579,6 +587,8 @@ export function createApp(ctx: AppContext) {
   function ownerOnly(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "chats are yours alone");
   }
+  /** Your device by name, for the board's history ("a terminal" at the CLI). */
+  const deviceName = (p: Principal): string | undefined => (!isOwner(p) ? undefined : p.kind === "admin" ? `a terminal on ${ctx.nodeName}` : ctx.store.device(p.device)?.name);
   /** A chat where Galahad read the bank is for devices that may read the bank. */
   const visibleTo = (c: ConversationSummary, p: Principal) => !c.bank || p.scopes.includes("bank:read");
 
@@ -986,6 +996,49 @@ export function createApp(ctx: AppContext) {
       ownerOnly(p);
       return { reports: ctx.world.reportsView() };
     },
+    // ---------- saved experiments (node-local: what this node's world showed) ----------
+    experiments: () => {
+      if (!ctx.world.store) throw new HttpError(424, "this node doesn't keep experiments");
+      return { node: ctx.nodeName, ...ctx.world.store.listing() };
+    },
+    experiment: (input) => {
+      const store = ctx.world.store;
+      const experiment = store?.get(input.id);
+      if (!store || !experiment) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
+      return { experiment, examination: store.examination(input.id), ...(input.code ? { code: store.code(input.id) } : {}) };
+    },
+    experimentRecording: (input) => {
+      const page = ctx.world.store?.recording(input.id, input.from ?? 0, input.limit ?? 2000, input.hz);
+      if (!page) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
+      return page;
+    },
+    pinExperiment: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you pin saved experiments");
+      return experimentErrors(() => ({ experiment: ctx.world.store!.pin(input.id, input.pinned) }));
+    },
+    deleteExperiment: (input, p) => {
+      // Deleting kept work is yours to decide (fleet:admin, which agents can never hold).
+      if (!isOwner(p)) throw new HttpError(403, "only you delete saved experiments");
+      return experimentErrors(() => {
+        if (!ctx.world.store!.remove(input.id)) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
+        return { deleted: true };
+      });
+    },
+    runExperiment: (input, p) => {
+      const { on, quest: relayed, ...rest } = input;
+      // An arm's sandboxes all belong to its own quest (Galahad's own, in chat, too); a node relays the arm's.
+      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
+      return longRunning(
+        onNode(p, on, routes.runExperiment.path, { ...rest, ...(quest ? { quest } : {}) }, async () => {
+          try {
+            return await runExperiment({ sandbox: ctx.sandbox!, world: ctx.world, nodeName: ctx.nodeName, log: ctx.log }, rest, quest ? { quest } : {});
+          } catch (error) {
+            if (error instanceof RunError) throw new HttpError(error.status, error.message);
+            throw error;
+          }
+        }),
+      );
+    },
     world: (_input, p, req) => {
       // Yours alone: it carries what Galahad is thinking about in your chats.
       ownerOnly(p);
@@ -1023,6 +1076,55 @@ export function createApp(ctx: AppContext) {
         },
       });
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+    },
+    // ---------- the chalkboard: you draw, Galahad and your agents write, and only you erase your drawing ----------
+    board: () => ctx.board.view(),
+    boardSnapshot: () => {
+      const shot = ctx.board.snapshot();
+      if (!shot) throw new HttpError(404, "there's no picture of the board yet: one is taken when the owner draws on it");
+      return new Response(shot.png, { headers: { "content-type": "image/png", "content-length": String(shot.png.length), "cache-control": "no-store", "content-security-policy": "sandbox; default-src 'none'", ...SECURITY_HEADERS } });
+    },
+    boardDraw: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner draws on the board");
+      return ctx.board.draw(input.strokes, input.snapshot ? new Uint8Array(Buffer.from(input.snapshot, "base64")) : undefined, deviceName(p));
+    },
+    boardWrite: (input, p) => {
+      const owner = isOwner(p);
+      if (!owner && p.kind !== "arm") throw new HttpError(403, "only you and your agents write on the board");
+      // Every agent that may read the mind reads the board: nothing credential-shaped goes on it.
+      const item = input.item as Record<string, unknown> & { series?: { name: string }[] };
+      guardAgainstSecrets(...[item.text, item.title, item.xLabel, item.yLabel, ...(item.series ?? []).map((s) => s.name)].filter((t): t is string => typeof t === "string"));
+      return { item: ctx.board.write(input, owner ? "owner" : p.label!, owner, deviceName(p)) };
+    },
+    boardErase: (input, p) => ({ erased: ctx.board.erase(input, { owner: isOwner(p), by: p.label ?? p.device, device: deviceName(p) }) }),
+    boardClear: (_input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner clears the board");
+      ctx.board.clear(deviceName(p));
+      return { version: ctx.board.version };
+    },
+    // Its history: every version kept; read by what may read the board, restored and forgotten only by you.
+    boardHistory: (input) => ctx.board.history.before(input.before ?? null, input.limit ?? 50),
+    boardVersion: (input) => {
+      const found = boardVersionForArchive(ctx.board, input.version);
+      if (!found) throw new HttpError(404, `the board's history has no version ${input.version}`);
+      const { image, ...view } = found;
+      return view;
+    },
+    boardVersionPicture: (input) => {
+      const picture = ctx.board.history.picture(input.version);
+      if (!picture) throw new HttpError(404, `there's no picture of the board at version ${input.version}`);
+      return new Response(new Uint8Array(picture.png), {
+        headers: { "content-type": "image/png", "x-board-picture-of": String(picture.shows), "cache-control": "no-store", "content-security-policy": "sandbox; default-src 'none'", ...SECURITY_HEADERS },
+      });
+    },
+    boardRestore: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner restores the board");
+      return ctx.board.restore(input.version, deviceName(p));
+    },
+    boardForget: (_input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner forgets the board's history");
+      ctx.board.forgetHistory(deviceName(p));
+      return { versions: ctx.board.history.size };
     },
     setProject: (input) => {
       guardAgainstSecrets(input.name, input.instructions ?? "", input.repo ?? "");
@@ -1417,6 +1519,17 @@ export function createApp(ctx: AppContext) {
       ),
   };
 
+  /** The experiment store's refusals as plain HTTP errors. */
+  function experimentErrors<T>(run: () => T): T {
+    if (!ctx.world.store) throw new HttpError(424, "this node doesn't keep experiments");
+    try {
+      return run();
+    } catch (error) {
+      if (error instanceof ExperimentError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  }
+
   /** Bank failures as plain HTTP errors: a status and a sentence, never the bank's body. */
   async function bankErrors<T>(run: () => Promise<T>): Promise<T> {
     try {
@@ -1496,6 +1609,7 @@ export function createApp(ctx: AppContext) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       if (error instanceof PairingError) return json({ error: error.message }, error.status);
       if (error instanceof SandboxError) return json({ error: error.message }, error.status);
+      if (error instanceof BoardError) return json({ error: error.message }, error.status);
       if (error instanceof ZodError) return json({ error: "invalid input", issues: error.issues }, 400);
       if (error instanceof SyntaxError) return json({ error: "invalid JSON" }, 400);
       const message = String((error as Error).message ?? error);

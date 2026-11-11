@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { png } from "./png-fixture.ts";
 import { routes, type RouteName } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -166,9 +167,15 @@ describe("galahad mcp (official MCP client over stdio)", () => {
       [
         "artifact_read",
         "artifacts",
+        "board_erase",
+        "board_read",
+        "board_write",
         "connector_call",
         "connectors",
         "decide",
+        "experiment_examine",
+        "experiment_run",
+        "experiments",
         "fleet",
         "ledger",
         "loops",
@@ -199,6 +206,17 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     const recalled = text(await client.callTool({ name: "recall", arguments: { query: "round table" } }));
     expect(recalled).toContain("[agent] The round table meets on Tuesdays");
     expect(daemon.store.recall("tea")[0]?.trust).toBe("untrusted");
+  });
+
+  test("the chalkboard: an agent writes its own, sees your drawing as a picture, and can't erase it", async () => {
+    await call("boardDraw", { strokes: [{ id: "s_mcpdrawing01", color: "blue", width: 6, points: [50, 50, 300, 200] }], snapshot: Buffer.from(png(320, 180)).toString("base64") }, home.adminToken());
+    expect(text(await client.callTool({ name: "board_write", arguments: { kind: "equation", text: "a^2 + b^2 = c^2" } }))).toMatch(/^Wrote equation i_/);
+    const read = await client.callTool({ name: "board_read", arguments: {} });
+    const content = read.content as { type: string; text?: string; mimeType?: string; data?: string }[];
+    expect(content[0]!.text).toContain("(yours) at");
+    expect(content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(Buffer.from(content[1]!.data!, "base64").subarray(1, 4).toString()).toBe("PNG");
+    expect((await call("boardErase", { strokes: ["s_mcpdrawing01"] }, armToken)).status).toBe(403);
   });
 
   test("an agent cannot erase your memories, only its own (review #7)", async () => {

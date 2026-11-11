@@ -2,6 +2,7 @@ import type { ExperimentView, GalahadState, Station } from "@galahad/core/world"
 import { padAt, STATIONS } from "@galahad/core/world";
 import { BUILDS, type Mover } from "./collide.ts";
 import { aisleAt, HALL, HALL_DOOR_IN, HALL_DOOR_OUT, inHall } from "./hall-plan.ts";
+import { DECK_REST, DECK_TOP, inStairs, STAIR_WAY } from "./keep-deck.ts";
 import { MARGIN as PLAN_MARGIN, type Planner, type Wet } from "./nav.ts";
 import { type Ground, moveOnGround } from "./physics.ts";
 import { paved, SITE_GATES, SITE_OBSTACLES } from "./sites.ts";
@@ -27,6 +28,8 @@ const NEAR_ENOUGH = 1.2;
 export interface Point {
   x: number;
   y: number;
+  /** Where he stands there, when it's not on the land: on the keep's stairs or its deck (world z). */
+  z?: number;
 }
 
 export interface Obstacle extends Point {
@@ -97,13 +100,13 @@ export function plotGate(plot: { x: number; y: number; size: number }): Target {
   return { x: plot.x + ux * d, y: plot.y + uy * d, facing: Math.atan2(-uy, -ux) };
 }
 
-/** Where his state sends him: a station, or the gate of the experiment he's out at (his hall if it isn't known). */
+/** Where his state sends him: a station (at the keep, up on its deck), or the gate of the experiment he's out at (the keep if it isn't known). */
 export function targetFor(galahad: GalahadState, experiments: readonly ExperimentView[]): Target {
   if (galahad.station === "field") {
     const e = experiments.find((x) => x.id === galahad.experiment);
-    return e ? plotGate(e.plot) : standAt("keep");
+    return e ? plotGate(e.plot) : DECK_REST;
   }
-  return standAt(galahad.station);
+  return galahad.station === "keep" ? DECK_REST : standAt(galahad.station);
 }
 
 /** The buildings (the keep's, the hall, the proving ground's) and the fenced plots he walks round. Pads on a site have no fence. */
@@ -170,11 +173,33 @@ function hallApproach(p: Point): Point[] {
   return [{ x: HALL.x + HALL.hx + HALL_CLEAR, y: HALL.y + side }, corner];
 }
 
+/** A waypoint up on the keep's stairs or deck (it says how high, and that's off the ground). */
+const raisedAt = (p: Point): boolean => p.z !== undefined && p.z > 0.05;
+
+/** On the keep's deck (a point that says it's up there). */
+const onDeck = (p: Point): boolean => (p.z ?? 0) > DECK_TOP - 0.1;
+
 /**
  * Waypoints from `from` to `to` (ending at `to`), round whatever stands between. Into and out of
- * the workshop hall he goes by its door, and inside it along the aisle.
+ * the workshop hall he goes by its door, and inside it along the aisle; up to the keep's deck and
+ * down from it by its stairs (STAIR_WAY: those waypoints say how high they are).
  */
 export function planPath(from: Point, to: Point, obs: readonly Obstacle[]): Point[] {
+  const up = onDeck(to);
+  const down = onDeck(from);
+  const climbing = (from.z ?? 0) > 0.05 && !down && inStairs(from.x, from.y);
+  if (!up && !down && !climbing) return groundPath(from, to, obs);
+  const foot = STAIR_WAY[STAIR_WAY.length - 1]!;
+  const copy = (p: Point): Point => ({ x: p.x, y: p.y, z: p.z });
+  if (up && (down || climbing)) return [...(climbing ? STAIR_WAY.slice(0, -1).reverse() : []).map(copy), copy(to)];
+  if (up) return [...groundPath(from, foot, obs).slice(0, -1), copy(foot), ...STAIR_WAY.slice(0, -1).reverse().map(copy), copy(to)];
+  // Down (from the deck, or from partway down the stairs), then on over the land.
+  const way = climbing ? [foot] : STAIR_WAY;
+  return [...way.slice(0, -1).map(copy), copy(foot), ...groundPath(foot, to, obs)];
+}
+
+/** Waypoints over the land (and through the hall), as planPath. */
+function groundPath(from: Point, to: Point, obs: readonly Obstacle[]): Point[] {
   const fromHall = inHall(from.x, from.y);
   const toHall = inHall(to.x, to.y);
   if (!fromHall && !toHall) return [...detours(from, to, obs, 0), { x: to.x, y: to.y }];
@@ -291,6 +316,8 @@ export function pathLength(from: Point, path: readonly Point[]): number {
 }
 
 export const WALK_SPEED = 1.7;
+/** On the keep's stairs (and while he's up on its deck), this share of his pace: a step at a time. */
+const STAIR_PACE = 0.55;
 export const RUN_SPEED = 5;
 /** Farther than this, he runs. */
 export const RUN_BEYOND = 28;
@@ -312,6 +339,8 @@ export interface WalkWorld {
   wet: Wet;
   /** Ground he never steps on (water deeper than a puddle at the edge); `wet` if not given. */
   deep?: Wet;
+  /** The land's height (world z); 0 if not given. */
+  height?: (x: number, y: number) => number;
 }
 
 /** Turns tried, either way, when a step would end in water. */
@@ -337,6 +366,10 @@ export class Walker {
   fallbacks = 0;
   /** Times he planned again on the way. */
   replans = 0;
+  /** Where his feet are (world z): on the land, or on what he's stepped up onto (a tread, the deck, a flat rock). */
+  z = 0;
+  /** True while that's above the land: his questions are asked from there (collide.ts' floor). */
+  raised = false;
   private path: Point[] = [];
   private facing: number;
   private pace = WALK_SPEED;
@@ -362,6 +395,19 @@ export class Walker {
   /** Walks among the world's solids from now on. */
   join(world: WalkWorld): void {
     this.world = world;
+    this.stand(this.raised ? this.z : Number.NaN);
+  }
+
+  /** Stands him where he is, on the land or what he's on: at z if it's given (a place on the deck), else the land. */
+  private stand(z: number): void {
+    const land = this.world?.height?.(this.x, this.y) ?? 0;
+    this.z = Number.isNaN(z) ? land : Math.max(land, z);
+    this.raised = this.z > land + 0.03;
+  }
+
+  /** The floor his questions are asked from: where his feet are while he's up on something; NaN on the land. */
+  get floor(): number {
+    return this.raised ? this.z : Number.NaN;
   }
 
   /** Remaining waypoints (for tests and debugging). */
@@ -377,13 +423,14 @@ export class Walker {
       this.heading = target.facing;
       this.path = [];
       this.moving = this.running = false;
+      this.stand(target.z ?? Number.NaN);
       return;
     }
     if (Math.hypot(target.x - this.x, target.y - this.y) < 0.05) {
       this.path = [];
       return;
     }
-    const plan = planPath(this, target, obs);
+    const plan = planPath({ x: this.x, y: this.y, z: this.raised ? this.z : undefined }, target, obs);
     this.path = this.world ? this.refine(plan) : plan;
     this.seen = this.world ? this.world.planner.solids.version : -1;
     this.resetProgress();
@@ -392,18 +439,26 @@ export class Walker {
     this.running = pace.running;
   }
 
-  /** The way's legs, each planned round what's solid (a waypoint inside something is passed by). */
+  /**
+   * The way's legs, each planned round what's solid (a waypoint inside something is passed by). Those up on the
+   * keep's stairs and deck (a waypoint with a height) are taken as they are: they're its way up and down.
+   */
   private refine(plan: readonly Point[]): Point[] {
     const { planner, mover, wet } = this.world!;
     const out: Point[] = [];
     let x = this.x;
     let y = this.y;
+    let up = this.raised;
     for (let i = 0; i < plan.length; i++) {
       const p = plan[i]!;
-      if (i < plan.length - 1 && !mover.fits(p.x, p.y, PLAN_MARGIN)) continue;
-      planner.route(x, y, p.x, p.y, mover, wet, out);
+      if (up || raisedAt(p)) out.push(p);
+      else {
+        if (i < plan.length - 1 && !mover.fits(p.x, p.y, PLAN_MARGIN)) continue;
+        planner.route(x, y, p.x, p.y, mover, wet, out);
+      }
       x = p.x;
       y = p.y;
+      up = raisedAt(p);
     }
     return out;
   }
@@ -486,18 +541,24 @@ export class Walker {
     return true;
   }
 
-  /** A step among the solids: move and slide along the way, round whatever is met. */
+  /**
+   * A step among the solids: move and slide along the way, round whatever is met. He steps up onto what's no
+   * higher than his step above his feet (collide.ts' support) and down off it, never more than a step down at once
+   * (he doesn't walk off the deck's edge); up there, everything is asked from where his feet are.
+   */
   private walk(dt: number): boolean {
     const { planner, mover, wet } = this.world!;
+    const solids = planner.solids;
     this.moving = this.path.length > 0;
-    // Something grew (or went) since the way was planned: if it's now in the way ahead, plan round it.
-    const version = planner.solids.version;
+    // Something grew (or went) since the way was planned: if it's now in the way ahead, plan round it (on the land).
+    const version = solids.version;
     if (this.path.length && version !== this.seen) {
       this.seen = version;
       const next = this.path[0]!;
-      if (!planner.clear(this.x, this.y, next.x, next.y, mover, wet, 0)) this.replan();
+      if (!this.raised && !raisedAt(next) && !planner.clear(this.x, this.y, next.x, next.y, mover, wet, 0)) this.replan();
     }
-    let budget = this.pace * dt;
+    // On stairs and steps, at a climber's pace.
+    let budget = this.pace * dt * (this.raised || (this.path[0] && raisedAt(this.path[0])) ? STAIR_PACE : 1);
     for (let guard = 0; budget > 1e-9 && this.path.length && guard < 6; guard++) {
       const next = this.path[0]!;
       const dx = next.x - this.x;
@@ -510,9 +571,25 @@ export class Walker {
       }
       const len = Math.min(budget, d);
       const out = this.scratch;
+      // What stops him is judged from the highest thing a foot of his is up on (a tread is narrower than he is: one
+      // foot on it, he steps to the next), or where his feet are.
+      const land0 = this.world!.height?.(this.x, this.y) ?? 0;
+      const reach = Math.max(this.z, solids.support(this.x, this.y, this.z, mover.step, mover.r));
+      solids.floor = reach > land0 + 0.03 ? reach : Number.NaN;
       mover.slide(this.x, this.y, (dx / d) * len, (dy / d) * len, out);
       const deep = this.world!.deep ?? wet;
       if (deep?.(out.x, out.y)) this.aside(dx / d, dy / d, len, out, deep);
+      // Where his feet are there: on the land, or what he's stepped up onto; not over an edge more than a step down.
+      const land = this.world!.height?.(out.x, out.y) ?? 0;
+      const z = Math.max(land, solids.support(out.x, out.y, this.z, mover.step));
+      solids.floor = Number.NaN;
+      if (this.raised && z < this.z - mover.step - 1e-6) {
+        out.x = this.x;
+        out.y = this.y;
+      } else {
+        this.z = z;
+        this.raised = z > land + 0.03;
+      }
       const mx = out.x - this.x;
       const my = out.y - this.y;
       if (mx * mx + my * my > 1e-12) this.heading = turnTowards(this.heading, Math.atan2(my, mx), 10 * dt);
@@ -546,25 +623,35 @@ export class Walker {
     const before = this.stuck;
     this.stuck += dt;
     const { mover } = this.world!;
-    if (this.path.length === 1 && left < NEAR_ENOUGH && !mover.fits(this.path[0]!.x, this.path[0]!.y)) {
+    if (this.path.length === 1 && left < NEAR_ENOUGH && !this.fitsAt(this.path[0]!)) {
       // Something stands where he was going: this near, he's arrived.
       this.path.length = 0;
       this.resetProgress();
       return;
     }
-    if (before < REPLAN_S && this.stuck >= REPLAN_S) {
+    if (before < REPLAN_S && this.stuck >= REPLAN_S && !this.raised && !raisedAt(this.path[0]!)) {
       this.replan();
       return;
     }
     if (this.stuck > STUCK_S) {
       const next = this.path.shift()!;
-      if (mover.fits(next.x, next.y)) {
+      if (this.fitsAt(next)) {
         this.x = next.x;
         this.y = next.y;
+        this.stand(next.z ?? Number.NaN);
       }
       this.fallbacks++;
       this.resetProgress();
     }
+  }
+
+  /** True where he could stand at a waypoint: nothing solid there, as he'd meet it from its height (on the deck, from the deck). */
+  private fitsAt(p: Point): boolean {
+    const { planner, mover } = this.world!;
+    planner.solids.floor = raisedAt(p) ? p.z! : Number.NaN;
+    const fits = mover.fits(p.x, p.y);
+    planner.solids.floor = Number.NaN;
+    return fits;
   }
 
   /** The step would end in water: turn aside, a little and then more, either way; or stay put. */

@@ -1,5 +1,6 @@
-import type { ExperimentView, WorldEvent } from "@galahad/core/world";
-import { STATIONS } from "@galahad/core/world";
+import type { Examination, RecordingPage, SavedExperiment } from "@galahad/core/experiments";
+import type { ExperimentFrame, ExperimentView, WorldEvent } from "@galahad/core/world";
+import { phaseOf, STATIONS } from "@galahad/core/world";
 import { isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import {
@@ -7,10 +8,10 @@ import {
   emptyWorld,
   ENGINE_LABEL,
   experimentEnded,
-  experimentPlace,
   followWorld,
   metricLabel,
   metricValue,
+  phaseLine,
   STATUS_LABEL,
   STATUS_TONE,
   type StreamStatus,
@@ -26,12 +27,18 @@ import { toast } from "../ui/toast.ts";
 import { type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
 import { createWorldChat } from "./world-chat.ts";
 import { createLook } from "./world-look.ts";
+import { boardFeed, fetchBoard, openBoardSheet } from "./board.ts";
+import { busyPlot, decodeRecording, frameAt, posesAt, type Recording, ReplayClock, replayView, ReplayWorld } from "../lib/replay.ts";
+import { examinationView, type ReplayPanel, replayPanel } from "./world-replay.ts";
 import { FIELD, RUNWAY } from "../world/field-plan.ts";
 import { HALL } from "../world/hall-plan.ts";
 
 /*
  * The SANDBOX: a 3D world where Galahad is seen at work, walking between the
- * places of his keep, and every experiment runs live on its own plot. The world
+ * places of his keep, and every experiment runs live on its own plot: built at
+ * the workshop's bench, tested where it belongs, examined at the observatory. A
+ * saved experiment can be replayed where it was tested (its panel plays, pauses
+ * and scrubs it, its readouts charted). The world
  * itself is a separate bundle (/world.js, three.js on WebGPU or WebGL2), fetched
  * only when this page opens; this page keeps the stream (GET /api/world, signed,
  * reconnecting), the model, and the HUD. A node that doesn't stream the world yet
@@ -43,7 +50,7 @@ import { HALL } from "../world/hall-plan.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 6;
+const WORLD_API = 7;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -113,6 +120,26 @@ export const worldView: View = (root, ctx, { scope }) => {
   let gPressed = 0;
   let timeChoice: TimeChoice = "now";
   let weatherChoice: WeatherChoice = storedWeather();
+  // ---- saved experiments: the replay playing (if any), and examinations fetched for ended ones' panels ----
+  /** The replay playing, if any: the saved experiment, its recording and clock, and its panel. */
+  let replay: {
+    id: string;
+    saved: SavedExperiment;
+    recording: Recording;
+    clock: ReplayClock;
+    view: ExperimentView;
+    first: ExperimentFrame | null;
+    panel: ReplayPanel;
+    timer: ReturnType<typeof setInterval>;
+    /** The last keyframe handed to the renderer. */
+    index: number;
+  } | null = null;
+  const replayWorld = new ReplayWorld();
+  /** The world as the renderer gets it: the live one, with a replay on its plot (the same object while nothing changes). */
+  const shown = () => replayWorld.shown(model, replay?.view ?? null, replay?.first ?? null);
+  let replayLoading: string | null = null;
+  /** Examinations fetched for ended experiments' panels, by id and phase (null: none to be had). */
+  const examinations = new Map<string, Examination | null | "loading">();
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
@@ -217,8 +244,16 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
   setFollow(true);
 
-  /** Looks at what was picked in the selector: following Galahad, an experiment (its panel opens), a site or a station. */
+  /** Looks at what was picked in the selector: following Galahad, an experiment (its panel opens), a site or a station; the chalkboard opens. */
   function lookAt(target: LookTarget): void {
+    if (target.kind === "board") {
+      openBoard();
+      return;
+    }
+    if (target.kind === "saved") {
+      void startReplay(target.id);
+      return;
+    }
     if (target.kind === "experiment") {
       setFollow(false);
       select(target.id);
@@ -237,6 +272,10 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   /** The selector's button: what the view is on now (what's under the camera's focus when not following), and what's running. */
   function updateLook(): void {
+    if (replay && selected === replay.view.id) {
+      look.show(replay.saved.title, "Replay, not live", runningCount(model));
+      return;
+    }
     handle?.where(lookFocus);
     const at = lookingAt(model, { x: lookFocus.focusX, y: lookFocus.focusY }, following, selected);
     look.show(at.label, at.meta, runningCount(model));
@@ -392,8 +431,8 @@ export const worldView: View = (root, ctx, { scope }) => {
     rect(RUNWAY, "#8d9097");
     rect(HALL, "rgb(190 186 178 / 0.95)", MAP_INK);
     for (const s of Object.values(STATIONS)) dot(s.x, s.y, 1.5, "rgb(59 53 80 / 0.75)");
-    // Every experiment where it stands, in its status's colour.
-    for (const e of model.experiments) {
+    // Every experiment where it stands (a replay too), in its status's colour.
+    for (const e of shown().experiments) {
       const [u, v] = at(e.plot.x, e.plot.y);
       const half = Math.max(3 * one, e.plot.size / 2 / span);
       g.fillStyle = MAP_STATUS[e.status];
@@ -439,11 +478,39 @@ export const worldView: View = (root, ctx, { scope }) => {
   let lastSummary = "";
   let summaryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ---------- the chalkboard: its face in the world, and the sheet you draw on ----------
+  const boardChanges = boardFeed();
+  let boardShown = -1;
+  let boardFetching = false;
+  /** The board's state to the world's face whenever its version moves (one fetch at a time; the latest wins). */
+  async function syncBoard(): Promise<void> {
+    if (boardFetching || model.boardVersion < 0 || model.boardVersion === boardShown || demoTimer) return;
+    boardFetching = true;
+    const want = model.boardVersion;
+    try {
+      const board = await fetchBoard(ctx, scope.signal);
+      boardShown = board?.version ?? want;
+      handle?.setBoard(board);
+    } catch {
+      /* the face keeps what it had; the next change tries again */
+    } finally {
+      boardFetching = false;
+    }
+    if (!scope.disposed && model.boardVersion !== boardShown) void syncBoard();
+  }
+  function openBoard(): void {
+    openBoardSheet(ctx, boardChanges);
+  }
+
   function apply(event: WorldEvent): void {
     const next = applyWorldEvent(model, event);
     if (next === model) return;
     model = next;
-    handle?.update(model, event);
+    if (event.type === "board" || (event.type === "hello" && model.boardVersion >= 0)) {
+      boardChanges.announce(model.boardVersion);
+      void syncBoard();
+    }
+    handle?.update(shown(), event);
     if ((event.type === "weather" || event.type === "hello") && weatherChoice === "live") {
       applyWeather();
       showClock();
@@ -563,6 +630,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- the panel: the selected experiment's readouts (the selector lists them all) ----------
   function select(id: string | null): void {
+    if (replay && id !== replay.view.id) stopReplay(false);
     selected = id;
     handle?.select(id);
     if (id) handle?.goTo({ kind: "experiment", id });
@@ -570,6 +638,12 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
 
   function renderPanel(): void {
+    if (replay && selected === replay.view.id) {
+      panel.hidden = false;
+      if (panel.firstChild !== replay.panel.el) replace(panel, replay.panel.el);
+      updateLook();
+      return;
+    }
     const e = selected ? model.experiments.find((x) => x.id === selected) : undefined;
     if (selected && !e) {
       selected = null;
@@ -596,7 +670,7 @@ export const worldView: View = (root, ctx, { scope }) => {
             "p",
             { class: "tiny muted world-facts" },
             [
-              `${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]} ${experimentPlace(e)}`,
+              `${ENGINE_LABEL[e.engine]} · ${phaseLine(e)}`,
               `on ${e.nodeName}`,
               model.frames[e.id] ? `sim ${model.frames[e.id]!.t.toFixed(1)} s` : null,
               `started ${relativeTime(e.startedAt)}`,
@@ -610,12 +684,119 @@ export const worldView: View = (root, ctx, { scope }) => {
             ? h("dl", { class: "kv tnum world-metrics" }, ...metrics.flatMap(([k, v]) => [h("dt", {}, metricLabel(k)), h("dd", { class: "mono" }, metricValue(v))]))
             : h("p", { class: "small muted" }, "No readouts yet."),
           e.summary ? callout(e.status === "failed" ? "danger" : "quiet", e.summary, { title: experimentEnded(e) ? "How it ended" : undefined }) : null,
+          experimentEnded(e) ? examined(e) : null,
         ),
       );
       return;
     }
     panel.hidden = true;
   }
+
+  // ---------- saved experiments: the examination in an ended one's panel, and replays ----------
+
+  /** An ended experiment's examination (fetched once it's ended), charted, with a way to replay it. */
+  function examined(e: ExperimentView): HTMLElement {
+    const key = `${e.id}|${phaseOf(e)}`;
+    const got = examinations.get(key);
+    if (got === undefined) {
+      examinations.set(key, "loading");
+      void ctx.api
+        .post<{ examination: Examination | null }>("/api/experiments/get", { id: e.id })
+        .then((r) => examinations.set(key, r.examination))
+        .catch(() => examinations.set(key, null))
+        .finally(() => !scope.disposed && selected === e.id && renderPanel());
+    }
+    const replayButton = button("Replay", { icon: "repeat", size: "sm", onClick: () => void startReplay(e.id) });
+    if (got === "loading" || got === undefined) return h("p", { class: "small muted" }, phaseOf(e) === "examining" ? "Galahad is examining it at the observatory…" : "Examining…");
+    if (!got) return h("div", { class: "stack tight" }, h("p", { class: "small muted" }, "This node didn't keep it, so there's nothing to examine."));
+    return h("div", { class: "stack tight" }, h("h4", { class: "small strong" }, "What it showed"), examinationView(got).el, h("div", { class: "row" }, replayButton));
+  }
+
+
+  /** Replays a saved experiment where it was tested: fetched, decoded once, then played a keyframe at a time. */
+  async function startReplay(id: string): Promise<void> {
+    if (replayLoading) return;
+    replayLoading = id;
+    toast("Loading the replay…", { tone: "info" });
+    try {
+      const { experiment: saved, examination } = await ctx.api.post<{ experiment: SavedExperiment; examination: Examination | null }>("/api/experiments/get", { id });
+      const busy = busyPlot(model, saved.plot);
+      if (busy) {
+        toast("Its pad is busy", { tone: "warn", description: `“${busy.title}” is being tested there now. Replay it once that's done.` });
+        return;
+      }
+      const pages: RecordingPage[] = [];
+      let from: number | null = 0;
+      // At most a few hundred pages (a runaway's whole recording): never an unbounded loop.
+      for (let i = 0; from !== null && i < 400; i++) {
+        // The archive keeps every frame; a replay asks for 15 a second of simulation (the renderer plays between them).
+        const recPage: RecordingPage = await ctx.api.post<RecordingPage>("/api/experiments/recording", { id, from, hz: 15 });
+        pages.push(recPage);
+        from = recPage.next;
+      }
+      if (scope.disposed) return;
+      const recording = decodeRecording(pages);
+      const n = recording.times.length;
+      const t0 = n ? recording.times[0]! : 0;
+      const t1 = n ? recording.times[n - 1]! : 0;
+      const view = replayView(saved);
+      const first: ExperimentFrame | null = n ? { experiment: view.id, t: t0, poses: posesAt(recording, 0) } : null;
+      stopReplay(false);
+      const clock = new ReplayClock(t0, t1, recording.rate, performance.now());
+      const panelView = replayPanel({
+        saved,
+        examination,
+        t0,
+        t1,
+        rate: recording.rate,
+        frames: n,
+        onPlay: () => replay?.clock.play(performance.now()),
+        onPause: () => replay?.clock.pause(performance.now()),
+        onSeek: (t) => {
+          if (!replay) return;
+          replay.clock.seek(t, performance.now());
+          tickReplay();
+        },
+        onClose: () => stopReplay(true),
+      });
+      replay = { id, saved, recording, clock, view, first, panel: panelView, timer: setInterval(tickReplay, 66), index: 0 };
+      handle?.update(shown(), null);
+      setFollow(false);
+      select(view.id);
+      look.refresh();
+    } catch (error) {
+      toast("Couldn't replay it", { tone: "error", description: errorMessage(error) });
+    } finally {
+      replayLoading = null;
+    }
+  }
+
+  /** The playhead moves on: the keyframe it's reached goes to the renderer (which plays between them, as it does a live test's). */
+  function tickReplay(): void {
+    if (!replay || !handle) return;
+    const now = performance.now();
+    const t = replay.clock.at(now);
+    const rec = replay.recording;
+    if (rec.times.length) {
+      const i = frameAt(rec.times, t);
+      if (i !== replay.index) {
+        replay.index = i;
+        handle.update(shown(), { type: "frame", at: now, frame: { experiment: replay.view.id, t: rec.times[i]!, poses: posesAt(rec, i) } });
+      }
+    }
+    replay.panel.update(t, replay.clock.playing);
+  }
+
+  function stopReplay(close: boolean): void {
+    if (!replay) return;
+    clearInterval(replay.timer);
+    const wasSelected = selected === replay.view.id;
+    replay = null;
+    handle?.update(shown(), null);
+    if (wasSelected && close) select(null);
+    look.refresh();
+  }
+  scope.add(() => stopReplay(false));
 
   // ---------- keyboard ----------
   scope.listen(document, "keydown", (event) => {
@@ -698,6 +879,7 @@ export const worldView: View = (root, ctx, { scope }) => {
           updateLook();
         },
         onLost: (reason) => void lostDevice(reason),
+        onBoard: () => openBoard(),
       });
       if (scope.disposed) {
         mounted.dispose();
@@ -708,7 +890,10 @@ export const worldView: View = (root, ctx, { scope }) => {
       const s = mounted.stats();
       note("start", `${s.backend} · ${s.tier} · dpr ${s.dpr}${restarts ? ` (restart ${restarts})` : ""}`);
       setTimeout(() => void sendReport(), 6000);
-      handle.update(model, null);
+      handle.update(shown(), null);
+      // A new world (a restart) draws the board's face again.
+      boardShown = -1;
+      void syncBoard();
       handle.select(selected);
       handle.setFollow(following);
       handle.setTimeOfDay(timeChoice === "now" ? null : timeChoice);

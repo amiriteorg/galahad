@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, padAt, qrToTerminal, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, padAt, phaseOf, qrToTerminal, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -18,11 +18,13 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
+import { boardLines } from "./board-cli.ts";
+import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, Examination, ExperimentRunResult, ExperimentView, ProjectView, SavedExperiment, SavedSummary, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
+import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 
 const VERSION = "0.1.0";
 
@@ -58,6 +60,15 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
+  board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
+  board history [--limit 20] | board restore <version> | board history forget [-y]
+                                  every version is kept (clearing destroys nothing): list them, put one back, forget them
+  experiments [--all] | experiments show <id> [--code] | experiments pin|unpin <id> | experiments rm <id>
+                                  the experiments this node's SANDBOX showed, every one archived: how each
+                                  ended, its examination (each readout's range, trend, what's notable), its
+                                  code; pin marks a favourite; rm deletes one for good (only you)
+  experiments run <script.py> --title "…" [--engine mujoco|jsbsim|rocketpy|gazebo|custom] [--site field|hall|open]
+                  [--minutes 10] [--on ultra]   build, test and examine one, as Galahad's experiment_run does
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -331,6 +342,9 @@ async function main(): Promise<void> {
       base: { type: "string" },
       branch: { type: "string" },
       draft: { type: "boolean" },
+      engine: { type: "string" },
+      site: { type: "string" },
+      code: { type: "boolean" },
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
@@ -761,19 +775,129 @@ Next:
           console.log(`  ${weatherLine(e.weather)}`);
           for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
-          for (const x of e.experiments) console.log(`  ${x.status.padEnd(8)} ${x.title} ${dim(`${x.engine} · ${whereLine(x)} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
+          for (const x of e.experiments) console.log(`  ${phaseOf(x).padEnd(9)} ${x.title} ${dim(`${x.engine} · ${whereLine(x)} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
+          if (e.saved?.length) console.log(dim(`  ${e.saved.length} saved to replay or examine: galahad experiments`));
         } else if (e.type === "galahad") console.log(`${at} ${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station})`)}`);
         else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
-        else if (e.type === "experiment") console.log(`${at} ${e.experiment.status} ${e.experiment.title} ${dim(`${whereLine(e.experiment)}${e.experiment.summary ? ` · ${e.experiment.summary}` : ""}`)}`);
+        else if (e.type === "experiment") console.log(`${at} ${phaseOf(e.experiment)} ${e.experiment.title} ${dim(`${phaseOf(e.experiment) === "building" ? "at the workshop's bench" : whereLine(e.experiment)}${e.experiment.summary ? ` · ${e.experiment.summary}` : ""}`)}`);
+        else if (e.type === "saved") console.log(`${at} ${dim(`saved experiments: ${e.saved.length} to replay (newest: ${e.saved[0]?.title ?? "none"})`)}`);
         else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
         else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
+        else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : e.change === "restore" ? "restored from its history" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);
         if (!flags.follow) return;
       }
       return;
+    }
+
+    case "board": {
+      // The chalkboard in words: what Galahad and your agents wrote, and your drawing. `board clear` takes it all off.
+      const admin = new Admin(home);
+      if (sub === "clear") {
+        if (!flags.yes && !confirm("Clear the chalkboard (your drawing and everything written on it) for good?")) return;
+        await admin.call("boardClear", {});
+        console.log("Cleared. The board is clean on every device that has it open.");
+        return;
+      }
+      if (sub === "history" && rest[0] === "forget") {
+        if (!flags.yes && !confirm("Forget the board's history (every earlier version and picture) for good? The board itself stays.")) return;
+        await admin.call("boardForget", {});
+        console.log("Forgotten. Its history starts again from the board as it is.");
+        return;
+      }
+      if (sub === "history") {
+        const { versions, more } = await admin.call<{ versions: BoardVersionInfo[]; more: boolean }>("boardHistory", { limit: Number(str("limit") ?? 20) });
+        for (const v of versions) {
+          const who = v.by === "owner" ? `you${v.device ? ` (${v.device})` : ""}` : v.by === "galahad" ? "Galahad" : v.by;
+          console.log(`${bold(String(v.version).padStart(5))}  ${dim(new Date(v.at).toLocaleString())}  ${who} ${v.summary}${v.picture === v.version ? dim("  · picture") : ""}`);
+        }
+        if (more) console.log(dim("… older versions too: --limit to see more"));
+        console.log(dim("galahad board restore <version> puts one back (what's there now is kept too)."));
+        return;
+      }
+      if (sub === "restore") {
+        const version = Number(rest[0]);
+        if (!rest[0] || !Number.isInteger(version)) fail("usage: galahad board restore <version>   (galahad board history lists them)");
+        const { version: now } = await admin.call<{ version: number }>("boardRestore", { version });
+        console.log(`Version ${version} is back on the board (as version ${now}); what was there is kept in its history.`);
+        return;
+      }
+      if (sub) fail("usage: galahad board | galahad board clear [-y] | galahad board history [forget] | galahad board restore <version>");
+      const { head, items, drawing } = boardLines(await admin.call<BoardView>("board"));
+      console.log(bold(head));
+      if (!items.length) console.log(dim("Nothing written on it."));
+      for (const item of items) {
+        console.log(`\n${dim(item.title)}`);
+        for (const line of item.lines) console.log(`  ${line}`);
+      }
+      console.log(`\n${drawing}`);
+      console.log(dim("\nDraw on it in the app: Chalkboard (G then D), or tap the board at the observatory in the SANDBOX."));
+      return;
+    }
+
+    // ---------- saved experiments: what this node's world showed, built, tested and examined ----------
+    case "experiment":
+    case "experiments": {
+      const admin = new Admin(home);
+      const kb = (b: number) => (b < 2 ** 20 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 2 ** 20).toFixed(1)} MB`);
+      const id = rest[0];
+      const needId = () => {
+        if (!id || !/^ex_[A-Za-z0-9_-]{12}$/.test(id)) fail(`usage: galahad experiments ${sub} <ex_…>`);
+        return id!;
+      };
+      if (!sub || sub === "ls" || sub === "list") {
+        const list = await admin.call<{ node: string; experiments: SavedSummary[]; total: number; bytes: number }>("experiments");
+        if (!list.experiments.length) {
+          console.log(`No experiments saved on ${list.node} yet. Galahad builds, tests and examines one with experiment_run; or \`galahad experiments run <script.py> …\`.`);
+          return;
+        }
+        const shown = flags.all ? list.experiments : list.experiments.slice(0, 20);
+        for (const e of shown) console.log(describeSaved(e).replace(/^- (ex_\S+)/, (_, x: string) => `- ${bold(x)}`));
+        console.log(dim(`\n${list.total} saved on ${list.node} (every one kept) · ${kb(list.bytes)}${list.total > shown.length ? ` · --all lists every one` : ""} · galahad experiments show <id>`));
+        return;
+      }
+      if (sub === "show") {
+        const { experiment, examination, code } = await admin.call<{ experiment: SavedExperiment; examination: Examination | null; code?: { name: string; source: string } | null }>("experiment", { id: needId(), ...(flags.code ? { code: true } : {}) });
+        const [head, ...body] = describeExamination(experiment, examination).split("\n");
+        console.log(bold(head!));
+        for (const line of body) console.log(line.startsWith("- ") ? `  ${line}` : line);
+        console.log(dim(`${kb(experiment.bytes)} on ${experiment.nodeName} · replay it in the app's SANDBOX (the selector's Saved experiments)`));
+        if (flags.code) console.log(code ? `\n${dim(`--- ${code.name} ---`)}\n${code.source}` : dim("\nNo code was kept with it."));
+        return;
+      }
+      if (sub === "pin" || sub === "unpin") {
+        const { experiment } = await admin.call<{ experiment: SavedSummary }>("pinExperiment", { id: needId(), pinned: sub === "pin" });
+        console.log(experiment.pinned ? `A favourite: ${experiment.title} is offered first to replay.` : `No longer a favourite: ${experiment.title} (it's kept all the same).`);
+        return;
+      }
+      if (sub === "rm" || sub === "delete") {
+        const target = needId();
+        if (!flags.yes && !confirm(`Delete saved experiment ${target} (its recording, readouts and code) for good?`)) return;
+        await admin.call("deleteExperiment", { id: target });
+        console.log(`Deleted ${target}.`);
+        return;
+      }
+      if (sub === "run") {
+        const file = rest[0];
+        const engine = str("engine") ?? "custom";
+        if (!file || !str("title")) fail('usage: galahad experiments run <script.py> --title "…" [--engine mujoco|jsbsim|rocketpy|gazebo|custom] [--site field|hall|open] [--minutes 10] [--on ultra]');
+        const script = readFileSync(file!, "utf8");
+        console.log(dim(`Building "${str("title")}" in a fresh sandbox (${engine === "gazebo" ? "Gazebo" : "the Lab"}); watch it in the app's SANDBOX…`));
+        const out = await admin.call<ExperimentRunResult>("runExperiment", {
+          title: str("title"),
+          engine,
+          script,
+          ...(str("site") ? { site: str("site") } : {}),
+          ...(str("minutes") ? { minutes: Number(str("minutes")) } : {}),
+          ...(str("on") ? { on: str("on") } : {}),
+        });
+        console.log(describeRun(out));
+        return;
+      }
+      fail("usage: galahad experiments [ls] | show <id> [--code] | pin <id> | unpin <id> | rm <id> | run <script.py> --title … — see `galahad help`");
     }
 
     case "chats": {

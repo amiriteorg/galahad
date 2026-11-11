@@ -1,4 +1,4 @@
-import { COURSE_LINE, COURSE_RADII } from "./field-plan.ts";
+import { BRIDGE, COURSE_LINE, COURSE_RADII } from "./field-plan.ts";
 import { type Route, route, type RouteSample, routeSample, sample } from "./field-route.ts";
 
 /*
@@ -41,7 +41,7 @@ const logs: Obstacle[] = [
 ];
 
 /** The bridge on the east side (heading north): an earth ramp up, a plank deck on trestles, a ramp down. */
-export const BRIDGE = { x: -116, y: 22, heading: NORTH, half: 1.65, up: 3.6, deck: 5.3, down: 3.6, height: 0.9 };
+export { BRIDGE };
 const bridge: Obstacle = {
   kind: "ramp",
   x: BRIDGE.x,

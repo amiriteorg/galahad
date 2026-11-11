@@ -111,6 +111,9 @@ export class FootPlanner {
   phase = 0;
   private readonly fromX: Float64Array;
   private readonly fromY: Float64Array;
+  /** The height a swinging foot left from, and how far the ground on its way stood above the line to where it lands. */
+  private readonly fromZ: Float64Array;
+  private readonly over: Float64Array;
   private readonly toX: Float64Array;
   private readonly toY: Float64Array;
   private readonly settle: Float64Array;
@@ -134,11 +137,42 @@ export class FootPlanner {
     this.lift = f();
     this.fromX = f();
     this.fromY = f();
+    this.fromZ = f();
+    this.over = f();
     this.toX = f();
     this.toY = f();
     this.settle = f();
     this.planted = new Uint8Array(this.n).fill(1);
     this.wasStance = new Uint8Array(this.n).fill(1);
+  }
+
+  /**
+   * A swinging foot's height, `k` of the way (eased) and `s` of the time from where it left to where it lands: along
+   * the line from the one height to the other, lifted at mid-swing by its lift and by however far the ground on the
+   * way stands above that line (a step's edge), so it clears the edge rather than popping up it; never below the
+   * ground it's over. On even ground, sloping or not: its lift over the ground.
+   */
+  private swingZ(i: number, k: number, s: number, ground: (x: number, y: number) => number, scale = 1): number {
+    const from = this.fromZ[i]!;
+    const to = ground(this.toX[i]!, this.toY[i]!);
+    const line = from + (to - from) * k + Math.sin(s * Math.PI) * (this.liftHeight * scale + this.over[i]!);
+    return Math.max(ground(this.x[i]!, this.y[i]!), line);
+  }
+
+  /** As a foot lifts: how far the ground on its way stands above the line from where it is to where it's going (a step's edge; 0 on even ground). */
+  private measure(i: number, ground: (x: number, y: number) => number): void {
+    const fx = this.fromX[i]!;
+    const fy = this.fromY[i]!;
+    const tx = this.toX[i]!;
+    const ty = this.toY[i]!;
+    const from = this.fromZ[i]!;
+    const to = ground(tx, ty);
+    let over = 0;
+    for (let j = 1; j < 8; j++) {
+      const u = j / 8;
+      over = Math.max(over, ground(fx + (tx - fx) * u, fy + (ty - fy) * u) - (from + (to - from) * u));
+    }
+    this.over[i] = over;
   }
 
   /** Where foot i rests under a body at (bx, by) facing `heading`. */
@@ -157,7 +191,7 @@ export class FootPlanner {
     for (let i = 0; i < this.n; i++) {
       this.x[i] = this.toX[i] = this.fromX[i] = this.restX(i, bx, heading);
       this.y[i] = this.toY[i] = this.fromY[i] = this.restY(i, by, heading);
-      this.z[i] = ground(this.x[i]!, this.y[i]!);
+      this.z[i] = this.fromZ[i] = ground(this.x[i]!, this.y[i]!);
       this.lift[i] = 0;
       this.planted[i] = 1;
       this.wasStance[i] = 1;
@@ -221,6 +255,7 @@ export class FootPlanner {
           if (this.wasStance[i]) {
             this.fromX[i] = this.x[i]!;
             this.fromY[i] = this.y[i]!;
+            this.fromZ[i] = this.z[i]!;
           }
           const s = (u - this.duty) / (1 - this.duty);
           // Land a half-stance ahead of the hip, where the hip will be when it lands.
@@ -230,11 +265,12 @@ export class FootPlanner {
           const uy = vy / speed;
           this.toX[i] = this.restX(i, bx, heading) + vx * left + ux * ahead;
           this.toY[i] = this.restY(i, by, heading) + vy * left + uy * ahead;
+          if (this.wasStance[i]) this.measure(i, ground);
           const k = smooth(s);
           this.x[i] = this.fromX[i]! + (this.toX[i]! - this.fromX[i]!) * k;
           this.y[i] = this.fromY[i]! + (this.toY[i]! - this.fromY[i]!) * k;
           this.lift[i] = Math.sin(s * Math.PI) * this.liftHeight;
-          this.z[i] = ground(this.x[i]!, this.y[i]!) + this.lift[i]!;
+          this.z[i] = this.swingZ(i, k, s, ground);
           this.planted[i] = 0;
           anyLifted = true;
         }
@@ -257,6 +293,7 @@ export class FootPlanner {
       if (stepping >= 0) {
         this.fromX[stepping] = this.x[stepping]!;
         this.fromY[stepping] = this.y[stepping]!;
+        this.fromZ[stepping] = this.z[stepping]!;
         this.settle[stepping] = 1e-6;
       }
     }
@@ -273,11 +310,12 @@ export class FootPlanner {
       this.settle[i] = s >= 1 ? 0 : s;
       this.toX[i] = this.restX(i, bx, heading);
       this.toY[i] = this.restY(i, by, heading);
+      if (s <= dt / 0.3 + 1e-9) this.measure(i, ground);
       const k = smooth(s);
       this.x[i] = this.fromX[i]! + (this.toX[i]! - this.fromX[i]!) * k;
       this.y[i] = this.fromY[i]! + (this.toY[i]! - this.fromY[i]!) * k;
       this.lift[i] = s >= 1 ? 0 : Math.sin(s * Math.PI) * this.liftHeight * 0.6;
-      this.z[i] = ground(this.x[i]!, this.y[i]!) + this.lift[i]!;
+      this.z[i] = s >= 1 ? ground(this.x[i]!, this.y[i]!) : this.swingZ(i, k, s, ground, 0.6);
       this.planted[i] = s >= 1 ? 1 : 0;
       if (!this.planted[i]) anyLifted = true;
     }

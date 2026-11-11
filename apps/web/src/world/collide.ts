@@ -38,7 +38,11 @@ export interface Circle {
   r: number;
 }
 
-/** How a kind of walker is built: its radius, how high it stands, what it steps over, and who gives way (the lighter). */
+/**
+ * How a kind of walker is built: its radius, how high it stands, the most it steps up onto (or down from), and who
+ * gives way (the lighter). A step is about a walker's knee height: Galahad's knee is 0.53 m up (knight.ts: hips at
+ * 1.02, a 0.44 m thigh), the dog's 0.2 m (dog.ts).
+ */
 export interface Build {
   r: number;
   height: number;
@@ -50,9 +54,9 @@ export interface Build {
 export const BUILDS = {
   /** A site's machine on the move (a rover, a cart, a taxiing aircraft): nothing moves it. */
   machine: { r: 1, height: 3, step: 0, mass: 1e9 },
-  galahad: { r: 0.45, height: 2.5, step: 0.35, mass: 100 },
+  galahad: { r: 0.45, height: 2.5, step: 0.5, mass: 100 },
   deer: { r: 0.5, height: 1.9, step: 0.3, mass: 60 },
-  dog: { r: 0.32, height: 0.75, step: 0.15, mass: 20 },
+  dog: { r: 0.32, height: 0.75, step: 0.2, mass: 20 },
   microduck: { r: 0.3, height: 0.9, step: 0.1, mass: 4 },
   rabbit: { r: 0.2, height: 0.5, step: 0.12, mass: 3 },
   duck: { r: 0.22, height: 0.4, step: 0.05, mass: 2 },
@@ -69,6 +73,7 @@ const key = (cx: number, cy: number): number => ((cx & 0x7fff) << 15) | (cy & 0x
 // The narrow phase's answer (module scratch: no allocation).
 let nX = 0;
 let nY = 0;
+let nZ = 0;
 let spanIn = 0;
 let spanOut = 0;
 const NONE = 2;
@@ -485,6 +490,37 @@ export class Solids {
     return n;
   }
 
+  // ---------- the camera's view of them ----------
+
+  private viewX = Number.NaN;
+  private viewY = Number.NaN;
+  private camX = Number.NaN;
+  private camY = Number.NaN;
+  private camPad = 0;
+
+  /**
+   * The camera's questions (its arm and its moves: `span`, `slide3`, `blocked3` and those built on them) see
+   * whatever stands above its ground (a deck, eaves, a crown, a lookout) as reaching down to the ground, unless it's
+   * over (x, y), where he is, or the camera, a ball of radius `pad` at (cx, cy), is under it or within its reach
+   * (it's on its way out from under what he's left; coming from outside, it stops farther off than that): the camera
+   * never goes under something he isn't under too, so it never wedges in the corner beneath. NaN: off (as solids
+   * really are).
+   */
+  cameraAt(x: number, y: number, cx = Number.NaN, cy = Number.NaN, pad = 0): void {
+    this.viewX = x;
+    this.viewY = y;
+    this.camX = cx;
+    this.camY = cy;
+    this.camPad = pad;
+  }
+
+  /** How far above its ground solid i's underside is, as the camera's questions see it. */
+  private under(i: number): number {
+    const lo = this.lo[i]!;
+    if (lo <= 0 || Number.isNaN(this.viewX)) return lo;
+    return this.gap(i, this.viewX, this.viewY) <= 0 || this.gap(i, this.camX, this.camY) < this.camPad ? lo : 0;
+  }
+
   // ---------- one solid ----------
 
   /** How far (x, y) is outside a solid's footprint; negative inside it (by how deep). */
@@ -509,9 +545,39 @@ export class Solids {
     return up === 0 ? side : side === 0 ? up : Math.hypot(side, up);
   }
 
-  /** True when a solid stands in the way of a walker `height` tall that steps over `step`. */
+  /**
+   * Where the walker asking stands (world z: its feet), or NaN: on each solid's own ground, as walkers that keep to
+   * the land ask. One that climbs (Galahad: Walker) sets it round its own questions, and clears it after.
+   */
+  floor = Number.NaN;
+
+  /**
+   * True when a solid stands in the way of a walker `height` tall that steps up `step`: its top is more than a step
+   * above the walker's feet, and its underside lower than its head (on its own ground, or the walker's `floor`).
+   */
   blocks(i: number, step: number, height: number): boolean {
-    return (this.mask[i]! & WALK) !== 0 && this.hi[i]! > step && this.lo[i]! < height;
+    if (!(this.mask[i]! & WALK)) return false;
+    if (Number.isNaN(this.floor)) return this.hi[i]! > step && this.lo[i]! < height;
+    const base = this.base[i]!;
+    return base + this.hi[i]! > this.floor + step && base + this.lo[i]! < this.floor + height;
+  }
+
+  /**
+   * What a walker whose feet are at z, stepping up to `step`, stands on at (x, y): the top of the highest thing
+   * walkers meet under that point that's no more than a step above its feet (a tread, a deck, a flat rock); −Infinity:
+   * nothing (it's on the land). With `r`, under any part of a circle that wide: what a foot is already up on.
+   */
+  support(x: number, y: number, z: number, step: number, r = 0): number {
+    const n = this.around(x - r, y - r, x + r, y + r);
+    let top = Number.NEGATIVE_INFINITY;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & WALK)) continue;
+      const t = this.base[i]! + this.hi[i]!;
+      if (t > z + step || t <= top || this.gap(i, x, y) > (r > 0 ? r - SKIN * 2 : 0)) continue;
+      top = t;
+    }
+    return top;
   }
 
   /** The way out of solid i for a circle of radius r at (x, y): a push into (nX, nY) of the length returned (0: not touching). */
@@ -618,7 +684,7 @@ export class Solids {
    * it; `hit` is what did. Boxes are grown with square corners here: a little room to spare.
    */
   view(ax: number, ay: number, az: number, bx: number, by: number, bz: number, sight: number, room = sight, inside = false, soft = false): number {
-    const n = this.along(ax, ay, bx, by, Math.max(sight, room));
+    const n = this.along(ax, ay, bx, by, Math.max(sight, room) * Math.SQRT2);
     let best = 1;
     this.hit = NOTHING;
     for (let k = 0; k < n; k++) {
@@ -643,11 +709,26 @@ export class Solids {
   }
 
   /**
+   * Along the camera's arm from A to B: the share (from `lo`) where a ball of radius `room` first meets a VIEW solid
+   * (1 when it meets none): how far out it can go without passing anything. One it's leaving by `lo` doesn't count.
+   */
+  firstAlong(ax: number, ay: number, az: number, bx: number, by: number, bz: number, room: number, lo: number): number {
+    const n = this.along(ax, ay, bx, by, room * Math.SQRT2);
+    let best = 1;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & VIEW) || !this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, room) || spanOut <= lo) continue;
+      if (spanIn < best) best = Math.max(lo, spanIn);
+    }
+    return best;
+  }
+
+  /**
    * Along the camera's arm from A to B: the share (lo..hi) nearest `want` where a ball of radius `room` is
    * inside no VIEW solid, or −1 if there's none. Allocates nothing (the spans are kept in the world's scratch).
    */
   clearAlong(ax: number, ay: number, az: number, bx: number, by: number, bz: number, room: number, want: number, lo: number, hi: number): number {
-    const n = this.along(ax, ay, bx, by, room);
+    const n = this.along(ax, ay, bx, by, room * Math.SQRT2);
     let m = 0;
     const spans = this.spans;
     for (let k = 0; k < n && m < spans.length / 2; k++) {
@@ -685,6 +766,106 @@ export class Solids {
     return best;
   }
 
+  /**
+   * True when a ball of radius `pad` at (x, y, z) is inside a solid the camera keeps out of (VIEW), each grown by
+   * `pad` with square corners, as the camera's other questions grow them.
+   */
+  blocked3(x: number, y: number, z: number, pad: number): boolean {
+    const reach = pad * Math.SQRT2;
+    const n = this.around(x - reach, y - reach, x + reach, y + reach);
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & VIEW)) continue;
+      const base = this.base[i]!;
+      if (z <= base + this.under(i) - pad || z >= base + this.hi[i]! + pad) continue;
+      const dx = x - this.px[i]!;
+      const dy = y - this.py[i]!;
+      if (this.shape[i] === CIRCLE) {
+        const R = this.hx[i]! + pad;
+        if (dx * dx + dy * dy < R * R) return true;
+        continue;
+      }
+      const c = this.cos[i]!;
+      const s = this.sin[i]!;
+      if (Math.abs(dx * c + dy * s) < this.hx[i]! + pad && Math.abs(-dx * s + dy * c) < this.hy[i]! + pad) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A ball of radius `pad` at (x, y, z) that's inside something the camera keeps out of, moved out the shortest way
+   * (through a side, the top or the underside of each, a few times over): into `out`; true when it ends clear.
+   */
+  pushOut3(x: number, y: number, z: number, pad: number, out: { x: number; y: number; z: number }): boolean {
+    for (let pass = 0; pass < 4; pass++) {
+      if (!this.blocked3(x, y, z, pad)) {
+        out.x = x;
+        out.y = y;
+        out.z = z;
+        return true;
+      }
+      const n = this.count;
+      for (let k = 0; k < n; k++) {
+        const i = this.found[k]!;
+        if (!(this.mask[i]! & VIEW)) continue;
+        const below = z - (this.base[i]! + this.under(i) - pad);
+        const above = this.base[i]! + this.hi[i]! + pad - z;
+        if (below <= 0 || above <= 0) continue;
+        let depth = below;
+        let wx = 0;
+        let wy = 0;
+        let wz = -1;
+        if (above < depth) {
+          depth = above;
+          wz = 1;
+        }
+        const dx = x - this.px[i]!;
+        const dy = y - this.py[i]!;
+        if (this.shape[i] === CIRCLE) {
+          const d = Math.hypot(dx, dy);
+          const side = this.hx[i]! + pad - d;
+          if (side <= 0) continue;
+          if (side < depth && d > 1e-9) {
+            depth = side;
+            wx = dx / d;
+            wy = dy / d;
+            wz = 0;
+          }
+        } else {
+          const c = this.cos[i]!;
+          const s = this.sin[i]!;
+          const lx = dx * c + dy * s;
+          const ly = -dx * s + dy * c;
+          const sx = this.hx[i]! + pad - Math.abs(lx);
+          const sy = this.hy[i]! + pad - Math.abs(ly);
+          if (sx <= 0 || sy <= 0) continue;
+          if (sx < depth) {
+            depth = sx;
+            const u = lx >= 0 ? 1 : -1;
+            wx = u * c;
+            wy = u * s;
+            wz = 0;
+          }
+          if (sy < depth) {
+            depth = sy;
+            const u = ly >= 0 ? 1 : -1;
+            wx = -u * s;
+            wy = u * c;
+            wz = 0;
+          }
+        }
+        x += wx * (depth + SKIN);
+        y += wy * (depth + SKIN);
+        z += wz * (depth + SKIN);
+        break;
+      }
+    }
+    out.x = x;
+    out.y = y;
+    out.z = z;
+    return !this.blocked3(x, y, z, pad);
+  }
+
   /** How far along the segment from A to B (0..1) it leaves solid i grown by `pad` (0: it's never inside it). */
   leaves(i: number, ax: number, ay: number, az: number, bx: number, by: number, bz: number, pad: number): number {
     return this.span(i, ax, ay, az, bx - ax, by - ay, bz - az, pad) ? Math.min(1, spanOut) : 0;
@@ -695,7 +876,7 @@ export class Solids {
     let enter = Number.NEGATIVE_INFINITY;
     let exit = Number.POSITIVE_INFINITY;
     // Level with it.
-    const z0 = this.base[i]! + this.lo[i]! - pad;
+    const z0 = this.base[i]! + this.under(i) - pad;
     const z1 = this.base[i]! + this.hi[i]! + pad;
     if (Math.abs(dz) < 1e-12) {
       if (az < z0 || az > z1) return false;
@@ -759,6 +940,274 @@ export class Solids {
     spanIn = enter;
     spanOut = exit;
     return true;
+  }
+
+  /**
+   * Where a point moving from A along D first enters solid i grown by `pad` (square corners, as `span`): the
+   * share of D (0..1), or NONE; sets the face it meets (nX, nY, nZ). One it starts inside doesn't stop it.
+   */
+  private enter(i: number, ax: number, ay: number, az: number, dx: number, dy: number, dz: number, pad: number): number {
+    let enter = Number.NEGATIVE_INFINITY;
+    let exit = Number.POSITIVE_INFINITY;
+    // Which bound it crosses last on the way in: 0 the bottom or top, 1 the circle, 2 and 3 a box's own x and y.
+    let face = -1;
+    let sign = 0;
+    const z0 = this.base[i]! + this.under(i) - pad;
+    const z1 = this.base[i]! + this.hi[i]! + pad;
+    if (Math.abs(dz) < 1e-12) {
+      if (az <= z0 || az >= z1) return NONE;
+    } else {
+      const u0 = (z0 - az) / dz;
+      const u1 = (z1 - az) / dz;
+      enter = Math.min(u0, u1);
+      exit = Math.max(u0, u1);
+      face = 0;
+      sign = dz > 0 ? -1 : 1;
+    }
+    const px = ax - this.px[i]!;
+    const py = ay - this.py[i]!;
+    if (this.shape[i] === CIRCLE) {
+      const R = this.hx[i]! + pad;
+      const a = dx * dx + dy * dy;
+      const b = px * dx + py * dy;
+      const c = px * px + py * py - R * R;
+      if (a < 1e-12) {
+        if (c >= 0) return NONE;
+      } else {
+        const disc = b * b - a * c;
+        if (disc <= 0) return NONE;
+        const root = Math.sqrt(disc);
+        const t0 = (-b - root) / a;
+        const t1 = (-b + root) / a;
+        if (t0 > enter) {
+          enter = t0;
+          face = 1;
+        }
+        if (t1 < exit) exit = t1;
+      }
+    } else {
+      const cos = this.cos[i]!;
+      const sin = this.sin[i]!;
+      const lx = px * cos + py * sin;
+      const ly = -px * sin + py * cos;
+      const ldx = dx * cos + dy * sin;
+      const ldy = -dx * sin + dy * cos;
+      for (let axis = 0; axis < 2; axis++) {
+        const p = axis ? ly : lx;
+        const d = axis ? ldy : ldx;
+        const e = (axis ? this.hy[i]! : this.hx[i]!) + pad;
+        if (Math.abs(d) < 1e-12) {
+          if (Math.abs(p) >= e) return NONE;
+          continue;
+        }
+        const t0 = (-e - p) / d;
+        const t1 = (e - p) / d;
+        const lo = Math.min(t0, t1);
+        if (lo > enter) {
+          enter = lo;
+          face = 2 + axis;
+          sign = d > 0 ? -1 : 1;
+        }
+        exit = Math.min(exit, Math.max(t0, t1));
+      }
+    }
+    if (enter >= exit || enter > 1 || exit <= 0) return NONE;
+    // Starting on its surface (within a skin, as a slide leaves it, or rounding does): stopped at once if heading
+    // in through the face it's on. Deeper in, it's on its way out: nothing stops it.
+    if (enter < 0 || face < 0) return this.onFace(i, ax, ay, az, dx, dy, dz, pad);
+    if (face === 0) {
+      nX = 0;
+      nY = 0;
+      nZ = sign;
+    } else if (face === 1) {
+      const R = this.hx[i]! + pad;
+      nX = (px + dx * enter) / R;
+      nY = (py + dy * enter) / R;
+      nZ = 0;
+    } else {
+      const cos = this.cos[i]!;
+      const sin = this.sin[i]!;
+      const ux = face === 2 ? sign : 0;
+      const uy = face === 3 ? sign : 0;
+      nX = ux * cos - uy * sin;
+      nY = ux * sin + uy * cos;
+      nZ = 0;
+    }
+    return enter;
+  }
+
+  /** A point inside solid i grown by `pad` (square corners): 0 with the nearest face's normal if it's within a skin of it and heading in, else NONE. */
+  private onFace(i: number, ax: number, ay: number, az: number, dx: number, dy: number, dz: number, pad: number): number {
+    // The shallowest way out: through the bottom, the top, or a side.
+    const below = az - (this.base[i]! + this.under(i) - pad);
+    const above = this.base[i]! + this.hi[i]! + pad - az;
+    let depth = below;
+    let wx = 0;
+    let wy = 0;
+    let wz = -1;
+    if (above < depth) {
+      depth = above;
+      wz = 1;
+    }
+    const px = ax - this.px[i]!;
+    const py = ay - this.py[i]!;
+    if (this.shape[i] === CIRCLE) {
+      const d = Math.hypot(px, py);
+      const side = this.hx[i]! + pad - d;
+      if (side < depth && d > 1e-9) {
+        depth = side;
+        wx = px / d;
+        wy = py / d;
+        wz = 0;
+      }
+    } else {
+      const cos = this.cos[i]!;
+      const sin = this.sin[i]!;
+      const lx = px * cos + py * sin;
+      const ly = -px * sin + py * cos;
+      const sx = this.hx[i]! + pad - Math.abs(lx);
+      const sy = this.hy[i]! + pad - Math.abs(ly);
+      if (sx < depth) {
+        depth = sx;
+        const ux = lx >= 0 ? 1 : -1;
+        wx = ux * cos;
+        wy = ux * sin;
+        wz = 0;
+      }
+      if (sy < depth) {
+        depth = sy;
+        const uy = ly >= 0 ? 1 : -1;
+        wx = -uy * sin;
+        wy = uy * cos;
+        wz = 0;
+      }
+    }
+    if (depth > SKIN * 2 || dx * wx + dy * wy + dz * wz >= 0) return NONE;
+    nX = wx;
+    nY = wy;
+    nZ = wz;
+    return 0;
+  }
+
+  /**
+   * The camera's move-and-slide: a ball of radius `pad` at (x, y, z) wants to move by (dx, dy, dz) among the
+   * solids it keeps out of (VIEW). It goes as far as it can, slides along what it meets with what's left
+   * (round a post, along a wall, under a deck, over a roof) and stops in a crease; it never enters anything,
+   * so it never jumps through one either. Into `out`; true when it met something. Allocates nothing.
+   */
+  slide3(x: number, y: number, z: number, dx: number, dy: number, dz: number, pad: number, out: { x: number; y: number; z: number }): boolean {
+    const len = Math.hypot(dx, dy, dz);
+    const reach = pad * Math.SQRT2 + len + SKIN * 4;
+    const n = this.around(x - reach, y - reach, x + reach, y + reach);
+    let met = false;
+    // Each leg is checked to end clear (a skin's push off one face can land in a neighbour's, in a tight corner): one
+    // that doesn't is undone, and it stops there. (Unless it began inside something: then it's let out.)
+    const checked = !this.amid(n, x, y, z, pad * 0.98);
+    const wantX = dx;
+    const wantY = dy;
+    const wantZ = dz;
+    // The faces met so far (a slide that turns back into one stops: a crease).
+    let ax = 0;
+    let ay = 0;
+    let az = 0;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    for (let turn = 0; turn < 4; turn++) {
+      const left = Math.hypot(dx, dy, dz);
+      if (left < 1e-9) break;
+      let best = NONE;
+      let wx = 0;
+      let wy = 0;
+      let wz = 0;
+      for (let k = 0; k < n; k++) {
+        const i = this.found[k]!;
+        if (!(this.mask[i]! & VIEW)) continue;
+        const t = this.enter(i, x, y, z, dx, dy, dz, pad);
+        if (t >= best) continue;
+        best = t;
+        wx = nX;
+        wy = nY;
+        wz = nZ;
+      }
+      if (best === NONE) {
+        if (!checked || !this.amid(n, x + dx, y + dy, z + dz, pad * 0.98)) {
+          x += dx;
+          y += dy;
+          z += dz;
+        }
+        break;
+      }
+      met = true;
+      // Up to the face, and a skin off it (along its normal: a glancing approach would leave it touching).
+      const fx = x + dx * best + wx * SKIN;
+      const fy = y + dy * best + wy * SKIN;
+      const fz = z + dz * best + wz * SKIN;
+      if (checked && this.amid(n, fx, fy, fz, pad * 0.98)) break;
+      x = fx;
+      y = fy;
+      z = fz;
+      // What's left, along the face.
+      let rx = dx * (1 - best);
+      let ry = dy * (1 - best);
+      let rz = dz * (1 - best);
+      const into = rx * wx + ry * wy + rz * wz;
+      if (into < 0) {
+        rx -= wx * into;
+        ry -= wy * into;
+        rz -= wz * into;
+      }
+      // Turned back into the face met before: along the crease between the two instead.
+      if (turn > 0 && rx * ax + ry * ay + rz * az < -1e-9) {
+        let ex = ay * wz - az * wy;
+        let ey = az * wx - ax * wz;
+        let ez = ax * wy - ay * wx;
+        const el = Math.hypot(ex, ey, ez);
+        if (el < 1e-6) break;
+        ex /= el;
+        ey /= el;
+        ez /= el;
+        const along = rx * ex + ry * ey + rz * ez;
+        rx = ex * along;
+        ry = ey * along;
+        rz = ez * along;
+      }
+      if (rx * wantX + ry * wantY + rz * wantZ <= 0 || (turn > 1 && rx * bx + ry * by + rz * bz < -1e-9)) break;
+      bx = ax;
+      by = ay;
+      bz = az;
+      ax = wx;
+      ay = wy;
+      az = wz;
+      dx = rx;
+      dy = ry;
+      dz = rz;
+    }
+    out.x = x;
+    out.y = y;
+    out.z = z;
+    return met;
+  }
+
+  /** True when (x, y, z) is inside one of the first `n` solids gathered in `found` that the camera keeps out of, each grown by `pad` (as blocked3, without gathering). */
+  private amid(n: number, x: number, y: number, z: number, pad: number): boolean {
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & VIEW)) continue;
+      const base = this.base[i]!;
+      if (z <= base + this.under(i) - pad || z >= base + this.hi[i]! + pad) continue;
+      const dx = x - this.px[i]!;
+      const dy = y - this.py[i]!;
+      if (this.shape[i] === CIRCLE) {
+        const R = this.hx[i]! + pad;
+        if (dx * dx + dy * dy < R * R) return true;
+        continue;
+      }
+      const c = this.cos[i]!;
+      const s = this.sin[i]!;
+      if (Math.abs(dx * c + dy * s) < this.hx[i]! + pad && Math.abs(-dx * s + dy * c) < this.hy[i]! + pad) return true;
+    }
+    return false;
   }
 
   /** The top of the tallest thing under (x, y) that's no higher than `step` above its ground (world z); −Infinity: none. */
@@ -935,6 +1384,16 @@ export class Solids {
         }
       }
       if (!moved) break;
+    }
+    // Solids have the last word: a push out of a heavier walker never leaves it inside one (it may still touch the
+    // walker, which separate() parts next).
+    for (let k = 0; k < this.count; k++) {
+      const i = this.found[k]!;
+      if (!this.blocks(i, step, height)) continue;
+      const depth = this.push(i, x, y, r);
+      if (depth <= 0) continue;
+      x += nX * (depth + SKIN / 2);
+      y += nY * (depth + SKIN / 2);
     }
     out.x = x;
     out.y = y;

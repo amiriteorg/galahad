@@ -15,6 +15,15 @@ Coordinates are metres, z up (x east, y north); orientations are unit quaternion
 (w, x, y, z). Frames are paced to `speed` times real time so the world shows the
 motion as it happened (speed=0: as fast as it computes).
 
+An experiment has phases, and the module says them (`ex.phase`): building from the
+moment it starts (Galahad puts it together at the workshop's bench), testing from
+its first frame (where it belongs: a pad of the proving ground, a test cell, open
+land), examining once it ends (at the observatory). While someone watches the
+world, the node asks for the first frame to wait a few seconds (at most 30) while
+it's shown being built; with nobody watching it doesn't wait. The script that
+runs it (`__main__`, up to 64 KB) is kept with it on the node. A node that doesn't
+know phases is spoken to as before.
+
 Inside a Galahad sandbox with a network it streams to the node (GALAHAD_WORLD,
 GALAHAD_TOKEN); anywhere else the simulation still runs, unseen. Standard library
 only; numpy and the simulators are needed only by their adapters.
@@ -23,6 +32,7 @@ only; numpy and the simulators are needed only by their adapters.
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
@@ -158,8 +168,28 @@ def _quat_from_matrix(m):
 
 # ---------- an experiment ----------
 
+CODE_MAX = 64 * 1024
+
+
+def _main_source():
+    """The running script (`__main__`), when it's a small file: its name and text."""
+    path = getattr(sys.modules.get("__main__"), "__file__", None)
+    try:
+        if not path or not os.path.isfile(path) or os.path.getsize(path) > CODE_MAX:
+            return None
+        with open(path, encoding="utf-8", errors="replace") as f:
+            source = f.read(CODE_MAX)
+    except OSError:
+        return None
+    name = re.sub(r"[^A-Za-z0-9._ -]", "_", os.path.basename(path))[:120] or "main.py"
+    return name, source
+
+
 class Experiment:
-    """One simulation on its plot of the world. Use it as a context manager: it ends when the block does (failed, if it raised)."""
+    """One simulation on its plot of the world. Use it as a context manager: it ends when the block does (failed, if it raised).
+
+    `phase` is where it is: "building" until its first frame, "testing" until it ends, then "examining".
+    """
 
     def __init__(self, title, engine="custom", scene=(), extent=None, plot=None, speed=1.0, site=None):
         self.title = title
@@ -167,12 +197,15 @@ class Experiment:
         self.metrics = {}
         self.id = None
         self.scale = 1.0
+        self.phase = "building"
         self._buffer = []
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._ended = False
         self._clock = None
         self._warned = False
+        # Set when the node knows phases: until when (monotonic) the first frame waits while it's built.
+        self._build_until = None
         self.live = bool(os.environ.get("GALAHAD_WORLD") and os.environ.get("GALAHAD_TOKEN"))
         if not self.live:
             _say("not in a Galahad sandbox with a network: the simulation runs, unseen")
@@ -191,14 +224,41 @@ class Experiment:
             _say(f"not shown in the world ({error}); the simulation runs anyway")
             return
         self.id, self._key, self.scale = started["id"], started["key"], started.get("scale", 1.0)
+        if "build" in started:
+            # A node that knows phases: the first frame holds while the world shows it built, and the script is kept.
+            self._build_until = time.monotonic() + max(0.0, min(30.0, float(started["build"] or 0)))
+            code = _main_source()
+            if code:
+                self._quietly(f"/experiments/{self.id}/code", {"name": code[0], "source": code[1]})
         self._thread = threading.Thread(target=self._send, name="galahad-world", daemon=True)
         self._thread.start()
-        _say(f'"{title}" is on its plot in the SANDBOX ({self.id})')
+        _say(f'"{title}" is being built in the SANDBOX ({self.id})')
+
+    def _quietly(self, path, body):
+        """A request the experiment can do without (an older node answers 404)."""
+        try:
+            _post(path, body, {"x-experiment-key": self._key})
+        except Exception:
+            pass
+
+    def _built(self, poses):
+        """Before the first frame: say how its bodies stand once built, wait while the world shows it put together, then say the test begins."""
+        until, self._build_until = self._build_until, None
+        self._quietly(f"/experiments/{self.id}/phase", {"phase": "building", "poses": {str(k): [round(float(v), 5) for v in p] for k, p in poses.items()}})
+        wait = until - time.monotonic()
+        if wait > 0.05:
+            _say(f"Galahad is building it at the workshop's bench ({wait:.0f} s)")
+            time.sleep(wait)
+        self._quietly(f"/experiments/{self.id}/phase", {"phase": "testing"})
 
     def frame(self, t, poses, metrics=None):
         """Poses: {body id: (x, y, z, qw, qx, qy, qz)}; metrics: {name: number}. Paced to speed × real time."""
         if metrics:
             self.metrics.update({k: float(v) for k, v in metrics.items()})
+        if self.phase == "building":
+            self.phase = "testing"
+            if self.live and not self._ended and self._build_until is not None:
+                self._built(poses)
         if self.speed and self.speed > 0:
             now = time.monotonic()
             if self._clock is None:
@@ -242,12 +302,14 @@ class Experiment:
             self._flush()
 
     def end(self, status="done", summary=None, metrics=None):
-        """Ends it in the world: done or failed, with a one-line summary."""
+        """Ends it in the world: done or failed, with a one-line summary. Then Galahad examines it."""
         if metrics:
             self.metrics.update({k: float(v) for k, v in metrics.items()})
         if not self.live or self._ended:
             self._ended = True
+            self.phase = "examining"
             return
+        self.phase = "examining"
         self._stop.set()
         self._thread.join(timeout=2)
         self._flush(everything=True)
@@ -260,6 +322,7 @@ class Experiment:
             body["metrics"] = dict(list(finite.items())[:24])
         try:
             _post(f"/experiments/{self.id}/end", body, {"x-experiment-key": self._key})
+            _say(f"{status}: Galahad examines it at the observatory (galahad experiments show {self.id})")
         except Exception as error:
             _say(f"couldn't end it in the world ({error})")
 

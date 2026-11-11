@@ -60,6 +60,49 @@ export const ExperimentEnd = z.strictObject({
   metrics: Metrics.optional(),
 });
 
+/*
+ * Built, tested, examined (the module's own word for its phases). Starting is building; while the node
+ * asks it to hold its first frame (`build` in the start's answer), the module says how its bodies stand
+ * once put together, so the world can assemble them on the bench; then that testing begins. A node that
+ * doesn't know phases answers 404, and the module carries on: its first frame is the test, its end the
+ * examination.
+ */
+export const ExperimentPhaseReport = z.discriminatedUnion("phase", [
+  z.strictObject({
+    phase: z.literal("building"),
+    poses: z.record(BodyId, PoseSchema).refine((p) => Object.keys(p).length <= 500, "at most 500 bodies"),
+  }),
+  z.strictObject({ phase: z.literal("testing") }),
+]);
+
+/** The code that ran it: its own `__main__` script, small files only. Kept on the node with the experiment, as data. */
+export const CODE_MAX = 64 * 1024;
+export const ExperimentCode = z.strictObject({
+  name: z.string().regex(/^[A-Za-z0-9._ -]{1,120}$/, "a file name"),
+  source: z.string().max(CODE_MAX),
+});
+
+/** A saved experiment's id (the world's own). */
+export const ExperimentId = z.string().regex(/^ex_[A-Za-z0-9_-]{12}$/, "an experiment id (ex_…)");
+
+/**
+ * Galahad builds, tests and examines an experiment: his Python script (using galahad_world) runs in a
+ * fresh sandbox (the Lab for MuJoCo, JSBSim, RocketPy and custom work; Gazebo's image for Gazebo) with a
+ * network only to the gateway, for at most `minutes`; the world shows it built in the workshop, tested
+ * where it belongs (or at `site`), examined at the observatory, and keeps it.
+ */
+export const ExperimentRunInput = z.strictObject({
+  title: z.string().trim().min(1).max(120),
+  engine: z.enum(["mujoco", "gazebo", "jsbsim", "rocketpy", "custom"]),
+  script: z.string().min(1).max(CODE_MAX),
+  site: z.enum(["field", "hall", "open"]).optional(),
+  extent: z.number().finite().positive().max(10_000_000).optional(),
+  minutes: z.number().int().min(1).max(60).optional(),
+  on: z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+  /** Set by a full node relaying an arm's request: its sandbox belongs to that arm's quest. */
+  quest: z.string().max(64).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+});
+
 /** How the world ran on a device: what the page reports, so problems on a phone can be seen from a terminal. Nothing personal: the device, the renderer, its numbers, its errors. */
 export const WorldReport = z.strictObject({
   session: z.string().regex(/^[A-Za-z0-9_-]{8,40}$/),

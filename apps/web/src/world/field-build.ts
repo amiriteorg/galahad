@@ -15,6 +15,8 @@ import {
   HANGAR_AIRCRAFT,
   LIGHTNING_MAST_HEIGHT,
   LIGHTNING_MASTS,
+  PAPI_LENS,
+  PAPI_SETTINGS,
   PAPIS,
   PROPS,
   RIM_MARKERS,
@@ -40,7 +42,8 @@ import type { Glow } from "./place.ts";
  * plant; ambient occlusion baked in; a glow mask marking the hangar's and the
  * tower's insides, which are lit at night) and the lit one (lamps, lenses, glass:
  * its glow attribute says which: 0 a lamp, 0.5 a lens that only shines at
- * night, 1 glass). Lights at night are listed as halos (the place draws them).
+ * night, 1 glass, PAPI_KIND and its unit's setting a PAPI's lens). Lights at
+ * night are listed as halos (the place draws them; the PAPIs' it keeps itself).
  * Everything in the place's group's scene coordinates: ground at 0, x east,
  * y up, z south (a world point (x, y, h) is (x, h, −y)).
  */
@@ -569,19 +572,18 @@ function weatherMast(k: Kit): void {
   k.cyl(s.x + 1.1, s.y, 0, 0.75, 0.08, 0.08, C.steel, 6);
 }
 
+/** A PAPI lens's glow in the lit mesh: this plus its unit's setting (degrees). field.ts colours it by the camera's angle above it. */
+export const PAPI_KIND = 2;
+
 function papi(k: Kit): void {
   k.solid.glow(0);
   for (const p of PAPIS) {
     p.xs.forEach((x, i) => {
-      // Two legs, a housing, two lenses facing the approach: the two nearest the runway red, the far two white (on the slope).
+      // Two legs, a housing, two lenses facing the approach, each red or white by the angle it's seen from (field.ts).
       for (const s of [-1, 1]) k.plain(x + s * 0.3, p.y, 0, 0.45, 0.04, 0.04, C.steelDark);
       k.box(x, p.y, 0.45, 0.85, 0.42, 0.32, C.cream);
-      const red = i < 2;
-      for (const s of [-1, 1]) {
-        k.light.glow(0.5);
-        k.light.add(new CylinderGeometry(0.11, 0.11, 0.04, 8), red ? 0xff5040 : 0xfff6e8, W(x + s * 0.18, p.y + p.dir * -0.33, 0.66, 0, 1, Math.PI / 2), 0);
-      }
-      k.halos.push({ x, y: p.y - p.dir * 0.4, z: 0.66, r: 0.9, color: red ? 0xff5a46 : 0xfff3e0 });
+      k.light.glow(PAPI_KIND + PAPI_SETTINGS[i]!);
+      for (const s of [-1, 1]) k.light.add(new CylinderGeometry(0.11, 0.11, 0.04, 8), 0xffffff, W(x + s * 0.18, p.y - p.dir * PAPI_LENS.ahead, PAPI_LENS.z, 0, 1, Math.PI / 2), 0);
     });
   }
 }

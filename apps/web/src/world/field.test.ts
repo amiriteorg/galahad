@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { PADS } from "@galahad/core/world";
 import type { Collider } from "./colliders.ts";
+import { BUILDS, Solids } from "./collide.ts";
+import { Planner } from "./nav.ts";
 import { aircraft, CIRCUIT_HEIGHT, ROUTES, runwayFor, stepAircraft, TAXI_KEEP_CLEAR, TAXI_OUT } from "./field-circuit.ts";
 import { onPaving, rubberStreaks, runwayPaint } from "./field-ground.ts";
 import { launcher, LOWERED, stepLauncher, UPRIGHT } from "./field-launcher.ts";
@@ -14,17 +16,25 @@ import {
   FIELD_NAMES,
   FIELD_OBSTACLES,
   FIELD_RIM,
+  BRIDGE,
+  HANGAR,
+  HANGAR_AIRCRAFT,
   LAUNCH_SLAB,
   LAUNCHER_PARK,
+  PAPI_LENS,
+  PAPI_SETTINGS,
+  PAPIS,
+  papiWhite,
   RUNWAY,
   TAXIWAY,
   TIE_DOWN,
+  TOWER,
 } from "./field-plan.ts";
 import { MISSIONS, PAD_TOP, quad, stepQuad } from "./field-quad.ts";
 import { sample, routeSample } from "./field-route.ts";
 import { COURSE_ROUTE, courseHeight, OSR_SCALE, ROVER, ROVER_KEEP_CLEAR, roverState, stepRover, wheelHeight } from "./field-rover.ts";
 import { bandFill, sockPose, windsock } from "./field-wind.ts";
-import { obstacles, planPath, plotGate, type Point, standAt } from "./path.ts";
+import { obstacles, planPath, plotGate, type Point, standAt, Walker } from "./path.ts";
 
 /*
  * The proving ground: its plan (what stands where, and that nothing stands in
@@ -61,6 +71,43 @@ function* walk(from: Point, path: readonly Point[]): Generator<Point> {
 }
 
 describe("the proving ground's plan", () => {
+  test("the hangar's inside can be walked: in by its open door, round the aircraft (which stays solid) to the workbench", () => {
+    const s = new Solids();
+    s.add(FIELD_COLLIDERS);
+    const planner = new Planner(s);
+    const w = new Walker({ x: HANGAR.x + HANGAR.hx + 6, y: HANGAR.y, facing: Math.PI });
+    const m = s.join(w, BUILDS.galahad);
+    w.join({ planner, mover: m, wet: null });
+    // In front of the workbench at the back wall, south of the aircraft's wing.
+    const bench = { x: HANGAR.x - HANGAR.hx + 1.6, y: HANGAR.y - 3.6, facing: Math.PI };
+    w.go(bench, []);
+    let through = false;
+    for (let k = 0; k < 60 * 40 && (w.moving || w.waypoints.length); k++) {
+      w.step(1 / 60);
+      through ||= s.overlaps(w.x, w.y, w.r - 0.02, BUILDS.galahad.step, BUILDS.galahad.height);
+    }
+    expect([Math.round(w.x * 100) / 100, Math.round(w.y * 100) / 100, through, w.fallbacks]).toEqual([bench.x, bench.y, false, 0]);
+    // And the aircraft is where it's drawn: its fuselage, its wing (lower than his head), its tail.
+    for (const [x, y] of [[HANGAR_AIRCRAFT.x - 2, HANGAR_AIRCRAFT.y], [HANGAR_AIRCRAFT.x, HANGAR_AIRCRAFT.y + 4], [HANGAR_AIRCRAFT.x - 4.9, HANGAR_AIRCRAFT.y - 1.2]] as const) {
+      expect(s.overlaps(x, y, 0.1, BUILDS.galahad.step, BUILDS.galahad.height)).toBe(true);
+    }
+  });
+
+  test("the rover course's bridge is walked on as it's drawn: up its ramp within 5 cm of the slope, along its deck at its height", () => {
+    const s = new Solids();
+    s.add(FIELD_COLLIDERS);
+    const B = BRIDGE;
+    let z = 0;
+    for (let u = 0; u <= B.up + B.deck + B.down; u += 0.05) {
+      const x = B.x + Math.cos(B.heading) * u;
+      const y = B.y + Math.sin(B.heading) * u;
+      // What a walker going along it stands on, from where its feet were.
+      z = Math.max(0, s.support(x, y, z, BUILDS.galahad.step));
+      const drawn = u < B.up ? (B.height * u) / B.up : u <= B.up + B.deck ? B.height : (B.height * (B.up + B.deck + B.down - u)) / B.down;
+      expect(Math.abs(z - drawn)).toBeLessThan(0.051);
+    }
+  });
+
   test("everything it builds stands on the field, within its rim", () => {
     const edge = FIELD_RIM + 0.6;
     for (const c of FIELD_COLLIDERS) {
@@ -400,6 +447,41 @@ describe("the runway", () => {
       expect(x1).toBeLessThanOrEqual(RUNWAY.x + RUNWAY.hx);
       expect(y0).toBeGreaterThanOrEqual(RUNWAY.y - RUNWAY.hy);
       expect(y1).toBeLessThanOrEqual(RUNWAY.y + RUNWAY.hy);
+    }
+  });
+
+  test("each PAPI unit shows red or white by the eye's angle above it, as a real PAPI: two and two on the 3° glide path", () => {
+    // A pilot on the extended centreline, 600 m short of the PAPIs, at an angle above them: what each runway's four show.
+    const seen = (deg: number) =>
+      PAPIS.map((p) => {
+        const ex = RUNWAY.x;
+        const ey = p.y - p.dir * 600;
+        const above = 600 * Math.tan((deg * Math.PI) / 180);
+        return p.xs.map((x, i) => (papiWhite(PAPI_SETTINGS[i]!, Math.hypot(ex - x, ey - p.y), above) ? "W" : "R")).join("");
+      });
+    expect(seen(3)).toEqual(["RRWW", "RRWW"]);
+    expect(seen(3.3)).toEqual(["RWWW", "RWWW"]);
+    expect(seen(2.7)).toEqual(["RRRW", "RRRW"]);
+    expect(seen(4)).toEqual(["WWWW", "WWWW"]);
+    expect(seen(2)).toEqual(["RRRR", "RRRR"]);
+    // From the ground beside them, all red; from the tower's cab, all white.
+    expect(PAPIS[0].xs.map((x, i) => papiWhite(PAPI_SETTINGS[i]!, Math.hypot(x - RUNWAY.x, 40), 1.7 - PAPI_LENS.z))).toEqual([false, false, false, false]);
+    expect(PAPIS[0].xs.map((x, i) => papiWhite(PAPI_SETTINGS[i]!, Math.hypot(x - TOWER.x, PAPIS[0].y - TOWER.y), TOWER.cab - PAPI_LENS.z))).toEqual([true, true, true, true]);
+  });
+
+  test("every PAPI lens is drawn with its own unit's setting (so each shows its own colour), none fixed red or white", async () => {
+    const { buildStatic, PAPI_KIND } = await import("./field-build.ts");
+    const { FIELD_DETAIL } = await import("./field.ts");
+    for (const name of ["high", "low"] as const) {
+      const glow = buildStatic(FIELD_DETAIL[name].build).light.build().getAttribute("glow");
+      const counts = new Map<number, number>();
+      for (let i = 0; i < glow.count; i++) {
+        const k = glow.getX(i);
+        if (k > PAPI_KIND - 0.5) counts.set(Math.round((k - PAPI_KIND) * 100) / 100, (counts.get(Math.round((k - PAPI_KIND) * 100) / 100) ?? 0) + 1);
+      }
+      // Each setting on both runways' units, the same number of vertices each (two lenses a unit).
+      expect([...counts.keys()].sort()).toEqual([...PAPI_SETTINGS].sort());
+      expect(new Set(counts.values()).size).toBe(1);
     }
   });
 });
