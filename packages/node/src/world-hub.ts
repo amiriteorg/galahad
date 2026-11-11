@@ -4,6 +4,7 @@ import {
   ASSEMBLE_MS,
   BENCH,
   type Examination,
+  EXAMINE_MAX_MS,
   EXAMINE_MS,
   ExperimentCode,
   ExperimentCode as ExperimentCodeSchema,
@@ -523,8 +524,8 @@ export class WorldHub {
 
   /**
    * It ended (done, or failed): it's saved, and Galahad walks to the observatory and examines it. While
-   * someone watches, he takes his time there (the walk, then EXAMINE_MS; at most HOLD_MAX_MS); then it's
-   * done.
+   * someone watches, he takes his time there (the walk, then EXAMINE_MS; at most EXAMINE_MAX_MS); then
+   * it's done.
    */
   private conclude(e: Running, status: "done" | "failed", summary: string | null, metrics?: Record<string, number>): void {
     const at = this.now();
@@ -550,7 +551,7 @@ export class WorldHub {
       }
     }
     this.doing("observatory", `Examining: ${e.title}`, { experiment: e.id });
-    const hold = this.watchers.size ? Math.min(HOLD_MAX_MS, walkMs(from, STATIONS.observatory) + EXAMINE_MS) : 0;
+    const hold = this.watchers.size ? Math.min(EXAMINE_MAX_MS, walkMs(from, STATIONS.observatory) + EXAMINE_MS) : 0;
     if (!hold) return this.examined(e);
     e.timer = setTimeout(() => this.examined(e), hold);
     e.timer.unref?.();
@@ -588,7 +589,7 @@ export class WorldHub {
   }
 
   /** Resolves once it's done or failed (examined), or after `maxMs`. */
-  settled(id: string, maxMs = HOLD_MAX_MS + 5_000): Promise<void> {
+  settled(id: string, maxMs = EXAMINE_MAX_MS + 5_000): Promise<void> {
     const e = this.experiments.get(id);
     if (!e || e.phase === "done" || e.phase === "failed") return Promise.resolve();
     return new Promise((resolve) => {

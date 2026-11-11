@@ -113,11 +113,13 @@ const NEAR_STATION = 14;
  */
 export function lookingAt(model: WorldModel, focus: { x: number; y: number }, following: boolean, selected: string | null): { label: string; meta: string; target: LookTarget | null } {
   const open = selected ? model.experiments.find((e) => e.id === selected) : undefined;
-  if (open) return { label: open.title, meta: STATUS_LABEL[open.status], target: { kind: "experiment", id: open.id } };
+  /** Its status, or where it is when that says more (being built, being examined). */
+  const said = (e: (typeof model.experiments)[number]) => (phaseOf(e) === "building" || phaseOf(e) === "examining" ? PHASE_LABEL[phaseOf(e)] : STATUS_LABEL[e.status]);
+  if (open) return { label: open.title, meta: said(open), target: { kind: "experiment", id: open.id } };
   if (following) return { label: "Galahad", meta: model.galahad.doing || `At ${stationLabel(model.galahad.station).toLowerCase()}`, target: { kind: "galahad" } };
   for (const e of model.experiments) {
     if (Math.abs(focus.x - e.plot.x) <= e.plot.size / 2 + 2 && Math.abs(focus.y - e.plot.y) <= e.plot.size / 2 + 2) {
-      return { label: e.title, meta: STATUS_LABEL[e.status], target: { kind: "experiment", id: e.id } };
+      return { label: e.title, meta: said(e), target: { kind: "experiment", id: e.id } };
     }
   }
   for (const site of SITE_NAMES) {

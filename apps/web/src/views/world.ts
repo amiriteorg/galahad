@@ -119,6 +119,26 @@ export const worldView: View = (root, ctx, { scope }) => {
   let gPressed = 0;
   let timeChoice: TimeChoice = "now";
   let weatherChoice: WeatherChoice = storedWeather();
+  // ---- saved experiments: the replay playing (if any), and examinations fetched for ended ones' panels ----
+  /** The replay playing, if any: the saved experiment, its recording and clock, and its panel. */
+  let replay: {
+    id: string;
+    saved: SavedExperiment;
+    recording: Recording;
+    clock: ReplayClock;
+    view: ExperimentView;
+    first: ExperimentFrame | null;
+    panel: ReplayPanel;
+    timer: ReturnType<typeof setInterval>;
+    /** The last keyframe handed to the renderer. */
+    index: number;
+  } | null = null;
+  const replayWorld = new ReplayWorld();
+  /** The world as the renderer gets it: the live one, with a replay on its plot (the same object while nothing changes). */
+  const shown = () => replayWorld.shown(model, replay?.view ?? null, replay?.first ?? null);
+  let replayLoading: string | null = null;
+  /** Examinations fetched for ended experiments' panels, by id and phase (null: none to be had). */
+  const examinations = new Map<string, Examination | null | "loading">();
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
@@ -640,8 +660,6 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
 
   // ---------- saved experiments: the examination in an ended one's panel, and replays ----------
-  /** Examinations fetched for ended experiments' panels, by id and phase (null: none to be had). */
-  const examinations = new Map<string, Examination | null | "loading">();
 
   /** An ended experiment's examination (fetched once it's ended), charted, with a way to replay it. */
   function examined(e: ExperimentView): HTMLElement {
@@ -658,26 +676,9 @@ export const worldView: View = (root, ctx, { scope }) => {
     const replayButton = button("Replay", { icon: "repeat", size: "sm", onClick: () => void startReplay(e.id) });
     if (got === "loading" || got === undefined) return h("p", { class: "small muted" }, phaseOf(e) === "examining" ? "Galahad is examining it at the observatory…" : "Examining…");
     if (!got) return h("div", { class: "stack tight" }, h("p", { class: "small muted" }, "This node didn't keep it, so there's nothing to examine."));
-    return h("div", { class: "stack tight" }, h("h4", { class: "small strong" }, phaseOf(e) === "examining" ? "Galahad's examination, so far" : "What it showed"), examinationView(got).el, h("div", { class: "row" }, replayButton));
+    return h("div", { class: "stack tight" }, h("h4", { class: "small strong" }, "What it showed"), examinationView(got).el, h("div", { class: "row" }, replayButton));
   }
 
-  /** The replay playing, if any: the saved experiment, its recording and clock, and its panel. */
-  let replay: {
-    id: string;
-    saved: SavedExperiment;
-    recording: Recording;
-    clock: ReplayClock;
-    view: ExperimentView;
-    first: ExperimentFrame | null;
-    panel: ReplayPanel;
-    timer: ReturnType<typeof setInterval>;
-    /** The last keyframe handed to the renderer. */
-    index: number;
-  } | null = null;
-  const replayWorld = new ReplayWorld();
-  /** The world as the renderer gets it: the live one, with a replay on its plot (the same object while nothing changes). */
-  const shown = () => replayWorld.shown(model, replay?.view ?? null, replay?.first ?? null);
-  let replayLoading: string | null = null;
 
   /** Replays a saved experiment where it was tested: fetched, decoded once, then played a keyframe at a time. */
   async function startReplay(id: string): Promise<void> {

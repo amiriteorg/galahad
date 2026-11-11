@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GatewayTokens } from "@galahad/brain";
-import { HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent } from "@galahad/core";
+import { EXAMINE_MAX_MS, HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent } from "@galahad/core";
 import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
 import { ExperimentStore } from "../src/experiment-store.ts";
 import { cellAt, cellOnSite, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
@@ -212,7 +212,10 @@ describe("built, tested, examined", () => {
       // It's saved already (the panel, the tools and the CLI read it from here).
       expect(store.get(id)).toMatchObject({ status: "done", phase: "examining", readouts: { error_mm: { count: 7 } } });
       const settled = world.settled(id);
-      jest.advanceTimersByTime(HOLD_MAX_MS);
+      // He walks from the test cell to the observatory, then examines it: held for that, at most a minute.
+      jest.advanceTimersByTime(30_000);
+      expect(world.current(id)).toMatchObject({ phase: "examining" });
+      jest.advanceTimersByTime(EXAMINE_MAX_MS - 30_000);
       await settled;
       expect(world.current(id)).toMatchObject({ phase: "done" });
       expect(store.get(id)).toMatchObject({ phase: "done", phases: { ended: now.t } });
@@ -284,7 +287,7 @@ describe("built, tested, examined", () => {
       const b = world.start({ title: "Second flight", engine: "jsbsim", scene, extent: 3000 }, { ...origin, sandbox: "aaaaaaaaaa" });
       expect(events).toContainEqual(expect.objectContaining({ type: "cleared", experiment: a.id }));
       events.length = 0;
-      jest.advanceTimersByTime(HOLD_MAX_MS);
+      jest.advanceTimersByTime(EXAMINE_MAX_MS);
       expect(events.some((e) => e.type === "experiment" && e.experiment.id === a.id)).toBe(false);
       expect(world.current(b.id)).toMatchObject({ phase: "building" });
     } finally {

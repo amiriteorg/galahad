@@ -147,7 +147,7 @@ export function replayPanel(o: {
     `on ${s.nodeName}`,
     relativeTime(s.endedAt ?? s.startedAt),
     `${o.frames} frames${s.recording.truncated ? `, cut short at ${seconds(s.recording.truncated.t)} (its safety limit)` : ""}`,
-    o.rate !== 1 ? `${Math.round(o.rate * 10) / 10}× real time` : null,
+    Math.abs(o.rate - 1) > 0.05 ? `${Math.round(o.rate * 10) / 10}× real time` : null,
   ]
     .filter(Boolean)
     .join(" · ");

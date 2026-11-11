@@ -297,8 +297,8 @@ export function padKindFor(engine: ExperimentEngine, extent: number | undefined,
  * (padKindFor) and examines it at the observatory. The bench's place is fixed like the stations', so
  * the node can tell how long he needs to get there. While someone watches, the node asks a simulation
  * to hold its first frame until he's there and has put it together, and holds an ended experiment at
- * the observatory while he examines it; with nobody watching, neither waits. Never longer than
- * HOLD_MAX_MS either way.
+ * the observatory while he examines it; with nobody watching, neither waits. A first frame is never
+ * held longer than HOLD_MAX_MS, an examination never longer than EXAMINE_MAX_MS (his walk there included).
  */
 export const BENCH = { x: 102.5, y: 11.6, label: "Assembly bench", stand: { x: 102.5, y: 10.35 } } as const;
 /** How long the world shows an experiment put together on the bench once he's there, and examined (ms). */
@@ -307,6 +307,7 @@ export const EXAMINE_MS = 12_000;
 /** The shortest a watched build is shown, however long he's been at the bench. */
 export const ASSEMBLE_MIN_MS = 4_000;
 export const HOLD_MAX_MS = 30_000;
+export const EXAMINE_MAX_MS = 60_000;
 
 /** About how long Galahad takes from one place to another: at a run (4.5 m/s), a quarter again for the way round things (ms). */
 export function walkMs(from: { x: number; y: number }, to: { x: number; y: number }): number {
