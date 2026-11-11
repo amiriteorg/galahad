@@ -897,7 +897,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const motion = !reduced();
     // What grows bends with the weather's wind: as it always did in a light breeze, hard in a storm.
     // (A whole step at a time, so the uniform, and every plant material with it, isn't uploaded as the wind eases.)
-    wind.value = motion ? Math.min(2.6, Math.max(0.4, Math.round((0.55 + 0.18 * weather.state.wind) * 10) / 10)) : 0;
+    wind.value = motion ? Math.min(2.6, Math.max(0.4, Math.round((0.46 + 0.18 * weather.state.wind) * 10) / 10)) : 0;
     waterUniforms.waves.value = motion ? 1 : 0;
     const dt = Math.min(0.1, (now - lastTick) / 1000);
     lastTick = now;
@@ -989,7 +989,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     placeFrame.night = skyState.night;
     placeFrame.rain = weather.state.rain;
     placeFrame.wetness = weather.state.wetness;
-    placeFrame.wind = model?.weather?.wind ?? BREEZE;
+    // The weather's wind (Denmark's when live, the preset's otherwise): the windsocks agree with the rain.
+    placeFrame.wind = weather.state.wind;
     for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
 
     // Sparks fly from the bench where his blade's tip works.
