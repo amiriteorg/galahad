@@ -1053,14 +1053,15 @@ export function createApp(ctx: AppContext) {
             send({ type: "conversation", id: kept.id, title: kept.title, project: kept.project });
           }
           const seen = helper ? (event: ChatStreamEvent) => void (event.type === "model" && ctx.compute.attemptModel(helper, event.ref)) : worldWatcher(request.role ?? "planner", wantTools === false, answer);
-          // Background archiving waits while an answer streams.
-          const answered = ctx.archive.answering();
           let context = known;
           // A model call takes a slot. Yours, with his tools, never waits; a quest's or an agent's waits its turn.
           let leave: (() => void) | null = null;
           let attemptEnded: (() => void) | null = null;
+          // Background archiving waits while an answer streams (not while a call only waits for its slot).
+          let answered: (() => void) | null = null;
           try {
             leave = await ctx.governor.enterModel({ wait: !(isOwner(p) && wantTools !== false) }, req.signal);
+            answered = ctx.archive.answering();
             if (attempt) attemptEnded = ctx.compute.attemptBegin(attempt, { station: attemptStation(request.role ?? "planner"), doing: `The ${request.role ?? "planner"} is thinking` });
             if (fromArchive) {
               const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
@@ -1085,7 +1086,7 @@ export function createApp(ctx: AppContext) {
           } finally {
             leave?.();
             attemptEnded?.();
-            answered();
+            answered?.();
             if (!helper) ctx.world.rest();
             clearInterval(heartbeat);
             if (kept && answerId !== null) {
