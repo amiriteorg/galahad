@@ -23,6 +23,13 @@ Reachy Mini
   Files:   src/reachy_mini/descriptions/reachy_mini/urdf/robot.urdf and the meshes it names
   License: Apache-2.0
 
+Open Source Rover (NASA JPL)
+  Source:  https://github.com/nasa-jpl/osr-rover-code
+  Commit:  7aaf18512c9e8a997931f0caae28b63c8c6e9a78
+  Files:   ROS/osr_gazebo/urdf/osr.urdf.xacro and the meshes it names
+  License: Apache-2.0
+  Copyright 2018 California Institute of Technology. Government Sponsorship Acknowledged.
+
 Changes made (Apache-2.0 §4(b)): by scripts/robots/build.ts in the Galahad
 repository. Each model's links joined by fixed joints were merged into rigid
 parts; parts sealed inside a shell and tiny fasteners and connectors were left
@@ -31,3 +38,5 @@ triangle budget, quantized, and stored with the kinematic tree in a compact
 format.
 Reachy Mini's head, carried in the original by a Stewart platform (a closed
 chain), is instead hung on yaw, pitch and roll joints about its centre.
+The Open Source Rover's description (xacro) was expanded to plain URDF, and
+its rockers, fixed to the body there, turn on the body as on the real rover.

@@ -78,7 +78,8 @@ describe("the PWA bundle", () => {
     const world = await assets.serve("/world.js").text();
     // The index the world fetches by is bundled into it; every file it names is served.
     const manifests = [...world.matchAll(/"([a-z0-9-]+\.json\?v=[0-9a-f]{8})"/g)].map((m) => m[1]!);
-    expect(manifests.length).toBe(3);
+    // The Open Duck Mini, SO-101, Reachy Mini and the Open Source Rover.
+    expect(manifests.length).toBe(4);
     for (const entry of manifests) {
       const path = `/world-assets/robots/${entry.split("?")[0]}`;
       expect(assets.has(path)).toBe(true);

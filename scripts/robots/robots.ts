@@ -38,6 +38,14 @@ export interface RobotSpec {
   detach?: DetachSpec;
   /** The colour for visuals the URDF gives none (sRGB 0..1). */
   defaultRgba: [number, number, number, number];
+  /** The licence file, from the repository's root (default LICENSE). */
+  license?: string;
+  /** The copyright line the licence file carries, repeated in NOTICE.txt. */
+  copyright?: string;
+  /** The description is xacro: expanded first; $(find package) is the package folder, relative to the URDF's. */
+  xacro?: Record<string, string>;
+  /** Joints the description fixes that the real machine turns on (the rover's rockers): made revolute about `axis`. */
+  free?: Record<string, { axis: Vec3; lower: number; upper: number }>;
 }
 
 const DEG = Math.PI / 180;
@@ -91,5 +99,24 @@ export const ROBOTS: RobotSpec[] = [
       ],
     },
     defaultRgba: [0.9, 0.9, 0.9, 1],
+  },
+  {
+    name: "open-source-rover",
+    title: "Open Source Rover (NASA JPL)",
+    repo: "nasa-jpl/osr-rover-code",
+    commit: "7aaf18512c9e8a997931f0caae28b63c8c6e9a78",
+    urdf: "ROS/osr_gazebo/urdf/osr.urdf.xacro",
+    license: "LICENSE.txt",
+    copyright: "Copyright 2018 California Institute of Technology. Government Sponsorship Acknowledged.",
+    xacro: { osr_gazebo: ".." },
+    budget: 9_000,
+    sites: ["base_link"],
+    // The description fixes each rocker to the body (its simulator drives the wheels only); on the real rover the
+    // rockers pivot on the body through the differential, and the world moves them so.
+    free: {
+      rocker_bogie_joint_L_1: { axis: [0, 1, 0], lower: -40 * DEG, upper: 40 * DEG },
+      rocker_bogie_joint_R_1: { axis: [0, 1, 0], lower: -40 * DEG, upper: 40 * DEG },
+    },
+    defaultRgba: [0.75, 0.75, 0.75, 1],
   },
 ];
