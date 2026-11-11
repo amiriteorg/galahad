@@ -944,7 +944,7 @@ export function createApp(ctx: AppContext) {
       return { experiment, examination: store.examination(input.id), ...(input.code ? { code: store.code(input.id) } : {}) };
     },
     experimentRecording: (input) => {
-      const page = ctx.world.store?.recording(input.id, input.from ?? 0, input.limit ?? 2000);
+      const page = ctx.world.store?.recording(input.id, input.from ?? 0, input.limit ?? 2000, input.hz);
       if (!page) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
       return page;
     },

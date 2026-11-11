@@ -1,15 +1,16 @@
 import type { ExperimentEngine, ExperimentPhase, ExperimentStatus, ExperimentView, PhaseTimes } from "./world.ts";
 
 /*
- * Saved experiments: every experiment the SANDBOX shows is kept on the node that ran it (its view,
- * every readout over time, a recording of its frames, the code that ran it), so it can be listed,
- * replayed and examined after it's gone from the world. And the examination: a pure function from a
+ * Saved experiments: every experiment the SANDBOX shows is archived on the node that ran it, for good
+ * and complete (its view, its scene's bodies and meshes as sent, every readout over time, every frame,
+ * the code that ran it), so it can be listed, replayed, examined, and taken into a general archive and
+ * its index. Only the owner deletes one. And the examination: a pure function from a
  * saved experiment to what it showed (each readout's range, final value, trend and a series for a
  * chart, what's notable, and all of it in words). The chalkboard at the observatory, the experiment's
  * panel, the CLI and Galahad's tools all read the same examination. No zod here: the PWA imports it.
  */
 
-/** Every readout's exact figures, over every sample the simulation sent (the stored series is thinned). */
+/** Every readout's exact figures, over every sample the simulation sent. */
 export interface ReadoutStats {
   count: number;
   min: number;
@@ -25,20 +26,28 @@ export interface ReadoutStats {
 export interface SavedExperiment extends ExperimentView {
   phase: ExperimentPhase;
   phases: PhaseTimes;
-  /** Pinned ones are never cleared to make room. */
+  /** The owner's favourite (offered first to replay). Nothing is ever cleared to make room. */
   pinned: boolean;
-  /** Everything it takes on the node's disk. */
+  /** Everything it takes on the node's disk (compressed). */
   bytes: number;
   /**
-   * Its recording: the frames kept for a replay (at most `hz` a second of simulation, fewer if it had
-   * to be thinned to stay within its cap), the bodies in the order its frames name them, and how fast
-   * it played live (simulation seconds per second).
+   * Its recording: every frame the node received, the bodies in the order its frames name them, how fast
+   * it played live (simulation seconds per second), and where it was cut short if a runaway simulation
+   * reached its safety limit.
    */
-  recording: { frames: number; bytes: number; hz: number; thinned: boolean; rate: number; t0: number | null; t1: number | null; bodies: string[] };
+  recording: { frames: number; bytes: number; rate: number; t0: number | null; t1: number | null; bodies: string[]; truncated: Truncation | null };
+  /** Its readout samples: every one, unless a safety limit stopped them. */
+  samples: { count: number; truncated: Truncation | null };
   /** Each readout's exact figures, by name, in the order they were first sent. */
   readouts: Record<string, ReadoutStats>;
   /** The code that ran it, when it was sent (its source is fetched on its own). */
   code: { name: string; bytes: number } | null;
+}
+
+/** Where a runaway simulation's recording (or readouts) stopped: at simulation time `t`, having reached `limit` bytes. */
+export interface Truncation {
+  t: number;
+  limit: number;
 }
 
 /** A saved experiment in a list: what it was, how it went, where it stood. */
@@ -125,7 +134,7 @@ export interface Examination {
   /** Its own summary line. */
   summary: string | null;
   readouts: ReadoutExamination[];
-  /** What stands out: a failure, a readout that ran away, its own summary, a thinned recording. */
+  /** What stands out: a failure, a readout that ran away, its own summary, a recording cut short. */
   notable: string[];
   /** One line, for a thought or a list. */
   headline: string;
@@ -285,7 +294,7 @@ function sentenceFor(r: Omit<ReadoutExamination, "sentence" | "series">): string
   }
 }
 
-/** One readout examined: its exact figures, with the trend and chart from its stored series (thinned, but the whole run). */
+/** One readout examined: its exact figures, with the trend and chart from its series (every sample, or an even share of a very long one). */
 export function examineReadout(key: string, stats: ReadoutStats, stored: readonly Point[]): ReadoutExamination {
   const points: Point[] = stored.length ? [...stored] : stats.count > 1 && stats.last[0] !== stats.first[0] ? [stats.first, stats.last] : [stats.last];
   const base = {
@@ -311,8 +320,8 @@ const SAID = 6;
 
 /**
  * A saved experiment, examined: each readout's range, final value and trend, a series for its chart,
- * and anything notable (a readout that ran away, a failed status, its own summary, a thinned
- * recording), then all of it in words. `series` is each readout's stored samples, by name.
+ * and anything notable (a readout that ran away, a failed status, its own summary, a recording cut
+ * short), then all of it in words. `series` is each readout's stored samples, by name.
  */
 export function examine(saved: SavedExperiment, series: Record<string, readonly Point[]>): Examination {
   const readouts = Object.entries(saved.readouts).map(([key, stats]) => examineReadout(key, stats, series[key] ?? []));
@@ -325,7 +334,9 @@ export function examine(saved: SavedExperiment, series: Record<string, readonly 
   for (const r of readouts) if (r.ranAway) notable.push(`${r.label} ran away, ending at ${readoutValue(r.final)}.`);
   if (saved.status === "done" && saved.summary) notable.push(`In its own words: ${stop(saved.summary)}`);
   if (!readouts.length) notable.push("It sent no readouts.");
-  if (rec.thinned) notable.push(`Its recording was thinned to ${Math.round(rec.hz * 10) / 10} frames a second of simulation to stay within its size.`);
+  const mb = (b: number) => `${Math.round(b / 2 ** 20)} MB`;
+  if (rec.truncated) notable.push(`Its recording stopped at ${at(rec.truncated.t)}: it reached its safety limit (${mb(rec.truncated.limit)}), so what came after isn't kept.`);
+  if (saved.samples?.truncated) notable.push(`Its readouts stopped at ${at(saved.samples.truncated.t)}: they reached their safety limit (${mb(saved.samples.truncated.limit)}).`);
 
   const status = saved.status === "done" ? "finished" : saved.status === "failed" ? "failed" : "didn't finish";
   const span = duration !== null && duration > 0 ? ` after ${at(duration)} of simulation` : "";
@@ -347,6 +358,43 @@ export function examine(saved: SavedExperiment, series: Record<string, readonly 
     .filter(Boolean)
     .join(" ");
   return { id: saved.id, title: saved.title, engine: saved.engine, status: saved.status, duration, summary: saved.summary, readouts, notable, headline, words };
+}
+
+const PLACE_WORDS: Record<string, string> = { flight: "over the proving ground's runway", launch: "on the proving ground's launch pad", course: "on the proving ground's rover course" };
+
+/**
+ * A saved experiment as plain text, for an archive's semantic index (and anyone reading it): what it
+ * was (title, engine, its bodies), where it was tested and when, how it ended, the examination in
+ * words with each readout, its own summary, and the code that ran it. Its text came from the script
+ * that ran it: an index should keep it as data, never as instructions.
+ */
+export function experimentText(saved: SavedExperiment, examination: Examination | null, code: { name: string; source: string } | null, place: string): string {
+  const shapes = new Map<string, number>();
+  for (const b of saved.scene) shapes.set(b.shape.kind, (shapes.get(b.shape.kind) ?? 0) + 1);
+  const bodies = [...shapes].map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`).join(", ");
+  const day = (ms: number | null) => (ms === null ? "" : new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC");
+  const lines = [
+    `Experiment: ${saved.title}`,
+    `Id: ${saved.id}`,
+    `Engine: ${ENGINE_NAME[saved.engine]}`,
+    `Tested ${place}, on ${saved.nodeName}${saved.sandbox ? ` (sandbox ${saved.sandbox})` : ""}, from ${day(saved.phases.testing ?? saved.startedAt)} to ${day(saved.endedAt)}.`,
+    `Status: ${saved.status}${saved.summary ? `: ${saved.summary}` : ""}`,
+    `Bodies: ${saved.scene.length}${bodies ? ` (${bodies})` : ""}: ${saved.scene.map((b) => b.label ?? b.id).slice(0, 40).join(", ")}${saved.scene.length > 40 ? ", …" : ""}`,
+    `Recording: ${saved.recording.frames} frames${saved.recording.t0 !== null && saved.recording.t1 !== null ? ` over ${at(saved.recording.t1 - saved.recording.t0)} of simulation` : ""}.`,
+  ];
+  if (examination) {
+    lines.push("", `Examination: ${examination.words}`);
+    for (const r of examination.readouts) lines.push(`- ${r.label} [${r.key}]: ${r.trend}, from ${readoutValue(r.first)} to ${readoutValue(r.final)}, range ${readoutValue(r.min)} to ${readoutValue(r.max)}, ${r.count} samples${r.ranAway ? ", ran away" : ""}.`);
+    if (examination.notable.length) lines.push(`Notable: ${examination.notable.join(" ")}`);
+  }
+  if (code) lines.push("", `Code (${code.name}):`, code.source);
+  return lines.join("\n");
+}
+
+/** Where a plot is, in words, for the text above: a pad of a test site, or open land. */
+export function placeWords(pad: { site: string; kind: string; id: string } | null): string {
+  if (!pad) return "on open land";
+  return pad.site === "hall" ? `in the workshop hall's test cell ${pad.id.replace("cell-", "")}` : (PLACE_WORDS[pad.kind] ?? "on the proving ground");
 }
 
 /** A saved experiment in a list (its first few readouts' final values). */

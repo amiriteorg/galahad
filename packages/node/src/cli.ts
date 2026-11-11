@@ -59,9 +59,10 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
-  experiments [--all] | experiments show <id> [--code] | experiments pin|unpin|rm <id>
-                                  the experiments this node's SANDBOX showed, saved: how each ended, its
-                                  examination (each readout's range, trend, what's notable), its code
+  experiments [--all] | experiments show <id> [--code] | experiments pin|unpin <id> | experiments rm <id>
+                                  the experiments this node's SANDBOX showed, every one archived: how each
+                                  ended, its examination (each readout's range, trend, what's notable), its
+                                  code; pin marks a favourite; rm deletes one for good (only you)
   experiments run <script.py> --title "…" [--engine mujoco|jsbsim|rocketpy|gazebo|custom] [--site field|hall|open]
                   [--minutes 10] [--on ultra]   build, test and examine one, as Galahad's experiment_run does
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
@@ -798,14 +799,14 @@ Next:
         return id!;
       };
       if (!sub || sub === "ls" || sub === "list") {
-        const list = await admin.call<{ node: string; experiments: SavedSummary[]; total: number; bytes: number; budget: number }>("experiments");
+        const list = await admin.call<{ node: string; experiments: SavedSummary[]; total: number; bytes: number }>("experiments");
         if (!list.experiments.length) {
           console.log(`No experiments saved on ${list.node} yet. Galahad builds, tests and examines one with experiment_run; or \`galahad experiments run <script.py> …\`.`);
           return;
         }
         const shown = flags.all ? list.experiments : list.experiments.slice(0, 20);
         for (const e of shown) console.log(describeSaved(e).replace(/^- (ex_\S+)/, (_, x: string) => `- ${bold(x)}`));
-        console.log(dim(`\n${list.total} saved on ${list.node} · ${kb(list.bytes)} of ${kb(list.budget)}${list.total > shown.length ? ` · --all lists every one` : ""} · galahad experiments show <id>`));
+        console.log(dim(`\n${list.total} saved on ${list.node} (every one kept) · ${kb(list.bytes)}${list.total > shown.length ? ` · --all lists every one` : ""} · galahad experiments show <id>`));
         return;
       }
       if (sub === "show") {
@@ -819,7 +820,7 @@ Next:
       }
       if (sub === "pin" || sub === "unpin") {
         const { experiment } = await admin.call<{ experiment: SavedSummary }>("pinExperiment", { id: needId(), pinned: sub === "pin" });
-        console.log(experiment.pinned ? `Pinned: ${experiment.title} stays, however full the store gets.` : `Unpinned: ${experiment.title} goes when room is needed, oldest first.`);
+        console.log(experiment.pinned ? `A favourite: ${experiment.title} is offered first to replay.` : `No longer a favourite: ${experiment.title} (it's kept all the same).`);
         return;
       }
       if (sub === "rm" || sub === "delete") {

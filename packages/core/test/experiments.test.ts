@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chartSeries, examine, ranAway, readoutLabel, readoutValue, type ReadoutStats, type SavedExperiment, summaryOf, trendOf } from "../src/experiments.ts";
+import { chartSeries, examine, experimentText, placeWords, ranAway, readoutLabel, readoutValue, type ReadoutStats, type SavedExperiment, summaryOf, trendOf } from "../src/experiments.ts";
 import { phaseOf, stationForTool } from "../src/world.ts";
 
 /*
@@ -38,7 +38,8 @@ function saved(over: Partial<SavedExperiment>, readouts: Record<string, [number,
     phases: { building: 1_000, testing: 2_000, examining: 21_000, ended: 30_000 },
     pinned: false,
     bytes: 1234,
-    recording: { frames: 300, bytes: 9000, hz: 15, thinned: false, rate: 1, t0: 0, t1: 20, bodies: ["hand"] },
+    recording: { frames: 300, bytes: 9000, rate: 1, t0: 0, t1: 20, bodies: ["hand"], truncated: null },
+    samples: { count: 200, truncated: null },
     readouts: Object.fromEntries(Object.entries(readouts).map(([k, p]) => [k, statsOf(p)])),
     code: null,
     ...over,
@@ -113,27 +114,47 @@ describe("an experiment, examined", () => {
     expect(ex.duration).toBe(20);
   });
 
-  test("a failure, a runaway and a thinned recording are notable; a readout seen only at the end is a value", () => {
+  test("a failure, a runaway and a recording cut short at its safety limit are notable; a readout seen only at the end is a value", () => {
     const angle = series(80, (t) => 0.01 * Math.exp(t * 1.2));
     const ex = examine(
-      saved({ status: "failed", phase: "failed", summary: "RuntimeError: it came down at t=40 s", recording: { frames: 900, bytes: 8e6, hz: 7.5, thinned: true, rate: 4, t0: 0, t1: 7.9, bodies: [] } }, { angle_rad: angle, lowest_m: [[7.9, 31]] }),
+      saved({ status: "failed", phase: "failed", summary: "RuntimeError: it came down at t=40 s", recording: { frames: 900, bytes: 8e6, rate: 4, t0: 0, t1: 7.9, bodies: [], truncated: { t: 7.9, limit: 256 * 2 ** 20 } } }, { angle_rad: angle, lowest_m: [[7.9, 31]] }),
       { angle_rad: angle },
     );
     expect(ex.readouts.find((r) => r.key === "angle_rad")).toMatchObject({ ranAway: true });
     expect(ex.readouts.find((r) => r.key === "lowest_m")!.sentence).toBe("lowest (m) was 31.0.");
     expect(ex.notable[0]).toBe("It failed: RuntimeError: it came down at t=40 s.");
     expect(ex.notable.some((n) => /^angle \(rad\) ran away, ending at/.test(n))).toBe(true);
-    expect(ex.notable.some((n) => /thinned to 7\.5 frames a second/.test(n))).toBe(true);
+    expect(ex.notable).toContain("Its recording stopped at 7.9 s: it reached its safety limit (256 MB), so what came after isn't kept.");
     expect(ex.headline).toBe("Two-link arm failed: RuntimeError: it came down at t=40 s.");
     expect(ex.words).toContain("angle (rad) ran away");
     expect(ex.words).not.toContain("Nothing ran away");
   });
 
   test("with nothing to go on: no readouts, said so", () => {
-    const ex = examine(saved({ status: "failed", phase: "failed", summary: "its sandbox couldn't start: no sandbox host", recording: { frames: 0, bytes: 0, hz: 15, thinned: false, rate: 1, t0: null, t1: null, bodies: [] } }), {});
+    const ex = examine(saved({ status: "failed", phase: "failed", summary: "its sandbox couldn't start: no sandbox host", recording: { frames: 0, bytes: 0, rate: 1, t0: null, t1: null, bodies: [], truncated: null } }), {});
     expect(ex).toMatchObject({ readouts: [], duration: null });
     expect(ex.notable).toEqual(["It failed: its sandbox couldn't start: no sandbox host.", "It sent no readouts."]);
     expect(ex.words).toBe("Two-link arm (MuJoCo) failed. It failed: its sandbox couldn't start: no sandbox host. It sent no readouts.");
+  });
+
+  test("as plain text for an archive's index: what it was, where and when, how it ended, the examination, the code", () => {
+    const error = series(200, (t) => 3 + 90 * Math.exp(-t * 2));
+    const s = saved({ summary: "it tracked the circle", scene: [{ id: "pedestal", shape: { kind: "cylinder", radius: 0.1, length: 0.5 } }, { id: "hand", shape: { kind: "sphere", radius: 0.05 }, label: "hand" }] }, { error_mm: error });
+    const text = experimentText(s, examine(s, { error_mm: error }), { name: "arm.py", source: "import galahad_world as gw\n" }, placeWords({ site: "hall", kind: "cell", id: "cell-1" }));
+    expect(text.split("\n").slice(0, 7)).toEqual([
+      "Experiment: Two-link arm",
+      "Id: ex_AAAAAAAAAAAA",
+      "Engine: MuJoCo",
+      "Tested in the workshop hall's test cell 1, on ultra (sandbox 0123456789), from 1970-01-01 00:00 UTC to 1970-01-01 00:00 UTC.",
+      "Status: done: it tracked the circle",
+      "Bodies: 2 (1 cylinder, 1 sphere): pedestal, hand",
+      "Recording: 300 frames over 20 s of simulation.",
+    ]);
+    expect(text).toContain("Examination: Two-link arm (MuJoCo) finished after 20 s of simulation.");
+    expect(text).toContain("- error (mm) [error_mm]: falling, from 93.0 to 3.00");
+    expect(text).toContain("Code (arm.py):\nimport galahad_world as gw");
+    expect(placeWords(null)).toBe("on open land");
+    expect(placeWords({ site: "field", kind: "launch", id: "launch" })).toBe("on the proving ground's launch pad");
   });
 
   test("a list's summary: its first readouts' final values, how long it covers", () => {

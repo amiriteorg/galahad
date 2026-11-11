@@ -257,7 +257,7 @@ describe("Galahad's experiment tools", () => {
     const api: ToolApi = {
       call: async <T,>(name: string) => {
         reached.push(name);
-        return (name === "experiments" ? { node: "ultra", experiments: [result.experiment], total: 1, bytes: 1, budget: 512 * 2 ** 20 } : { experiment: { ...result.experiment, phases: { building: 0, testing: 1000, examining: 20_000, ended: 30_000 }, recording: { frames: 300, hz: 15, thinned: false }, code: null }, examination: result.examination }) as T;
+        return (name === "experiments" ? { node: "ultra", experiments: [result.experiment], total: 1, bytes: 1, budget: 512 * 2 ** 20 } : { experiment: { ...result.experiment, phases: { building: 0, testing: 1000, examining: 20_000, ended: 30_000 }, recording: { frames: 300, truncated: null }, code: null }, examination: result.examination }) as T;
       },
       bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
     };

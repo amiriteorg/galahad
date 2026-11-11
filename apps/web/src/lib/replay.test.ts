@@ -78,7 +78,8 @@ const saved: SavedExperiment = {
   phases: { building: 1000, testing: 2000, examining: 9000, ended: 12_000 },
   pinned: false,
   bytes: 100,
-  recording: { frames: 3, bytes: 90, hz: 15, thinned: false, rate: 1, t0: 0, t1: 2, bodies: ["hand"] },
+  recording: { frames: 3, bytes: 90, rate: 1, t0: 0, t1: 2, bodies: ["hand"], truncated: null },
+  samples: { count: 0, truncated: null },
   readouts: {},
   code: null,
 };

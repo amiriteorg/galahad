@@ -146,7 +146,7 @@ export function replayPanel(o: {
     `${ENGINE_LABEL[s.engine]} · ${STATUS_LABEL[s.status]}, tested ${experimentPlace(s)}`,
     `on ${s.nodeName}`,
     relativeTime(s.endedAt ?? s.startedAt),
-    `${o.frames} frames${s.recording.thinned ? `, thinned to ${Math.round(s.recording.hz * 10) / 10}/s` : ""}`,
+    `${o.frames} frames${s.recording.truncated ? `, cut short at ${seconds(s.recording.truncated.t)} (its safety limit)` : ""}`,
     o.rate !== 1 ? `${Math.round(o.rate * 10) / 10}× real time` : null,
   ]
     .filter(Boolean)

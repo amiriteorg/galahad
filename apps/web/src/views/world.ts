@@ -693,9 +693,10 @@ export const worldView: View = (root, ctx, { scope }) => {
       }
       const pages: RecordingPage[] = [];
       let from: number | null = 0;
-      // At most the store's whole cap (a few pages): never an unbounded loop.
-      for (let i = 0; from !== null && i < 64; i++) {
-        const recPage: RecordingPage = await ctx.api.post<RecordingPage>("/api/experiments/recording", { id, from });
+      // At most a few hundred pages (a runaway's whole recording): never an unbounded loop.
+      for (let i = 0; from !== null && i < 400; i++) {
+        // The archive keeps every frame; a replay asks for 15 a second of simulation (the renderer plays between them).
+        const recPage: RecordingPage = await ctx.api.post<RecordingPage>("/api/experiments/recording", { id, from, hz: 15 });
         pages.push(recPage);
         from = recPage.next;
       }
