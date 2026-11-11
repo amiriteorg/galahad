@@ -384,7 +384,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // Galahad and his dog among the solids: he plans round them (nav.ts) and slides; it follows in his footsteps.
   const walkerMover = solids.join(walker, BUILDS.galahad);
   walkerMover.ground = deep;
-  walker.join({ planner: new Planner(solids), mover: walkerMover, wet, deep });
+  walker.join({ planner: new Planner(solids), mover: walkerMover, wet, deep, height: (x, y) => Math.max(land.heightAt(x, y), WATER_LEVEL - 0.6) });
+  /** How high he stands, drawn: his feet's floor (the land, a tread, the deck), eased as he steps up and down. */
+  let standZ = Number.NaN;
+  /** Where his feet land: on the land, or what's no higher than his step above where he stands (a tread, a rock). */
+  const feetGround = (x: number, y: number): number => Math.max(groundAt(x, y), solids.support(x, y, walker.z, BUILDS.galahad.step));
   dog.join(solids, deep);
   // The page's `?colliders=1`: what's solid, drawn as lines (nothing is built without it).
   const colliderLines = wantsColliders(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
@@ -543,7 +547,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     (out) => {
       out[0] = walker.x;
       out[1] = walker.y;
-      out[2] = groundAt(walker.x, walker.y) + HEAD_HEIGHT;
+      out[2] = (Number.isNaN(standZ) ? groundAt(walker.x, walker.y) : standZ) + HEAD_HEIGHT;
       return true;
     },
     10,
@@ -1021,11 +1025,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
     knightState.bench = g?.station === "forge";
     attend();
-    const gz = groundAt(walker.x, walker.y);
+    // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
+    if (Number.isNaN(standZ) || !motion || Math.abs(walker.z - standZ) > 2) standZ = walker.z;
+    else standZ += (walker.z - standZ) * (1 - Math.exp(-renderDt * 12));
+    const gz = standZ;
     // Characters sit in the world root at their absolute place (only instanced things are origin-relative).
     knight.root.position.set(walker.x, gz, -walker.y);
     knight.root.rotation.y = headingToSceneYaw(walker.heading);
-    knight.animate(renderDt, t, knightState, walker.x, walker.y, gz, walker.heading, groundAt, attention, motion);
+    knight.animate(renderDt, t, knightState, walker.x, walker.y, gz, walker.heading, feetGround, attention, motion);
     master.x = walker.x;
     master.y = walker.y;
     master.heading = walker.heading;
@@ -1072,7 +1079,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     critters.step(renderDt, t, galahadLead, dogLead, groundAt, atWork && g?.station === "forge", origin, motion);
 
     // The camera, over a smoothed ground; then everything that depends on where it is.
-    const focusGround = rig.settle(Math.max(0, groundAt(rig.x, rig.y)), renderDt, motion);
+    const focusGround = rig.settle(Math.max(0, rig.follow ? standZ : groundAt(rig.x, rig.y)), renderDt, motion);
     // On its spring arm: over the land, before what blocks the view, never inside anything.
     rig.wanted(focusGround, armWant, armPivot);
     arm.update(armPivot, armWant, solids, groundAt, renderDt, motion);
@@ -1159,7 +1166,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (!prev) {
         // First sight: put him (and the dog) where he is at once, and the camera on him.
         walker.go(targetFor(next.galahad, next.experiments), stationObstacles, true);
-        knight.place(walker.x, walker.y, walker.heading, groundAt);
+        standZ = walker.z;
+        knight.place(walker.x, walker.y, walker.heading, feetGround);
         dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
         // A three-quarter view of his front to begin with (he turns his back as he walks off, and the view swings round).
         rig.lookAt(walker.x, walker.y);

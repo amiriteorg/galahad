@@ -27,7 +27,8 @@ import {
   TorusGeometry,
 } from "three/webgpu";
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
-import { fleetSlot, STAIRS, tread } from "./keep-plan.ts";
+import { DECK_POTS, DECK_TOP, LANDING, onStairs, STAIRS, tread } from "./keep-deck.ts";
+import { fleetSlot } from "./keep-plan.ts";
 import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
 import { pathSheen, puddleDarken } from "./wet.ts";
@@ -337,11 +338,21 @@ function buildKeep(p: Parts): void {
     const mx = (top[0] + foot[0]) / 2 + ox;
     const mz = (top[1] + foot[1]) / 2 + oz;
     solid.add(new BoxGeometry(S.stringer.w, S.stringer.h, S.length), C.woodDark, along(mx, D / 2 + S.stringer.y, mz), 0.03);
-    solid.add(new BoxGeometry(S.rail.w, S.rail.h, S.length), C.wood, along(mx, D / 2 + S.rail.y, mz), 0.03);
+    // On the deck's side (+side), the handrail and its posts begin only below the opening, the way on from the deck.
+    const from = side > 0 ? S.opening : 0;
+    const t0 = from / S.run;
+    const ht = (t0 + 1) / 2;
+    solid.add(new BoxGeometry(S.rail.w, S.rail.h, S.length * (1 - t0)), C.wood, along(top[0] + (foot[0] - top[0]) * ht + ox, D - D * ht + S.rail.y, top[1] + (foot[1] - top[1]) * ht + oz), 0.03);
     for (let i = 0; i <= S.posts; i++) {
-      const t = i / S.posts;
+      const t = Math.max(t0, i / S.posts);
+      if (i > 0 && i / S.posts <= t0) continue;
       solid.add(new BoxGeometry(0.08, S.post, 0.08), C.woodDark, at(top[0] + (foot[0] - top[0]) * t + ox, D - D * t + S.post / 2 - 0.03, top[1] + (foot[1] - top[1]) * t + oz));
     }
+  }
+  // The landing: planks at the deck's height from its edge to the top tread, along the opening.
+  {
+    const [lx, lz] = onStairs(LANDING.along, LANDING.across);
+    planks((g, c, l, v) => solid.add(g, c, within(at(lx, 0, lz, yaw), l), v), 0, 0, LANDING.halfAcross * 2, LANDING.halfAlong * 2, DECK_TOP, 0.05);
   }
   for (const side of [-1, 1]) {
     const ox = Math.cos(yaw) * side * 0.9;
@@ -398,7 +409,7 @@ function buildKeep(p: Parts): void {
   for (const [dx, dz] of [[-0.5, -0.3], [0.5, -0.3], [-0.5, 0.3], [0.5, 0.3]] as const) solid.add(new BoxGeometry(0.07, 0.72, 0.07), C.woodDark, at(4.3 + dx, R + 0.36, 0.6 + dz, 0.3));
   mug(solid, null, 4.05, R + 0.78, 0.5, C.cream);
   mug(solid, null, 4.45, R + 0.78, 0.75, C.orange);
-  for (const [x, z, size, trail] of [[4.4, 2.6, 1.2, false], [4.9, -1.4, 1, true], [-4.7, -2.0, 1.1, true], [-3.2, -4.4, 0.9, false], [2.0, -5.4, 1, false], [-5.2, 1.4, 0.9, true]] as const) {
+  for (const [x, z, size, trail] of DECK_POTS) {
     pottedPlant(p, x, R, z, size, trail);
   }
   lanternBox(p, 2.95, R + 2.1, 5.25);

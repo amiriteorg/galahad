@@ -173,6 +173,8 @@ describe("the keep's solids", () => {
       // Between the stringers' undersides and the handrails' tops, within a metre of the middle: the stairs (not the deck's rim or its braces).
       const line = STAIRS.deck * (1 - along / run);
       if (along < 0.5 || along > run - 0.3 || Math.abs(across) > 1.0 || y < 0.3 || y > STAIRS.deck - 0.2 || y < line - 0.3 || y > line + 1.05) continue;
+      // (Nor the deck's rim beside their top, nor the landing from it.)
+      if (Math.hypot(points[i]!, points[i + 1]!) < 6.45 && y > STAIRS.deck - 0.5) continue;
       // The treads themselves (and nothing else) lie within their width.
       if (Math.abs(across) <= STAIRS.tread.w / 2 + 0.01 || onBrace(points[i]!, y, -points[i + 1]!)) continue;
       if (Math.abs(Math.abs(across) - 0.74) > 0.07) off.push(`${along.toFixed(2)} along, ${across.toFixed(2)} across, ${y.toFixed(2)} up`);

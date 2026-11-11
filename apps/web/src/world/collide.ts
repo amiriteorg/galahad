@@ -38,7 +38,11 @@ export interface Circle {
   r: number;
 }
 
-/** How a kind of walker is built: its radius, how high it stands, what it steps over, and who gives way (the lighter). */
+/**
+ * How a kind of walker is built: its radius, how high it stands, the most it steps up onto (or down from), and who
+ * gives way (the lighter). A step is about a walker's knee height: Galahad's knee is 0.53 m up (knight.ts: hips at
+ * 1.02, a 0.44 m thigh), the dog's 0.2 m (dog.ts).
+ */
 export interface Build {
   r: number;
   height: number;
@@ -50,9 +54,9 @@ export interface Build {
 export const BUILDS = {
   /** A site's machine on the move (a rover, a cart, a taxiing aircraft): nothing moves it. */
   machine: { r: 1, height: 3, step: 0, mass: 1e9 },
-  galahad: { r: 0.45, height: 2.5, step: 0.35, mass: 100 },
+  galahad: { r: 0.45, height: 2.5, step: 0.5, mass: 100 },
   deer: { r: 0.5, height: 1.9, step: 0.3, mass: 60 },
-  dog: { r: 0.32, height: 0.75, step: 0.15, mass: 20 },
+  dog: { r: 0.32, height: 0.75, step: 0.2, mass: 20 },
   microduck: { r: 0.3, height: 0.9, step: 0.1, mass: 4 },
   rabbit: { r: 0.2, height: 0.5, step: 0.12, mass: 3 },
   duck: { r: 0.22, height: 0.4, step: 0.05, mass: 2 },
@@ -541,9 +545,39 @@ export class Solids {
     return up === 0 ? side : side === 0 ? up : Math.hypot(side, up);
   }
 
-  /** True when a solid stands in the way of a walker `height` tall that steps over `step`. */
+  /**
+   * Where the walker asking stands (world z: its feet), or NaN: on each solid's own ground, as walkers that keep to
+   * the land ask. One that climbs (Galahad: Walker) sets it round its own questions, and clears it after.
+   */
+  floor = Number.NaN;
+
+  /**
+   * True when a solid stands in the way of a walker `height` tall that steps up `step`: its top is more than a step
+   * above the walker's feet, and its underside lower than its head (on its own ground, or the walker's `floor`).
+   */
   blocks(i: number, step: number, height: number): boolean {
-    return (this.mask[i]! & WALK) !== 0 && this.hi[i]! > step && this.lo[i]! < height;
+    if (!(this.mask[i]! & WALK)) return false;
+    if (Number.isNaN(this.floor)) return this.hi[i]! > step && this.lo[i]! < height;
+    const base = this.base[i]!;
+    return base + this.hi[i]! > this.floor + step && base + this.lo[i]! < this.floor + height;
+  }
+
+  /**
+   * What a walker whose feet are at z, stepping up to `step`, stands on at (x, y): the top of the highest thing
+   * walkers meet under that point that's no more than a step above its feet (a tread, a deck, a flat rock); −Infinity:
+   * nothing (it's on the land). With `r`, under any part of a circle that wide: what a foot is already up on.
+   */
+  support(x: number, y: number, z: number, step: number, r = 0): number {
+    const n = this.around(x - r, y - r, x + r, y + r);
+    let top = Number.NEGATIVE_INFINITY;
+    for (let k = 0; k < n; k++) {
+      const i = this.found[k]!;
+      if (!(this.mask[i]! & WALK)) continue;
+      const t = this.base[i]! + this.hi[i]!;
+      if (t > z + step || t <= top || this.gap(i, x, y) > (r > 0 ? r - SKIN * 2 : 0)) continue;
+      top = t;
+    }
+    return top;
   }
 
   /** The way out of solid i for a circle of radius r at (x, y): a push into (nX, nY) of the length returned (0: not touching). */
