@@ -24,6 +24,7 @@ import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
 import { FIRE } from "./hearth-plan.ts";
+import { emptySeason, type SeasonChoice, seasonFor, seasonState } from "./season.ts";
 import { HALL, inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
@@ -157,6 +158,8 @@ export interface WorldHandle {
   setBeacon(on: boolean): void;
   /** A fixed look (a place of the sun), or null for the real sky over Denmark now. */
   setTimeOfDay(preset: TimePreset | null): void;
+  /** The season to show: Denmark's by the real date ("live"), or one to look at. Eased to, never snapped. */
+  setSeason(choice: SeasonChoice): void;
   /** The weather to ease towards. */
   setWeather(kind: WeatherKind): void;
   /** The real weather (Denmark's, now) to ease towards, as cloud, rain and mist; `snap` goes straight there (first sight). */
@@ -504,6 +507,38 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let disposed = false;
   let lost = false;
   let override: TimePreset | null = null;
+  // ---- the season: Denmark's by the date, or the one chosen to look at (season.ts: everything that grows and lives reads seasonState) ----
+  let seasonChoice: SeasonChoice = "live";
+  const seasonTarget = emptySeason();
+  let seasonRead = Number.NEGATIVE_INFINITY;
+  let seasonSettled = false;
+  const SEASON_FIELDS = ["year", "winter", "spring", "summer", "autumn", "leaf", "bloom", "turn", "litter", "vigour"] as const;
+  /** Keeps seasonState to the date (read again once a minute) or the choice, eased over a few seconds; true while it's changing. */
+  function stepSeason(dt: number, motion: boolean, now: number): boolean {
+    if (now - seasonRead > 60_000) {
+      seasonRead = now;
+      seasonFor(seasonChoice, Date.now(), seasonTarget);
+    }
+    const k = !seasonSettled || !motion ? 1 : 1 - Math.exp(-dt * 0.9);
+    let moved = false;
+    for (const key of SEASON_FIELDS) {
+      const d = seasonTarget[key] - seasonState[key];
+      if (Math.abs(d) > 1e-4) {
+        seasonState[key] += d * k;
+        moved = true;
+      } else seasonState[key] = seasonTarget[key];
+    }
+    seasonState.name = seasonTarget.name;
+    seasonSettled = true;
+    if (moved) dirty = true;
+    return moved;
+  }
+  // ?trace=1: a tour sets the season to look at (as the HUD's control does).
+  if (trace) (globalThis as { __sandboxSeason?: unknown }).__sandboxSeason = (choice: SeasonChoice) => {
+    seasonChoice = choice;
+    seasonRead = Number.NEGATIVE_INFINITY;
+    dirty = true;
+  };
   const skyState = emptySky();
   const heavens = emptyHeavens();
   const weather = new Weather(options.weather ?? "clear");
@@ -1191,6 +1226,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     let active = walker.step(dt);
     // The weather moves on (re-lighting marks the frame dirty); while it rains, every frame is drawn.
     if (stepWeather(dt, motion, now)) active = true;
+    if (stepSeason(dt, motion, now)) active = true;
     if (rig.follow) {
       rig.lookAt(walker.x, walker.y);
       rig.trail(walker.heading, walker.moving, dt, cameraClear);
@@ -1617,6 +1653,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       placeHeavens();
       weather.settleMist(heavens.sunElevation * DEG, heavens.evening);
       applySky();
+    },
+    setSeason(choice) {
+      seasonChoice = choice;
+      seasonRead = Number.NEGATIVE_INFINITY;
+      dirty = true;
     },
     setWeather(kind) {
       weather.set(kind);

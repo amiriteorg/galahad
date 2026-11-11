@@ -51,7 +51,7 @@ import type { WorldWhere } from "../world/scene.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 9;
+const WORLD_API = 10;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -74,8 +74,27 @@ const WEATHER_CHOICES = [
   { value: "storm", label: "Storm", icon: "storm" },
 ] as const;
 type WeatherChoice = (typeof WEATHER_CHOICES)[number]["value"];
-/** This viewer's weather (only theirs: it's kept in this browser). */
+/** The season shown: Denmark's by the real date, or one to look at. */
+const SEASON_CHOICES = [
+  { value: "live", label: "Live", icon: "globe" },
+  { value: "spring", label: "Spring" },
+  { value: "summer", label: "Summer" },
+  { value: "autumn", label: "Autumn" },
+  { value: "winter", label: "Winter" },
+] as const;
+type SeasonChoice = (typeof SEASON_CHOICES)[number]["value"];
+/** This viewer's weather and season (only theirs: kept in this browser). */
 const WEATHER_KEY = "galahad.world.weather";
+const SEASON_KEY = "galahad.world.season";
+
+function storedSeason(): SeasonChoice {
+  try {
+    const v = localStorage.getItem(SEASON_KEY);
+    return SEASON_CHOICES.some((c) => c.value === v) ? (v as SeasonChoice) : "live";
+  } catch {
+    return "live";
+  }
+}
 
 function storedWeather(): WeatherChoice {
   try {
@@ -121,6 +140,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   let gPressed = 0;
   let timeChoice: TimeChoice = "now";
   let weatherChoice: WeatherChoice = storedWeather();
+  let seasonChoice: SeasonChoice = storedSeason();
   // ---- saved experiments: the replay playing (if any), and examinations fetched for ended ones' panels ----
   /** The replay playing, if any: the saved experiment, its recording and clock, and its panel. */
   let replay: {
@@ -157,6 +177,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   const followButton = button("Follow Galahad", { iconOnly: true, icon: "user", size: "sm", onClick: () => lookAt({ kind: "galahad" }) });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
   const weatherControl = segmented<WeatherChoice>(WEATHER_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), weatherChoice, (v) => setWeather(v), { label: "Weather", small: true, block: true });
+  const seasonControl = segmented<SeasonChoice>(SEASON_CHOICES.map((c) => ({ value: c.value, label: c.label, ...("icon" in c ? { icon: c.icon } : {}) })), seasonChoice, (v) => setSeason(v), { label: "Season", small: true, block: true });
   // The sky, in one control: the time in Denmark and its weather on the button; the choices behind it.
   const clock = h("span", { class: "sky-time tnum" });
   const skyMore = h("span", { class: "sky-more" });
@@ -169,8 +190,10 @@ export const worldView: View = (root, ctx, { scope }) => {
     onClick: () => {
       time.set("now");
       weatherControl.set("live");
+      seasonControl.set("live");
       setTime("now");
       setWeather("live");
+      setSeason("live");
     },
   });
   const skyPanel = h(
@@ -178,6 +201,7 @@ export const worldView: View = (root, ctx, { scope }) => {
     { class: "world-sky card", id: "world-sky", role: "group", "aria-label": "The sky", hidden: true },
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Time"), time.el),
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Weather"), weatherControl.el),
+    h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Season"), seasonControl.el),
     h("div", { class: "sky-foot" }, skyNote, skyReset),
   );
   skyWrap.append(skyButton, skyPanel);
@@ -322,6 +346,18 @@ export const worldView: View = (root, ctx, { scope }) => {
     }
   }
 
+  /** The season to the world: Denmark's by the real date, or one to look at. */
+  function setSeason(choice: SeasonChoice): void {
+    seasonChoice = choice;
+    handle?.setSeason(choice);
+    showClock();
+    try {
+      localStorage.setItem(SEASON_KEY, choice);
+    } catch {
+      /* storage off (a private window): the choice lasts this visit */
+    }
+  }
+
   /** The sky's choices, open or shut. */
   function setSky(open: boolean): void {
     if (open) look.close();
@@ -337,7 +373,11 @@ export const worldView: View = (root, ctx, { scope }) => {
   function showClock(): void {
     if (!mod) return;
     const w = weatherChoice === "live" ? model.weather : null;
-    const showing = [timeChoice !== "now" ? TIME_CHOICES.find((c) => c.value === timeChoice)!.label : null, weatherChoice !== "live" ? WEATHER_CHOICES.find((c) => c.value === weatherChoice)!.label : null]
+    const showing = [
+      timeChoice !== "now" ? TIME_CHOICES.find((c) => c.value === timeChoice)!.label : null,
+      weatherChoice !== "live" ? WEATHER_CHOICES.find((c) => c.value === weatherChoice)!.label : null,
+      seasonChoice !== "live" ? SEASON_CHOICES.find((c) => c.value === seasonChoice)!.label : null,
+    ]
       .filter((s): s is NonNullable<typeof s> => s !== null)
       .join(", ")
       .toLowerCase();
@@ -347,7 +387,7 @@ export const worldView: View = (root, ctx, { scope }) => {
     skyButton.dataset.preview = String(Boolean(showing));
     skyButton.title = showing ? "A preview of another sky. Open to go back to now." : "The sky follows the real sun, moon and weather over Denmark. Open to preview another.";
     skyNote.textContent = showing
-      ? "A preview. The real sky is Denmark's, now."
+      ? "A preview. The real sky and season are Denmark's, now."
       : w
         ? `${w.place}: ${real}, wind ${Math.round(w.wind)} m/s. ${w.source}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
         : "The real sun and moon over Denmark. Its weather isn't known right now, so the sky is shown clear.";
@@ -917,6 +957,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       handle.select(selected);
       handle.setFollow(following);
       handle.setTimeOfDay(timeChoice === "now" ? null : timeChoice);
+      handle.setSeason(seasonChoice);
       applyWeather(true);
       showClock();
       updateBeacon();
