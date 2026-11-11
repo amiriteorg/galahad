@@ -58,9 +58,10 @@ export class CameraRig {
 
   /**
    * While following him as he walks, swing slowly round behind him (heading:
-   * his, atan2 convention); and whenever the camera would stand inside a
-   * building (`clear` is false where it can't be), turn it to the nearest
-   * clear side instead, or come closer.
+   * his, atan2 convention), to the nearest side where nothing blocks the view
+   * (`clear` is false where something would). Not for a while after the view
+   * was turned by hand: then it stays where it was turned (the arm keeps it out
+   * of whatever's there, and what's between dissolves).
    */
   trail(heading: number, walking: boolean, dt: number, clear: (x: number, y: number) => boolean): void {
     this.sinceTurn += dt;
@@ -88,7 +89,7 @@ export class CameraRig {
       }
       t.yaw += angleDiff(t.yaw, want) * (1 - Math.exp(-dt * (walking ? 0.55 : 0.3)));
     }
-    if (at(t.yaw, back)) return;
+    if (this.sinceTurn < 6 || at(t.yaw, back)) return;
     for (let k = 1; k <= 15; k++) {
       for (const sign of [1, -1]) {
         const yaw = t.yaw + sign * k * (Math.PI / 15);
@@ -98,8 +99,6 @@ export class CameraRig {
         }
       }
     }
-    // Hemmed in all round: come in closer.
-    t.distance = Math.max(MIN_DISTANCE, t.distance * 0.92);
   }
 
   /** The ground under the focus, eased (a hill's facets would make the view bob). */

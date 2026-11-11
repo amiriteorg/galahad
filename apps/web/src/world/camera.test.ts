@@ -9,7 +9,7 @@ import { Workshop } from "./hall.ts";
 import { HALL } from "./hall-plan.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
 import { Planner } from "./nav.ts";
-import { obstacles, PLACES, standAt, Walker } from "./path.ts";
+import { angleDiff, obstacles, PLACES, standAt, Walker } from "./path.ts";
 import type { Place } from "./place.ts";
 import { SITE_COLLIDERS } from "./sites.ts";
 import { BASE_FLATS, BIG, CHUNK, chunkSamples, heightAt, SEED } from "./terrain.ts";
@@ -307,6 +307,23 @@ describe("the camera's spring arm", () => {
     }
     expect(faults).toEqual([]);
     expect(pops).toBe(0);
+  });
+
+  test("turned by hand while it follows him, it stays where it's turned, as far out as it was", () => {
+    const rig = new CameraRig();
+    rig.lookAt(0, 0, 14);
+    rig.target.yaw = 0;
+    rig.update(0, false);
+    // Everything east of him blocks the view.
+    const clear = (x: number) => x < 0;
+    // Turned to look west from the east: where nothing would be clear.
+    rig.rotateBy(Math.PI);
+    for (let k = 0; k < 60 * 3; k++) rig.trail(0, false, 1 / 60, clear);
+    expect(Math.abs(angleDiff(rig.target.yaw, Math.PI))).toBeLessThan(1e-9);
+    expect(rig.target.distance).toBe(14);
+    // Left alone a while, it goes back round to a clear side.
+    for (let k = 0; k < 60 * 8; k++) rig.trail(0, false, 1 / 60, clear);
+    expect(Math.cos(rig.target.yaw)).toBeGreaterThan(0);
   });
 
   test("under reduced motion it goes straight where it may, with nothing eased", () => {

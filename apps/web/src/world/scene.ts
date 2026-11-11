@@ -139,6 +139,8 @@ export interface WorldHandle {
   dispose(): void;
 }
 
+/** Frames the page's trace keeps (`?trace=1`). */
+const TRACE = 2000;
 const REBASE_M = 2048;
 const ZERO: [number, number] = [0, 0];
 /** A frame is due this long after the last (a 60 Hz frame, less a margin so rAF jitter never skips one). */
@@ -392,6 +394,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   dog.join(solids, deep);
   // The page's `?colliders=1`: what's solid, drawn as lines (nothing is built without it).
   const colliderLines = wantsColliders(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
+  // The page's `?trace=1`: the last frames' camera and Galahad (time, camera x y z, his x y z), kept for a tour to read
+  // (globalThis.__sandboxTrace: the buffer and how many frames went in). Nothing is kept without it.
+  const trace = /[?&]trace=1(&|$)/.test(location.search) ? { frames: new Float64Array(TRACE * 7), n: 0 } : null;
+  if (trace) (globalThis as { __sandboxTrace?: unknown }).__sandboxTrace = trace;
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
@@ -1085,6 +1091,17 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     arm.update(armPivot, armWant, solids, groundAt, renderDt, motion);
     rig.apply(camera, origin, focusGround, arm);
     colliderLines?.update(rig.x, rig.y, origin, arm.x, arm.y, arm.z);
+    if (trace) {
+      const f = trace.frames;
+      const k = (trace.n++ % TRACE) * 7;
+      f[k] = now;
+      f[k + 1] = arm.x;
+      f[k + 2] = arm.y;
+      f[k + 3] = arm.z;
+      f[k + 4] = walker.x;
+      f[k + 5] = walker.y;
+      f[k + 6] = standZ;
+    }
     camera.updateMatrixWorld();
     occlusion.from.value.copy(camera.position);
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
