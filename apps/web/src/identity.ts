@@ -40,12 +40,32 @@ async function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => I
   }
 }
 
-export async function loadIdentity(): Promise<BrowserIdentity | null> {
-  try {
-    return ((await tx("readonly", (s) => s.get(KEY))) as BrowserIdentity | undefined) ?? null;
-  } catch {
-    return null;
+/** The key store couldn't be read just now: not the same as "no key" (which would invite pairing over it). */
+export class KeyStoreUnavailable extends Error {
+  constructor(override readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "KeyStoreUnavailable";
   }
+}
+
+const READ_ATTEMPTS = 3;
+
+/**
+ * This browser's key, or null when none was ever made. A store that can't be read (Safari
+ * drops its storage connection after a Home Screen app has slept) is tried again, then
+ * throws KeyStoreUnavailable: it is never mistaken for "not paired".
+ */
+export async function loadIdentity(): Promise<BrowserIdentity | null> {
+  let last: unknown;
+  for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    try {
+      return ((await tx("readonly", (s) => s.get(KEY))) as BrowserIdentity | undefined) ?? null;
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw new KeyStoreUnavailable(last);
 }
 
 export async function saveIdentity(identity: BrowserIdentity): Promise<void> {

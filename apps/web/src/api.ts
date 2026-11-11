@@ -40,6 +40,10 @@ export const setNetworkHandler = (handler: (ok: boolean) => void): void => {
   onNetwork = handler;
 };
 
+/** A gateway error that isn't the node's own (the node always answers in JSON): the proxy in front of it. */
+const fromProxy = (response: Response): boolean =>
+  (response.status === 502 || response.status === 503 || response.status === 504) && !(response.headers.get("content-type") ?? "").includes("application/json");
+
 async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   const bytes = body === undefined ? new Uint8Array() : utf8(JSON.stringify(body));
   const headers = await signRequest(identity.device, signerFor(identity), method, path, bytes);
@@ -55,6 +59,12 @@ async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", pa
   } catch (error) {
     if (!isAbort(error)) onNetwork(false);
     throw error;
+  }
+  if (fromProxy(response)) {
+    // `tailscale serve` answering for a node that's restarting or down: the node is away, not refusing.
+    onNetwork(false);
+    await response.body?.cancel().catch(() => {});
+    throw new ApiError(response.status, `Galahad's node isn't answering (${response.status}). It may be restarting.`);
   }
   onNetwork(true);
   if (!response.ok) {

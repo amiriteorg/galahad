@@ -106,15 +106,36 @@ export function empty(options: { icon: IconName; title: string; body?: Child; ac
   );
 }
 
-/** A courteous error with a way forward. */
+/** What each error state on screen would do to try again (see retryFailed). */
+const retries = new WeakMap<Element, () => void>();
+
+/** A courteous error with a way forward. When the node comes back, the shell tries it again by itself. */
 export function errorState(title: string, error: unknown, retry?: () => void): HTMLElement {
-  return empty({
+  const el = empty({
     icon: "alert",
     title,
     body: error instanceof Error ? error.message : String(error),
     actions: retry ? button("Try again", { icon: "retry", onClick: retry }) : null,
     compact: true,
   });
+  if (retry) {
+    el.dataset.retry = "";
+    retries.set(el, retry);
+  }
+  return el;
+}
+
+/** Tries again every error state under `root` that can (after a dropped connection comes back). Returns how many. */
+export function retryFailed(root: ParentNode): number {
+  let n = 0;
+  for (const el of root.querySelectorAll("[data-retry]")) {
+    const retry = retries.get(el);
+    if (!retry) continue;
+    retries.delete(el);
+    n++;
+    retry();
+  }
+  return n;
 }
 
 /** Skeleton rows standing in for a list, the same height as the real thing (no layout jump). */

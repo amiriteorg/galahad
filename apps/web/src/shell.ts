@@ -6,7 +6,7 @@ import { startLive } from "./live.ts";
 import { shortId } from "./lib/text.ts";
 import { lastRoute, rememberRoute, setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
-import { button, count, dot, kbd } from "./ui/controls.ts";
+import { button, count, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { cx, h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { emblem } from "./ui/emblem.ts";
@@ -243,7 +243,11 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         h("span", { class: "grow" }, navigator.onLine ? "Can't reach Galahad right now. What you see may be out of date." : "You're offline. The app is cached; live data returns when you reconnect."),
         button("Retry", { size: "sm", onClick: () => void live.refreshFleet() }),
       );
-    } else toast("Reconnected", { tone: "ok", duration: 2000 });
+    } else {
+      // Whatever failed while the node was away is asked again, so the page heals by itself.
+      retryFailed(main);
+      toast("Reconnected", { tone: "ok", duration: 2000 });
+    }
   });
 
   function toggleSidebar(): void {
