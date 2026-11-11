@@ -171,7 +171,7 @@ export class Chalkboard implements Place {
 
   /** The board changed: an agent's item, somewhere, is his to go and write (unless motion is off: then it just appears). */
   boardChanged(change: BoardChange, motion: boolean): void {
-    if (change.change === "clear") this.chores = [];
+    if (change.change === "clear" || change.change === "restore") this.chores = [];
     if (change.change !== "write" || change.by !== "agent" || !change.region || !motion) return;
     if (this.chores.length >= 3) return;
     const first = this.chores.length === 0;

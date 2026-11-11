@@ -195,6 +195,7 @@ describe("the board, read at the boundary", () => {
     expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "draw", by: "owner", region: null })).toMatchObject({ change: "draw", region: null });
     expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "write", by: "agent", region: { x: 1500, y: 0, w: 300, h: 80 } })).toBeNull();
     expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "explode", by: "agent", region: null })).toBeNull();
+    expect(readWorldEvent({ type: "board", at: 1, version: 5, change: "restore", by: "owner", region: null })).toMatchObject({ change: "restore" });
     const hello = readWorldEvent({ type: "hello", at: 1, galahad: { station: "keep", doing: "", experiment: null, model: null, since: 0 }, nodes: [], experiments: [], thoughts: [], board: { version: 9 } });
     expect(hello).toMatchObject({ type: "hello", board: { version: 9 } });
   });

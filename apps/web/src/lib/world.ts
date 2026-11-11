@@ -327,7 +327,7 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       return id(v.experiment) ? { type: "cleared", at, experiment: v.experiment } : null;
     case "board": {
       // The chalkboard changed: its version, what kind of change, and where an item went (bounded to the board).
-      const change = v.change === "draw" || v.change === "write" || v.change === "erase" || v.change === "clear" ? v.change : null;
+      const change = v.change === "draw" || v.change === "write" || v.change === "erase" || v.change === "clear" || v.change === "restore" ? v.change : null;
       const by = v.by === "owner" || v.by === "agent" ? v.by : null;
       const r = v.region;
       const region = isObj(r) && num(r.x) && num(r.y) && num(r.w) && num(r.h) && r.x >= 0 && r.y >= 0 && r.w >= 0 && r.h >= 0 && r.x + r.w <= 1600 && r.y + r.h <= 900 ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;

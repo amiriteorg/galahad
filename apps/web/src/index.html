@@ -1152,6 +1152,18 @@
       .board-item { border-top: 1px solid var(--border); padding-top: var(--sp-2); }
       .board-item .row { display: flex; align-items: center; gap: var(--sp-2); }
       .board-item-text { color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+      .board-history { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: var(--sp-4); align-items: start; }
+      .board-history-side { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 62vh; overflow: auto; }
+      .board-history-list { display: flex; flex-direction: column; gap: 2px; }
+      .board-history-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-md); background: transparent; color: var(--text); cursor: pointer; min-height: var(--control-h); font: inherit; }
+      .board-history-row:hover { background: var(--surface-2); }
+      .board-history-row[aria-current="true"] { background: var(--surface-3); box-shadow: inset 2px 0 0 var(--accent); }
+      .board-history-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus); }
+      .board-history-preview { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+      .board-history-preview .row { display: flex; gap: var(--sp-2); }
+      .board-history-canvas { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-md); border: 1px solid var(--border); background: #2f3b36; }
+      .board-history-text { color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+      @media (max-width: 639px) { .board-history { grid-template-columns: 1fr; } .board-history-side { max-height: 32vh; } }
       dialog.sheet.full { width: min(1240px, calc(100vw - 32px)); height: min(860px, calc(100dvh - 32px)); max-height: none; }
       dialog.sheet.full .sheet-body.board-sheet-body { flex: 1; min-height: 0; overflow: hidden; padding-top: 0; }
       @media (max-width: 639px) {

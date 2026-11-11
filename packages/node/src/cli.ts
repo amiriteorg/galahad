@@ -19,7 +19,7 @@ import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBran
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
-import type { BankStatusView, BoardView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
+import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
@@ -60,6 +60,8 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
   board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
+  board history [--limit 20] | board restore <version> | board history forget [-y]
+                                  every version is kept (clearing destroys nothing): list them, put one back, forget them
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -770,7 +772,7 @@ Next:
         else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
         else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
-        else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
+        else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : e.change === "restore" ? "restored from its history" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);
@@ -788,7 +790,30 @@ Next:
         console.log("Cleared. The board is clean on every device that has it open.");
         return;
       }
-      if (sub) fail("usage: galahad board | galahad board clear [-y]");
+      if (sub === "history" && rest[0] === "forget") {
+        if (!flags.yes && !confirm("Forget the board's history (every earlier version and picture) for good? The board itself stays.")) return;
+        await admin.call("boardForget", {});
+        console.log("Forgotten. Its history starts again from the board as it is.");
+        return;
+      }
+      if (sub === "history") {
+        const { versions, more } = await admin.call<{ versions: BoardVersionInfo[]; more: boolean }>("boardHistory", { limit: Number(str("limit") ?? 20) });
+        for (const v of versions) {
+          const who = v.by === "owner" ? `you${v.device ? ` (${v.device})` : ""}` : v.by === "galahad" ? "Galahad" : v.by;
+          console.log(`${bold(String(v.version).padStart(5))}  ${dim(new Date(v.at).toLocaleString())}  ${who} ${v.summary}${v.picture === v.version ? dim("  · picture") : ""}`);
+        }
+        if (more) console.log(dim("… older versions too: --limit to see more"));
+        console.log(dim("galahad board restore <version> puts one back (what's there now is kept too)."));
+        return;
+      }
+      if (sub === "restore") {
+        const version = Number(rest[0]);
+        if (!rest[0] || !Number.isInteger(version)) fail("usage: galahad board restore <version>   (galahad board history lists them)");
+        const { version: now } = await admin.call<{ version: number }>("boardRestore", { version });
+        console.log(`Version ${version} is back on the board (as version ${now}); what was there is kept in its history.`);
+        return;
+      }
+      if (sub) fail("usage: galahad board | galahad board clear [-y] | galahad board history [forget] | galahad board restore <version>");
       const { head, items, drawing } = boardLines(await admin.call<BoardView>("board"));
       console.log(bold(head));
       if (!items.length) console.log(dim("Nothing written on it."));

@@ -1,4 +1,5 @@
-import { BOARD_LIMITS, type BoardItem, type BoardStroke, type BoardView, type Chalk, CHALK, describeDrawing, emptyBoard, equationText, itemSummary, noteLines } from "@galahad/core/board";
+import { BOARD_LIMITS, type BoardItem, type BoardStroke, type BoardVersionInfo, type BoardView, type Chalk, CHALK, describeDrawing, emptyBoard, equationText, itemSummary, noteLines } from "@galahad/core/board";
+import { relativeTime } from "../lib/time.ts";
 import { ApiError, isNetworkError } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import {
@@ -148,6 +149,7 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
   const redoButton = button("Redo", { iconOnly: true, icon: "redo", size: "sm", label: "Redo", onClick: () => redo() });
   const fitButton = button("Fit", { iconOnly: true, icon: "expand", size: "sm", label: "Fit the board in view", onClick: () => fit() });
   const listButton = button("Writing", { icon: "scroll", size: "sm", label: "What's written on the board", onClick: () => setList(!listOpen) });
+  const historyButton = button("History", { icon: "clock", size: "sm", label: "The board's history: every version, kept", onClick: () => openHistory(ctx, { canRestore: canDraw, onRestored: () => void load() }) });
   const clearButton = canClear ? button("Clear…", { icon: "trash", size: "sm", variant: "danger", label: "Clear the board", onClick: () => void clearBoard() }) : null;
   const status = h("span", { class: "board-status tiny", role: "status", "aria-live": "polite" });
   const retry = button("Send now", { size: "sm", icon: "retry", onClick: () => flush(true) });
@@ -162,6 +164,7 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
     h("span", { class: "grow" }),
     fitButton,
     listButton,
+    historyButton,
     clearButton,
   );
   const slate = h("canvas", { class: "board-canvas", "aria-hidden": "true" }) as HTMLCanvasElement;
@@ -543,7 +546,7 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
   async function clearBoard(): Promise<void> {
     const ok = await confirmAction({
       title: "Clear the chalkboard?",
-      body: "Your drawing and everything written on it go, on every device. This can't be undone.",
+      body: "Your drawing and everything written on it go, on every device. Its history keeps them: you can put this version back from History.",
       confirmLabel: "Clear the board",
       tone: "danger",
     });
@@ -668,6 +671,105 @@ function createBoard(ctx: Ctx, scope: Scope, opts: { feed: BoardFeed }): { el: H
   resize();
   update();
   return { el, focus: () => stage.focus({ preventScroll: true }) };
+}
+
+/* ---------------- the board's history: every version, kept; look back, and put one back ---------------- */
+
+const HISTORY_PAGE = 50;
+
+function whoDid(v: BoardVersionInfo): string {
+  if (v.by === "owner") return v.device ? `You (${v.device})` : "You";
+  if (v.by === "galahad") return "Galahad";
+  if (v.by === "node") return "The board";
+  return v.by;
+}
+
+/** The board's history in a sheet: the versions, newest first; one opened shows as it stood, in words, and can be put back. */
+function openHistory(ctx: Ctx, opts: { canRestore: boolean; onRestored: () => void }): void {
+  const rows = h("div", { class: "board-history-list", role: "list", "aria-label": "Versions, newest first" });
+  const older = button("Older versions", { size: "sm", icon: "chevron-down", onClick: () => void page() });
+  older.hidden = true;
+  const canvas = h("canvas", { class: "board-history-canvas", role: "img", "aria-label": "The board as it stood" }) as HTMLCanvasElement;
+  const scratch = document.createElement("canvas");
+  const heading = h("p", { class: "small strong" });
+  const words = h("div", { class: "board-history-text small" });
+  const restore = button("Put this version back", { variant: "primary", icon: "retry", size: "sm" });
+  restore.hidden = true;
+  const preview = h("div", { class: "board-history-preview", hidden: true }, canvas, heading, h("div", { class: "row" }, restore), words);
+  const sheet = openSheet({
+    title: "The board's history",
+    description: "Every version is kept: clearing or erasing destroys nothing.",
+    size: "wide",
+    body: h("div", { class: "board-history" }, h("div", { class: "board-history-side" }, rows, older), preview),
+  });
+  let oldest: number | null = null;
+  let chosen: number | null = null;
+
+  async function page(): Promise<void> {
+    try {
+      const answer = await ctx.api.post<{ versions: BoardVersionInfo[]; more: boolean }>("/api/board/history", { limit: HISTORY_PAGE, ...(oldest !== null ? { before: oldest } : {}) }, sheet.scope.signal);
+      const versions = (Array.isArray(answer.versions) ? answer.versions : []).filter((v) => v && Number.isFinite(v.version) && typeof v.summary === "string");
+      for (const v of versions) {
+        const row: HTMLButtonElement = h(
+          "button",
+          { class: "board-history-row", type: "button", role: "listitem", "aria-current": "false", onclick: () => void open(v.version, row) },
+          h("span", { class: "small strong" }, `${whoDid(v)} ${v.summary}`),
+          h("span", { class: "meta tnum" }, `Version ${v.version} · ${relativeTime(v.at)}${v.picture === v.version ? " · with its picture" : ""}`),
+        );
+        rows.append(row);
+      }
+      oldest = versions.at(-1)?.version ?? oldest;
+      older.hidden = !answer.more;
+      if (!rows.childElementCount) rows.append(h("p", { class: "small muted" }, "No history yet."));
+    } catch (error) {
+      rows.append(callout("warn", `Can't read the history right now: ${errorMessage(error)}`));
+    }
+  }
+
+  async function open(version: number, row: HTMLElement): Promise<void> {
+    chosen = version;
+    for (const r of rows.querySelectorAll(".board-history-row")) r.setAttribute("aria-current", String(r === row));
+    try {
+      const v = await ctx.api.post<{ info: BoardVersionInfo; items: unknown; strokes: unknown; text: unknown }>("/api/board/version", { version }, sheet.scope.signal);
+      if (chosen !== version) return;
+      const board = readBoard({ version, updatedAt: v.info?.at ?? 0, items: v.items, strokes: v.strokes, snapshot: null });
+      if (!board) throw new Error("the node's answer isn't a version of the board");
+      preview.hidden = false;
+      const width = Math.max(320, Math.min(900, preview.clientWidth || 640));
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round((width * dpr * 9) / 16);
+      paintBoard(canvas, scratch, board);
+      canvas.setAttribute("aria-label", `The board at version ${version}: ${describeDrawing(board)}`);
+      heading.textContent = `Version ${version}: ${whoDid(v.info)} ${v.info.summary}, ${relativeTime(v.info.at)}.`;
+      // What an agent wrote is shown as text, never markup.
+      replace(words, ...String(typeof v.text === "string" ? v.text : "").split("\n").map((line) => h("div", {}, line || " ")));
+      restore.hidden = !opts.canRestore;
+      restore.onclick = () => void putBack(version);
+    } catch (error) {
+      preview.hidden = false;
+      replace(words, callout("warn", `Can't read version ${version}: ${errorMessage(error)}`));
+    }
+  }
+
+  async function putBack(version: number): Promise<void> {
+    const ok = await confirmAction({
+      title: `Put version ${version} back?`,
+      body: "It replaces what's on the board now, on every device. What's there now is kept in the history too.",
+      confirmLabel: "Put it back",
+    });
+    if (!ok) return;
+    try {
+      await ctx.api.post("/api/board/restore", { version });
+      sheet.close();
+      opts.onRestored();
+      toast(`Version ${version} is back on the board`, { tone: "ok" });
+    } catch (error) {
+      replace(words, callout("warn", `Couldn't put it back: ${errorMessage(error)}`));
+    }
+  }
+
+  void page();
 }
 
 /** For the world page: a feed it fills from its own stream. */
