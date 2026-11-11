@@ -1086,6 +1086,24 @@
       .world-banner .callout { box-shadow: var(--shadow-2); max-width: 560px; }
       .world-bottom { display: flex; align-items: flex-end; gap: var(--sp-2); min-height: 0; }
       .world-panel { width: min(340px, 100%); max-height: min(52vh, 440px); overflow: auto; box-shadow: var(--shadow-3); }
+      /* Talking to Galahad in the world: the composer at its foot, the last few turns above it. */
+      .world-chat { pointer-events: auto; width: min(440px, 100%); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+      .world-chat-log { max-height: min(42vh, 380px); overflow: auto; overscroll-behavior: contain; padding: var(--sp-2) var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); box-shadow: var(--shadow-3); }
+      .world-chat-log[hidden] { display: none; }
+      .world-chat-head { position: sticky; top: calc(-1 * var(--sp-2)); display: flex; align-items: center; gap: 4px; margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) 0; padding: 4px var(--sp-2) 4px var(--sp-3); background: var(--surface); border-bottom: 1px solid var(--border); z-index: 1; }
+      .world-chat-turn { font-size: var(--fs-14); line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+      .world-chat-turn.you { align-self: flex-end; max-width: 85%; background: var(--surface-2); padding: 6px 10px; border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg); white-space: pre-wrap; }
+      .world-chat-answer > :first-child { margin-top: 0; }
+      .world-chat-answer > :last-child { margin-bottom: 0; }
+      .world-chat-step { display: flex; align-items: center; gap: 6px; color: var(--text-3); margin-bottom: 4px; }
+      .world-chat-step .spinner { width: 11px; height: 11px; }
+      .world-chat-error { color: var(--danger); }
+      .world-chat-alert { margin: 0; padding: 6px 10px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--text); box-shadow: var(--shadow-2); }
+      .world-chat-alert[hidden] { display: none; }
+      .world-chat-bar { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 12px; border-radius: var(--r-xl); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-2); }
+      .world-chat-bar > svg { flex: none; align-self: center; }
+      .world-chat-bar textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-input); line-height: 1.4; padding: 5px 0; max-height: 120px; }
+      .world-chat-bar:focus-within { border-color: var(--accent-border); box-shadow: var(--shadow-2), 0 0 0 2px var(--focus); }
       .world-panel .card-head { position: sticky; top: 0; background: var(--surface); z-index: 1; border-radius: var(--r-lg) var(--r-lg) 0 0; }
       .world-panel .rows > .item { padding: var(--sp-2) var(--sp-3); }
       .world-metrics dd { text-align: right; }
@@ -1096,6 +1114,8 @@
       @media (max-width: 639px) {
         .world-bottom { flex-direction: column-reverse; align-items: stretch; }
         .world-panel { width: 100%; max-height: 42vh; }
+        .world-chat { width: 100%; }
+        .world-chat-log { max-height: 34vh; }
         .world-corner { flex-direction: row; align-items: center; }
         .world-controls { grid-template-columns: repeat(4, auto); }
       }

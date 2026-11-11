@@ -313,6 +313,34 @@ function send(api: Api, text: string): void {
   void run(api, turn);
 }
 
+// ---- the same conversation, for other surfaces (the SANDBOX talks to Galahad here too) ----
+
+/** A turn of the conversation as another surface shows it. */
+export type ChatTurn = Readonly<Pick<Turn, "id" | "role" | "content" | "status" | "error" | "model" | "as">> & { readonly step: string | null };
+
+/** The conversation as it stands (the one the Chat page shows): its turns, the step the answer is at, and its title. */
+export function chatState(): { turns: ChatTurn[]; busy: boolean; title: string | null } {
+  return {
+    turns: turns.map((t) => ({ id: t.id, role: t.role, content: t.content, status: t.status, error: t.error, model: t.model, as: t.as, step: t.steps.at(-1)?.text ?? null })),
+    busy: controller !== null,
+    title: current?.title ?? null,
+  };
+}
+
+/** Told whenever the conversation changes (a turn added, an answer streaming in). Returns the way to stop listening. */
+export function onChatChange(fn: () => void): () => void {
+  const listener = () => fn();
+  changed.add(listener);
+  return () => changed.delete(listener);
+}
+
+/** Ask Galahad in the conversation (the Chat page's role, project and keeping apply). False while an answer is still coming. */
+export function askGalahad(api: Api, text: string): boolean {
+  if (controller || !text.trim()) return false;
+  send(api, text.trim());
+  return true;
+}
+
 function retry(api: Api, turn: Turn): void {
   if (controller) return;
   const index = turns.indexOf(turn);

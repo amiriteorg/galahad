@@ -8,7 +8,7 @@ It's a view of what's happening now, not a record: the ledger, your chats and ke
 
 | Where | How |
 |---|---|
-| The app | **SANDBOX** (`G` then `X`): the world in 3D. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the experiments, the two test sites, the stations), searchable; picking an experiment opens its readouts. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
+| The app | **SANDBOX** (`G` then `X`): the world in 3D. **Talk to Galahad** in the composer at its foot (`C`): it's the same conversation as the Chat page, and asking follows him, so you watch him walk off to the library, the watchtower or the treasury to answer. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the experiments, the two test sites, the stations), searchable; picking an experiment opens its readouts. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
 | A terminal | `galahad world` (where he is, the weather, the experiments); `galahad world --follow` keeps watching |
 
 The stream is yours alone: agents can't watch it, because it carries a line of what Galahad is saying in your chats now and then. Once he has read the bank in an answer, nothing more from that answer appears.

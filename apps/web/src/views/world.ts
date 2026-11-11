@@ -24,6 +24,7 @@ import { h, isTyping, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 import { type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
+import { createWorldChat } from "./world-chat.ts";
 import { createLook } from "./world-look.ts";
 import { FIELD, RUNWAY } from "../world/field-plan.ts";
 import { HALL } from "../world/hall-plan.ts";
@@ -115,7 +116,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
-  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. L picks what to look at, F follows Galahad, M shows the map, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
+  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. C talks to Galahad, L picks what to look at, F follows Galahad, M shows the map, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
   const loading = h("div", { class: "world-loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", {}, "Opening the world…"));
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
@@ -155,6 +156,9 @@ export const worldView: View = (root, ctx, { scope }) => {
   const mapCanvas = h("canvas", { class: "world-map", "aria-hidden": "true", hidden: !mapOn }) as HTMLCanvasElement;
   const mapButton = button("Map", { iconOnly: true, icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
   const panel = h("div", { class: "world-panel card", hidden: true });
+  // Talking to Galahad here: the same conversation as the Chat page; asking follows him, so you see him go to work.
+  const chat = ctx.can("chat") ? createWorldChat({ api: ctx.api, onAsk: () => lookAt({ kind: "galahad" }), openChat: () => ctx.navigate("chat") }) : null;
+  if (chat) scope.add(() => chat.dispose());
   const controls = h(
     "div",
     { class: "world-controls" },
@@ -172,7 +176,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       h("div", { class: "world-left" }, banner, mapCanvas),
       h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, skyWrap)),
     ),
-    h("div", { class: "world-bottom" }, panel, h("div", { class: "world-corner" }, controls)),
+    h("div", { class: "world-bottom" }, panel, chat?.el ?? null, h("div", { class: "world-corner" }, controls)),
   );
   const summary = h("div", { class: "sr-only", "aria-live": "polite" });
   stage.append(loading, fallback, hud);
@@ -635,6 +639,8 @@ export const worldView: View = (root, ctx, { scope }) => {
       e: () => handle?.rotate(1),
       f: () => (following ? setFollow(false) : lookAt({ kind: "galahad" })),
       l: () => look.open(),
+      // Talk to him: the composer at the foot of the world.
+      c: () => chat?.focus(),
       m: () => setMap(!mapOn),
       // (Only while the sky's choices are open: Escape belongs to whatever else is.)
       ...(skyOpen ? { Escape: () => setSky(false) } : {}),
