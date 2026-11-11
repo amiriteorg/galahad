@@ -18,7 +18,7 @@ const MAX_PAGES = 1000;
 
 /** The answering side of /link/sync: one page, and what to repair. */
 export function answerSync(store: MindStore, request: SyncRequest, limit = 500): Omit<SyncPage, "presence"> {
-  return { ...store.eventsSince(request.have, limit, request.sets), sets: true };
+  return { ...store.eventsSince(request.have, limit, request.sets, request.after), sets: true };
 }
 
 export interface SyncOptions {

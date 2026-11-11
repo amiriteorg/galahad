@@ -37,8 +37,8 @@ const pull = (from: MindStore, to: MindStore, limit = 50) => {
   const state = new PullState(to);
   state.begin();
   for (let i = 0; i < 10_000; i++) {
-    const { have, sets } = state.request(true);
-    if (!state.receive(from.eventsSince(have, limit, sets)).more) return;
+    const { have, sets, after } = state.request(true);
+    if (!state.receive(from.eventsSince(have, limit, sets, after)).more) return;
   }
   throw new Error("the pull never ended");
 };
@@ -135,6 +135,31 @@ function replicaOf(fleet: Busy): MindStore {
   const store = new MindStore(":memory:");
   store.expectFleet(fleet.stores[0]!.fleet!);
   return store;
+}
+
+/** A founder `a` and a node `b` on one replica, a clock that moves only when told, and more replicas. */
+function twoNodes() {
+  const a = newNodeIdentity();
+  const b = newNodeIdentity();
+  let now = Date.UTC(2026, 10, 1);
+  const full = new MindStore(":memory:", new HlcClock(() => now));
+  foundFleet(full, a, { fleetName: "twins", nodeName: "a" });
+  enrollDevice(full, a, { device: b.id, name: "b", kind: "node", box: b64u(b.boxPublic) });
+  const replica = () => {
+    const store = new MindStore(":memory:", new HlcClock(() => now));
+    store.expectFleet(full.fleet!);
+    return store;
+  };
+  return { a, b, full, replica, tick: () => (now += 10) };
+}
+
+/** `node`'s next event, dated exactly like its head, with an id ground to sort after it: chain-valid. */
+function twin(store: MindStore, node: NodeIdentity, text: string): GEvent {
+  const parent = store.event(store.head(node.id)!)!;
+  for (let nonce = 0; ; nonce++) {
+    const event = signEvent({ v: 2, fleet: store.fleet!, hlc: parent.hlc, device: node.id, prev: parent.id, kind: "memory.added", body: { text: `${text} ${nonce}` } }, node);
+    if (event.id > parent.id) return event;
+  }
 }
 
 describe("the log's running summaries equal the log", () => {
@@ -308,8 +333,8 @@ describe("repairing a hole is paged", () => {
     state.begin();
     let pages = 0;
     for (;;) {
-      const { have, sets } = state.request(true);
-      const page = full.eventsSince(have, 20, sets);
+      const { have, sets, after } = state.request(true);
+      const page = full.eventsSince(have, 20, sets, after);
       expect(page.events.length).toBeLessThanOrEqual(20);
       pages++;
       if (!state.receive(page).more) break;
@@ -334,15 +359,15 @@ describe("repairing a hole is paged", () => {
     state.begin();
     // Two pages, then the pull is cut short (a timeout, say).
     for (let i = 0; i < 2; i++) {
-      const { have, sets } = state.request(true);
-      state.receive(full.eventsSince(have, 10, sets));
+      const { have, sets, after } = state.request(true);
+      state.receive(full.eventsSince(have, 10, sets, after));
     }
     expect(state.walking()).toEqual([b.id]);
     state.begin();
     for (let i = 0; i < 1000; i++) {
-      const { have, sets } = state.request(true);
+      const { have, sets, after } = state.request(true);
       // A peer that keeps saying "repair" can't start the same walk twice in one pull.
-      const page = { ...full.eventsSince(have, 10, sets), repair: [b.id] };
+      const page = { ...full.eventsSince(have, 10, sets, after), repair: [b.id] };
       if (!state.receive(page).more) break;
     }
     expect(state.walking()).toEqual([]);
@@ -360,6 +385,55 @@ describe("repairing a hole is paged", () => {
     expect(page.repair).toBeUndefined();
     pull(full, behind);
     expect(behind.digest()).toBe(full.digest());
+  });
+
+  test("a page that ends between two events dated the same instant: the walk goes on after the event, not the instant", () => {
+    // Found by the review: the walk's place was an hlc, so the second of two events dated the
+    // same instant never came when a page ended at the first, and the replicas disagreed for good.
+    const { b, full, replica, tick } = twoNodes();
+    // b (a stolen key) writes 500 ordinary events...
+    for (let i = 0; i < 500; i++) {
+      tick();
+      full.emit(b, "memory.added", { text: `b ${i}` });
+    }
+    const first500 = full.eventsSince({}, 100_000).events;
+    // ...then a 501st dated the same instant as the 500th, then more.
+    const hidden = twin(full, b, "hidden");
+    full.ingest([hidden]);
+    expect(full.rejection(hidden.id)).toBeNull();
+    tick();
+    const after = full.emit(b, "memory.added", { text: "after the twin" });
+
+    // Another replica got b's first 500 straight from b (a partial delivery: SECURITY.md #4).
+    const other = replica();
+    other.ingest(first500);
+    for (let i = 0; i < 5; i++) pull(full, other, 500);
+
+    // The walk's page ends at the 500th event, and the next page goes on after that event.
+    expect(other.event(hidden.id)).not.toBeNull();
+    expect(other.rejection(after.id)).toBe(full.rejection(after.id));
+    expect(other.digest()).toBe(full.digest());
+    expect(full.eventsSince(other.frontier(), 500, other.deviceDigests()).repair).toBeUndefined();
+  });
+
+  test("`after` moves a device's answer on by event; without it (an older node) the answer is by hlc, as before", () => {
+    const { a, b, full, tick } = twoNodes();
+    for (let i = 0; i < 3; i++) {
+      tick();
+      full.emit(b, "memory.added", { text: `b ${i}` });
+    }
+    const head = full.event(full.head(b.id)!)!;
+    const second = twin(full, b, "twin");
+    full.ingest([second]);
+    const have = { ...full.frontier(), [b.id]: head.hlc };
+    expect(full.eventsSince(have).events).toEqual([]);
+    expect(full.eventsSince(have, 500, undefined, { [b.id]: head.id }).events.map((e) => e.id)).toEqual([second.id]);
+    // A place without an hlc means nothing: that device's log from its start.
+    const whole = full.eventsSince({ [a.id]: full.frontier()[a.id]! }, 500, undefined, { [b.id]: head.id }).events;
+    expect(whole.filter((e) => e.device === b.id).length).toBe(4);
+    // A device being walked isn't checked for a hole (its set would only flag it again).
+    expect(full.eventsSince(have, 500, { [b.id]: { n: 1, h: "elsewhere" } }, { [b.id]: head.id }).repair).toBeUndefined();
+    expect(full.eventsSince(have, 500, { [b.id]: { n: 1, h: "elsewhere" } }).repair).toEqual([b.id]);
   });
 });
 

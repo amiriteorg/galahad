@@ -72,6 +72,16 @@ describe("the sync engine", () => {
     expect(storeB.deviceDigests()).toEqual(storeA.deviceDigests());
     expect(seen.largest).toBeLessThanOrEqual(25); // never more than a page
     expect(seen.bodies.length).toBeGreaterThan(120 / 25); // the walk took pages
+    // Each page after the first went on from the event the walk had reached, not just its hlc.
+    const walking = seen.bodies.filter((body) => !(body.have as Record<string, string>)[a.id] || (body.after as Record<string, string> | undefined)?.[a.id]);
+    expect(walking.length).toBeGreaterThan(1);
+    for (const body of walking.slice(1)) expect(body.after).toHaveProperty(a.id);
+  });
+
+  test("a walk's place is part of the contract; an older node's request, without it, still parses", () => {
+    expect(SyncRequest.parse({ have: { n_x: "000000000000001.000000" } })).toEqual({ have: { n_x: "000000000000001.000000" } });
+    expect(SyncRequest.parse({ have: {}, after: { n_x: "8SpuaToTVJa71zgvba41gtk83EkAB8nIV4TUfLJurdo" } }).after).toBeDefined();
+    expect(() => SyncRequest.parse({ have: {}, after: { n_x: "x".repeat(65) } })).toThrow();
   });
 
   test("against a node from before set hashes: never sends them, and still converges", async () => {

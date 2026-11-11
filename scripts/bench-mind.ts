@@ -210,8 +210,8 @@ function bench(n: number): Row {
       const t = performance.now();
       for (;;) {
         const page = performance.now();
-        const { have, sets } = pull.request(true);
-        const more = pull.receive(store.eventsSince(have, 500, sets)).more;
+        const { have, sets, after } = pull.request(true);
+        const more = pull.receive(store.eventsSince(have, 500, sets, after)).more;
         slowest = Math.max(slowest, performance.now() - page);
         pages++;
         if (!more) break;

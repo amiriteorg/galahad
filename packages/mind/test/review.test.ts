@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { b64u, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
+import { b64u, HlcClock, newNodeIdentity, signEvent } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, PullState } from "../src/index.ts";
 
 /*
@@ -14,8 +14,8 @@ const pull = (from: MindStore, to: MindStore, limit = 500) => {
   const state = new PullState(to);
   state.begin();
   for (let i = 0; i < 10_000; i++) {
-    const { have, sets } = state.request(true);
-    if (!state.receive(from.eventsSince(have, limit, sets)).more) return;
+    const { have, sets, after } = state.request(true);
+    if (!state.receive(from.eventsSince(have, limit, sets, after)).more) return;
   }
   throw new Error("the pull never ended");
 };
@@ -34,45 +34,6 @@ function twoNodes() {
   };
   return { a, b, full, replica, tick: () => (now += 10) };
 }
-
-/** `node`'s next event, dated exactly like its head, with an id ground to sort after it: chain-valid. */
-function twin(store: MindStore, node: NodeIdentity, text: string): GEvent {
-  const parent = store.event(store.head(node.id)!)!;
-  for (let nonce = 0; ; nonce++) {
-    const event = signEvent({ v: 2, fleet: store.fleet!, hlc: parent.hlc, device: node.id, prev: parent.id, kind: "memory.added", body: { text: `${text} ${nonce}` } }, node);
-    if (event.id > parent.id) return event;
-  }
-}
-
-describe("review: paged repair pages by hlc alone", () => {
-  test("a device whose 500th and 501st events share an hlc can't be repaired: replicas disagree for good", () => {
-    const { b, full, replica, tick } = twoNodes();
-    // b (a stolen key) writes 500 ordinary events...
-    for (let i = 0; i < 500; i++) {
-      tick();
-      full.emit(b, "memory.added", { text: `b ${i}` });
-    }
-    const first500 = full.eventsSince({}, 100_000).events;
-    // ...then a 501st dated the same instant as the 500th (two tries to grind its id), then more.
-    const hidden = twin(full, b, "hidden");
-    full.ingest([hidden]);
-    expect(full.rejection(hidden.id)).toBeNull();
-    tick();
-    const after = full.emit(b, "memory.added", { text: "after the twin" });
-
-    // Another replica got b's first 500 straight from b (a partial delivery: SECURITY.md #4).
-    const other = replica();
-    other.ingest(first500);
-    for (let i = 0; i < 5; i++) pull(full, other);
-
-    // Each pull flags b for repair and walks it, but the walk's page ends at the 500th event, its
-    // cursor is that event's hlc, and the next page asks for hlc > cursor: the 501st never comes.
-    expect(other.event(hidden.id)).not.toBeNull();
-    // So b's later events are a gap here and accepted there.
-    expect(other.rejection(after.id)).toBe(full.rejection(after.id));
-    expect(other.digest()).toBe(full.digest());
-  });
-});
 
 describe("review: one refused unchained event makes a device replay forever", () => {
   test("a v1 event refused in a chained fleet doesn't make each of that node's later events replay the log", () => {

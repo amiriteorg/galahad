@@ -12,8 +12,14 @@ const DeviceRef = z.string().max(100);
 export const LogDigest = z.strictObject({ n: z.number().int().min(0), h: z.string().max(64) });
 
 export const SyncRequest = z.strictObject({
-  /** Per device, the newest hlc held. */
+  /** Per device, the newest hlc held: answer what's dated after it. */
   have: z.record(DeviceRef, z.string().max(32)),
+  /**
+   * Per device, the id of the event at `have` a walk has reached: answer what comes after that
+   * event in (hlc, id) order, so an event dated the same instant isn't skipped. Sent only to a
+   * node that compares `sets` (older ones refuse the field); without it, `have` alone.
+   */
+  after: z.record(DeviceRef, z.string().max(64)).optional(),
   /** Sent by nodes from before set hashes (a hash of sorted ids): accepted, and ignored. */
   digests: z.record(DeviceRef, LogDigest).optional(),
   /** Per device, LogDigest of everything held: lets the peer find holes below `have`. */

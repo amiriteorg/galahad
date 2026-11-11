@@ -14,8 +14,8 @@ function sync(from: MindStore, to: MindStore, withDigests = true): void {
   const pull = new PullState(to);
   pull.begin();
   for (let i = 0; i < 1000; i++) {
-    const { have, sets } = pull.request(withDigests);
-    if (!pull.receive(from.eventsSince(have, 50, sets)).more) return;
+    const { have, sets, after } = pull.request(withDigests);
+    if (!pull.receive(from.eventsSince(have, 50, sets, after)).more) return;
   }
   throw new Error("the pull never ended");
 }

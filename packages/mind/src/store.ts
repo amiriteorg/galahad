@@ -1113,22 +1113,34 @@ export class MindStore {
    * fork; the peer then walks that device's log page by page (SyncEngine), so no answer is
    * ever larger than one page. When the peer is more than a page behind on a device the check
    * waits until it has caught up: it costs one set-hash step per event above its frontier.
+   *
+   * `after` (a walk's place, per device): the id of the event at `have[device]` the peer has
+   * reached, so the answer goes on after that event in (hlc, id) order. By hlc alone, an event
+   * dated the same instant as the last of a page could never come. That device is being walked,
+   * so it isn't checked for a hole.
    */
   eventsSince(
     have: Record<string, string>,
     limit = 500,
     digests?: Record<string, DeviceDigest>,
+    after?: Record<string, string>,
   ): { events: GEvent[]; more: boolean; repair?: string[] } {
     const devices = this.db.query<{ device: string; n: number; ids: Uint8Array }, []>("SELECT device, n, ids FROM log_devices").all();
     const batch: GEvent[] = [];
     const repair: string[] = [];
-    const perDevice = this.db.query<{ id: string; raw: string }, [string, string, number]>(
+    const sinceHlc = this.db.query<{ id: string; raw: string }, [string, string, number]>(
       "SELECT id, raw FROM events WHERE device = ? AND hlc > ? ORDER BY hlc, id LIMIT ?",
     );
+    // A row value, so the (device, hlc, id) index serves it (as in lateButHarmless).
+    const sinceEvent = this.db.query<{ id: string; raw: string }, [string, string, string, number]>(
+      "SELECT id, raw FROM events WHERE device = ? AND (hlc, id) > (?, ?) ORDER BY hlc, id LIMIT ?",
+    );
     for (const { device, n, ids } of devices) {
-      const above = perDevice.all(device, have[device] ?? "", limit + 1);
-      const theirs = digests?.[device];
-      if (theirs && have[device] && above.length <= limit) {
+      const since = have[device];
+      const place = since ? after?.[device] : undefined;
+      const above = place ? sinceEvent.all(device, since!, place, limit + 1) : sinceHlc.all(device, since ?? "", limit + 1);
+      const theirs = place ? undefined : digests?.[device];
+      if (theirs && since && above.length <= limit) {
         // What we hold up to their frontier: everything, less what's above it.
         const ours = SetHash.from(ids);
         for (const row of above) ours.remove(row.id);
