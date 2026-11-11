@@ -87,6 +87,31 @@ function publishProfile(store: MindStore, identity: NodeIdentity, endpoint: stri
   store.emit(identity, "node.profile", body);
 }
 
+/**
+ * One look at this node's own body: probe, then publish. It runs on a timer, and Bun ends
+ * the process on an unhandled rejection, so a failure here is a line in the log (the last
+ * capabilities stand), never the end of the node. Returns what the probe found, or null.
+ */
+export async function refreshCapabilities(
+  probe: () => Promise<Capabilities>,
+  publish: (caps: Capabilities) => void,
+  log: (message: string) => void,
+): Promise<Capabilities | null> {
+  let fresh: Capabilities;
+  try {
+    fresh = await probe();
+  } catch (error) {
+    log(`capabilities not refreshed: ${(error as Error).message}`);
+    return null;
+  }
+  try {
+    publish(fresh);
+  } catch (error) {
+    log(`profile not published: ${(error as Error).message}`);
+  }
+  return fresh;
+}
+
 export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise<Daemon> {
   const log = opts.log ?? ((message: string) => console.log(`[galahad] ${message}`));
   const env = loadEnv();
@@ -304,9 +329,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const outbox = setInterval(drain, 5_000);
   const refresh = opts.capabilities
     ? null
-    : setInterval(async () => {
-        caps = await probeCapabilities();
-        publishProfile(store, identity, endpoint, caps);
+    : setInterval(() => {
+        void refreshCapabilities(probeCapabilities, (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
+          if (fresh) caps = fresh;
+        });
       }, 5 * 60_000);
 
   log(
