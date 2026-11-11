@@ -44,6 +44,7 @@ import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
 import { onSite, SITE_COLLIDERS, SITE_VIEW } from "./sites.ts";
 import { SkyDome } from "./sky.ts";
+import { skyNow } from "./sky/clock.ts";
 import { BASE_FLATS, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
 import { Vegetation, wind } from "./vegetation.ts";
@@ -290,7 +291,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   scene.fogNode = atmosphere.node;
   weatherUniforms.splash.value = tier.splashes ? 1 : 0;
 
-  const sky = new SkyDome();
+  const sky = new SkyDome(tier.name);
   const rain = new Rain(scene, tier.rain);
   const horizon = new Horizon();
   scene.add(sky.group, horizon.group);
@@ -537,14 +538,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   /** The sun and moon: the real ones over Denmark now, or a preset's. */
   function placeHeavens(): void {
     if (override) Object.assign(heavens, TIME_PRESETS[override]);
-    else heavensAt(Date.now(), heavens);
+    else heavensAt(skyNow(), heavens);
   }
   function applySky(): void {
     skyFor(heavens, skyState);
     applyWeather(skyState, weather.state);
     const s = skyState;
     const w = weather.state;
-    sky.set(s, w.rain, !reduced());
+    sky.set(s, w, !reduced());
     horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud, s.underlight, Math.min(1, w.rain * 0.8 + w.snow));
     atmosphere.set(s, w.rain, w.snow);
     // (Half the shafts' glow: with no shadows in it, all of the near air would glow.)
@@ -1438,7 +1439,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
     occlusion.floor.value = gz;
     occlusion.on.value = rig.follow ? 1 : 0;
-    sky.follow(camera.position);
+    sky.follow(camera, renderDt, motion);
     horizon.follow(camera.position, t, motion);
     // The light: from the sun by day, the moon by night, kept over the focus.
     placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightDir);

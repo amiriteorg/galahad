@@ -28,13 +28,14 @@ describe("where the moon is drawn", () => {
     for (let e = 0.5; e <= 90; e += 0.5) {
       const seen = seenElevation(e * RAD) / RAD;
       expect(seen).toBeGreaterThan(last);
-      expect(seen).toBeLessThan(8.7);
+      expect(seen).toBeLessThan(10.5);
       last = seen;
     }
     // It clears the far hills (about 5°) soon after it rises, and a moon high in the south stands near the strip's top.
+    // (The same squeeze as the stars and the planets: sky/panorama.ts.)
     expect(seenElevation(6 * RAD) / RAD).toBeGreaterThan(5);
     expect(seenElevation(38 * RAD) / RAD).toBeGreaterThan(8);
-    expect(seenElevation(60 * RAD) / RAD).toBeGreaterThan(8.5);
+    expect(seenElevation(60 * RAD) / RAD).toBeGreaterThan(9);
   });
 
   test("it keeps its real bearing, and its real phase (the sun is turned with it)", () => {
@@ -44,7 +45,7 @@ describe("where the moon is drawn", () => {
       const real = Math.atan2(sky.moon[0], sky.moon[1]);
       const seen = Math.atan2(sky.moonSeen[0], sky.moonSeen[1]);
       expect(seen).toBeCloseTo(real, 9);
-      expect(Math.asin(sky.moonSeen[2]) / RAD).toBeLessThan(8.7);
+      expect(Math.asin(sky.moonSeen[2]) / RAD).toBeLessThan(10.5);
       expect(Math.hypot(...sky.moonSeen)).toBeCloseTo(1, 9);
       expect(Math.hypot(...sky.moonSun)).toBeCloseTo(1, 9);
       // The same angle between moon and sun, so the same lit share of its face.
@@ -54,6 +55,55 @@ describe("where the moon is drawn", () => {
     skyFor(heavens(-30, { moonElevation: -20 * RAD }), sky);
     expect(sky.moonSeen[2]).toBeCloseTo(sky.moon[2], 12);
     expect(sky.moonUp).toBe(0);
+  });
+});
+
+describe("moonlight", () => {
+  const night = (over: Partial<Heavens>) => ({ ...skyFor(heavens(-30, over), sky) });
+
+  test("follows the moon's real phase: the land is visibly brighter under a full moon than a new one", () => {
+    const full = night({ moonLit: 1, moonElevation: 40 * RAD });
+    const half = night({ moonLit: 0.5, moonElevation: 40 * RAD });
+    const fresh = night({ moonLit: 0, moonElevation: 40 * RAD });
+    const down = night({ moonLit: 1, moonElevation: -20 * RAD });
+    expect(full.lightIntensity).toBeGreaterThan(fresh.lightIntensity * 1.8);
+    // A half moon gives far less than half a full one's light (the moon's face is brightest lit head-on).
+    expect(half.lightIntensity - fresh.lightIntensity).toBeLessThan((full.lightIntensity - fresh.lightIntensity) * 0.45);
+    expect(half.lightIntensity).toBeGreaterThan(fresh.lightIntensity * 1.15);
+    // No moon in the sky is a new moon's night: the sky's own glow, still enough to read by.
+    expect(down.lightIntensity).toBeCloseTo(fresh.lightIntensity, 9);
+    expect(fresh.lightIntensity).toBeGreaterThan(0.18);
+    expect(full.moonlight).toBeGreaterThan(0.9);
+    expect(fresh.moonlight).toBe(0);
+    expect(down.moonlight).toBe(0);
+    // The sky's fill is a little brighter with it too.
+    expect(full.hemiIntensity).toBeGreaterThan(fresh.hemiIntensity);
+  });
+
+  test("and its height: a moon low over the hills lights less than one high in the south, and warmer", () => {
+    const high = night({ moonLit: 1, moonElevation: 45 * RAD });
+    const low = night({ moonLit: 1, moonElevation: 6 * RAD });
+    expect(low.lightIntensity).toBeLessThan(high.lightIntensity * 0.85);
+    expect(low.moonlight).toBeLessThan(high.moonlight);
+    const warmth = (c: number) => ((c >> 16) & 255) / (c & 255);
+    expect(warmth(low.light)).toBeGreaterThan(warmth(high.light) + 0.1);
+    // By day the moon lights nothing.
+    expect(skyFor(heavens(30, { moonLit: 1, moonElevation: 40 * RAD }), sky).moonlight).toBe(0);
+  });
+
+  test("it never jumps as the moon rises, fills or the sun goes down", () => {
+    let last = Number.NaN;
+    for (let m = -10; m <= 60; m += 0.25) {
+      const v = skyFor(heavens(-30, { moonLit: 0.9, moonElevation: m * RAD }), sky).lightIntensity;
+      if (!Number.isNaN(last)) expect(Math.abs(v - last)).toBeLessThan(0.02);
+      last = v;
+    }
+    last = Number.NaN;
+    for (let lit = 0; lit <= 1; lit += 0.01) {
+      const v = skyFor(heavens(-30, { moonLit: lit }), sky).lightIntensity;
+      if (!Number.isNaN(last)) expect(Math.abs(v - last)).toBeLessThan(0.02);
+      last = v;
+    }
   });
 });
 
@@ -124,6 +174,9 @@ describe("the weather on the sky", () => {
     expect(under(TIME_PRESETS.day, { cloud: 0.92, rain: 1, mist: 0 }).cloudShadow).toBe(0);
     expect(under(TIME_PRESETS.night, { cloud: 0.45, rain: 0, mist: 0 }).cloudShadow).toBe(0);
     expect(under(TIME_PRESETS.dawn, { cloud: 0.45, rain: 0, mist: 0 }).cloudShadow).toBe(0);
+    // A few fair-weather clouds throw their shadows too (the clouds themselves say where: sky/clouds.ts).
+    expect(under(TIME_PRESETS.day, { cloud: 0.15, rain: 0, mist: 0 }).cloudShadow).toBeGreaterThan(0.9);
+    expect(under(TIME_PRESETS.day, { cloud: 0.01, rain: 0, mist: 0 }).cloudShadow).toBe(0);
   });
 
   test("mist lies as a sheet on the ground at dawn and by night, and lifts by day", () => {
