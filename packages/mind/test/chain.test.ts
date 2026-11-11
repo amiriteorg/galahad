@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
+import { b64u, decodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
 import { adoptChains, enrollDevice, foundFleet, MindStore, revokeDevice } from "../src/index.ts";
 
 /*
@@ -77,7 +77,9 @@ describe("hash chains", () => {
     storeB.remember(b, "before the fork");
     sync(storeB, storeA);
     const head = storeB.head(b.id)!;
-    const clock = new HlcClock();
+    // Both branches dated after their parent, as a fork is (the wall clock made this depend on whether a
+    // millisecond had passed: a sibling dated with its parent is refused for its date, which is another test).
+    const clock = new HlcClock(() => decodeHlc(storeB.event(head)!.hlc).ms + 1_000);
     const left = forge(storeB, b, "memory.added", { text: "left branch" }, { hlc: clock.tick(), prev: head });
     const right = forge(storeB, b, "memory.added", { text: "right branch" }, { hlc: clock.tick(), prev: head });
     storeA.ingest([left]);
