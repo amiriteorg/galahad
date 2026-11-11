@@ -1,5 +1,5 @@
 import { attribute, float, length, max, mix, positionLocal, select, sin, smoothstep, uniform, vec2, vec3, vertexColor } from "three/tsl";
-import { Color, Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node } from "three/webgpu";
+import { Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node } from "three/webgpu";
 import type { Collider } from "./colliders.ts";
 import { type BuildDetail, buildStatic, type Halo } from "./field-build.ts";
 import { aircraft, restAircraft, stepAircraft } from "./field-circuit.ts";
@@ -384,4 +384,3 @@ const wrap = (a: number): number => {
   return d;
 };
 
-void Color;
