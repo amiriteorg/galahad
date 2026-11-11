@@ -157,7 +157,7 @@ Add an API key once, and every full node can use it. The key never appears in th
 | Errors | Provider error text is **redacted** of the key in use and of anything secret-shaped before it reaches chat, logs or arms. |
 | Asking | Galahad files a **secret request** (`secret.requested`: name, provider, purpose). You fill it from any device, and he learns only that it exists. |
 | Using keys | The **model gateway** (`/gw/<provider>/…`, loopback only) injects the real key on the way out. Arms hold `gw_…` tokens that are scoped to providers, expiring, request-capped, stored as hashes and revocable. |
-| Running tools | `galahad run --providers deepseek -- opencode` mints a token, sets `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` and the token for the child process only, and revokes the token when the tool exits. |
+| Running tools | `galahad run --providers deepseek -- opencode` mints a token, sets `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` and the token for the child process only, and revokes the token when the tool exits: also when `galahad run` is killed or its terminal closes (it stops the tool first). Ctrl+C is the tool's to take (an interactive one may only cancel), so `galahad run` waits for the tool through it, as a shell does. |
 | API | No route ever returns a secret's plaintext. Listing shows name, provider and a `…last4` hint (only for values of 12 characters or more). |
 
 ## 6. The Brain ✅
