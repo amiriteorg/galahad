@@ -16,14 +16,8 @@ describe("oath gate", () => {
     expect(decide({ ...scratch, createdBy: { quest: "q1", ephemeral: true } }).verdict).toBe("ask");
   });
 
-  test("standing orders pre-approve narrowly and expire", () => {
-    const orders = [
-      { id: "so-1", class: "outward" as const, resource: "git.push", target: "amiriteorg/*#feat/*", expiresAt: 2_000 },
-    ];
-    const push = { class: "outward" as const, resource: "git.push", target: "amiriteorg/galahad#feat/mind" };
-    expect(decide(push, orders, 1_000).verdict).toBe("allow");
-    expect(decide({ ...push, target: "amiriteorg/galahad#main" }, orders, 1_000).verdict).toBe("ask");
-    expect(decide(push, orders, 3_000).verdict).toBe("ask");
+  test("outward always asks here: standing orders are checked against the exact call in orders.ts", () => {
+    expect(decide({ class: "outward", resource: "git.push", target: "someone/repo#feat/x" })).toEqual({ verdict: "ask", reason: "outward-facing actions require your approval" });
   });
 
   test("forbidden is always denied", () => {
