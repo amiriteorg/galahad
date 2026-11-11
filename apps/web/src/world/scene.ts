@@ -3,28 +3,34 @@ import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { cameraPosition, dot, exp, float, fog, length, max, mix, normalize, positionWorld, pow, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform } from "three/tsl";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, type Node, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
-import { attachInput, CameraRig, DEFAULT_DISTANCE, STATION_DISTANCE } from "./camera.ts";
+import { attachInput, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Point3, SpringArm, STATION_DISTANCE } from "./camera.ts";
+import { BUILDS, Solids } from "./collide.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
+import { ColliderLines } from "./debug-colliders.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
+import { addPlants } from "./flora-plan.ts";
 import { ProvingGround } from "./field.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
+import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
 import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
 import { Land, waterUniforms } from "./land.ts";
 import { occlusion } from "./occlusion.ts";
 import { readThemeColors } from "./palette.ts";
+import { Planner } from "./nav.ts";
 import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
 import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } from "./place.ts";
+import { plotColliders } from "./plot-plan.ts";
 import { originUniform, Plots } from "./plots.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
-import { onSite, SITE_VIEW } from "./sites.ts";
+import { onSite, SITE_COLLIDERS, SITE_VIEW } from "./sites.ts";
 import { dither, SkyDome } from "./sky.ts";
 import { BASE_FLATS, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
@@ -276,8 +282,19 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   scene.add(sky.group, horizon.group);
   const land = new Land(worldRoot, SEED, shadows, tier.waterGrid, tier.terrainFine);
   const vegetation = new Vegetation(worldRoot, tier, (x, y) => land.heightAt(x, y), (chunk, layer) => land.smallLayer(chunk, layer));
-  land.onGrow = (chunk) => vegetation.addChunk(chunk);
-  land.onDrop = (chunk) => vegetation.removeChunk(chunk);
+  // What's solid (collide.ts): the keep and its stations, the sites, and each chunk's trees and rocks as the
+  // land grows and drops it (inside the land's own time budget: a chunk's solids take a few hundredths of a ms).
+  const solids = new Solids();
+  const plantSolids = new Map<object, number>();
+  land.onGrow = (chunk) => {
+    vegetation.addChunk(chunk);
+    plantSolids.set(chunk, addPlants(solids, chunk.samples.layers.trees, chunk.samples.layers.rocks));
+  };
+  land.onDrop = (chunk) => {
+    vegetation.removeChunk(chunk);
+    solids.remove(plantSolids.get(chunk) ?? 0);
+    plantSolids.delete(chunk);
+  };
   const keep = new Keep(shadows, tier.lights);
   const knight = new Knight(shadows);
   const dog = new RobotDog(shadows);
@@ -291,7 +308,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // The built places beyond the keep: the proving ground and the workshop hall.
   const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
   const places: Place[] = [new ProvingGround(placeContext), new Workshop(placeContext)];
+  solids.add(KEEP_COLLIDERS);
+  solids.add(SITE_COLLIDERS, (x, y) => land.heightAt(x, y));
   places.forEach((place, i) => {
+    // Its own solids, and what moves there (machines: nothing pushes them, everyone gives way).
+    solids.add(place.colliders, (x, y) => land.heightAt(x, y));
+    for (const m of place.movers ?? []) solids.join(m, BUILDS.machine);
     worldRoot.add(place.group);
     glows.set(`place${i}:warm`, place.warmGlows, 0xffb866);
     glows.set(`place${i}:cool`, place.coolGlows, 0x8fe2ff);
@@ -308,9 +330,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     for (let i = 0; i < list.length; i++) if (Math.hypot(x - list[i]!.x, y - list[i]!.y) < list[i]!.r) return true;
     return false;
   };
-  /** Galahad plans round buildings; underfoot he only refuses water and the giant tree. */
-  const galahadGround: Ground = { height, blocked: (x, y) => wet(x, y) || Math.hypot(x, y) < 6 };
-  const dogGround: Ground = { height, blocked: (x, y) => wet(x, y) || insideAny(stationObstacles, x, y) };
+  /** In the water, not just at its edge: where nobody walks (the way keeps off the edge too: `wet`). */
+  const deep = (x: number, y: number): boolean => land.heightAt(x, y) < land.waterAt(x, y) - 0.1;
+  // Buildings, trunks, rocks and fences are the solids' business now; the ground keeps to water, sites and plots.
+  const dogGround: Ground = { height, blocked: deep };
   const wildGround: Ground = {
     height,
     blocked: (x, y) => {
@@ -330,14 +353,27 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     },
   };
   const critters = new Critters(worldRoot, tier.microducks, duckGround, shadows);
-  /** Where the camera may stand: not inside the keep's tree and deck, the lab's hill, a building. */
-  const CAMERA_KEEP_OUT = PLACES.map((p) => ({ x: STATIONS[p].x, y: STATIONS[p].y, r: p === "keep" ? 9.5 : p === "forge" ? 7.5 : p === "oracle" ? 0 : p === "council" ? 3.4 : 4.6 }));
+  fauna.join(solids);
+  critters.flock.join(solids);
+  /** The fleet's banners, the beacon and the plots' fences: solids that come and go with the model. */
+  let fleetSolids = 0;
+  let beaconSolids = 0;
+  let plotSolids = 0;
+  /** The camera's spring arm, and where it wants to be. */
+  const arm = new SpringArm();
+  const armPivot: Point3 = { x: 0, y: 0, z: 0 };
+  const armWant: Point3 = { x: 0, y: 0, z: 0 };
+  /**
+   * Where the following camera may stand (camera.ts' trail): looking from there at him, nothing blocks the
+   * view and it isn't inside anything or under the land (the real solids; the arm takes care of the rest).
+   */
   const cameraClear = (x: number, y: number): boolean => {
-    for (let i = 0; i < CAMERA_KEEP_OUT.length; i++) {
-      const o = CAMERA_KEEP_OUT[i]!;
-      if (Math.hypot(x - o.x, y - o.y) < o.r) return false;
-    }
-    return true;
+    const t = rig.target;
+    const ground = land.heightAt(t.x, t.y);
+    const pz = ground + 2.3;
+    const z = ground + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+    if (land.heightAt(x, y) + 0.8 > z) return false;
+    return solids.view(t.x, t.y, pz, x, y, z, 0.3, CAMERA_PAD) > 0.97;
   };
   const galahadLead = { x: 0, y: 0, heading: 0 };
   const dogLead = { x: 0, y: 0, heading: 0 };
@@ -345,6 +381,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   const rig = new CameraRig();
   const walker = new Walker(standAt("keep"));
+  // Galahad and his dog among the solids: he plans round them (nav.ts) and slides; it follows in his footsteps.
+  const walkerMover = solids.join(walker, BUILDS.galahad);
+  walkerMover.ground = deep;
+  walker.join({ planner: new Planner(solids), mover: walkerMover, wet, deep });
+  dog.join(solids, deep);
+  // The page's `?colliders=1`: what's solid, drawn as lines (nothing is built without it).
+  const colliderLines = /[?&]colliders=(1|on|true)/.test(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
@@ -916,7 +959,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     waterUniforms.waves.value = motion ? 1 : 0;
     const dt = Math.min(0.1, (now - lastTick) / 1000);
     lastTick = now;
-    let active = walker.step(dt, galahadGround);
+    let active = walker.step(dt);
     // The weather moves on (re-lighting marks the frame dirty); while it rains, every frame is drawn.
     if (stepWeather(dt, motion, now)) active = true;
     if (rig.follow) {
@@ -990,6 +1033,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     master.running = walker.running;
     master.working = atWork || knightState.thinking;
     dog.step(renderDt, t, master, dogGround, motion, groundAt);
+    // Walkers that ended up overlapping are parted (the lighter gives way), before they're drawn.
+    solids.separate();
     dog.apply(groundAt(dog.x, dog.y), ZERO);
     keep.animate(t, motion);
     landmarks.animate(t, motion);
@@ -1028,7 +1073,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
     // The camera, over a smoothed ground; then everything that depends on where it is.
     const focusGround = rig.settle(Math.max(0, groundAt(rig.x, rig.y)), renderDt, motion);
-    rig.apply(camera, origin, focusGround);
+    // On its spring arm: over the land, before what blocks the view, never inside anything.
+    rig.wanted(focusGround, armWant, armPivot);
+    arm.update(armPivot, armWant, solids, groundAt, renderDt, motion);
+    rig.apply(camera, origin, focusGround, arm);
+    colliderLines?.update(rig.x, rig.y, origin, arm.x, arm.y, arm.z);
     camera.updateMatrixWorld();
     occlusion.from.value.copy(camera.position);
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
@@ -1080,6 +1129,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
           stationObstacles = obstacles(next.experiments);
           // Pads on the sites stand on ground that's level already; their machines make way for the experiment.
           const open = next.experiments.filter((e) => !padAt(e.plot));
+          // Each plot's fence, gate, sign and dome are solid; a pad's sign too.
+          solids.remove(plotSolids);
+          plotSolids = solids.add(next.experiments.flatMap((e) => plotColliders(e.plot)), (x, y) => land.heightAt(x, y));
           land.setFlats([...BASE_FLATS, ...open.map((e) => plotFlat(e.plot))]);
           const occupied = new Set<string>();
           for (const e of next.experiments) {
@@ -1099,6 +1151,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       }
       if (!prev || prev.nodes !== next.nodes) {
         keep.setNodes(next.nodes);
+        solids.remove(fleetSolids);
+        fleetSolids = solids.add(fleetColliders(keep.spots.map((spot) => spot.node.sandboxHost)));
         syncNodeLabels();
         dirty = true;
       }
@@ -1165,6 +1219,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     setBeacon(on) {
       if (keep.beaconOn === on) return;
       keep.setBeacon(on);
+      solids.remove(beaconSolids);
+      beaconSolids = on ? solids.add(BEACON_COLLIDERS) : 0;
       dirty = true;
     },
     setTimeOfDay(preset) {
@@ -1222,6 +1278,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       keep.dispose();
       for (const place of places) place.dispose();
       knight.dispose();
+      colliderLines?.dispose();
       dog.dispose();
       fauna.dispose();
       critters.dispose();
