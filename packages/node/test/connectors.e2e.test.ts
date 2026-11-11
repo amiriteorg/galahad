@@ -429,6 +429,54 @@ describe("an approval has a send deadline", () => {
     expect(fleet.sent()).toBe(0);
     expect(fleet.filer.actions().find((a) => a.id === id)!.state).toBe("lapsed");
   });
+
+  /** F heard of your approval, then its clock went back two days (a dead clock battery, a restored snapshot). */
+  async function heardThenClockWentBack() {
+    const fleet = twoNodes();
+    const asked = await fleet.filer.call({ connector: "forge", tool: "post", args: { text: "sent by a clock gone back" } }, { kind: "agent", by: "loop:x" });
+    const id = (asked as { action: string }).action;
+    fleet.sync(fleet.storeF, fleet.storeG);
+    fleet.clocks.g += HOUR;
+    const { sendBy } = fleet.answerer.decide(id, true, null);
+    fleet.clocks.f = fleet.clocks.g;
+    fleet.sync(fleet.storeG, fleet.storeF);
+    fleet.clocks.f -= 48 * HOUR;
+    return { ...fleet, id, sendBy: sendBy! };
+  }
+
+  test("a node whose clock went back sends nothing, though its clock reads the deadline as still to come", async () => {
+    const fleet = await heardThenClockWentBack();
+    // In truth the deadline has passed; by F's clock it's two days off.
+    fleet.clocks.g = fleet.sendBy + 28 * HOUR;
+    expect(fleet.clocks.f).toBeLessThan(fleet.sendBy);
+    const before = fleet.ledgered.length;
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(0);
+    expect(fleet.ledgered.length).toBe(before); // neither sent nor lapsed: not judged by that clock at all
+    // Once its clock is right again, the approval lapses, as it would have.
+    fleet.clocks.f = fleet.clocks.g;
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(0);
+    expect(fleet.filer.actions().find((a) => a.id === fleet.id)!.state).toBe("lapsed");
+  });
+
+  test("a clock gone back only holds the send: put right within the deadline, it's sent", async () => {
+    const fleet = await heardThenClockWentBack();
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(0);
+    fleet.clocks.f = fleet.sendBy - HOUR;
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(1);
+    expect(fleet.filer.actions().find((a) => a.id === fleet.id)!.state).toBe("done");
+  });
+
+  test("a clock a few minutes behind another node's (skew, not a clock gone back) sends as usual", async () => {
+    const fleet = await heardThenClockWentBack();
+    // G's events lead F's clock by four minutes: within what any clock may lead (MAX_CLOCK_DRIFT_MS).
+    fleet.clocks.f = fleet.clocks.g - 4 * 60_000;
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(1);
+  });
 });
 
 describe("loops over the API", () => {

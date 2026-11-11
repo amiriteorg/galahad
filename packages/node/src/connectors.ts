@@ -13,6 +13,7 @@ import {
   decide,
   decodeHlc,
   findSecrets,
+  MAX_CLOCK_DRIFT_MS,
   MAX_ORDER_DAYS,
   type NativeName,
   type NodeIdentity,
@@ -101,6 +102,8 @@ export class ConnectorService {
   private draining: Promise<void> | null = null;
   /** Sends under way in this process; an outbox row marked "sending" that isn't here is a crash. */
   private readonly inFlight = new Set<string>();
+  /** Said once in the log while this node's clock reads behind what it holds (clockGoneBack). */
+  private clockWarned = false;
 
   constructor(private readonly o: ConnectorServiceOptions) {
     this.now = o.now ?? Date.now;
@@ -322,13 +325,30 @@ export class ConnectorService {
     return { ok: false, status: 410, receipt };
   }
 
+  /**
+   * This node's clock has gone back (a dead clock battery, a restored snapshot, a boot before
+   * the time is set): it reads earlier than the newest event it holds, by more than any clock
+   * may lead another (no event dated further ahead is ever accepted, so no other node can make
+   * this true). Such a clock would read a deadline that has passed as one still to come.
+   */
+  private clockGoneBack(): boolean {
+    let newest = 0;
+    for (const hlc of Object.values(this.o.store.frontier())) newest = Math.max(newest, decodeHlc(hlc).ms);
+    const behind = newest - this.now() > MAX_CLOCK_DRIFT_MS;
+    if (behind && !this.clockWarned) this.o.log(`outbox: this node's clock reads ${new Date(this.now()).toISOString()}, before events it holds from ${new Date(newest).toISOString()}; nothing is sent until it's right`);
+    this.clockWarned = behind;
+    return behind;
+  }
+
   /** Send one approved action at most once, through the outbox, and write its receipt. */
   private async sendApproved(action: ActionView, why: string): Promise<{ ok: boolean; status?: number; receipt: string; result?: ConnectorResult }> {
     if (this.inFlight.has(action.id) || this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
       return { ok: false, status: 409, receipt: "already sent or being sent" };
     }
-    // Checked again here, at the moment of sending: an approval is good for APPROVAL_TTL_MS.
+    // Checked again here, at the moment of sending: an approval is good for APPROVAL_TTL_MS,
+    // by a clock that hasn't gone back. Nothing is marked, so it's judged again once it's right.
     if (action.sendBy === null) return { ok: false, status: 409, receipt: "not approved" };
+    if (this.clockGoneBack()) return { ok: false, status: 503, receipt: "not sent yet: this node's clock is behind the events it holds; it's sent (or lapses) once the clock is right" };
     if (this.now() > action.sendBy) return this.lapse(action);
     this.inFlight.add(action.id);
     this.o.local.query("INSERT INTO outbox (id, state, at) VALUES (?, 'sending', ?)").run(action.id, this.now());
