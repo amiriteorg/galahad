@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WorldWeather } from "@galahad/core/world";
-import { liveTarget, mistFor, rainFor } from "./live-weather.ts";
+import { liveTarget, mistFor, rainFor, snowFor, windFor, windHeadingFrom } from "./live-weather.ts";
 
 const w = (over: Partial<WorldWeather> = {}): WorldWeather => ({
   kind: "overcast",
@@ -38,7 +38,7 @@ describe("Denmark's weather, as the world shows it", () => {
   });
 
   test("an overcast evening in Copenhagen: grey and dry", () => {
-    expect(liveTarget(w())).toEqual({ cloud: 0.92, rain: 0, mist: 0 });
+    expect(liveTarget(w())).toEqual({ cloud: 0.92, rain: 0, mist: 0, snow: 0, storm: 0, wind: 1.6 });
   });
 
   test("rain needs a clouded sky, so rain under thin cloud still clouds over", () => {
@@ -53,21 +53,69 @@ describe("Denmark's weather, as the world shows it", () => {
     expect(liveTarget(w({ kind: "storm", precipitation: 3 })).rain).toBeGreaterThanOrEqual(0.9);
   });
 
-  test("fog is mist; snow (not drawn yet) is a grey, misty sky with no rain", () => {
+  test("fog is mist", () => {
     expect(liveTarget(w({ kind: "mist", visibility: 300 })).mist).toBe(0.9);
     expect(liveTarget(w({ kind: "mist", visibility: null })).mist).toBe(0.85);
-    expect(liveTarget(w({ kind: "snow", precipitation: 2, cloud: 0.6 }))).toEqual({ cloud: 0.85, rain: 0, mist: 0.55 });
+  });
+
+  test("snow grows with mm an hour (of water): flurries light, heavy snow full", () => {
+    expect(snowFor(0)).toBe(0);
+    expect(snowFor(Number.NaN)).toBe(0);
+    expect(snowFor(0.2)).toBeGreaterThan(0.3);
+    expect(snowFor(0.2)).toBeLessThan(0.5);
+    expect(snowFor(1)).toBeGreaterThan(0.55);
+    expect(snowFor(1)).toBeLessThan(0.75);
+    expect(snowFor(4)).toBe(1);
+    expect(snowFor(30)).toBe(1);
+  });
+
+  test("snow falls as snow, never as rain, from a clouded sky, with a little mist under it", () => {
+    const t = liveTarget(w({ kind: "snow", precipitation: 2, cloud: 0.6 }));
+    expect(t.rain).toBe(0);
+    expect(t.snow).toBeGreaterThan(0.7);
+    expect(t.cloud).toBe(0.85);
+    expect(t.mist).toBe(0.25);
+    expect(t.storm).toBe(0);
+    // Snow with nothing measured still snows; thick fog in snow stays thick.
+    expect(liveTarget(w({ kind: "snow", precipitation: 0 })).snow).toBe(0.35);
+    expect(liveTarget(w({ kind: "snow", precipitation: 1, visibility: 600 })).mist).toBe(0.9);
+    // Nothing else snows.
+    for (const kind of ["clear", "cloudy", "overcast", "mist", "drizzle", "rain", "storm"] as const) expect(liveTarget(w({ kind, precipitation: 3 })).snow).toBe(0);
+  });
+
+  test("only thunder is a storm; the wind is carried through in metres a second, within reason", () => {
+    expect(liveTarget(w({ kind: "storm", precipitation: 3 })).storm).toBe(1);
+    expect(liveTarget(w({ kind: "rain", precipitation: 30 })).storm).toBe(0);
+    expect(liveTarget(w({ wind: 9.4 })).wind).toBe(9.4);
+    expect(windFor(0)).toBe(0);
+    expect(windFor(-3)).toBe(0);
+    expect(windFor(Number.NaN)).toBe(0);
+    expect(windFor(80)).toBe(33);
   });
 
   test("everything stays within 0..1", () => {
     for (const kind of ["clear", "cloudy", "overcast", "mist", "drizzle", "rain", "snow", "storm"] as const) {
       for (const precipitation of [0, 0.2, 3, 50]) {
         const t = liveTarget(w({ kind, precipitation, visibility: 500, humidity: 1 }));
-        for (const v of Object.values(t)) {
+        const { wind, ...rest } = t;
+        for (const v of Object.values(rest)) {
           expect(v).toBeGreaterThanOrEqual(0);
           expect(v).toBeLessThanOrEqual(1);
         }
+        expect(wind).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+
+  test("the wind blows towards the opposite of where the report says it comes from, and only when it says", () => {
+    const close = (a: number, b: number) => expect(Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))).toBeLessThan(1e-9);
+    close(windHeadingFrom(270), 0); // a westerly blows east
+    close(windHeadingFrom(0), -Math.PI / 2); // a northerly blows south
+    close(windHeadingFrom(90), Math.PI); // an easterly blows west
+    close(windHeadingFrom(180), Math.PI / 2); // a southerly blows north
+    close(windHeadingFrom(360), windHeadingFrom(0));
+    close(liveTarget(w({ windFrom: 250 })).windHeading!, windHeadingFrom(250));
+    expect(liveTarget(w({ windFrom: null })).windHeading).toBeUndefined();
+    expect(liveTarget(w()).windHeading).toBeUndefined();
   });
 });

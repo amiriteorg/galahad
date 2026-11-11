@@ -94,6 +94,35 @@ export async function tailscaleInfo(): Promise<Capabilities["tailscale"]> {
 }
 
 /**
+ * Where `tailscale serve` publishes the PWA that this node's proxy port serves, from
+ * `tailscale serve status --json`: its https origin (the port left out when it's 443),
+ * or null when no web handler proxies to that port.
+ */
+export function servedOriginFrom(statusJson: string, proxyPort: number): string | null {
+  let status: { Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> };
+  try {
+    status = JSON.parse(statusJson);
+  } catch {
+    return null;
+  }
+  const targets = ["127.0.0.1", "localhost", "[::1]"].flatMap((host) => ["http", "https"].flatMap((scheme) => [`${scheme}://${host}:${proxyPort}`, `${scheme}://${host}:${proxyPort}/`]));
+  for (const [hostPort, web] of Object.entries(status.Web ?? {})) {
+    const proxy = web?.Handlers?.["/"]?.Proxy;
+    if (typeof proxy !== "string" || !targets.includes(proxy)) continue;
+    const m = hostPort.match(/^([A-Za-z0-9.-]+):(\d+)$/);
+    if (!m) continue;
+    return m[2] === "443" ? `https://${m[1]}` : `https://${m[1]}:${m[2]}`;
+  }
+  return null;
+}
+
+/** The PWA's address on the tailnet, as `tailscale serve` publishes this node's proxy port; null when it doesn't. */
+export async function servedOrigin(proxyPort: number): Promise<string | null> {
+  const raw = await run(["tailscale", "serve", "status", "--json"]);
+  return raw ? servedOriginFrom(raw, proxyPort) : null;
+}
+
+/**
  * A server: Linux and no battery. Windows and macOS machines are personal bodies that
  * sleep and travel, battery or not (Windows doesn't always report a laptop's battery).
  */

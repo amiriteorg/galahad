@@ -18,6 +18,7 @@ const SAMPLE = {
     weather_code: 3,
     cloud_cover: 92,
     wind_speed_10m: 1.6,
+    wind_direction_10m: 250,
     visibility: 20760,
   },
 };
@@ -58,6 +59,7 @@ describe("the weather in Denmark", () => {
       precipitation: 0,
       visibility: 20760,
       wind: 1.6,
+      windFrom: 250,
       temperature: 6.8,
       humidity: 0.84,
       observed: Date.UTC(2026, 10, 10, 16, 45),
@@ -76,6 +78,10 @@ describe("the weather in Denmark", () => {
     expect(readWeather({ current: { ...SAMPLE.current, cloud_cover: Number.NaN } })).toBeNull();
     expect(readWeather({ current: { ...SAMPLE.current, time: "yesterday" } })).toBeNull();
     expect(readWeather({ current: { ...SAMPLE.current, weather_code: 3.5 } })).toBeNull();
+    expect(readWeather({ current: { ...SAMPLE.current, wind_direction_10m: 400 } })).toBeNull();
+    // A model that doesn't give the wind's direction: the rest of the weather still stands.
+    const { wind_direction_10m: _gone, ...without } = SAMPLE.current;
+    expect(readWeather({ current: without })?.windFrom).toBeNull();
   });
 
   test("it asks one fixed address that carries nothing about you, and refuses redirects", async () => {

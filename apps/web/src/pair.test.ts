@@ -63,3 +63,10 @@ describe("pairing an app on the Home Screen by pasting the invite", () => {
     expect(inviteFrom("gi1.<script>")).toBeNull();
   });
 });
+
+describe("a node that can't be reached", () => {
+  test("is tried again on its own, sooner at first, never less often than every 30 s", async () => {
+    const { retryDelayMs } = await import("./screens.ts");
+    expect([0, 1, 2, 3, 4, 9].map(retryDelayMs)).toEqual([3000, 6000, 12_000, 24_000, 30_000, 30_000]);
+  });
+});

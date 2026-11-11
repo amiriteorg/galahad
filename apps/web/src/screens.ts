@@ -142,21 +142,69 @@ export function renderInsecure(root: HTMLElement): void {
   );
 }
 
-export function renderUnreachable(root: HTMLElement, message: string, retry: () => void): void {
+/** How long the unreachable screen waits before trying again on its own: 3 s, then doubling, at most 30 s. */
+export const retryDelayMs = (attempt: number): number => Math.min(30_000, 3000 * 2 ** Math.max(0, attempt));
+
+/**
+ * The node can't be reached: say so, and keep trying on our own (sooner when the network
+ * comes back or the app is brought to the front), so a node restart heals by itself.
+ */
+export function renderUnreachable(root: HTMLElement, message: string, retry: () => void, attempt = 0): void {
   document.title = "Unreachable · Galahad";
   const offline = !navigator.onLine;
+  const lifetime = new AbortController();
+  let left = Math.round(retryDelayMs(attempt) / 1000);
+  const status = h("p", { class: "tiny subtle tnum", style: "text-align:center;margin:0" });
+  const again = () => {
+    if (lifetime.signal.aborted) return;
+    lifetime.abort();
+    retry();
+  };
+  const tick = () => {
+    status.textContent = navigator.onLine ? `Trying again in ${left} s…` : "Waiting for a connection…";
+  };
+  const timer = setInterval(() => {
+    if (!status.isConnected) return lifetime.abort();
+    left -= 1;
+    if (left <= 0 && navigator.onLine) again();
+    else tick();
+  }, 1000);
+  lifetime.signal.addEventListener("abort", () => clearInterval(timer));
+  addEventListener("online", again, { signal: lifetime.signal });
+  document.addEventListener("visibilitychange", () => !document.hidden && again(), { signal: lifetime.signal });
+  tick();
   replace(
     root,
     solo(
       hero(
         offline ? "You're offline." : "Galahad can't be reached just now.",
-        offline ? "The app is cached on this device; your fleet's live data returns when you reconnect." : "The node may be restarting, or your tailnet may be down.",
+        offline ? "The app is cached on this device; your fleet's live data returns when you reconnect." : "The node may be restarting, or your tailnet may be down. This page keeps trying.",
       ),
       h(
         "section",
         { class: "card" },
         callout("quiet", message, { icon: offline ? "offline" : "alert" }),
-        h("div", { class: "row", style: "justify-content:center" }, button("Try again", { variant: "primary", icon: "retry", onClick: retry })),
+        h("div", { class: "row", style: "justify-content:center" }, button("Try again now", { variant: "primary", icon: "retry", onClick: again })),
+        status,
+      ),
+      footer(),
+    ),
+  );
+}
+
+/** The browser's storage didn't answer: the key is almost certainly still there, so pairing again is the wrong advice. */
+export function renderKeyStoreUnavailable(root: HTMLElement, message: string): void {
+  document.title = "Key unavailable · Galahad";
+  replace(
+    root,
+    solo(
+      hero("This browser's key can't be read just now.", "Its storage didn't answer. The key itself is almost certainly fine: reloading usually brings it back."),
+      h(
+        "section",
+        { class: "card" },
+        callout("quiet", message, { icon: "key" }),
+        h("p", { class: "small muted" }, "Don't pair this browser again yet: a new pairing would replace its key. If reloading doesn't help, close the app completely and open it again."),
+        h("div", { class: "row", style: "justify-content:center" }, button("Reload", { variant: "primary", icon: "retry", onClick: () => location.reload() })),
       ),
       footer(),
     ),

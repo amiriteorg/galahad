@@ -1,4 +1,5 @@
 import type { DeviceView, FleetView, PairingView, PeerStatus } from "@galahad/core";
+import { encodeQr, qrPath } from "@galahad/core/qr";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { gb, plural, shortId } from "../lib/text.ts";
 import { countdown, hlcMs, relativeTime } from "../lib/time.ts";
@@ -19,6 +20,8 @@ import {
   section,
   segmented,
   skeletonBlock,
+  skeletonRows,
+  skeletonStat,
   statTile,
 } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -260,6 +263,28 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
 // An invite can carry only what this device holds (the node refuses more), so only those are offered.
 const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => ctx.can(s.scope));
 
+/** An invite link as a QR code a phone's camera opens: black on white with its quiet zone, built as DOM (no markup strings). */
+function inviteQr(url: string): HTMLElement {
+  const code = encodeQr(url, "M");
+  const side = code.size + 8;
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${side} ${side}`);
+  svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("aria-hidden", "true");
+  const paper = document.createElementNS(ns, "rect");
+  paper.setAttribute("width", String(side));
+  paper.setAttribute("height", String(side));
+  paper.setAttribute("fill", "#fff");
+  const ink = document.createElementNS(ns, "path");
+  ink.setAttribute("d", qrPath(code, 4));
+  ink.setAttribute("fill", "#000");
+  svg.append(paper, ink);
+  const box = h("div", { class: "invite-qr", role: "img", "aria-label": "A QR code of the invite link: scan it with the new device's camera" });
+  box.append(svg);
+  return box;
+}
+
 export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"): void {
   if (!ctx.can("fleet:admin")) {
     toast("This device can't invite others", { tone: "warn", description: "It needs the fleet:admin scope." });
@@ -368,7 +393,8 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
       h(
         "div",
         { class: "stack tight" },
-        h("div", { class: "label" }, kind === "client" ? "Open this link on the phone or browser" : "Run this on the new machine"),
+        h("div", { class: "label" }, kind === "client" ? "Scan this with the phone's camera, or open the link on it" : "Run this on the new machine"),
+        kind === "client" && invite.url ? inviteQr(invite.url) : null,
         copyField(value, kind === "client" ? "Copy invite link" : "Copy join command"),
         h("div", { class: "row small muted" }, ring, left),
       ),
@@ -490,11 +516,83 @@ function placementPlayground(ctx: Ctx, scope: Scope): HTMLElement {
   );
 }
 
+interface ArmInfo {
+  label: string;
+  scopes: string[];
+  createdAt?: number;
+}
+
+/**
+ * Agents that hold their own key to Galahad (coding agents over MCP): what each may do, and
+ * Revoke, so one can be cut off from any device. Giving one a key stays at a terminal.
+ */
+function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
+  if (!ctx.can("fleet:admin")) return null;
+  const box = h("div", { class: "card" }, skeletonRows(2, { avatar: true }));
+  const count = h("span", { class: "count-label tnum" });
+
+  async function revoke(arm: ArmInfo): Promise<void> {
+    const ok = await confirmAction({
+      title: `Revoke ${arm.label}?`,
+      body: h("p", {}, "Its key stops working at once: it can no longer read the mind, run sandboxes or use your models. To bring it back, install it again from a terminal."),
+      confirmLabel: "Revoke",
+      typeToConfirm: arm.label,
+    });
+    if (!ok) return;
+    try {
+      await ctx.api.post("/api/arms/revoke", { label: arm.label }, scope.signal);
+      toast(`${arm.label} can't reach Galahad any more`, { tone: "ok" });
+      void load();
+    } catch (error) {
+      toast("Couldn't revoke it", { tone: "error", description: errorMessage(error) });
+    }
+  }
+
+  async function load(): Promise<void> {
+    try {
+      const { arms } = await ctx.api.get<{ arms: ArmInfo[] }>("/api/arms", scope.signal);
+      if (scope.disposed) return;
+      count.textContent = arms.length ? String(arms.length) : "";
+      replace(
+        box,
+        arms.length
+          ? h(
+              "div",
+              { class: "rows" },
+              ...arms.map((arm) =>
+                h(
+                  "div",
+                  { class: "item center" },
+                  h("span", { class: "avatar" }, icon("terminal", { size: 16 })),
+                  h(
+                    "div",
+                    { class: "grow" },
+                    h("div", { class: "strong mono" }, arm.label),
+                    h("div", { class: "meta" }, ...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null),
+                  ),
+                  h("div", { class: "item-actions" }, button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm) })),
+                ),
+              ),
+            )
+          : empty({ icon: "terminal", title: "No agents yet", body: "A coding agent gets Galahad's mind and sandboxes from a terminal on a node.", compact: true }),
+      );
+    } catch (error) {
+      if (!scope.disposed) replace(box, errorState("Couldn't list the agents", error, () => void load()));
+    }
+  }
+
+  void load();
+  const section_ = section("Agents", {}, box, h("p", { class: "tiny subtle" }, "Coding agents with their own key to Galahad. Add one on a node: ", h("span", { class: "mono" }, "galahad mcp install claude"), " (or opencode, codex, hermes)."));
+  section_.querySelector(".section-head h2")?.after(count);
+  return section_;
+}
+
 export const fleetView: View = (root, ctx, { scope, opts }) => {
   const admin = ctx.can("fleet:admin");
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(92), skeletonBlock(92), skeletonBlock(92));
-  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(180), skeletonBlock(180));
-  const clientsBox = h("div", { class: "card" });
+  const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat());
+  // One node card's height: most fleets have one or two, side by side on a desktop.
+  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(170));
+  const clientsBox = h("div", { class: "card" }, skeletonRows(1, { avatar: true }));
   const revokedBox = h("div");
   const errorBox = h("div");
 
@@ -548,6 +646,7 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
       section("Nodes", {}, nodesBox),
       section("Phones and browsers", {}, clientsBox),
       revokedBox,
+      agentsSection(ctx, scope),
       section("Placement", {}, placementPlayground(ctx, scope)),
     ),
   );

@@ -1,10 +1,11 @@
 import type { FleetView, SecretView } from "@galahad/core";
 import { isUnavailable } from "../api.ts";
 import type { View } from "../context.ts";
+import { ledgerSignature } from "../lib/activity.ts";
 import { gb, plural } from "../lib/text.ts";
 import { greeting } from "../lib/time.ts";
 import { asCaps, type LedgerEntry } from "../types.ts";
-import { button, dot, empty, meter, pageHead, section, skeletonBlock, skeletonRows, statTile } from "../ui/controls.ts";
+import { button, dot, empty, meter, pageHead, section, skeletonRows, skeletonStat, statTile } from "../ui/controls.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { autonomyCard, ledgerItem } from "./activity.ts";
@@ -15,13 +16,14 @@ import { openAddKey, vaultChanged } from "./vault.ts";
 /* Home: is everything well, does anything need me, what has Galahad been doing. */
 
 export const overviewView: View = (root, ctx, { scope }) => {
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(96), skeletonBlock(96), skeletonBlock(96), skeletonBlock(96));
+  const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat(), skeletonStat());
   const health = h("div", { class: "card" }, skeletonRows(2, { avatar: true }));
   const recent = h("div", { class: "card" }, skeletonRows(4));
   const autonomyBox = h("div", {}, autonomyCard(null));
   const lede = h("span", {}, ctx.whoami.fleetName ? `Fleet ${ctx.whoami.fleetName}, through ${ctx.whoami.nodeName}.` : `Through ${ctx.whoami.nodeName}.`);
   let vault: { count: number; unlocked: boolean } | null = null;
   let ledgerMissing = false;
+  let ledgerSeen = "";
 
   function renderStats(fleet: FleetView | null): void {
     const tiles: HTMLElement[] = [];
@@ -114,6 +116,10 @@ export const overviewView: View = (root, ctx, { scope }) => {
     try {
       const { entries } = await ctx.api.get<{ entries: LedgerEntry[] }>("/api/ledger", scope.signal);
       if (scope.disposed) return;
+      // Nothing new since the last look: leave the cards as they are.
+      const seen = ledgerSignature(entries);
+      if (seen === ledgerSeen) return;
+      ledgerSeen = seen;
       const latest = [...entries].sort((a, b) => (a.hlc < b.hlc ? 1 : -1)).slice(0, 8);
       replace(autonomyBox, autonomyCard(entries));
       replace(
@@ -124,6 +130,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
       );
     } catch (error) {
       if (scope.disposed) return;
+      ledgerSeen = "";
       if (isUnavailable(error)) ledgerMissing = true;
       replace(
         recent,

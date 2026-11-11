@@ -120,6 +120,8 @@ export interface WorldWeather {
   visibility: number | null;
   /** Wind at 10 m, m/s. */
   wind: number;
+  /** Where that wind blows from: degrees clockwise from north, as weather reports give it (270: a westerly). Null when the model doesn't say; absent from older nodes. */
+  windFrom?: number | null;
   /** °C. */
   temperature: number;
   /** Relative humidity, 0–1. */

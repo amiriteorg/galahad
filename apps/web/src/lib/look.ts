@@ -1,0 +1,114 @@
+import { padAt, type SiteName, SITE_NAMES, SITES, type Station, STATIONS } from "@galahad/core/world";
+import { ENGINE_LABEL, experimentEnded, experimentPlace, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
+
+/*
+ * The SANDBOX's one selector: what the view is looking at, in a few words, and
+ * everything it can look at instead (Galahad, the experiments, the two test
+ * sites, the keep's stations), ranked and searchable. Pure, so unit-tested; the
+ * view draws it (views/world-look.ts).
+ */
+
+export type LookTarget =
+  | { kind: "galahad" }
+  | { kind: "experiment"; id: string }
+  | { kind: "site"; site: SiteName }
+  | { kind: "station"; station: Exclude<Station, "field"> };
+
+export type LookGroup = "Galahad" | "Experiments" | "Test sites" | "The keep";
+
+export interface LookOption {
+  key: string;
+  target: LookTarget;
+  group: LookGroup;
+  label: string;
+  meta: string;
+  icon: "user" | "flask" | "compass" | "landscape";
+  /** A status dot (experiments). */
+  tone?: "ok" | "warn" | "neutral" | "danger";
+  live?: boolean;
+  /** Galahad is there now, or it's what the view is on. */
+  here?: boolean;
+}
+
+/** What each test site is for, in a line. */
+export const SITE_ABOUT: Record<SiteName, string> = {
+  field: "Aircraft, rockets and rovers: the runway, the launch pad, the course",
+  hall: "Robots, assemblies and machines, indoors",
+};
+
+const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** True when every word of the query starts a word of the text ("prov gr" finds "Proving ground"). */
+export function matches(text: string, query: string): boolean {
+  const words = fold(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (!words.length) return true;
+  const have = fold(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return words.every((w) => have.some((h) => h.startsWith(w)));
+}
+
+/**
+ * Everything the view can look at, in the order it's offered: Galahad; the
+ * experiments (running ones first, then those that ended, newest first); the
+ * test sites; the keep's stations, the one he's at marked. Filtered by `query`.
+ */
+export function lookOptions(model: WorldModel, query = ""): LookOption[] {
+  const g = model.galahad;
+  const out: LookOption[] = [{ key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: g.doing || `At ${stationLabel(g.station).toLowerCase()}`, icon: "user" }];
+  const time = (e: (typeof model.experiments)[number]) => e.endedAt ?? e.startedAt;
+  const experiments = [...model.experiments].sort((a, b) => Number(experimentEnded(a)) - Number(experimentEnded(b)) || time(b) - time(a));
+  for (const e of experiments) {
+    out.push({
+      key: `exp:${e.id}`,
+      target: { kind: "experiment", id: e.id },
+      group: "Experiments",
+      label: e.title,
+      meta: `${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]} ${experimentPlace(e)}`,
+      icon: "flask",
+      tone: STATUS_TONE[e.status],
+      live: e.status === "running",
+      here: g.station === "field" && g.experiment === e.id,
+    });
+  }
+  const at = g.station === "field" ? model.experiments.find((e) => e.id === g.experiment) : undefined;
+  const atPad = at ? padAt(at.plot) : null;
+  for (const site of SITE_NAMES) {
+    out.push({ key: `site:${site}`, target: { kind: "site", site }, group: "Test sites", label: SITES[site].label, meta: SITE_ABOUT[site], icon: "landscape", here: atPad?.site === site });
+  }
+  for (const [id, s] of Object.entries(STATIONS) as [Exclude<Station, "field">, { label: string }][]) {
+    out.push({ key: `station:${id}`, target: { kind: "station", station: id }, group: "The keep", label: s.label, meta: g.station === id ? "Galahad is here" : "", icon: "compass", here: g.station === id });
+  }
+  return query.trim() ? out.filter((o) => matches(`${o.label} ${o.meta} ${o.group}`, query)) : out;
+}
+
+/** Within this of a station's centre, the view is "at" it (metres). */
+const NEAR_STATION = 14;
+
+/**
+ * What the view is on, in a label and a line: the experiment open in the panel; Galahad,
+ * when following him; otherwise whatever the camera's focus is over (an experiment's plot,
+ * a test site, a station of the keep), or "Exploring".
+ */
+export function lookingAt(model: WorldModel, focus: { x: number; y: number }, following: boolean, selected: string | null): { label: string; meta: string; target: LookTarget | null } {
+  const open = selected ? model.experiments.find((e) => e.id === selected) : undefined;
+  if (open) return { label: open.title, meta: STATUS_LABEL[open.status], target: { kind: "experiment", id: open.id } };
+  if (following) return { label: "Galahad", meta: model.galahad.doing || `At ${stationLabel(model.galahad.station).toLowerCase()}`, target: { kind: "galahad" } };
+  for (const e of model.experiments) {
+    if (Math.abs(focus.x - e.plot.x) <= e.plot.size / 2 + 2 && Math.abs(focus.y - e.plot.y) <= e.plot.size / 2 + 2) {
+      return { label: e.title, meta: STATUS_LABEL[e.status], target: { kind: "experiment", id: e.id } };
+    }
+  }
+  for (const site of SITE_NAMES) {
+    const s = SITES[site];
+    if (Math.abs(focus.x - s.x) <= s.w / 2 && Math.abs(focus.y - s.y) <= s.d / 2) return { label: s.label, meta: "", target: { kind: "site", site } };
+  }
+  let best: { id: Exclude<Station, "field">; d: number } | null = null;
+  for (const [id, s] of Object.entries(STATIONS) as [Exclude<Station, "field">, { x: number; y: number }][]) {
+    const d = Math.hypot(focus.x - s.x, focus.y - s.y);
+    if (d < NEAR_STATION && (!best || d < best.d)) best = { id, d };
+  }
+  if (best) return { label: STATIONS[best.id].label, meta: "", target: { kind: "station", station: best.id } };
+  return { label: "Exploring", meta: "", target: null };
+}
+
+/** How many experiments are running or starting. */
+export const runningCount = (model: WorldModel): number => model.experiments.filter((e) => !experimentEnded(e)).length;

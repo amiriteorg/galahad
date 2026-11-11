@@ -55,9 +55,11 @@ The PWA is now at `https://wkp-minaltan.<your-tailnet>.ts.net/`, reachable only 
 bun galahad invite --client
 ```
 
-1. Open the printed URL on the device you're adding. It's single-use and valid for 10 minutes.
+1. Point the new device's camera at the QR code the terminal prints (or open the printed link on it). It's single-use and valid for 10 minutes.
 2. The device creates a non-extractable key and shows a **6-digit code**.
 3. The terminal shows the same code. Answer `y` only if they match.
+
+Run it on the node you'll talk to, wherever that is: on a server over SSH (`tailscale ssh you@server`, then `galahad invite --client`) it's the same. The link points at the address `tailscale serve` publishes the PWA on, port included (a server that keeps 443 for something else publishes it on another port, such as 8443); `--origin https://host:port` overrides it, and `--no-qr` leaves the code out. From a device that's already paired, **Fleet → Pair a device** shows the same QR code on its screen.
 
 The device gets every scope except `gateway:mint`: it's your console, the bank, the vault and pairing included. For a device you trust less, pair it from the PWA (**Fleet → Pair a device**, then **Custom** or **Chat & read**) with fewer; an invite never carries a scope the inviting device lacks.
 
@@ -433,3 +435,5 @@ Then authorise in the PWA (**Bank → Connect**, in the paired browser), and aga
 | `device keys not found` | The node was initialized with a different keystore; check `keystore` in `~/.galahad/config.json` |
 | Doubt about local state | Stop the daemon, then run `bun galahad rebuild`. It replays the log and confirms the state is identical. |
 | Lost a device | `bun galahad revoke <name>`. This rotates the vault and lists which keys to rotate at the provider. |
+| The app says "Galahad can't be reached just now" | Nothing to do while the node restarts: the page tries again on its own (and at once when the network comes back or you bring the app forward). If it keeps saying so, check `bun galahad status` on the node and `tailscale status`. |
+| The app says "This browser's key can't be read just now" | Reload; if that doesn't help, close the Home Screen app completely and open it again. Don't pair it again first: a new pairing replaces the key. |

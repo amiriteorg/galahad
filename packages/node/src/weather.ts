@@ -13,7 +13,7 @@ export const WEATHER_PLACE = "Copenhagen";
 export const WEATHER_SOURCE = "DMI HARMONIE via Open-Meteo";
 export const WEATHER_URL =
   "https://api.open-meteo.com/v1/forecast?latitude=55.676&longitude=12.568" +
-  "&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,visibility" +
+  "&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,visibility" +
   "&models=dmi_seamless&wind_speed_unit=ms&timezone=GMT";
 
 const REFRESH_MS = 15 * 60_000;
@@ -33,6 +33,7 @@ const Answer = z.object({
     precipitation: z.number().finite().min(0).max(500),
     cloud_cover: z.number().finite().min(0).max(100),
     wind_speed_10m: z.number().finite().min(0).max(120),
+    wind_direction_10m: z.number().finite().min(0).max(360).nullish(),
     visibility: z.number().finite().min(0).max(1_000_000).nullish(),
   }),
 });
@@ -63,6 +64,7 @@ export function readWeather(body: unknown): WorldWeather | null {
     precipitation: Math.round(c.precipitation * perHour * 100) / 100,
     visibility: c.visibility ?? null,
     wind: c.wind_speed_10m,
+    windFrom: c.wind_direction_10m ?? null,
     temperature: c.temperature_2m,
     humidity: c.relative_humidity_2m / 100,
     observed,

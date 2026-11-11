@@ -332,7 +332,7 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
 /** Denmark's weather, checked: the weather, null for a kind this page doesn't know yet (shown as unknown), undefined if malformed. */
 function readWeather(v: unknown): WorldWeather | null | undefined {
   if (!isObj(v)) return undefined;
-  const { kind, cloud, precipitation, visibility, wind, temperature, humidity, observed, place, source } = v;
+  const { kind, cloud, precipitation, visibility, wind, windFrom, temperature, humidity, observed, place, source } = v;
   const unit = (x: unknown): x is number => num(x) && x >= 0 && x <= 1;
   const ok =
     typeof kind === "string" &&
@@ -345,6 +345,7 @@ function readWeather(v: unknown): WorldWeather | null | undefined {
     num(wind) &&
     wind >= 0 &&
     wind <= 120 &&
+    (windFrom === undefined || windFrom === null || (num(windFrom) && windFrom >= 0 && windFrom <= 360)) &&
     num(temperature) &&
     temperature >= -60 &&
     temperature <= 60 &&
@@ -353,7 +354,8 @@ function readWeather(v: unknown): WorldWeather | null | undefined {
     str(source, 80);
   if (!ok) return undefined;
   if (!WEATHER_KINDS.has(kind)) return null;
-  return { kind: kind as WeatherKind, cloud, precipitation, visibility: visibility as number | null, wind, temperature, humidity, observed, place, source };
+  const from = typeof windFrom === "number" ? { windFrom } : windFrom === null ? { windFrom: null } : {};
+  return { kind: kind as WeatherKind, cloud, precipitation, visibility: visibility as number | null, wind, ...from, temperature, humidity, observed, place, source };
 }
 
 // ---------- words ----------

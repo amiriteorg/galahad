@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BankStatusView } from "@galahad/core";
-import { budgetLabel, consentLeft, readBankCallback } from "./bank.ts";
+import { budgetLabel, consentLeft, offReason, readBankCallback } from "./bank.ts";
 
 const status = (over: Partial<BankStatusView> = {}): BankStatusView => ({
   configured: true,
@@ -40,5 +40,12 @@ describe("the consent", () => {
     expect(budgetLabel({ account: "a", remaining: 2, perDay: 4, cacheAgeSeconds: 600, coolingDownUntil: null }, now)).toBe("2 of 4 background fetches left today · cache 10 min old");
     expect(budgetLabel({ account: "a", remaining: 0, perDay: 4, cacheAgeSeconds: 3 * 3600, coolingDownUntil: "2026-11-10T18:00:00Z" }, now)).toMatch(/cache 3 h old · the bank asked for a pause until/);
     expect(budgetLabel({ account: "a", remaining: 0, perDay: 4, cacheAgeSeconds: 60, coolingDownUntil: "2026-11-10T06:00:00Z" }, now)).not.toMatch(/pause/);
+  });
+});
+
+describe("bank access that's off", () => {
+  test("says the node's reason once, as a sentence, without repeating that it's off", () => {
+    expect(offReason("Bank access is off: bank access runs on Linux or macOS nodes only: file permissions can't be enforced here")).toBe("Bank access runs on Linux or macOS nodes only: file permissions can't be enforced here.");
+    expect(offReason("the key file is readable by others.")).toBe("The key file is readable by others.");
   });
 });
