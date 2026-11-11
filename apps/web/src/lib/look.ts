@@ -57,7 +57,7 @@ export interface LookOption {
   group: LookGroup;
   label: string;
   meta: string;
-  icon: "user" | "flask" | "compass" | "landscape" | "board" | "play-circle" | "code" | "server" | "paw" | "scroll" | "flame";
+  icon: "user" | "flask" | "compass" | "landscape" | "board" | "play-circle" | "code" | "server" | "paw" | "journal" | "flame";
   /** A status dot (experiments). */
   tone?: "ok" | "warn" | "neutral" | "danger";
   live?: boolean;
@@ -115,7 +115,7 @@ export function lookOptions(model: WorldModel, query = "", life = "", now = Date
     // The board you share: it opens to draw on.
     { key: "board", target: { kind: "board" }, group: "Galahad", label: "Chalkboard", meta: "At the observatory: draw on it, read what he wrote", icon: "board" },
     // What he wrote of each day: it opens to read.
-    { key: "journal", target: { kind: "journal" }, group: "Galahad", label: "His journal", meta: "What he wrote of each day, every evening at his desk", icon: "scroll" },
+    { key: "journal", target: { kind: "journal" }, group: "Galahad", label: "His journal", meta: "What he wrote of each day, every evening at his desk", icon: "journal" },
   ];
   const time = (e: (typeof model.experiments)[number]) => e.endedAt ?? e.startedAt;
   const experiments = [...model.experiments].sort((a, b) => Number(experimentEnded(a)) - Number(experimentEnded(b)) || time(b) - time(a));

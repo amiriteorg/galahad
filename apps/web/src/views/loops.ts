@@ -48,10 +48,10 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   heartbeat: { label: "Heartbeat", icon: "activity" },
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
-  reflect: { label: "Reflection", icon: "scroll" },
+  reflect: { label: "Journal", icon: "journal" },
 };
 
-/** The reflection's daily budget, as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
+/** His journal's daily budget (the reflect loop's), as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
 const REFLECT = { budget: 4000, min: 1000, max: 50_000 };
 
 const PRESETS: { label: string; schedule: string }[] = [
@@ -70,7 +70,7 @@ export function describeTask(task: LoopTask | null): string {
     const what = task.checklist ? "Heartbeat: checks the fleet, then reads your checklist." : "Heartbeat: checks the fleet and the machine it runs on.";
     return `${what}${task.selfAction === false ? " Only reports: self-action is off." : " Then fixes what's safe himself."}`;
   }
-  if (task.kind === "reflect") return `Daily reflection: a few lines on the day, kept as his own memory, within ${(task.budget ?? REFLECT.budget).toLocaleString("en-US")} tokens a day.`;
+  if (task.kind === "reflect") return `His journal: the day recollected in his own words, kept as his own memory, within ${(task.budget ?? REFLECT.budget).toLocaleString("en-US")} tokens a day.`;
   if (task.kind === "quest") return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
@@ -195,7 +195,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     h(
       "p",
       { class: "small muted" },
-      "Once a day he reads the day's ledger, the notices and the titles of the chats you kept (never the bank, never a secret) and writes a few lines: what happened, what he learned, what he'd like to do next. It's kept as his own memory; what he'd like to do becomes a suggestion in your Inbox, never an action.",
+      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs, the titles of the chats you kept, the experiments that finished, the chalkboard and his day in the SANDBOX (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
     ),
     field("Daily budget (tokens)", budget, { hint: `What he reads and writes together, on the cheapest role that can answer. ${REFLECT.min.toLocaleString("en-US")} to ${REFLECT.max.toLocaleString("en-US")}.` }),
   );

@@ -212,7 +212,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const read = ctx.can("mind:read");
 
   const waiting = () => ctx.live.actions.value.filter((a) => isWaiting(a));
-  // What his daily reflection suggests is its own list: ideas he'd like to act on, never acted on by him.
+  // What his journal suggests (its "Next") is its own list: ideas he'd like to act on, never acted on by him.
   const isSuggestion = (n: NoticeView) => n.source === "reflect";
   const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed && !isSuggestion(n));
   const suggestions = () => ctx.live.notices.value.filter((n) => !n.dismissed && isSuggestion(n));
@@ -294,7 +294,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
           return findingRow(
             ctx,
             { ...n, title: idea },
-            [h("span", {}, "from his reflection"), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
+            [h("span", {}, "from his journal"), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
             [
               ctx.can("chat") ? button("Ask him", { size: "sm", icon: "chat", label: `Ask him: ${idea}`, onClick: () => ctx.navigate("chat", { query: idea }) }) : null,
               write ? button("Dismiss", { size: "sm", variant: "ghost", icon: "x", label: `Dismiss: ${idea}`, onClick: (event) => void dismiss(n, event.currentTarget as HTMLButtonElement) }) : null,
@@ -382,7 +382,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const suggestionsSection = section(
     "Galahad suggests",
     {},
-    h("p", { class: "tiny subtle" }, "From his daily reflection: things he'd like to do. He won't do any of them on his own; ask him, or dismiss it."),
+    h("p", { class: "tiny subtle" }, "From his journal: things he'd like to do. He won't do any of them on his own; ask him, or dismiss it."),
     suggestionsBox,
   );
   const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);

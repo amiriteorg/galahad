@@ -231,6 +231,13 @@ export const Bodies = {
   }),
   /** A trial's score, recorded once by the node that ran it; every replica checks it follows from the numbers (trials.ts). */
   "trial.scored": TrialRecord.extend({ id: TrialId }),
+  /**
+   * His dog's name, as the owner gave it (LWW; companion.ts). Loose in the log, so a name a newer node allows
+   * never makes an older one refuse the event; the API checks it strictly, and so does whoever reads it.
+   */
+  "companion.named": z.strictObject({ name: z.string().min(1).max(64) }),
+  /** The owner took the name back: it's "the dog" again. */
+  "companion.unnamed": z.strictObject({}),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

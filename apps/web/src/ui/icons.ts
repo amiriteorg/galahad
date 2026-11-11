@@ -123,6 +123,8 @@ const ICONS = {
   paw: [circle(6.25, 10.5, 1.5), circle(9.75, 6.75, 1.5), circle(14.25, 6.75, 1.5), circle(17.75, 10.5, 1.5), "M12 12.25c-2.6 0-4.75 2.2-4.75 4.35 0 1.5 1.15 2.4 2.55 2.4.9 0 1.45-.45 2.2-.45s1.3.45 2.2.45c1.4 0 2.55-.9 2.55-2.4 0-2.15-2.15-4.35-4.75-4.35z"],
   /** His hearth: a flame. */
   flame: ["M12 3.5c.5 2.9 4.25 4.9 4.25 9.1a4.25 4.25 0 0 1-8.5 0c0-1.6.7-2.7 1.6-3.6.3 1.3.95 2.05 1.85 2.3-.55-2.85-.2-5.35.8-7.8z", "M12 20.5v-3"],
+  /** His journal: a bound book, its spine and a few lines on the cover. */
+  journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

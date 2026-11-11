@@ -27,6 +27,7 @@ import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
 import { inboxView } from "./views/inbox.ts";
+import { journalView } from "./views/journal.ts";
 import { loopsView, openLoopSheet } from "./views/loops.ts";
 import { memoryView, openRemember } from "./views/memory.ts";
 import { modelsView } from "./views/models.ts";
@@ -56,6 +57,7 @@ const ROUTES: RouteSpec[] = [
   { id: "world", label: "SANDBOX", icon: "landscape", group: "main", scope: "mind:read", key: "x", keywords: ["sandbox", "world", "3d", "experiments", "simulation", "galahad", "playground"], view: worldView },
   { id: "board", label: "Chalkboard", icon: "board", group: "main", scope: "mind:read", key: "d", keywords: ["whiteboard", "chalk", "draw", "sketch", "board", "notes", "equations", "charts"], view: boardView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
+  { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "dog", "learned", "log"], view: journalView },
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
   { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },

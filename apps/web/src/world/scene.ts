@@ -1560,7 +1560,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       }
       if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
       // The dog's name, once you've given it one (the node's `companion`; older nodes don't send it).
-      const name = (next as { companion?: { name?: string } | null }).companion?.name?.trim() ?? "";
+      const name = next.companion?.name.trim() ?? "";
       if (name !== dogName) {
         dogName = name;
         hearth.dogName = name;

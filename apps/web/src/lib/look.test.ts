@@ -98,7 +98,7 @@ describe("the SANDBOX's selector", () => {
     const unnamed = lookOptions(m, "", "Morning rounds", 0, null);
     expect(unnamed.slice(0, 4).map((o) => o.label)).toEqual(["Galahad", "His dog", "Chalkboard", "His journal"]);
     expect(unnamed[1]).toMatchObject({ target: { kind: "dog" }, meta: "Always with him", icon: "paw" });
-    expect(unnamed[3]).toMatchObject({ target: { kind: "journal" }, icon: "scroll" });
+    expect(unnamed[3]).toMatchObject({ target: { kind: "journal" }, icon: "journal" });
     // Named, with its battery and what it's doing.
     const named = lookOptions(m, "", "Writing his journal", 0, { name: "Bors", state: "lying by him", charge: 0.823 });
     expect(named[1]).toMatchObject({ label: "Bors", meta: "Lying by him · battery 82 %" });

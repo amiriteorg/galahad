@@ -16,6 +16,7 @@ import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
+import { dogCommand, journalCommand } from "./journal-cli.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
@@ -62,6 +63,10 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX (his heartbeat, the agents with him);
                                   how it ran on your devices
+  journal [<YYYY-MM-DD>] | journal --list [--limit 30]
+                                  his journal: every evening (21:30, Denmark) he recollects his day in his own
+                                  words; the latest entry, one day's, or the days he wrote
+  dog | dog name <name> | dog unname   his dog's name, in the world and in his journal on every device
   board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
   board history [--limit 20] | board restore <version> | board history forget [-y]
                                   every version is kept (clearing destroys nothing): list them, put one back, forget them
@@ -119,7 +124,7 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
-     | --reflect [--budget 4000]                       a few lines on the day, as his own memory; tokens a day
+     | --reflect [--budget 4000]                       his journal: the day recollected, as his own memory; tokens a day
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
   heartbeat                       run the heartbeat's checks now and print what they find
   self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
@@ -372,6 +377,8 @@ async function main(): Promise<void> {
       until: { type: "string" },
       text: { type: "string" },
       summaries: { type: "boolean" },
+      // The journal's list of days.
+      list: { type: "boolean" },
     },
   });
   const [command, sub, ...rest] = positionals;
@@ -809,6 +816,7 @@ Next:
           console.log(`${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station}${e.galahad.model ? ` · ${e.galahad.model}` : ""})`)}`);
           console.log(`  ${heartLine(e.heartbeat)}`);
           console.log(`  partners: ${partnersLine(e.partners)}`);
+          console.log(`  his dog: ${e.companion ? bold(e.companion.name) : dim("no name yet (galahad dog name <name>)")}`);
           console.log(`  ${weatherLine(e.weather)}`);
           for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
@@ -824,6 +832,7 @@ Next:
         else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : e.change === "restore" ? "restored from its history" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
         else if (e.type === "heartbeat") console.log(`${at} ${heartLine(e.heartbeat)}`);
         else if (e.type === "partners") console.log(`${at} partners: ${partnersLine(e.partners)}`);
+        else if (e.type === "companion") console.log(`${at} ${e.companion ? `his dog is named ${bold(e.companion.name)}` : dim("his dog has no name now")}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);
@@ -1587,6 +1596,12 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "archive":
       await archiveCommand(new Admin(home), sub, rest, flags, { confirm, readStdin: () => Bun.stdin.text() });
+      return;
+    case "journal":
+      await journalCommand(new Admin(home), sub, flags);
+      return;
+    case "dog":
+      await dogCommand(new Admin(home), sub, rest);
       return;
 
     case "rebuild": {

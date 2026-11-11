@@ -59,8 +59,10 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
 /**
  * PRAGMA user_version. 0: a replica from before versions (events, views, pending).
  * 1: log_devices, v_slots and the kind, loop and (device, hlc, id) indexes.
+ * 2: his dog's name (companion.named, companion.unnamed). The tables are the same; a replica that
+ *    held such events before it knew the kinds applies them once, by a replay.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const MAX_PENDING = 2000;
 
@@ -229,6 +231,9 @@ export class MindStore {
         // Opened by an older version in between, which wrote events without keeping these, and
         // applied them its own way.
         this.recountLog();
+        this.replay();
+      } else if (from < 2 && this.db.query("SELECT 1 FROM events WHERE kind IN ('companion.named', 'companion.unnamed') LIMIT 1").get()) {
+        // Kept while this replica didn't know the kinds (a newer node named his dog): applied now, as a rebuild would.
         this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -968,6 +973,17 @@ export class MindStore {
         const covered = orderCovers(order, { ...request.value, digest }, decodeHlc(event.hlc).ms);
         if (!covered) return "the order doesn't cover this action";
         this.putLww(`action-decision:${body.action}`, event, { id: body.action, verdict: "approved", order: body.order, note: `standing order: ${order.label}` });
+        return null;
+      }
+      case "companion.named": {
+        // The owner's setting, like the roster. What a name may be is the reader's to check (companion.ts).
+        if (!isFullNode(signer)) return "only full nodes may name his dog";
+        this.putLww("companion", event, { name: bodyOf(event, "companion.named").name });
+        return null;
+      }
+      case "companion.unnamed": {
+        if (!isFullNode(signer)) return "only full nodes may name his dog";
+        this.putLww("companion", event, null);
         return null;
       }
       default:

@@ -204,6 +204,25 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     expect(store.counts()).toEqual(before);
   });
 
+  test("his journal arrives like any memory he kept: a teaching titled by its day, his own, found by its words and by its tags", async () => {
+    const w = world();
+    const kept = w.mind.remember(w.identity, "Journal, 2026-11-11:\nBors woke me a little after six. In the afternoon I built the gripper at the bench.\n\nLearned: rack sleeps at night.\nNext:\n- Ask about rack's power settings", {
+      tags: ["journal", "reflection", "day:2026-11-11"],
+      prov: { trust: "agent", source: "reflection" },
+    });
+    w.mind.remember(w.identity, "The owner prefers SI units in every report.", { prov: { trust: "owner" } });
+    const { service, store } = w.open();
+    await service.drain();
+    const entry = store.get(archiveId("memories", kept.id))!;
+    expect(entry).toMatchObject({ kind: "teaching", source: "memories", trust: "agent", tags: ["journal", "reflection", "day:2026-11-11"] });
+    expect(entry.title).toStartWith("Journal, 2026-11-11: Bors woke me a little after six.");
+    expect(entry.description).toContain("Learned: rack sleeps at night.");
+    // By what he wrote, and by what it is.
+    expect((await service.search({ q: "gripper bench" })).hits.map((h) => h.id)).toEqual([entry.id]);
+    expect((await service.search({ q: "journal" })).hits.map((h) => h.id)).toEqual([entry.id]);
+    expect((await service.search({ q: "Bors", kinds: ["teaching"], trust: ["agent"] })).hits[0]).toMatchObject({ id: entry.id, title: entry.title });
+  });
+
   test("downtime: a node that was off catches up from its cursors, and never archives a record twice", async () => {
     const w = world();
     for (let i = 0; i < 120; i++) w.mind.remember(w.identity, `Fact number ${i} about the keep.`, { prov: { trust: "agent" } });

@@ -27,7 +27,7 @@ const MARK: Record<string, string> = { ok: "✓", attention: "△", failed: "✗
 export function describeTask(task: LoopTask | null): string {
   if (!task) return "(a task this version can't read)";
   if (task.kind === "heartbeat") return `${task.checklist ? "heartbeat + your checklist" : "heartbeat"}${task.selfAction === false ? " (self-action off)" : ""}`;
-  if (task.kind === "reflect") return `daily reflection (budget ${task.budget ?? REFLECT_BUDGET} tokens a day)`;
+  if (task.kind === "reflect") return `his journal (budget ${task.budget ?? REFLECT_BUDGET} tokens a day)`;
   if (task.kind === "quest") return `quest (${task.network}): ${task.goal.length > 70 ? `${task.goal.slice(0, 70)}…` : task.goal}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${v}`).join(" ");
   return `call ${task.connector}.${task.tool}${args ? ` ${args}` : ""}`;

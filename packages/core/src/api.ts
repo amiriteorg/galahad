@@ -11,6 +11,8 @@ import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
+import { cleanCompanionName, companionNameProblem } from "./companion.ts";
+import { JOURNAL_DAY } from "./journal.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -95,10 +97,23 @@ export const SandboxRequest = z.strictObject({
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
-/** The reflection's daily budget, in tokens (about four characters each): what he reads and writes together. */
+/** His journal's daily budget (the `reflect` loop's), in tokens (about four characters each): what he reads and writes together. */
 export const REFLECT_BUDGET = 4000;
 export const REFLECT_BUDGET_MIN = 1000;
 export const REFLECT_BUDGET_MAX = 50_000;
+
+/** A Danish day, YYYY-MM-DD: what a journal entry is about. */
+const JournalDay = z.string().regex(JOURNAL_DAY, "a day, YYYY-MM-DD");
+
+/** His dog's name as it's kept (companion.ts): cleaned, then checked; the message says why a name won't do. */
+export const CompanionName = z
+  .string()
+  .max(200)
+  .transform(cleanCompanionName)
+  .superRefine((name, ctx) => {
+    const problem = companionNameProblem(name);
+    if (problem) ctx.addIssue({ code: "custom", message: problem });
+  });
 
 /** What a loop does each time it runs. */
 export const LoopTask = z.discriminatedUnion("kind", [
@@ -108,9 +123,11 @@ export const LoopTask = z.discriminatedUnion("kind", [
    */
   z.strictObject({ kind: z.literal("heartbeat"), checklist: z.string().max(4000).optional(), selfAction: z.boolean().optional() }),
   /**
-   * Once a day, a few lines of what happened, what he learned and what he'd like to do next, as his own
-   * memory: by the cheapest usable role, within `budget` tokens a day (default REFLECT_BUDGET), from the
-   * day's ledger, notices and the titles of kept chats (never the bank, never secrets).
+   * His journal, once a day: a recollection of the day in his own words, what he learned and what he'd like
+   * to do next, kept as his own memory (journal.ts): by the cheapest usable role, within `budget` tokens a
+   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs, the titles of kept chats, the
+   * experiments that finished, the chalkboard and his day in the SANDBOX (never the bank, never secrets).
+   * The kind is still `reflect`: it was his daily reflection first, and loops on running fleets go on as they are.
    */
   z.strictObject({ kind: z.literal("reflect"), budget: z.number().int().min(REFLECT_BUDGET_MIN).max(REFLECT_BUDGET_MAX).optional() }),
   /** A quest in a fresh sandbox: plan, work, independent review, remembered. */
@@ -401,6 +418,20 @@ export const routes = {
   selfAction: { method: "GET", path: "/api/self-action", scope: "mind:read", input: null },
   /** The owner's switch for self-action (on by default). It steers Galahad, so it's brain:write: never an agent's. */
   setSelfAction: { method: "POST", path: "/api/self-action", scope: "brain:write", input: z.strictObject({ on: z.boolean() }) },
+  /**
+   * His journal (journal.ts): the entries the reflect loop kept, newest day first. `limit` (default 30) and
+   * `before` (a day: only older ones) page through it; `day` asks for one day's. Read like any memory.
+   */
+  journal: {
+    method: "POST",
+    path: "/api/journal",
+    scope: "mind:read",
+    input: z.strictObject({ limit: z.number().int().min(1).max(100).optional(), before: JournalDay.optional(), day: JournalDay.optional() }),
+  },
+  /** His dog (companion.ts): the name the owner gave it, or none. */
+  companion: { method: "GET", path: "/api/companion", scope: "mind:read", input: null },
+  /** Name his dog, or take the name back (null). The owner's setting, like the roster: brain:write, never an agent's. */
+  setCompanion: { method: "POST", path: "/api/companion", scope: "brain:write", input: z.strictObject({ name: CompanionName.nullable() }) },
   connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },
   setConnector: {
     method: "POST",
@@ -784,6 +815,12 @@ export interface FindingView {
   title: string;
   body: string;
   node?: string;
+}
+
+/** His dog as the owner sees it: its name (null: not named yet), and when that was set (ms; null: never). */
+export interface CompanionView {
+  name: string | null;
+  updatedAt: number | null;
 }
 
 export interface SelfActionView {

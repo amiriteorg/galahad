@@ -95,6 +95,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { selfActionOn } from "./heartbeat-world.ts";
+import { companionOf, companionView, journalEntries } from "./journal.ts";
 import { type Candidate, place } from "./placement.ts";
 
 /**
@@ -207,7 +208,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
-const COMPRESSED_READS = new Set<RouteName>(["recall", "conversation", "sandboxes", "experiment", "experimentRecording", "archiveSearch", "archiveEntry"]);
+const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "experiment", "experimentRecording", "archiveSearch", "archiveEntry"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -1544,6 +1545,22 @@ export function createApp(ctx: AppContext) {
       }
       ctx.world.heartbeatChanged();
       return selfActionView();
+    },
+    // His journal: the entries his loop kept, newest day first (read like any memory: agents may read his recollection).
+    journal: (input) => journalEntries(ctx.store, input),
+    // His dog's name: the owner's setting, the same on every node.
+    companion: () => companionView(ctx.store),
+    setCompanion: (input) => {
+      const name: string | null = input.name;
+      // It replicates in plaintext, goes into his journal's prompt and onto every device's world.
+      if (name !== null) guardAgainstSecrets(name);
+      if ((companionOf(ctx.store)?.name ?? null) !== name) {
+        if (name === null) ctx.store.emit(ctx.identity, "companion.unnamed", {});
+        else ctx.store.emit(ctx.identity, "companion.named", { name });
+      }
+      // The world calls the dog by its name at once.
+      ctx.world.companionChanged();
+      return companionView(ctx.store);
     },
     connectors: () => ({ connectors: connectorViews() }),
     setConnector: async (input) => {
