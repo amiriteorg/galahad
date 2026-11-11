@@ -1040,6 +1040,9 @@ export function createApp(ctx: AppContext) {
       onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
     createSandbox: (input, p) => {
       const { on, ...request } = input;
+      // Model providers only, and only ones this fleet has: the gateway's own scopes were refused by the contract.
+      const unknown = ((request.providers ?? []) as string[]).filter((id) => !providerRecord(ctx.store, id));
+      if (unknown.length) throw new HttpError(400, `no model provider ${unknown.join(", ")} on this fleet (galahad providers lists them)`);
       // An arm's sandboxes all belong to its own quest and are always ephemeral.
       const scoped = p.kind === "arm" ? { ...request, quest: armQuest(p.label!), persistent: false } : request;
       // Creating may pull an image: long-running.

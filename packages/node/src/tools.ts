@@ -9,6 +9,7 @@ import {
   type MemoryView,
   type NoticeView,
   type OrderView,
+  ProviderId,
   type RouteName,
   routes,
   type SandboxView,
@@ -79,6 +80,11 @@ function formatExec(result: ExecResult, header: string): string {
 }
 
 const NODE = z.string().max(100).describe("Node name to run on, e.g. a server; omit to let Galahad place it.").optional();
+const PROVIDERS = z
+  .array(ProviderId)
+  .max(8)
+  .describe("Model providers on this fleet the sandbox may call through the gateway (never raw keys); web search and repositories aren't providers")
+  .optional();
 const NETWORK = z
   .enum(["isolated", "gateway", "online"])
   .describe("isolated = no network · gateway = model calls only (default) · online = internet + models")
@@ -237,7 +243,7 @@ export const TOOLS: GalahadTool[] = [
     input: {
       command: z.string().min(1).max(100_000).describe("Shell command, run with sh -c in /work"),
       network: NETWORK,
-      providers: z.array(z.string().max(64)).max(8).describe("Model providers the sandbox may call through the gateway (never raw keys)").optional(),
+      providers: PROVIDERS,
       timeoutSec: z.number().int().min(1).max(3600).optional(),
       isolation: ISOLATION,
       lab: LAB,
@@ -278,7 +284,7 @@ export const TOOLS: GalahadTool[] = [
       lab: LAB,
       gazebo: GAZEBO,
       ttlMinutes: z.number().int().min(1).max(1440).optional(),
-      providers: z.array(z.string().max(64)).max(8).optional(),
+      providers: PROVIDERS,
       on: NODE,
     },
     routes: ["createSandbox"],

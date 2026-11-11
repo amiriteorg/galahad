@@ -97,6 +97,35 @@ describe("arm credentials", () => {
     expect((await call("mintToken", { label: "x" }, armToken)).status).toBe(403);
   });
 
+  test("can't get a repository, web search or an unknown service through a sandbox's providers", async () => {
+    const refused = async (providers: string[]) => {
+      const response = await call("createSandbox", { network: "gateway", providers }, armToken);
+      const body = (await response.json()) as { error: string; issues?: { message: string }[] };
+      return { status: response.status, error: body.error, why: body.issues?.map((i) => i.message) };
+    };
+    // The git gateway's scope (every private repository the GitHub key reads), search and the world are the node's to give.
+    for (const name of ["git:github:someone:private-repo", "search", "world"]) {
+      expect(await refused([name])).toEqual({ status: 400, error: "invalid input", why: ["search, world and git:… are Galahad's own gateway scopes, not model providers"] });
+    }
+    // A name this fleet has no provider for.
+    expect(await refused(["no-such-provider"])).toEqual({ status: 400, error: "no model provider no-such-provider on this fleet (galahad providers lists them)", why: undefined });
+    // Over MCP too, as an agent would ask.
+    const viaTool = await client.callTool({ name: "sandbox_run", arguments: { command: "true", providers: ["git:github:someone:private-repo"] } });
+    expect(viaTool.isError).toBe(true);
+    // A repository's token comes only through gateway:mint, which agents never hold.
+    expect((await call("mintToken", { label: "git:x", providers: ["git:github:someone:private-repo"] }, armToken)).status).toBe(403);
+  });
+
+  test("still may give a sandbox the fleet's model providers, and search through its own flag", async () => {
+    expect((await call("setProvider", { id: "stand-in", kind: "openai", baseUrl: "http://127.0.0.1:9/v1" }, home.adminToken())).status).toBe(200);
+    // Past the boundary, to the sandbox host (this test node has none).
+    for (const body of [{ providers: ["stand-in"] }, { search: true }]) {
+      const response = await call("createSandbox", { network: "gateway", ...body }, armToken);
+      expect(response.status).toBe(424);
+      expect(((await response.json()) as { error: string }).error).toContain("sandbox host");
+    }
+  });
+
   test("can never be minted with vault, device or gateway powers", async () => {
     const response = await call("mintArm", { label: "greedy", scopes: ["vault:write"] }, home.adminToken());
     expect(response.status).toBe(400);

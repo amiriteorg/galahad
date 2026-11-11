@@ -88,7 +88,7 @@ The review also confirmed what held up:
 
 ## Shipping (tested)
 
-- **Reading without a key.** The git gateway serves one repository per token (minted for the quest, revoked when it ends), fetch only: `git-receive-pack` is refused on every path, a token for another repository or a model token is refused, and the key is added by the node only for `github.com`, the host fixed in code for GitHub connectors (`packages/node/test/git-gateway.test.ts`).
+- **Reading without a key.** The git gateway serves one repository per token (minted for the quest through `gateway:mint`, which agents never hold, and revoked when it ends; a sandbox's providers can't name a repository), fetch only: `git-receive-pack` is refused on every path, a token for another repository or a model token is refused, and the key is added by the node only for `github.com`, the host fixed in code for GitHub connectors (`packages/node/test/git-gateway.test.ts`).
 
 - **No key in the sandbox, no push from it.** A quest's changes leave the sandbox as kept files (hashed, through the hostile-archive extractor); the node turns them into a commit with GitHub's API, using the connector's key on its pinned origin. Tested end to end against a stand-in GitHub: nothing is sent before approval, the key goes only to `api.github.com`, an approval ships exactly once (`packages/node/test/ship.test.ts`).
 - **One approval, one shipment.** `github.ship` is outward: an agent's request waits for you (or a standing order you signed, which must name the owner and repository). Branch names are pinned to `galahad/…`; an existing branch is refused, never force-pushed; a shipment whose clone came from another repository is refused.
@@ -98,7 +98,7 @@ The review also confirmed what held up:
 ## Web search (tested)
 
 - **Loopback only.** SearXNG listens on `127.0.0.1:8888` of the sandbox host, with every capability dropped but the three its entrypoint needs and `no-new-privileges`; it's reached through the node, never directly from a sandbox.
-- **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Every search is ledgered.
+- **Scoped.** A sandbox searches through its gateway only with a token that carries the `search` scope; a model token or a git token is refused (`packages/node/test/search.test.ts`). Only the request's own search flag puts that scope on a sandbox's token: asking for `search`, `world` or `git:…` among its providers is refused, and so is a provider the fleet doesn't have (`packages/node/test/mcp.test.ts`, `packages/sandbox/test/spec.test.ts`). Every search is ledgered.
 - **Residual risk:** search results and the pages behind them are written by strangers and can carry prompt injection; quests treat them as data, and anything outward still asks you.
 
 ## Chat history (tested)

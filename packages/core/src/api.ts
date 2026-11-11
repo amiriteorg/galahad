@@ -17,6 +17,20 @@ import { WorldReport } from "./world-input.ts";
  */
 
 const Name = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/);
+
+/**
+ * Gateway scopes that aren't model providers. The node gives them itself, on its own typed
+ * paths: `search` through a sandbox's search flag, `world` to every sandbox with a network,
+ * `git:<connector>:<owner>:<repo>` in a token minted through gateway:mint. Never a provider's
+ * id, so nobody can ask for one by name.
+ */
+export const isReservedGatewayScope = (name: string): boolean => name === "search" || name === "world" || name.startsWith("git:");
+
+/** A model provider's id: a name that isn't one of the gateway's own scopes. */
+export const ProviderId = Name.refine((name) => !isReservedGatewayScope(name), {
+  message: "search, world and git:… are Galahad's own gateway scopes, not model providers",
+});
+
 const ModelRef = z.string().min(3).max(256);
 
 export const ChatMessage = z.strictObject({
@@ -57,8 +71,8 @@ export const SandboxRequest = z.strictObject({
   cpus: z.number().min(0.25).max(64).default(4),
   memoryGb: z.number().min(0.25).max(512).default(8),
   ttlMinutes: z.number().int().min(1).max(7 * 24 * 60).default(120),
-  /** Providers the sandbox may call through the gateway (scoped token; never the key). */
-  providers: z.array(Name).max(16).optional(),
+  /** Model providers the sandbox may call through the gateway (scoped token; never the key). The node refuses one it doesn't have. */
+  providers: z.array(ProviderId).max(16).optional(),
   /** Persistent sandboxes are not cleaned up automatically; destroying one asks first. */
   persistent: z.boolean().default(false),
   quest: z.string().max(64).regex(/^[A-Za-z0-9._:-]+$/).optional(),
@@ -152,7 +166,7 @@ export const routes = {
     path: "/api/providers",
     scope: "brain:write",
     input: z.strictObject({
-      id: Name,
+      id: ProviderId,
       preset: Name.optional(),
       kind: z.enum(["openai", "anthropic"]).optional(),
       baseUrl: z.string().url().optional(),

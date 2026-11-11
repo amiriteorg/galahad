@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type ActionClass, type Decision, decide, type ExecResult, randomBytes, redact, type SandboxView } from "@galahad/core";
+import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxView } from "@galahad/core";
 import {
   chooseIsolation,
   containerName,
@@ -15,7 +15,9 @@ import {
   OWN_IMAGES,
   runArgs,
   type SandboxSpec,
+  SEARCH_SCOPE,
   volumeName,
+  WORLD_SCOPE,
 } from "./spec.ts";
 import { type ExtractLimits, type ExtractResult, extractTar } from "./tar.ts";
 import { budgetProblem, DEFAULT_DISK_GB, type Workspaces, type WorkspaceStats } from "./workspaces.ts";
@@ -106,6 +108,18 @@ export class SandboxError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * The gateway scopes a sandbox's token carries: the model providers asked for, web search
+ * by its own flag, and the world wherever there's a network. An internal scope (search,
+ * world, git:…) asked for by name is refused, however the request got here.
+ */
+export function sandboxScopes(input: { network: CreateInput["network"]; providers?: string[]; search?: boolean }): string[] {
+  const reserved = (input.providers ?? []).filter(isReservedGatewayScope);
+  if (reserved.length) throw new SandboxError(`${reserved.join(", ")}: not a model provider (search is the request's own flag; repositories come from the node)`);
+  if (input.network === "isolated") return [];
+  return [...(input.providers ?? []), ...(input.search ? [SEARCH_SCOPE] : []), WORLD_SCOPE];
 }
 
 interface Run {
@@ -243,6 +257,8 @@ export class SandboxHost {
   }
 
   async create(input: CreateInput): Promise<SandboxView> {
+    // Wherever there's a network, a sandbox may show its experiments in the world.
+    const providers = sandboxScopes(input);
     if (!(await this.available())) throw new SandboxError("docker is not available on this node", 424);
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);
     if (input.memoryGb > this.opts.maxMemoryGb) throw new SandboxError(`at most ${this.opts.maxMemoryGb} GB memory per sandbox on this node`);
@@ -270,8 +286,6 @@ export class SandboxHost {
 
     const id = hex(randomBytes(5));
     const quest = input.quest ?? `adhoc-${id}`;
-    // Wherever there's a network, a sandbox may show its experiments in the world.
-    const providers = input.network === "isolated" ? [] : [...(input.providers ?? []), ...(input.search ? ["search"] : []), "world"];
     let env: Record<string, string> = {};
     let tokenHash: string | undefined;
     if (providers.length) {
@@ -329,13 +343,14 @@ export class SandboxHost {
       this.creating.delete(id);
     }
     if (tokenHash) this.tokenStore.put(id, tokenHash);
+    const models = providers.filter((p) => p !== SEARCH_SCOPE && p !== WORLD_SCOPE);
     this.opts.ledger({
       class: "create",
       resource: "docker.container",
       target: containerName(id),
       verdict: "allow",
       quest,
-      detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${providers.some((p) => p !== "search") ? ` · models: ${providers.filter((p) => p !== "search").join(", ")}` : ""}${providers.includes("search") ? " · web search" : ""}`,
+      detail: `${isolation === "vm" ? "microVM" : "container"} · ${input.network} · ${input.cpus} cpu · ${input.memoryGb} GB · ${spec.workspace ? `${diskGb} GB disk` : "unlimited disk"} · ${image}${models.length ? ` · models: ${models.join(", ")}` : ""}${providers.includes(SEARCH_SCOPE) ? " · web search" : ""}`,
     });
     return (await this.get(id))!;
   }
