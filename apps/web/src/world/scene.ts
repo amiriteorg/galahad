@@ -40,16 +40,18 @@ import { weatherUniforms } from "./wet.ts";
  * WebGPU isn't available): the land and what grows on it, the treehouse keep and
  * its stations, the plots, Galahad and his dog, birds, deer, rabbits, ducks and
  * fireflies, a sky under the real sun and moon over Denmark, weather (cloud,
- * mist, rain), and HTML labels and a speech bubble projected from 3D. A quality
+ * mist, rain, snow, wind, thunder), and HTML labels and a speech bubble projected from 3D. A quality
  * tier chosen at start caps everything; the resolution governor holds the frame
  * time (post effects first, then the pixel ratio, then shadows and grass).
  *
  * The picture: AgX tone mapping (exposure by the sun and the weather) over
  * linear-light colours; a sun and a lavender-and-green hemisphere fill, ambient
- * occlusion baked into the geometry, a haze that warms towards the sun and a
- * height-bound mist that lies in hollows and over water, dithered so their
- * gradients never band; rain streaks, ripples and wet, darker ground; on the
- * high tier, GTAO, sun shafts and bloom (post.ts); multisampling where it's
+ * occlusion baked into the geometry, a grade for the time of day, and the air
+ * (atmosphere.ts: a haze that warms towards the sun, a height-bound mist that
+ * lies in hollows and over water, cloud shadows, lightning), dithered so their
+ * gradients never band; rain and snow, ripples, wet, darker ground and lying
+ * snow (wet.ts); on the high tier, GTAO, light shafts marched through the sun's
+ * shadow map, and bloom (post.ts, shafts.ts); multisampling where it's
  * cheap; a reversed depth buffer on WebGPU (no flicker far away). Steady: land grows within a time budget per
  * frame, frames are paced to the display (none dropped for a fraction of a
  * millisecond), the camera follows on a smoothed ground, shadows are snapped to
