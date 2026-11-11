@@ -9,7 +9,8 @@ import type { LedgerEntryInput } from "@galahad/sandbox";
  *   git -c http.extraHeader="Authorization: Bearer gw_…" clone http://<gateway>/git/<connector>/<owner>/<repo>.git
  *
  * The token is minted for one repository through one connector (provider
- * `git:<connector>:<owner>:<repo>`), for the quest's lifetime; the node adds the
+ * `git:<connector>:<owner>:<repo>`), for the quest's lifetime, only through gateway:mint
+ * (a sandbox's providers can't name one: the contract reserves git:…); the node adds the
  * connector's key on the way to github.com. Pushing is refused: changes leave as a
  * shipment, through the oath gate (github.ship).
  */

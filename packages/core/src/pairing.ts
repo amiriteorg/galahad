@@ -48,10 +48,21 @@ export function decodeInvite(text: string): Invite {
 
 const pairKey = (secret: Bytes) => deriveKey(secret, "galahad/pair/v1/mac");
 
+/**
+ * What a joining device calls itself, shown in terminals and the app: no control characters
+ * (an escape sequence would be acted on), line breaks or bidirectional overrides (which can make
+ * the name read as something else next to the approval code).
+ */
+export const DeviceName = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((name) => !/[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]/u.test(name), { message: "a device name can't hold control characters" });
+
 export const PairRequestFields = z.strictObject({
   invite: B64,
   device: z.string().regex(/^[nc]_[A-Za-z0-9_-]{43,87}$/),
-  name: z.string().min(1).max(64),
+  name: DeviceName,
   kind: z.enum(["node", "client"]),
   box: B64.optional(),
   endpoint: z.string().url().max(512).optional(),

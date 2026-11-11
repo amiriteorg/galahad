@@ -132,7 +132,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     vmNote.hidden = !p.vmReason;
     const isolated = network === "isolated";
     for (const chip of providersBox.querySelectorAll<HTMLButtonElement>("button")) chip.disabled = isolated;
-    providersHint.textContent = isolated ? "An isolated sandbox can't reach any model." : providers.size ? "Only these providers' models are reachable, through the gateway." : "None chosen: every configured provider is reachable through the gateway.";
+    providersHint.textContent = isolated ? "An isolated sandbox can't reach any model." : providers.size ? "Only these providers' models are reachable, through the gateway." : "None chosen: no model is reachable. Choose the providers whose models it may call.";
     replace(
       summary,
       icon(NETWORK[network].icon),

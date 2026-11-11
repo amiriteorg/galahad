@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SandboxRequest } from "@galahad/core";
-import { chooseIsolation, execArgs, gatewayEnv, KATA_RUNTIME, microVMsAvailable, NETWORKS, networkCreateArgs, runArgs, type SandboxSpec, vmResolvConf } from "../src/index.ts";
+import { chooseIsolation, execArgs, gatewayEnv, KATA_RUNTIME, microVMsAvailable, NETWORKS, networkCreateArgs, runArgs, SandboxError, type SandboxSpec, sandboxScopes, vmResolvConf } from "../src/index.ts";
 
 const base: SandboxSpec = {
   id: "0123456789",
@@ -141,5 +141,22 @@ describe("sandbox hardening", () => {
     const parsed = SandboxRequest.parse({});
     expect(parsed).toMatchObject({ network: "gateway", persistent: false, ttlMinutes: 120, cpus: 4, memoryGb: 8 });
     expect(() => SandboxRequest.parse({ image: "Evil Image; rm -rf /" })).toThrow();
+  });
+
+  test("a request names model providers only: search, the world and repositories are the node's to give", () => {
+    expect(SandboxRequest.parse({ providers: ["deepseek", "cloudflare-ai"] }).providers).toEqual(["deepseek", "cloudflare-ai"]);
+    for (const name of ["search", "world", "git:github:someone:private-repo", "git:x"]) {
+      expect(SandboxRequest.safeParse({ providers: [name] }).success).toBe(false);
+    }
+  });
+
+  test("the token's scopes: the providers asked for, search by its own flag, the world wherever there's a network", () => {
+    expect(sandboxScopes({ network: "gateway", providers: ["deepseek"] })).toEqual(["deepseek", "world"]);
+    expect(sandboxScopes({ network: "online", search: true })).toEqual(["search", "world"]);
+    expect(sandboxScopes({ network: "isolated", providers: ["deepseek"], search: true })).toEqual([]);
+    // Whatever reached the host by another way, it never mints an internal scope by name.
+    for (const name of ["search", "world", "git:github:someone:private-repo"]) {
+      expect(() => sandboxScopes({ network: "gateway", providers: [name] })).toThrow(SandboxError);
+    }
   });
 });

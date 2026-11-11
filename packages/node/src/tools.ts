@@ -9,6 +9,7 @@ import {
   type MemoryView,
   type NoticeView,
   type OrderView,
+  ProviderId,
   type RouteName,
   routes,
   type SandboxView,
@@ -42,9 +43,13 @@ export interface GalahadTool {
   /**
    * private: returns the user's private data (the bank).
    * egress: can carry data out of Galahad (the web, services, sandboxes, another model).
-   * In chat, once private data is in an answer, egress tools are refused for the rest of it.
+   * record: writes words or numbers the model chooses into the shared mind (a memory, a
+   *   secret request, kept work's label, a sandbox's line in the ledger), which replicates
+   *   in plaintext to every node and is read by every agent with mind:read.
+   * In chat, once private data is in an answer, egress and record tools are refused for the
+   * rest of it. A tool with no flow only reads the mind (a test holds every tool to this).
    */
-  flow?: "private" | "egress";
+  flow?: "private" | "egress" | "record";
   run(api: ToolApi, args: any): Promise<string>;
 }
 
@@ -75,6 +80,11 @@ function formatExec(result: ExecResult, header: string): string {
 }
 
 const NODE = z.string().max(100).describe("Node name to run on, e.g. a server; omit to let Galahad place it.").optional();
+const PROVIDERS = z
+  .array(ProviderId)
+  .max(8)
+  .describe("Model providers on this fleet the sandbox may call through the gateway (never raw keys); web search and repositories aren't providers")
+  .optional();
 const NETWORK = z
   .enum(["isolated", "gateway", "online"])
   .describe("isolated = no network · gateway = model calls only (default) · online = internet + models")
@@ -167,6 +177,7 @@ export const TOOLS: GalahadTool[] = [
       untrusted: z.boolean().describe("true if it came from a web page, a file or someone other than the user").optional(),
     },
     routes: ["remember"],
+    flow: "record",
     async run(api, { text, tags, untrusted }) {
       const result = await api.call<{ id: string; trust: string }>("remember", { text, ...(tags ? { tags } : {}), ...(untrusted ? { untrusted } : {}) });
       return `Remembered as ${result.trust}. Every node will have it within seconds.`;
@@ -232,7 +243,7 @@ export const TOOLS: GalahadTool[] = [
     input: {
       command: z.string().min(1).max(100_000).describe("Shell command, run with sh -c in /work"),
       network: NETWORK,
-      providers: z.array(z.string().max(64)).max(8).describe("Model providers the sandbox may call through the gateway (never raw keys)").optional(),
+      providers: PROVIDERS,
       timeoutSec: z.number().int().min(1).max(3600).optional(),
       isolation: ISOLATION,
       lab: LAB,
@@ -273,10 +284,12 @@ export const TOOLS: GalahadTool[] = [
       lab: LAB,
       gazebo: GAZEBO,
       ttlMinutes: z.number().int().min(1).max(1440).optional(),
-      providers: z.array(z.string().max(64)).max(8).optional(),
+      providers: PROVIDERS,
       on: NODE,
     },
     routes: ["createSandbox"],
+    // Its sizes and providers land in the ledger, and nothing could run in it after the bank anyway.
+    flow: "record",
     async run(api, args) {
       const { sandbox } = await api.call<{ sandbox: SandboxView }>(
         "createSandbox",
@@ -341,6 +354,7 @@ export const TOOLS: GalahadTool[] = [
       provider: z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/).optional(),
     },
     routes: ["requestSecret"],
+    flow: "record",
     async run(api, { name, purpose, provider }) {
       await api.call("requestSecret", { name, purpose, ...(provider ? { provider } : {}) });
       return `Requested "${name}". The user will see it in the vault and can fill it from any device; you will never see the value.`;
@@ -456,6 +470,7 @@ export const TOOLS: GalahadTool[] = [
       on: NODE,
     },
     routes: ["saveArtifact"],
+    flow: "record",
     async run(api, { id, path, label, on }) {
       const { artifact } = await api.call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: id, ...(path ? { path } : {}), ...(label ? { label } : {}), ...(on ? { on } : {}) });
       if (!artifact) return `Nothing to keep in ${path ?? "/work/out"}.`;
@@ -642,10 +657,17 @@ export const schemaOf = (t: GalahadTool): Record<string, unknown> => {
 
 const CHAT_RESULT_MAX = 30_000;
 
+/** Why a tool is refused once the bank is in the answer, in words for the model. */
+const REFUSED: Record<"egress" | "record", string> = {
+  egress: "this tool can carry data out of Galahad (the web, services, sandboxes, another model)",
+  record: "this tool writes into Galahad's shared mind (memories, secret requests, kept work, the ledger), which every node and every agent that may read the mind sees",
+};
+
 /**
  * The tools for one chat answer: checked input, outcomes instead of exceptions, and
  * one rule across calls: once the user's private data (the bank) is in the answer,
- * nothing that can carry data out of Galahad runs for the rest of it.
+ * nothing that can carry data out of Galahad, or write it into the shared mind,
+ * runs for the rest of it.
  */
 export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string, opts: { tag?: string } = {}): ChatTools {
   const byName = new Map(tools.map((t) => [t.name, t]));
@@ -653,7 +675,7 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
   return {
     specs: tools.map((t) => ({
       name: t.name,
-      description: t.flow === "egress" ? `${t.description} Refused once the user's bank data is in the answer.` : t.description,
+      description: t.flow === "egress" || t.flow === "record" ? `${t.description} Refused once the user's bank data is in the answer.` : t.description,
       inputSchema: schemaOf(t),
     })),
     describe: (call: ToolCall) => {
@@ -664,9 +686,9 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
     async run(call) {
       const t = byName.get(call.name);
       if (!t) return { content: `There's no tool named ${call.name} here.`, isError: true, summary: "no such tool" };
-      if (t.flow === "egress" && privateIn) {
+      if ((t.flow === "egress" || t.flow === "record") && privateIn) {
         return {
-          content: "Refused: the user's bank data is in this answer, and this tool can carry data out of Galahad (the web, services, sandboxes, another model). Answer from what you have; the user can ask for it in a new message.",
+          content: `Refused: the user's bank data is in this answer, and ${REFUSED[t.flow]}. Answer from what you have; the user can ask for it in a new message.`,
           isError: true,
           summary: "refused: bank data is in this answer",
         };

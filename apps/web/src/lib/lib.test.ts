@@ -90,10 +90,20 @@ describe("markdown-lite", () => {
   test("pathological input stays bounded (it is re-parsed every frame while streaming)", () => {
     const deep = `${"> ".repeat(200)}x`;
     expect(() => parseMarkdown(deep)).not.toThrow();
-    for (const text of ["*a ".repeat(4000), "a *b ".repeat(4000), "_x ".repeat(4000), "**a ".repeat(3000), "~~a ".repeat(3000)]) {
-      const started = performance.now();
-      parseMarkdown(text);
-      expect(performance.now() - started).toBeLessThan(60);
+    // Bounded means linear: four times the input takes about four times as long, on any machine
+    // (a quadratic parser would take sixteen). The fastest of a few runs keeps a pause out of it.
+    const fastest = (text: string) => {
+      let best = Infinity;
+      for (let i = 0; i < 5; i++) {
+        const started = performance.now();
+        parseMarkdown(text);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    for (const unit of ["*a ", "a *b ", "_x ", "**a ", "~~a "]) {
+      parseMarkdown(unit.repeat(1000)); // warm
+      expect(fastest(unit.repeat(8000)) / fastest(unit.repeat(2000))).toBeLessThan(10);
     }
   });
 

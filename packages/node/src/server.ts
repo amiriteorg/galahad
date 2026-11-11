@@ -483,7 +483,8 @@ export function createApp(ctx: AppContext) {
         thinking();
       } else if (event.type === "tool") {
         const tool = TOOLS.find((t) => t.name === event.name);
-        const detail = tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
+        // Once the bank is in the answer, a tool's input may carry it: the world gets only its name.
+        const detail = answer.bank || tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
         ctx.world.doing(stationForTool(event.name), `${event.title}${detail}`, { model });
       } else if (event.type === "tool_result") {
         thinking();
@@ -978,11 +979,14 @@ export function createApp(ctx: AppContext) {
       ctx.chats.projectRemoved(input.id);
       return { removed: true };
     },
-    createInvite: (input) =>
-      ctx.pairing.createInvite(input.kind, {
-        scopes: input.scopes ?? (input.kind === "client" ? CLIENT_DEFAULT_SCOPES : undefined),
-        origin: input.origin,
-      }),
+    createInvite: (input, p) => {
+      const scopes: Scope[] | undefined = input.scopes ?? (input.kind === "client" ? CLIENT_DEFAULT_SCOPES : undefined);
+      // An invite carries no more than its maker holds, so a paired device can't pair itself a stronger one.
+      // (A machine's invite still needs approving at a terminal, where you hold everything.)
+      const beyond = input.kind === "client" ? scopes!.filter((s) => !p.scopes.includes(s)) : [];
+      if (beyond.length) throw new HttpError(403, `an invite can't carry scopes this device doesn't hold: ${beyond.join(", ")}`);
+      return ctx.pairing.createInvite(input.kind, { scopes, origin: input.origin });
+    },
     pairings: () => ({ pairings: ctx.pairing.pending() }),
     approvePairing: (input, p) => {
       // A new machine receives the vault. A lost or stolen phone must not be able to
@@ -1039,6 +1043,9 @@ export function createApp(ctx: AppContext) {
       onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
     createSandbox: (input, p) => {
       const { on, ...request } = input;
+      // Model providers only, and only ones this fleet has: the gateway's own scopes were refused by the contract.
+      const unknown = ((request.providers ?? []) as string[]).filter((id) => !providerRecord(ctx.store, id));
+      if (unknown.length) throw new HttpError(400, `no model provider ${unknown.join(", ")} on this fleet (galahad providers lists them)`);
       // An arm's sandboxes all belong to its own quest and are always ephemeral.
       const scoped = p.kind === "arm" ? { ...request, quest: armQuest(p.label!), persistent: false } : request;
       // Creating may pull an image: long-running.
@@ -1101,7 +1108,7 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
       return { trial: trialViews().find((t) => t.id === id) };
     },
-    bankStatus: () => ctx.bank.status(),
+    bankStatus: () => bankErrors(async () => ctx.bank.status()),
     bankAccounts: () => bankErrors(async () => ctx.bank.accounts()),
     bankBalances: (input) => bankErrors(() => ctx.bank.balances(input)),
     bankTransactions: (input) => bankErrors(() => ctx.bank.transactions(input)),

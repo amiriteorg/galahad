@@ -32,8 +32,23 @@ export const COOLDOWN_MS = 6 * 60 * 60_000;
 const PENDING_TTL_MS = 15 * 60_000;
 export const REAUTHORIZE = "Bank access needs re-authorisation. Ask the human to re-authorize Galahad's bank connection (Galahad → Bank → Re-authorize).";
 
-/** Enable Banking's error codes that mean the consent is over. */
-const SESSION_OVER = new Set(["EXPIRED_SESSION", "CLOSED_SESSION", "REVOKED_SESSION", "SESSION_DOES_NOT_EXIST", "WRONG_SESSION_STATUS", "UNAUTHORIZED_ACCESS", "ACCESS_DENIED"]);
+/** Enable Banking's error codes that say the session itself is over: no need to ask. */
+const SESSION_OVER = new Set(["EXPIRED_SESSION", "CLOSED_SESSION", "REVOKED_SESSION", "SESSION_DOES_NOT_EXIST"]);
+/** Refusals that may or may not mean the consent ended (like any 401 or 403): the session is asked once. */
+const REFUSED = new Set(["WRONG_SESSION_STATUS", "UNAUTHORIZED_ACCESS", "ACCESS_DENIED"]);
+/** Session statuses that end the consent. AUTHORIZED is the one that reads; anything unknown isn't taken as an end. */
+const SESSION_ENDED = new Set(["EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"]);
+/** What a broken session file says: never its text, which a parser would quote. */
+const BROKEN_SESSION = "the bank session file doesn't hold up: disconnect, then re-authorize (Bank → Re-authorize)";
+
+const SessionFile = z.object({
+  session_id: z.string().min(1).max(200),
+  aspsp: z.string().max(200),
+  accounts: z.array(z.object({ uid: z.string(), name: z.string().nullable(), iban: z.string().nullable(), currency: z.string().nullable() })),
+  valid_until: z.string(),
+  created_at: z.string(),
+  invalid_since: z.string().optional(),
+});
 
 export const BankConfig = z.strictObject({
   appId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "the application ID (a UUID)"),
@@ -149,7 +164,8 @@ export class BankService {
     try {
       config = this.config()!;
     } catch (error) {
-      return `the bank config doesn't hold up: ${(error as Error).message.slice(0, 200)}`;
+      // A parser's message quotes the file: say only that it isn't JSON.
+      return `the bank config doesn't hold up: ${error instanceof SyntaxError ? "it isn't valid JSON" : (error as Error).message.slice(0, 200)}`;
     }
     for (const [path, what] of [
       [this.path("config.json"), "the bank config"],
@@ -158,6 +174,12 @@ export class BankService {
     ] as const) {
       const problem = this.privacyProblem(path, what);
       if (problem) return problem;
+    }
+    try {
+      this.session();
+    } catch (error) {
+      if (error instanceof BankError) return error.message;
+      throw error;
     }
     return null;
   }
@@ -188,9 +210,18 @@ export class BankService {
 
   /* ---------- the session ---------- */
 
+  /** The session on disk, checked; a broken file is a BankError that quotes none of it. */
   private session(): Session | null {
     if (!existsSync(this.path("session.json"))) return null;
-    return JSON.parse(readFileSync(this.path("session.json"), "utf8")) as Session;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(this.path("session.json"), "utf8"));
+    } catch {
+      throw new BankError(424, BROKEN_SESSION);
+    }
+    const session = SessionFile.safeParse(parsed);
+    if (!session.success) throw new BankError(424, BROKEN_SESSION);
+    return session.data;
   }
 
   private saveSession(session: Session): void {
@@ -248,18 +279,46 @@ export class BankService {
     appendFileSync(this.path("audit.log"), `${new Date(this.now()).toISOString()} ${tool} ${account ? `…${account.slice(-4)}` : "-"} ${status}\n`, { mode: 0o600 });
   }
 
-  /** A failure the agent may see: never the body, headers or stack. */
-  private failure(tool: string, account: string | null, error: unknown): Reauthorize | never {
-    if (error instanceof EnableBankingError && (error.status === 401 || error.status === 403 || (error.code !== null && SESSION_OVER.has(error.code)))) {
-      const session = this.session();
-      if (session && !session.invalid_since) this.saveSession({ ...session, invalid_since: new Date(this.now()).toISOString() });
-      this.audit(tool, account, "reauthorization-required");
-      return { reauthorization_required: true, message: REAUTHORIZE };
+  /**
+   * A failure the agent may see: never the body, headers or stack. The consent is taken
+   * as ended only when the bank says the session is over, or when it refused a fetch
+   * (a 401 or 403) and the session, asked once, says so: a passing refusal must not
+   * cost you a new authorisation at the bank.
+   */
+  private async failure(tool: string, account: string | null, error: unknown, client: EnableBankingClient): Promise<Reauthorize> {
+    if (error instanceof EnableBankingError) {
+      const over = error.code !== null && SESSION_OVER.has(error.code);
+      const refused = error.status === 401 || error.status === 403 || (error.code !== null && REFUSED.has(error.code));
+      if (over || (refused && (await this.sessionEnded(client)))) {
+        const session = this.session();
+        if (session && !session.invalid_since) this.saveSession({ ...session, invalid_since: new Date(this.now()).toISOString() });
+        this.audit(tool, account, "reauthorization-required");
+        return { reauthorization_required: true, message: REAUTHORIZE };
+      }
+      if (refused) {
+        this.audit(tool, account, `refused-${error.status}-consent-holds`);
+        throw new BankError(503, `the bank refused this fetch for now (${error.status}${error.code ? ` ${error.code}` : ""}); the consent still holds: try again later`);
+      }
     }
     this.audit(tool, account, error instanceof EnableBankingError ? `error-${error.status}` : "error");
     if (error instanceof BankError) throw error;
     if (error instanceof EnableBankingError) throw new BankError(502, `the bank couldn't answer (${error.status}${error.code ? ` ${error.code}` : ""})`);
     throw new BankError(502, "the bank couldn't be reached");
+  }
+
+  /** Asked once, after a refused fetch: whether the session itself says the consent is over. */
+  private async sessionEnded(client: EnableBankingClient): Promise<boolean> {
+    const session = this.session();
+    if (!session) return true;
+    try {
+      const answer = await client.getSession(session.session_id);
+      const status = typeof answer?.status === "string" ? answer.status.toUpperCase() : null;
+      const until = answer?.access?.valid_until;
+      return (status !== null && SESSION_ENDED.has(status)) || (typeof until === "string" && Date.parse(until) <= this.now());
+    } catch (error) {
+      // The session is gone, or can't be asked just now (which proves nothing).
+      return error instanceof EnableBankingError && (error.status === 404 || (error.code !== null && SESSION_OVER.has(error.code)));
+    }
   }
 
   private allowed(session: Session, account: string): void {
@@ -339,7 +398,7 @@ export class BankService {
       this.audit("bank_balances", input.account, "live");
       return this.wrap(shaped, "live", at);
     } catch (error) {
-      return this.rateLimited(error, input.account, "bank_balances", hit) ?? this.failure("bank_balances", input.account, error);
+      return this.rateLimited(error, input.account, "bank_balances", hit) ?? (await this.failure("bank_balances", input.account, error, client));
     }
   }
 
@@ -387,7 +446,7 @@ export class BankService {
       } while (continuation && pages < MAX_PAGES);
       if (continuation && pages >= MAX_PAGES) note = `Only the first ${MAX_PAGES} pages: narrow the range for the rest.`;
     } catch (error) {
-      return this.rateLimited(error, input.account, "bank_transactions", hit) ?? this.failure("bank_transactions", input.account, error);
+      return this.rateLimited(error, input.account, "bank_transactions", hit) ?? (await this.failure("bank_transactions", input.account, error, client));
     }
     const at = this.now();
     if (!note) this.store(key, input.account, out, at);
@@ -502,7 +561,12 @@ export class BankService {
   }
 
   async disconnect(): Promise<{ ended: boolean }> {
-    const session = this.session();
+    let session: Session | null = null;
+    try {
+      session = this.session();
+    } catch {
+      session = null; // a broken file is forgotten like any other
+    }
     let ended = false;
     if (session && !this.problem()) {
       try {

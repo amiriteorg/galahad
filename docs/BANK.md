@@ -89,7 +89,7 @@ Seven days before the consent ends, the heartbeat leaves a notice in your inbox.
 Galahad's own chat (the app's Chat, `galahad ask`) has the bank tools whenever the device you ask from holds `bank:read`: ask "what did I spend on groceries last month?" and he reads the transactions himself, shown as steps in the answer. Two things to know:
 
 - What he reads goes to the model that answers, like everything in a chat: your planner's roster (`galahad roster`).
-- Once bank data is in an answer, he can't use the web, your services, sandboxes or another model for the rest of it. Ask for those in a new message.
+- Once bank data is in an answer, he can't use the web, your services, sandboxes or another model for the rest of it, and he can't write into the shared mind (remember, request a secret, keep a sandbox's work), which every node and every agent that reads the mind would see. Ask for those in a new message.
 
 ## Let an agent read it
 
@@ -168,10 +168,10 @@ Files are created with mode 600 from the start, written to a temporary file and 
 | A forged or replayed bank callback | 256-bit random state, kept only as a hash, compared in constant time, single use, 15 minutes; completing needs `fleet:admin` (a paired device's signature) | `bank.test.ts` |
 | The authorisation code leaks from the address bar | Removed from the address bar and history at once; single use; useless without your key's signature | |
 | The key or session is read by another user | 600 files in a 700 directory, owned by the node's user; anything looser and bank access stays off | `bank.test.ts` (simulated modes and owner) |
-| Secrets in logs, errors or answers | Errors carry only the HTTP status and Enable Banking's error code, never the body; the audit log has no amounts, names, IBANs, codes or session; answers never include the session id | `bank.test.ts` |
+| Secrets in logs, errors or answers | Errors carry only the HTTP status and Enable Banking's error code, never the body; the audit log has no amounts, names, IBANs, codes or session; answers never include the session id; a broken session or config file is reported as broken, never quoted (a JSON parser's message would quote it), in an answer or a log | `bank.test.ts` |
 | Requests redirected or sent elsewhere | Fixed origin `https://api.enablebanking.com`, TLS, redirects refused, 30 s timeout, 8 MB cap | |
 | Hammering the bank gets the consent blocked | Cache, a budget of 4 per account a day, 6 hours' pause after a 429, never a retry loop | `bank.test.ts` |
-| An expired or revoked consent | Mapped to `reauthorization_required` ("ask the human to re-authorize"); nothing more goes to the bank until you do | `bank.test.ts` |
+| An expired or revoked consent | Mapped to `reauthorization_required` ("ask the human to re-authorize"); nothing more goes to the bank until you do. It's taken as ended only when the bank's error code says the session is over, or when the bank refused a fetch (401 or 403) and the session, asked once (`GET /sessions/{id}`, already on the allowlist), says it ended or is gone. Any other refusal is a temporary failure: the agent is told to try later, and the consent stands, so a passing refusal never costs you a new MitID authorisation | `bank.test.ts` |
 
 **Not defended against:** anyone who is the node's user or root on ultra can read the key and the session. The `galahad` user has sudo (your choice), so the key is as safe as that account and root. Galahad's own quests run in microVM sandboxes without access to the node's home, and agents reach the bank only through their MCP tools.
 

@@ -59,6 +59,8 @@ bun galahad invite --client
 2. The device creates a non-extractable key and shows a **6-digit code**.
 3. The terminal shows the same code. Answer `y` only if they match.
 
+The device gets every scope except `gateway:mint`: it's your console, the bank, the vault and pairing included. For a device you trust less, pair it from the PWA (**Fleet → Pair a device**, then **Custom** or **Chat & read**) with fewer; an invite never carries a scope the inviting device lacks.
+
 ## 4. Add the server
 
 ### The one-command way: `scripts/deploy.sh`
@@ -76,11 +78,11 @@ scripts/deploy.sh wmd@ultra
 
 What a deploy does:
 
-1. Ships the committed tree only. It refuses to run if you have uncommitted changes.
+1. Ships the committed tree only, into a fresh private directory it makes on the server (`mktemp -d`, removed when the deploy ends). It refuses to run if you have uncommitted changes.
 2. Unpacks it into `~/galahad/releases/<rev>`, then switches the `~/galahad/app` symlink to that directory in one atomic step. To roll back, point the symlink at an older release and restart.
-3. Installs Bun if it's missing and runs `bun install --frozen-lockfile`.
+3. Installs Bun 1.4.4 (the version the repo is tested with) unless that's the one in `~/.bun/bin`, from the official release, checking its SHA-256 against the one pinned in `scripts/remote-setup.sh`; then runs `bun install --frozen-lockfile`.
 4. Runs the whole test suite on the server and stops if anything fails.
-5. Creates the node or joins the fleet, but only the first time. On later runs the node's identity and mind are kept.
+5. Creates the node or joins the fleet, but only the first time. On later runs the node's identity and mind are kept. Old releases are removed: it keeps this one, the two before it and the one the node is running from (on Linux, where systemd says which).
 6. Installs and restarts the service, then prints `galahad status`.
 
 You need SSH access to the server first. Pick one:

@@ -10,7 +10,8 @@
  *
  * One exception: Galahad may clean up ephemeral things *he* created for a quest
  * (sandboxes, worktrees, temp prefixes). Everything else that deletes, asks.
- * Standing orders (signed by you) can pre-approve a narrowly matching class.
+ * Standing orders (signed by you) are checked separately, against the exact call:
+ * see orders.ts.
  */
 
 export type ActionClass = "read" | "create" | "modify" | "outward" | "delete" | "forbidden";
@@ -28,19 +29,7 @@ export interface Action {
   quest?: string;
 }
 
-export interface StandingOrder {
-  id: string;
-  class: Exclude<ActionClass, "forbidden">;
-  resource: string;
-  /** Glob over `target`, e.g. "amiriteorg/*#feat/*". */
-  target: string;
-  expiresAt?: number;
-}
-
-const globToRegExp = (glob: string): RegExp =>
-  new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`);
-
-export function decide(action: Action, orders: StandingOrder[] = [], now = Date.now()): Decision {
+export function decide(action: Action): Decision {
   switch (action.class) {
     case "forbidden":
       return { verdict: "deny", reason: "breaks a limit of the oath" };
@@ -58,15 +47,6 @@ export function decide(action: Action, orders: StandingOrder[] = [], now = Date.
   ) {
     return { verdict: "allow", reason: "cleaning up an ephemeral resource this quest created" };
   }
-
-  const order = orders.find(
-    (o) =>
-      o.class === action.class &&
-      o.resource === action.resource &&
-      globToRegExp(o.target).test(action.target) &&
-      (o.expiresAt === undefined || o.expiresAt > now),
-  );
-  if (order) return { verdict: "allow", reason: `standing order ${order.id}` };
 
   return {
     verdict: "ask",

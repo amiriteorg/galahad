@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, padAt, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
@@ -20,6 +20,7 @@ import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
+import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 
@@ -622,7 +623,8 @@ Next:
       const admin = new Admin(home);
       const providers = str("providers")?.split(",").filter(Boolean);
       const minted = await admin.call<{ token: string; info: { hash: string } }>("mintToken", {
-        label: `run:${cmd[0]}`,
+        // The tool's name, not its path (a label holds at most 64 characters).
+        label: `run:${basename(cmd[0]!).slice(0, 60)}`,
         ...(providers ? { providers } : {}),
         ttlMinutes: Number(str("ttl") ?? 240),
         maxRequests: Number(str("max") ?? 100_000),
@@ -639,10 +641,9 @@ Next:
       };
       delete env.ANTHROPIC_API_KEY;
       process.stderr.write(dim(`[galahad] ${cmd[0]} gets a scoped gateway token (revoked on exit); real keys stay in the vault\n`));
-      const child = Bun.spawn(cmd, { env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-      const code = await child.exited;
-      await admin.call("revokeToken", { hash: minted.info.hash });
-      process.exit(code);
+      // Revoked when the tool exits, however galahad run is stopped (see run-tool.ts).
+      const start = () => Bun.spawn(cmd, { env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      process.exit(await runWithToken(start, () => admin.call("revokeToken", { hash: minted.info.hash })));
     }
     case "vault": {
       if (sub !== "rotate") fail("usage: galahad vault rotate");

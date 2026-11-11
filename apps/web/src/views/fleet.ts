@@ -36,7 +36,7 @@ export const SCOPE_INFO: { scope: AnyScope; label: string }[] = [
   { scope: "vault:write", label: "Add, replace and delete keys" },
   { scope: "brain:write", label: "Change providers, the roster, loops and connectors" },
   { scope: "gateway:mint", label: "Mint scoped model-gateway tokens" },
-  { scope: "fleet:admin", label: "Invite, approve and revoke devices" },
+  { scope: "fleet:admin", label: "Invite, approve and revoke devices; decide approvals; dismiss alerts" },
   { scope: "sandbox", label: "Create and use sandboxes" },
   { scope: "connect", label: "Run connector tools (never see their keys)" },
 ];
@@ -257,7 +257,8 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
   );
 }
 
-const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => s.scope !== "sandbox" || ctx.can("sandbox"));
+// An invite can carry only what this device holds (the node refuses more), so only those are offered.
+const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => ctx.can(s.scope));
 
 export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"): void {
   if (!ctx.can("fleet:admin")) {
