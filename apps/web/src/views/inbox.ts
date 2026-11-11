@@ -256,7 +256,8 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
   const renderNotices = () => {
     const list = openNotices();
-    const write = ctx.can("mind:write");
+    // Dismissing is yours alone: it needs fleet:admin, which agents never hold.
+    const write = ctx.can("fleet:admin");
     replace(
       noticesBox,
       h(

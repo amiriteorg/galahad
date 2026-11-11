@@ -335,7 +335,8 @@ export const routes = {
     input: z.strictObject({ name: LoopName.optional(), limit: z.number().int().min(1).max(200).optional() }),
   },
   notices: { method: "GET", path: "/api/notices", scope: "mind:read", input: null },
-  dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "mind:write", input: z.strictObject({ key: NoticeKey }) },
+  // Yours alone (fleet:admin, which agents never hold): an injected agent can't silence an alert.
+  dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "fleet:admin", input: z.strictObject({ key: NoticeKey }) },
   /** Run the heartbeat's checks here, now, and return what they find (writes nothing). */
   heartbeat: { method: "POST", path: "/api/heartbeat", scope: "mind:read", input: z.strictObject({}) },
   connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },

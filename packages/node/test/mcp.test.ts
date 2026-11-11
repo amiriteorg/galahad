@@ -8,6 +8,7 @@ import { routes, type RouteName } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
+import { reconcile } from "../src/heartbeat.ts";
 import { Home } from "../src/home.ts";
 
 /*
@@ -124,6 +125,19 @@ describe("arm credentials", () => {
       expect(response.status).toBe(424);
       expect(((await response.json()) as { error: string }).error).toContain("sandbox host");
     }
+  });
+
+  test("can read your alerts but never silence one", async () => {
+    // What the heartbeat would raise for a server gone quiet.
+    reconcile(daemon.store, daemon.identity, [{ key: "offline:test-server", severity: "alert", title: "test-server is offline", body: "Not seen for 2 hours." }], Date.now());
+    const { notices } = (await (await call("notices", undefined, armToken)).json()) as { notices: { key: string; dismissed: boolean }[] };
+    const open = notices.find((n) => !n.dismissed)!;
+    expect(open).toBeDefined();
+    const refused = await call("dismissNotice", { key: open.key }, armToken);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toBe("requires scope fleet:admin");
+    // You can, from a terminal or a paired device.
+    expect((await call("dismissNotice", { key: open.key }, home.adminToken())).status).toBe(200);
   });
 
   test("can never be minted with vault, device or gateway powers", async () => {

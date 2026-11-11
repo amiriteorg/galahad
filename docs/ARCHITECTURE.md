@@ -388,7 +388,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 | A standing order whose tool changed since you signed it; one that expires within 3 days | warn / info |
 | Low disk on this node | warn, alert under 3 % |
 
-Findings become **notices** in your inbox, keyed so the same problem never repeats. A notice clears itself when its cause goes away, a dismissed one stays quiet until it changes, and an unchanged finding writes nothing. Notices about one node's body (its disk, its vault) are only cleared by that node. Optionally, a **checklist** you write is read by the `swift` role each beat with the findings and recent activity (as data); it answers `HEARTBEAT_OK`, or two or three lines for you, which become a notice.
+Findings become **notices** in your inbox, keyed so the same problem never repeats. A notice clears itself when its cause goes away, a dismissed one stays quiet until it changes, and an unchanged finding writes nothing. Only you dismiss one (`fleet:admin`, from a terminal or a paired device): agents can read notices but never quiet them. Notices about one node's body (its disk, its vault) are only cleared by that node. Optionally, a **checklist** you write is read by the `swift` role each beat with the findings and recent activity (as data); it answers `HEARTBEAT_OK`, or two or three lines for you, which become a notice.
 
 ## 10. Connectors and the approval outbox ✅
 
