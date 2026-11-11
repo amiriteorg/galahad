@@ -59,10 +59,26 @@ describe("an examination on the chalkboard", () => {
     for (const input of [note, chart]) expect(BoardWriteInput.safeParse(input).success).toBe(true);
     expect(note!.item).toMatchObject({ kind: "note", title: "Examined: Two-link arm" });
     expect((note!.item as { text: string }).text).toContain("fell from 90.0 to 12.9");
-    // The error moved most (the speed barely did): it's the one charted, against time.
+    // The speed comes first but barely moved: the error, which moved most, is the one charted, against time.
     expect(chart!.item).toMatchObject({ kind: "chart", title: "Two-link arm: error mm", xLabel: "time (s)" });
     expect((chart!.item as { series: { values: number[] }[] }).series[0]!.values).toEqual([90, 45, 30, 22, 18, 15, 12.9]);
     expect(chart!.color).toBe("yellow");
+  });
+
+  test("it charts what the examination leads with, and says each sentence once (as ultra's real arm showed)", () => {
+    // The arm's real readouts: the error it was built to shrink first, the torques swinging after it. The torques
+    // move more for their size, but the finding is the error falling.
+    const readouts = [
+      readout("error_mm", [455, 120, 8, 0.9, 0.4, 0.32]),
+      readout("shoulder_nm", [25, -5.73, 6, 3.2, 4.4, 3.87], { trend: "oscillating" as ReadoutExamination["trend"] }),
+      readout("elbow_nm", [5.15, -2.94, 1.2, 0.3, 1.1, 0.85], { trend: "oscillating" as ReadoutExamination["trend"] }),
+    ];
+    const words = `Arm (MuJoCo) finished after 8.0 s of simulation. ${readouts.map((r) => r.sentence).join(" ")} In its own words: tracked. Nothing ran away.`;
+    const [note, chart] = examinationOnBoard(examination({ readouts, words, notable: ["In its own words: tracked."] }));
+    expect((chart!.item as { title: string }).title).toBe("Two-link arm: error mm");
+    const text = (note!.item as { text: string }).text;
+    for (const sentence of [...readouts.map((r) => r.sentence), "In its own words: tracked.", "Nothing ran away."]) expect(text.split(sentence).length - 1).toBe(1);
+    expect(text.split("\n")[0]).toBe("Arm (MuJoCo) finished after 8.0 s of simulation.");
   });
 
   test("a readout that ran away is charted in warning pink; with nothing to chart, just the note", () => {

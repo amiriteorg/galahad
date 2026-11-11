@@ -1028,9 +1028,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   function shaftColor(): number {
     return skyState.lightFromSun ? skyState.sunGlow : skyState.light;
   }
-  /** How much the clear air scatters, per metre: thicker under a low sun, and in rain and snow. */
+  /** How much the clear air scatters, per metre: a little thicker under a low sun (more, and open lit ground goes milky: there are no shadows there to make shafts), and in rain and snow. */
   function shaftHaze(): number {
-    return 0.004 + 0.009 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
+    return 0.004 + 0.004 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
   }
   /** How strongly the light's shafts show: low suns make them; a closed deck of cloud takes them away; the moon's are faint. */
   function shaftStrength(): number {
@@ -1229,7 +1229,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       f[k + 6] = standZ;
     }
     camera.updateMatrixWorld();
-    atmosphere.ground(focusGround, renderDt);
+    // The sheet of mist lies on the land under the focus, never on the deck or the stair he stands on (laid there,
+    // it hung in the air at the deck's height and everything below lay in its densest part).
+    atmosphere.ground(Math.max(0, groundAt(rig.x, rig.y)), renderDt);
     occlusion.from.value.copy(camera.position);
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
     occlusion.floor.value = gz;
