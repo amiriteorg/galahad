@@ -15,6 +15,25 @@ import {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** POST JSON to a peer, signed by this node's device key; the answer as it came (bytes, say). */
+export async function signedFetch(
+  identity: NodeIdentity,
+  endpoint: string,
+  path: string,
+  payload: unknown,
+  opts: { fetch?: FetchLike; timeoutMs?: number } = {},
+): Promise<Response> {
+  const body = utf8(JSON.stringify(payload));
+  const headers = await signRequest(identity.id, identity.sign, "POST", path, body);
+  return (opts.fetch ?? fetch)(`${endpoint.replace(/\/$/, "")}${path}`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000),
+  });
+}
+
 /** POST JSON to a peer, signed by this node's device key. */
 export async function signedPost<T>(
   identity: NodeIdentity,
@@ -23,14 +42,7 @@ export async function signedPost<T>(
   payload: unknown,
   opts: { fetch?: FetchLike; timeoutMs?: number } = {},
 ): Promise<T> {
-  const body = utf8(JSON.stringify(payload));
-  const headers = await signRequest(identity.id, identity.sign, "POST", path, body);
-  const response = await (opts.fetch ?? fetch)(`${endpoint.replace(/\/$/, "")}${path}`, {
-    method: "POST",
-    headers: { ...headers, "content-type": "application/json" },
-    body,
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000),
-  });
+  const response = await signedFetch(identity, endpoint, path, payload, opts);
   if (!response.ok) throw new Error(`${path} → ${response.status} ${await response.text().catch(() => "")}`.trim());
   return (await response.json()) as T;
 }

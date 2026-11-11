@@ -64,7 +64,7 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { answerSync, PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
+import { answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { type LedgerEntryInput, SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
@@ -335,6 +335,48 @@ export function createApp(ctx: AppContext) {
     const failed = streamedError(result);
     if (failed) throw new HttpError(failed.status, `${target.name}: ${failed.error}`);
     return result;
+  }
+
+  /** A kept file's bytes, fenced: opened directly, it can do nothing on this origin. */
+  function keptFile(body: BodyInit | null, type: string, disposition: string, length: number | null): Response {
+    return new Response(body, {
+      headers: {
+        "content-type": type,
+        ...(length !== null ? { "content-length": String(length) } : {}),
+        "content-disposition": disposition,
+        "cache-control": "no-store",
+        "content-security-policy": "sandbox; default-src 'none'",
+        ...SECURITY_HEADERS,
+      },
+    });
+  }
+
+  /** A kept file from the node that holds it, streamed through with this node's own fences. */
+  async function fileFrom(holder: Device, input: { id: string; path: string }): Promise<Response> {
+    if (!holder.profile?.endpoint) throw new HttpError(424, `${holder.name} has no reachable endpoint`);
+    let upstream: Response;
+    try {
+      upstream = await signedFetch(ctx.identity, holder.profile.endpoint, routes.artifactFile.path, input, { timeoutMs: 10 * 60_000 });
+    } catch {
+      throw new HttpError(502, `${holder.name} is unreachable`);
+    }
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => "");
+      let message = text;
+      try {
+        message = (JSON.parse(text) as { error?: string }).error ?? text;
+      } catch {
+        /* plain text */
+      }
+      throw new HttpError(upstream.status, `${holder.name}: ${message}`.slice(0, 500));
+    }
+    // Only what the holder decided about the file is kept; every fence is this node's own.
+    const type = upstream.headers.get("content-type") ?? "application/octet-stream";
+    const disposition = /^(?:inline|attachment); filename="[A-Za-z0-9._ -]*"$/.test(upstream.headers.get("content-disposition") ?? "")
+      ? upstream.headers.get("content-disposition")!
+      : "attachment";
+    const length = Number(upstream.headers.get("content-length"));
+    return keptFile(upstream.body, type, disposition, Number.isFinite(length) && length >= 0 ? length : null);
   }
 
   /**
@@ -1178,7 +1220,15 @@ export function createApp(ctx: AppContext) {
         }),
       );
     },
-    artifactFile: (input) => {
+    artifactFile: async (input, p) => {
+      const artifact = ctx.artifacts.get(input.id);
+      // Any device can fetch any artifact: the files stay where they were kept, so ask that node,
+      // signed as this one (it checks the same scope). A forwarded request is never sent on.
+      if (artifact && !artifact.here && p.kind !== "node") {
+        const holder = ctx.store.activeDevice(artifact.node);
+        if (!holder) throw new HttpError(409, `${artifact.nodeName} is gone; its files went with it`);
+        return fileFrom(holder, input);
+      }
       let file: ReturnType<ArtifactStore["read"]>;
       try {
         file = ctx.artifacts.read(input.id, input.path);
@@ -1187,17 +1237,7 @@ export function createApp(ctx: AppContext) {
         throw error;
       }
       const name = file.name.replace(/[^A-Za-z0-9._ -]/g, "_");
-      return new Response(file.bytes, {
-        headers: {
-          "content-type": file.type,
-          "content-length": String(file.bytes.length),
-          "content-disposition": `${file.inline ? "inline" : "attachment"}; filename="${name}"`,
-          "cache-control": "no-store",
-          // Opened directly, a kept file can do nothing on this origin.
-          "content-security-policy": "sandbox; default-src 'none'",
-          ...SECURITY_HEADERS,
-        },
-      });
+      return keptFile(file.bytes, file.type, `${file.inline ? "inline" : "attachment"}; filename="${name}"`, file.bytes.length);
     },
     removeArtifact: async (input, p) => {
       if (p.kind !== "admin" && p.kind !== "client" && p.kind !== "node") throw new HttpError(403, "only you remove kept work");

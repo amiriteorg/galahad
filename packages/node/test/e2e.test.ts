@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { b64u, clientIdFromKey, type FleetView, newNodeIdentity, routes, type RouteName, signRequest, utf8 } from "@galahad/core";
@@ -318,6 +319,50 @@ describe("M0: one mind, two bodies", () => {
     // …and work pinned to the server is forwarded there (signed as the laptop) and refused by it.
     await expect(callA("createSandbox", { network: "isolated", on: "server" })).rejects.toThrow(/424.*server: this node is not a sandbox host/);
     await expect(callA("sandboxes", { on: "nowhere" })).rejects.toThrow(/404/);
+  });
+
+  test("a kept file is fetched from whichever node holds it, under the same scope, fenced the same way", async () => {
+    // The server keeps a sandbox's work (the collector stands in for docker cp).
+    const kept = (await server.artifacts.save(
+      async (_sandbox, _from, dest) => {
+        writeFileSync(join(dest, "report.md"), "# Held on the server\n");
+        writeFileSync(join(dest, "page.html"), "<script>alert(1)</script>");
+        return {
+          files: [
+            { path: "report.md", size: 21, sha256: createHash("sha256").update("# Held on the server\n").digest("hex") },
+            { path: "page.html", size: 25, sha256: createHash("sha256").update("<script>alert(1)</script>").digest("hex") },
+          ],
+          bytes: 46,
+          skipped: [],
+        };
+      },
+      { sandbox: "0123456789", label: "server work" },
+    ))!;
+    await until(() => laptop.store.lww(`artifact:${kept.id}`) !== null);
+    const fetchFile = (token: string, path: string) =>
+      fetch(`http://127.0.0.1:${portA}${routes.artifactFile.path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ id: kept.id, path }),
+      });
+    // Asked of the laptop, which doesn't hold it: forwarded to the server, and back.
+    const md = await fetchFile(homeA.adminToken(), "report.md");
+    expect(md.status).toBe(200);
+    expect(await md.text()).toBe("# Held on the server\n");
+    expect(md.headers.get("content-security-policy")).toBe("sandbox; default-src 'none'");
+    expect(md.headers.get("x-content-type-options")).toBe("nosniff");
+    const html = await fetchFile(homeA.adminToken(), "page.html");
+    expect(html.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await html.text()).toBe("<script>alert(1)</script>");
+    // An agent with mind:read reads it too; what the holder refuses comes back refused.
+    const { token: armToken } = await admin(homeA, portA)<{ token: string }>("mintArm", { label: "far-reader" });
+    expect(await (await fetchFile(armToken, "report.md")).text()).toBe("# Held on the server\n");
+    const missing = await fetchFile(homeA.adminToken(), "../manifest.json");
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as { error: string }).error).toMatch(/server: no such file/);
+    // A node's forwarded request runs where it lands: the laptop never forwards one on.
+    const relayed = await signedPost(server.identity, laptop.endpoint, routes.artifactFile.path, { id: kept.id, path: "report.md" }).catch((error: Error) => error.message);
+    expect(String(relayed)).toMatch(/421/);
   });
 
   test("the ledger is readable fleet-wide", async () => {

@@ -86,6 +86,7 @@ Since then, a device whose chain holds a refused event, and a revoked device, ha
 
 - **What leaves a sandbox is parsed as hostile.** The node streams `docker cp` through its own tar parser: only regular files and directories are written; symlinks, hard links, devices and FIFOs are refused; paths can't climb out or be absolute; bytes and file count are capped mid-stream, so an archive can't fill the disk before a check. Tested with hand-built hostile archives (`packages/sandbox/test/tar.test.ts`), and on ultra against a real container and a real microVM that plant a link to `/etc/passwd` (`packages/sandbox/test/docker.integration.test.ts`).
 - **Serving is fenced.** Only files the manifest lists are opened; HTML and SVG are served as text, never rendered; responses carry `CSP: sandbox` and `nosniff`; downloads are checked against the SHA-256 recorded in the mind (`packages/node/test/artifacts.test.ts`).
+- **From another node, the same fences.** A file asked of a node that doesn't hold it is fetched from the holder, signed as that node (the holder checks the scope again), and never forwarded on; only the file's type and name come back from the holder, every other header is the asking node's own. Signed node-to-node requests never follow redirects (`packages/node/test/e2e.test.ts`).
 - **Agents keep, you delete.** An arm or a loop can keep only its own sandboxes' work; removing kept work needs `fleet:admin`.
 
 ## MicroVM sandboxes (tested)
