@@ -10,7 +10,8 @@ import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_POR
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { BankService } from "./bank/service.ts";
-import { BoardStore } from "./board.ts";
+import { BoardStore, writeOnBoard } from "./board.ts";
+import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
 import { WorldHub } from "./world-hub.ts";
 import { ExperimentStore } from "./experiment-store.ts";
@@ -229,6 +230,15 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   );
   const board = new BoardStore({ dir: join(home.dir, "boards"), log, onChange: (change) => world.boardChanged(change) });
   world.setBoard(() => board.version);
+  // An experiment's examination, written up on the chalkboard at the observatory where it's examined: each in place
+  // of the last write-up (the board's history keeps every one), so the board doesn't fill with them.
+  world.onExamine(
+    writeUpExaminations(
+      (input) => writeOnBoard({ board, world }, input),
+      (id) => board.view().items.some((item) => item.id === id),
+      log,
+    ),
+  );
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });

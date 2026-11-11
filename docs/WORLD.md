@@ -24,7 +24,7 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 | Messenger's post | Calling your services (connectors) |
 | Forge | Sandboxes: running code |
 | Oracle | Decisions |
-| Observatory | Investigations and trials; the chalkboard (writing on it, reading it) | | Observatory | Investigations and trials; examining an experiment that has ended, and reading saved ones |
+| Observatory | Investigations and trials; examining an experiment that has ended (its write-up goes on the chalkboard: a note in words and a chart of the readout that moved most, each in place of the last) and reading saved ones; the chalkboard (writing on it, reading it) |
 | The field | Out on an experiment's pad or plot, watching it tested |
 | The workshop's assembly bench | Building an experiment (its sandbox spinning up, its simulation starting) |
 | The keep | Everything else, and resting |
