@@ -9,6 +9,7 @@ import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { WorldReport } from "./world-input.ts";
+import { BoardDrawInput, BoardEraseInput, BoardWriteInput } from "./board-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -219,6 +220,19 @@ export const routes = {
   /** How the world ran on a device (yours alone), and the latest reports, for `galahad world --logs`. */
   worldReport: { method: "POST", path: "/api/world/report", scope: "mind:read", input: WorldReport },
   worldReports: { method: "GET", path: "/api/world/reports", scope: "mind:read", input: null },
+  /*
+   * The chalkboard you and Galahad share (node-local, a file in the home). Reading is mind:read. Drawing,
+   * writing and erasing are part of your conversation with him (chat): what you draw reaches his models as
+   * a picture, as what you type does. Only you draw or erase your drawing (the node refuses agents); an
+   * agent erases only what it wrote; clearing it all is fleet:admin, which agents never hold.
+   */
+  board: { method: "GET", path: "/api/board", scope: "mind:read", input: null },
+  /** The PNG of the board as you last saw it (uploaded with your strokes), for models that can see. */
+  boardSnapshot: { method: "POST", path: "/api/board/snapshot", scope: "mind:read", input: z.strictObject({}) },
+  boardDraw: { method: "POST", path: "/api/board/draw", scope: "chat", input: BoardDrawInput },
+  boardWrite: { method: "POST", path: "/api/board/write", scope: "chat", input: BoardWriteInput },
+  boardErase: { method: "POST", path: "/api/board/erase", scope: "chat", input: BoardEraseInput },
+  boardClear: { method: "POST", path: "/api/board/clear", scope: "fleet:admin", input: z.strictObject({}) },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

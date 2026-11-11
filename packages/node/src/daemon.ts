@@ -10,6 +10,7 @@ import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_POR
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { BankService } from "./bank/service.ts";
+import { BoardStore } from "./board.ts";
 import { ChatStore } from "./chats.ts";
 import { WorldHub } from "./world-hub.ts";
 import { buildAssets } from "./assets.ts";
@@ -36,6 +37,8 @@ export interface Daemon {
   bank: BankService;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
+  /** The chalkboard you and Galahad share (writeOnBoard in board.ts writes on it from the node). */
+  board: BoardStore;
   stop(): Promise<void>;
 }
 
@@ -221,6 +224,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     () => weather.current(),
     () => void weather.refresh(),
   );
+  const board = new BoardStore({ dir: join(home.dir, "boards"), log, onChange: (change) => world.boardChanged(change) });
+  world.setBoard(() => board.version);
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -276,6 +281,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     world,
+    board,
     ledger,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
@@ -349,6 +355,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     bank,
     world,
+    board,
     async stop() {
       clearInterval(outbox);
       bank.close();

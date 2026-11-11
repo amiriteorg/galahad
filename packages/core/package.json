@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./board": "./src/board.ts",
     "./bytes": "./src/bytes.ts",
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",

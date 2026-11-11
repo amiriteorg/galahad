@@ -1,3 +1,5 @@
+import type { BoardChange } from "./board.ts";
+
 /*
  * The SANDBOX: an infinite synthetic world where Galahad is visible as he works, and
  * every experiment (a robot in MuJoCo or Gazebo, a plane in JSBSim, a rocket in
@@ -136,7 +138,7 @@ export interface WorldWeather {
 
 export type WorldEvent =
   /** The whole world as it is now: first, on every (re)connect. `weather` is null when it's unknown or turned off. */
-  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null }
+  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null; board?: { version: number } }
   /** The weather changed (null: no longer known). */
   | { type: "weather"; at: number; weather: WorldWeather | null }
   /** He moved or started something else. */
@@ -151,7 +153,9 @@ export type WorldEvent =
   /** An ended experiment left the map: the pad it stood on was needed for the next test. */
   | { type: "cleared"; at: number; experiment: string }
   /** Something needs you (a notice, an approval waiting). */
-  | { type: "notice"; at: number; severity: "info" | "warn" | "error"; title: string };
+  | { type: "notice"; at: number; severity: "info" | "warn" | "error"; title: string }
+  /** The chalkboard changed (board.ts): fetch it again; `region` is where an item went, so the world can show him writing it. Older pages ignore it. */
+  | ({ type: "board"; at: number } & BoardChange);
 
 /** Which station a tool sends him to. */
 export function stationForTool(name: string): Station {
@@ -162,6 +166,8 @@ export function stationForTool(name: string): Station {
   if (name === "web_search") return "watchtower";
   if (name === "decide") return "oracle";
   if (name.startsWith("experiment")) return "field";
+  // The chalkboard stands at the observatory: he thinks out loud there, and writes results up.
+  if (name.startsWith("board_")) return "observatory";
   return "keep";
 }
 
