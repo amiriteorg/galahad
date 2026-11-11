@@ -321,9 +321,11 @@ The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet
 
 ## 11. Loops and the heartbeat
 
-Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox.
+Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once, the world's weather) and records each in the ledger as his own; everything else waits for you. Each evening he also writes a short reflection on the day as his own memory, and what he'd like to do next becomes a suggestion in your inbox.
 
 ```sh
+bun galahad self-action                    # on or off, what he may fix, what he fixed lately (self-action off to stop it)
+bun galahad loop set reflect --budget 6000 # the reflection's daily budget, in tokens (4000 by default)
 bun galahad heartbeat                      # run the checks now and print what they find
 bun galahad notices                        # what needs you (notice dismiss <key> to quiet one)
 bun galahad loop ls                        # every loop, where it runs, when next, how the last run went

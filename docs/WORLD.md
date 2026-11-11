@@ -28,7 +28,60 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 | The field | Out on an experiment's plot, watching it run |
 | The keep | Everything else, and resting |
 
-Agents connected over MCP move him too: their calls are his tools. With nothing to do for half a minute he walks home.
+Agents connected over MCP move him too: their calls are his tools, and each agent walks there beside him (see "His partners" below). With nothing to do for half a minute he goes back to his day.
+
+## His heartbeat
+
+His heartbeat (the loop that looks the fleet over every 30 minutes, ARCHITECTURE §9) is in the world, and in him: the lodestar on his chest beats softly all the time, a lub-dub at rest, and harder for a few seconds whenever a heartbeat runs (on any node: the world reads it from the mind). The selector's line for him and his bubble say how it went, "Heartbeat ✓ 12:30" (Denmark's time), or what needs you ("Needs you: rack is offline (+1 more)"), and "fixed one thing himself" when he did (see "Self-action" in ARCHITECTURE §9).
+
+When something needs you (a warning or an alert; information only doesn't take him from his day), and he has no work, he goes to where it is and stays there, concerned (his hand at his chin, looking at it), until it's resolved or you dismiss it:
+
+| Finding | Where he goes |
+|---|---|
+| A silent node | Its spot in the fleet's ring at the keep, in front of its banner or tower |
+| A sandbox problem (one the reaper missed, no disk limit, the image gone) | The forge |
+| Low disk | The workshop's racks |
+| A failing or orphaned loop, a connector, a standing order | The messenger's post |
+| A role with no model | The council table |
+| The vault, the fleet, your checklist | The keep |
+
+The stream carries it as a `heartbeat` event (and in `hello`): when its last run finished and how, the open findings by severity with their titles and places, what he fixed himself after it, and whether self-action is on. It's read from the mind (the notices the heartbeat raised, less those dismissed), so every node's world agrees whichever node ran it; the hub looks again every 15 seconds while someone watches, and at once when a run ends or a notice is dismissed. The bank's own findings stay in the Inbox: the world never shows anything about the bank. `galahad world` prints it ("♥ 12:30 ✓ all quiet").
+
+## His day
+
+When there's no work he lives a day (`life.ts`), planned from the real time in Denmark and a seed, so he's doing the same thing on every device at the same moment:
+
+| When (Denmark) | What |
+|---|---|
+| Night, until he wakes (06:15 to 06:45) | Resting on the keep's deck |
+| Then | Morning rounds: each station of the keep in turn, a pause and a look at each |
+| Then | Walking the dog: fetch on the lawns south of the keep, then on to the next spot |
+| The day | Visits, 35 to 70 minutes each, in an order of the day's own: his friends the Microducks, reading at the library, the workshop, the proving ground, the council table, the observatory; a short walk with the dog at noon |
+| 18:30 | A walk with the dog |
+| Then | The council table with Reachy Mini |
+| Until bedtime (21:45 to 22:15) | By the board at the observatory |
+| Then | Resting on the deck |
+
+Real work always comes first: the moment the stream has work for him (a chat, a tool, a quest, an agent's call, an experiment), he drops what he's doing and goes. When it's done he picks his day up where it would be (the plan is a function of the time, so it's simply the block for now). What needs you comes next, then the dog's battery, then the plan. Under reduced motion he stays put, resting on the deck. The selector and his bubble say what he's doing ("Walking the dog · Heartbeat ✓ 12:30").
+
+## Those he looks after
+
+`care.ts` is his day beat by beat, and how he looks after everyone in it. It allocates nothing a frame (its plan is asked once a block), and costs about half a microsecond a frame.
+
+| Who | What he does |
+|---|---|
+| His dog | Pats it (he crouches, his hand on its head), throws a ball it runs for, picks up and brings back to his feet, three throws a game. Its battery is four cells on its back, green to red: it drains as it goes (faster running) and lasts a good half hour of play; when it's low he walks it to its charging dock by the keep (a pad and a post with a light, beside the way to the stairs), sees it settled and pats it, and it sits there until it's full (about two minutes) while he goes on; flat while he works, it goes on its own. Its mood shows: its tail up and wagging when it plays or is patted, low and slow when it's tired; its ears pricked or drooped; the light in its eye dimmed when it's low |
+| His friends | The Microducks gather round him in a ring when he visits, heads up at him; he crouches to look one over; one that has wandered far from the others he walks to and leads home (it follows him back). At the council table Reachy Mini and he look at each other and "talk": their heads tilt and nod |
+| His companions | On the proving ground: before the aircraft flies he walks round it, a pause at each of six points (it waits at its tie-down, engine off, until he's done; it's never held in the air or on its way); he swaps the quadcopter's battery on its pad once it's down (it's ready to fly a moment later); he checks the rover at its start gate as it comes by. In the workshop he clears a finished print at the printer farm and looks over the assembly line's arms. The machines run their own simulations (`field*.ts`, `hall*.ts`); care only reads them and holds the aircraft for the walk-round |
+| His partners | See below |
+
+`?life=walk-dog` (or rounds, friends, library, workshop, field, council, observatory, rest) on the page fixes his day to one part of it, and `?charge=0.15` sets the dog's battery, for tours; with `?trace=1`, `globalThis.__sandboxLife` says what he's doing (and its `force(activity)` and `setCharge(c)` change it).
+
+## His partners
+
+The coding agents that work with him over MCP (Claude Code, OpenCode…) are in the world as small squires: robots in the knights' style, cream plates, an orange tabard, a dark visor with a glowing line; hover one for its name. One appears at the keep's door (small, growing as it comes) when its first call arrives, walks beside him to the station its calls send them to and stands by while they work; when it's made no call for 45 seconds it walks back to the keep and fades away. At most six at once. The hub knows them from the agents' calls (an arm's label is its name; Galahad's own chat and his loops are him, not partners) and streams them as a `partners` event (and in `hello`). All of them are three instanced meshes (body and head, legs, arms), each a small circle among the solids.
+
+The fleet's nodes are his partners too: he tends a silent one's spot (above). The selector's **Partners** group lists the agents with him, then the nodes (online or silent); picking one takes the view there.
 
 ## The test sites
 
@@ -128,6 +181,7 @@ Low-poly and pastel, every shape procedural (`apps/web/src/world/`). three.js on
 | The workshop | A steel-framed hall with a glazed sawtooth roof, lit by its own light (the sky through its glazing, the sun's patches through its real openings, lamp pools at night), that opens part by part for the camera; its machines are one skinned mesh moved by a simulation of the floor's work (see "The workshop" above; `hall*.ts`) |
 | The distance | Three hazy lavender mountain ranges, drifting low-poly clouds, and wind turbines and research domes at the horizon; nearer, a research station of panelled geodesic domes and a limestone cliff and arch in chipped layers (`scenery.ts`, `sky.ts`) |
 | At night | Lit windows, lanterns, screens and runes glow warm or cool (`glows.ts`), and a few point lights by tier. Moonlight is brighter when the moon is full, and the air glows silver round the moon; with it down, the sky's glow still lights the night enough to read |
+| His heart | The lodestar on his chest beats: a uniform that brightens only the star (its glow mask's white-hot part), a soft lub-dub at rest and a strong beat for a few seconds when a heartbeat runs (`care.ts`' `lodestarPulse`); steady under reduced motion |
 | The camera | Close and low over his shoulder, so he's large in the frame. While he walks it swings slowly round behind him, to a side where nothing blocks the view; turned by hand, it stays where it's turned for a while. It's a body on a spring arm: carried round with the arm as the view turns, zooms and follows him (so a turn moves it exactly as far as the turn does), then eased to where the arm wants it, never faster in all than the arm's end moves plus 12 m/s. The arm lifts over the land when a hillside rises behind (the proving ground's edge), keeps some room from what it passes and tilts up over something right by him. Every move slides among the solids (round a post, along a wall, over a roof), so it never jumps, by any input, and is never inside anything (a crown, a post, a machine, a wall) or under the land; it never goes under something he isn't under. Held against something it can't slide round on its way (a wall with the arm's end beyond it), it isn't carried on along it but makes for the arm on its own side; left behind, 4 m past its arm and getting nowhere for a second (on the keep's deck as he walks off down the stairs), it cuts to the arm, as it does when he jumps somewhere. Under reduced motion it goes straight where it may. Leaves, posts and walls between it and him aren't looked round: they dissolve in a fine dither (`camera.ts`, `occlusion.ts`). A dense test turns it by hand round the keep, every station, the hall and the proving ground's edge at five distances and holds the most it moves in a frame (`camera.test.ts`); `?trace=1` on the page keeps its last 2000 frames, and Galahad's, in `globalThis.__sandboxTrace` |
 | What's solid | Everything walkers and the camera meet is one world of solids (`collide.ts`): the keep's and each station's footprints (`keep-plan.ts`, held to the drawn keep by a test), the sites' walls and their places' own solids and machines, each tree's trunk and crown and each rock (`flora-plan.ts`, added and dropped with their chunk), and each plot's fence with the gap for its gate, its sign and its dome (`plot-plan.ts`, which `plots.ts` draws from too). What can be stood on has its height: the keep's stairs (each tread, the landing) and deck, the rover course's bridge, flat-topped rocks; a walker steps onto a top within its step of its feet and is stopped by anything taller (`Solids.support`, `BUILDS`). The stairs are one plan (`keep-deck.ts`) that the keep draws them from and the solids are made of, and the test that holds the footprints to the drawing covers them and their rails. Galahad plans his way round it all and off the water (`nav.ts`: the blocked part of the way searched on a grid, pulled taut into a few straight legs; up to the deck by the stairs) and slides along whatever he meets on the way; the dog keeps by him where there's room and follows in his footsteps round what stands between; the Microducks, deer, rabbits and ducks slide along what they meet and keep apart, the small giving way to the large, everyone to a site's machines. Nothing tunnels, however fast he dashes. `?colliders=1` on the page draws it all as lines, coloured by what it stops, with every walker's circle |
 | Labels | Laid out on the screen so none sits on another: in order of how much each matters (his bubble, the open experiment, the experiments, their bodies, the sites, the stations, the nodes; within each, the nearer first), each stands on its anchor if that's free, else just above what's in its way (at most three times its height), else fades. A margin it has to clear before it changes its mind keeps them still as the view moves; under reduced motion they don't animate. Sizes are measured when a label is shown or changes, not every frame; the layout allocates nothing (`labels.ts`) |
