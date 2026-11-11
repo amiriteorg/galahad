@@ -149,6 +149,8 @@ Since then, a device whose chain holds a refused event, and a revoked device, ha
 
 ## Known limitations
 
+**The model gateway forwards any path.** A gateway token reaches every method and path under its provider's base URL with the real key: not only model calls but, for an OpenAI-style key, files, batches, fine-tuning, assistants and deletes, and whatever an admin-capable key allows. It is bounded by the token (its providers, expiry, request cap, revocation), and the key itself never leaves the node. An allowlist like the bank's was weighed in November 2026 and not added: Galahad's own model calls never use the gateway (they go to providers directly), its clients are other tools (OpenCode in sandboxes, any code in a sandbox, whatever runs under `galahad run`) whose endpoints are theirs and change with their versions, and a path missed would break a tool. A list of model-call paths per provider kind, which you could extend per provider, is the likely next step.
+
 **Sandbox disk without the helper.** A sandbox host deployed without `--sudo` has no workspace helper, so its sandboxes' workspaces are unlimited Docker volumes. The heartbeat raises a warning on that host until the helper is installed.
 
 **#5: same-user agents.** On a desktop, the daemon and your coding agents (Claude Code and others) run as the same OS user. An agent with shell access can read the admin token and, with the file keystore, the device keys. Arm tokens limit what an agent can do *through Galahad*. They can't stop a same-user process from reading files that user owns.
