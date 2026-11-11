@@ -1,5 +1,5 @@
 import { abs, attribute, ceil, dot, float, fract, fwidth, int, max, min, mix, normalWorld, positionLocal, positionWorld, screenCoordinate, sin, smoothstep, step, uniform, uniformArray, uv, vec3 } from "three/tsl";
-import { Color, DoubleSide, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node, Vector3 } from "three/webgpu";
+import { AdditiveBlending, Color, DoubleSide, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node, Vector3 } from "three/webgpu";
 import { CUT_ROOF, KERB } from "./hall-cutaway.ts";
 import { BAY_INSET, CART, CART_LANE, CELLS, EAST, HALL_AISLE, HALL_DOOR, HALL_RISE, HALL_TEETH, HALL_TOOTH, HALL_WALL, HEAD, LAMP_HEIGHT, LAMP_ROWS, NORTH, OPENINGS, type Opening, SILL, SOUTH, WEST } from "./hall-plan.ts";
 import { linear } from "./mesher.ts";
@@ -65,6 +65,8 @@ export class HallUniforms {
   /** Per printed part: the height (hall frame, metres) its layers have reached; anything above is pressed down onto it. */
   readonly clampValues: number[] = Array.from({ length: PART_SLOTS }, () => 1e4);
   readonly clamps = uniformArray(this.clampValues, "float");
+  /** How strongly the sun's shafts show (0 at night, under cloud, or with the roof gone). */
+  readonly shafts = uniform(0);
   readonly beltValues: number[] = Array.from({ length: BELT_SLOTS }, () => 0);
   readonly belts = uniformArray(this.beltValues, "float");
   readonly barValues: number[] = Array.from({ length: BAR_SLOTS }, () => 0);
@@ -413,3 +415,22 @@ export function fenceMaterial(u: HallUniforms): MeshBasicNodeMaterial {
 
 /** The fence's mesh has this many rows of wire over its height. */
 const FENCE_MESH_ROWS = 18;
+
+/**
+ * Shafts of sunlight through the skylights and windows: each opening's prism, its far end pushed along the
+ * sun's rays down to the floor in the vertex shader (so it lands on its own patch), faint and additive,
+ * brighter near the glass. Openings the sun is behind collapse to nothing.
+ */
+export function shaftMaterial(u: HallUniforms): MeshBasicNodeMaterial {
+  const m = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending });
+  const end = attribute("end", "float") as unknown as F;
+  const facing = attribute("facing", "vec3") as unknown as V3;
+  const L = u.sunDir as unknown as V3;
+  const ly = (L.y as unknown as F).max(0.05);
+  const shining = step(0.03, dot(L, facing)).mul(step(0.06, L.y as unknown as F));
+  const along = (positionLocal.y as unknown as F).div(ly);
+  const far = positionLocal.sub(L.mul(along));
+  m.positionNode = mix(positionLocal, far, end.mul(shining));
+  m.colorNode = u.sun.mul(u.shafts).mul(float(1).sub(end).pow(2)).mul(shining);
+  return m;
+}

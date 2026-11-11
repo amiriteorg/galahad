@@ -1,4 +1,4 @@
-import { BoxGeometry, type BufferGeometry, OctahedronGeometry } from "three/webgpu";
+import { BoxGeometry, BufferAttribute, BufferGeometry, OctahedronGeometry } from "three/webgpu";
 import { CUT_EAST, CUT_NORTH, CUT_ROOF, CUT_SOUTH, CUT_WEST } from "./hall-cutaway.ts";
 import { type Detail, finish, Kit } from "./hall-kit.ts";
 import {
@@ -352,4 +352,56 @@ function breaks(from: number, to: number, step: number, extra: readonly number[]
   const sorted = [...out].sort((p, q) => p - q);
   // Drop cuts that fall within a hand's breadth of an edge that must be there.
   return sorted.filter((v, i) => i === 0 || v - sorted[i - 1]! > 0.14 || extra.includes(v) || v === to);
+}
+
+/**
+ * The light shafts' prisms: for each skylight pane and window, the four sides of a prism from the glass
+ * (`end` 0) to a copy of it (`end` 1) that the shader pushes along the sun's rays to the floor; `facing` is
+ * the opening's outward normal (scene axes), so only openings the sun shines through show.
+ */
+export function buildShafts(): BufferGeometry {
+  const pos: number[] = [];
+  const end: number[] = [];
+  const facing: number[] = [];
+  type P = readonly [number, number, number];
+  /** An opening: its four corners (world), and its outward normal (world). */
+  const add = (corners: readonly P[], n: P) => {
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i]!;
+      const b = corners[(i + 1) % 4]!;
+      const quad: [P, number][] = [
+        [a, 0],
+        [b, 0],
+        [b, 1],
+        [a, 0],
+        [b, 1],
+        [a, 1],
+      ];
+      for (const [[x, y, z], e] of quad) {
+        pos.push(x, z, -y);
+        end.push(e);
+        facing.push(n[0], n[2], -n[1]);
+      }
+    }
+  };
+  const lo = HALL_EAVES + 0.26;
+  const hi = HALL_EAVES + HALL_RISE - 0.22;
+  for (let i = 0; i < HALL_TEETH; i++) {
+    const x = WEST + i * HALL_TOOTH + (i === 0 ? T : 0.09);
+    for (let p = 0; p < 8; p++) {
+      const y0 = SOUTH + (p * HALL.hy * 2) / 8 + 0.09;
+      const y1 = SOUTH + ((p + 1) * HALL.hy * 2) / 8 - 0.09;
+      add([[x, y0, lo], [x, y1, lo], [x, y1, hi], [x, y0, hi]], [-1, 0, 0]);
+    }
+  }
+  const f = 0.14;
+  for (const o of OPENINGS.south) add([[o.a + f, SOUTH + T, o.z0 + f], [o.b - f, SOUTH + T, o.z0 + f], [o.b - f, SOUTH + T, o.z1 - f], [o.a + f, SOUTH + T, o.z1 - f]], [0, -1, 0]);
+  for (const o of OPENINGS.north) add([[o.a + f, NORTH - T, o.z0 + f], [o.b - f, NORTH - T, o.z0 + f], [o.b - f, NORTH - T, o.z1 - f], [o.a + f, NORTH - T, o.z1 - f]], [0, 1, 0]);
+  for (const o of OPENINGS.west.slice(1)) add([[WEST + T, o.a + f, o.z0 + f], [WEST + T, o.b - f, o.z0 + f], [WEST + T, o.b - f, o.z1 - f], [WEST + T, o.a + f, o.z1 - f]], [-1, 0, 0]);
+  for (const o of OPENINGS.east) add([[EAST - T, o.a + f, o.z0 + f], [EAST - T, o.b - f, o.z0 + f], [EAST - T, o.b - f, o.z1 - f], [EAST - T, o.a + f, o.z1 - f]], [1, 0, 0]);
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(Float32Array.from(pos), 3));
+  g.setAttribute("end", new BufferAttribute(Float32Array.from(end), 1));
+  g.setAttribute("facing", new BufferAttribute(Float32Array.from(facing), 3));
+  return g;
 }

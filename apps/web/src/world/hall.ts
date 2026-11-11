@@ -6,10 +6,10 @@ import { Cutaway, indoors } from "./hall-cutaway.ts";
 import { HallFlow } from "./hall-flow.ts";
 import { finish, Kit, pack, Quads, triangles } from "./hall-kit.ts";
 import { Machines } from "./hall-machines.ts";
-import { fenceMaterial, floorMaterial, glassMaterial, HallUniforms, type Lighting, rigMaterial, screenMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
+import { fenceMaterial, floorMaterial, glassMaterial, HallUniforms, type Lighting, rigMaterial, screenMaterial, shaftMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
 import { CART, CELLS, CRANE, FARM, HALL, HALL_DETAIL, HALL_SOLIDS, inCollider, inHall } from "./hall-plan.ts";
 import { Bones } from "./hall-rig.ts";
-import { buildHall, LAMP_BAY, LAMP_SIGN } from "./hall-shell.ts";
+import { buildHall, buildShafts, LAMP_BAY, LAMP_SIGN } from "./hall-shell.ts";
 import { disposeTree } from "./keep.ts";
 import type { Glow, Place, PlaceContext, PlaceFrame } from "./place.ts";
 
@@ -23,7 +23,8 @@ import type { Glow, Place, PlaceContext, PlaceFrame } from "./place.ts";
  * tunnel, an electronics bench, and four test cells whose residents test
  * themselves while no experiment needs the cell (hall-flow.ts, hall-machines.ts,
  * hall-cells.ts). Seven draw calls: the shell, its glass, the floor, what stands
- * still, what moves (one skinned mesh), the screens and belts, and the cells' fences.
+ * still, what moves (one skinned mesh), the screens and belts, and the cells' fences;
+ * an eighth for the sun's shafts on the medium and high tiers.
  */
 
 /** The lamps indoors: a working light by day, warmer and brighter at night (linear colour). */
@@ -101,9 +102,17 @@ export class Workshop implements Place {
       if (!this.hemi) this.findLights(scene);
     };
     this.group.add(floor, solid, shell, moving, screens, fences, glass);
+    const meshes: Mesh[] = [shell, solid, glass, floor, moving, screens, fences];
+    // Shafts of sunlight through the openings (not on the low tier).
+    if (lighting.sun) {
+      const shafts = new Mesh(buildShafts(), shaftMaterial(this.u));
+      shafts.renderOrder = 2;
+      this.group.add(shafts);
+      meshes.push(shafts);
+    }
     // One sphere for everything: out of view, nothing of the hall is drawn.
     const bounds = new Sphere(new Vector3(HALL.x, 5, -HALL.y), Math.hypot(HALL.hx + 9, HALL.hy + 2, 8));
-    for (const mesh of [shell, solid, glass, floor, moving, screens, fences]) mesh.geometry.boundingSphere = bounds.clone();
+    for (const mesh of meshes) mesh.geometry.boundingSphere = bounds.clone();
     this.lamp = detail > 0 ? new PointLight(0xffd6a6, 0, 16, 1.6) : null;
     if (this.lamp) this.group.add(this.lamp);
     this.setNight(0);
@@ -215,6 +224,8 @@ export class Workshop implements Place {
       w.copy(this.sun.position).sub(this.sun.target.position).normalize();
       u.sunDir.value.copy(w);
       u.sunShadow.value = this.sun.shadow.intensity;
+      // The shafts: in clear sunlight only (a clear sky's hard shadows), and not once the roof is gone.
+      u.shafts.value = 0.0055 * this.sun.shadow.intensity * (1 - this.cut.roof) * Math.max(0, Math.min(1, (w.y - 0.06) * 6)) * (1 - frame.night);
     }
     const wantInside = indoors(cx, cy, ch) ? 1 : 0;
     this.inside += frame.motion ? Math.max(-1, Math.min(1, (wantInside - this.inside) * 8 * frame.dt)) : wantInside - this.inside;
