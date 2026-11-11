@@ -218,11 +218,9 @@ function hangar(k: Kit): void {
     ribs(k, x0, y1, x0, y0, 0.03, 0.45, () => h.eaves, C.creamShade);
     ribs(k, x0, y0, x1, y0, 0.03, 0.45, (u) => slope(x0 + (x1 - x0) * u) - 0.05, C.creamShade);
     ribs(k, x1, y1, x0, y1, 0.03, 0.45, (u) => slope(x1 - (x1 - x0) * u) - 0.05, C.creamShade);
-    for (const s of [-1, 1]) {
-      const ya = s > 0 ? y1 : h.y + h.door;
-      const yb = s > 0 ? h.y + h.door : y0;
-      ribs(k, x1, ya, x1, yb, 0.03, 0.45, () => h.eaves, C.creamShade);
-    }
+    // The front's two jambs (running north, so their outside is east), not across the door.
+    ribs(k, x1, y0, x1, h.y - h.door, 0.03, 0.45, () => h.eaves, C.creamShade);
+    ribs(k, x1, h.y + h.door, x1, y1, 0.03, 0.45, () => h.eaves, C.creamShade);
   }
   // The roof: two pitched sheets with an overhang, seams down them, a ridge cap and gutters.
   const over = 0.45;

@@ -66,12 +66,12 @@ export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: Build
 
 /** Pools of lamplight on the ground at night (scene x, z of the group, radius, strength): floodlights, doors, the gate. */
 const POOLS: readonly [number, number, number, number][] = [
-  ...FLOODLIGHTS.map((f): [number, number, number, number] => [f.x + Math.cos(f.aim) * 10, -(f.y + Math.sin(f.aim) * 10), 17, 0.55]),
-  [HANGAR.x + HANGAR.hx + 3.5, -HANGAR.y, 9, 0.6],
-  [HANGAR.x, -HANGAR.y, 7, 0.45],
-  [TOWER.x, -(TOWER.y + TOWER.half + 1.2), 5, 0.4],
-  [ENTRANCE_POSTS.x - 1.5, -FIELD_GATE.y, 7, 0.5],
-  [BLOCKHOUSE.x - 1.5, -(BLOCKHOUSE.y + BLOCKHOUSE.hy + 1.5), 4.5, 0.4],
+  ...FLOODLIGHTS.map((f): [number, number, number, number] => [f.x + Math.cos(f.aim) * 9, -(f.y + Math.sin(f.aim) * 9), 20, 0.32]),
+  [HANGAR.x + HANGAR.hx + 3.5, -HANGAR.y, 10, 0.34],
+  [HANGAR.x, -HANGAR.y, 7, 0.3],
+  [TOWER.x, -(TOWER.y + TOWER.half + 1.2), 6, 0.26],
+  [ENTRANCE_POSTS.x - 1.5, -FIELD_GATE.y, 8, 0.3],
+  [BLOCKHOUSE.x - 1.5, -(BLOCKHOUSE.y + BLOCKHOUSE.hy + 1.5), 5, 0.26],
 ];
 
 type F = Node<"float">;
@@ -81,13 +81,14 @@ function pools(): F {
   const p = vec2(positionLocal.x, positionLocal.z);
   let sum: F = float(0) as unknown as F;
   for (const [x, z, r, s] of POOLS) {
+    // A soft falloff: bright under the lamp, fading out with no edge.
     const k = float(1).sub(smoothstep(0, r, length(p.sub(vec2(x, z)))));
-    sum = sum.add(k.mul(k).mul(s)) as unknown as F;
+    sum = sum.add(k.mul(k).mul(k).mul(s)) as unknown as F;
   }
   return sum;
 }
 
-const WARM = vec3(1, 0.78, 0.5);
+const WARM = vec3(1, 0.72, 0.42);
 
 export class ProvingGround implements Place {
   readonly group = new Group();

@@ -45,6 +45,7 @@ const CONCRETE_JOINT = 0x9d998f;
 const SHOULDER = 0xbab29c;
 const EARTH = 0xd2b98d;
 const EARTH_DARK = 0xc2a678;
+const ARENA_EARTH = 0xd6c39b;
 const MOWN = [0xafd067, 0x9ec65a] as const;
 const ROUGH = 0x93bb50;
 
@@ -247,10 +248,10 @@ export function buildGround(d: GroundDetail): Mesher {
       const mx = (ax + bx) / 2;
       const my = (ay + by) / 2;
       const band = MOWN[Math.floor((mx - RUNWAY.x + 1000 * stripe + stripe / 2) / stripe) % 2]!;
-      const patch = 0.96 + 0.08 * hash(Math.floor(mx / 13), Math.floor(my / 11), 5);
-      // Two triangles, each a touch different: facets you can see up close.
-      m.triangles([ax, TURF, -ay, bx, TURF, -ay, bx, TURF, -by], shade(band, patch * (0.975 + 0.05 * hash(i, j, 1))));
-      m.triangles([ax, TURF, -ay, bx, TURF, -by, ax, TURF, -by], shade(band, patch * (0.975 + 0.05 * hash(i, j, 2))));
+      const patch = 0.97 + 0.06 * hash(Math.floor(mx / 13), Math.floor(my / 11), 5);
+      // Two triangles, each a touch different: facets you can see up close, not a pattern from afar.
+      m.triangles([ax, TURF, -ay, bx, TURF, -ay, bx, TURF, -by], shade(band, patch * (0.982 + 0.036 * hash(i, j, 1))));
+      m.triangles([ax, TURF, -ay, bx, TURF, -by, ax, TURF, -by], shade(band, patch * (0.982 + 0.036 * hash(i, j, 2))));
     }
   }
   // The rim: rough grass from the mown edge out to the fence line.
@@ -359,13 +360,12 @@ export function buildGround(d: GroundDetail): Mesher {
         const bx = r.x - r.hx + (i + 1) * sx - (i < nx2 - 1 ? gap : 0);
         const by = r.y - r.hy + (j + 1) * sy - (j < ny2 - 1 ? gap : 0);
         const c = tint((ax + bx) / 2, (ay + by) / 2);
-        flat(m, ax, ay, bx, by, PAVE, shade(c, 0.96 + 0.07 * hash(i, j, salt)));
+        flat(m, ax, ay, bx, by, PAVE, shade(c, 0.975 + 0.045 * hash(i, j, salt)));
       }
     }
     lip(m, r, TURF, PAVE, CONCRETE_JOINT);
   };
-  const stains = TIE_DOWNS.map((t) => [t.x - Math.cos(t.heading) * 1.2, t.y - Math.sin(t.heading) * 1.2] as const);
-  slabs(APRON, 6, 11, (x, y) => (d.fine && stains.some(([sx, sy]) => Math.hypot(x - sx, y - sy) < 3.2) ? 0xbdb8ac : CONCRETE));
+  slabs(APRON, 6, 11, () => CONCRETE);
   // The launch slab, scorched round its middle and down the flame trench.
   slabs(LAUNCH_SLAB, 2, 13, (x, y) => {
     const r = Math.hypot(x - LAUNCH_SLAB.x, y - LAUNCH_SLAB.y);
@@ -375,12 +375,20 @@ export function buildGround(d: GroundDetail): Mesher {
 
   // The arena and the rover's track: beaten earth.
   m.glow(0.45);
-  const arenaStep = 3.4;
-  for (let j = 0; j < 10; j++) {
-    for (let i = 0; i < 10; i++) {
+  // (Rolled and swept: faint, broad variations, and the darker arcs of what's been driven on it.)
+  const cells = d.fine ? 16 : 10;
+  const arenaStep = (ARENA.hx * 2) / cells;
+  for (let j = 0; j < cells; j++) {
+    for (let i = 0; i < cells; i++) {
       const ax = ARENA.x - ARENA.hx + i * arenaStep;
       const ay = ARENA.y - ARENA.hy + j * arenaStep;
-      flat(m, ax, ay, ax + arenaStep, ay + arenaStep, BASE, shade(EARTH, 0.95 + 0.09 * hash(i, j, 21)));
+      const cx = ax + arenaStep / 2 - ARENA.x;
+      const cy = ay + arenaStep / 2 - ARENA.y;
+      const r = Math.hypot(cx, cy);
+      const worn = Math.max(0, 1 - Math.abs(r - 9) / 2.2) * 0.05 + Math.max(0, 1 - Math.abs(r - 13.5) / 1.8) * 0.035;
+      const c = shade(ARENA_EARTH, (0.985 + 0.03 * hash(Math.floor(i / 3), Math.floor(j / 3), 21)) * (1 - worn));
+      m.triangles([ax, BASE, -ay, ax + arenaStep, BASE, -ay, ax + arenaStep, BASE, -(ay + arenaStep)], shade(c, 0.995 + 0.01 * hash(i, j, 22)));
+      m.triangles([ax, BASE, -ay, ax + arenaStep, BASE, -(ay + arenaStep), ax, BASE, -(ay + arenaStep)], shade(c, 0.995 + 0.01 * hash(i, j, 24)));
     }
   }
   // The track: five strips across, the ruts darker, every sample shared by its neighbours (no cracks).
