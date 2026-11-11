@@ -68,8 +68,10 @@ export interface Tier {
   halos: number;
   /** Multisampling (cheap on the tile-based GPUs of phones). */
   antialias: boolean;
-  /** Rain streaks round the camera at most. */
+  /** Rain streaks (or snowflakes) round the camera at most. */
   rain: number;
+  /** Splashes where rain lands, drawn on the surfaces themselves near the camera: a little work per pixel while it rains. */
+  splashes: boolean;
   /**
    * Post effects. Only the high tier has any: on phones (medium) a post pipeline's
    * extra full-screen passes cost more than they give, so the medium picture is
@@ -111,6 +113,7 @@ export const TIERS: Record<TierName, Tier> = {
     halos: 24,
     antialias: false,
     rain: 500,
+    splashes: false,
     post: NO_POST,
   },
   medium: {
@@ -145,6 +148,7 @@ export const TIERS: Record<TierName, Tier> = {
     halos: 48,
     antialias: true,
     rain: 1400,
+    splashes: false,
     post: NO_POST,
   },
   high: {
@@ -179,6 +183,7 @@ export const TIERS: Record<TierName, Tier> = {
     halos: 96,
     antialias: true,
     rain: 3600,
+    splashes: true,
     post: { ao: true, shafts: true, bloom: true },
   },
 };

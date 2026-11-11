@@ -1,17 +1,19 @@
 /*
- * The SANDBOX's weather: a small state (clear, overcast, mist, drizzle, rain)
- * that the world eases towards, never jumps to. Clouds gather before the rain
- * starts and the rain stops before they clear; the ground gets wet while it
- * rains and dries slowly after; mist lies at dawn and after rain, thin by day.
- * Nothing here fetches anything: the HUD sets the kind (and later, a feed of real
- * Danish weather could, through `set`). Pure, so unit-tested.
+ * The SANDBOX's weather: a small state (clear, overcast, mist, drizzle, rain,
+ * snow, storm) that the world eases towards, never jumps to. Clouds gather
+ * before the rain or the snow starts and it stops before they clear; the ground
+ * gets wet while it rains and dries slowly after; snow settles while it falls
+ * and thaws after (into wet ground); mist lies at dawn, after rain and over
+ * thawing snow, thin by day; the wind eases too, and a storm brings thunder.
+ * Nothing here fetches anything: the HUD sets the kind, or the real weather in
+ * Denmark aims it (live-weather.ts). Pure, so unit-tested.
  */
 
-export type WeatherKind = "clear" | "overcast" | "mist" | "drizzle" | "rain";
+export type WeatherKind = "clear" | "overcast" | "mist" | "drizzle" | "rain" | "snow" | "storm";
 
-export const WEATHER_KINDS: readonly WeatherKind[] = ["clear", "overcast", "mist", "drizzle", "rain"];
+export const WEATHER_KINDS: readonly WeatherKind[] = ["clear", "overcast", "mist", "drizzle", "rain", "snow", "storm"];
 
-/** Where the weather stands, every value 0..1. */
+/** Where the weather stands: every value 0..1 except the wind. */
 export interface WeatherState {
   /** Cloud cover: a greyer, softer sky, weaker sun and shadows. */
   cloud: number;
@@ -21,20 +23,40 @@ export interface WeatherState {
   mist: number;
   /** How wet the ground, rocks and roofs are: darker, with a sheen. */
   wetness: number;
+  /** Snow falling. */
+  snow: number;
+  /** Snow lying on the ground, the roofs and the trees. */
+  snowCover: number;
+  /** Thunder: lightning strikes while it's up. */
+  storm: number;
+  /** The wind, metres a second: it slants the rain, drives the snow, and bends what grows. */
+  wind: number;
 }
 
-interface Target {
+/** What the weather eases towards. Snow, storm and wind may be left out (none, none, a light breeze). */
+export interface WeatherAim {
   cloud: number;
   rain: number;
   mist: number;
+  snow?: number;
+  storm?: number;
+  /** Metres a second. */
+  wind?: number;
 }
 
+type Target = Required<WeatherAim>;
+
+/** A light breeze: what the wind is when nothing says otherwise. */
+export const BREEZE = 2.5;
+
 const TARGETS: Record<WeatherKind, Target> = {
-  clear: { cloud: 0, rain: 0, mist: 0 },
-  overcast: { cloud: 0.8, rain: 0, mist: 0.1 },
-  mist: { cloud: 0.35, rain: 0, mist: 0.75 },
-  drizzle: { cloud: 0.72, rain: 0.35, mist: 0.3 },
-  rain: { cloud: 0.92, rain: 1, mist: 0.22 },
+  clear: { cloud: 0, rain: 0, mist: 0, snow: 0, storm: 0, wind: BREEZE },
+  overcast: { cloud: 0.8, rain: 0, mist: 0.1, snow: 0, storm: 0, wind: 3.5 },
+  mist: { cloud: 0.35, rain: 0, mist: 0.75, snow: 0, storm: 0, wind: 0.6 },
+  drizzle: { cloud: 0.72, rain: 0.35, mist: 0.3, snow: 0, storm: 0, wind: 3 },
+  rain: { cloud: 0.92, rain: 1, mist: 0.22, snow: 0, storm: 0, wind: 6 },
+  snow: { cloud: 0.88, rain: 0, mist: 0.3, snow: 0.8, storm: 0, wind: 2 },
+  storm: { cloud: 1, rain: 1, mist: 0.2, snow: 0, storm: 1, wind: 14 },
 };
 
 /** Seconds to cover about two thirds of the way (an exponential ease). */
@@ -42,10 +64,17 @@ const CLOUD_IN = 9;
 const CLOUD_OUT = 16;
 const RAIN_IN = 5;
 const RAIN_OUT = 3.5;
+const SNOW_IN = 6;
+const SNOW_OUT = 5;
+const STORM = 6;
+const WIND = 8;
 const MIST = 10;
 /** Full rain soaks the ground in about this many seconds; it dries over a few minutes (faster in sunshine). */
 const SOAK_S = 25;
 const DRY_S = 240;
+/** Heavy snow covers the ground in about this many seconds; it thaws over a few minutes (faster in sunshine, faster still in rain). */
+const SETTLE_S = 40;
+const THAW_S = 200;
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 const smooth = (a: number, b: number, x: number): number => {
@@ -69,7 +98,7 @@ export function naturalMist(elevationDeg: number, evening: number): number {
 
 export class Weather {
   kind: WeatherKind;
-  readonly state: WeatherState = { cloud: 0, rain: 0, mist: 0, wetness: 0 };
+  readonly state: WeatherState = { cloud: 0, rain: 0, mist: 0, wetness: 0, snow: 0, snowCover: 0, storm: 0, wind: BREEZE };
 
   constructor(kind: WeatherKind = "clear") {
     this.kind = kind;
@@ -82,9 +111,17 @@ export class Weather {
     this.custom = null;
   }
 
-  /** What the weather should become, as cloud, rain and mist of its own (the real weather in Denmark); it eases there. */
-  aim(target: Target): void {
-    this.custom = { cloud: target.cloud, rain: target.rain, mist: target.mist };
+  /** What the weather should become, as cloud, rain, mist, snow, thunder and wind of its own (the real weather in Denmark); it eases there. */
+  aim(target: WeatherAim): void {
+    const wind = target.wind ?? BREEZE;
+    this.custom = {
+      cloud: clamp01(target.cloud),
+      rain: clamp01(target.rain),
+      mist: clamp01(target.mist),
+      snow: clamp01(target.snow ?? 0),
+      storm: clamp01(target.storm ?? 0),
+      wind: wind >= 0 ? Math.min(40, wind) : BREEZE,
+    };
   }
 
   private custom: Target | null = null;
@@ -93,14 +130,19 @@ export class Weather {
     return this.custom ?? TARGETS[this.kind];
   }
 
-  /** Straight to the kind's look (first sight): no easing, and wet ground if it rains. */
+  /** Straight to the kind's look (first sight): no easing, wet ground if it rains, lying snow if it snows. */
   snap(elevationDeg: number, evening: number): WeatherState {
     const t = this.target();
-    this.state.cloud = t.cloud;
-    this.state.rain = t.rain;
-    this.state.wetness = t.rain > 0 ? Math.min(1, 0.5 + t.rain * 0.5) : 0;
-    this.state.mist = this.mistTarget(t, elevationDeg, evening);
-    return this.state;
+    const s = this.state;
+    s.cloud = t.cloud;
+    s.rain = t.rain;
+    s.snow = t.snow;
+    s.storm = t.storm;
+    s.wind = t.wind;
+    s.wetness = t.rain > 0 ? Math.min(1, 0.5 + t.rain * 0.5) : 0;
+    s.snowCover = t.snow > 0 ? Math.min(1, 0.55 + t.snow * 0.5) : 0;
+    s.mist = this.mistTarget(t, elevationDeg, evening);
+    return s;
   }
 
   /** The mist straight to what this sun and weather bring (the time of day jumped: a preset). */
@@ -113,24 +155,37 @@ export class Weather {
     const s = this.state;
     const t = this.target();
     s.cloud = ease(s.cloud, t.cloud, dt, t.cloud > s.cloud ? CLOUD_IN : CLOUD_OUT);
-    // Rain only falls from a sky that has clouded over.
-    const rainTarget = t.rain * smooth(0.45, 0.8, s.cloud);
+    // Rain and snow only fall from a sky that has clouded over.
+    const clouded = smooth(0.45, 0.8, s.cloud);
+    const rainTarget = t.rain * clouded;
     s.rain = ease(s.rain, rainTarget, dt, rainTarget > s.rain ? RAIN_IN : RAIN_OUT);
     if (s.rain < 1e-3 && rainTarget === 0) s.rain = 0;
-    // Wet while it rains; dry after, faster under a bright sun than an overcast one.
+    const snowTarget = t.snow * clouded;
+    s.snow = ease(s.snow, snowTarget, dt, snowTarget > s.snow ? SNOW_IN : SNOW_OUT);
+    if (s.snow < 1e-3 && snowTarget === 0) s.snow = 0;
+    // Thunder needs the sky black.
+    const stormTarget = t.storm * smooth(0.7, 0.95, s.cloud);
+    s.storm = ease(s.storm, stormTarget, dt, STORM);
+    if (s.storm < 1e-3 && stormTarget === 0) s.storm = 0;
+    s.wind = ease(s.wind, t.wind, dt, WIND);
+    if (Math.abs(s.wind - t.wind) < 1e-3) s.wind = t.wind;
+
+    const sun = smooth(0, 25, elevationDeg) * (1 - s.cloud);
+    // Snow settles while it falls; after, it thaws: faster under a bright sun, faster still when rain washes it away.
+    if (s.snow > 0.02) s.snowCover = Math.min(1, s.snowCover + (dt / SETTLE_S) * (0.3 + s.snow));
+    else if (s.snowCover > 0) s.snowCover = Math.max(0, s.snowCover - (dt / THAW_S) * (0.5 + 1.5 * sun + 3 * s.rain));
+    // Wet while it rains; dry after, faster under a bright sun than an overcast one. Thawing snow keeps the ground wet.
     if (s.rain > 0.02) s.wetness = Math.min(1, s.wetness + (dt / SOAK_S) * (0.3 + s.rain));
-    else {
-      const sun = smooth(0, 25, elevationDeg) * (1 - s.cloud);
-      s.wetness = Math.max(0, s.wetness - (dt / DRY_S) * (0.5 + 1.5 * sun));
-    }
+    else s.wetness = Math.max(0, s.wetness - (dt / DRY_S) * (0.5 + 1.5 * sun));
+    if (s.snow <= 0.02 && s.snowCover > 0) s.wetness = Math.max(s.wetness, Math.min(0.75, s.snowCover * 1.5));
     s.mist = ease(s.mist, this.mistTarget(t, elevationDeg, evening), dt, MIST);
     return s;
   }
 
   private mistTarget(t: Target, elevationDeg: number, evening: number): number {
-    // After rain the wet ground steams: mist while it's wet and no longer raining.
+    // After rain the wet ground steams: mist while it's wet and no longer raining (nor snowing).
     const wet = this.state.wetness;
-    const afterRain = wet * wet * (1 - smooth(0.05, 0.4, this.state.rain)) * 0.45;
+    const afterRain = wet * wet * (1 - smooth(0.05, 0.4, this.state.rain)) * (1 - smooth(0.05, 0.4, this.state.snow)) * 0.45;
     return clamp01(Math.max(t.mist, naturalMist(elevationDeg, evening) * (1 - t.cloud * 0.4), afterRain));
   }
 }

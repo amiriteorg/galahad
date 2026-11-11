@@ -96,7 +96,8 @@ function landMaterial(): MeshLambertNodeMaterial {
   const foam = smoothstep(0.2, 0.04, above).mul(smoothstep(-0.06, 0.02, above));
   const wet = smoothstep(0.55, 0.15, above).mul(smoothstep(-0.2, 0.0, above));
   const ground = mix(vertexColor(), vertexColor().mul(0.82), wet);
-  m.colorNode = mix(ground.mul(wetDarken()), vec3(0.93, 0.98, 0.96), foam.mul(0.8));
+  // (The land's colour is its vertex colour twice over: once here, once by the material; the snow needs to know.)
+  m.colorNode = mix(ground.mul(wetDarken(1, 2)), vec3(0.93, 0.98, 0.96), foam.mul(0.8));
   // Wet ground takes a sheen of the sky.
   m.emissiveNode = wetSheen(1);
   return m;
