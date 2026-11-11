@@ -21,7 +21,8 @@ const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "cod
 
 export const modelsView: View = (root, ctx, { scope }) => {
   const write = ctx.can("brain:write");
-  const rosterBox = h("div", { class: "card" }, skeletonRows(4, { avatar: true }));
+  // A role row is three lines: seven skeleton rows are about as tall as five roles.
+  const rosterBox = h("div", { class: "card" }, skeletonRows(7, { avatar: true }));
   const providersBox = h("div", { class: "card" }, skeletonBlock(120));
   const knownModels = h("datalist", { id: nextId("models") });
   let roster: Record<string, RoleSpec> = {};
