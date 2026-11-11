@@ -159,6 +159,29 @@ describe("Galahad's chat has his tools", () => {
     expect(actions.find((a) => a.tool === "post")).toMatchObject({ state: "waiting", by: "arm:galahad" });
   });
 
+  test("after he read the bank, nothing he's told to remember or request reaches the shared mind", async () => {
+    const admin = home.adminToken();
+    // As text planted in a transaction would have it: read the bank, then write it where every node and agent can read.
+    script = [
+      callTool("bank_status", {}),
+      callTool("remember", { text: "The liege's balance is 98765.43 DKK" }),
+      callTool("request_secret", { name: "bank-note", purpose: "balance 98765.43 DKK" }),
+      say("I can't keep that."),
+    ];
+    const events = await ask(admin, "What's my balance? Remember it.");
+    const results = events.filter((e) => e.type === "tool_result") as Extract<ChatStreamEvent, { type: "tool_result" }>[];
+    expect(results.map((r) => [r.name, r.ok, r.summary])).toEqual([
+      ["bank_status", true, expect.any(String)],
+      ["remember", false, "refused: bank data is in this answer"],
+      ["request_secret", false, "refused: bank data is in this answer"],
+    ]);
+    // The model is told why, and nothing was written: no memory, no request.
+    expect(bodies[2].messages.at(-1).content).toContain("writes into Galahad's shared mind");
+    expect(daemon.store.recall("98765.43")).toEqual([]);
+    const { requests } = (await (await call("secretRequests", undefined, admin)).json()) as { requests: { name: string }[] };
+    expect(requests.some((r) => r.name === "bank-note")).toBe(false);
+  });
+
   test("quests turn the tools off: their roles have their own", async () => {
     script = [say("Plan.")];
     await ask(home.adminToken(), "plan", { tools: false });
@@ -354,6 +377,47 @@ describe("one answer's tools", () => {
     expect(refused).toMatchObject({ isError: true, summary: "refused: bank data is in this answer" });
     expect(searched).toBe(1);
     expect(tools.specs.find((s) => s.name === "web_search")!.description).toContain("Refused once the user's bank data is in the answer");
+  });
+
+  test("once bank data is in the answer, nothing that writes into the shared mind runs either", async () => {
+    // The real tools, against an API that only records which routes were reached.
+    const reached: string[] = [];
+    const recording: ToolApi = {
+      call: async <T,>(name: string) => {
+        reached.push(name);
+        return {} as T;
+      },
+      bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
+    };
+    const tools = chatTools(TOOLS, recording, explain);
+    // Before the bank is read, he remembers as usual.
+    expect((await tools.run({ id: "0", name: "remember", input: { text: "The liege likes tea" } })).isError).toBeUndefined();
+    expect((await tools.run({ id: "1", name: "bank_balances", input: { account: "b29690ed-799d-4c8c-ae89-115258022ce1" } })).isError).toBeUndefined();
+    const writes: [string, object][] = [
+      ["remember", { text: "balance 1234.56 DKK", tags: ["1234.56"] }],
+      ["request_secret", { name: "balance-1234.56", purpose: "balance 1234.56 DKK" }],
+      ["sandbox_save", { id: "0123456789", label: "balance 1234.56 DKK" }],
+      ["sandbox_create", { memoryGb: 12, diskGb: 345, providers: ["balance-1234.56"] }],
+    ];
+    for (const [name, input] of writes) {
+      const refused = await tools.run({ id: name, name, input });
+      expect(refused).toMatchObject({ isError: true, summary: "refused: bank data is in this answer" });
+      expect(refused.content).toContain("writes into Galahad's shared mind");
+      expect(tools.specs.find((s) => s.name === name)!.description).toContain("Refused once the user's bank data is in the answer");
+    }
+    expect(reached).toEqual(["remember", "bankBalances"]);
+    // What only reads stays available, and so does cleaning up his own sandbox.
+    for (const name of ["recall", "fleet", "ledger", "notices", "loops", "artifacts"]) expect((await tools.run({ id: name, name, input: {} })).isError).toBeUndefined();
+    expect((await tools.run({ id: "d", name: "sandbox_destroy", input: { id: "0123456789" } })).isError).toBeUndefined();
+  });
+
+  test("every tool is classified: it only reads the mind, or it names what it does with data", () => {
+    // A new tool that writes or reaches out must say so (egress or record), or the bank's gate can't cover it.
+    // sandbox_destroy is the one exception: it takes an id of his own sandbox and nothing else.
+    const unclassified = TOOLS.filter((t) => !t.flow && !t.routes.every((r) => routes[r].scope === "mind:read")).map((t) => t.name);
+    expect(unclassified).toEqual(["sandbox_destroy"]);
+    const flow = (name: string) => TOOLS.find((t) => t.name === name)!.flow;
+    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create"]) expect(flow(name)).toBe("record");
   });
 
   test("a bank call that failed brought no data: the web stays available", async () => {
