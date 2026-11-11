@@ -19,6 +19,7 @@ import {
   section,
   segmented,
   skeletonBlock,
+  skeletonStat,
   statTile,
 } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -492,7 +493,7 @@ function placementPlayground(ctx: Ctx, scope: Scope): HTMLElement {
 
 export const fleetView: View = (root, ctx, { scope, opts }) => {
   const admin = ctx.can("fleet:admin");
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(110), skeletonBlock(110), skeletonBlock(110));
+  const stats = h("div", { class: "grid stats" }, skeletonStat(), skeletonStat(), skeletonStat());
   const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(240), skeletonBlock(240));
   const clientsBox = h("div", { class: "card" });
   const revokedBox = h("div");

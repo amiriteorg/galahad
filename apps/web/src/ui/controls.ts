@@ -159,6 +159,11 @@ export function skeletonRows(n = 3, options: { avatar?: boolean } = {}): HTMLEle
   );
 }
 
+/** A stat tile's place while its figure loads (as tall as the tile, on every screen). */
+export function skeletonStat(): HTMLElement {
+  return h("div", { class: "skeleton stat-skeleton", "aria-hidden": "true" });
+}
+
 export function skeletonBlock(height: number): HTMLElement {
   return h("div", { class: "skeleton", style: `height:${height}px;border-radius:12px`, "aria-hidden": "true" });
 }
