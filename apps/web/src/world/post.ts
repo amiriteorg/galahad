@@ -110,6 +110,7 @@ export class Post {
     shafts.update(this.camera, range, this.size.x, this.size.y);
     shafts.lightDir.value.copy(lightDir);
     shafts.haze.value = haze;
+    shafts.active.value = strength > 0.003 ? 1 : 0;
     this.shaftStrength.value = strength;
     this.shaftColor.value.setHex(color);
   }

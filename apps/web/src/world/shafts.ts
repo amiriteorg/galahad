@@ -1,4 +1,4 @@
-import { dot, exp, float, floor, Fn, fract, getViewPosition, interleavedGradientNoise, length, lightShadowMatrix, Loop, max, min, rtt, screenCoordinate, smoothstep, step, texture, uniform, uv, vec2, vec4 } from "three/tsl";
+import { dot, exp, float, floor, Fn, fract, getViewPosition, If, interleavedGradientNoise, length, lightShadowMatrix, Loop, max, min, rtt, screenCoordinate, smoothstep, step, texture, uniform, uv, vec2, vec4 } from "three/tsl";
 import { type DirectionalLight, type Node, type PerspectiveCamera, type Texture, Vector2, Vector3 } from "three/webgpu";
 import { WATER_LEVEL } from "./terrain.ts";
 
@@ -42,6 +42,8 @@ export class SunShafts {
   readonly haze = uniform(0.004);
   /** Where the light comes from (scene axes, unit). */
   readonly lightDir = uniform(new Vector3(0, 1, 0));
+  /** 1 while the shafts have any strength (else the march is skipped: overcast, rain, a moonless night). */
+  readonly active = uniform(1);
   private readonly eye = uniform(new Vector3());
   /** One texel of the low-resolution targets, in uv. */
   private readonly texel = uniform(new Vector2(1 / 640, 1 / 400));
@@ -76,6 +78,7 @@ export class SunShafts {
         const mist = air.mist as unknown as F;
         const sheet = air.sheet as unknown as F;
         const sheetLevel = air.sheetLevel as unknown as F;
+        If(this.active.greaterThan(0.5), () => {
         Loop(STEPS, ({ i }) => {
           const t = float(i).add(jitter).mul(stride);
           const p = this.eye.add(dir.mul(t));
@@ -91,6 +94,7 @@ export class SunShafts {
           sum.addAssign(lit.mul(inside).mul(this.haze).add(lit.mul(misty).mul(1.5)));
           mistAll.addAssign(misty);
           mistLit.addAssign(misty.mul(lit));
+        });
         });
         // What the lit air along the ray scatters: never more than all of the light (1 − e^−depth).
         const scattered = float(1).sub(exp(sum.mul(stride).negate()));

@@ -878,10 +878,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   function shaftHaze(): number {
     return 0.004 + 0.009 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
   }
-  /** How strongly the light's shafts show: low suns, mist and rain make them; cloud takes them away; the moon's are faint. */
+  /** How strongly the light's shafts show: low suns make them; a closed deck of cloud takes them away; the moon's are faint. */
   function shaftStrength(): number {
     const s = skyState;
-    const clear = 1 - 0.85 * s.cloud;
+    // Broken cloud lets the light through; a closed deck (overcast, rain, a storm) has no direct light to make shafts.
+    const gap = Math.min(1, Math.max(0, (0.9 - s.cloud) / 0.55));
+    const clear = gap * gap * (3 - 2 * gap);
     if (!s.lightFromSun) return 0.4 * s.night * s.moonUp * s.moonLit * clear;
     const low = 1 - Math.min(1, Math.max(0, (s.sunElevation * DEG - 5) / 35));
     return (0.55 + 0.35 * low) * clear * Math.min(1, (s.sunElevation * DEG) / 1.5);
