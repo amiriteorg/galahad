@@ -337,7 +337,7 @@ function statusCard(ctx: Ctx, s: ArchiveStatusView, refresh: () => void): HTMLEl
     h("div", { class: "card-head" }, icon("library", { size: 16 }), h("h3", { class: "grow" }, `On ${s.node}`), s.paused ? badge("waiting: the node is busy", "neutral", "pause") : null),
     h(
       "div",
-      { class: "pad stack" },
+      { class: "stack", style: "padding:var(--sp-4)" },
       h(
         "dl",
         { class: "kv" },

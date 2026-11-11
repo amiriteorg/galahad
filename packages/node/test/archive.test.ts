@@ -356,6 +356,8 @@ describe("hybrid search: words and meaning, fused", () => {
     expect(hybrid.mode).toBe("hybrid");
     expect(hybrid.hits[0]).toMatchObject({ id: id("a"), matched: ["meaning"] });
     expect(hybrid.hits[0]!.similarity).toBeGreaterThan(0.5);
+    // The meaning list's tail (passages about nothing like it) isn't offered as a result.
+    expect(hybrid.hits.map((h) => h.id)).toEqual([id("a")]);
     expect(search("automobile", {}, true).hits).toEqual([]);
   });
 

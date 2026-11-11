@@ -564,6 +564,11 @@ export class ArchiveStore {
     if (index && opts.query) {
       const allowed = this.allowed(filters, hideKinds);
       meaning = index.search(opts.query, depth, allowed ? (entry) => allowed.has(entry) : undefined);
+      // A scan always finds k nearest, however far: keep those within reach of the best (half its
+      // similarity, and above 0.1), so a passage about nothing like the query isn't offered as a result.
+      // Relative, because what counts as close differs from one embedding model to the next.
+      const floor = Math.max(0.1, (meaning[0]?.similarity ?? 0) * 0.5);
+      meaning = meaning.filter((m) => m.similarity >= floor);
     }
     const lists: Ranked[][] = [text.map((t) => ({ entry: t.entry, chunk: t.chunk })), meaning.map((m) => ({ entry: m.entry, chunk: m.chunk }))];
     const fused = fuse(lists).slice(offset, offset + limit);
