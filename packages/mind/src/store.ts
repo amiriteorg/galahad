@@ -462,7 +462,9 @@ export class MindStore {
     if (event.kind === "device.revoked" || event.kind === "fleet.chained") return "replay"; // may invalidate history
     if (event.v === 2 && (event.prev ?? null) !== this.head(event.device)) return "replay"; // gap or fork
     // A refused sibling, a waiting gap or a pinned head: only the whole log can tell what this one is.
-    if (this.db.query("SELECT 1 FROM v_chainbad WHERE device = ?").get(event.device)) return "replay";
+    if (this.db.query("SELECT 1 FROM v_chainbad WHERE device = ? UNION ALL SELECT 1 FROM v_devices WHERE id = ? AND revoked_hlc IS NOT NULL LIMIT 1").get(event.device, event.device)) {
+      return "replay";
+    }
     if (!tail || compareEvents(event, tail) > 0) return "next";
     return this.lateButHarmless(event, batch, index) ? "late" : "replay";
   }

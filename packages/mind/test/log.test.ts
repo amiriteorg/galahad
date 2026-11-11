@@ -1,0 +1,515 @@
+import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, SetHash, sha256B64u, signEvent } from "@galahad/core";
+import { enrollDevice, foundFleet, MindStore, PullState } from "../src/index.ts";
+
+/*
+ * What sync and the loops read on a timer is kept as events arrive, so it costs the same
+ * at any log size. These hold it to what the log itself says, computed from scratch here:
+ * after any delivery order, after a rebuild, and after migrating a replica written by the
+ * store as it was before (fixtures/mind-v0.db).
+ */
+
+function rng(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffle<T>(items: T[], random: () => number): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+const pull = (from: MindStore, to: MindStore, limit = 50) => {
+  const state = new PullState(to);
+  state.begin();
+  for (let i = 0; i < 10_000; i++) {
+    const { have, sets } = state.request(true);
+    if (!state.receive(from.eventsSince(have, limit, sets)).more) return;
+  }
+  throw new Error("the pull never ended");
+};
+
+/** What the log says, from scratch: per device, its count, newest hlc and set hash. */
+function fromScratch(store: MindStore) {
+  const rows = store.db.query<{ id: string; hlc: string; device: string }, []>("SELECT id, hlc, device FROM events").all();
+  const devices = new Map<string, { ids: string[]; top: string }>();
+  for (const row of rows) {
+    const d = devices.get(row.device) ?? { ids: [], top: "" };
+    d.ids.push(row.id);
+    if (row.hlc > d.top) d.top = row.hlc;
+    devices.set(row.device, d);
+  }
+  const digests = Object.fromEntries([...devices].map(([device, d]) => [device, { n: d.ids.length, h: SetHash.of(d.ids).digest() }]));
+  const frontier = Object.fromEntries([...devices].map(([device, d]) => [device, d.top]));
+  // Exactly the query lastSlot used to run over the whole log.
+  const slots = store.db
+    .query<{ loop: string; device: string; slot: number }, []>(
+      `SELECT json_extract(e.raw, '$.body.loop') AS loop, e.device AS device, MAX(json_extract(e.raw, '$.body.slot')) AS slot
+       FROM events e LEFT JOIN v_rejected r ON r.id = e.id
+       WHERE e.kind = 'loop.ran' AND r.id IS NULL AND json_extract(e.raw, '$.body.slot') IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2`,
+    )
+    .all();
+  return { digests, frontier, count: rows.length, slots };
+}
+
+function kept(store: MindStore) {
+  const slots = store.db.query<{ loop: string; device: string; slot: number }, []>("SELECT loop, device, slot FROM v_slots ORDER BY loop, device").all();
+  for (const { loop, device, slot } of slots) expect(store.lastSlot(loop, device)).toBe(slot);
+  return { digests: store.deviceDigests(), frontier: store.frontier(), count: store.eventCount(), slots };
+}
+
+const expectKeptMatchesLog = (store: MindStore) => expect(kept(store)).toEqual(fromScratch(store));
+
+interface Busy {
+  nodes: NodeIdentity[];
+  stores: MindStore[];
+  events: GEvent[];
+}
+
+/**
+ * Three nodes writing at once on their own replicas, mostly ledger entries and loop runs
+ * (what a busy sandbox host writes), syncing now and then: so the union is full of events
+ * that reach every other replica late.
+ */
+function busyFleet(seed: number, rounds = 120): Busy {
+  const random = rng(seed);
+  let now = Date.UTC(2026, 10, 1);
+  const clock = () => now;
+  const nodes = [newNodeIdentity(), newNodeIdentity(), newNodeIdentity()];
+  const [a, b, c] = nodes as [NodeIdentity, NodeIdentity, NodeIdentity];
+  const founder = new MindStore(":memory:", new HlcClock(clock));
+  foundFleet(founder, a, { fleetName: "busy", nodeName: "a" });
+  enrollDevice(founder, a, { device: b.id, name: "b", kind: "node", box: b64u(b.boxPublic) });
+  enrollDevice(founder, a, { device: c.id, name: "c", kind: "node", box: b64u(c.boxPublic) });
+  for (const [node, name] of [[a, "backup"], [b, "heartbeat"], [c, "poll"]] as const) {
+    founder.emit(a, "loop.set", { name, schedule: "every 30m", on: node.id, enabled: true, task: { kind: "heartbeat" } });
+  }
+  const stores = [founder, ...[b, c].map(() => {
+    const s = new MindStore(":memory:", new HlcClock(clock));
+    s.expectFleet(founder.fleet!);
+    s.ingest(founder.eventsSince({}, 100_000).events);
+    return s;
+  })];
+  const loops = ["backup", "heartbeat", "poll"];
+  const slots = [0, 0, 0];
+  for (let round = 0; round < rounds; round++) {
+    now += Math.floor(random() * 3_000);
+    const i = Math.floor(random() * 3);
+    const store = stores[i]!;
+    const node = nodes[i]!;
+    const k = random();
+    if (k < 0.6) store.emit(node, "ledger.recorded", { class: "create", resource: "sandbox.exec", target: `sb${round}`, verdict: "allow" });
+    else if (k < 0.8) {
+      const slot = Date.UTC(2026, 10, 1) + ++slots[i]! * 1_800_000;
+      store.emit(node, "loop.ran", { loop: loops[i]!, run: `s${slot.toString(36)}`, slot, status: "ok", started: slot, finished: slot, summary: "ok" });
+    } else if (k < 0.9) store.remember(node, `note ${round}`, { tags: ["busy"] });
+    else store.emit(node, "loop.ran", { loop: loops[i]!, run: `m${round}`, slot: null, status: "ok", started: now, finished: now, summary: "by hand" });
+    // Now and then two replicas meet.
+    if (random() < 0.15) {
+      const x = stores[Math.floor(random() * 3)]!;
+      const y = stores[Math.floor(random() * 3)]!;
+      if (x !== y) y.ingest(x.eventsSince(y.frontier(), 100_000).events);
+    }
+  }
+  const union = new Map<string, GEvent>();
+  for (const store of stores) for (const event of store.eventsSince({}, 100_000).events) union.set(event.id, event);
+  return { nodes, stores, events: [...union.values()] };
+}
+
+/** A fresh replica of the busy fleet (its clock is the real one: the events are all in the past). */
+function replicaOf(fleet: Busy): MindStore {
+  const store = new MindStore(":memory:");
+  store.expectFleet(fleet.stores[0]!.fleet!);
+  return store;
+}
+
+describe("the log's running summaries equal the log", () => {
+  for (const seed of [1, 2, 3, 4]) {
+    test(`PROPERTY seed ${seed}: any delivery order and batching, with duplicates and late arrivals, keeps them exact`, () => {
+      const fleet = busyFleet(seed);
+      const random = rng(seed * 101);
+      const reference = replicaOf(fleet);
+      reference.ingest(fleet.events);
+      const referenceDigest = reference.digest();
+      for (let trial = 0; trial < 4; trial++) {
+        const replica = replicaOf(fleet);
+        const delivery = shuffle([...fleet.events, ...fleet.events.filter(() => random() < 0.2)], random);
+        while (delivery.length) {
+          replica.ingest(delivery.splice(0, 1 + Math.floor(random() * 25)));
+          // After every batch, not just at the end.
+          expectKeptMatchesLog(replica);
+        }
+        expect(replica.digest()).toBe(referenceDigest);
+        replica.rebuild();
+        expect(replica.digest()).toBe(referenceDigest);
+        expectKeptMatchesLog(replica);
+      }
+    });
+  }
+
+  test("the writers' own replicas agree with the log too, and a rebuild changes nothing", () => {
+    const fleet = busyFleet(9);
+    for (const store of fleet.stores) {
+      expectKeptMatchesLog(store);
+      const before = { digest: store.digest(), ...kept(store) };
+      store.rebuild();
+      expect({ digest: store.digest(), ...kept(store) }).toEqual(before);
+    }
+  });
+
+  test("late ledger entries and loop runs from a sound chain skip the replay, and land where a replay puts them", () => {
+    const fleet = busyFleet(5, 200);
+    const replica = replicaOf(fleet);
+    // Everyone's history up to the last 30 events, then the stragglers one by one, oldest last.
+    const ordered = [...fleet.events].sort((x, y) => (x.hlc < y.hlc ? -1 : x.hlc > y.hlc ? 1 : x.id < y.id ? -1 : 1));
+    const head = ordered.slice(0, -30);
+    const tail = ordered.slice(-30);
+    replica.ingest(head);
+    // Deliver each device's stragglers in its own order, but the devices one after another,
+    // so most arrive after newer events of other devices.
+    const byDevice = [...new Set(tail.map((e) => e.device))].map((d) => tail.filter((e) => e.device === d));
+    let replays = 0;
+    let late = 0;
+    for (const events of byDevice.reverse()) {
+      for (const event of events) {
+        const lateNow = Object.values(replica.frontier()).some((top) => top > event.hlc);
+        const result = replica.ingest([event]);
+        if (lateNow) late++;
+        if (result.rebuilt) replays++;
+      }
+    }
+    expect(late).toBeGreaterThan(0);
+    // Memories still replay when late; ledger entries and loop runs don't.
+    const lateOthers = tail.filter((e) => e.kind !== "ledger.recorded" && e.kind !== "loop.ran").length;
+    expect(replays).toBeLessThanOrEqual(lateOthers);
+    const live = { digest: replica.digest(), ...kept(replica) };
+    replica.rebuild();
+    expect({ digest: replica.digest(), ...kept(replica) }).toEqual(live);
+    expectKeptMatchesLog(replica);
+  });
+});
+
+/** A late ledger entry, signed for `node` after its head, dated just after its parent. */
+function lateEntry(store: MindStore, node: NodeIdentity, extra: Partial<GEvent> = {}): GEvent {
+  const prev = store.head(node.id);
+  const parent = prev ? store.event(prev)! : null;
+  const { ms, counter } = decodeHlc(parent?.hlc ?? store.clock.tick());
+  return signEvent(
+    {
+      v: 2,
+      fleet: store.fleet!,
+      hlc: encodeHlc({ ms, counter: counter + 1 }),
+      device: node.id,
+      prev,
+      kind: "ledger.recorded",
+      body: { class: "read", resource: "t", target: "late", verdict: "allow" },
+      ...extra,
+    } as never,
+    node,
+  );
+}
+
+describe("a late arrival replays whenever a replay could judge it differently", () => {
+  // The clock moves only when told, so "newer" is newer however fast the test runs.
+  function twoWriters() {
+    const a = newNodeIdentity();
+    const b = newNodeIdentity();
+    let now = Date.UTC(2026, 10, 1);
+    const store = new MindStore(":memory:", new HlcClock(() => now));
+    foundFleet(store, a, { fleetName: "late", nodeName: "a" });
+    enrollDevice(store, a, { device: b.id, name: "b", kind: "node", box: b64u(b.boxPublic) });
+    now += 1_000;
+    /** Something of a's, a second after everything so far. */
+    const newer = () => {
+      now += 1_000;
+      return store.remember(a, "newer");
+    };
+    return { a, b, store, newer };
+  }
+
+  test("a sound late ledger entry doesn't replay; a late memory does", () => {
+    const { b, store, newer } = twoWriters();
+    const entry = lateEntry(store, b);
+    newer();
+    expect(store.ingest([entry])).toMatchObject({ added: 1, rebuilt: false });
+    const late = signEvent(
+      { v: 2, fleet: store.fleet!, hlc: encodeHlc({ ms: decodeHlc(entry.hlc).ms, counter: decodeHlc(entry.hlc).counter + 1 }), device: b.id, prev: entry.id, kind: "memory.added", body: { text: "late memory" } },
+      b,
+    );
+    expect(store.ingest([late])).toMatchObject({ added: 1, rebuilt: true });
+    const live = store.digest();
+    store.rebuild();
+    expect(store.digest()).toBe(live);
+  });
+
+  test("from a revoked device, or one enrolled at the same instant, it replays", () => {
+    const { a, b, store, newer } = twoWriters();
+    const c = newNodeIdentity();
+    enrollDevice(store, a, { device: c.id, name: "c", kind: "node", box: b64u(c.boxPublic) });
+    const enrollment = store.device(c.id)!.enrolledHlc;
+    // c signs an entry dated the very moment it was enrolled: who came first is the ids' to say.
+    const tie = signEvent({ v: 2, fleet: store.fleet!, hlc: enrollment, device: c.id, prev: null, kind: "ledger.recorded", body: { class: "read", resource: "t", target: "tie", verdict: "allow" } }, c);
+    newer();
+    expect(store.ingest([tie]).rebuilt).toBe(true);
+    // b's entry from before its revocation reaches us after the revocation: replayed.
+    const entry = lateEntry(store, b);
+    store.emit(a, "device.revoked", { device: b.id, reason: "lost", head: store.head(b.id) });
+    expect(store.ingest([entry]).rebuilt).toBe(true);
+    const live = store.digest();
+    store.rebuild();
+    expect(store.digest()).toBe(live);
+  });
+
+  test("a late entry beside a refused sibling replays, and the fork is found", () => {
+    const { b, store, newer } = twoWriters();
+    const first = lateEntry(store, b);
+    store.ingest([first]);
+    const { ms } = decodeHlc(first.hlc);
+    const early = lateEntry(store, b, { hlc: encodeHlc({ ms: ms - 1, counter: 0 }) } as Partial<GEvent>);
+    newer();
+    store.ingest([early]); // dated before its parent: refused
+    const sibling = lateEntry(store, b);
+    expect(store.ingest([sibling]).rebuilt).toBe(true);
+    expect(store.rejection(sibling.id)).toMatch(/forked/);
+    const live = store.digest();
+    store.rebuild();
+    expect(store.digest()).toBe(live);
+  });
+});
+
+describe("repairing a hole is paged", () => {
+  test("a replica missing an old event is walked back to whole, one page at a time", () => {
+    const fleet = busyFleet(7, 300);
+    const full = replicaOf(fleet);
+    full.ingest(fleet.events);
+    const holed = replicaOf(fleet);
+    const b = fleet.nodes[1]!;
+    const bEvents = fleet.events.filter((e) => e.device === b.id).sort((x, y) => (x.hlc < y.hlc ? -1 : 1));
+    const missing = bEvents[3]!;
+    holed.ingest(fleet.events.filter((e) => e.id !== missing.id));
+    expect(holed.event(missing.id)).toBeNull();
+    expect(full.eventsSince(holed.frontier(), 20, holed.deviceDigests()).repair).toEqual([b.id]);
+
+    const state = new PullState(holed);
+    state.begin();
+    let pages = 0;
+    for (;;) {
+      const { have, sets } = state.request(true);
+      const page = full.eventsSince(have, 20, sets);
+      expect(page.events.length).toBeLessThanOrEqual(20);
+      pages++;
+      if (!state.receive(page).more) break;
+    }
+    expect(pages).toBeGreaterThan(bEvents.length / 20);
+    expect(holed.event(missing.id)).not.toBeNull();
+    expect(holed.deviceDigests()).toEqual(full.deviceDigests());
+    expect(holed.digest()).toBe(full.digest());
+    // Whole again: nothing more to repair.
+    expect(full.eventsSince(holed.frontier(), 20, holed.deviceDigests()).repair).toBeUndefined();
+  });
+
+  test("a walk goes on in the next pull, and a device is walked once per pull", () => {
+    const fleet = busyFleet(8, 300);
+    const full = replicaOf(fleet);
+    full.ingest(fleet.events);
+    const holed = replicaOf(fleet);
+    const b = fleet.nodes[1]!;
+    const missing = fleet.events.filter((e) => e.device === b.id).sort((x, y) => (x.hlc < y.hlc ? -1 : 1))[2]!;
+    holed.ingest(fleet.events.filter((e) => e.id !== missing.id));
+    const state = new PullState(holed);
+    state.begin();
+    // Two pages, then the pull is cut short (a timeout, say).
+    for (let i = 0; i < 2; i++) {
+      const { have, sets } = state.request(true);
+      state.receive(full.eventsSince(have, 10, sets));
+    }
+    expect(state.walking()).toEqual([b.id]);
+    state.begin();
+    for (let i = 0; i < 1000; i++) {
+      const { have, sets } = state.request(true);
+      // A peer that keeps saying "repair" can't start the same walk twice in one pull.
+      const page = { ...full.eventsSince(have, 10, sets), repair: [b.id] };
+      if (!state.receive(page).more) break;
+    }
+    expect(state.walking()).toEqual([]);
+    expect(holed.digest()).toBe(full.digest());
+  });
+
+  test("a replica that's merely behind is caught up by frontier, with nothing to repair", () => {
+    const fleet = busyFleet(3, 200);
+    const full = replicaOf(fleet);
+    full.ingest(fleet.events);
+    const behind = replicaOf(fleet);
+    const ordered = [...fleet.events].sort((x, y) => (x.hlc < y.hlc ? -1 : 1));
+    behind.ingest(ordered.slice(0, ordered.length - 15));
+    const page = full.eventsSince(behind.frontier(), 500, behind.deviceDigests());
+    expect(page.repair).toBeUndefined();
+    pull(full, behind);
+    expect(behind.digest()).toBe(full.digest());
+  });
+});
+
+describe("ingest", () => {
+  test("an event already held is skipped before its signature is checked, so a tampered copy changes nothing", () => {
+    const a = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, a, { fleetName: "dup", nodeName: "a" });
+    const memory = store.remember(a, "original");
+    const before = store.digest();
+    const tampered = { ...memory, body: { text: "tampered" }, sig: memory.sig.replace(/^./, (ch) => (ch === "A" ? "B" : "A")) };
+    expect(store.ingest([tampered])).toEqual({ added: 0, invalid: [], rebuilt: false });
+    expect(store.digest()).toBe(before);
+    expect(store.recall("tampered")).toEqual([]);
+    // A forged event we don't hold is still refused.
+    const forged = { ...store.remember(a, "another"), id: sha256B64u("not the content") };
+    expect(store.ingest([forged]).invalid.length).toBe(1);
+  });
+});
+
+describe("migrating a replica in place", () => {
+  const fixture = join(import.meta.dir, "fixtures", "mind-v0.db");
+  const expected = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "mind-v0.json"), "utf8"));
+
+  function copyOf(path: string): { dir: string; path: string } {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-migrate-"));
+    const copy = join(dir, "mind.db");
+    copyFileSync(path, copy);
+    return { dir, path: copy };
+  }
+
+  const logHash = (store: MindStore) =>
+    sha256B64u(
+      store.db
+        .query<{ id: string; raw: string }, []>("SELECT id, raw FROM events ORDER BY id")
+        .all()
+        .map((e) => `${e.id}:${e.raw}`)
+        .join("\n"),
+    );
+
+  test("a replica made by the store before schema versions opens with nothing lost or changed", () => {
+    const { dir, path } = copyOf(fixture);
+    try {
+      const raw = new Database(path);
+      expect(raw.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version).toBe(0);
+      raw.close();
+      const store = new MindStore(path);
+      expect(store.schemaVersion()).toBe(1);
+      expect(store.fleet).toBe(expected.fleet);
+      expect(logHash(store)).toBe(expected.log);
+      expect(store.eventCount()).toBe(expected.eventCount);
+      expect(store.digest()).toBe(expected.digest);
+      expect(store.frontier()).toEqual(expected.frontier);
+      expect({ a: store.head(expected.devices.a), b: store.head(expected.devices.b), c: store.head(expected.devices.c) }).toEqual(expected.heads);
+      expect({
+        heartbeatOnB: store.lastSlot("heartbeat", expected.devices.b),
+        pollOnC: store.lastSlot("poll", expected.devices.c),
+        heartbeatOnA: store.lastSlot("heartbeat", expected.devices.a),
+      }).toEqual(expected.lastSlot);
+      expect(store.loopRuns(undefined, 1000).map((e) => e.id)).toEqual(expected.loopRuns);
+      expect(store.ledger(1000).map((e) => e.id)).toEqual(expected.ledger);
+      expect(store.db.query("SELECT id, reason FROM v_rejected ORDER BY id").all()).toEqual(expected.rejected);
+      expect(store.forks()).toEqual(expected.forks);
+      expect(store.pendingCount()).toBe(expected.pending);
+      expect(store.recall(undefined, 50).map((m) => m.id)).toEqual(expected.recall);
+      expectKeptMatchesLog(store);
+      // The forked node's chain is known to be broken, so its next events replay.
+      expect(store.db.query("SELECT device FROM v_chainbad").all()).toEqual([{ device: expected.devices.c }]);
+      store.close();
+
+      // Opening it again migrates nothing twice, and a rebuild agrees with what migration derived.
+      const again = new MindStore(path);
+      expect(again.digest()).toBe(expected.digest);
+      const derived = kept(again);
+      again.rebuild();
+      expect(again.digest()).toBe(expected.digest);
+      expect(kept(again)).toEqual(derived);
+      expect(logHash(again)).toBe(expected.log);
+
+      // And it syncs, hole-finding included, with a replica made today.
+      const fresh = new MindStore(":memory:");
+      fresh.expectFleet(expected.fleet);
+      pull(again, fresh);
+      expect(fresh.digest()).toBe(expected.digest);
+      expect(fresh.deviceDigests()).toEqual(again.deviceDigests());
+      again.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** Undo version 1 by hand: exactly the schema the store had before it. */
+  function downgrade(path: string): void {
+    const db = new Database(path);
+    db.exec(`DROP TABLE log_devices; DROP TABLE v_slots; DROP TABLE v_chainbad;
+      DROP INDEX events_kind; DROP INDEX events_loop; DROP INDEX events_device_order;
+      CREATE INDEX events_device ON events (device, hlc); PRAGMA user_version = 0;`);
+    db.close();
+  }
+
+  for (const seed of [21, 22]) {
+    test(`PROPERTY seed ${seed}: a busy replica taken back to the old schema migrates to exactly what it kept live`, () => {
+      const fleet = busyFleet(seed, 150);
+      const dir = mkdtempSync(join(tmpdir(), "galahad-migrate-"));
+      try {
+        const path = join(dir, "mind.db");
+        const store = new MindStore(path);
+        store.expectFleet(fleet.stores[0]!.fleet!);
+        store.ingest(shuffle(fleet.events, rng(seed)));
+        const live = { digest: store.digest(), log: logHash(store), ...kept(store) };
+        store.close();
+        downgrade(path);
+        const migrated = new MindStore(path);
+        expect({ digest: migrated.digest(), log: logHash(migrated), ...kept(migrated) }).toEqual(live);
+        expectKeptMatchesLog(migrated);
+        migrated.close();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("a replica an older version wrote to in between is recounted on the next start", () => {
+    const fleet = busyFleet(31, 80);
+    const dir = mkdtempSync(join(tmpdir(), "galahad-migrate-"));
+    try {
+      const path = join(dir, "mind.db");
+      const store = new MindStore(path);
+      store.expectFleet(fleet.stores[0]!.fleet!);
+      const ordered = [...fleet.events].sort((x, y) => (x.hlc < y.hlc ? -1 : 1));
+      store.ingest(ordered.slice(0, -10));
+      // What an older version would leave: the new events in the log and its views, but not
+      // in what it doesn't know about.
+      const stale = {
+        log: store.db.query("SELECT * FROM log_devices").all() as { device: string; n: number; top: string; ids: Uint8Array }[],
+        slots: store.db.query("SELECT * FROM v_slots").all() as { loop: string; device: string; slot: number }[],
+      };
+      store.ingest(ordered.slice(-10));
+      const live = { digest: store.digest(), ...kept(store) };
+      store.db.exec("DELETE FROM log_devices; DELETE FROM v_slots");
+      for (const row of stale.log) store.db.query("INSERT INTO log_devices VALUES (?, ?, ?, ?)").run(row.device, row.n, row.top, row.ids);
+      for (const row of stale.slots) store.db.query("INSERT INTO v_slots VALUES (?, ?, ?)").run(row.loop, row.device, row.slot);
+      expect(store.eventCount()).toBeLessThan(fleet.events.length);
+      store.close();
+      const reopened = new MindStore(path);
+      expect({ digest: reopened.digest(), ...kept(reopened) }).toEqual(live);
+      expectKeptMatchesLog(reopened);
+      reopened.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -197,6 +197,23 @@ describe("hash chains", () => {
     expect(storeA.rejection(child.id)).toMatch(/dated before/);
   });
 
+  test("what a revoked node signs after its revocation is refused for the reason a rebuild gives", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeB.remember(b, "before");
+    sync(storeB, storeA);
+    revokeDevice(storeA, a, b.id, "key stolen");
+    const revocation = storeA.event(storeA.head(a.id)!)!;
+    // In order: dated a second after everything storeA holds.
+    const after = forge(storeA, b, "memory.added", { text: "after" }, { hlc: encodeHlc({ ms: decodeHlc(revocation.hlc).ms + 1_000, counter: 0 }), prev: storeA.head(b.id) });
+    storeA.ingest([after]);
+    const live = storeA.digest();
+    const reason = storeA.rejection(after.id);
+    storeA.rebuild();
+    expect(storeA.rejection(after.id)).toBe(reason);
+    expect(storeA.digest()).toBe(live);
+    void storeB;
+  });
+
   test("a far-future counter from an unknown key cannot wedge the clock (review #3)", () => {
     const { a, storeA } = fleet();
     const stranger = newNodeIdentity();
