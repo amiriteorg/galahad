@@ -10,6 +10,7 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import { artifactTarget } from "./artifacts.ts";
 import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
+import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
@@ -489,8 +490,11 @@ Next:
     case "revoke": {
       if (!sub) fail("usage: galahad revoke <device>");
       const fleet = await new Admin(home).call<FleetView>("fleet");
-      const target = fleet.devices.find((d) => d.id === sub || d.name === sub || d.id.startsWith(sub));
-      if (!target) fail(`no device matches ${sub}`);
+      const matches = activeDevicesMatching(fleet.devices, sub);
+      if (!matches.length) fail(`no active device matches ${sub}`);
+      // Never guess which device to cut off: several matches must be told apart by id.
+      if (matches.length > 1) fail(`"${sub}" matches ${matches.length} devices; name one by its id:\n${matches.map((d) => `  ${d.id.slice(0, 12)}  ${d.name} (${d.kind})`).join("\n")}`);
+      const target = matches[0]!;
       if (!confirm(`Revoke ${target.name} (${target.kind})? This rotates the vault.`)) return;
       const result = await new Admin(home).call("revokeDevice", { device: target.id, reason: str("reason") });
       console.log(`Revoked ${target.name}.`);
