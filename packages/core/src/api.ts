@@ -8,7 +8,7 @@ import { TrialRecord } from "./trials.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { WorldReport } from "./world-input.ts";
+import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 
 /*
@@ -239,6 +239,24 @@ export const routes = {
   boardVersionPicture: { method: "POST", path: "/api/board/version/picture", scope: "mind:read", input: BoardVersionInput },
   boardRestore: { method: "POST", path: "/api/board/restore", scope: "chat", input: BoardVersionInput },
   boardForget: { method: "POST", path: "/api/board/history/forget", scope: "fleet:admin", input: z.strictObject({}) },
+  /**
+   * Saved experiments: every experiment the world showed, archived for good on the node that ran it
+   * (node-local, never in the mind). Reading them is the world's scope; a favourite is yours (mind:write,
+   * and only you), deleting too (fleet:admin, as with kept work: nothing else ever deletes one). Running
+   * one creates a sandbox: the sandbox scope.
+   */
+  experiments: { method: "GET", path: "/api/experiments", scope: "mind:read", input: null },
+  experiment: { method: "POST", path: "/api/experiments/get", scope: "mind:read", input: z.strictObject({ id: ExperimentId, code: z.boolean().optional() }) },
+  experimentRecording: {
+    method: "POST",
+    path: "/api/experiments/recording",
+    scope: "mind:read",
+    /** hz: a replay's view of it, at most that many frames a second of simulation (the archive keeps every frame). */
+    input: z.strictObject({ id: ExperimentId, from: z.number().int().min(0).max(1_000_000_000).optional(), limit: z.number().int().min(1).max(5000).optional(), hz: z.number().min(1).max(120).optional() }),
+  },
+  pinExperiment: { method: "POST", path: "/api/experiments/pin", scope: "mind:write", input: z.strictObject({ id: ExperimentId, pinned: z.boolean() }) },
+  deleteExperiment: { method: "POST", path: "/api/experiments/delete", scope: "fleet:admin", input: z.strictObject({ id: ExperimentId }) },
+  runExperiment: { method: "POST", path: "/api/experiments/run", scope: "sandbox", input: ExperimentRunInput },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

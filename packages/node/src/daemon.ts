@@ -13,6 +13,7 @@ import { BankService } from "./bank/service.ts";
 import { BoardStore } from "./board.ts";
 import { ChatStore } from "./chats.ts";
 import { WorldHub } from "./world-hub.ts";
+import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
@@ -213,7 +214,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
-  const world = new WorldHub();
+  // Every experiment the world shows is saved here, node-local (its view, readouts, recording, code).
+  const experiments = new ExperimentStore({ dir: home.experimentsDir, log });
+  const world = new WorldHub({ store: experiments });
   const weather = new WeatherService({
     enabled: opts.weather ?? false,
     wanted: () => world.watching > 0,
@@ -361,6 +364,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       bank.close();
       chats.close();
       world.close();
+      experiments.close();
       weather.close();
       await loops.stop();
       await connectors.drain();

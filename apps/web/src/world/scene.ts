@@ -33,6 +33,7 @@ import type { Ground } from "./physics.ts";
 import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } from "./place.ts";
 import { plotColliders } from "./plot-plan.ts";
 import { originUniform, Plots } from "./plots.ts";
+import { Assembly, benchFor, buildingAt } from "./assembly.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
@@ -322,6 +323,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     glows.set(`place${i}:cool`, place.coolGlows, 0x8fe2ff);
   });
   const placeFrame: PlaceFrame = { dt: 0, t: 0, motion: true, focusX: 0, focusY: 0, distance: 0, follow: true, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0, wind: BREEZE, windHeading: WIND_HEADING };
+  // ---- experiments being built: on the workshop's assembly bench (assembly.ts) ----
+  const assembly = new Assembly();
+  worldRoot.add(assembly.group);
+  let benchSparks = 0;
 
   // ---------- the ground, as each kind of walker sees it ----------
   let stationObstacles: Obstacle[] = obstacles();
@@ -654,7 +659,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let walkKey = "";
   function retarget(m: WorldModel): void {
     // Something to write on the chalkboard comes first; then his station.
-    const target = chalkboard.stand() ?? targetFor(m.galahad, m.experiments);
+    const target = chalkboard.stand() ?? buildingAt(m.galahad, m.experiments) ?? targetFor(m.galahad, m.experiments);
     const key = `${m.galahad.station}|${m.galahad.experiment}|${target.x.toFixed(2)},${target.y.toFixed(2)}`;
     if (key === walkKey) return;
     walkKey = key;
@@ -1073,6 +1078,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     active = rig.update(dt, motion) || active;
     active = plots.animate(now, skyState.horizon) || active;
+    active = assembly.animate(now, motion) || active;
     const ambient = motion && now - lastRender >= idleInterval;
     if (!dirty && !active && !ambient) {
       renderedLast = false;
@@ -1125,6 +1131,23 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
     knightState.bench = g?.station === "forge";
     attend();
+    // ---- building an experiment: at the assembly bench he works as at the lab's, blade's tip to the parts ----
+    const atBench = !walker.moving && g ? buildingAt(g, model!.experiments) : null;
+    if (atBench) {
+      knightState.bench = true;
+      knightState.armed = true;
+      attention.x = atBench.bench.x;
+      attention.y = atBench.bench.y;
+      attention.z = atBench.bench.z;
+      attention.on = true;
+      if (motion) {
+        benchSparks -= renderDt;
+        if (benchSparks <= 0) {
+          benchSparks = 0.4;
+          fauna.sparksAt(atBench.bench.x, atBench.bench.y - 0.15, atBench.bench.z + 0.05, 2);
+        }
+      }
+    }
     // At the chalkboard, writing: his hand at the chalk, not busy at the station's work.
     knightState.writing = !walker.moving && chalkboard.hand(attention);
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
@@ -1280,7 +1303,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         syncExperimentLabels(next);
         if (selected && !next.experiments.some((e) => e.id === selected)) options.onSelect(null);
       }
-      if (!prev || prev.galahad !== next.galahad || prev.experiments !== next.experiments) retarget(next);
+      if (!prev || prev.galahad !== next.galahad || prev.experiments !== next.experiments) {
+        retarget(next);
+        if (assembly.sync(benchFor(next), event?.at ?? next.at, performance.now())) dirty = true;
+      }
       if (!prev || prev.galahad !== next.galahad || prev.thoughts !== next.thoughts) {
         syncBubble(next);
         dirty = true;
@@ -1294,7 +1320,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       }
       if (!prev) {
         // First sight: put him (and the dog) where he is at once, and the camera on him.
-        walker.go(targetFor(next.galahad, next.experiments), stationObstacles, true);
+        walker.go(buildingAt(next.galahad, next.experiments) ?? targetFor(next.galahad, next.experiments), stationObstacles, true);
         standZ = walker.z;
         knight.place(walker.x, walker.y, walker.heading, feetGround);
         dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
@@ -1424,6 +1450,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       fauna.dispose();
       critters.dispose();
       plots.dispose();
+      assembly.dispose();
       landmarks.dispose();
       glows.dispose();
       rain.dispose();

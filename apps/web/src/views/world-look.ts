@@ -10,7 +10,8 @@ import { icon } from "../ui/icons.ts";
  * how many experiments are running, and behind it everything the view can look
  * at instead, grouped and searchable: type to narrow, arrows to move, Enter to
  * go, Escape to close. It takes the place of Follow, Go to and the experiments
- * list. What's offered and in what order is lib/look.ts.
+ * list; a saved experiment picked here is replayed. What's offered and in what
+ * order is lib/look.ts.
  */
 
 export interface Look {
@@ -46,7 +47,7 @@ export function createLook(options: { model: () => WorldModel; onPick: (target: 
   const input = h("input", {
     class: "input sm",
     type: "search",
-    placeholder: "Galahad, an experiment, a place…",
+    placeholder: "Galahad, an experiment, a saved one, a place…",
     "aria-label": "Find what to look at",
     role: "combobox",
     "aria-controls": listId,
@@ -95,7 +96,7 @@ export function createLook(options: { model: () => WorldModel; onPick: (target: 
           },
           o.tone ? dot(o.tone, { live: o.live }) : icon(o.icon, { size: 15, class: "subtle" }),
           h("span", { class: "grow look-option-text" }, h("span", { class: "small strong ellipsis" }, o.label), o.meta ? h("span", { class: "meta ellipsis" }, o.meta) : null),
-          o.here ? h("span", { class: "tiny look-here" }, o.group === "Galahad" || o.group === "The keep" || o.group === "Test sites" ? "here" : "watching") : null,
+          o.here ? h("span", { class: "tiny look-here" }, o.hereText ?? "here") : null,
         ),
       );
     });

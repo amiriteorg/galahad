@@ -5,6 +5,7 @@ export * from "./board-input.ts";
 export * from "./chats.ts";
 export * from "./world.ts";
 export * from "./world-input.ts";
+export * from "./experiments.ts";
 export * from "./bytes.ts";
 export * from "./canonical.ts";
 export * from "./connectors.ts";

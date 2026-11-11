@@ -64,7 +64,8 @@ export interface StatusColors {
   accent: number;
 }
 
-function shapeMesher(shape: BodyShape, color: number): Mesher {
+/** A body's shape as a mesh (its own frame, z up), in its colour: the plots draw them, so does the assembly bench. */
+export function shapeMesher(shape: BodyShape, color: number): Mesher {
   const m = new Mesher();
   switch (shape.kind) {
     case "box":
