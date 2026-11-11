@@ -1,19 +1,19 @@
-import { attribute, cameraPosition, float, length, max, mix, positionLocal, positionWorld, select, sin, smoothstep, uniform, vec2, vec3, vertexColor } from "three/tsl";
-import { Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node } from "three/webgpu";
+import { attribute, cameraPosition, float, length, max, mix, positionLocal, positionWorld, select, sin, smoothstep, tan, uniform, vec2, vec3, vertexColor } from "three/tsl";
+import { type Camera, Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node } from "three/webgpu";
 import type { Collider } from "./colliders.ts";
-import { type BuildDetail, buildStatic, type Halo } from "./field-build.ts";
+import { type BuildDetail, buildStatic, type Halo, PAPI_KIND } from "./field-build.ts";
 import { aircraft, restAircraft, stepAircraft } from "./field-circuit.ts";
 import { buildGround, type GroundDetail } from "./field-ground.ts";
 import { launcher, placeLauncher, stepLauncher } from "./field-launcher.ts";
 import { beamMaterial, type MachineDetail, Machines } from "./field-machines.ts";
 import { loadRealRover, type RealRover } from "./field-osr.ts";
-import { BLOCKHOUSE, ENTRANCE_POSTS, FIELD, FIELD_GATE, FIELD_LEVEL, FIELD_NAMES, FLOODLIGHTS, HANGAR, LAUNCH_SLAB, TOWER } from "./field-plan.ts";
+import { BLOCKHOUSE, ENTRANCE_POSTS, FIELD, FIELD_GATE, FIELD_LEVEL, FIELD_NAMES, FLOODLIGHTS, HANGAR, LAUNCH_SLAB, PAPI_LENS, PAPI_SETTINGS, PAPIS, papiWhite, TOWER } from "./field-plan.ts";
 import { quad, restQuad, stepQuad } from "./field-quad.ts";
 import { restRover, roverState, stepRover } from "./field-rover.ts";
 import { cupSpeed, sockPose, windsock } from "./field-wind.ts";
 import { Glows } from "./glows.ts";
 import { disposeTree } from "./keep.ts";
-import { groundAO } from "./mesher.ts";
+import { groundAO, linear } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
 import type { Glow, Place, PlaceContext, PlaceFrame } from "./place.ts";
 import type { TierName } from "./tiers.ts";
@@ -67,6 +67,10 @@ export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: Build
     realRover: false,
   },
 };
+
+/** The PAPIs' halos at night, red and white. */
+const PAPI_RED = 0xff5a46;
+const PAPI_WHITE = 0xfff3e0;
 
 /** Pools of lamplight on the ground at night (scene x, z of the group, radius, strength): floodlights, doors, the gate. */
 const POOLS: readonly [number, number, number, number][] = [
@@ -136,6 +140,22 @@ export class ProvingGround implements Place {
   /** Posed for rest (reduced motion) and not changed since. */
   private rested = false;
   private lampLevel = 0;
+  /** The view's camera (found from the first frame drawn), for the PAPIs' halos. */
+  private camera: Camera | null = null;
+  /**
+   * The PAPIs' units, in the group's frame (scene x, z), and whether each shows white now: their halos' colours,
+   * kept by the camera's angle above them as their lenses' are (in the lit shader).
+   */
+  private readonly papis = PAPIS.flatMap((p, j) =>
+    p.xs.map((x, i) => ({
+      key: `papi${j * 4 + i}`,
+      x,
+      z: -(p.y - p.dir * 0.4),
+      setting: PAPI_SETTINGS[i]!,
+      white: false,
+      at: [[x, PAPI_LENS.z, -(p.y - p.dir * 0.4), 0.9]] as [number, number, number, number][],
+    })),
+  );
 
   constructor(ctx: PlaceContext) {
     const detail = FIELD_DETAIL[ctx.tier.name];
@@ -183,8 +203,20 @@ export class ProvingGround implements Place {
     const lamp = c.mul(float(0.85).add(this.night.mul(1.6)));
     const lens = c.mul(float(0.5).add(this.night.mul(2.4)));
     const glass = mix(c, vec3(1, 0.77, 0.43).mul(1.75), this.night);
-    lit.colorNode = select(kind.lessThan(0.25), lamp, select(kind.lessThan(0.75), lens, glass));
+    // A PAPI's lens: white seen from above its unit's setting, red from below, by the camera's angle above the lens's
+    // centre (its height in the group, whatever the fragment: the whole lens turns at once), with as sharp an edge
+    // between (a few hundredths of a degree) as a real one's.
+    const setting = kind.sub(PAPI_KIND).mul(Math.PI / 180);
+    const rise = cameraPosition.y.sub(positionWorld.y.sub(positionLocal.y).add(PAPI_LENS.z));
+    const run = max(length(cameraPosition.xz.sub(positionWorld.xz)), 0.01);
+    const white = smoothstep(-0.0006, 0.0006, rise.div(run).sub(tan(setting)));
+    const papi = mix(vec3(...linear(0xff5040)), vec3(...linear(0xfff6e8)), white).mul(float(0.5).add(this.night.mul(2.4)));
+    // (A colour, as the vertex colours' branches are: the select widens it; the typings don't.)
+    lit.colorNode = select(kind.lessThan(0.25), lamp, select(kind.lessThan(0.75), lens, select(kind.lessThan(1.5), glass, papi as unknown as typeof glass)));
     const litMesh = new Mesh(built.light.build(), lit);
+    litMesh.onBeforeRender = (_renderer, _scene, camera) => {
+      if ((camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera) this.camera = camera;
+    };
 
     // The machines: their lights glow at night (navigation lights, the beacon's lenses).
     const machine = new MeshLambertNodeMaterial({ vertexColors: true });
@@ -205,6 +237,8 @@ export class ProvingGround implements Place {
 
     // Halos at night: the runway's lights and the field's lamps, in the group (one draw call, drawn only after dark).
     this.halos = new Glows(this.group, detail.halos);
+    // The PAPIs' first, one a unit (they change colour): on the low tier there are more lights than halos.
+    for (const u of this.papis) this.halos.set(u.key, u.at, PAPI_RED);
     const byColor = new Map<number, [number, number, number, number][]>();
     for (const h of built.halos as Halo[]) {
       const list = byColor.get(h.color) ?? [];
@@ -260,6 +294,7 @@ export class ProvingGround implements Place {
     const dy = Math.max(0, Math.abs(f.focusY - FIELD.y) - FIELD.hy);
     const far = Math.hypot(dx, dy) + f.distance * 0.5;
     this.group.visible = far < this.reach;
+    if (this.group.visible) this.seePapis();
     const night = this.lampLevel;
     if (!f.motion) {
       if (this.rested) return;
@@ -314,6 +349,24 @@ export class ProvingGround implements Place {
   }
 
   /** Every machine where its state says, the movers with them. */
+  /** Each PAPI's halo red or white as its lenses are, by the camera's angle above it (changed only when one turns). */
+  private seePapis(): void {
+    const c = this.camera;
+    if (!c) return;
+    // The camera in the group's frame (the world's origin floats; the group stands at the field's level).
+    const m = this.group.matrixWorld.elements;
+    const cx = c.position.x - m[12]!;
+    const above = c.position.y - m[13]! - PAPI_LENS.z;
+    const cz = c.position.z - m[14]!;
+    for (const u of this.papis) {
+      // A hair of hysteresis (a hundredth of a degree), so a camera resting on a unit's edge doesn't flicker its halo.
+      const white = papiWhite(u.setting + (u.white ? -0.01 : 0.01), Math.hypot(cx - u.x, cz - u.z), above);
+      if (white === u.white) continue;
+      u.white = white;
+      this.halos.set(u.key, u.at, white ? PAPI_WHITE : PAPI_RED);
+    }
+  }
+
   private pose(night: number): void {
     const m = this.machines;
     const engine = this.plane.power > 0.03;

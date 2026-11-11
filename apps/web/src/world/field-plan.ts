@@ -92,6 +92,16 @@ export const PAPIS = [
   { dir: -1, y: RUNWAY.y + RUNWAY.hy - 20, xs: [-150, -148, -146, -144] },
   { dir: 1, y: RUNWAY.y - RUNWAY.hy + 20, xs: [-170, -172, -174, -176] },
 ] as const;
+/**
+ * Each PAPI unit's setting (degrees above the horizontal), from the one nearest the runway: a unit shows white to an
+ * eye above its setting and red to one below, so on the 3° glide path the two nearest are red and the two farther
+ * white; a little high, three white; high, all four; low, all four red.
+ */
+export const PAPI_SETTINGS = [3.5, 3.17, 2.83, 2.5] as const;
+/** The PAPIs' lenses: their height above the field, and how far ahead of each unit's centre they sit (towards the approach). */
+export const PAPI_LENS = { z: 0.66, ahead: 0.33 } as const;
+/** Whether a PAPI unit (its `setting`, degrees) shows white to an eye `above` metres higher than its lenses and `along` metres from it over the ground. */
+export const papiWhite = (setting: number, along: number, above: number): boolean => above > along * Math.tan((setting * Math.PI) / 180);
 /** Lightning masts at the launch pad's south corners, just off it. */
 export const LIGHTNING_MASTS = [
   { x: -113.2, y: -109.8 },
@@ -217,6 +227,36 @@ export const FIELD_OBSTACLES: { x: number; y: number; r: number }[] = [
 const box = (x: number, y: number, hx: number, hy: number, top?: number, yaw?: number): Collider => ({ kind: "box", x, y, hx, hy, ...(yaw === undefined ? {} : { yaw }), ...(top === undefined ? {} : { top }) });
 const circle = (x: number, y: number, r: number, top?: number): Collider => ({ kind: "circle", x, y, r, ...(top === undefined ? {} : { top }) });
 
+/** The rover course's bridge (field-rover.ts drives it, field-build.ts draws it): from (x, y) along `heading`, an earth ramp up, a plank deck, a ramp down. */
+export const BRIDGE = { x: -116, y: 22, heading: Math.PI / 2, half: 1.65, up: 3.6, deck: 5.3, down: 3.6, height: 0.9 };
+
+/**
+ * The bridge as walkers meet it: each earth ramp in nine shallow steps (a foot on it is never 5 cm off its slope),
+ * the deck, and the kerbs along the deck's sides (higher than a walker on it steps over without standing on them).
+ */
+function bridge(): Collider[] {
+  const B = BRIDGE;
+  const c = Math.cos(B.heading);
+  const s = Math.sin(B.heading);
+  const at = (u: number, v: number): [number, number] => [B.x + c * u - s * v, B.y + s * u + c * v];
+  const out: Collider[] = [];
+  const steps = 9;
+  for (const [u0, length, rising] of [[0, B.up, true], [B.up + B.deck, B.down, false]] as const) {
+    for (let k = 0; k < steps; k++) {
+      const [x, y] = at(u0 + ((k + 0.5) * length) / steps, 0);
+      const top = (B.height * (rising ? k + 0.5 : steps - k - 0.5)) / steps;
+      out.push(box(x, y, length / steps / 2, B.half, top, B.heading));
+    }
+  }
+  const [dx, dy] = at(B.up + B.deck / 2, 0);
+  out.push(box(dx, dy, B.deck / 2, B.half, B.height, B.heading));
+  for (const v of [-1, 1]) {
+    const [kx, ky] = at(B.up + B.deck / 2, v * (B.half + 0.12));
+    out.push(box(kx, ky, B.deck / 2 + 0.1, 0.08, B.height + 0.16, B.heading));
+  }
+  return out;
+}
+
 /** What nobody walks through (walls, masts, parked plant, the course's obstacles): precise boxes and circles. */
 export const FIELD_COLLIDERS: Collider[] = (() => {
   const out: Collider[] = [];
@@ -230,8 +270,26 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   // (The front's jambs with the door leaves stacked open in front of them.)
   out.push(box(h.x + h.hx + 0.05, h.y + h.door + jamb + 0.15, 0.45, jamb + 0.2, h.eaves));
   out.push(box(h.x + h.hx + 0.05, h.y - h.door - jamb - 0.15, 0.45, jamb + 0.2, h.eaves));
-  // The aircraft inside, its wings across the hangar.
-  out.push(box(HANGAR_AIRCRAFT.x - 1.45, HANGAR_AIRCRAFT.y, 3.95, 5.3, 3.1));
+  // Inside, a floor he can walk (field-build.ts draws it): the aircraft, nose to the door, as it's built
+  // (aircraftParts: its fuselage, its high wing with the struts under it, lower than his head, its tailplane and fin,
+  // its main wheels), the engine on its stand and the tool chest, stepladder and trolley by it; along the back wall
+  // the drums, the workbench and the shelving.
+  const a = HANGAR_AIRCRAFT;
+  const floor = (x: number, y: number, hx: number, hy: number, top: number, bottom = 0): Collider => ({ ...box(x, y, hx, hy, top), ...(bottom > 0 ? { bottom } : {}) });
+  out.push(
+    floor(a.x - 1.55, a.y, 3.8, 0.6, 2.2),
+    floor(a.x - 0.02, a.y, 0.83, 5.25, 2.3, 0.9),
+    floor(a.x - 4.95, a.y, 0.42, 1.68, 1.72, 1.5),
+    floor(a.x - 4.66, a.y, 0.48, 0.08, 3.12, 1.5),
+    floor(a.x, a.y + 1.12, 0.4, 0.3, 0.95),
+    floor(a.x, a.y - 1.12, 0.4, 0.3, 0.95),
+    floor(a.x + 2.6, a.y - 4.6, 0.4, 0.6, 1.25),
+    floor(a.x + 2.4, a.y - 2.0, 0.35, 0.35, 1.75),
+    floor(a.x + 2.6, a.y + 2.4, 0.45, 0.35, 0.85),
+    circle(h.x - h.hx + t + 0.75, h.y - h.hy + t + 0.75, 0.85, 0.95),
+    floor(h.x - h.hx + t + 0.4, h.y - h.hy + 4.2, 0.45, 1.7, 1.0),
+    floor(h.x - h.hx + t + 0.4, h.y + h.hy - t - 1.8, 0.4, 1.6, 3.1),
+  );
   // The tower (its stair on the east side) and the blockhouse.
   out.push(box(TOWER.x, TOWER.y, TOWER.half, TOWER.half, TOWER.roof));
   out.push(box(TOWER.x + TOWER.half + 0.7, TOWER.y, 0.7, TOWER.half, 3));
@@ -260,7 +318,7 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   out.push(box(SIGN.x, SIGN.y, 0.2, SIGN.half, SIGN.top));
   // The rover course: the start gate's posts, the bridge, the rock garden, the sand pit's frame, the slalom's poles.
   for (const side of [-1, 1]) out.push(circle(START_GATE.x, START_GATE.y + side * START_GATE.half, 0.22, START_GATE.height));
-  out.push(box(-116, 28.25, 1.7, 6.3, 0.9));
+  out.push(...bridge());
   out.push(circle(-124.2, 38.5, 3.2, 0.6));
   out.push(box(-131.3, 38.5, 2.9, 2, 0.25));
   for (const p of SLALOM_POLES) out.push(circle(p.x, p.y, 0.3, 1.6));

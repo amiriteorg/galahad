@@ -91,6 +91,28 @@ describe("footwork", () => {
     }
   });
 
+  test("up a flight of stairs, a foot lands on a tread, arcs over the next one's edge and never pops up it", () => {
+    // Treads 0.454 m deep, 0.35 m up each (the keep's).
+    const stairs = (x: number) => Math.max(0, Math.floor(x / 0.454) + 1) * 0.35;
+    const feet = new FootPlanner(rests);
+    feet.place(0, 0, 0, stairs);
+    const z = [feet.z[0]!, feet.z[1]!];
+    let x = 0;
+    let most = 0;
+    for (let i = 0; i < 240; i++) {
+      x += 0.94 / 60;
+      feet.step(1 / 60, x, 0, 0, 0.94, 0, 0.91, stairs);
+      for (let f = 0; f < 2; f++) {
+        // Never inside a tread, a planted foot on one, and no jump up an edge.
+        expect(feet.z[f]!).toBeGreaterThanOrEqual(stairs(feet.x[f]!) - 1e-9);
+        if (feet.planted[f]) expect(feet.z[f]!).toBeCloseTo(stairs(feet.x[f]!), 9);
+        most = Math.max(most, Math.abs(feet.z[f]! - z[f]!));
+        z[f] = feet.z[f]!;
+      }
+    }
+    expect(most).toBeLessThan(0.08);
+  });
+
   test("a teleport sets the feet down under the body at once", () => {
     const feet = new FootPlanner(rests);
     feet.place(0, 0, 0, flat);

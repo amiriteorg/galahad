@@ -1,7 +1,8 @@
-import { attribute, uniform } from "three/tsl";
+import { attribute, float, uniform, vertexColor } from "three/tsl";
 import { BoxGeometry, type BufferGeometry, CircleGeometry, Color, CylinderGeometry, Euler, Group, IcosahedronGeometry, type Matrix4, Mesh, MeshBasicMaterial, MeshLambertNodeMaterial, Quaternion, type SkinnedMesh, TorusGeometry, Vector3 } from "three/webgpu";
 import { BUILDS, type Mover, type Solids } from "./collide.ts";
 import { headingToSceneYaw } from "./coords.ts";
+import type { indoorLight } from "./hall-materials.ts";
 import { FootPlanner } from "./ik.ts";
 import { at, bevelBox, Mesher } from "./mesher.ts";
 import { angleDiff, turnTowards } from "./path.ts";
@@ -70,6 +71,14 @@ export class RobotDog {
   private readonly mesh: SkinnedMesh;
   private readonly eyeColor = uniform(new Color(0xffb547));
   private readonly material = new MeshLambertNodeMaterial({ vertexColors: true });
+  /** 0 outdoors, 1 in the workshop hall: then it's lit as the hall lights itself (lightIndoors; as knight.ts' is). */
+  readonly indoors = uniform(0);
+
+  /** Lit, while `indoors`, as the hall lights its own interior (`irradiance`: hall.ts' light()), not by the scene's lights. Before the first frame. */
+  lightIndoors(irradiance: ReturnType<typeof indoorLight>): void {
+    this.material.colorNode = vertexColor().mul(float(1).sub(this.indoors));
+    this.material.emissiveNode = this.eyeColor.mul(attribute("glow", "float")).mul(2.2).add(vertexColor().mul(irradiance.mul(this.indoors).mul(1 / Math.PI)));
+  }
   private readonly shadow: Mesh;
   /** Where it is (its place among the solids too: x, y and its radius). */
   private readonly spring: Spring & { r: number } = { x: 0, y: -8, vx: 0, vy: 0, r: BUILDS.dog.r };
