@@ -1,4 +1,4 @@
-import { attribute, float, length, max, mix, positionLocal, select, sin, smoothstep, uniform, vec2, vec3, vertexColor } from "three/tsl";
+import { attribute, cameraPosition, float, length, max, mix, positionLocal, positionWorld, select, sin, smoothstep, uniform, vec2, vec3, vertexColor } from "three/tsl";
 import { Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node } from "three/webgpu";
 import type { Collider } from "./colliders.ts";
 import { type BuildDetail, buildStatic, type Halo } from "./field-build.ts";
@@ -190,7 +190,8 @@ export class ProvingGround implements Place {
     machine.colorNode = vertexColor().mul(wetDarken(0.4));
     machine.emissiveNode = wetSheen(0.6).add(vertexColor().mul(attribute("glow", "float")).mul(this.lights).mul(1.7));
     const beams = beamMaterial();
-    beams.colorNode = vertexColor().mul(this.beamStrength);
+    // (Faded out close to the camera: a beam is a glow in the air, never a sheet across the view.)
+    beams.colorNode = vertexColor().mul(this.beamStrength).mul(smoothstep(3, 14, length(cameraPosition.sub(positionWorld))));
     this.machines = new Machines(detail.machines, machine, beams);
     this.machineMaterial = machine;
     this.machines.mesh.castShadow = ctx.shadows;
@@ -325,7 +326,7 @@ export class ProvingGround implements Place {
     m.poseBeacon(this.beacon);
     m.poseBarrier(ease(this.barrier));
     this.lights.value = night;
-    this.beamStrength.value = night * 0.9;
+    this.beamStrength.value = night * 0.6;
     this.machines.beams.visible = night > 0.05;
     const [a, r, q, l] = this.movers as [Mover, Mover, Mover, Mover];
     a.x = this.plane.x;
