@@ -9,7 +9,7 @@ import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { WorldReport } from "./world-input.ts";
-import { BoardDrawInput, BoardEraseInput, BoardWriteInput } from "./board-input.ts";
+import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -233,6 +233,12 @@ export const routes = {
   boardWrite: { method: "POST", path: "/api/board/write", scope: "chat", input: BoardWriteInput },
   boardErase: { method: "POST", path: "/api/board/erase", scope: "chat", input: BoardEraseInput },
   boardClear: { method: "POST", path: "/api/board/clear", scope: "fleet:admin", input: z.strictObject({}) },
+  /** Every version is kept (clearing and erasing destroy nothing): read them, restore one (yours), forget them (yours, fleet:admin). */
+  boardHistory: { method: "POST", path: "/api/board/history", scope: "mind:read", input: BoardHistoryInput },
+  boardVersion: { method: "POST", path: "/api/board/version", scope: "mind:read", input: BoardVersionInput },
+  boardVersionPicture: { method: "POST", path: "/api/board/version/picture", scope: "mind:read", input: BoardVersionInput },
+  boardRestore: { method: "POST", path: "/api/board/restore", scope: "chat", input: BoardVersionInput },
+  boardForget: { method: "POST", path: "/api/board/history/forget", scope: "fleet:admin", input: z.strictObject({}) },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

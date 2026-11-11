@@ -105,12 +105,22 @@ export type BoardEraseInput = z.infer<typeof BoardEraseInput>;
 
 /** Who wrote an item, where it is, its colour and when. */
 const placed = { id: ItemId, by: z.string().min(1).max(64), x: Finite, y: Finite, w: Finite, h: Finite, color: ChalkSchema, at: Finite };
-const ItemStored = z.discriminatedUnion("kind", [
+export const ItemStored = z.discriminatedUnion("kind", [
   z.strictObject({ ...shapes.text, ...placed }),
   z.strictObject({ ...shapes.note, ...placed }),
   z.strictObject({ ...shapes.equation, ...placed }),
   z.strictObject({ ...shapes.chart, ...placed }).superRefine(chartIssues),
 ]);
+
+/** A stroke as the node keeps it. */
+export const StrokeStored = strokeChecks(z.strictObject({ ...strokeShape, at: Finite }));
+
+/** The history's pages: newest first, before a version. */
+export const BoardHistoryInput = z.strictObject({
+  before: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+});
+export const BoardVersionInput = z.strictObject({ version: z.number().int().min(0) });
 
 /** The file a board is kept in on the node: what was written, checked again whenever it's read. */
 export const BoardFile = z.strictObject({
@@ -118,7 +128,7 @@ export const BoardFile = z.strictObject({
   version: z.number().int().min(0),
   updatedAt: Finite,
   items: z.array(ItemStored).max(L.items),
-  strokes: z.array(strokeChecks(z.strictObject({ ...strokeShape, at: Finite }))).max(L.strokes),
+  strokes: z.array(StrokeStored).max(L.strokes),
   snapshot: z
     .strictObject({ at: Finite, version: z.number().int().min(0), width: z.number().int(), height: z.number().int(), bytes: z.number().int() })
     .nullable(),

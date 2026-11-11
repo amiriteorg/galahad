@@ -215,8 +215,15 @@ export class Chalkboard implements Place {
     return out;
   }
 
+  /** What the face shows now: painted again only when the board or what's held back changes. */
+  private shown: { board: BoardView | null; hidden: string } = { board: null, hidden: "" };
+
   private paint(): void {
-    paintBoard(this.canvas, this.scratch, this.board, { hide: this.hidden() });
+    const hide = this.hidden();
+    const key = [...hide].join(",");
+    if (this.shown.board === this.board && this.shown.hidden === key) return;
+    this.shown = { board: this.board, hidden: key };
+    paintBoard(this.canvas, this.scratch, this.board, { hide });
     this.texture.needsUpdate = true;
   }
 

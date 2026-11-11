@@ -77,6 +77,7 @@ import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
 import { BankError, type BankService } from "./bank/service.ts";
 import { BoardError, type BoardStore } from "./board.ts";
+import { boardVersionForArchive } from "./board-history.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
@@ -533,6 +534,8 @@ export function createApp(ctx: AppContext) {
   function ownerOnly(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "chats are yours alone");
   }
+  /** Your device by name, for the board's history ("a terminal" at the CLI). */
+  const deviceName = (p: Principal): string | undefined => (!isOwner(p) ? undefined : p.kind === "admin" ? `a terminal on ${ctx.nodeName}` : ctx.store.device(p.device)?.name);
   /** A chat where Galahad read the bank is for devices that may read the bank. */
   const visibleTo = (c: ConversationSummary, p: Principal) => !c.bank || p.scopes.includes("bank:read");
 
@@ -979,7 +982,7 @@ export function createApp(ctx: AppContext) {
     },
     boardDraw: (input, p) => {
       if (!isOwner(p)) throw new HttpError(403, "only the owner draws on the board");
-      return ctx.board.draw(input.strokes, input.snapshot ? new Uint8Array(Buffer.from(input.snapshot, "base64")) : undefined);
+      return ctx.board.draw(input.strokes, input.snapshot ? new Uint8Array(Buffer.from(input.snapshot, "base64")) : undefined, deviceName(p));
     },
     boardWrite: (input, p) => {
       const owner = isOwner(p);
@@ -987,13 +990,37 @@ export function createApp(ctx: AppContext) {
       // Every agent that may read the mind reads the board: nothing credential-shaped goes on it.
       const item = input.item as Record<string, unknown> & { series?: { name: string }[] };
       guardAgainstSecrets(...[item.text, item.title, item.xLabel, item.yLabel, ...(item.series ?? []).map((s) => s.name)].filter((t): t is string => typeof t === "string"));
-      return { item: ctx.board.write(input, owner ? "owner" : p.label!, owner) };
+      return { item: ctx.board.write(input, owner ? "owner" : p.label!, owner, deviceName(p)) };
     },
-    boardErase: (input, p) => ({ erased: ctx.board.erase(input, { owner: isOwner(p), by: p.label ?? p.device }) }),
+    boardErase: (input, p) => ({ erased: ctx.board.erase(input, { owner: isOwner(p), by: p.label ?? p.device, device: deviceName(p) }) }),
     boardClear: (_input, p) => {
       if (!isOwner(p)) throw new HttpError(403, "only the owner clears the board");
-      ctx.board.clear();
+      ctx.board.clear(deviceName(p));
       return { version: ctx.board.version };
+    },
+    // Its history: every version kept; read by what may read the board, restored and forgotten only by you.
+    boardHistory: (input) => ctx.board.history.before(input.before ?? null, input.limit ?? 50),
+    boardVersion: (input) => {
+      const found = boardVersionForArchive(ctx.board, input.version);
+      if (!found) throw new HttpError(404, `the board's history has no version ${input.version}`);
+      const { image, ...view } = found;
+      return view;
+    },
+    boardVersionPicture: (input) => {
+      const picture = ctx.board.history.picture(input.version);
+      if (!picture) throw new HttpError(404, `there's no picture of the board at version ${input.version}`);
+      return new Response(new Uint8Array(picture.png), {
+        headers: { "content-type": "image/png", "x-board-picture-of": String(picture.shows), "cache-control": "no-store", "content-security-policy": "sandbox; default-src 'none'", ...SECURITY_HEADERS },
+      });
+    },
+    boardRestore: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner restores the board");
+      return ctx.board.restore(input.version, deviceName(p));
+    },
+    boardForget: (_input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only the owner forgets the board's history");
+      ctx.board.forgetHistory(deviceName(p));
+      return { versions: ctx.board.history.size };
     },
     setProject: (input) => {
       guardAgainstSecrets(input.name, input.instructions ?? "", input.repo ?? "");

@@ -32,7 +32,7 @@ describe("the board's store", () => {
     board.draw([strokeAt(1)]);
     const item = board.write({ item: { kind: "text", text: "Hello" } }, "galahad");
     expect(board.version).toBe(2);
-    expect(readdirSync(d).sort()).toEqual(["main.json"]);
+    expect(readdirSync(d).sort()).toEqual(["main.history", "main.json"]);
     // A fresh store reads the same board back; points kept to a tenth.
     const again = new BoardStore({ dir: d });
     expect(again.view().items).toEqual([item]);

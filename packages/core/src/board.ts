@@ -112,10 +112,40 @@ export interface BoardView {
 /** What changed, as the world's stream says it: enough for a page to fetch the board again, and for the world to show him writing where the item went. */
 export interface BoardChange {
   version: number;
-  change: "draw" | "write" | "erase" | "clear";
+  change: "draw" | "write" | "erase" | "clear" | "restore";
   by: "owner" | "agent";
   /** Where on the board (board units), when it's one place: an item written there. */
   region: { x: number; y: number; w: number; h: number } | null;
+}
+
+/*
+ * The board's history: every version, kept (append-only, on the node). Clearing
+ * or erasing never destroys what was there; only the owner forgets history.
+ */
+
+/** What made a version: "start" is where the kept history begins (the board as it stood then). */
+export type BoardHistoryChange = "start" | "draw" | "write" | "erase" | "clear" | "restore";
+
+export interface BoardVersionInfo {
+  version: number;
+  at: number;
+  /** "owner", or the agent that changed it ("galahad", an agent's label). */
+  by: string;
+  /** The owner's device, when it was the owner. */
+  device: string | null;
+  change: BoardHistoryChange;
+  /** In a line: "drew 3 strokes", "wrote a note: \"Plan\"", "cleared the board". */
+  summary: string;
+  /** The version the nearest kept picture of the board shows (at or before this one, with nothing wiped in between), or null. */
+  picture: number | null;
+}
+
+/** One version as it stood: its items and strokes, and the whole of it in words. */
+export interface BoardVersionView {
+  info: BoardVersionInfo;
+  items: BoardItem[];
+  strokes: BoardStroke[];
+  text: string;
 }
 
 export const emptyBoard = (): BoardView => ({ version: 0, updatedAt: 0, items: [], strokes: [], snapshot: null });
