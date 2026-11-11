@@ -70,6 +70,8 @@ Event kinds today:
 |---|---|
 | `fleet.genesis` | Founds the fleet |
 | `device.enrolled` / `device.revoked` | Adds or removes a device |
+| `device.scoped` | Changes what a paired client may do (full nodes are always owner-equivalent) |
+| `fleet.chained` | A fleet founded before hash chains adopts them once: exactly the events it lists stay valid unchained, no others ever |
 | `node.profile` | A node's endpoint and capabilities, re-published only when they change |
 | `vault.key` / `vault.grant` | Vault keys, sealed to each full node |
 | `secret.set` / `secret.deleted` | Encrypted secrets (LWW by name) |
@@ -81,6 +83,7 @@ Event kinds today:
 | `loop.set` / `loop.removed` / `loop.ran` | Loops (LWW by name) and each run, recorded by the node that ran it |
 | `notice.raised` / `notice.cleared` / `notice.dismissed` | What needs you (LWW by key) |
 | `connector.set` / `connector.removed` | Connector manifests (LWW by id) |
+| `project.set` / `project.removed` | Projects (LWW by id): a name, your instructions, an optional repository (§10¼) |
 | `action.requested` / `action.decided` / `action.done` | The outbox: an action the oath asks about, your answer (the first one stands), the receipt (once, from the node that asked) |
 | `investigation.registered` / `investigation.concluded` | A pre-registration (with its digest, checked by every replica) recorded before anything ran, and its conclusion, once, by the node that ran it |
 | `trial.scored` | A graded trial: problem, seed, each answer against the exact one, the score, the revision and models that ran it. Every replica checks the verdicts and the score follow from the numbers |
@@ -116,7 +119,7 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
   | Node | Ed25519 key | Link and API |
   | Client (PWA) | Non-extractable WebCrypto P-256 key, verified with `lowS: false` because WebCrypto doesn't normalize signatures | API only |
   | CLI | Local admin token | Loopback listener only |
-- **Per-method authorization:** authenticating a request doesn't authorize every route. Each route names exactly one scope (`mind:read`, `mind:write`, `chat`, `vault:read`, `vault:write`, `brain:write`, `gateway:mint`, `fleet:admin`), and the server checks it when the route executes.
+- **Per-method authorization:** authenticating a request doesn't authorize every route. Each route names exactly one scope (`mind:read`, `mind:write`, `chat`, `vault:read`, `vault:write`, `brain:write`, `gateway:mint`, `fleet:admin`, `sandbox`, `connect`, `bank:read`), and the server checks it when the route executes.
 - **The PWA** is served over HTTPS by `tailscale serve`, with a strict CSP (`script-src 'self'`, `frame-ancestors 'none'` and so on).
 - 🔜 **v1:** embedded peer-to-peer QUIC (Iroh) with relay fallback, so no VPN app is needed.
 
@@ -268,7 +271,7 @@ Network reachability was verified on ultra before it was built. From an internal
 
 | Property | How |
 |---|---|
-| **Least privilege** | Arm tokens hold `mind:read`, `mind:write`, `sandbox`, `vault:read` (names only) and `chat`. `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write` are refused at mint time. The token works on loopback only, is stored as a hash and is revoked instantly with `galahad arms revoke`. |
+| **Least privilege** | Arm tokens hold `mind:read`, `mind:write`, `sandbox`, `vault:read` (names only), `chat` and `connect`. `vault:write`, `fleet:admin`, `gateway:mint` and `brain:write` are refused at mint time. The token works on loopback only, is stored as a hash and is revoked instantly with `galahad arms revoke`. |
 | **Provenance** | Memories written through an arm are `agent`, or `untrusted` when they come from the web, files or other people. They're never `owner`, and the arm's label is recorded as their source. |
 | **Contained** | Every sandbox an arm creates belongs to the quest `arm.<label>` and is always ephemeral. The arm can execute in and clean up only those. That holds across nodes too: forwarding relays the quest, never your approval. |
 | **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |

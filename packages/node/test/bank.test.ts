@@ -273,6 +273,22 @@ describe("what agents read", () => {
     expect(s.bank.data()).toHaveLength(calls + 1);
   });
 
+  test("a stale copy of the same range doesn't hide a fresher, wider one: still no bank call", async () => {
+    const tx = (day: string, name: string) => ({ entry_reference: name, booking_date: day, transaction_amount: { currency: "DKK", amount: "1.00" }, credit_debit_indicator: "DBIT", creditor: { name } });
+    const s = await connected({ pages: [[tx("2026-10-02", "early"), tx("2026-10-20", "middle")]] });
+    // October's last weeks, fetched and cached as their own range.
+    await s.service.transactions({ account: ACCOUNT, from: "2026-10-10", to: "2026-10-31" });
+    // Seven hours on (the cache lasts six), a wider range is fetched.
+    s.advance(7 * 60 * 60_000);
+    await s.service.transactions({ account: ACCOUNT, from: "2026-10-01", to: "2026-11-01" });
+    const calls = s.bank.data().length;
+    // The same weeks again: their own copy is stale, but the wider one is fresh and covers them.
+    const again = (await s.service.transactions({ account: ACCOUNT, from: "2026-10-10", to: "2026-10-31" })) as any;
+    expect(again).toMatchObject({ source: "cache" });
+    expect(again.data.map((t: any) => t.counterparty)).toEqual(["middle"]);
+    expect(s.bank.data()).toHaveLength(calls);
+  });
+
   test("a 429 is never retried: a 6-hour pause, the cache meanwhile", async () => {
     let calls = 0;
     const s = await connected({ balances: () => (++calls === 1 ? Response.json({ balances: [] }) : Response.json({ error: "ASPSP_RATE_LIMIT_EXCEEDED" }, { status: 429 })) });

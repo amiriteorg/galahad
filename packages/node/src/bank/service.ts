@@ -354,7 +354,11 @@ export class BankService {
     if (input.from > isoDay(this.now())) throw new BankError(400, "from is in the future");
     if ((to - from) / DAY_MS > MAX_RANGE_DAYS) throw new BankError(400, `at most ${MAX_RANGE_DAYS} days at a time`);
     const key = `transactions:${input.account}:${input.from}:${input.to}`;
-    const hit = this.cached<TransactionOut[]>(key) ?? this.covering(input.account, input.from, input.to);
+    // The freshest of what's cached: this exact range, or a wider one that covers it (a stale
+    // copy of the exact range must not hide a fresh wider one and cost a fetch from the bank).
+    const exact = this.cached<TransactionOut[]>(key);
+    const wider = this.covering(input.account, input.from, input.to);
+    const hit = exact && (!wider || exact.at >= wider.at) ? exact : (wider ?? exact);
     if (hit && !input.refresh && this.now() - hit.at < TRANSACTIONS_TTL_MS) {
       this.audit("bank_transactions", input.account, "cache");
       return this.wrap(hit.body, "cache", hit.at);

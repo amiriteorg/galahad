@@ -147,6 +147,8 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
     method: request.method,
     headers,
     body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    // The key is pinned to this provider's origin: it never chases a Location header to another host.
+    redirect: "manual",
     signal: request.signal,
   });
   const responseHeaders = new Headers();

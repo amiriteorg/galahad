@@ -7,8 +7,10 @@ import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type Fleet
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
+import { artifactTarget } from "./artifacts.ts";
 import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
+import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
@@ -30,7 +32,8 @@ Set up
   join <invite> [--name server] [--port 7777]              join a fleet with an invite
   serve                                                    run this node (daemon)
   expose [--https 443]                                     publish the PWA over HTTPS on your tailnet (tailscale serve)
-  invite [--client] [--origin https://host.ts.net]         add a device (prints an invite, then asks you to approve)
+  invite [--client] [--origin https://host.ts.net] [--no-wait]
+                                                           add a device (prints an invite, then asks you to approve)
   pairings | approve <invite> <device> | reject <invite> <device>
   revoke <device> [--reason text]
   grant <device> <scope…>                                   give a paired phone/browser more permissions (e.g. sandbox)
@@ -129,7 +132,8 @@ Agents (MCP)
 Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
 
-Options: --home <dir> (or GALAHAD_HOME), GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>`;
+Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|file and --advertise <tailnet ip>
+Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>`;
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
@@ -488,8 +492,11 @@ Next:
     case "revoke": {
       if (!sub) fail("usage: galahad revoke <device>");
       const fleet = await new Admin(home).call<FleetView>("fleet");
-      const target = fleet.devices.find((d) => d.id === sub || d.name === sub || d.id.startsWith(sub));
-      if (!target) fail(`no device matches ${sub}`);
+      const matches = activeDevicesMatching(fleet.devices, sub);
+      if (!matches.length) fail(`no active device matches ${sub}`);
+      // Never guess which device to cut off: several matches must be told apart by id.
+      if (matches.length > 1) fail(`"${sub}" matches ${matches.length} devices; name one by its id:\n${matches.map((d) => `  ${d.id.slice(0, 12)}  ${d.name} (${d.kind})`).join("\n")}`);
+      const target = matches[0]!;
       if (!confirm(`Revoke ${target.name} (${target.kind})? This rotates the vault.`)) return;
       const result = await new Admin(home).call("revokeDevice", { device: target.id, reason: str("reason") });
       console.log(`Revoked ${target.name}.`);
@@ -1193,7 +1200,7 @@ Evidence: galahad artifact ${i!.artifact}`));
         }
         process.exit(code);
       }
-      fail("usage: galahad sandbox run|ls|exec|rm|build — see `galahad help`");
+      fail("usage: galahad sandbox run|ls|exec|save|rm|build — see `galahad help`");
     }
 
     case "artifacts":
@@ -1223,12 +1230,13 @@ Evidence: galahad artifact ${i!.artifact}`));
       if (out) {
         const wanted = file ? artifact!.files.filter((f) => f.path === file) : artifact!.files;
         for (const f of wanted) {
+          // The record names the file; it never decides where on this machine it's written.
+          const target = artifactTarget(out, f.path);
           const { bytes } = await admin.bytes("artifactFile", { id, path: f.path });
-          const target = join(out, ...f.path.split("/"));
-          mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, bytes);
           const sha = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
           if (sha !== f.sha256) fail(`${f.path}: its SHA-256 doesn't match what was recorded`);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, bytes);
         }
         console.log(`Saved ${wanted.length} file(s) to ${out}, each checked against its recorded SHA-256.${artifact!.count > artifact!.files.length ? dim(` (${artifact!.count - artifact!.files.length} more aren't listed in the mind; fetch them by name)`) : ""}`);
         return;

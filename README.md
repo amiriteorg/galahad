@@ -6,7 +6,7 @@
 
 ## Status: M0 built
 
-Working and tested today (58 tests, including property tests and a two-node end-to-end test over HTTP):
+Working and tested today (`bun run check` runs the whole suite, including property tests and a two-node end-to-end test over HTTP):
 
 - **One mind across nodes.** A signed, content-addressed event log syncs over your tailnet. State is a pure function of the event set: any delivery order gives an identical digest, and rebuilding from the log gives the same state.
 - **Secure pairing.** One-time invites, a 6-digit confirmation code on both screens, and a lock on any invite that gets used twice.
@@ -17,7 +17,7 @@ Working and tested today (58 tests, including property tests and a two-node end-
 - **Quests.** `galahad do "<goal>"` plans, works in a fresh sandbox one shell command at a time, and is checked by an independent reviewer model before it counts as done. Works with any model on the roster.
 - **Placement.** Work goes to the body that suits it: long and untrusted work to the always-on sandbox server, interactive work to the laptop you're on.
 - **The oath gate.** Creating is free; deleting and outward-facing actions ask first.
-- **PWA.** Pair a phone or browser with a non-extractable WebCrypto key and the 6-digit code. From there you can chat, search memory, add keys in a password field (never shown back), answer secret requests, approve devices and edit the roster. Every request is signed, each route has its own scope, and the CSP is strict. *Builds and is served correctly, but hasn't been run in a real browser yet; your first run is its first real test.*
+- **PWA.** Pair a phone or browser with a non-extractable WebCrypto key and the 6-digit code. From there you can chat, search memory, add keys in a password field (never shown back), answer secret requests, approve devices and edit the roster. Every request is signed, each route has its own scope, and the CSP is strict. *It has paired and run in a real browser (headless Edge, November 2026).*
 
 ## Quick start
 

@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { type ArtifactView, b64u, newNodeIdentity, type RouteName, routes } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore } from "@galahad/mind";
 import type { ExtractLimits, ExtractResult } from "@galahad/sandbox";
-import { ArtifactStore, contentTypeOf } from "../src/artifacts.ts";
+import { ArtifactStore, artifactTarget, contentTypeOf } from "../src/artifacts.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -241,5 +241,38 @@ describe("artifacts over the API", () => {
     const response = await send(home.adminToken(), "saveArtifact", { sandbox: "0123456789" });
     expect(response.status).toBe(424);
     expect((await send(home.adminToken(), "saveArtifact", { sandbox: "0123456789", path: "/work/../etc" })).status).toBe(400);
+  });
+});
+
+/*
+ * Fetching an artifact (`galahad artifact <id> --out dir`) writes files named by the mind's
+ * record, which another node signed. A stolen node key must not turn "fetch them all"
+ * into a write anywhere on the machine that fetches.
+ */
+describe("where a fetched file lands", () => {
+  const out = join(tmpdir(), "galahad-fetch-out");
+  const root = resolve(out);
+
+  test("inside the directory you chose, folders and all", () => {
+    expect(artifactTarget(out, "report.md")).toBe(join(root, "report.md"));
+    expect(artifactTarget(out, "plots/run 1/stress.png")).toBe(join(root, "plots", "run 1", "stress.png"));
+  });
+
+  test("a path that climbs out, is absolute or isn't a path is refused", () => {
+    for (const path of ["../outside.txt", "a/../../outside.txt", "..", "/etc/cron.d/job", "", "a//b", "./a", "a/./b", "a/"]) {
+      expect(() => artifactTarget(out, path)).toThrow("not a path inside the artifact");
+    }
+  });
+
+  test("whatever this system's separators and drives are, nothing lands outside", () => {
+    for (const path of ["..\\..\\outside.txt", "C:\\Windows\\evil.dll", "C:evil.txt", "\\\\server\\share\\x", "a/..\\..\\..\\x"]) {
+      let target: string | null = null;
+      try {
+        target = artifactTarget(out, path);
+      } catch {
+        continue; // refused
+      }
+      expect(target.startsWith(root + sep)).toBe(true);
+    }
   });
 });

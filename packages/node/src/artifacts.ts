@@ -57,6 +57,23 @@ export function contentTypeOf(path: string): { type: string; inline: boolean } {
   return { type: "application/octet-stream", inline: false };
 }
 
+/**
+ * Where one fetched file of an artifact lands under `out`. The paths come from the mind's
+ * record, which another node signed, so they're checked like anything from outside: a path
+ * that climbs out, is absolute or names a drive is refused, and a fetch never writes
+ * outside the directory you chose.
+ */
+export function artifactTarget(out: string, path: string): string {
+  const refuse = () => new ArtifactError(400, `refusing ${JSON.stringify(path.slice(0, 200))}: not a path inside the artifact`);
+  const parts = path.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) throw refuse();
+  const root = resolve(out);
+  const target = resolve(root, ...parts);
+  // Whatever this system reads as a separator or a drive, the result stays under the root.
+  if (!target.startsWith(root + sep)) throw refuse();
+  return target;
+}
+
 export class ArtifactStore {
   private readonly now: () => number;
 
