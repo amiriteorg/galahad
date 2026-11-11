@@ -13,6 +13,9 @@ import { BOX, CIRCLE, SIGHT, type Solids, VIEW, WALK } from "./collide.ts";
  * on; the walkers' are rewritten every frame (one buffer, no allocation).
  */
 
+/** True when the page asks for the debug view: `?colliders=1` (or `on`, `true`) in its query. */
+export const wantsColliders = (search: string): boolean => /[?&]colliders=(1|on|true)(&|$)/.test(search);
+
 /** Look this far round the focus. */
 const REACH = 70;
 /** Segments round a circle. */
@@ -21,7 +24,7 @@ const MAX_LINES = 60_000;
 const MAX_MOVERS = 96;
 
 const colour = (mask: number): [number, number, number] =>
-  (mask & WALK) === 0 ? [0.35, 0.65, 1] : (mask & VIEW) === 0 ? [0.4, 0.95, 0.45] : (mask & SIGHT) !== 0 ? [1, 0.55, 0.15] : [1, 0.9, 0.2];
+  (mask & WALK) === 0 ? [0.1, 0.45, 1] : (mask & VIEW) === 0 ? [0.1, 0.85, 0.2] : (mask & SIGHT) !== 0 ? [1, 0.3, 0] : [0.95, 0.85, 0];
 
 export class ColliderLines {
   private readonly solidPositions = new Float32Array(MAX_LINES * 6);
@@ -29,8 +32,8 @@ export class ColliderLines {
   private readonly solidGeometry = new BufferGeometry();
   private readonly moverPositions = new Float32Array((MAX_MOVERS * ROUND + 2) * 6);
   private readonly moverGeometry = new BufferGeometry();
-  private readonly material = new LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.85 });
-  private readonly moverMaterial = new LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95 });
+  private readonly material = new LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false, fog: false });
+  private readonly moverMaterial = new LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95, toneMapped: false, fog: false });
   private readonly solidLines: LineSegments;
   private readonly moverLines: LineSegments;
   private builtVersion = -1;

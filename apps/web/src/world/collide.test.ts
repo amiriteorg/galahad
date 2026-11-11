@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BUILDS, CELL, NOTHING, SKIN, Solids } from "./collide.ts";
+import { wantsColliders } from "./debug-colliders.ts";
 import type { Collider } from "./colliders.ts";
 import { rng } from "./physics.ts";
 
@@ -443,5 +444,14 @@ describe("the cost", () => {
     // (Measured at about 0.03 ms; the bound leaves room for a slow, busy machine.)
     expect(each).toBeLessThan(0.2);
     expect(CELL).toBeGreaterThan(0);
+  });
+});
+
+describe("the debug view", () => {
+  test("it's asked for by the page's ?colliders=1 (or on, true), and only then", () => {
+    expect(wantsColliders("?colliders=1")).toBe(true);
+    expect(wantsColliders("?tier=low&colliders=on")).toBe(true);
+    expect(wantsColliders("?colliders=true&x=2")).toBe(true);
+    for (const off of ["", "?colliders=0", "?colliders=10", "?nocolliders=1", "?colliders"]) expect(wantsColliders(off)).toBe(false);
   });
 });

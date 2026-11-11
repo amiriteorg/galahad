@@ -7,7 +7,7 @@ import { attachInput, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Po
 import { BUILDS, Solids } from "./collide.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
-import { ColliderLines } from "./debug-colliders.ts";
+import { ColliderLines, wantsColliders } from "./debug-colliders.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
@@ -387,7 +387,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   walker.join({ planner: new Planner(solids), mover: walkerMover, wet, deep });
   dog.join(solids, deep);
   // The page's `?colliders=1`: what's solid, drawn as lines (nothing is built without it).
-  const colliderLines = /[?&]colliders=(1|on|true)/.test(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
+  const colliderLines = wantsColliders(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
