@@ -232,9 +232,9 @@ const ARM_SPEED = 12;
 /** Samples of the ground along the arm. */
 const GROUND_SAMPLES = 12;
 /** How far the arm tilts up (radians) to look over something right by him, tried in turn. */
-const TILTS = [0.18, 0.36, 0.54, 0.72, 0.9, 1.1];
-/** The steepest the arm goes (radians above the horizon). */
-const STEEPEST = 1.35;
+const TILTS = [0.15, 0.3, 0.45, 0.6, 0.75];
+/** The steepest the arm goes (radians above the horizon): a view from above and to the side, never straight down on him. */
+const STEEPEST = 0.95;
 
 /**
  * The spring arm from the focus to the camera. Each frame it's told where the
