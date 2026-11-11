@@ -56,7 +56,7 @@ function keep(): Collider[] {
     f.circle(0, 0, 2.7, 9),
     f.circle(0, 0, 1.75, 12.2, 9),
     // The crown: heaps of leaves from the deck's roof up; the camera keeps out, and sees through it.
-    ...CROWN.map(([bottom, top, r]) => f.circle(0, 0, r, top, bottom, { stops: "camera", seeThrough: true })),
+    f.circle(0, 0, Math.max(...CROWN.map(([, , r]) => r)), CROWN[CROWN.length - 1]![1], CROWN[0]![0], { stops: "camera", seeThrough: true }),
     // The deck with its rim, joists and railing, and the furniture and plants on it.
     f.circle(0, 0, DECK_R, DECK + 1.5, DECK_UNDER),
     // The room: its walls, glass front and a wide roof with solar panels.
