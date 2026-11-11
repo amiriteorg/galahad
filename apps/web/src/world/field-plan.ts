@@ -99,6 +99,26 @@ export const LIGHTNING_MASTS = [
 ] as const;
 export const LIGHTNING_MAST_HEIGHT = 16;
 
+/** The apron's floodlight masts, at two of its corners: how tall, and the way their lamps face (atan2). */
+export const FLOODLIGHTS = [
+  { x: -73, y: -61, height: 9, aim: Math.PI * 0.78 },
+  { x: -111.2, y: -6, height: 9, aim: -Math.PI * 0.28 },
+] as const;
+/** The weather station's Stevenson screen, beside its mast. */
+export const STEVENSON = { x: -73.8, y: -6.2 };
+/** The aircraft kept in the hangar (nose to the door, a little north of the middle, its cowling off). */
+export const HANGAR_AIRCRAFT = { x: HANGAR.x + 1.1, y: HANGAR.y + 1 };
+/** The sign at the gate, south of the road: on two posts, its board facing the road from the keep. */
+export const SIGN = { x: -66.3, y: -35 - 3.6 - 4.2, half: 2.6, top: 3 };
+/** Things standing about: a tow tug by the hangar, an extinguisher, a picnic bench by the tower, cones, drums. */
+export const PROPS: readonly { kind: "tug" | "extinguisher" | "bench" | "cones" | "drums"; x: number; y: number; yaw: number }[] = [
+  { kind: "tug", x: -98.4, y: -44.6, yaw: Math.PI / 2 },
+  { kind: "extinguisher", x: -99.1, y: -63.7, yaw: 0 },
+  { kind: "bench", x: -100.5, y: -6.5, yaw: 0 },
+  { kind: "cones", x: -98.5, y: -61.2, yaw: Math.PI / 2 },
+  { kind: "drums", x: -94.6, y: -64.8, yaw: 0 },
+];
+
 /** Where the resident aircraft is tied down when the flight pad is taken: in front of the hangar, nose to its door. */
 export const TIE_DOWN = { x: -85.5, y: -56, heading: Math.PI };
 /** Painted tie-down spots (flat): the resident's, and two for visitors on the apron's north side. */
@@ -138,6 +158,13 @@ export const COURSE_RADII = [0, 4, 4, 3.4, 3, 3, 3, 3.2] as const;
 
 /** The start gate: an arch over the start line, and the charging post beside it where the rover parks. */
 export const START_GATE = { x: COURSE_START.x, y: COURSE_START.y, half: 2.3, height: 3.4 };
+/** Tyres stacked at the course's corners. */
+export const COURSE_TYRES: readonly (readonly [number, number])[] = [
+  [-113.3, 15.3],
+  [-113.3, 40.8],
+  [-141.2, 40.8],
+  [-141.2, 15.3],
+];
 
 // ---------- the drone's corner (south of the flight pad, west of the launch pad) ----------
 
@@ -200,13 +227,25 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   out.push(box(h.x, h.y + h.hy - t, h.hx, t, h.eaves));
   out.push(box(h.x, h.y - h.hy + t, h.hx, t, h.eaves));
   const jamb = (h.hy - h.door) / 2;
-  out.push(box(h.x + h.hx - t, h.y + h.door + jamb, t, jamb, h.eaves));
-  out.push(box(h.x + h.hx - t, h.y - h.door - jamb, t, jamb, h.eaves));
-  out.push(box(h.x - 1.6, h.y + 0.4, 2.6, 4.4, 2.2));
+  // (The front's jambs with the door leaves stacked open in front of them.)
+  out.push(box(h.x + h.hx + 0.05, h.y + h.door + jamb + 0.15, 0.45, jamb + 0.2, h.eaves));
+  out.push(box(h.x + h.hx + 0.05, h.y - h.door - jamb - 0.15, 0.45, jamb + 0.2, h.eaves));
+  // The aircraft inside, its wings across the hangar.
+  out.push(box(HANGAR_AIRCRAFT.x - 1.45, HANGAR_AIRCRAFT.y, 3.95, 5.3, 3.1));
   // The tower (its stair on the east side) and the blockhouse.
   out.push(box(TOWER.x, TOWER.y, TOWER.half, TOWER.half, TOWER.roof));
   out.push(box(TOWER.x + TOWER.half + 0.7, TOWER.y, 0.7, TOWER.half, 3));
   out.push(box(BLOCKHOUSE.x, BLOCKHOUSE.y, BLOCKHOUSE.hx, BLOCKHOUSE.hy, BLOCKHOUSE.roof));
+  out.push(box(BLOCKHOUSE.x + BLOCKHOUSE.hx + 0.35, BLOCKHOUSE.y + 0.8, 0.35, 0.6, 0.9));
+  // The floodlights, the weather station's screen, and what stands about.
+  for (const f of FLOODLIGHTS) out.push(circle(f.x, f.y, 0.4, f.height));
+  out.push(box(STEVENSON.x, STEVENSON.y, 0.42, 0.36, 1.8));
+  for (const p of PROPS) {
+    if (p.kind === "tug") out.push(box(p.x + Math.cos(p.yaw) * 0.6, p.y + Math.sin(p.yaw) * 0.6, 1.8, 0.75, 1.4, p.yaw));
+    else if (p.kind === "bench") out.push(box(p.x, p.y, 0.95, 0.85, 0.8, p.yaw));
+    else if (p.kind === "drums") out.push(circle(p.x + 0.3, p.y + 0.25, 0.75, 0.9));
+    else if (p.kind === "extinguisher") out.push(circle(p.x, p.y, 0.35, 1.3));
+  }
   out.push(box(BOWSER.x, BOWSER.y, BOWSER.hx, BOWSER.hy, BOWSER.top, BOWSER.yaw));
   out.push(circle(WINDSOCK.x, WINDSOCK.y, 0.25, WINDSOCK.height));
   out.push(circle(WEATHER_MAST.x, WEATHER_MAST.y, 0.3, WEATHER_MAST.height));
@@ -216,14 +255,17 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   // The fences (posts and rails: a thin box each) and the entrance's posts.
   for (const f of FENCES) out.push(box((f.ax + f.bx) / 2, (f.ay + f.by) / 2, Math.abs(f.bx - f.ax) / 2 + 0.1, Math.abs(f.by - f.ay) / 2 + 0.1, 1.2));
   for (const side of [-1, 1]) out.push(circle(ENTRANCE_POSTS.x, FIELD_GATE.y + side * ENTRANCE_POSTS.half, 0.3, 3.2));
-  // The entrance's sign, south of the road.
-  out.push(box(ENTRANCE_POSTS.x, FIELD_GATE.y - ENTRANCE_POSTS.half - 4.2, 0.2, 2.6, 3));
+  // The barrier's housing, and the entrance's sign, south of the road.
+  out.push(box(ENTRANCE_POSTS.x - 0.75, FIELD_GATE.y - ENTRANCE_POSTS.half + 0.25, 0.3, 0.3, 1.1));
+  out.push(box(SIGN.x, SIGN.y, 0.2, SIGN.half, SIGN.top));
   // The rover course: the start gate's posts, the bridge, the rock garden, the sand pit's frame, the slalom's poles.
   for (const side of [-1, 1]) out.push(circle(START_GATE.x, START_GATE.y + side * START_GATE.half, 0.22, START_GATE.height));
   out.push(box(-116, 28.25, 1.7, 6.3, 0.9));
   out.push(circle(-124.2, 38.5, 3.2, 0.6));
   out.push(box(-131.3, 38.5, 2.9, 2, 0.25));
-  for (const p of SLALOM_POLES) out.push(circle(p.x, p.y, 0.15, 1.6));
+  for (const p of SLALOM_POLES) out.push(circle(p.x, p.y, 0.3, 1.6));
+  out.push(circle(START_GATE.x - 2.2, START_GATE.y - START_GATE.half - 1.3, 0.3, 1.4));
+  for (const [x, y] of COURSE_TYRES) out.push(circle(x, y, 0.5, 0.9));
   // The drone's gates (their stands) and its pad's charging post.
   for (const g of DRONE_GATES) {
     const sx = Math.cos(g.heading + Math.PI / 2) * (DRONE_GATE_RADIUS + 0.2);
