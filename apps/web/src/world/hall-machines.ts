@@ -117,7 +117,7 @@ export class Machines {
   // ---------- the printer farm ----------
 
   private farm(flow: HallFlow): void {
-    const { solid, rig, bones, quads, detail, cool } = this.b;
+    const { solid, rig, bones, quads, detail } = this.b;
     const bench = FARM.bench;
     const top = FARM.top;
     // The bench: a steel frame and a laminate top, a shelf of spare spools under it.
@@ -155,7 +155,6 @@ export class Machines {
       // The display and the status light.
       quads.add(K.screen, [x + h - 0.2, y - h - 0.03, top + 0.32], [0.17, 0, 0], [0, 0, 0.09], 1, BAR.printer + i);
       solid.glow(SLOT.printer + i).box(K.white, x, y - h, top + P.height + 0.025, h * 1.6, 0.03, 0.015, 0, 0).glow(0);
-      cool.push([x, top + P.height + 0.1, -(y - h), 0.5]);
       // The spool holder on its right side.
       solid.rod(K.dark, x + h, y + 0.1, top + 0.82, x + h + 0.12, y + 0.1, top + 0.82, 0.015, 6);
 
@@ -366,7 +365,7 @@ export class Machines {
   // ---------- the assembly line ----------
 
   private line(): void {
-    const { solid, rig, bones, quads, glass, detail, cool } = this.b;
+    const { solid, rig, bones, quads, glass, detail } = this.b;
     const L = LINE;
     const len = L.east - L.west;
     // The conveyor: side frames, legs, its belt, the drums.
@@ -394,7 +393,6 @@ export class Machines {
     solid.panel(K.cream, ix, L.y, 1.92, 0.18, 1.4, 0.14, 0, 0.02, 0.02);
     solid.box(K.dark, ix, L.y, 1.75, 0.16, 0.16, 0.2);
     solid.glow(SLOT.inspect).cyl(K.white, ix, L.y, 1.62, 0.13, 0.03, 16, 0.13, 0).glow(0);
-    cool.push([ix, 1.6, -L.y, 0.5]);
     // The arms' pedestals, and the screw feeder.
     for (const a of L.arms) {
       solid.cyl(K.steel, a.x, a.y, 0, 0.45, 0.06, 16);
@@ -692,7 +690,8 @@ export class Machines {
       bones.put(b.head, p.x + pose.headX, p.y + pose.headY, FARM.top + P.nozzle);
       bones.put(b.bed, p.x, p.y, FARM.top + pose.bed);
       bones.put(b.bar, p.x, p.y + pose.bar, FARM.top + pose.bed);
-      bones.put(b.spool, p.x + P.half + 0.1, p.y + 0.1, FARM.top + 0.82, 0, 0, -p.fed / 0.17);
+      // The spool turns about its axle (east-west) as filament is drawn off it.
+      bones.put(b.spool, p.x + P.half + 0.1, p.y + 0.1, FARM.top + 0.82, 0, -p.fed / 0.17);
       u.barValues[BAR.printer + i] = pose.progress;
       const waiting = p.t < 0;
       const c = u.lampColors[SLOT.printer + i]!;
