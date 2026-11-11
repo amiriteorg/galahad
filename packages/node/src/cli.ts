@@ -7,6 +7,7 @@ import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type Fleet
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
+import { artifactTarget } from "./artifacts.ts";
 import { tailscaleInfo } from "./capabilities.ts";
 import { startDaemon } from "./daemon.ts";
 import { loadEnv } from "./env.ts";
@@ -1217,12 +1218,13 @@ Evidence: galahad artifact ${i!.artifact}`));
       if (out) {
         const wanted = file ? artifact!.files.filter((f) => f.path === file) : artifact!.files;
         for (const f of wanted) {
+          // The record names the file; it never decides where on this machine it's written.
+          const target = artifactTarget(out, f.path);
           const { bytes } = await admin.bytes("artifactFile", { id, path: f.path });
-          const target = join(out, ...f.path.split("/"));
-          mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, bytes);
           const sha = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
           if (sha !== f.sha256) fail(`${f.path}: its SHA-256 doesn't match what was recorded`);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, bytes);
         }
         console.log(`Saved ${wanted.length} file(s) to ${out}, each checked against its recorded SHA-256.${artifact!.count > artifact!.files.length ? dim(` (${artifact!.count - artifact!.files.length} more aren't listed in the mind; fetch them by name)`) : ""}`);
         return;
