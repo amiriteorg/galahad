@@ -125,7 +125,7 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 | 500 events already held | 2 | 2 | 6 | 466 |
 | A late memory (still replays) | 100 | 699 | 5,470 | 6,955 |
 | A hole's repair, end to end (pages of 500; the page that fills it replays) | 212 | 1,236 | 27,985 | one answer, above |
-| First start on a replica from before (migrates once) | 178 | 1,241 | 20,141 | – |
+| First start on a replica from before (migrates once, replaying the views) | 167 | 1,215 | 30,699 | – |
 | `rebuild` (now also recounts) | 200 | 1,520 | 12,988 | 6,643 |
 
 What still grows with the log: a replay (a late memory, notice or action, a revocation, a hole's fill, a fork), a `rebuild`, and the first start on a replica from before schema versions, which migrates it once.
