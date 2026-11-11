@@ -103,7 +103,9 @@ export const activityView: View = (root, ctx, { scope }) => {
   const filter: LedgerFilter = { classes: new Set(), verdict: "all", query: "" };
   // As tall as a screenful of rows, so nothing below it jumps when they arrive.
   const timeline = h("div", { class: "card" }, skeletonRows(12));
-  const autonomyBox = h("div", {}, autonomyCard(null));
+  // Filled once the ledger has answered: on a phone it sits under the timeline, and a card that was
+  // there already would jump when the timeline settles to its real height.
+  const autonomyBox = h("div");
   const countLabel = h("span", { class: "count-label tnum" });
   const search = h("input", { class: "input", type: "search", placeholder: "Search activity", "aria-label": "Search activity", autocomplete: "off", spellcheck: "false" });
 
@@ -243,11 +245,12 @@ export const activityView: View = (root, ctx, { scope }) => {
       signature = next;
       entries = sorted;
       replace(autonomyBox, autonomyCard(entries));
-      bar.hidden = entries.length === 0;
       render();
     } catch (error) {
       if (scope.disposed) return;
       signature = "";
+      // What Galahad may do alone is worth showing even without the ledger's counts.
+      if (!autonomyBox.firstChild) replace(autonomyBox, autonomyCard(null));
       if (isUnavailable(error)) {
         replace(
           timeline,
