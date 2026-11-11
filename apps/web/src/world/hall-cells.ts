@@ -148,7 +148,7 @@ export class Cells {
   }
 
   private fence(cell: Cell, i: number): void {
-    const { solid, rig, bones, quads, detail, warm, cool } = this.b;
+    const { solid, rig, bones, fences, detail, warm, cool } = this.b;
     const h = cell.size / 2 + CELL_FENCE;
     const gate = CELL_GATE / 2;
     const gy = cell.y - cell.side * h;
@@ -171,7 +171,7 @@ export class Cells {
       }
       for (const z of [0.12, FENCE_HEIGHT - 0.03]) solid.box(K.yellow, (side.x0 + side.x1) / 2, (side.y0 + side.y1) / 2, z, Math.abs(ux) * len + 0.04, Math.abs(uy) * len + 0.04, 0.04);
       // The mesh: one panel each side, drawn as a wire grid in the screens' shader.
-      quads.add(0x3a3e45, [side.x0, side.y0, 0.14], [side.x1 - side.x0, side.y1 - side.y0, 0], [0, 0, FENCE_HEIGHT - 0.2], 3, 0, 0, len / 0.07);
+      fences.add(0x2f333a, [side.x0, side.y0, 0.14], [side.x1 - side.x0, side.y1 - side.y0, 0], [0, 0, FENCE_HEIGHT - 0.2], 3, 0, 0, len / 0.07);
     }
     // The gate: two light-curtain posts, their beams, and the beacon.
     for (const s of [-1, 1]) {
@@ -192,8 +192,8 @@ export class Cells {
       solid.glow(slot).cyl(K.white, bx, by, 2.06 + k * 0.16, 0.09, 0.14, 12, 0.09, 0).glow(0);
     });
     solid.cyl(K.dark, bx, by, 2.54, 0.09, 0.04, 12);
-    cool.push([bx, 2.3, -by, 0.45]);
     void warm;
+    void cool;
   }
 
   private leg(cell: Cell, fade: number): number[] {

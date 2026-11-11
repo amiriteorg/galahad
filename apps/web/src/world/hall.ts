@@ -1,12 +1,12 @@
-import { type Camera, Color, type DirectionalLight, Group, type HemisphereLight, Mesh, type Object3D, type Scene, Sphere, Vector3 } from "three/webgpu";
+import { type Camera, Color, type DirectionalLight, Group, type HemisphereLight, Mesh, type Object3D, PointLight, type Scene, Sphere, Vector3 } from "three/webgpu";
 import type { Collider } from "./colliders.ts";
 import type { Vec3 } from "./coords.ts";
 import { Cells } from "./hall-cells.ts";
 import { Cutaway, indoors } from "./hall-cutaway.ts";
 import { HallFlow } from "./hall-flow.ts";
-import { finish, Kit, Quads, triangles } from "./hall-kit.ts";
+import { finish, Kit, pack, Quads, triangles } from "./hall-kit.ts";
 import { Machines } from "./hall-machines.ts";
-import { floorMaterial, glassMaterial, HallUniforms, type Lighting, rigMaterial, screenMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
+import { fenceMaterial, floorMaterial, glassMaterial, HallUniforms, type Lighting, rigMaterial, screenMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
 import { CART, CELLS, CRANE, FARM, HALL, HALL_DETAIL, HALL_SOLIDS, inCollider, inHall } from "./hall-plan.ts";
 import { Bones } from "./hall-rig.ts";
 import { buildHall, LAMP_BAY, LAMP_SIGN } from "./hall-shell.ts";
@@ -22,8 +22,8 @@ import type { Glow, Place, PlaceContext, PlaceFrame } from "./place.ts";
  * crane, a cart, an assembly line with two six-axis arms, a CNC mill, a wind
  * tunnel, an electronics bench, and four test cells whose residents test
  * themselves while no experiment needs the cell (hall-flow.ts, hall-machines.ts,
- * hall-cells.ts). Six draw calls: the shell, its glass, the floor, what stands
- * still, what moves (one skinned mesh), and the screens and belts.
+ * hall-cells.ts). Seven draw calls: the shell, its glass, the floor, what stands
+ * still, what moves (one skinned mesh), the screens and belts, and the cells' fences.
  */
 
 /** The lamps indoors: a working light by day, warmer and brighter at night (linear colour). */
@@ -61,6 +61,9 @@ export class Workshop implements Place {
   private inside = 0;
   private clock = 0;
   private posed = false;
+  /** A lamp over Galahad while he's in the hall after dark (not on the low tier): the hall's light on him. */
+  private readonly lamp: PointLight | null;
+  private near = 0;
 
   constructor(ctx: PlaceContext) {
     const tier = ctx.tier.name;
@@ -71,20 +74,23 @@ export class Workshop implements Place {
     const rig = new Kit(detail);
     const glassKit = new Kit(detail);
     const quads = new Quads();
+    const fenceQuads = new Quads();
     const bones = new Bones();
     const building = buildHall(detail, fixed, glassKit);
-    const build = { detail, solid: fixed, rig, glass: glassKit, quads, bones, warm: this.warmGlows, cool: this.coolGlows };
+    const build = { detail, solid: fixed, rig, glass: glassKit, quads, fences: fenceQuads, bones, warm: this.warmGlows, cool: this.coolGlows };
     this.machines = new Machines(build, this.flow);
     this.cells = new Cells(build, this.machines);
     this.warmGlows.push(...building.warm);
 
-    const shell = new Mesh(building.shell, shellMaterial(this.u, lighting));
-    const floor = new Mesh(building.floor, floorMaterial(this.u, lighting));
-    const solid = new Mesh(finish(fixed.build(), { solids: HALL_SOLIDS }), solidMaterial(this.u, lighting));
-    const glass = new Mesh(glassKit.build(), glassMaterial(this.u));
-    const moving = bones.mesh(finish(rig.build(), { inside: true, foot: 0 }), rigMaterial(this.u, lighting));
+    const shell = new Mesh(pack(building.shell), shellMaterial(this.u, lighting));
+    const floor = new Mesh(pack(building.floor), floorMaterial(this.u, lighting));
+    const solid = new Mesh(pack(finish(fixed.build(), { solids: HALL_SOLIDS })), solidMaterial(this.u, lighting));
+    const glass = new Mesh(pack(glassKit.build()), glassMaterial(this.u));
+    const moving = bones.mesh(pack(finish(rig.build(), { inside: true, foot: 0 }), "part"), rigMaterial(this.u, lighting));
     const screens = new Mesh(quads.build(), screenMaterial(this.u));
+    const fences = new Mesh(fenceQuads.build(), fenceMaterial(this.u));
     glass.renderOrder = 1;
+    fences.renderOrder = 1;
     // The shell casts the hall's shadow outdoors; indoors the hall's own light has none to cast.
     shell.castShadow = ctx.shadows;
     shell.receiveShadow = ctx.shadows;
@@ -94,10 +100,12 @@ export class Workshop implements Place {
       if ((camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera) this.camera = camera;
       if (!this.hemi) this.findLights(scene);
     };
-    this.group.add(floor, solid, shell, moving, screens, glass);
+    this.group.add(floor, solid, shell, moving, screens, fences, glass);
     // One sphere for everything: out of view, nothing of the hall is drawn.
     const bounds = new Sphere(new Vector3(HALL.x, 5, -HALL.y), Math.hypot(HALL.hx + 9, HALL.hy + 2, 8));
-    for (const mesh of [shell, solid, glass, floor, moving, screens]) mesh.geometry.boundingSphere = bounds.clone();
+    for (const mesh of [shell, solid, glass, floor, moving, screens, fences]) mesh.geometry.boundingSphere = bounds.clone();
+    this.lamp = detail > 0 ? new PointLight(0xffd6a6, 0, 16, 1.6) : null;
+    if (this.lamp) this.group.add(this.lamp);
     this.setNight(0);
     this.machines.pose(this.flow, this.u, 0, false);
     this.cells.pose(0, false, this.u, this.machines);
@@ -186,6 +194,13 @@ export class Workshop implements Place {
     const cart = this.flow.cart.pose;
     this.movers[0]!.x = cart.x;
     this.movers[0]!.y = cart.y;
+    // The lamps' light on Galahad (his own material takes the scene's lights, not the hall's).
+    if (this.lamp) {
+      const inside = inHall(frame.galahadX, frame.galahadY) ? 1 : 0;
+      this.near += frame.motion ? Math.max(-1, Math.min(1, (inside - this.near) * 3 * frame.dt)) : inside - this.near;
+      this.lamp.position.set(frame.galahadX, 6.2, -frame.galahadY);
+      this.lamp.intensity = 9 * this.lamps * this.near;
+    }
   }
 
   /** The sky's light as the scene has it now, and the glass for where the camera is. */

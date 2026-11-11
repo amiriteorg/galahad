@@ -263,6 +263,30 @@ export function finish(geometry: BufferGeometry, options: Finish = {}): BufferGe
   return geometry;
 }
 
+/**
+ * Packs a finished geometry's per-vertex tags into one attribute, `tag` (vec4: its lamp slot, how lit it
+ * is indoors, its shell part or printed part (`z`), its cell), so a skinned mesh stays within the GPU's
+ * eight vertex buffers.
+ */
+export function pack(geometry: BufferGeometry, z: "cut" | "part" = "cut"): BufferGeometry {
+  const n = geometry.getAttribute("position").count;
+  const out = new Float32Array(n * 4);
+  const read = (name: string) => (geometry.getAttribute(name)?.array as Float32Array | undefined) ?? null;
+  const glow = read("glow");
+  const lit = read("lit");
+  const third = read(z);
+  const fade = read("fade");
+  for (let i = 0; i < n; i++) {
+    out[i * 4] = glow ? glow[i]! : 0;
+    out[i * 4 + 1] = lit ? lit[i]! : 0;
+    out[i * 4 + 2] = third ? third[i]! : 0;
+    out[i * 4 + 3] = fade ? fade[i]! : 0;
+  }
+  for (const name of ["glow", "lit", "cut", "part", "fade"]) geometry.deleteAttribute(name);
+  geometry.setAttribute("tag", new BufferAttribute(out, 4));
+  return geometry;
+}
+
 /** The triangles of a geometry. */
 export const triangles = (geometry: BufferGeometry): number => (geometry.index ? geometry.index.count : geometry.getAttribute("position").count) / 3;
 

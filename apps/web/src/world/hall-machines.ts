@@ -24,6 +24,8 @@ export interface Build {
   rig: Kit;
   glass: Kit;
   quads: Quads;
+  /** The cells' fence panels (wire mesh). */
+  fences: Quads;
   bones: Bones;
   warm: Glow[];
   cool: Glow[];
@@ -298,7 +300,7 @@ export class Machines {
     this.crane.bridge = bones.add();
     rig.bone(this.crane.bridge);
     // Two box girders on end trucks that ride the rails.
-    for (const sx of [-1, 1]) rig.panel(K.yellow, sx * 0.42, 0, deck - 0.35, 0.24, span - 0.6, 0.7, 0, 0.02, 0.03);
+    for (const sx of [-1, 1]) rig.panel(0xe2b850, sx * 0.42, 0, deck - 0.35, 0.24, span - 0.6, 0.7, 0, 0.02, 0.03);
     for (const sy of [-1, 1]) {
       rig.panel(K.dark, 0, sy * (span / 2), C.rail + 0.25, 1.6, 0.42, 0.42, 0, 0.02, 0.03);
       for (const sx of [-1, 1]) cylY(rig, K.charcoal, sx * 0.55, sy * (span / 2), C.rail + 0.1, 0.12, 0.2, 10);
@@ -327,7 +329,7 @@ export class Machines {
       rig.box(K.charcoal, 0, 0, 0.5, 0.025, 0.025, 1, 0, 0);
     }
     rig.bone(0);
-    warm.push([C.park.x, C.rail + 1, -C.park.y, 0.6]);
+    void warm;
   }
 
   // ---------- the cart ----------

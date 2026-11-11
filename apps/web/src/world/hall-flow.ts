@@ -241,7 +241,8 @@ export class HallFlow {
     for (const part of this.parts) {
       if (part.state !== "belt" && part.state !== "chute") continue;
       if (part.state === "chute" && Math.abs(part.x - x) < 0.01) continue;
-      if (part.x > x - 0.45 - BELT_SPEED * CHUTE_TIME && part.x < x + 0.4) return false;
+      // (Whatever's behind it travels on while the part is swept and slides down: it must still be a gap behind when it lands.)
+      if (part.x > x - 0.45 - BELT_SPEED * (EJECT.sweep + CHUTE_TIME) && part.x < x + 0.4) return false;
     }
     return true;
   }

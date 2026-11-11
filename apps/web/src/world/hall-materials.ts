@@ -81,8 +81,14 @@ const el = (array: { element(i: Node): unknown }, i: F): F => array.element(int(
 const elV3 = (array: { element(i: Node): unknown }, i: F): V3 => array.element(int(i.add(0.5)) as unknown as Node) as unknown as V3;
 
 /** The shell's mask: false (discarded) where the cutaway has dissolved it. Mirrors hall-cutaway.ts's cutAt. */
+/** The packed per-vertex tags (hall-kit.ts's pack): x its lamp slot, y how lit it is indoors, z its shell part or printed part, w its cell. */
+const tag = () => attribute("tag", "vec4");
+const tagX = () => tag().x as unknown as F;
+const tagZ = () => tag().z as unknown as F;
+const tagW = () => tag().w as unknown as F;
+
 function cutawayMask(u: HallUniforms) {
-  const cut = attribute("cut", "float") as unknown as F;
+  const cut = tagZ();
   const withRoof = step(CUT_ROOF - 0.5, cut);
   const wall = el(u.walls, cut.sub(withRoof.mul(CUT_ROOF)));
   const local = positionWorld.sub(u.shift);
@@ -92,9 +98,9 @@ function cutawayMask(u: HallUniforms) {
   return threshold().greaterThanEqual(amount.mul(0.999)).and(occlusionMask());
 }
 
-const lit = () => attribute("lit", "float") as unknown as F;
+const lit = () => tag().y as unknown as F;
 const albedo = () => attribute("color", "vec3") as unknown as V3;
-const lamp = (u: HallUniforms) => elV3(u.lamps, attribute("glow", "float") as unknown as F);
+const lamp = (u: HallUniforms) => elV3(u.lamps, tagX());
 
 /** 1 inside [lo, hi], 0 outside, with soft edges `s` wide (a penumbra). */
 function within(v: F, lo: number, hi: number, s = 0.05): F {
@@ -207,7 +213,7 @@ function indoorLight(u: HallUniforms, o: Lighting): V3 {
   const p = positionWorld.sub(u.shift) as unknown as V3;
   // The sky: through the roof's glazing and the windows, softer than outdoors and mostly from above.
   const up = (n.y as unknown as F).mul(0.5).add(0.5);
-  const sky = mix(u.ground, u.sky, up).mul(float(0.36).add(up.mul(0.34)));
+  const sky = mix(u.ground, u.sky, up).mul(float(0.46).add(up.mul(0.3)));
   // The lamps: a fill that's stronger on faces that look up, and pools.
   const facing = (n.y as unknown as F).max(0).mul(0.5).add(0.5);
   const lamps = u.fill.mul(facing).mul(float(1).add(lampPools(p).mul(u.pools)));
@@ -339,10 +345,9 @@ export function solidMaterial(u: HallUniforms, o: Lighting): MeshLambertNodeMate
  */
 export function rigMaterial(u: HallUniforms, o: Lighting): MeshLambertNodeMaterial {
   const m = new MeshLambertNodeMaterial({ vertexColors: true });
-  const part = attribute("part", "float") as unknown as F;
-  const clamp = el(u.clamps, part);
+  const clamp = el(u.clamps, tagZ());
   m.positionNode = vec3(positionLocal.x, min(positionLocal.y, clamp), positionLocal.z);
-  const present = el(u.present, attribute("fade", "float") as unknown as F);
+  const present = el(u.present, tagW());
   m.maskNode = occlusionMask().and(threshold().greaterThanEqual(float(1).sub(present).mul(0.999)));
   m.colorNode = colorFactor({ ...o, wet: 0 });
   m.emissiveNode = emissive(u, { ...o, wet: 0 });
@@ -359,11 +364,9 @@ export function glassMaterial(u: HallUniforms): MeshBasicNodeMaterial {
 }
 
 /**
- * Screens, belts and wire mesh, by a `kind` attribute: 0 an oscilloscope (a grid and a live trace), 1 a
- * progress bar (a printer's display), 2 a belt (cleats that travel with it, lit as the room is), 3 a
- * fence's wire mesh (its holes dropped; far off, where the wires are finer than a pixel, a dither of the
- * share they cover). `slot` picks the trace's phase, the bar or the belt. A resident's screens fade with
- * it (`fade`).
+ * Screens and belts, by a `kind` attribute: 0 an oscilloscope (a grid and a live trace), 1 a progress bar
+ * (a printer's display), 2 a belt (cleats that travel with it, lit as the room is). `slot` picks the
+ * trace's phase, the bar or the belt. A resident's screens fade with it (`fade`).
  */
 export function screenMaterial(u: HallUniforms): MeshBasicNodeMaterial {
   const m = new MeshBasicNodeMaterial({ side: DoubleSide });
@@ -384,15 +387,27 @@ export function screenMaterial(u: HallUniforms): MeshBasicNodeMaterial {
   const room = u.sky.mul(0.55).add(u.fill.mul(1.2)).mul(0.62);
   const belt = base.mul(room).mul(mix(float(0.85), float(1.3), cleat));
   m.colorNode = mix(mix(scope, bar, step(0.5, kind)), belt, step(1.5, kind));
-  // The mesh: wires every 7 cm each way (u along the panel in those units; v across its height).
+  const present = el(u.present, attribute("fade", "float") as unknown as F);
+  m.maskNode = occlusionMask().and(threshold().greaterThanEqual(float(1).sub(present).mul(0.999)));
+  return m;
+}
+
+/**
+ * The cells' fence panels: a dark wire mesh you see through (u along the panel in wires, v up it), lit
+ * as the room is. Up close each wire is drawn; far off, where they're finer than a pixel, the panel
+ * fades to the share of it they cover.
+ */
+export function fenceMaterial(u: HallUniforms): MeshBasicNodeMaterial {
+  const m = new MeshBasicNodeMaterial({ side: DoubleSide, transparent: true, depthWrite: false });
+  const p = uv();
   const wx = abs(fract(p.x).sub(0.5));
   const wy = abs(fract(p.y.mul(FENCE_MESH_ROWS)).sub(0.5));
-  const wire = max(step(0.42, wx), step(0.42, wy));
-  const fine = fwidth(p.x).mul(2.5).clamp(0, 1);
-  const cover = mix(wire, float(0.3), fine);
-  const mesh = float(1).sub(step(2.5, kind)).add(step(2.5, kind).mul(cover));
-  const present = el(u.present, attribute("fade", "float") as unknown as F);
-  m.maskNode = occlusionMask().and(threshold().greaterThanEqual(float(1).sub(present).mul(0.999))).and(mesh.greaterThan(threshold().mul(0.98).add(0.01)));
+  const wire = max(smoothstep(0.36, 0.44, wx), smoothstep(0.36, 0.44, wy));
+  const fine = fwidth(p.x).mul(2).clamp(0, 1);
+  const room = u.sky.mul(0.55).add(u.fill.mul(1.2)).mul(0.62);
+  m.colorNode = albedo().mul(room);
+  m.opacityNode = mix(mix(float(0.06), float(0.9), wire), float(0.32), fine);
+  m.maskNode = occlusionMask();
   return m;
 }
 
