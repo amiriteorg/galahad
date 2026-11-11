@@ -94,10 +94,24 @@ export const SandboxRequest = z.strictObject({
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
+/** The reflection's daily budget, in tokens (about four characters each): what he reads and writes together. */
+export const REFLECT_BUDGET = 4000;
+export const REFLECT_BUDGET_MIN = 1000;
+export const REFLECT_BUDGET_MAX = 50_000;
+
 /** What a loop does each time it runs. */
 export const LoopTask = z.discriminatedUnion("kind", [
-  /** Look around: fleet and body checks, notices in your inbox; optionally a checklist a model reads. */
-  z.strictObject({ kind: z.literal("heartbeat"), checklist: z.string().max(4000).optional() }),
+  /**
+   * Look around: fleet and body checks, notices in your inbox; optionally a checklist a model reads. After
+   * it, Galahad fixes what's on the self-action allowlist himself (self-action.ts) unless `selfAction` is false.
+   */
+  z.strictObject({ kind: z.literal("heartbeat"), checklist: z.string().max(4000).optional(), selfAction: z.boolean().optional() }),
+  /**
+   * Once a day, a few lines of what happened, what he learned and what he'd like to do next, as his own
+   * memory: by the cheapest usable role, within `budget` tokens a day (default REFLECT_BUDGET), from the
+   * day's ledger, notices and the titles of kept chats (never the bank, never secrets).
+   */
+  z.strictObject({ kind: z.literal("reflect"), budget: z.number().int().min(REFLECT_BUDGET_MIN).max(REFLECT_BUDGET_MAX).optional() }),
   /** A quest in a fresh sandbox: plan, work, independent review, remembered. */
   z.strictObject({
     kind: z.literal("quest"),
@@ -377,6 +391,10 @@ export const routes = {
   dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "fleet:admin", input: z.strictObject({ key: NoticeKey }) },
   /** Run the heartbeat's checks here, now, and return what they find (writes nothing). */
   heartbeat: { method: "POST", path: "/api/heartbeat", scope: "mind:read", input: z.strictObject({}) },
+  /** Whether Galahad fixes what's on the self-action allowlist himself after each heartbeat, and what he fixed lately. */
+  selfAction: { method: "GET", path: "/api/self-action", scope: "mind:read", input: null },
+  /** The owner's switch for self-action (on by default). It steers Galahad, so it's brain:write: never an agent's. */
+  setSelfAction: { method: "POST", path: "/api/self-action", scope: "brain:write", input: z.strictObject({ on: z.boolean() }) },
   connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },
   setConnector: {
     method: "POST",
@@ -740,6 +758,17 @@ export interface FindingView {
   title: string;
   body: string;
   node?: string;
+}
+
+export interface SelfActionView {
+  /** Every heartbeat loop lets him fix what's safe himself (none of them says `selfAction: false`). */
+  on: boolean;
+  /** The heartbeat loops it follows (self-action runs after each of their runs). */
+  heartbeats: string[];
+  /** The allowlist: each kind, its oath class, and why it needs no asking. */
+  allowlist: { kind: string; class: string; why: string }[];
+  /** His own fixes, newest first (ledger entries of resource "self-action"). */
+  recent: LedgerEntry[];
 }
 
 export interface ConnectorToolView {

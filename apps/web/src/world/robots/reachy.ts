@@ -26,6 +26,8 @@ export class ReachyMini {
   private lookYaw = 0;
   private lookPitch = 0;
   private bodyYaw = 0;
+  /** Talking with Galahad (care.ts, at the council table): 0 .. 1, its head tilting and nodding as it "speaks". */
+  talk = 0;
 
   constructor(
     readonly sk: Skeleton,
@@ -69,8 +71,8 @@ export class ReachyMini {
     const sk = this.sk;
     sk.set(this.body, this.bodyYaw);
     sk.set(this.yaw, this.lookYaw - sk.q[this.body]!);
-    sk.set(this.pitch, this.lookPitch);
-    sk.set(this.roll, 0.08 * Math.sin(t * 0.5) * (target ? 0.4 : 1));
+    sk.set(this.pitch, this.lookPitch + this.talk * 0.07 * Math.sin(t * 3.3));
+    sk.set(this.roll, 0.08 * Math.sin(t * 0.5) * (target ? 0.4 : 1) + this.talk * 0.22 * Math.sin(t * 1.9 + 1.3));
     // Antennas: a slow, lopsided wave; livelier while it watches someone.
     const lively = target ? 1.6 : 1;
     sk.set(this.antennas[0], 0.25 * Math.sin(t * 1.1 * lively) + 0.1);

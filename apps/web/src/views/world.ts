@@ -50,7 +50,7 @@ import { HALL } from "../world/hall-plan.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 7;
+const WORLD_API = 8;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -148,8 +148,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
   // One selector for what the view is on (Galahad, an experiment, a site, a station), and a way back to him when it isn't.
-  const lookFocus = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0 };
-  const look = createLook({ model: () => model, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
+  const lookFocus = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "" };
+  const look = createLook({ model: () => model, life: () => lookFocus.life, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
   scope.add(() => look.dispose());
   const followButton = button("Follow Galahad", { iconOnly: true, icon: "user", size: "sm", onClick: () => lookAt({ kind: "galahad" }) });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
@@ -265,7 +265,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       handle?.goTo({ kind: "galahad" });
     } else {
       setFollow(false);
-      handle?.goTo(target.kind === "site" ? { kind: "site", site: target.site } : { kind: "station", station: target.station });
+      handle?.goTo(target);
     }
     updateLook();
   }
@@ -277,7 +277,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       return;
     }
     handle?.where(lookFocus);
-    const at = lookingAt(model, { x: lookFocus.focusX, y: lookFocus.focusY }, following, selected);
+    const at = lookingAt(model, { x: lookFocus.focusX, y: lookFocus.focusY }, following, selected, lookFocus.life);
     look.show(at.label, at.meta, runningCount(model));
   }
   scope.interval(updateLook, 400);
@@ -354,7 +354,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
   mapButton.setAttribute("aria-pressed", String(mapOn));
 
-  const where = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0 };
+  const where = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "" };
   const uv: [number, number] = [0, 0];
   let mapLand: HTMLCanvasElement | null = null;
 

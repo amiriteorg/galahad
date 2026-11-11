@@ -135,10 +135,10 @@ describe("saved experiments in the selector and the stream", () => {
   test("a group to replay from: the newest few, and every match of a search", () => {
     const list = Array.from({ length: 12 }, (_, i) => summary(i, i === 11 ? { title: "Rover on the course", status: "failed" } : {}));
     const model = hello([], list);
-    const group = lookOptions(model, "", 3000).filter((o) => o.group === "Saved experiments");
+    const group = lookOptions(model, "", "", 3000).filter((o) => o.group === "Saved experiments");
     expect(group).toHaveLength(SAVED_SHOWN);
     expect(group[0]).toMatchObject({ target: { kind: "saved", id: list[0]!.id }, icon: "play-circle", meta: "Replay · MuJoCo · Done in the workshop · just now" });
-    const found = lookOptions(model, "rover", 3000).filter((o) => o.group === "Saved experiments");
+    const found = lookOptions(model, "rover", "", 3000).filter((o) => o.group === "Saved experiments");
     expect(found.map((o) => o.label)).toEqual(["Rover on the course"]);
     expect(found[0]).toMatchObject({ tone: "danger" });
   });

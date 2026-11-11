@@ -1,5 +1,25 @@
-import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentPhase, ExperimentStatus, ExperimentView, GalahadState, PhaseTimes, Pose, SceneBody, Station, WeatherKind, WorldEvent, WorldNode, WorldWeather } from "@galahad/core/world";
-import { padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
+import type {
+  BodyShape,
+  ExperimentEngine,
+  ExperimentFrame,
+  ExperimentPhase,
+  ExperimentStatus,
+  ExperimentView,
+  GalahadState,
+  HeartbeatFinding,
+  HeartbeatPlace,
+  PhaseTimes,
+  Pose,
+  SceneBody,
+  Station,
+  WeatherKind,
+  WorldEvent,
+  WorldHeartbeat,
+  WorldNode,
+  WorldPartner,
+  WorldWeather,
+} from "@galahad/core/world";
+import { HEARTBEAT_FINDINGS, MAX_PARTNERS, padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
 import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/experiments";
 
 /*
@@ -39,6 +59,10 @@ export interface WorldModel {
   boardVersion: number;
   /** The experiments the node saved that have ended, newest first: what can be replayed. */
   saved: SavedSummary[];
+  /** His heartbeat (null: none yet, or an older node). */
+  heartbeat: WorldHeartbeat | null;
+  /** The agents working with him now. */
+  partners: WorldPartner[];
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -52,6 +76,8 @@ export const emptyWorld = (): WorldModel => ({
   weather: null,
   boardVersion: -1,
   saved: [],
+  heartbeat: null,
+  partners: [],
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -76,7 +102,20 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
   switch (event.type) {
     case "hello": {
       const { experiments, frames } = prune(dedupe(event.experiments), state.frames);
-      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null, boardVersion: event.board?.version ?? state.boardVersion, saved: event.saved ?? [] };
+      return {
+        at,
+        galahad: event.galahad,
+        nodes: event.nodes,
+        experiments,
+        frames,
+        thoughts: event.thoughts.slice(-MAX_THOUGHTS),
+        notice: state.notice,
+        weather: event.weather ?? null,
+        boardVersion: event.board?.version ?? state.boardVersion,
+        saved: event.saved ?? [],
+        heartbeat: event.heartbeat ?? null,
+        partners: event.partners ?? [],
+      };
     }
     case "saved":
       return { ...state, at, saved: event.saved };
@@ -110,6 +149,10 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
       return { ...state, at, weather: event.weather };
     case "board":
       return { ...state, at, boardVersion: event.version };
+    case "heartbeat":
+      return { ...state, at, heartbeat: event.heartbeat };
+    case "partners":
+      return { ...state, at, partners: event.partners };
     case "cleared": {
       if (!state.experiments.some((e) => e.id === event.experiment)) return state;
       const { [event.experiment]: _gone, ...frames } = state.frames;
@@ -161,7 +204,43 @@ function readGalahad(v: unknown): GalahadState | null {
   if (!isObj(v) || !str(v.station, 32) || !str(v.doing) || !nullable(v.experiment, id) || !nullable(v.model, (m): m is string => str(m, 200)) || !num(v.since)) return null;
   // A station this page doesn't know yet: show him at his hall rather than drop the event.
   const station = (STATION_NAMES.has(v.station) ? v.station : "keep") as Station;
-  return { station, doing: v.doing, experiment: v.experiment, model: v.model, since: v.since };
+  const state: GalahadState = { station, doing: v.doing, experiment: v.experiment, model: v.model, since: v.since };
+  if (v.idle === true) state.idle = true;
+  return state;
+}
+
+const PLACES = new Set<string>(["keep", "node", "council", "forge", "messenger", "racks"]);
+const FINDING_SEVERITIES = new Set<string>(["info", "warn", "alert"]);
+const RUN_STATUSES = new Set<string>(["ok", "attention", "failed", "interrupted"]);
+const count = (v: unknown): v is number => num(v) && Number.isInteger(v) && v >= 0 && v <= 10_000;
+
+/** His heartbeat, checked: unknown fields are ignored, a place this page doesn't know is the keep; null if malformed. */
+function readHeartbeat(v: unknown): WorldHeartbeat | null {
+  if (!isObj(v) || !nullable(v.ran, num) || !(v.status === null || (typeof v.status === "string" && RUN_STATUSES.has(v.status)))) return null;
+  const c = v.counts;
+  if (!isObj(c) || !count(c.info) || !count(c.warn) || !count(c.alert) || typeof v.selfAction !== "boolean") return null;
+  const findings = readList(v.findings, 64, (f): HeartbeatFinding | null => {
+    if (!isObj(f) || !id(f.key) || typeof f.severity !== "string" || !FINDING_SEVERITIES.has(f.severity) || !str(f.title, 200) || !nullable(f.node, id)) return null;
+    const place = (typeof f.place === "string" && PLACES.has(f.place) ? f.place : "keep") as HeartbeatPlace;
+    return { key: f.key, severity: f.severity as HeartbeatFinding["severity"], title: f.title, place, node: place === "node" ? f.node : null };
+  });
+  const fixed = readList(v.fixed, 64, (t) => (str(t, 300) ? t : null));
+  if (!findings || !fixed) return null;
+  return {
+    ran: v.ran,
+    status: v.status as WorldHeartbeat["status"],
+    counts: { info: c.info, warn: c.warn, alert: c.alert },
+    findings: findings.slice(0, HEARTBEAT_FINDINGS),
+    fixed: fixed.slice(0, HEARTBEAT_FINDINGS),
+    selfAction: v.selfAction,
+  };
+}
+
+/** A partner, checked: its name is an agent's label (lowercase letters, digits, . _ -). */
+function readPartner(v: unknown): WorldPartner | null {
+  if (!isObj(v) || typeof v.name !== "string" || !/^[a-z0-9][a-z0-9._-]{0,47}$/.test(v.name) || !str(v.station, 32) || !str(v.doing) || !num(v.since) || !num(v.last)) return null;
+  const station = (STATION_NAMES.has(v.station) ? v.station : "keep") as Station;
+  return { name: v.name, station, doing: v.doing, since: v.since, last: v.last };
 }
 
 function readNode(v: unknown): WorldNode | null {
@@ -362,10 +441,24 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       const experiments = readList(v.experiments, LIMITS.experiments, readExperiment);
       const thoughts = readList(v.thoughts, 64, (t) => (str(t) ? t : null));
       if (!(galahad && nodes && experiments && thoughts)) return null;
-      // Weather it can't read is unknown weather, saved ones it can't read are left out: never a reason to lose the world. The board's version, when the node says it.
-      const board = isObj(v.board) && num(v.board.version) && v.board.version >= 0 ? { board: { version: v.board.version } } : {};
-      const saved = v.saved === undefined ? {} : { saved: readSavedList(v.saved) };
-      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts, ...board, ...saved } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null, ...board, ...saved };
+      // Weather, a heartbeat or partners it can't read are unknown, saved ones it can't read are left out: never a
+      // reason to lose the world. The board's version, when the node says it.
+      const hello: Extract<WorldEvent, { type: "hello" }> = { type: "hello", at, galahad, nodes, experiments, thoughts };
+      if (v.weather !== undefined) hello.weather = readWeather(v.weather) ?? null;
+      if (isObj(v.board) && num(v.board.version) && v.board.version >= 0) hello.board = { version: v.board.version };
+      if (v.saved !== undefined) hello.saved = readSavedList(v.saved);
+      if (v.heartbeat !== undefined) hello.heartbeat = readHeartbeat(v.heartbeat);
+      if (v.partners !== undefined) hello.partners = (readList(v.partners, 64, readPartner) ?? []).slice(-MAX_PARTNERS);
+      return hello;
+    }
+    case "heartbeat": {
+      if (v.heartbeat === null) return { type: "heartbeat", at, heartbeat: null };
+      const heartbeat = readHeartbeat(v.heartbeat);
+      return heartbeat ? { type: "heartbeat", at, heartbeat } : null;
+    }
+    case "partners": {
+      const partners = readList(v.partners, 64, readPartner);
+      return partners ? { type: "partners", at, partners: partners.slice(-MAX_PARTNERS) } : null;
     }
     case "saved":
       return Array.isArray(v.saved) ? { type: "saved", at, saved: readSavedList(v.saved) } : null;
@@ -468,6 +561,38 @@ export const weatherLabel = (w: WorldWeather): string => WEATHER_LABEL[w.kind];
 
 export const stationLabel = (station: Station): string => (station === "field" ? "the field" : STATIONS[station].label);
 
+/** Nothing to do: he lives his day. (An older node doesn't say; it rests him at the keep with "At the keep".) */
+export const isIdle = (g: GalahadState): boolean => g.idle ?? (g.station === "keep" && (g.doing === "At the keep" || g.doing === ""));
+
+const DANISH_CLOCK = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Copenhagen", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+/** "12:30", in Denmark, whatever the device's zone. */
+export const danishClock = (ms: number): string => DANISH_CLOCK.format(ms);
+
+/** What needs the owner enough for him to go to it: the most serious open finding that isn't only for information. */
+export function heartbeatConcern(h: WorldHeartbeat | null): HeartbeatFinding | null {
+  return h?.findings.find((f) => f.severity !== "info") ?? null;
+}
+
+/** When it last ran and how: "Heartbeat ✓ 12:30" (△ when it found something, ✗ when it failed), "Heartbeat: not yet". */
+export function heartbeatStamp(h: WorldHeartbeat): string {
+  if (h.ran === null) return "Heartbeat: not yet";
+  return `Heartbeat ${h.status === "failed" ? "✗" : h.status === "attention" ? "△" : "✓"} ${danishClock(h.ran)}`;
+}
+
+/**
+ * His heartbeat in a few words: "Heartbeat ✓ 12:30", or what needs you ("Needs you: rack is offline", "+2 more").
+ * When what he's doing already says what needs you (`doing`: he's tending it), just when it ran.
+ */
+export function heartbeatLine(h: WorldHeartbeat | null, doing = ""): string | null {
+  if (!h) return null;
+  const concern = heartbeatConcern(h);
+  if (concern && !doing.startsWith("Needs you: ")) {
+    const more = h.counts.alert + h.counts.warn - 1;
+    return `Needs you: ${concern.title}${more > 0 ? ` (+${more} more)` : ""}`;
+  }
+  return heartbeatStamp(h);
+}
+
 /** Where an experiment stands, in words: "on the proving ground", "in the workshop", "on open land". */
 export function experimentPlace(e: Pick<ExperimentView, "plot">): string {
   const pad = padAt(e.plot);
@@ -503,6 +628,9 @@ export function worldSummary(model: WorldModel): string {
   const parts = [`Galahad is ${where}${g.doing ? `: ${g.doing}` : ""}.`];
   if (g.model) parts.push(`Thinking with ${g.model}.`);
   if (model.weather) parts.push(`In ${model.weather.place}: ${weatherLabel(model.weather).toLowerCase()}, ${Math.round(model.weather.temperature)} °C.`);
+  const heart = heartbeatLine(model.heartbeat);
+  if (heart) parts.push(`${heart}.`);
+  if (model.partners.length) parts.push(`With him: ${model.partners.map((p) => p.name).join(", ")}.`);
   const running = model.experiments.filter((e) => !isEnded(e));
   const ended = model.experiments.filter(isEnded);
   if (!model.experiments.length) parts.push("No experiments.");

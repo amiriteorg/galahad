@@ -1,4 +1,4 @@
-import type { ActionView, NoticeView } from "@galahad/core";
+import type { ActionView, NoticeView, SelfActionView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
@@ -212,7 +212,10 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const read = ctx.can("mind:read");
 
   const waiting = () => ctx.live.actions.value.filter((a) => isWaiting(a));
-  const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed);
+  // What his daily reflection suggests is its own list: ideas he'd like to act on, never acted on by him.
+  const isSuggestion = (n: NoticeView) => n.source === "reflect";
+  const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed && !isSuggestion(n));
+  const suggestions = () => ctx.live.notices.value.filter((n) => !n.dismissed && isSuggestion(n));
 
   async function dismiss(n: NoticeView, trigger: HTMLButtonElement): Promise<void> {
     await busy(trigger, async () => {
@@ -277,8 +280,70 @@ export const inboxView: View = (root, ctx, { scope }) => {
     noticesSection.hidden = !list.length;
     renderAllClear();
   };
+  const suggestionsBox = h("div", { class: "card" });
+  const renderSuggestions = () => {
+    const list = suggestions();
+    const write = ctx.can("fleet:admin");
+    replace(
+      suggestionsBox,
+      h(
+        "div",
+        { class: "rows" },
+        ...list.map((n) => {
+          const idea = n.title.replace(/^Galahad suggests: /, "");
+          return findingRow(
+            ctx,
+            { ...n, title: idea },
+            [h("span", {}, "from his reflection"), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
+            [
+              ctx.can("chat") ? button("Ask him", { size: "sm", icon: "chat", label: `Ask him: ${idea}`, onClick: () => ctx.navigate("chat", { query: idea }) }) : null,
+              write ? button("Dismiss", { size: "sm", variant: "ghost", icon: "x", label: `Dismiss: ${idea}`, onClick: (event) => void dismiss(n, event.currentTarget as HTMLButtonElement) }) : null,
+            ],
+          );
+        }),
+      ),
+    );
+    suggestionsSection.hidden = !list.length;
+  };
+
+  // What he fixed himself after his heartbeats (self-action): his own, in the ledger; the switch is on Loops.
+  const fixedRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
+  const fixedSummary = h("span", { class: "small strong" });
+  let fixedSignature = "";
+  async function loadFixed(): Promise<void> {
+    if (!read) return;
+    try {
+      const view = await ctx.api.get<SelfActionView>("/api/self-action", scope.signal);
+      if (scope.disposed) return;
+      const signature = JSON.stringify([view.on, view.recent.map((e) => e.id)]);
+      if (signature === fixedSignature) return;
+      fixedSignature = signature;
+      const recent = view.recent.slice(0, 8);
+      keepPlace(fixedRows, () =>
+        replace(
+          fixedRows,
+          ...recent.map((e) => {
+            const failed = e.reason?.startsWith("Galahad's own fix didn't") ?? false;
+            const at = hlcMs(e.hlc);
+            return h(
+              "div",
+              { class: "item" },
+              h("span", { class: "avatar", "data-tone": failed ? "warn" : "ok" }, icon(failed ? "alert" : "check-circle", { size: 14 })),
+              h("div", { class: "grow" }, h("div", { class: "small strong" }, `${failed ? "Galahad tried" : "Galahad fixed"}: ${e.detail ?? e.target}`), h("div", { class: "meta" }, h("span", { class: "mono" }, e.target), at ? h("span", {}, relativeTime(at)) : null)),
+            );
+          }),
+          h("p", { class: "tiny subtle", style: "padding:8px 12px" }, view.on ? "After each heartbeat he fixes only what's on a short list himself (Loops → Self-action, where you can turn it off); everything else waits here for you." : "Self-action is off: he only reports (Loops → Self-action)."),
+        ),
+      );
+      fixedSummary.textContent = `Fixed by Galahad himself (${view.recent.length})`;
+      fixed.hidden = !view.recent.length;
+    } catch {
+      /* an older node has no self-action: nothing to show */
+    }
+  }
+
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + suggestions().length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -314,6 +379,13 @@ export const inboxView: View = (root, ctx, { scope }) => {
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);
   const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
+  const suggestionsSection = section(
+    "Galahad suggests",
+    {},
+    h("p", { class: "tiny subtle" }, "From his daily reflection: things he'd like to do. He won't do any of them on his own; ask him, or dismiss it."),
+    suggestionsBox,
+  );
+  const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);
   // Kept across re-renders so it stays open while the outbox changes.
   const history = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), historySummary), historyRows);
 
@@ -328,7 +400,9 @@ export const inboxView: View = (root, ctx, { scope }) => {
       actionsSection,
       requestsSection,
       noticesSection,
+      suggestionsSection,
       read ? history : null,
+      read ? fixed : null,
     ),
   );
 
@@ -336,12 +410,16 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.secretRequests.subscribe(renderRequests));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
+  scope.add(ctx.live.notices.subscribe(renderSuggestions));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();
   renderRequests();
   renderActions();
   renderNotices();
+  renderSuggestions();
   void ctx.live.refreshInbox();
+  void loadFixed();
+  scope.interval(() => void loadFixed(), 15_000);
   scope.interval(() => void ctx.live.refreshInbox(), 2000);
   // Deadlines tick without a re-render (that would lose a half-made decision).
   scope.interval(() => {

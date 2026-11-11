@@ -35,6 +35,8 @@ export interface Duck {
   headPitch: number;
   beak: number;
   wander: number;
+  /** Gathered round Galahad (care.ts), looking up at him. */
+  gathered?: boolean;
 }
 
 export interface Leader {
@@ -48,6 +50,11 @@ const HOME_RADIUS = 34;
 
 export class MicroduckFlock {
   readonly ducks: Duck[] = [];
+  /* ---------- Galahad's visits (care.ts) ---------- */
+  /** He's come to see them: those within reach gather round this point, looking up at him. */
+  readonly gather = { on: false, x: 0, y: 0 };
+  /** The one he's leading home (it follows him), or −1. */
+  led = -1;
   private readonly movers: Mover[] = [];
   private readonly random: () => number;
   private readonly scratch = { x: 0, y: 0 };
@@ -113,6 +120,13 @@ export class MicroduckFlock {
         d.mode = "walk";
       }
       if (d.timer <= 0 && !d.following) this.choose(d);
+      if (i === this.led) {
+        d.following = 1;
+        d.followTimer = Math.max(d.followTimer, 1);
+      }
+      // Round him in a loose ring when he visits, each in its own place of it.
+      const gathering = this.gather.on && i !== this.led && Math.hypot(d.x - this.gather.x, d.y - this.gather.y) < 30;
+      d.gathered = false;
 
       // Where it wants to go.
       let tx = Math.cos(d.wander);
@@ -126,6 +140,20 @@ export class MicroduckFlock {
         tx = gx / (dist || 1);
         ty = gy / (dist || 1);
         d.speed = dist < 0.5 ? 0 : Math.min(1.4, WALK + dist * 0.25);
+      } else if (gathering) {
+        const a = i * 2.39996;
+        const gx = this.gather.x + Math.cos(a) * (1.9 + 0.4 * (i % 3)) - d.x;
+        const gy = this.gather.y + Math.sin(a) * (1.9 + 0.4 * (i % 3)) - d.y;
+        const dist = Math.hypot(gx, gy);
+        tx = gx / (dist || 1);
+        ty = gy / (dist || 1);
+        d.speed = dist < 0.35 ? 0 : Math.min(1.3, WALK + dist * 0.3);
+        if (dist < 0.6) {
+          d.gathered = true;
+          d.mode = "look";
+          d.timer = Math.max(d.timer, 0.5);
+          d.heading = turnTowards(d.heading, Math.atan2(this.gather.y - d.y, this.gather.x - d.x), 3 * dt);
+        }
       } else if (d.mode === "walk") d.speed = WALK;
       else d.speed = 0;
       // A loose flock: drawn to the others when far, kept apart when close.
@@ -183,7 +211,9 @@ export class MicroduckFlock {
     let yaw = 0;
     let pitch = 0;
     let beak = 0;
-    if (d.mode === "look" && !d.following) yaw = 0.7 * Math.sin(t * 1.8 + i);
+    if (d.mode === "look" && !d.following) yaw = d.gathered ? 0.15 * Math.sin(t * 1.3 + i) : 0.7 * Math.sin(t * 1.8 + i);
+    // Gathered round him: heads up, at him.
+    if (d.gathered) pitch = -0.35;
     if (d.mode === "bob" && !d.following) pitch = 0.35 * Math.max(0, Math.sin(t * 7 + i));
     if (d.mode === "peck" && !d.following) {
       const p = Math.max(0, Math.sin(t * 5 + i));
@@ -219,6 +249,38 @@ export class MicroduckFlock {
     out.left = 0.55 * s * moving;
     out.right = -0.55 * s * moving;
     out.bob = Math.abs(s) * 0.025 * moving;
+  }
+
+  /** The duck farthest from the rest (its index, and how far from the flock's middle), for him to lead home. */
+  stray(): { index: number; distance: number } {
+    const n = this.ducks.length;
+    let cx = 0;
+    let cy = 0;
+    for (const d of this.ducks) {
+      cx += d.x / n;
+      cy += d.y / n;
+    }
+    let index = -1;
+    let distance = 0;
+    this.ducks.forEach((d, i) => {
+      const r = Math.hypot(d.x - cx, d.y - cy);
+      if (r > distance) {
+        distance = r;
+        index = i;
+      }
+    });
+    return { index, distance };
+  }
+
+  /** The middle of the flock (into `out`). */
+  middle(out: { x: number; y: number }): { x: number; y: number } {
+    out.x = 0;
+    out.y = 0;
+    for (const d of this.ducks) {
+      out.x += d.x / this.ducks.length;
+      out.y += d.y / this.ducks.length;
+    }
+    return out;
   }
 
   /** The duck nearest a world point within `r` metres, if any. */

@@ -23,7 +23,9 @@ import {
   type ExperimentView,
   type GalahadState,
   HOLD_MAX_MS,
+  MAX_PARTNERS,
   PADS,
+  PARTNER_IDLE_MS,
   padKindFor,
   type PhaseTimes,
   PLOT_FILL,
@@ -35,7 +37,9 @@ import {
   STATIONS,
   walkMs,
   type WorldEvent,
+  type WorldHeartbeat,
   type WorldNode,
+  type WorldPartner,
   type WorldReport,
   type WorldWeather,
 } from "@galahad/core";
@@ -149,9 +153,14 @@ export class WorldHub {
   private readonly examiners = new Set<(examination: Examination | null, experiment: ExperimentView) => void>();
 
   constructor(private readonly opts: { now?: () => number; store?: ExperimentStore } = {}) {
-    this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
-    // An experiment that stops sending (its sandbox died, its script hung) ends as failed.
-    this.sweep = setInterval(() => this.quiet(), 15_000);
+    this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now(), idle: true };
+    // An experiment that stops sending (its sandbox died, its script hung) ends as failed; partners that went quiet go home;
+    // his heartbeat is read again (another node may have run it, or a notice cleared).
+    this.sweep = setInterval(() => {
+      this.quiet();
+      this.partnersQuiet();
+      if (this.watchers.size) this.heartbeatChanged();
+    }, 15_000);
     this.sweep.unref?.();
     // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
     opts.store?.onChange(() => this.emit({ type: "saved", at: this.now(), saved: this.saved() }));
@@ -199,7 +208,19 @@ export class WorldHub {
   /** Everything now: what a new watcher sees first. */
   hello(): WorldEvent {
     const board = this.boardVersion();
-    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather(), saved: this.saved(), ...(board === null ? {} : { board: { version: board } }) };
+    return {
+      type: "hello",
+      at: this.now(),
+      galahad: this.galahad,
+      nodes: this.nodes(),
+      experiments: this.views(),
+      thoughts: [...this.thoughts],
+      weather: this.weather(),
+      saved: this.saved(),
+      ...(board === null ? {} : { board: { version: board } }),
+      heartbeat: this.heartbeatNow(),
+      partners: this.partnerViews(),
+    };
   }
 
   watch(fn: (event: WorldEvent) => void): () => void {
@@ -235,7 +256,7 @@ export class WorldHub {
       // Building an experiment, out at one being tested or examining one, he stays at it.
       const watching = this.galahad.experiment ? this.experiments.get(this.galahad.experiment) : undefined;
       if (watching && (watching.phase === "building" || watching.phase === "testing" || watching.phase === "examining")) return this.restIn(IDLE_MS);
-      this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
+      this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now(), idle: true };
       this.emit({ type: "galahad", at: this.now(), galahad: this.galahad });
     }, ms);
     this.idle.unref?.();
@@ -270,6 +291,66 @@ export class WorldHub {
 
   fleetChanged(): void {
     this.emit({ type: "fleet", at: this.now(), nodes: this.nodes() });
+  }
+
+  /* ---------- his heartbeat ---------- */
+
+  private heartbeat: () => WorldHeartbeat | null = () => null;
+  private heartbeatKey = "null";
+
+  /** Where his heartbeat is read from (the app sets it: heartbeat-world.ts, from the mind). */
+  setHeartbeat(source: () => WorldHeartbeat | null): void {
+    this.heartbeat = source;
+    this.heartbeatKey = JSON.stringify(this.heartbeatNow());
+  }
+
+  private heartbeatNow(): WorldHeartbeat | null {
+    try {
+      return this.heartbeat();
+    } catch {
+      return null;
+    }
+  }
+
+  /** It ran, a notice was dismissed or cleared: watchers hear of it if what the world shows changed. */
+  heartbeatChanged(): void {
+    const heartbeat = this.heartbeatNow();
+    const key = JSON.stringify(heartbeat);
+    if (key === this.heartbeatKey) return;
+    this.heartbeatKey = key;
+    this.emit({ type: "heartbeat", at: this.now(), heartbeat });
+  }
+
+  /* ---------- partners: the agents working with him (their MCP calls) ---------- */
+
+  private readonly partners = new Map<string, WorldPartner>();
+
+  /** An agent's call: it arrives (or moves on) to the station its tool sends it to, beside him. */
+  partner(name: string, station: Station, doing: string): void {
+    const now = this.now();
+    const was = this.partners.get(name);
+    const line = clipThought(doing);
+    const next: WorldPartner = { name: name.slice(0, 48), station, doing: line, since: was?.since ?? now, last: now };
+    this.partners.delete(name);
+    this.partners.set(name, next);
+    while (this.partners.size > MAX_PARTNERS) this.partners.delete(this.partners.keys().next().value!);
+    if (!was || was.station !== station || was.doing !== line) this.emit({ type: "partners", at: now, partners: this.partnerViews() });
+  }
+
+  /** Partners that have made no call for a while go home. */
+  partnersQuiet(): void {
+    const now = this.now();
+    let gone = false;
+    for (const [name, p] of this.partners) {
+      if (now - p.last < PARTNER_IDLE_MS) continue;
+      this.partners.delete(name);
+      gone = true;
+    }
+    if (gone) this.emit({ type: "partners", at: now, partners: this.partnerViews() });
+  }
+
+  private partnerViews(): WorldPartner[] {
+    return [...this.partners.values()].map((p) => ({ ...p }));
   }
 
   /* ---------- experiments ---------- */

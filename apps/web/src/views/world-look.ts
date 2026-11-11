@@ -31,7 +31,7 @@ export interface Look {
 
 let ids = 0;
 
-export function createLook(options: { model: () => WorldModel; onPick: (target: LookTarget) => void; onOpen?: () => void }): Look {
+export function createLook(options: { model: () => WorldModel; life?: () => string; onPick: (target: LookTarget) => void; onOpen?: () => void }): Look {
   const listId = `world-look-list-${++ids}`;
   const label = h("span", { class: "look-label ellipsis" });
   const meta = h("span", { class: "look-meta ellipsis" });
@@ -73,7 +73,7 @@ export function createLook(options: { model: () => WorldModel; onPick: (target: 
   let last = { label: "", meta: "", running: -1 };
 
   function render(): void {
-    shown = lookOptions(options.model(), input.value);
+    shown = lookOptions(options.model(), input.value, options.life?.() ?? "");
     active = Math.min(active, Math.max(0, shown.length - 1));
     const rows: HTMLElement[] = [];
     let group: LookGroup | null = null;
@@ -96,7 +96,7 @@ export function createLook(options: { model: () => WorldModel; onPick: (target: 
           },
           o.tone ? dot(o.tone, { live: o.live }) : icon(o.icon, { size: 15, class: "subtle" }),
           h("span", { class: "grow look-option-text" }, h("span", { class: "small strong ellipsis" }, o.label), o.meta ? h("span", { class: "meta ellipsis" }, o.meta) : null),
-          o.here ? h("span", { class: "tiny look-here" }, o.hereText ?? "here") : null,
+          o.here ? h("span", { class: "tiny look-here" }, o.hereText ?? (o.group === "Partners" ? "with him" : "here")) : null,
         ),
       );
     });

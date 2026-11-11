@@ -19,6 +19,7 @@ import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
 import { assess, loopNotice } from "./heartbeat.ts";
+import { heartbeatView } from "./heartbeat-world.ts";
 import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
@@ -53,7 +54,7 @@ export interface DaemonOptions {
   capabilities?: Capabilities;
   /** How often the loop runner wakes (default 15 s). */
   loopIntervalMs?: number;
-  /** Let the fleet's founding node create the default heartbeat loop (default true; GALAHAD_HEARTBEAT=off disables). */
+  /** Let the fleet's founding node create the default loops, the heartbeat and the daily reflection (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
@@ -78,6 +79,24 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
     enabled: true,
     task: { kind: "heartbeat" },
     label: "Galahad's regular look around",
+  });
+}
+
+/**
+ * And a daily reflection, once, the same way: in the evening in Denmark, on the node that runs the heartbeat
+ * (an always-on one). Never again after that, so a reflection you removed stays removed.
+ */
+export function ensureReflection(store: MindStore, identity: NodeIdentity): void {
+  if (store.genesis?.device !== identity.id || store.lww("loop:reflect")) return;
+  const beat = loopRecords(store).find((l) => l.name === "heartbeat");
+  store.emit(identity, "loop.set", {
+    name: "reflect",
+    schedule: "30 21 * * *",
+    tz: "Europe/Copenhagen",
+    on: beat?.on ?? identity.id,
+    enabled: true,
+    task: { kind: "reflect" },
+    label: "Galahad's daily reflection",
   });
 }
 
@@ -269,8 +288,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     execute: loopExecutor(taskDeps),
     onFinished: (loop, result) => {
       if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
+      // His heartbeat in the world: it beat, and what still needs you.
+      if (loop.task.kind === "heartbeat" || loop.task.kind === "reflect") world.heartbeatChanged();
     },
   });
+  // Self-action's hands, and what the reflection reads.
+  taskDeps.runLoop = (name) => void loops.runNow(name);
+  taskDeps.isRunning = (name) => loops.isRunning(name);
+  taskDeps.weather = { enabled: opts.weather ?? false, watched: () => world.watching > 0, known: () => weather.current() !== null, refresh: () => weather.refresh() };
+  taskDeps.chats = chats;
+  world.setHeartbeat(() => heartbeatView(store));
 
   const shutdown = new AbortController();
   const app = createApp({
@@ -344,6 +371,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ensureHeartbeat(store, identity, caps);
     } catch (error) {
       log(`default heartbeat not created: ${(error as Error).message}`);
+    }
+    try {
+      ensureReflection(store, identity);
+    } catch (error) {
+      log(`daily reflection not created: ${(error as Error).message}`);
     }
   }
   loops.start(opts.loopIntervalMs);

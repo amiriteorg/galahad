@@ -1,6 +1,12 @@
 import {
   type ActionView,
+  canonical,
+  type Json,
   CLIENT_DEFAULT_SCOPES,
+  SELF_ACTION_KINDS,
+  SELF_ACTION_RESOURCE,
+  SELF_ACTIONS,
+  type SelfActionView,
   type ChatStreamEvent,
   stationForTool,
   type WorldEvent,
@@ -85,6 +91,7 @@ import { boardVersionForArchive } from "./board-history.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
+import { selfActionOn } from "./heartbeat-world.ts";
 import { type Candidate, place } from "./placement.ts";
 
 /**
@@ -564,12 +571,44 @@ export function createApp(ctx: AppContext) {
     };
   }
 
-  /** What an agent (an arm, Galahad's own tools included) does through the API, as the world shows it. */
-  function armActivity(name: RouteName, input: unknown): void {
+  /**
+   * What an agent (an arm, Galahad's own tools included) does through the API, as the world shows it. A coding
+   * agent (not Galahad's own chat, not a loop: those are him) walks there beside him, as his partner.
+   */
+  function armActivity(name: RouteName, input: unknown, label?: string): void {
     const tool = TOOLS.find((t) => t.routes[0] === name);
     if (!tool || (name === "connectors" || name === "fleet")) return;
     const q = input && typeof input === "object" ? ((input as Record<string, unknown>).q ?? (input as Record<string, unknown>).query) : undefined;
-    ctx.world.doing(stationForTool(tool.name), `${tool.title}${typeof q === "string" && tool.flow !== "private" ? `: ${q.slice(0, 80)}` : ""}`);
+    const station = stationForTool(tool.name);
+    const line = `${tool.title}${typeof q === "string" && tool.flow !== "private" ? `: ${q.slice(0, 80)}` : ""}`;
+    ctx.world.doing(station, line);
+    if (label && label !== GALAHAD_ARM && !label.startsWith("loop.")) ctx.world.partner(label, station, line);
+  }
+
+  /** Self-action as the owner sees it: on or off, the heartbeats it follows, the allowlist, his latest fixes. */
+  function selfActionView(): SelfActionView {
+    const { on, heartbeats } = selfActionOn(ctx.store);
+    return {
+      on,
+      heartbeats,
+      allowlist: SELF_ACTION_KINDS.map((kind) => ({ kind, class: SELF_ACTIONS[kind].class, why: SELF_ACTIONS[kind].why })),
+      recent: ctx.store
+        .ledger(300)
+        .filter((e) => e.body.resource === SELF_ACTION_RESOURCE)
+        .slice(0, 50)
+        .map((e) => ({
+          id: e.id,
+          hlc: e.hlc,
+          device: e.device,
+          class: e.body.class,
+          resource: e.body.resource,
+          target: e.body.target,
+          verdict: e.body.verdict,
+          reason: e.body.reason ?? null,
+          quest: e.body.quest ?? null,
+          detail: e.body.detail ?? null,
+        })),
+    };
   }
 
   /** A tool's failure in words the model may see: what the API would say, never an internal error's detail. */
@@ -1381,8 +1420,10 @@ export function createApp(ctx: AppContext) {
     setLoop: (input) => {
       const existing = loopRecords(ctx.store).find((l) => l.name === input.name);
       if (!existing && (!input.schedule || !input.task)) throw new HttpError(400, "a new loop needs a schedule and a task");
-      const task: LoopTask | null = input.task ?? existing?.task ?? null;
+      let task: LoopTask | null = input.task ?? existing?.task ?? null;
       if (!task) throw new HttpError(400, "this node can't read the loop's task; give it again");
+      // A heartbeat given again keeps the owner's self-action switch unless it says otherwise (setSelfAction turns it on).
+      if (task.kind === "heartbeat" && task.selfAction === undefined && existing?.task?.kind === "heartbeat" && existing.task.selfAction === false) task = { ...task, selfAction: false };
       const schedule: string = input.schedule ?? existing!.scheduleText;
       const tz: string = input.tz ?? existing?.tz ?? "UTC";
       if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);
@@ -1433,9 +1474,34 @@ export function createApp(ctx: AppContext) {
     dismissNotice: (input) => {
       if (!ctx.store.lww(`notice:${input.key}`)?.value) throw new HttpError(404, "no such notice");
       ctx.store.emit(ctx.identity, "notice.dismissed", { key: input.key });
+      // He stops tending to it in the world.
+      ctx.world.heartbeatChanged();
       return { ok: true };
     },
     heartbeat: async () => ({ node: ctx.nodeName, findings: await ctx.heartbeatCheck() }),
+    selfAction: () => selfActionView(),
+    setSelfAction: (input) => {
+      const beats = loopRecords(ctx.store).filter((l) => l.task?.kind === "heartbeat");
+      if (!beats.length) throw new HttpError(409, "there's no heartbeat loop, and self-action runs after it (galahad loop add heartbeat --every 30m --heartbeat)");
+      for (const loop of beats) {
+        if (loop.task?.kind !== "heartbeat") continue;
+        const { selfAction: _was, ...rest } = loop.task;
+        // On is the default: the field is left out (so the task reads as it always did); off says so.
+        const task = input.on ? rest : { ...rest, selfAction: false };
+        if (canonical(task as unknown as Json) === canonical(loop.task as unknown as Json)) continue;
+        ctx.store.emit(ctx.identity, "loop.set", {
+          name: loop.name,
+          schedule: loop.scheduleText,
+          tz: loop.tz,
+          on: loop.on,
+          enabled: loop.enabled,
+          task: task as unknown as Record<string, unknown>,
+          ...(loop.label ? { label: loop.label } : {}),
+        });
+      }
+      ctx.world.heartbeatChanged();
+      return selfActionView();
+    },
     connectors: () => ({ connectors: connectorViews() }),
     setConnector: async (input) => {
       if (input.mcp) {
@@ -1592,7 +1658,7 @@ export function createApp(ctx: AppContext) {
       if (!principal) throw new HttpError(401, "sign the request with an enrolled device key");
       if (route.scope && !principal.scopes.includes(route.scope)) throw new HttpError(403, `requires scope ${route.scope}`);
       const input = route.input ? route.input.parse(body.length ? JSON.parse(new TextDecoder().decode(body)) : {}) : undefined;
-      if (principal.kind === "arm") armActivity(name, input);
+      if (principal.kind === "arm") armActivity(name, input, principal.label);
       const result = await handlers[name](input, principal, req);
       if (result instanceof Response) return result;
       // What the PWA reads goes compressed. Answers that carry a credential (an invite, a token) never do.
