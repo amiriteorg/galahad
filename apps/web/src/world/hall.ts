@@ -1,4 +1,4 @@
-import { type Camera, Color, type DirectionalLight, Group, type HemisphereLight, Mesh, type Object3D, PointLight, type Scene, Sphere, Vector3 } from "three/webgpu";
+import { type Camera, Color, type DirectionalLight, Group, type HemisphereLight, Mesh, type Object3D, type Scene, Sphere, Vector3 } from "three/webgpu";
 import type { Collider } from "./colliders.ts";
 import type { Vec3 } from "./coords.ts";
 import { Cells } from "./hall-cells.ts";
@@ -6,7 +6,7 @@ import { Cutaway, indoors } from "./hall-cutaway.ts";
 import { HallFlow } from "./hall-flow.ts";
 import { finish, Kit, pack, Quads, triangles } from "./hall-kit.ts";
 import { Machines } from "./hall-machines.ts";
-import { fenceMaterial, floorMaterial, glassMaterial, HallUniforms, type Lighting, rigMaterial, screenMaterial, shaftMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
+import { fenceMaterial, floorMaterial, glassMaterial, HallUniforms, indoorLight, type Lighting, rigMaterial, screenMaterial, shaftMaterial, shellMaterial, solidMaterial } from "./hall-materials.ts";
 import { CART, CELLS, CRANE, FARM, HALL, HALL_DETAIL, HALL_SOLIDS, inCollider, inHall } from "./hall-plan.ts";
 import { Bones } from "./hall-rig.ts";
 import { buildHall, buildShafts, LAMP_BAY, LAMP_SIGN } from "./hall-shell.ts";
@@ -62,14 +62,14 @@ export class Workshop implements Place {
   private inside = 0;
   private clock = 0;
   private posed = false;
-  /** A lamp over Galahad while he's in the hall after dark (not on the low tier): the hall's light on him. */
-  private readonly lamp: PointLight | null;
-  private near = 0;
+  /** How the hall lights itself on this tier. */
+  private readonly lighting: Lighting;
 
   constructor(ctx: PlaceContext) {
     const tier = ctx.tier.name;
     const detail = HALL_DETAIL[tier];
     const lighting: Lighting = { sun: detail > 0, wet: 0.7 };
+    this.lighting = lighting;
     this.flow = new HallFlow({ printers: FARM.count[tier], tote: tier === "low" ? 4 : 6 });
     const fixed = new Kit(detail);
     const rig = new Kit(detail);
@@ -113,8 +113,6 @@ export class Workshop implements Place {
     // One sphere for everything: out of view, nothing of the hall is drawn.
     const bounds = new Sphere(new Vector3(HALL.x, 5, -HALL.y), Math.hypot(HALL.hx + 9, HALL.hy + 2, 8));
     for (const mesh of meshes) mesh.geometry.boundingSphere = bounds.clone();
-    this.lamp = detail > 0 ? new PointLight(0xffd6a6, 0, 16, 1.6) : null;
-    if (this.lamp) this.group.add(this.lamp);
     this.setNight(0);
     this.machines.pose(this.flow, this.u, 0, false);
     this.cells.pose(0, false, this.u, this.machines);
@@ -203,18 +201,15 @@ export class Workshop implements Place {
     const cart = this.flow.cart.pose;
     this.movers[0]!.x = cart.x;
     this.movers[0]!.y = cart.y;
-    // The lamps' light on Galahad (his own material takes the scene's lights, not the hall's): from above
-    // him on the camera's side, so the side of him you see is lit as the hall around him is.
-    if (this.lamp) {
-      const inside = inHall(frame.galahadX, frame.galahadY) ? 1 : 0;
-      this.near += frame.motion ? Math.max(-1, Math.min(1, (inside - this.near) * 3 * frame.dt)) : inside - this.near;
-      const dx = cx - frame.galahadX;
-      const dy = cy - frame.galahadY;
-      const d = Math.max(1e-3, Math.hypot(dx, dy));
-      const k = Math.min(2.5, d) / d;
-      this.lamp.position.set(frame.galahadX + dx * k, 4.6, -(frame.galahadY + dy * k));
-      this.lamp.intensity = 14 * this.lamps * this.near;
-    }
+  }
+
+  /**
+   * The light indoors, as the hall's own faces take it (an irradiance node: the sky through its glazing, the sun's
+   * patches through its openings, its lamps): for whoever walks in (Galahad, his dog: their materials use it there,
+   * on every tier, rather than the scene's sun, which no roof stops where there are no shadows).
+   */
+  insideLight(): ReturnType<typeof indoorLight> {
+    return indoorLight(this.u, this.lighting);
   }
 
   /** The sky's light as the scene has it now, and the glass for where the camera is. */

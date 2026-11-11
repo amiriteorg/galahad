@@ -210,7 +210,7 @@ export interface Lighting {
  * Irradiance indoors (the same units as the scene's lights, so a Lambert face reflects albedo × this ÷ π):
  * the sky through the glazing (mostly from above), the sun's patches, and the lamps.
  */
-function indoorLight(u: HallUniforms, o: Lighting): V3 {
+export function indoorLight(u: HallUniforms, o: Lighting): V3 {
   const n = normalWorld;
   const p = positionWorld.sub(u.shift) as unknown as V3;
   // The sky: through the roof's glazing and the windows, softer than outdoors and mostly from above.

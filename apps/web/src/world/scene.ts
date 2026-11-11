@@ -16,6 +16,7 @@ import { addPlants } from "./flora-plan.ts";
 import { ProvingGround } from "./field.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
+import { inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
 import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
@@ -332,7 +333,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   glows.set("landmarks", landmarks.windows, 0xffc27a);
   // The built places beyond the keep: the proving ground and the workshop hall.
   const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
-  const places: Place[] = [new ProvingGround(placeContext), new Workshop(placeContext)];
+  const workshop = new Workshop(placeContext);
+  const places: Place[] = [new ProvingGround(placeContext), workshop];
+  // In the hall, Galahad and his dog are lit as it lights itself (every tier: no sun under its roof where there are no shadows).
+  knight.lightIndoors(workshop.insideLight());
+  dog.lightIndoors(workshop.insideLight());
   solids.add(KEEP_COLLIDERS);
   solids.add(SITE_COLLIDERS, (x, y) => land.heightAt(x, y));
   places.forEach((place, i) => {
@@ -1121,6 +1126,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // Walkers that ended up overlapping are parted (the lighter gives way), before they're drawn.
     solids.separate();
     dog.apply(groundAt(dog.x, dog.y), ZERO);
+    // Into the hall and out, over a third of a second (at once under reduced motion).
+    for (const [who, x, y] of [[knight, walker.x, walker.y], [dog, dog.x, dog.y]] as const) {
+      const inside = inHall(x, y) ? 1 : 0;
+      who.indoors.value += motion ? Math.max(-1, Math.min(1, (inside - who.indoors.value) * 3 * renderDt)) : inside - who.indoors.value;
+    }
     keep.animate(t, motion);
     landmarks.animate(t, motion);
     placeFrame.dt = renderDt;
