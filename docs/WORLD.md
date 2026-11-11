@@ -37,6 +37,7 @@ A chalkboard stands beside the observatory, on the keep's side: a slate in a woo
 - **He writes there.** When he (or an agent of yours) writes on the board, he walks to it, stands before the spot the item went to and writes, his right hand moving along its lines with the chalk for a few seconds; the item appears on the face as he starts. Several writes queue (three at most; more just appear). Under reduced motion they just appear.
 - **You draw there.** Tap the board (or hover it: "Chalkboard · tap to open") or pick it in the selector, and it opens over the world to draw on (full screen on a phone). What you draw shows on the face too.
 - **How it's drawn.** Its face is a texture painted from the board's state with the same chalk as the page you draw on (`apps/web/src/ui/chalk.ts`): grain from a small noise tile, a drier second edge to every stroke, the duster rubbing chalk out. It's painted again only when the board changes, never per frame, at 512 pixels across on the low tier, 1024 on medium (phones) and 1600 on high. The frame, legs, tray, chalk and duster are one merged mesh (`apps/web/src/world/board.ts`, a place of its own like the hall and the proving ground); with the face, two draw calls.
+- **Nothing on it is lost.** Every version is kept (the app's History, `galahad board history`): clearing or erasing takes it off the face, not out of the record.
 - **Solid.** The frame and its legs are a solid walkers go round; the space before it, where he stands to write, stays clear (held by a test).
 
 ## The test sites
