@@ -130,6 +130,7 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 3. Both sides derive a **6-digit code (SAS)** from (secret, fleet, joining device key). Approve only if the codes match. Someone who intercepted the invite has a different device key, and therefore a different code.
 4. **Conflict lock:** if a second device uses the same invite, the invite is locked and nothing on it can be approved. That pattern suggests interception.
 5. Approval emits `device.enrolled`. For nodes it also emits `vault.grant`. The joining device verifies an **approval proof** (another HMAC) and that the synced genesis matches the fleet id in the invite.
+6. **Scopes:** a client's invite says what the device may do. By default that's every scope except `gateway:mint` (your phone and browser are your console); name fewer for a device you trust less. An invite never carries a scope its maker lacks: a paired device asking for more is refused with the scopes it lacks. A machine becomes a full node, owner-equivalent, so approving one is done only at a terminal on an existing node.
 
 ## 4. The Vault ✅
 

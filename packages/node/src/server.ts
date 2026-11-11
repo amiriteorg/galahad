@@ -979,11 +979,14 @@ export function createApp(ctx: AppContext) {
       ctx.chats.projectRemoved(input.id);
       return { removed: true };
     },
-    createInvite: (input) =>
-      ctx.pairing.createInvite(input.kind, {
-        scopes: input.scopes ?? (input.kind === "client" ? CLIENT_DEFAULT_SCOPES : undefined),
-        origin: input.origin,
-      }),
+    createInvite: (input, p) => {
+      const scopes: Scope[] | undefined = input.scopes ?? (input.kind === "client" ? CLIENT_DEFAULT_SCOPES : undefined);
+      // An invite carries no more than its maker holds, so a paired device can't pair itself a stronger one.
+      // (A machine's invite still needs approving at a terminal, where you hold everything.)
+      const beyond = input.kind === "client" ? scopes!.filter((s) => !p.scopes.includes(s)) : [];
+      if (beyond.length) throw new HttpError(403, `an invite can't carry scopes this device doesn't hold: ${beyond.join(", ")}`);
+      return ctx.pairing.createInvite(input.kind, { scopes, origin: input.origin });
+    },
     pairings: () => ({ pairings: ctx.pairing.pending() }),
     approvePairing: (input, p) => {
       // A new machine receives the vault. A lost or stolen phone must not be able to

@@ -368,7 +368,32 @@ describe("a browser client (the PWA path)", () => {
     await callA("rejectPairing", { invite: pending.invite, device: pending.device });
   });
 
-  test("client invites default to least privilege (no gateway minting)", async () => {
+  test("an invite carries no more than its maker holds: a phone can't pair itself a stronger device", async () => {
+    const callA = admin(homeA, portA);
+    const invite = await callA<{ invite: string }>("createInvite", { kind: "client", scopes: ["fleet:admin", "chat"] });
+    const phone = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
+    const phoneId = clientIdFromKey(new Uint8Array(await crypto.subtle.exportKey("raw", phone.publicKey)));
+    const join = await requestPairing(invite.invite, { device: phoneId, name: "small-phone", kind: "client" });
+    const pending = (await callA("pairings")).pairings.find((p: any) => p.device === phoneId);
+    await callA("approvePairing", { invite: pending.invite, device: pending.device });
+    await waitForApproval(join, { intervalMs: 50 });
+    const asPhone = async (input: object) => {
+      const body = utf8(JSON.stringify(input));
+      const headers = await signRequest(phoneId, async (m) => new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, phone.privateKey, m)), "POST", "/api/invites", body);
+      const response = await fetch(`http://127.0.0.1:${portA}/api/invites`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body });
+      return { status: response.status, error: ((await response.json()) as { error?: string }).error };
+    };
+    // Asking for more, by name or by the default, is refused and says what it lacks.
+    expect(await asPhone({ kind: "client", scopes: ["chat", "gateway:mint", "vault:write"] })).toEqual({
+      status: 403,
+      error: "an invite can't carry scopes this device doesn't hold: gateway:mint, vault:write",
+    });
+    expect((await asPhone({ kind: "client" })).status).toBe(403);
+    // Within what it holds, it invites as before.
+    expect((await asPhone({ kind: "client", scopes: ["chat"] })).status).toBe(200);
+  });
+
+  test("client invites default to every scope but gateway minting", async () => {
     const callA = admin(homeA, portA);
     const invite = await callA<{ invite: string }>("createInvite", { kind: "client" });
     const key = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;

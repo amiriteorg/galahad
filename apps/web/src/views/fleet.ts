@@ -257,7 +257,8 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
   );
 }
 
-const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => s.scope !== "sandbox" || ctx.can("sandbox"));
+// An invite can carry only what this device holds (the node refuses more), so only those are offered.
+const KNOWN_SCOPES = (ctx: Ctx) => SCOPE_INFO.filter((s) => ctx.can(s.scope));
 
 export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"): void {
   if (!ctx.can("fleet:admin")) {

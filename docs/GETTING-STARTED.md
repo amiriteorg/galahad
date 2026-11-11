@@ -59,6 +59,8 @@ bun galahad invite --client
 2. The device creates a non-extractable key and shows a **6-digit code**.
 3. The terminal shows the same code. Answer `y` only if they match.
 
+The device gets every scope except `gateway:mint`: it's your console, the bank, the vault and pairing included. For a device you trust less, pair it from the PWA (**Fleet → Pair a device**, then **Custom** or **Chat & read**) with fewer; an invite never carries a scope the inviting device lacks.
+
 ## 4. Add the server
 
 ### The one-command way: `scripts/deploy.sh`
