@@ -21,7 +21,7 @@ In the [Control Panel](https://enablebanking.com/cp/applications): **API applica
 | Environment | Production |
 | Private key | **Generate outside the browser and import a public certificate** (step 2), so the private key never leaves the node. *Generate in the browser* also works: then place the downloaded `.pem` yourself as in step 2. |
 | Application name | `GALAHAD` |
-| Allowed redirect URLs | `https://ultra.tail719902.ts.net:8443/bank/callback` (exactly; the PWA finishes the authorisation there) |
+| Allowed redirect URLs | `https://<node>.<tailnet>.ts.net:8443/bank/callback`: the PWA's address on the bank's node (its `tailscale serve` name), exactly; the PWA finishes the authorisation there |
 | Application description | e.g. "Personal, read-only account information for my own assistant" |
 | Data protection email | your email |
 | Privacy and terms URLs | your own pages (e.g. on galahad.bot) |
@@ -57,7 +57,7 @@ On ultra:
 ```sh
 galahad bank setup --app-id <application id> \
   --key /var/lib/galahad/.galahad/bank/enablebanking.pem \
-  --redirect-url https://ultra.tail719902.ts.net:8443/bank/callback
+  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback
 ```
 
 `--aspsp` (default `Lunar`) and `--country` (default `DK`) choose the bank. Setup writes `bank/config.json` (mode 600) and checks the files at once: it says *Not ready yet* if the key is readable by anyone else or belongs to another user.
