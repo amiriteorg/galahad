@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EffortLevel } from "./compute.ts";
 
 /*
  * Trials: problems with known answers, scored by a program, never by a model.
@@ -50,6 +51,13 @@ export const TrialRecord = z.strictObject({
   note: z.string().max(1000).optional(),
 });
 export type TrialRecord = z.infer<typeof TrialRecord>;
+
+/**
+ * How a run was run: its effort (attempts per trial, the best taken by the reviewer on the evidence before
+ * anything is graded) and how many trials ran at once. Read leniently from the log (trial.run).
+ */
+export const TrialRunSettings = z.object({ effort: EffortLevel, parallel: z.number().int().min(1).max(64).optional() });
+export type TrialRunSettings = z.infer<typeof TrialRunSettings>;
 
 /** An answer passes when it is within its tolerance of the exact one. */
 export const answerOk = (got: number | null, expected: number, tolerance: number): boolean =>

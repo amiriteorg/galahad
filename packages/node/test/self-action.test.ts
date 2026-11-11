@@ -93,8 +93,8 @@ describe("what the plan calls for", () => {
 });
 
 describe("the allowlist", () => {
-  test("is exactly three kinds, none outward, none needing you", () => {
-    expect(SELF_ACTION_KINDS.sort()).toEqual(["reap-sandbox", "refresh-weather", "retry-loop"]);
+  test("is exactly five kinds, none outward, none needing you", () => {
+    expect(SELF_ACTION_KINDS.sort()).toEqual(["adapt-compute", "calibrate", "reap-sandbox", "refresh-weather", "retry-loop"]);
     for (const kind of SELF_ACTION_KINDS) expect(["read", "create", "modify", "delete"]).toContain(SELF_ACTIONS[kind].class);
     // The only delete is the oath's own exception: an ephemeral sandbox, on behalf of its quest.
     expect(SELF_ACTION_KINDS.filter((k) => SELF_ACTIONS[k].class === "delete")).toEqual(["reap-sandbox"]);
@@ -116,6 +116,15 @@ describe("the allowlist", () => {
       { kind: "reap-sandbox", sandbox: "../../etc" },
       { kind: "retry-loop", loop: "site", after: "s1", task: { kind: "quest" } },
       { kind: "refresh-weather", url: "https://example.org" },
+      // Compute: he measures and re-derives; he never acquires, installs, downloads, hires or raises his own ceiling.
+      { kind: "rent-gpu", provider: "anywhere", hours: 1 },
+      { kind: "provision-node", cloud: "any" },
+      { kind: "pull-model", runtime: "ollama", model: "qwen3:8b" },
+      { kind: "install-runtime", node: "n_x" },
+      { kind: "set-compute-limit", node: "n_x", cores: 32 },
+      { kind: "calibrate", why: "joined", node: "n_other" },
+      { kind: "calibrate", why: "because" },
+      { kind: "adapt-compute", plan: { effort: 3 } },
       "reap-sandbox",
       null,
     ];
@@ -204,6 +213,43 @@ describe("each fix", () => {
     const [outcome] = await selfAct(fresh, async () => fresh, broken, (e) => void ledger.push(e));
     expect(outcome).toMatchObject({ ok: false });
     expect(ledger[0]!.reason).toContain("already running");
+  });
+
+  test("compute: he measures the node he's on when it's due, and re-derives his defaults when the fleet's compute changed", async () => {
+    const compute = (over: Partial<NonNullable<SelfSnapshot["compute"]>> = {}): SelfSnapshot["compute"] => ({ canMeasure: true, due: null, lastAt: NOW - 5 * MIN, limitSetAt: null, adapts: true, planDigest: "d1", recordedDigest: "d1", ...over });
+    expect(planSelfActions(calm({ compute: compute() }))).toEqual([]);
+    // Never measured: now.
+    expect(planSelfActions(calm({ compute: compute({ due: "joined", lastAt: null }) }))).toEqual([{ kind: "calibrate", why: "joined" }]);
+    // Its body changed five minutes after the last measurement (a runtime that comes and goes): not in a loop.
+    expect(planSelfActions(calm({ compute: compute({ due: "changed" }) }))).toEqual([]);
+    expect(planSelfActions(calm({ compute: compute({ due: "changed", lastAt: NOW - 61 * MIN }) }))).toEqual([{ kind: "calibrate", why: "changed" }]);
+    // The owner changed its ceiling since: measured again at once.
+    expect(planSelfActions(calm({ compute: compute({ due: "changed", limitSetAt: NOW - MIN }) }))).toEqual([{ kind: "calibrate", why: "changed" }]);
+    // A node that can't measure itself here doesn't try.
+    expect(planSelfActions(calm({ compute: compute({ due: "joined", lastAt: null, canMeasure: false }) }))).toEqual([]);
+    // The recorded plan isn't what the mind gives: re-derive. Only the node that keeps the plan does.
+    expect(planSelfActions(calm({ compute: compute({ planDigest: "d2" }) }))).toEqual([{ kind: "adapt-compute" }]);
+    expect(planSelfActions(calm({ compute: compute({ planDigest: "d2", adapts: false }) }))).toEqual([]);
+
+    const { did, h } = hands();
+    h.calibrate = async (why) => void did.push(`calibrate ${why}`);
+    h.adaptCompute = () => (did.push("adapt"), ["rack joined: 4 sandbox slots, 8 model calls at once (measured 15.6 reference cores' worth).", "Default effort 1 → 3: auto may now run up to 3 attempts at a quest at once."]);
+    const ledger: LedgerWrite[] = [];
+    const state = calm({ compute: compute({ due: "joined", lastAt: null, planDigest: "d2" }) });
+    const fixed = await selfAct(state, async () => state, h, (e) => void ledger.push(e));
+    expect(did).toEqual(["calibrate joined", "adapt"]);
+    expect(fixed.map((f) => f.ok)).toEqual([true, true]);
+    // The line the owner reads says what changed.
+    expect(fixed[1]!.title).toContain("rack joined: 4 sandbox slots");
+    expect(ledger.map((e) => [e.class, e.target, e.quest, e.resource])).toEqual([
+      ["create", "calibrate:joined", SELF_ACTION_QUEST, SELF_ACTION_RESOURCE],
+      ["modify", "adapt-compute:plan", SELF_ACTION_QUEST, SELF_ACTION_RESOURCE],
+    ]);
+    expect(ledger[1]!.detail).toContain("Default effort 1 → 3");
+    // Without the hands (a node that can't), it's recorded as tried, never as done.
+    const bare = hands();
+    const tried = await selfAct(state, async () => state, bare.h, () => {});
+    expect(tried.map((f) => f.ok)).toEqual([false, false]);
   });
 
   test("its ledger target names what it was about, and a retry names the run", () => {

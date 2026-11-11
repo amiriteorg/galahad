@@ -1,6 +1,7 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, openAIConversation, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
 import { listModels, resolveProvider } from "./providers.ts";
@@ -21,6 +22,8 @@ export interface ChatRequest {
   signal?: AbortSignal;
   /** What the model may call while it answers, and how each call runs. */
   tools?: ChatTools;
+  /** Start the role's models at this position (effort: each parallel attempt takes another one first). */
+  rotate?: number;
 }
 
 /**
@@ -73,7 +76,9 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  * would start over and might repeat what was done).
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
-  const candidates = req.model ? [req.model] : await expand(ctx, roleModels(ctx.store, req.role ?? "planner"));
+  const listed = req.model ? [req.model] : await expand(ctx, roleModels(ctx.store, req.role ?? "planner"));
+  // A parallel attempt starts at another of the role's models; the rest stay its fallbacks, in order.
+  const candidates = req.rotate ? rotated(listed, req.rotate) : listed;
   const tools = req.tools?.specs.length ? req.tools : undefined;
   for (const ref of candidates) {
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.

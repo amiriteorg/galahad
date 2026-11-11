@@ -8,7 +8,7 @@ import { ProjectId } from "./chats.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
-import { TrialId, TrialRecord } from "./trials.ts";
+import { TrialId, TrialRecord, TrialRunId } from "./trials.ts";
 
 /*
  * The mind is an append-only log of these events. Each event is content-addressed
@@ -238,6 +238,27 @@ export const Bodies = {
   "companion.named": z.strictObject({ name: z.string().min(1).max(64) }),
   /** The owner took the name back: it's "the dog" again. */
   "companion.unnamed": z.strictObject({}),
+  /**
+   * A trial run's settings (its effort: attempts per trial), recorded once when it starts by the node that
+   * runs it; the first stands. Open in the log (trials.ts TrialRunSettings): the Index per effort reads it.
+   */
+  "trial.run": z.strictObject({ run: TrialRunId, suite: z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/), settings: Open }),
+  /**
+   * A node's own measurement of itself (compute.ts Calibration): the signer is the node measured, and its
+   * latest stands. Open in the log, so a newer node that measures more never makes an older one refuse it.
+   */
+  "compute.calibrated": z.strictObject({ measured: Open }),
+  /** The owner's ceiling for one node (compute.ts ComputeLimit; the latest stands; empty: the defaults again). */
+  "compute.limit": z.strictObject({ node: DeviceRef, limit: Open }),
+  /** How he spends compute on a quest: the level auto may reach and the day's budget of extra attempts (compute.ts ComputePolicy). */
+  "compute.policy": z.strictObject({ policy: Open }),
+  /** His defaults, re-derived when the fleet's compute changed (compute.ts ComputePlan), and what changed, a line each. */
+  "compute.adapted": z.strictObject({
+    at: z.number().int(),
+    digest: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+    plan: Open,
+    changes: z.array(z.string().max(400)).max(24),
+  }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

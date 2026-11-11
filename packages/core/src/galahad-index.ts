@@ -36,3 +36,50 @@ export function galahadIndex(scores: readonly number[], resamples = 2000): { mea
   means.sort((a, b) => a - b);
   return { mean, low: means[Math.floor(0.05 * (resamples - 1))]!, high: means[Math.ceil(0.95 * (resamples - 1))]!, n };
 }
+
+/** The Index of the trials run at one effort level. */
+export interface EffortIndex {
+  /** Attempts per trial (1: one engineer in one sandbox). */
+  effort: number;
+  mean: number;
+  low: number;
+  high: number;
+  /** Scored trials (crashed ones say nothing about ability), and the runs they came from. */
+  n: number;
+  runs: number;
+}
+
+const percent = (x: number): string => `${(100 * x).toFixed(0)}%`;
+
+/**
+ * The Index per effort level, and whether more effort measurably helped: a level "wins" only
+ * if its interval clears effort 1's (the same rule as any change). `efforts` says which runs
+ * ran at more than effort 1 (a run it doesn't name ran at 1). When more effort didn't
+ * measurably help, the verdict says so.
+ */
+export function effortReport(
+  trials: readonly { run: string; status: string; score: number }[],
+  efforts: Readonly<Record<string, number>>,
+): { levels: EffortIndex[]; helps: boolean | null; verdict: string } {
+  const byLevel = new Map<number, { scores: number[]; runs: Set<string> }>();
+  for (const t of trials) {
+    if (t.status !== "scored") continue;
+    const effort = efforts[t.run] ?? 1;
+    const level = byLevel.get(effort) ?? { scores: [], runs: new Set<string>() };
+    level.scores.push(t.score);
+    level.runs.add(t.run);
+    byLevel.set(effort, level);
+  }
+  const levels = [...byLevel.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([effort, level]) => ({ effort, ...galahadIndex(level.scores), runs: level.runs.size }));
+  const base = levels.find((l) => l.effort === 1);
+  const top = [...levels].reverse().find((l) => l.effort > 1);
+  if (!base || !top || base.n < 2 || top.n < 2) {
+    return { levels, helps: null, verdict: "Not measured at more than one effort level yet: galahad trial run --effort 3 (and one at --effort 1) to see whether more compute helps." };
+  }
+  const said = (l: EffortIndex) => `${percent(l.mean)} (${percent(l.low)}–${percent(l.high)}, ${l.n} trials)`;
+  if (top.low > base.high) return { levels, helps: true, verdict: `More effort measurably helps: effort ${top.effort} scores ${said(top)} against ${said(base)} at effort 1, and the intervals don't overlap.` };
+  if (top.high < base.low) return { levels, helps: false, verdict: `More effort measurably hurt: effort ${top.effort} scores ${said(top)} against ${said(base)} at effort 1.` };
+  return { levels, helps: false, verdict: `No measurable difference: effort ${top.effort} scores ${said(top)} against ${said(base)} at effort 1, and the intervals overlap. More compute hasn't been shown to help on this suite.` };
+}

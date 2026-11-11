@@ -76,8 +76,13 @@ export interface SandboxHostOptions {
   resolvConf?: string;
   tokenStore?: SandboxTokenStore;
   docker?: string;
+  /** How Docker is run (tests pass a stand-in that answers its commands; nothing is spawned then). */
+  runner?: DockerRunner;
   now?: () => number;
 }
+
+/** One docker command: its arguments in, its exit code and output out. */
+export type DockerRunner = (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 /** Parsed (defaults applied) create request. */
 export interface CreateInput {
@@ -171,6 +176,7 @@ export class SandboxHost {
   }
 
   private async docker(args: string[], timeoutMs = 60_000, max = MAX_OUTPUT): Promise<Run> {
+    if (this.opts.runner) return { ...(await this.opts.runner(args, timeoutMs)), truncated: false };
     const proc = Bun.spawn([this.bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => proc.kill(), timeoutMs);
     const [out, err, code] = await Promise.all([readCapped(proc.stdout, max), readCapped(proc.stderr, max), proc.exited]);
@@ -179,7 +185,7 @@ export class SandboxHost {
   }
 
   async available(): Promise<boolean> {
-    if (!Bun.which(this.bin)) return false;
+    if (!this.opts.runner && !Bun.which(this.bin)) return false;
     return (await this.docker(["info", "--format", "{{.ServerVersion}}"], 8000)).code === 0;
   }
 
@@ -366,6 +372,8 @@ export class SandboxHost {
     if (!/^\/work(\/|$)/.test(path) || path.split("/").some((part) => part === "." || part === "..")) {
       throw new SandboxError("only directories under /work can be kept");
     }
+    // A stand-in for Docker has no files to copy out.
+    if (this.opts.runner) return null;
     const proc = Bun.spawn([this.bin, "cp", `${containerName(id)}:${path}`, "-"], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => proc.kill(), 15 * 60_000);
     try {
@@ -388,14 +396,21 @@ export class SandboxHost {
   }
 
   async list(): Promise<SandboxView[]> {
-    if (!(await this.available())) return [];
-    const ids = (await this.docker(["ps", "-aq", "--filter", `label=${LABEL}=1`, "--filter", `label=${LABEL}.node=${this.opts.node}`])).stdout
+    return (await this.listed()) ?? [];
+  }
+
+  /** This node's sandboxes as Docker lists them, or null when Docker couldn't say (never mistaken for "none"). */
+  async listed(): Promise<SandboxView[] | null> {
+    if (!(await this.available())) return null;
+    const listing = await this.docker(["ps", "-aq", "--filter", `label=${LABEL}=1`, "--filter", `label=${LABEL}.node=${this.opts.node}`]);
+    if (listing.code !== 0) return null;
+    const ids = listing.stdout
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
     if (!ids.length) return [];
     const inspected = await this.docker(["inspect", ...ids]);
-    if (inspected.code !== 0) return [];
+    if (inspected.code !== 0) return null;
     const containers = JSON.parse(inspected.stdout) as { Config: { Labels: Record<string, string>; Image: string }; State: { Status: string } }[];
     const usage = await this.workspaceStats();
     return containers

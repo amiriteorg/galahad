@@ -173,6 +173,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "board_erase",
         "board_read",
         "board_write",
+        "compute",
         "connector_call",
         "connectors",
         "decide",
@@ -230,6 +231,19 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     expect(text(await client.callTool({ name: "journal", arguments: { day: "2026-01-01" } }))).toBe("No journal entry for 2026-01-01.");
     const bad = await client.callTool({ name: "journal", arguments: { day: "yesterday" } });
     expect(bad.isError).toBe(true);
+  });
+
+  test("compute: an agent reads the census, and has no way to raise a ceiling, change the budget or make a node measure itself", async () => {
+    const census = text(await client.callTool({ name: "compute", arguments: {} }));
+    expect(census).toMatch(/^Compute · effort auto/);
+    expect(census).toContain("Ceilings and effort are the user's to set");
+    // No tool reaches those routes, and the routes refuse an agent's token.
+    const { tools } = await client.listTools();
+    expect(tools.filter((t) => /limit|ceiling|policy|calibrat|budget/i.test(t.name))).toEqual([]);
+    expect((await call("setComputeLimit", { node: daemon.identity.id, cores: 64 }, armToken)).status).toBe(403);
+    expect((await call("setComputePolicy", { effort: 3, attemptsPerDay: 500 }, armToken)).status).toBe(403);
+    expect((await call("calibrateCompute", {}, armToken)).status).toBe(403);
+    expect((await call("startTrialRun", { run: "r-agent", suite: "engineering", effort: 3 }, armToken)).status).toBe(403);
   });
 
   test("remember and recall: an agent's memories are labelled agent, never owner", async () => {

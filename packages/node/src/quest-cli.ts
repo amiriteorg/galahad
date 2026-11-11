@@ -1,6 +1,23 @@
-import { type ArtifactView, type ChatStreamEvent, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import { type ArtifactView, type AttemptTag, type ChatStreamEvent, type EffortAsk, type EffortGrant, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
-import { AGENTS, chooseAgentModels, investigate, type InvestigationOutcome, type QuestEvent, type QuestOptions, type QuestOutcome, readResults, runQuest } from "@galahad/brain";
+import {
+  AGENTS,
+  attemptInstructions,
+  chooseAgentModels,
+  type EffortEvent,
+  type EffortPick,
+  type EffortResult,
+  evidenceCollector,
+  investigate,
+  type InvestigationOutcome,
+  observation,
+  type QuestEvent,
+  type QuestOptions,
+  type QuestOutcome,
+  readResults,
+  runEffort,
+  runQuest,
+} from "@galahad/brain";
 
 /*
  * `galahad do "<goal>"`: a quest from the terminal. The loop itself is pure
@@ -40,6 +57,12 @@ export interface DoOptions {
   agent?: { name: string; minutes: number; repo?: string };
   /** With a GitHub repo: once the reviewer passes the work, ask you (or a standing order) to open a pull request. */
   ship?: { title?: string; base?: string; draft?: boolean; connector?: string };
+  /**
+   * How much compute to spend: 1, 2 or 3 attempts at once (each in its own sandbox, each reviewed, the best
+   * taken by the independent reviewer on the evidence), or auto: the node decides from the slots free and
+   * the day's budget. Left out: one attempt, and the node isn't asked.
+   */
+  effort?: EffortAsk;
 }
 
 /** What became of shipping a quest's work. */
@@ -53,6 +76,15 @@ export interface Shipped {
 }
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * A quest's id: when it started, and three more characters, so quests started in the same millisecond
+ * (trials in parallel) each have their own. Its sandboxes, ledger entries and effort are told apart by it.
+ */
+export const questId = (prefix = "q"): string =>
+  `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 36 ** 3)
+    .toString(36)
+    .padStart(3, "0")}`;
 
 /** owner/repo of a github.com clone URL, or null. */
 export function githubRepo(url: string): { owner: string; repo: string } | null {
@@ -173,6 +205,33 @@ function print(event: QuestEvent): void {
   }
 }
 
+/** One attempt of several, a line per step: which attempt, and what it did. */
+function printAttempt(attempt: number, event: QuestEvent): void {
+  const tag = dim(`  [${attempt}]`);
+  switch (event.type) {
+    case "plan":
+      console.log(`${tag} planned ${dim(`· ${event.model}`)}`);
+      return;
+    case "command":
+      console.log(`${tag} $ ${firstLines(event.command, 1)}`);
+      return;
+    case "observation":
+      if (event.exitCode !== 0) console.log(`${tag} ${dim(event.output.split("\n")[0] ?? "")}`);
+      return;
+    case "review":
+      console.log(`${tag} ${bold(`review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}`);
+      return;
+    case "retry":
+      console.log(`${tag} ${dim(`the ${event.role} couldn't answer; asking again in ${Math.round(event.waitMs / 1000)} s`)}`);
+      return;
+    case "finished":
+      console.log(`${tag} ${event.outcome.status} ${dim(`· ${event.outcome.steps} commands`)}`);
+      return;
+    default:
+      return;
+  }
+}
+
 const VERDICT: Record<QuestOutcome["status"], string> = {
   done: "✓ Done, and an independent review agrees.",
   unverified: "△ Finished, but the reviewer did not accept it.",
@@ -181,26 +240,41 @@ const VERDICT: Record<QuestOutcome["status"], string> = {
 };
 
 export interface NodeQuestHooks {
-  emit?(event: QuestEvent): void;
+  /** Progress. With effort, each attempt's events carry which attempt they are (1-based). */
+  emit?(event: QuestEvent, attempt?: number): void;
   signal?: AbortSignal;
-  /** Once the sandbox exists. */
-  started?(info: { quest: string; sandbox: SandboxView; host: string }): void;
-  /** Once the loop has ended, before the work is kept and the sandbox goes: read what it left. */
+  /** Once a sandbox exists (one per attempt). */
+  started?(info: { quest: string; sandbox: SandboxView; host: string; attempt?: number }): void;
+  /** Once the loop has ended, before the work is kept and the sandbox goes: read what it left (with effort: what the taken attempt left). */
   finished?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>): Promise<void>;
+  /** With effort: how many attempts the node granted and why, each attempt's start and end, and the pick. */
+  effort?(event: { type: "granted"; grant: EffortGrant } | EffortEvent): void;
 }
 
-/**
- * One quest through a node's API: a fresh sandbox, the pure loop, cleanup, and the
- * outcome remembered. The CLI and loops both run quests this way; the node decides
- * what the caller may do (an arm's or a loop's sandboxes are always its own and ephemeral).
- */
-export async function runNodeQuest(
-  node: NodeClient,
-  options: DoOptions,
-  hooks: NodeQuestHooks = {},
-): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped }> {
-  const quest = `q-${Date.now().toString(36)}`;
-  const agent = options.agent ? await agentFor(node, options) : undefined;
+/** What a quest that ran several attempts did: each one's outcome, and which was taken and why. */
+export interface EffortDone {
+  attempts: { index: number; status: QuestOutcome["status"] }[];
+  failed: { index: number; error: string }[];
+  pick: EffortPick;
+  grant: EffortGrant;
+}
+
+type Exec = (command: string, timeoutSec: number) => Promise<ExecResult>;
+
+/** One attempt's place of work: its sandbox, and what was opened for it. */
+interface Workshop {
+  /** The sandbox's quest (with effort: the quest's id and the attempt's number). */
+  quest: string;
+  sandbox: SandboxView;
+  host: string;
+  exec: Exec;
+  gitToken: string | null;
+}
+
+type Agent = NonNullable<QuestOptions["agent"]>;
+
+/** A fresh sandbox for a quest (or one attempt at it), on the host with room. */
+async function openWorkshop(node: NodeClient, options: DoOptions, quest: string, agent: Agent | undefined, tag?: AttemptTag): Promise<Workshop> {
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: options.network,
     ...(options.isolation ? { isolation: options.isolation } : {}),
@@ -211,75 +285,204 @@ export async function runNodeQuest(
     ...(options.network !== "isolated" ? { search: true } : {}),
     // The agent calls models itself, through the gateway, on a token that lives as long as the sandbox.
     ...(agent ? { providers: [...new Set(agent.models.map((m) => m.provider))], ttlMinutes: Math.min(agent.minutes + 30, 7 * 24 * 60) } : {}),
+    ...(tag ? { attempt: tag } : {}),
   });
   // Sandboxes name their host by device id; people (and the engineer) know it by name.
   const fleet = await node.call<FleetView>("fleet").catch(() => null);
   const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
-  hooks.started?.({ quest, sandbox, host });
+  const exec: Exec = (command, timeoutSec) => node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
+  return { quest, sandbox, host, exec, gitToken: null };
+}
 
-  const exec = (command: string, timeoutSec: number) =>
-    node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
+/** The quest itself, in its workshop: the repository cloned if there is one, plan, work, review, and its changes kept as a patch. */
+async function workIn(
+  node: NodeClient,
+  options: DoOptions,
+  shop: Workshop,
+  agent: Agent | undefined,
+  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number },
+): Promise<QuestOutcome> {
+  const { exec } = shop;
+  if (options.agent?.repo) {
+    const github = githubRepo(options.agent.repo);
+    const through = github ? await cloneThroughGateway(node, exec, github, shop.quest, options.agent.minutes) : null;
+    if (through) shop.gitToken = through.hash;
+    else {
+      if (options.network !== "online") throw new Error(`cloning ${options.agent.repo} needs --net online (or, for GitHub, a GitHub connector: galahad connector add github)`);
+      const cloned = await exec(`git clone -q --depth 50 '${options.agent.repo}' /work/repo 2>&1 | tail -5; test -d /work/repo/.git`, 900);
+      if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
+    }
+  }
+  const evidence = options.evidence ?? (agent ? agentEvidence(agent.workdir) : undefined);
+  const instructions = [options.instructions, run.instructions].filter(Boolean).join("\n\n");
+  const outcome = await runQuest(
+    {
+      goal: options.goal,
+      environment: environment(shop.sandbox, shop.host),
+      maxSteps: options.maxSteps,
+      commandTimeoutSec: options.commandTimeoutSec,
+      ...(instructions ? { instructions } : {}),
+      ...(evidence ? { evidence } : {}),
+      ...(agent ? { agent } : {}),
+      ...(run.parallelCommands && run.parallelCommands > 1 ? { parallelCommands: run.parallelCommands } : {}),
+    },
+    {
+      ask: async (role, messages) => {
+        let text = "";
+        let model = "";
+        const input = {
+          role,
+          messages,
+          tools: false,
+          // The archive's relevant entries go with the plan (the start), not with every step.
+          ...(role === "planner" && messages.length === 1 ? { archive: true } : {}),
+          // One of several attempts: its planner and engineer start at another of the role's models (the
+          // reviewer is the same independent reviewer for all), and the node shows the call as a helper's.
+          ...(run.tag ? { attempt: run.tag, ...(role !== "reviewer" && run.tag.index > 1 ? { rotate: run.tag.index - 1 } : {}) } : {}),
+        };
+        for await (const event of node.stream("chat", input)) {
+          if (event.type === "text") text += event.text;
+          else if (event.type === "model") model = event.ref;
+          else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
+        }
+        return { text, model };
+      },
+      exec,
+      emit: run.emit,
+      signal: run.signal,
+    },
+  );
+  // A repository's changes are kept as a patch (new files included) to read, and as a
+  // shipment (ship/: the files themselves) that github.ship can turn into a pull request.
+  if (options.agent?.repo) {
+    await exec("mkdir -p /work/out && cd /work/repo && git add -A && git diff --cached --binary > /work/out/changes.patch && git reset -q", 120).catch(() => {});
+    await exec(`python3 -c ${shq(SHIPMENT_SCRIPT)} /work/repo /work/out/ship`, 120).catch(() => {});
+  }
+  return outcome;
+}
+
+/** The workshop is done with: what it put in /work/out is kept (when `keep`), the sandbox goes, its git token is revoked. */
+async function closeWorkshop(node: NodeClient, options: DoOptions, shop: Workshop, keep: boolean): Promise<ArtifactView | null> {
+  // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
+  const artifact = keep
+    ? await node
+        .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: shop.sandbox.id, on: shop.sandbox.node, label: (options.label ?? options.goal).slice(0, 200) })
+        .then((r) => r.artifact)
+        .catch(() => null)
+    : null;
+  if (!options.keep) await node.call("destroySandbox", { id: shop.sandbox.id, on: shop.sandbox.node }).catch(() => {});
+  if (shop.gitToken) await node.call("revokeToken", { hash: shop.gitToken }).catch(() => {});
+  return artifact;
+}
+
+/** What the reviewer sees of an attempt's sandbox when attempts are compared: its evidence commands, and what it left to keep. */
+async function sandboxEvidence(exec: Exec, commands: readonly string[]): Promise<string> {
+  let out = "";
+  for (const command of [...commands, "ls -la /work/out 2>/dev/null | head -40"]) {
+    const result = await exec(command, 60).catch(() => null);
+    if (result) out += `$ ${command}\n${observation(result)}\n\n`;
+  }
+  return out.trim();
+}
+
+/**
+ * One quest through a node's API: a fresh sandbox, the pure loop, cleanup, and the
+ * outcome remembered. The CLI and loops both run quests this way; the node decides
+ * what the caller may do (an arm's or a loop's sandboxes are always its own and ephemeral).
+ *
+ * With `effort`, the node first says how many attempts the quest may run at once (from
+ * the slots free and the day's budget); several run in parallel, each in its own sandbox
+ * and reviewed as ever, and the independent reviewer takes the best on the evidence alone.
+ */
+export async function runNodeQuest(
+  node: NodeClient,
+  options: DoOptions,
+  hooks: NodeQuestHooks = {},
+): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone }> {
+  const quest = questId();
+  const agent = options.agent ? await agentFor(node, options) : undefined;
+  let grant: EffortGrant | null = null;
+  if (options.effort !== undefined) {
+    grant = await node.call<EffortGrant>("effort", { quest, effort: options.effort, ...(options.on ? { on: options.on } : {}), label: (options.label ?? options.goal).replace(/\s+/g, " ").trim().slice(0, 120) });
+    hooks.effort?.({ type: "granted", grant });
+  }
+  const attempts = grant?.attempts ?? 1;
+
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
-  let gitToken: string | null = null;
-  try {
-    if (options.agent?.repo) {
-      const github = githubRepo(options.agent.repo);
-      const through = github ? await cloneThroughGateway(node, exec, github, quest, options.agent.minutes) : null;
-      if (through) gitToken = through.hash;
-      else {
-        if (options.network !== "online") throw new Error(`cloning ${options.agent.repo} needs --net online (or, for GitHub, a GitHub connector: galahad connector add github)`);
-        const cloned = await exec(`git clone -q --depth 50 '${options.agent.repo}' /work/repo 2>&1 | tail -5; test -d /work/repo/.git`, 900);
-        if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
-      }
+  let effort: EffortDone | undefined;
+  if (attempts === 1) {
+    // The node shows a quest whose effort it granted (as his own work: there's one attempt).
+    const tag = grant ? { quest: grant.quest, index: 1, of: 1 } : undefined;
+    const shop = await openWorkshop(node, options, quest, agent, tag);
+    hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+    try {
+      outcome = await workIn(node, options, shop, agent, { emit: hooks.emit, signal: hooks.signal, ...(tag ? { tag } : {}) });
+      await hooks.finished?.(shop.exec);
+    } finally {
+      artifact = await closeWorkshop(node, options, shop, true);
     }
-    const evidence = options.evidence ?? (agent ? agentEvidence(agent.workdir) : undefined);
-    outcome = await runQuest(
-      {
-        goal: options.goal,
-        environment: environment(sandbox, host),
-        maxSteps: options.maxSteps,
-        commandTimeoutSec: options.commandTimeoutSec,
-        ...(options.instructions ? { instructions: options.instructions } : {}),
-        ...(evidence ? { evidence } : {}),
-        ...(agent ? { agent } : {}),
-      },
-      {
-        ask: async (role, messages) => {
-          let text = "";
-          let model = "";
-          // The archive's relevant entries go with the plan (the start), not with every step.
-          for await (const event of node.stream("chat", { role, messages, tools: false, ...(role === "planner" && messages.length === 1 ? { archive: true } : {}) })) {
-            if (event.type === "text") text += event.text;
-            else if (event.type === "model") model = event.ref;
-            else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
-          }
-          return { text, model };
+  } else {
+    const open: Workshop[] = [];
+    const evidenceCommands = options.evidence ?? (agent ? agentEvidence(agent.workdir) : []);
+    let result: EffortResult<Workshop>;
+    try {
+      result = await runEffort<Workshop>(
+        { goal: options.goal, attempts },
+        {
+          attempt: async (index, of, signal) => {
+            const tag = { quest: grant!.quest, index, of };
+            const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
+            open.push(shop);
+            hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
+            const collect = evidenceCollector();
+            const done = await workIn(node, options, shop, agent, {
+              emit: (event) => {
+                collect.emit(event);
+                hooks.emit?.(event, index);
+              },
+              signal,
+              tag,
+              instructions: attemptInstructions(index, of),
+              // Parallel sub-steps too: independent commands may run at once inside each sandbox.
+              parallelCommands: of,
+            });
+            return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+          },
+          // The pick is his own decision, by the independent reviewer: no attempt's tag, no rotation.
+          ask: async (messages) => {
+            let text = "";
+            let model = "";
+            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false })) {
+              if (event.type === "text") text += event.text;
+              else if (event.type === "model") model = event.ref;
+              else if (event.type === "error") throw new Error(`the reviewer could not answer: ${event.error}`);
+            }
+            return { text, model };
+          },
+          emit: (event) => hooks.effort?.(event),
+          ...(hooks.signal ? { signal: hooks.signal } : {}),
         },
-        exec,
-        emit: hooks.emit,
-        signal: hooks.signal,
-      },
-    );
-    // A repository's changes are kept as a patch (new files included) to read, and as a
-    // shipment (ship/: the files themselves) that github.ship can turn into a pull request.
-    if (options.agent?.repo) {
-      await exec("mkdir -p /work/out && cd /work/repo && git add -A && git diff --cached --binary > /work/out/changes.patch && git reset -q", 120).catch(() => {});
-      await exec(`python3 -c ${shq(SHIPMENT_SCRIPT)} /work/repo /work/out/ship`, 120).catch(() => {});
+      );
+    } catch (error) {
+      // No attempt finished: nothing to keep, every sandbox goes.
+      await Promise.all(open.map((shop) => closeWorkshop(node, options, shop, false)));
+      throw error;
     }
-    await hooks.finished?.(exec);
-  } finally {
-    // What the quest put in /work/out outlives the sandbox (nothing there: nothing kept).
-    artifact = await node
-      .call<{ artifact: ArtifactView | null }>("saveArtifact", { sandbox: sandbox.id, on: sandbox.node, label: (options.label ?? options.goal).slice(0, 200) })
-      .then((r) => r.artifact)
-      .catch(() => null);
-    if (!options.keep) await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
-    if (gitToken) await node.call("revokeToken", { hash: gitToken }).catch(() => {});
+    outcome = result.outcome;
+    const taken = result.taken?.handle ?? null;
+    try {
+      if (taken) await hooks.finished?.(taken.exec);
+    } finally {
+      // The taken attempt's work is kept; the others' sandboxes go (their commands stay in the ledger).
+      const closed = await Promise.all(open.map((shop) => closeWorkshop(node, options, shop, shop === taken)));
+      artifact = taken ? (closed[open.indexOf(taken)] ?? null) : null;
+    }
+    effort = { attempts: result.attempts.map((a) => ({ index: a.index, status: a.outcome.status })), failed: result.failed, pick: result.pick, grant: grant! };
   }
 
   const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
-  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}) };
+  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}) };
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
   const memory = redact(
@@ -287,13 +490,16 @@ export async function runNodeQuest(
       `Quest (${outcome.status}): ${options.goal}`,
       outcome.summary.trim(),
       outcome.review ? `Reviewer: ${outcome.review.trim()}` : "",
+      effort
+        ? `Effort ${effort.attempts.length + effort.failed.length}: ${[...effort.attempts.map((a) => `attempt ${a.index} ${a.status}`), ...effort.failed.map((f) => `attempt ${f.index} didn't run`)].join(", ")}. Taken: attempt ${effort.pick.index} (${effort.pick.reason.trim().split("\n")[0]})`
+        : "",
       artifact ? `Kept: artifact ${artifact.id} (${artifact.count} file(s): ${artifact.files.slice(0, 8).map((f) => f.path).join(", ")})` : "",
     ]
       .filter(Boolean)
       .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}) };
+  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}) };
 }
 
 /** Passed work on a GitHub clone: file github.ship for your approval (a standing order may answer it at once). */
@@ -372,20 +578,31 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
   let shipped: Shipped | undefined;
+  let effort: EffortDone | undefined;
   try {
-    ({ outcome, artifact, shipped } = await runNodeQuest(node, options, {
-      emit: print,
+    ({ outcome, artifact, shipped, effort } = await runNodeQuest(node, options, {
+      // One attempt reads as ever; several are told apart, a line each.
+      emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : print(event)),
       signal: controller.signal,
-      started: ({ quest, sandbox, host }) => {
-        console.log(dim(`[quest ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network} · Ctrl-C stops after the current step]\n`));
+      started: ({ quest, sandbox, host, attempt }) => {
+        console.log(dim(`[${attempt ? `attempt ${attempt}` : "quest"} ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network}${attempt ? "" : " · Ctrl-C stops after the current step"}]${attempt ? "" : "\n"}`));
         if (options.keep) console.log(dim(`[the sandbox is kept afterwards: galahad sandbox exec ${sandbox.id} --on ${host} -- …]`));
+      },
+      effort: (event) => {
+        if (event.type === "granted") {
+          const g = event.grant;
+          console.log(`${bold(`◇ Effort ${g.attempts}`)} ${dim(`· ${g.attempts === 1 ? "one attempt" : `${g.attempts} attempts at once, each in its own sandbox`}${g.asked === "auto" ? " (auto)" : ""}${g.host ? ` on ${g.host}` : ""} · budget ${g.budget.usedToday} of ${g.budget.perDay} extra attempts used`)}`);
+          for (const reason of g.reasons) console.log(dim(`  ${reason}`));
+        } else if (event.type === "attempt-failed") console.log(dim(`  [${event.index}] didn't run: ${event.error.split("\n")[0]}`));
+        else if (event.type === "picking") console.log(`\n${bold("◇ Choosing")} ${dim(`· the independent reviewer compares attempts ${event.candidates.join(", ")} on the evidence alone`)}`);
+        else if (event.type === "picked" && event.by !== "only") console.log(`${bold(`◇ Taken: attempt ${event.index}`)} ${dim(event.model ? `· ${event.model}` : "")}\n${indent(firstLines(event.reason, 6))}\n`);
       },
     }));
   } finally {
     process.off("SIGINT", onInterrupt);
   }
 
-  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions`)}`);
+  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
   console.log(indent(outcome.summary.trim()));
   if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
   if (artifact) {

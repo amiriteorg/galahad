@@ -13,6 +13,7 @@ import type { BoardChange } from "./board.ts";
  */
 
 import type { SavedSummary } from "./experiments.ts";
+import type { WorldCompute } from "./world-compute.ts";
 
 /** A shape a simulated body is drawn as (metres; local frame, z up). */
 export type BodyShape =
@@ -188,6 +189,8 @@ export type WorldEvent =
       weather?: WorldWeather | null;
       board?: { version: number };
       saved?: SavedSummary[];
+      /** Each node's slots and strength, and his helpers at work (world-compute.ts). Absent from older nodes. */
+      compute?: WorldCompute | null;
       /** His heartbeat (null before its first run here, or with no heartbeat). Absent from older nodes. */
       heartbeat?: WorldHeartbeat | null;
       /** The agents working with him now. Absent from older nodes. */
@@ -214,6 +217,8 @@ export type WorldEvent =
   /** Poses of an experiment's bodies (a few to 30 a second). */
   | { type: "frame"; at: number; frame: ExperimentFrame }
   | { type: "fleet"; at: number; nodes: WorldNode[] }
+  /** A node's slots filled or freed, or a helper started, moved or finished (world-compute.ts). Older pages ignore it. */
+  | { type: "compute"; at: number; compute: WorldCompute }
   /** An ended experiment left the map: the pad it stood on was needed for the next test. */
   | { type: "cleared"; at: number; experiment: string }
   /** Something needs you (a notice, an approval waiting). */

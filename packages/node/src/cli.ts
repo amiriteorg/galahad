@@ -17,6 +17,7 @@ import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeC
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { dogCommand, journalCommand } from "./journal-cli.ts";
+import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
@@ -25,7 +26,8 @@ import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, 
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
-import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
+import { chooseProblems, describeEffort, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
+import type { EffortLevel, TrialRunsView } from "@galahad/core";
 import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 
 const VERSION = "0.1.0";
@@ -84,12 +86,18 @@ Work
                                   the scientific method: hypothesis and predictions registered before anything
                                   runs, a verified experiment in the Lab, an independent method review
   findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
-  trial run [problem|domain …] [--repeat 1] [--parallel 3] [--seed n] [--net gateway|online] [--vm|--container]
+  trial run [problem|domain …] [--repeat 1] [--parallel auto|n] [--effort 1|2|3] [--seed n] [--net gateway|online] [--vm|--container]
                                   problems with exact answers, posed with fresh random parameters, solved in the Lab,
-                                  graded by a program: the Galahad Index
-  trials [--all] | trial <id|run> | trial problems   the Index per run, and each answer against the exact one
-  do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep]
-                                  a quest: plan → work in a fresh sandbox → independent review → remembered
+                                  graded by a program: the Galahad Index. Trials run across the free slots;
+                                  --effort makes that many attempts a trial (the reviewer takes one before
+                                  anything is graded) and records it, so the Index per effort can be compared
+  trials [--all] | trial <id|run> | trial problems   the Index per run and per effort level (did more compute
+                                  help?), and each answer against the exact one
+  do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep] [--effort auto|1|2|3]
+                                  a quest: plan → work in a fresh sandbox → independent review → remembered.
+                                  --effort spends more compute for a better answer: that many attempts at once,
+                                  each in its own sandbox and reviewed, the best taken by the independent
+                                  reviewer on the evidence alone (auto: what the free slots and the budget allow)
   do --agent opencode "<goal>" [--minutes 60] [--repo https://…] [--net gateway|online]
                                   the same, with a full coding agent doing the work for up to --minutes
                                   (models through the gateway; --repo clones first and keeps a patch:
@@ -107,6 +115,15 @@ Work
   sandbox build [--on ultra] [--lab|--gazebo]   build the sandbox image (or the Lab, or Gazebo) on a host
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
+
+Compute (he uses the machines you enrolled, within a ceiling you set; he never acquires any)
+  compute                         the census: what each node measured, its ceiling, slots in use and waiting,
+                                  his plan, the day's budget, and what more compute would buy
+  compute calibrate [node]        a node measures itself now (a few seconds, low priority, within its ceiling)
+  compute limit <node> [--cores n] [--mem gb] [--sandboxes n] [--model-calls n] [--reset]
+                                  the ceiling: what he may use of that machine (default: half of it)
+  compute effort [auto|1|2|3] [--budget n]
+                                  how much he spends on a quest by himself, and the day's budget of extra attempts
 
 Archive (this node's: everything kept for good, searched by words and meaning)
   archive                         entries, passages embedded, the backlog, the embedder, the last integrity check, disk
@@ -370,6 +387,12 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
+      // Compute: effort and ceilings.
+      effort: { type: "string" },
+      cores: { type: "string" },
+      sandboxes: { type: "string" },
+      "model-calls": { type: "string" },
+      reset: { type: "boolean" },
       // The archive's filters and ideas.
       trust: { type: "string" },
       source: { type: "string" },
@@ -1041,6 +1064,12 @@ Next:
       if (repo && !agentName) fail("--repo goes with --agent");
       if (repo && !/^https:\/\/[A-Za-z0-9._~:/?#!$&()*+,;=%-]+$/.test(repo)) fail("--repo must be an https:// URL (no user or password in it)");
       if (flags.ship && !(repo && githubRepo(repo))) fail("--ship needs --repo https://github.com/<owner>/<repo>");
+      let effort: ReturnType<typeof parseEffort>;
+      try {
+        effort = parseEffort(str("effort"));
+      } catch (error) {
+        fail((error as Error).message);
+      }
       const outcome = await questFromCli(new Admin(home), {
         goal,
         network: network as "isolated" | "gateway" | "online",
@@ -1050,6 +1079,7 @@ Next:
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
         keep: Boolean(flags.keep),
+        ...(effort !== undefined ? { effort } : {}),
         ...(agentName ? { agent: { name: agentName, minutes, ...(repo ? { repo } : {}) } } : {}),
         ...(flags.ship
           ? { ship: { ...(str("title") ? { title: str("title") } : {}), ...(str("base") ? { base: str("base") } : {}), ...(flags.draft ? { draft: true } : {}), ...(str("connector") ? { connector: str("connector") } : {}) } }
@@ -1225,11 +1255,17 @@ Evidence: galahad artifact ${i!.artifact}`));
         } catch (error) {
           fail((error as Error).message);
         }
+        // A run is measured at one level: auto would mix them.
+        const effortRaw = str("effort");
+        if (effortRaw !== undefined && !["1", "2", "3"].includes(effortRaw)) fail("--effort must be 1, 2 or 3 for a trial run (a run is measured at one level; auto would mix them)");
+        // Across the free slots by default (auto); a number is kept within what the slots carry.
+        const parallelRaw = str("parallel");
         const trials = await trialRunFromCli(admin, {
           suite,
           problems,
           repeat: whole("repeat", 1, 20),
-          parallel: whole("parallel", 3, 8),
+          parallel: parallelRaw === undefined || parallelRaw === "auto" ? "auto" : whole("parallel", 3, 8),
+          ...(effortRaw !== undefined ? { effort: Number(effortRaw) as EffortLevel } : {}),
           network: network as "gateway" | "online",
           ...(isolation() ? { isolation: isolation() } : {}),
           ...(str("on") ? { on: str("on") } : {}),
@@ -1237,7 +1273,7 @@ Evidence: galahad artifact ${i!.artifact}`));
         });
         process.exit(trials.length ? 0 : 1);
       }
-      const { trials } = (await admin.call("trials")) as { trials: TrialView[] };
+      const { trials, runs: settings = {} } = (await admin.call("trials")) as { trials: TrialView[]; runs?: TrialRunsView };
       if (command === "trials" || !sub) {
         if (!trials.length) {
           console.log("No trials yet: galahad trial run (or galahad trial run cantilever-beam for one)");
@@ -1247,10 +1283,13 @@ Evidence: galahad artifact ${i!.artifact}`));
         for (const t of trials) runs.set(t.run, [...(runs.get(t.run) ?? []), t]);
         for (const [run, ts] of [...runs].slice(0, flags.all ? undefined : 10)) {
           const models = [...new Set(ts.flatMap((t) => t.models))];
-          console.log(`${bold(run)} ${dim(`${new Date(Math.min(...ts.map((t) => t.recordedAt))).toLocaleString()} · ${ts[0]!.suite} · revision ${ts[0]!.version}${models.length ? ` · ${models.join(", ")}` : ""}`)}`);
+          console.log(`${bold(run)} ${dim(`${new Date(Math.min(...ts.map((t) => t.recordedAt))).toLocaleString()} · ${ts[0]!.suite}${settings[run] ? ` · effort ${settings[run]!.effort}` : ""} · revision ${ts[0]!.version}${models.length ? ` · ${models.join(", ")}` : ""}`)}`);
           console.log(`  ${describeIndex(ts)}`);
         }
         if (runs.size > 10 && !flags.all) console.log(dim(`  … ${runs.size - 10} older run(s): --all`));
+        // Did more compute make him more capable? The Index per effort level, with its interval, says.
+        const byEffort = describeEffort(trials, settings);
+        if (byEffort) console.log(`\n${byEffort}`);
         console.log(`\n${bold("By problem")} ${dim("(every run)")}`);
         for (const p of chooseProblems(suite, [])) {
           const ts = trials.filter((t) => t.problem === p.id && t.status === "scored");
@@ -1280,7 +1319,7 @@ Evidence: galahad artifact ${i!.artifact}`));
       const run = trials.filter((t) => t.run === sub);
       if (!run.length) fail(`no trial or run ${sub}`);
       for (const t of [...run].reverse()) console.log(describeTrial(t));
-      console.log(`\n${describeIndex(run)}`);
+      console.log(`\n${describeIndex(run)}${settings[sub!] ? dim(` · effort ${settings[sub!]!.effort}`) : ""}`);
       return;
     }
 
@@ -1602,6 +1641,9 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "dog":
       await dogCommand(new Admin(home), sub, rest);
+      return;
+    case "compute":
+      await computeCommand(new Admin(home), sub, rest, flags);
       return;
 
     case "rebuild": {

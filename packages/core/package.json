@@ -17,7 +17,8 @@
     "./qr": "./src/qr.ts",
     "./request-auth": "./src/request-auth.ts",
     "./secret-scan": "./src/secret-scan.ts",
-    "./world": "./src/world.ts"
+    "./world": "./src/world.ts",
+    "./world-compute": "./src/world-compute.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

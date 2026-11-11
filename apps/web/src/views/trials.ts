@@ -1,4 +1,5 @@
-import type { TrialView } from "@galahad/core";
+import type { TrialRunsView, TrialView } from "@galahad/core";
+import { effortReport } from "@galahad/core/galahad-index";
 import { isUnavailable } from "../api.ts";
 import type { Ctx, View } from "../context.ts";
 import { plural } from "../lib/text.ts";
@@ -14,6 +15,8 @@ import { icon } from "../ui/icons.ts";
  * in the Lab as ordinary quests, and graded by a program on the node, never by a
  * model. Here: the Galahad Index per run, each problem over every run, and every
  * answer beside the exact one. Runs start from a terminal (`galahad trial run`).
+ * When runs were made at more than one effort, the Index per effort level says, with
+ * its interval, whether more compute made him more capable (and says so when it didn't).
  */
 
 const MARK: Record<Mark, { label: string; tone: Tone }> = {
@@ -130,6 +133,42 @@ export const trialsView: View = (root, ctx, { scope }) => {
   const runsBox = h("div", { class: "card" }, skeletonRows(3, { avatar: true }));
   const problemsBox = h("div", { class: "card" }, skeletonRows(4, { avatar: true }));
   const content = h("div", { class: "stack" });
+  /** Each run's effort (attempts per trial), for the runs that recorded one. */
+  let efforts: Record<string, number> = {};
+
+  /** The Index per effort level, with the verdict: did more compute help? Null when no run spent more than one attempt. */
+  function effortSection(trials: readonly TrialView[]): HTMLElement | null {
+    if (!Object.values(efforts).some((e) => e > 1)) return null;
+    const report = effortReport(trials, efforts);
+    return section(
+      "By effort",
+      { count: "attempts per trial" },
+      h(
+        "div",
+        { class: "card" },
+        h(
+          "div",
+          { class: "rows" },
+          ...report.levels.map((l) =>
+            h(
+              "div",
+              { class: "item" },
+              h("span", { class: "avatar tnum strong" }, String(l.effort)),
+              h(
+                "div",
+                { class: "grow stack tight", style: "min-width:0" },
+                h("div", { class: "row wrap" }, h("span", { class: "strong small tnum" }, `Index ${percent(l.mean)}`), h("span", { class: "tiny subtle tnum" }, `${percent(l.low)}–${percent(l.high)}`)),
+                meter(l.mean, scoreTone(l.mean), `Galahad Index at effort ${l.effort}`),
+                h("div", { class: "meta tnum" }, h("span", {}, l.effort === 1 ? "one attempt a trial" : `${l.effort} attempts a trial`), h("span", {}, plural(l.n, "trial")), h("span", {}, plural(l.runs, "run"))),
+              ),
+            ),
+          ),
+        ),
+      ),
+      callout(report.helps ? "ok" : "quiet", report.verdict, { title: report.helps ? "More compute made him more capable" : report.helps === false ? "More compute didn't measurably help" : "Not compared yet", icon: "gauge" }),
+      h("p", { class: "tiny subtle" }, "With effort, each trial makes that many attempts; the independent reviewer takes one on the evidence before anything is graded, and only that one's answers count."),
+    );
+  }
 
   function runRow(r: RunSummary): HTMLElement {
     return h(
@@ -139,7 +178,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
       h(
         "div",
         { class: "grow stack tight", style: "min-width:0" },
-        h("div", { class: "row wrap" }, h("span", { class: "strong small tnum" }, `Index ${percent(r.index.mean)}`), h("span", { class: "tiny subtle tnum" }, `${percent(r.index.low)}–${percent(r.index.high)}`), r.crashed ? badge(`${r.crashed} crashed`, "neutral") : null),
+        h("div", { class: "row wrap" }, h("span", { class: "strong small tnum" }, `Index ${percent(r.index.mean)}`), h("span", { class: "tiny subtle tnum" }, `${percent(r.index.low)}–${percent(r.index.high)}`), efforts[r.run] ? badge(`effort ${efforts[r.run]}`, efforts[r.run]! > 1 ? "accent" : "neutral") : null, r.crashed ? badge(`${r.crashed} crashed`, "neutral") : null),
         meter(r.index.mean, scoreTone(r.index.mean)),
         h(
           "div",
@@ -156,8 +195,9 @@ export const trialsView: View = (root, ctx, { scope }) => {
 
   async function refresh(): Promise<void> {
     try {
-      const { trials } = await ctx.api.get<{ trials: TrialView[] }>("/api/trials", scope.signal);
+      const { trials, runs: settings = {} } = await ctx.api.get<{ trials: TrialView[]; runs?: TrialRunsView }>("/api/trials", scope.signal);
       if (scope.disposed) return;
+      efforts = Object.fromEntries(Object.entries(settings).map(([run, s]) => [run, s.effort]));
       if (!trials.length) {
         replace(
           content,
@@ -179,6 +219,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
       replace(
         content,
         stats,
+        effortSection(trials),
         section("Runs", { count: plural(runs.length, "run") }, runsBox),
         section("By problem", { count: "every run" }, problemsBox),
       );

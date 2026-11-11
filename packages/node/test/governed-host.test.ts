@@ -1,0 +1,213 @@
+import { describe, expect, test } from "bun:test";
+import { b64u, type NodeCapacity, newNodeIdentity, SELF_ACTION_QUEST } from "@galahad/core";
+import { foundFleet, MindStore, Vault } from "@galahad/mind";
+import type { CreateInput, LedgerEntryInput } from "@galahad/sandbox";
+import type { Capabilities } from "../src/capabilities.ts";
+import { GovernedSandboxHost } from "../src/compute/governed-host.ts";
+import { Governor } from "../src/compute/governor.ts";
+import { modelSpeed, sandboxStart } from "../src/compute/measure.ts";
+import { fakeDocker } from "./fake-docker.ts";
+
+/*
+ * The governed sandbox host: the real host's own logic above a stand-in Docker, behind
+ * the governor. Every sandbox takes a slot first; what Docker says (or can't say) is
+ * read carefully; and the two measurements a calibration takes of this node go
+ * through the same door and never call out.
+ */
+
+const capacity = (over: Partial<NodeCapacity> = {}): NodeCapacity => ({ cores: 8, memoryGb: 16, sandboxes: 2, modelCalls: 2, strength: 8, speed: 1, measured: true, reasons: [], ...over });
+const request = (over: Partial<CreateInput> = {}): CreateInput => ({ network: "isolated", cpus: 4, memoryGb: 8, ttlMinutes: 60, persistent: false, ...over });
+
+function host(over: { capacity?: () => NodeCapacity; microVMs?: boolean; maxWaitMs?: number } = {}) {
+  const docker = fakeDocker();
+  const ledger: LedgerEntryInput[] = [];
+  const cap = over.capacity ?? (() => capacity());
+  const governor = new Governor({ capacity: cap, host: () => null, retryMs: 5, maxWaitMs: over.maxWaitMs ?? 2_000 });
+  let minted = 0;
+  const sandbox = new GovernedSandboxHost(
+    {
+      node: "n_test",
+      tokens: { mint: () => ({ token: `gw_${++minted}`, info: { hash: `h${minted}` } }), revoke: () => true },
+      ledger: (entry) => void ledger.push(entry),
+      maxCpus: 64,
+      maxMemoryGb: 512,
+      runner: docker.runner,
+      microVMs: over.microVMs ?? false,
+    },
+    { governor, capacity: cap, microVMs: over.microVMs ?? false },
+  );
+  return { sandbox, governor, docker, ledger };
+}
+
+describe("every sandbox takes a slot first", () => {
+  test("within the ceiling it starts; past it, it waits, and starts when one ends", async () => {
+    const { sandbox, governor, docker } = host();
+    const a = await sandbox.create(request({ quest: "q-a" }));
+    const b = await sandbox.create(request({ quest: "q-b" }));
+    let third: string | null = null;
+    const waiting = sandbox.create(request({ quest: "q-c" })).then((s) => (third = s.id));
+    await Bun.sleep(20);
+    expect(third).toBeNull();
+    expect(docker.running()).toBe(2);
+    expect(governor.queue()).toMatchObject([{ quest: "q-c" }]);
+    // Its own cleanup (the oath lets a quest remove its ephemeral sandbox) frees the slot.
+    expect((await sandbox.destroy(a.id, { quest: "q-a" })).verdict).toBe("allow");
+    await waiting;
+    expect(third).not.toBeNull();
+    expect(docker.peak()).toBe(2);
+    // A destroy the oath doesn't allow frees nothing.
+    expect((await sandbox.destroy(b.id, { quest: "someone-else" })).verdict).toBe("ask");
+    expect(governor.usage().sandboxes).toBe(2);
+  });
+
+  test("more than the ceiling gets the ceiling; a microVM's overhead comes out of it", async () => {
+    const plain = host();
+    expect(await plain.sandbox.create(request({ cpus: 64, memoryGb: 512 }))).toMatchObject({ cpus: 8, memoryGb: 16 });
+    expect(plain.governor.usage()).toMatchObject({ cores: 8, memoryGb: 16 });
+    const vms = host({ microVMs: true });
+    expect(await vms.sandbox.create(request({ cpus: 64, memoryGb: 512, isolation: "vm" }))).toMatchObject({ cpus: 7, memoryGb: 14, isolation: "vm" });
+    expect(vms.governor.usage()).toMatchObject({ cores: 8, memoryGb: 16 });
+  });
+
+  test("a ceiling too small for a microVM's own overhead carries none, and says so", async () => {
+    const tiny = host({ microVMs: true, capacity: () => capacity({ cores: 1, memoryGb: 2, sandboxes: 1 }) });
+    await expect(tiny.sandbox.create(request({ isolation: "vm" }))).rejects.toThrow(/too small for a microVM/);
+    expect(tiny.docker.running()).toBe(0);
+    expect(tiny.governor.usage().sandboxes).toBe(0);
+    // A container fits there.
+    expect(await tiny.sandbox.create(request())).toMatchObject({ cpus: 1, memoryGb: 2 });
+  });
+
+  test("a sandbox that fails to start gives its slot back", async () => {
+    const { sandbox, governor, docker } = host();
+    const run = docker.runner;
+    const failing = host();
+    void run;
+    const broken = new GovernedSandboxHost(
+      {
+        node: "n_test",
+        tokens: { mint: () => ({ token: "gw", info: { hash: "h" } }), revoke: () => true },
+        ledger: () => {},
+        maxCpus: 64,
+        maxMemoryGb: 512,
+        runner: async (args, ms) => (args[0] === "run" ? { code: 125, stdout: "", stderr: "no space left on device" } : failing.docker.runner(args, ms)),
+      },
+      { governor: failing.governor, capacity: () => capacity(), microVMs: false },
+    );
+    await expect(broken.create(request())).rejects.toThrow(/could not start sandbox/);
+    expect(failing.governor.usage().sandboxes).toBe(0);
+    expect(governor.usage().sandboxes).toBe(0);
+    void sandbox;
+  });
+});
+
+describe("Docker's list is the truth, read carefully", () => {
+  test("sandboxes from before a restart hold their slots; when Docker can't say, nothing is freed", async () => {
+    const first = host();
+    await first.sandbox.create(request({ quest: "q-old" }));
+    // A new node process over the same Docker: it knows nothing until it asks.
+    const governor = new Governor({ capacity: () => capacity(), host: () => null });
+    let down = false;
+    const again = new GovernedSandboxHost(
+      {
+        node: "n_test",
+        tokens: { mint: () => ({ token: "gw", info: { hash: "h" } }), revoke: () => true },
+        ledger: () => {},
+        maxCpus: 64,
+        maxMemoryGb: 512,
+        runner: async (args, ms) => (down ? { code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" } : first.docker.runner(args, ms)),
+      },
+      { governor, capacity: () => capacity(), microVMs: false },
+    );
+    expect(governor.usage().sandboxes).toBe(0);
+    await again.reconcile();
+    expect(governor.usage()).toMatchObject({ sandboxes: 1, cores: 4, memoryGb: 8 });
+    // Docker stops answering: a failed list isn't "no sandboxes".
+    down = true;
+    await again.reconcile();
+    expect(governor.usage().sandboxes).toBe(1);
+  });
+
+  test("a list asked for before a sandbox came to be never frees its slot", async () => {
+    const { governor } = host();
+    const asked = governor.mark();
+    const ticket = await governor.acquire({ cpus: 4, memoryGb: 8 }, { quest: "q" });
+    governor.bind(ticket, "cccccccccc");
+    // Docker's answer arrives now, from before it existed.
+    governor.adopt([], asked);
+    expect(governor.usage().sandboxes).toBe(1);
+    // A list asked for after it existed that doesn't have it: it really is gone.
+    governor.adopt([], governor.mark());
+    expect(governor.usage().sandboxes).toBe(0);
+  });
+});
+
+describe("what a calibration measures of this node, through the same door", () => {
+  test("a sandbox's start-up, per kind, with its own sandboxes gone afterwards; never when the node is full", async () => {
+    const { sandbox, governor, docker, ledger } = host({ microVMs: true });
+    docker.startMs = 15;
+    const starts = await sandboxStart(sandbox, governor, () => capacity(), true);
+    expect(starts.map((s) => s.kind)).toEqual(["container", "vm"]);
+    expect(starts.every((s) => s.startMs >= 10)).toBe(true);
+    expect(docker.running()).toBe(0);
+    expect(governor.usage().sandboxes).toBe(0);
+    // His own, small, and in the ledger under his own quest.
+    expect(ledger.filter((e) => e.resource === "docker.container" && e.class === "create").every((e) => e.quest === SELF_ACTION_QUEST && /1 cpu · 1 GB/.test(e.detail ?? ""))).toBe(true);
+    expect(ledger.filter((e) => e.class === "delete" && e.verdict === "allow")).toHaveLength(2);
+    // Full: he doesn't queue behind real work, nor in front of it.
+    await sandbox.create(request());
+    await sandbox.create(request());
+    expect(await sandboxStart(sandbox, governor, () => capacity(), true)).toEqual([]);
+    expect(docker.running()).toBe(2);
+  });
+
+  test("a local model's speed: only a runtime on this machine, never one that was repointed elsewhere", async () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
+    void b64u;
+    const vault = new Vault(store, identity);
+    const asked: string[] = [];
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      const encoder = new TextEncoder();
+      const numbers = Array.from({ length: 60 }, (_, i) => `${i + 1}\n`);
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          for (let i = 0; i < 6; i++) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: numbers.slice(i * 10, i * 10 + 10).join("") } }] })}\n\n`));
+            await Bun.sleep(60);
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    const caps = { localModels: [{ runtime: "ollama", models: ["qwen3-embedding:0.6b", "qwen3:8b"] }] } as Capabilities;
+    const governor = new Governor({ capacity: () => capacity(), host: () => null });
+    const enter: Governor["enterModel"] = (o, s) => governor.enterModel(o, s);
+
+    // A runtime nobody added as a provider can't be called, so it isn't measured.
+    expect(await modelSpeed({ store, vault, fetch: fetchStub }, caps, enter)).toEqual([]);
+    expect(asked).toEqual([]);
+    store.emit(identity, "provider.set", { id: "ollama", kind: "openai", baseUrl: "http://127.0.0.1:11434/v1" });
+    const speeds = await modelSpeed({ store, vault, fetch: fetchStub }, caps, enter);
+    expect(speeds).toHaveLength(1);
+    // The chat model, not the embedder; on loopback.
+    expect(speeds[0]).toMatchObject({ runtime: "ollama", model: "qwen3:8b" });
+    expect(speeds[0]!.tps).toBeGreaterThan(1);
+    expect(asked.every((url) => url.startsWith("http://127.0.0.1:11434/"))).toBe(true);
+    expect(governor.usage().modelCalls).toBe(0);
+
+    // Only an embedding model: nothing to measure, nothing asked.
+    asked.length = 0;
+    expect(await modelSpeed({ store, vault, fetch: fetchStub }, { localModels: [{ runtime: "ollama", models: ["qwen3-embedding:0.6b"] }] } as Capabilities, enter)).toEqual([]);
+    // "ollama" repointed at a service elsewhere, with a key of its own there: measuring himself never calls out.
+    vault.set("ollama", "sk-fake-not-a-real-key-0000000000", { provider: "ollama", origin: "https://models.example.com" });
+    store.emit(identity, "provider.set", { id: "ollama", kind: "openai", baseUrl: "https://models.example.com/v1", secret: "ollama" });
+    expect(await modelSpeed({ store, vault, fetch: fetchStub }, caps, enter)).toEqual([]);
+    expect(asked).toEqual([]);
+    store.close();
+  }, 20_000);
+});

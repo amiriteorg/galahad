@@ -114,6 +114,8 @@ beforeAll(async () => {
   daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000 });
   expect((await call("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` })).status).toBe(200);
   for (const role of ["swift", "planner"]) expect((await call("setRoster", { role, models: ["stand-in/m"] })).status).toBe(200);
+  // His compute plan is already on record (his first heartbeat would record it, as one more thing he did himself).
+  daemon.compute.adapt();
 });
 
 afterAll(async () => {
@@ -162,7 +164,7 @@ describe("the owner's self-action switch", () => {
 
     const off = await json<SelfActionView>(await call("setSelfAction", { on: false }));
     expect(off).toMatchObject({ on: false, heartbeats: ["heartbeat"] });
-    expect(off.allowlist.map((a) => a.kind).sort()).toEqual(["reap-sandbox", "refresh-weather", "retry-loop"]);
+    expect(off.allowlist.map((a) => a.kind).sort()).toEqual(["adapt-compute", "calibrate", "reap-sandbox", "refresh-weather", "retry-loop"]);
     expect(loopRecords(daemon.store).find((l) => l.name === "heartbeat")!.task).toEqual({ kind: "heartbeat", selfAction: false });
     // Giving the heartbeat a checklist doesn't quietly turn it back on.
     await json(await call("setLoop", { name: "heartbeat", task: { kind: "heartbeat", checklist: "Is the backup there?" } }));

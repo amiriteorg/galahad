@@ -1,4 +1,4 @@
-import type { PlacementNeeds, Presence } from "@galahad/core";
+import type { NodeCapacity, PlacementNeeds, Presence } from "@galahad/core";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 
 /*
@@ -10,6 +10,8 @@ import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
  *  - long work prefers always-on machines and avoids laptops on battery
  *  - interactive work prefers the machine you are using
  *  - local-model work prefers GPUs; heavy work prefers free memory and idle cores
+ *  - a node's strength is what it measured (its calibration), not its core count
+ *  - a node with a slot free is preferred; a full one is ranked behind (work would wait there)
  */
 
 export interface Candidate {
@@ -19,6 +21,11 @@ export interface Candidate {
   online: boolean;
   self: boolean;
   presence: Presence | null;
+  /**
+   * What the node may carry (from its calibration and the owner's ceiling), how many standard sandboxes
+   * fit now (null: not known) and how many wait. Absent: scored from the core count, as before compute.
+   */
+  compute?: { capacity: NodeCapacity; free: number | null; queued: number; /** Tokens a second its best local model measured. */ localTps?: number } | null;
 }
 
 export interface Placement {
@@ -45,6 +52,8 @@ function hardCheck(needs: PlacementNeeds, c: Candidate): string | null {
   if (missing.length) return `missing ${missing.join(", ")}`;
   if (needs.localModels && !caps.localModels.some((r) => r.models.length)) return "no local models running";
   if (needs.untrusted && !caps.docker && !(caps.vm.kvm || caps.vm.tools.length)) return "cannot sandbox untrusted work";
+  // The owner's ceiling: a node told to carry no sandboxes takes none.
+  if ((needs.docker || needs.untrusted) && caps.sandbox && c.compute && c.compute.capacity.sandboxes <= 0) return "its ceiling takes no sandboxes";
   return null;
 }
 
@@ -102,7 +111,34 @@ export function place(needs: PlacementNeeds, candidates: Candidate[]): Placement
       const freeShare = caps.memoryGb ? c.presence.freeMemoryGb / caps.memoryGb : 0;
       score += Math.round(freeShare * 10);
     }
-    score += Math.min(10, Math.round(caps.cores / 4));
+    const compute = c.compute;
+    if (!compute) score += Math.min(10, Math.round(caps.cores / 4));
+    else {
+      // Strength: what it measured, in reference cores' worth; a guess from its threads until it has.
+      if (compute.capacity.strength !== null) {
+        score += Math.min(10, Math.round(compute.capacity.strength / 4));
+        reasons.push(`measured ${compute.capacity.strength.toFixed(1)} reference cores' worth`);
+      } else {
+        score += Math.min(10, Math.round(caps.cores / 8));
+        reasons.push(`not measured yet: guessing from ${caps.cores} threads`);
+      }
+      // Room: a slot free now counts for it; a full node is ranked behind, the longer its queue the further.
+      const slots = compute.capacity.sandboxes;
+      if (slots > 0) {
+        if (compute.free === null) reasons.push(`${slots} slot${slots === 1 ? "" : "s"} (in use: not known)`);
+        else if (compute.free > 0) {
+          score += Math.min(10, compute.free * 2);
+          reasons.push(`${compute.free} of ${slots} slot${slots === 1 ? "" : "s"} free`);
+        } else {
+          score -= 20 + Math.min(10, compute.queued * 2);
+          reasons.push(`full: work waits for a slot (${compute.queued} ahead)`);
+        }
+      }
+      if (needs.localModels && compute.localTps) {
+        score += Math.min(10, Math.round(compute.localTps / 6));
+        reasons.push(`its local model wrote ${Math.round(compute.localTps)} tokens a second`);
+      }
+    }
     if (needs.prefer && (c.name === needs.prefer || c.device === needs.prefer)) {
       score += 50;
       reasons.push("preferred");
