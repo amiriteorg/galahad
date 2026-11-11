@@ -1,6 +1,6 @@
 import { abs, atan, dot, exp, float, floor, fract, max, mix, mx_noise_float, normalize, positionLocal, screenCoordinate, sin, smoothstep, sqrt, step, time, uniform, vec2, vec3 } from "three/tsl";
 import { BackSide, Color, Group, Mesh, MeshBasicNodeMaterial, type Node, SphereGeometry, Vector3 } from "three/webgpu";
-import { airColor, lobes, WIND_X, WIND_Z } from "./air.ts";
+import { air, airColor, lobes, wind as windWay } from "./air.ts";
 import type { Sky } from "./daynight.ts";
 import { only, weatherUniforms } from "./wet.ts";
 
@@ -158,7 +158,7 @@ export class SkyDome {
 
     // Rain far off: darker curtains hanging from the cloud to the horizon, leaning with the wind.
     const rainy = only(this.curtains.greaterThan(0.003), float(0) as unknown as F, () => {
-      const round = normalize(vec2(dir.x, dir.z)).add(vec2(WIND_X, WIND_Z).mul(up.mul(1.6)));
+      const round = normalize(vec2(dir.x, dir.z)).add(air.wind.mul(up.mul(1.6)));
       const veil = sin(round.x.mul(5).add(sin(round.y.mul(4).add(this.drift.x.mul(0.5))).mul(2.2))).mul(sin(round.y.mul(6).sub(round.x.mul(3)).add(this.drift.y.mul(0.5))));
       const hang = smoothstep(0, 0.04, up).mul(float(1).sub(smoothstep(0.08, 0.34, up)));
       return smoothstep(-0.2, 0.7, veil).mul(hang).mul(this.curtains) as unknown as F;
@@ -256,7 +256,7 @@ export class SkyDome {
     const d = this.drift.value;
     const speed = (0.004 + 0.0022 * wind) * dt;
     // (Wrapped far out, so the GPU's floats stay precise in a page left open for days.)
-    d.set((d.x - WIND_X * speed) % 4096, (d.y - WIND_Z * speed) % 4096, (d.z + speed * 0.6) % 4096);
+    d.set((d.x - windWay.x * speed) % 4096, (d.y - windWay.z * speed) % 4096, (d.z + speed * 0.6) % 4096);
   }
 
   /** Keeps the dome centred on the camera. */

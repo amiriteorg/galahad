@@ -1,6 +1,6 @@
 import { abs, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, cameraWorldMatrix, cross, float, hash, instanceIndex, length, mix, mod, normalize, sin, smoothstep, step, uniform, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { Color, InstancedMesh, MeshBasicNodeMaterial, type Node, PlaneGeometry, type Scene, Vector2 } from "three/webgpu";
-import { WIND_X, WIND_Z } from "./air.ts";
+import { wind as windWay } from "./air.ts";
 import { HALL, HALL_EAVES } from "./hall-plan.ts";
 import { originUniform } from "./plots.ts";
 import { weatherUniforms } from "./wet.ts";
@@ -183,7 +183,7 @@ export class Rain {
     this.snowStrength.value = (0.7 + 0.25 * snow) * (motion ? 1 : 0.7);
     // The rain leans with the wind (a gale lays it nearly flat, so not all the way).
     const lean = Math.min(wind, 16) * 0.75;
-    this.lean.value.set(WIND_X * lean, WIND_Z * lean);
+    this.lean.value.set(windWay.x * lean, windWay.z * lean);
   }
 
   /** The workshop hall's floor height (metres): no rain or snow falls under its roof. */
@@ -201,7 +201,7 @@ export class Rain {
     if (this.flakeCount > 0) {
       const b = this.blown.value;
       const s = Math.min(wind, 12) * 0.85 * dt;
-      b.set((b.x + WIND_X * s) % wrap, (b.y + WIND_Z * s) % wrap);
+      b.set((b.x + windWay.x * s) % wrap, (b.y + windWay.z * s) % wrap);
     }
   }
 

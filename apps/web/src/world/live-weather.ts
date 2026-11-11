@@ -18,6 +18,8 @@ export interface WeatherTarget {
   storm: number;
   /** The wind at 10 m, metres a second. */
   wind: number;
+  /** The way it blows towards (atan2 convention: 0 east, π/2 north); left out when the report doesn't say. */
+  windHeading?: number;
 }
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -44,6 +46,15 @@ export function mistFor(visibility: number | null): number {
   return 0;
 }
 
+/**
+ * Where a wind blows towards (atan2 convention: 0 east, π/2 north), from where a weather report
+ * says it blows from (degrees clockwise from north): a westerly (270) blows towards the east (0).
+ */
+export function windHeadingFrom(fromDegrees: number): number {
+  const towards = ((fromDegrees + 180) * Math.PI) / 180;
+  return Math.atan2(Math.cos(towards), Math.sin(towards));
+}
+
 /** The wind as the world uses it: metres a second, never negative, a hurricane at most. */
 export function windFor(metresPerSecond: number): number {
   return metresPerSecond > 0 ? Math.min(33, metresPerSecond) : 0;
@@ -65,5 +76,7 @@ export function liveTarget(w: WorldWeather): WeatherTarget {
   let cloud = clamp01(w.cloud);
   if (rain > 0 || snowing) cloud = Math.max(cloud, 0.85);
   if (w.kind === "storm") cloud = 1;
-  return { cloud, rain, mist, snow, storm: w.kind === "storm" ? 1 : 0, wind: windFor(w.wind) };
+  const target: WeatherTarget = { cloud, rain, mist, snow, storm: w.kind === "storm" ? 1 : 0, wind: windFor(w.wind) };
+  if (typeof w.windFrom === "number" && Number.isFinite(w.windFrom)) target.windHeading = windHeadingFrom(w.windFrom);
+  return target;
 }

@@ -1,5 +1,5 @@
 import { dot, float, length, max, mix, renderGroup, sin, smoothstep, uniform } from "three/tsl";
-import { Color, type Node, Vector3 } from "three/webgpu";
+import { Color, type Node, Vector2, Vector3 } from "three/webgpu";
 import { WIND_HEADING } from "./place.ts";
 import { only, weatherUniforms } from "./wet.ts";
 
@@ -17,12 +17,12 @@ type F = Node<"float">;
 type V3 = Node<"vec3">;
 
 /**
- * The way the wind blows towards, in scene axes (x east, z south), a unit vector: the same
- * heading the places' windsocks use (place.ts), from the west-south-west, Denmark's
- * prevailing wind. (The node reports the wind's speed, not its bearing.)
+ * The way the wind blows towards, in scene axes (x east, z south), a unit vector: the weather's
+ * (Denmark's, when it's live and the node says where it blows from; otherwise from the
+ * west-south-west, Denmark's prevailing wind, as the windsocks have it: place.ts). Read on the
+ * CPU from `wind`, in shaders from `air.wind`; `setWindHeading` moves both.
  */
-export const WIND_X = Math.cos(WIND_HEADING);
-export const WIND_Z = -Math.sin(WIND_HEADING);
+export const wind = { x: Math.cos(WIND_HEADING), z: -Math.sin(WIND_HEADING), heading: WIND_HEADING };
 
 /** In the render's shared group: uploaded once a render, not once per draw. */
 export const air = {
@@ -43,7 +43,18 @@ export const air = {
   rayA: uniform(new Vector3(1, 0, 0)).setGroup(renderGroup),
   rayB: uniform(new Vector3(0, 0, 1)).setGroup(renderGroup),
   rayDrift: uniform(0).setGroup(renderGroup),
+  /** The wind's way (scene x, z), for shaders. */
+  wind: uniform(new Vector2(wind.x, wind.z)).setGroup(renderGroup),
 };
+
+/** The wind now blows towards `heading` (atan2 convention: 0 east, π/2 north). Cheap when it hasn't changed. */
+export function setWindHeading(heading: number): void {
+  if (Math.abs(heading - wind.heading) < 1e-4) return;
+  wind.heading = heading;
+  wind.x = Math.cos(heading);
+  wind.z = -Math.sin(heading);
+  air.wind.value.set(wind.x, wind.z);
+}
 
 export interface Lobes {
   /** The cosine of the angle between the view and the light. */

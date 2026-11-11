@@ -9,7 +9,7 @@
  * Denmark aims it (live-weather.ts). Pure, so unit-tested.
  */
 
-import { BREEZE } from "./place.ts";
+import { BREEZE, WIND_HEADING } from "./place.ts";
 
 export type WeatherKind = "clear" | "overcast" | "mist" | "drizzle" | "rain" | "snow" | "storm";
 
@@ -33,6 +33,8 @@ export interface WeatherState {
   storm: number;
   /** The wind, metres a second: it slants the rain, drives the snow, and bends what grows. */
   wind: number;
+  /** The way it blows towards (atan2 convention: 0 east, π/2 north). */
+  windHeading: number;
 }
 
 /** What the weather eases towards. Snow, storm and wind may be left out (none, none, a light breeze). */
@@ -44,6 +46,8 @@ export interface WeatherAim {
   storm?: number;
   /** Metres a second. */
   wind?: number;
+  /** The way it blows towards (atan2 convention); Denmark's prevailing west-south-westerly when left out. */
+  windHeading?: number;
 }
 
 type Target = Required<WeatherAim>;
@@ -52,13 +56,13 @@ type Target = Required<WeatherAim>;
 export { BREEZE };
 
 const TARGETS: Record<WeatherKind, Target> = {
-  clear: { cloud: 0, rain: 0, mist: 0, snow: 0, storm: 0, wind: BREEZE },
-  overcast: { cloud: 0.8, rain: 0, mist: 0.1, snow: 0, storm: 0, wind: 3.5 },
-  mist: { cloud: 0.35, rain: 0, mist: 0.75, snow: 0, storm: 0, wind: 0.6 },
-  drizzle: { cloud: 0.72, rain: 0.35, mist: 0.3, snow: 0, storm: 0, wind: 3 },
-  rain: { cloud: 0.92, rain: 1, mist: 0.22, snow: 0, storm: 0, wind: 6 },
-  snow: { cloud: 0.88, rain: 0, mist: 0.3, snow: 0.8, storm: 0, wind: 2 },
-  storm: { cloud: 1, rain: 1, mist: 0.2, snow: 0, storm: 1, wind: 14 },
+  clear: { cloud: 0, rain: 0, mist: 0, snow: 0, storm: 0, wind: BREEZE, windHeading: WIND_HEADING },
+  overcast: { cloud: 0.8, rain: 0, mist: 0.1, snow: 0, storm: 0, wind: 3.5, windHeading: WIND_HEADING },
+  mist: { cloud: 0.35, rain: 0, mist: 0.75, snow: 0, storm: 0, wind: 0.6, windHeading: WIND_HEADING },
+  drizzle: { cloud: 0.72, rain: 0.35, mist: 0.3, snow: 0, storm: 0, wind: 3, windHeading: WIND_HEADING },
+  rain: { cloud: 0.92, rain: 1, mist: 0.22, snow: 0, storm: 0, wind: 6, windHeading: WIND_HEADING },
+  snow: { cloud: 0.88, rain: 0, mist: 0.3, snow: 0.8, storm: 0, wind: 2, windHeading: WIND_HEADING },
+  storm: { cloud: 1, rain: 1, mist: 0.2, snow: 0, storm: 1, wind: 14, windHeading: WIND_HEADING },
 };
 
 /** Seconds to cover about two thirds of the way (an exponential ease). */
@@ -100,7 +104,7 @@ export function naturalMist(elevationDeg: number, evening: number): number {
 
 export class Weather {
   kind: WeatherKind;
-  readonly state: WeatherState = { cloud: 0, rain: 0, mist: 0, wetness: 0, snow: 0, snowCover: 0, storm: 0, wind: BREEZE };
+  readonly state: WeatherState = { cloud: 0, rain: 0, mist: 0, wetness: 0, snow: 0, snowCover: 0, storm: 0, wind: BREEZE, windHeading: WIND_HEADING };
 
   constructor(kind: WeatherKind = "clear") {
     this.kind = kind;
@@ -123,6 +127,7 @@ export class Weather {
       snow: clamp01(target.snow ?? 0),
       storm: clamp01(target.storm ?? 0),
       wind: wind >= 0 ? Math.min(40, wind) : BREEZE,
+      windHeading: Number.isFinite(target.windHeading) ? target.windHeading! : WIND_HEADING,
     };
   }
 
@@ -141,6 +146,7 @@ export class Weather {
     s.snow = t.snow;
     s.storm = t.storm;
     s.wind = t.wind;
+    s.windHeading = t.windHeading;
     s.wetness = t.rain > 0 ? Math.min(1, 0.5 + t.rain * 0.5) : 0;
     s.snowCover = t.snow > 0 ? Math.min(1, 0.55 + t.snow * 0.5) : 0;
     s.mist = this.mistTarget(t, elevationDeg, evening);
@@ -171,6 +177,9 @@ export class Weather {
     if (s.storm < 1e-3 && stormTarget === 0) s.storm = 0;
     s.wind = ease(s.wind, t.wind, dt, WIND);
     if (Math.abs(s.wind - t.wind) < 1e-3) s.wind = t.wind;
+    // The wind veers the short way round, as slowly as it strengthens.
+    const turn = Math.atan2(Math.sin(t.windHeading - s.windHeading), Math.cos(t.windHeading - s.windHeading));
+    s.windHeading = Math.abs(turn) < 1e-3 ? t.windHeading : s.windHeading + turn * (1 - Math.exp(-dt / WIND));
 
     const sun = smooth(0, 25, elevationDeg) * (1 - s.cloud);
     // Snow settles while it falls; after, it thaws: faster under a bright sun, faster still when rain washes it away.

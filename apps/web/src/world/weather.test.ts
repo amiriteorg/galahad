@@ -222,4 +222,27 @@ describe("the weather", () => {
     run(b, 20, 5, 0.2);
     expect(a.state).toEqual(b.state);
   });
+
+  test("the wind veers to the real direction the short way round, smoothly, and a preset brings the prevailing one back", () => {
+    const w = new Weather("clear");
+    const start = w.state.windHeading;
+    // From just north of east round to just south of it: the short way is through east, never round the back.
+    w.aim({ cloud: 0.3, rain: 0, mist: 0, wind: 5, windHeading: -0.4 });
+    let last = start;
+    for (const s of run(w, 60)) {
+      const step = Math.atan2(Math.sin(s.windHeading - last), Math.cos(s.windHeading - last));
+      expect(step).toBeLessThanOrEqual(1e-9);
+      expect(Math.abs(step)).toBeLessThan(0.02);
+      expect(Math.cos(s.windHeading)).toBeGreaterThan(0.9);
+      last = s.windHeading;
+    }
+    expect(Math.abs(w.state.windHeading - -0.4)).toBeLessThan(1e-3);
+    w.set("rain");
+    run(w, 90);
+    expect(Math.abs(w.state.windHeading - start)).toBeLessThan(1e-3);
+    // Snapped on first sight; a direction that isn't a number is the prevailing one.
+    w.aim({ cloud: 0, rain: 0, mist: 0, windHeading: Number.NaN });
+    w.snap(30, 0.5);
+    expect(w.state.windHeading).toBe(start);
+  });
 });

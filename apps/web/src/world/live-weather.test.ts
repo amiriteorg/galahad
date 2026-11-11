@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WorldWeather } from "@galahad/core/world";
-import { liveTarget, mistFor, rainFor, snowFor, windFor } from "./live-weather.ts";
+import { liveTarget, mistFor, rainFor, snowFor, windFor, windHeadingFrom } from "./live-weather.ts";
 
 const w = (over: Partial<WorldWeather> = {}): WorldWeather => ({
   kind: "overcast",
@@ -105,5 +105,17 @@ describe("Denmark's weather, as the world shows it", () => {
         expect(wind).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+
+  test("the wind blows towards the opposite of where the report says it comes from, and only when it says", () => {
+    const close = (a: number, b: number) => expect(Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))).toBeLessThan(1e-9);
+    close(windHeadingFrom(270), 0); // a westerly blows east
+    close(windHeadingFrom(0), -Math.PI / 2); // a northerly blows south
+    close(windHeadingFrom(90), Math.PI); // an easterly blows west
+    close(windHeadingFrom(180), Math.PI / 2); // a southerly blows north
+    close(windHeadingFrom(360), windHeadingFrom(0));
+    close(liveTarget(w({ windFrom: 250 })).windHeading!, windHeadingFrom(250));
+    expect(liveTarget(w({ windFrom: null })).windHeading).toBeUndefined();
+    expect(liveTarget(w()).windHeading).toBeUndefined();
   });
 });

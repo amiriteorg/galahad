@@ -2,6 +2,7 @@ import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";
 import { attachInput, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Point3, SpringArm, STATION_DISTANCE } from "./camera.ts";
 import { BUILDS, Solids } from "./collide.ts";
@@ -874,9 +875,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   /** Moves the weather on, re-lighting the sky at most ten times a second while it changes; true while it rains (every frame wanted). */
   let lastSkyAt = 0;
-  const lastWeather = { cloud: -1, rain: -1, mist: -1, wetness: -1, snow: -1, snowCover: -1, wind: -1 };
+  const lastWeather = { cloud: -1, rain: -1, mist: -1, wetness: -1, snow: -1, snowCover: -1, wind: -1, windHeading: -1 };
   function stepWeather(dt: number, motion: boolean, now: number): boolean {
     const w = weather.step(dt, skyState.sunElevation * DEG, heavens.evening);
+    // The wind's way: the rain's lean, the drifts and the sky's curtains all read it.
+    setWindHeading(w.windHeading);
     // Clocks move only while there's something for them to move: every change is an upload for each
     // material that reads it, which a phone pays for on a dry, clear day for nothing.
     if (motion) {
@@ -899,7 +902,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       sky.strike(lightning.bearing, lightning.bolt, lightning.strike);
     }
     const moved =
-      Math.abs(w.cloud - lastWeather.cloud) + Math.abs(w.rain - lastWeather.rain) + Math.abs(w.mist - lastWeather.mist) + Math.abs(w.wetness - lastWeather.wetness) + Math.abs(w.snow - lastWeather.snow) + Math.abs(w.snowCover - lastWeather.snowCover) + Math.abs(w.wind - lastWeather.wind) * 0.01 > 2e-4;
+      Math.abs(w.cloud - lastWeather.cloud) + Math.abs(w.rain - lastWeather.rain) + Math.abs(w.mist - lastWeather.mist) + Math.abs(w.wetness - lastWeather.wetness) + Math.abs(w.snow - lastWeather.snow) + Math.abs(w.snowCover - lastWeather.snowCover) + Math.abs(w.wind - lastWeather.wind) * 0.01 + Math.abs(w.windHeading - lastWeather.windHeading) * 0.01 > 2e-4;
     if (moved && now - lastSkyAt > 100) {
       lastSkyAt = now;
       lastWeather.cloud = w.cloud;
@@ -909,6 +912,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       lastWeather.snow = w.snow;
       lastWeather.snowCover = w.snowCover;
       lastWeather.wind = w.wind;
+      lastWeather.windHeading = w.windHeading;
       applySky();
     }
     // (Re-lighting marks the frame dirty; falling rain and snow want every frame.)
@@ -1051,6 +1055,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     placeFrame.wetness = weather.state.wetness;
     // The weather's wind (Denmark's when live, the preset's otherwise): the windsocks agree with the rain.
     placeFrame.wind = weather.state.wind;
+    placeFrame.windHeading = weather.state.windHeading;
     for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
 
     // Sparks fly from the bench where his blade's tip works.

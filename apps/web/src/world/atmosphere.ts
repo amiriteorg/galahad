@@ -1,6 +1,6 @@
 import { cameraPosition, dot, exp, float, Fn, length, max, min, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
 import { Color, type Node, Vector2, Vector3 } from "three/webgpu";
-import { air, airColor, lobes, WIND_X, WIND_Z } from "./air.ts";
+import { air, airColor, lobes, wind as windWay } from "./air.ts";
 import type { Sky } from "./daynight.ts";
 import { dither } from "./sky.ts";
 import { WATER_LEVEL } from "./terrain.ts";
@@ -218,7 +218,7 @@ export class Atmosphere {
       // Clouds ride a faster wind than the one on the ground. (Wrapped far out, so the GPU's floats stay precise.)
       const speed = 3 + wind * 1.3;
       const at = this.shadeAt.value;
-      at.set((at.x - WIND_X * speed * dt) % 60_000, (at.y - WIND_Z * speed * dt) % 60_000);
+      at.set((at.x - windWay.x * speed * dt) % 60_000, (at.y - windWay.z * speed * dt) % 60_000);
     }
     if (air.rays.value > 0.003) air.rayDrift.value = (air.rayDrift.value + dt * 0.03) % 6000;
   }

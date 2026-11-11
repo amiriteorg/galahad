@@ -732,9 +732,11 @@ Next:
         return;
       }
       // The SANDBOX in words: where Galahad is, what's running on the plots; --follow keeps watching.
+      /** A bearing (degrees clockwise from north) as one of sixteen compass points: 250 → "WSW". */
+      const compassPoint = (deg: number) => ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
       const weatherLine = (w: WorldWeather | null | undefined) =>
         w
-          ? `${w.kind} in ${w.place}, ${Math.round(w.temperature)} °C, wind ${Math.round(w.wind)} m/s${w.precipitation ? `, ${w.precipitation} mm/h` : ""} ${dim(`(${w.source}, ${new Date(w.observed).toLocaleTimeString()})`)}`
+          ? `${w.kind} in ${w.place}, ${Math.round(w.temperature)} °C, wind ${Math.round(w.wind)} m/s${typeof w.windFrom === "number" ? ` from the ${compassPoint(w.windFrom)}` : ""}${w.precipitation ? `, ${w.precipitation} mm/h` : ""} ${dim(`(${w.source}, ${new Date(w.observed).toLocaleTimeString()})`)}`
           : dim("weather unknown (or GALAHAD_WEATHER=off on the node)");
       /** "the proving ground (flight)", "the workshop (cell-2)", or its plot on open land. */
       const whereLine = (x: ExperimentView) => {

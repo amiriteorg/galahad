@@ -138,6 +138,9 @@ describe("reading events at the boundary", () => {
       hello({ weather: null }),
       { type: "weather", at: 5, weather: weather({ kind: "drizzle", visibility: null }) },
       { type: "weather", at: 6, weather: null },
+      // The wind's direction: given, unknown (null), or absent (an older node).
+      { type: "weather", at: 7, weather: weather({ windFrom: 250 }) },
+      { type: "weather", at: 8, weather: weather({ windFrom: null }) },
     ];
     for (const e of events) expect(readWorldEvent(JSON.parse(JSON.stringify(e)))).toEqual(e);
   });
