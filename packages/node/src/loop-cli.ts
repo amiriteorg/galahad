@@ -352,10 +352,15 @@ export async function actionCommand(api: Api, sub: string | undefined, rest: str
     return;
   }
   const { actions } = await api.call<{ actions: ActionView[] }>("actions");
-  const shown = flags.all ? actions : actions.filter((a) => a.state === "waiting" || a.state === "approved");
+  // An approval that expired unsent shows for a week: you approved it, and it didn't happen.
+  const recent = (a: ActionView) => a.state === "lapsed" && a.sendBy !== null && a.sendBy > Date.now() - 7 * 24 * 60 * 60_000;
+  const shown = flags.all ? actions : actions.filter((a) => a.state === "waiting" || a.state === "approved" || recent(a));
   if (!shown.length) console.log(flags.all ? "No actions yet." : "Nothing is waiting for you. (--all shows history)");
   for (const a of shown) {
-    console.log(`  ${bold(a.id)}  ${a.state.padEnd(8)} ${a.class.padEnd(7)} ${a.connector}.${a.tool}  ${dim(`asked by ${a.by}`)}`);
+    const state = a.state === "lapsed" ? "expired" : a.state;
+    console.log(`  ${bold(a.id)}  ${state.padEnd(8)} ${a.class.padEnd(7)} ${a.connector}.${a.tool}  ${dim(`asked by ${a.by}`)}`);
+    if (a.state === "lapsed") console.log(dim(`      your approval expired ${new Date(a.sendBy!).toISOString()} before the node that asked could send it: never sent`));
+    if (a.state === "approved" && a.sendBy !== null) console.log(dim(`      sent by ${new Date(a.sendBy).toISOString()} or never`));
     const answered = a.order ? dim(`  · answered by your standing order "${a.order.label}"`) : "";
     console.log(`      ${a.target}${a.why ? dim(`  · ${a.why}`) : ""}${answered}${a.receipt ? `\n      ${dim(a.receipt.slice(0, 200))}` : ""}`);
   }

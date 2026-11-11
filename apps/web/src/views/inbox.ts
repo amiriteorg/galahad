@@ -30,6 +30,7 @@ const STATE: Record<ActionView["state"], { label: string; tone: Tone }> = {
   failed: { label: "failed", tone: "danger" },
   denied: { label: "declined", tone: "neutral" },
   expired: { label: "expired unanswered", tone: "neutral" },
+  lapsed: { label: "approval expired · never sent", tone: "neutral" },
 };
 
 /** "loop:morning" → "the loop morning"; who asked, as the owner would say it. */

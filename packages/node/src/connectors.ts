@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import {
   type ActionView,
+  approvalSendBy,
   argStrings,
   type ArgValue,
   type BuiltRequest,
@@ -226,8 +227,11 @@ export class ConnectorService {
         const orderId = decision?.value?.order;
         const order = orderId ? this.o.store.lww<StoredOrder>(`order:${orderId}`)?.value : null;
         const done = this.o.store.lww<{ ok: boolean; receipt: string }>(`action-done:${body.id}`)?.value ?? null;
+        // From recorded times only: the approval's own hlc, the request's own deadline.
+        const sendBy = decision?.value?.verdict === "approved" ? approvalSendBy(decodeHlc(decision.hlc).ms, body.expires) : null;
         let state: ActionView["state"];
         if (done) state = done.ok ? "done" : "failed";
+        else if (sendBy !== null && now > sendBy) state = "lapsed";
         else if (decision?.value) state = decision.value.verdict;
         else state = body.expires <= now ? "expired" : "waiting";
         return {
@@ -243,6 +247,7 @@ export class ConnectorService {
           requestedAt: entry.hlc,
           expires: body.expires,
           state,
+          sendBy,
           decidedVia: decision?.value?.via ?? decision?.device ?? null,
           order: orderId ? { id: orderId, label: order?.label ?? orderId } : null,
           receipt: done?.receipt ?? null,
@@ -287,7 +292,7 @@ export class ConnectorService {
   }
 
   private async drainOnce(): Promise<void> {
-    const mine = this.actions(10_000).filter((a) => a.node === this.o.identity.id && a.state === "approved");
+    const mine = this.actions(10_000).filter((a) => a.node === this.o.identity.id && (a.state === "approved" || a.state === "lapsed"));
     for (const action of mine) {
       if (this.inFlight.has(action.id)) continue;
       const row = this.o.local.query<{ state: string }, [string]>("SELECT state FROM outbox WHERE id = ?").get(action.id);
@@ -300,11 +305,31 @@ export class ConnectorService {
     }
   }
 
+  /** An approval past its send deadline: never sent, and said so in the ledger, once. */
+  private lapse(action: ActionView): { ok: false; status: number; receipt: string } {
+    const receipt = `not sent: your approval expired at ${new Date(action.sendBy!).toISOString()} before this node could send it, so it never will`;
+    if (!this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
+      this.o.ledger({
+        class: action.class as LedgerEntryInput["class"],
+        resource: `connector.${action.connector}`,
+        target: action.target,
+        verdict: "deny",
+        reason: "the approval expired before it could be sent",
+        detail: `action ${action.id}, asked by ${action.by} · ${receipt}`.slice(0, 2000),
+      });
+      this.o.local.query("INSERT OR IGNORE INTO outbox (id, state, at) VALUES (?, 'expired', ?)").run(action.id, this.now());
+    }
+    return { ok: false, status: 410, receipt };
+  }
+
   /** Send one approved action at most once, through the outbox, and write its receipt. */
   private async sendApproved(action: ActionView, why: string): Promise<{ ok: boolean; status?: number; receipt: string; result?: ConnectorResult }> {
     if (this.inFlight.has(action.id) || this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
       return { ok: false, status: 409, receipt: "already sent or being sent" };
     }
+    // Checked again here, at the moment of sending: an approval is good for APPROVAL_TTL_MS.
+    if (action.sendBy === null) return { ok: false, status: 409, receipt: "not approved" };
+    if (this.now() > action.sendBy) return this.lapse(action);
     this.inFlight.add(action.id);
     this.o.local.query("INSERT INTO outbox (id, state, at) VALUES (?, 'sending', ?)").run(action.id, this.now());
     let ok = false;

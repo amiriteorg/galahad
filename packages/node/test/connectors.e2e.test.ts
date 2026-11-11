@@ -3,8 +3,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ActionView, type ConnectorView, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type OrderView, type RouteName, routes } from "@galahad/core";
-import { foundFleet, MindStore, Vault } from "@galahad/mind";
+import { type ActionView, APPROVAL_TTL_MS, b64u, type ConnectorView, decodeHlc, HlcClock, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type OrderView, type RouteName, routes } from "@galahad/core";
+import { enrollDevice, foundFleet, MindStore, Vault } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { ConnectorService } from "../src/connectors.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
@@ -333,6 +333,101 @@ describe("the outbox survives a crash without sending twice", () => {
     const action = service.actions().find((a) => a.id === id)!;
     expect(action.state).toBe("failed");
     expect(action.receipt).toMatch(/outcome unknown/);
+  });
+});
+
+describe("an approval has a send deadline", () => {
+  const HOUR = 60 * 60_000;
+
+  /** Two nodes: F files the action and is the only one that sends it; you answer on G. Each has its own clock. */
+  function twoNodes() {
+    const clocks = { f: Date.UTC(2026, 10, 2, 9), g: Date.UTC(2026, 10, 2, 9) };
+    const f = newNodeIdentity();
+    const g = newNodeIdentity();
+    const storeF = new MindStore(":memory:", new HlcClock(() => clocks.f));
+    foundFleet(storeF, f, { fleetName: "camelot", nodeName: "filer" });
+    enrollDevice(storeF, f, { device: g.id, name: "answerer", kind: "node", box: b64u(g.boxPublic) });
+    const vault = new Vault(storeF, f);
+    vault.set("forge", KEY, { provider: "forge", origin });
+    storeF.emit(f, "connector.set", { id: "forge", manifest: manifest() });
+    const storeG = new MindStore(":memory:", new HlcClock(() => clocks.g));
+    storeG.expectFleet(storeF.fleet!);
+    const sync = (from: MindStore, to: MindStore) => to.ingest(from.eventsSince(to.frontier(), 100_000).events);
+    sync(storeF, storeG);
+    let sent = 0;
+    const fetch = (async () => {
+      sent += 1;
+      return Response.json({ created: true }, { status: 201 });
+    }) as unknown as typeof globalThis.fetch;
+    const ledgered: { verdict: string; reason?: string; detail?: string }[] = [];
+    const service = (store: MindStore, identity: typeof f, now: () => number) =>
+      new ConnectorService({ store, vault: new Vault(store, identity), identity, local: new Database(":memory:"), ledger: (e) => ledgered.push(e), log: () => {}, fetch, now });
+    const filer = service(storeF, f, () => clocks.f);
+    const answerer = service(storeG, g, () => clocks.g);
+    return { clocks, g, storeF, storeG, sync, filer, answerer, ledgered, sent: () => sent };
+  }
+
+  async function approvedWhileAway(hoursAway: number) {
+    const fleet = twoNodes();
+    const asked = await fleet.filer.call({ connector: "forge", tool: "post", args: { text: "late" } }, { kind: "agent", by: "loop:x" });
+    const id = (asked as { action: string }).action;
+    fleet.sync(fleet.storeF, fleet.storeG);
+    // F goes away; an hour later you approve on G.
+    fleet.clocks.g += HOUR;
+    const approved = fleet.answerer.decide(id, true, null);
+    expect(approved.sendBy).toBe(fleet.clocks.g + APPROVAL_TTL_MS);
+    // F comes back much later and hears of it only now.
+    fleet.clocks.f = fleet.clocks.g + hoursAway * HOUR;
+    fleet.clocks.g = fleet.clocks.f;
+    fleet.sync(fleet.storeG, fleet.storeF);
+    await fleet.filer.drain();
+    return { ...fleet, id };
+  }
+
+  test("a node back within 72 hours of your approval sends it", async () => {
+    const { filer, id, sent } = await approvedWhileAway(71);
+    expect(sent()).toBe(1);
+    expect(filer.actions().find((a) => a.id === id)!.state).toBe("done");
+  });
+
+  test("a node back after 72 hours never sends it: it's ledgered, and shown as lapsed everywhere", async () => {
+    const { filer, answerer, storeF, storeG, sync, id, sent, ledgered } = await approvedWhileAway(73);
+    expect(sent()).toBe(0);
+    expect(filer.actions().find((a) => a.id === id)!.state).toBe("lapsed");
+    const record = ledgered.filter((e) => e.detail?.includes(id));
+    expect(record.at(-1)).toMatchObject({ verdict: "deny" });
+    expect(record.at(-1)!.reason).toMatch(/expired/);
+    // Draining again neither sends nor ledgers it twice.
+    await filer.drain();
+    expect(sent()).toBe(0);
+    expect(ledgered.filter((e) => e.detail?.includes(id) && e.verdict === "deny")).toHaveLength(1);
+    // Every device sees the same, from the approval's own recorded time.
+    sync(storeF, storeG);
+    expect(answerer.actions().find((a) => a.id === id)!.state).toBe("lapsed");
+    // And you can't answer it again.
+    expect(() => answerer.decide(id, true, null)).toThrow(/already lapsed/);
+  });
+
+  test("the deadline is the approval's recorded time, not when a node heard of it", async () => {
+    const { filer, storeF, id } = await approvedWhileAway(71);
+    const view = filer.actions().find((a) => a.id === id)!;
+    const decision = storeF.lww(`action-decision:${id}`)!;
+    expect(view.sendBy).toBe(decodeHlc(decision.hlc).ms + APPROVAL_TTL_MS);
+  });
+
+  test("an approval recorded after the request had expired is never sent", async () => {
+    const fleet = twoNodes();
+    const asked = await fleet.filer.call({ connector: "forge", tool: "post", args: { text: "too late" } }, { kind: "agent", by: "loop:x" });
+    const id = (asked as { action: string }).action;
+    fleet.sync(fleet.storeF, fleet.storeG);
+    // A node whose clock let it answer after the day was up (decide() itself refuses that).
+    fleet.clocks.g += 25 * HOUR;
+    fleet.storeG.emit(fleet.g, "action.decided", { id, verdict: "approved" });
+    fleet.clocks.f = fleet.clocks.g;
+    fleet.sync(fleet.storeG, fleet.storeF);
+    await fleet.filer.drain();
+    expect(fleet.sent()).toBe(0);
+    expect(fleet.filer.actions().find((a) => a.id === id)!.state).toBe("lapsed");
   });
 });
 
