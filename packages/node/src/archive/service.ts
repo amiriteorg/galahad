@@ -59,6 +59,9 @@ export class ArchiveService {
   private embedderLocal: boolean | null = null;
   private embedRetryAt = 0;
   private embedFailures = 0;
+  /** Where embedding got to (a passage id), for the model it was embedding with. */
+  private embedFrom = 0;
+  private embedModel: string | null = null;
   private understandError: string | null = null;
   private understandRetryAt = 0;
   private lastUnderstand: number | null = null;
@@ -252,14 +255,24 @@ export class ArchiveService {
     }
     this.store.dropOtherModels(model);
     if (this.now() < this.embedRetryAt) return;
+    if (this.embedModel !== model) {
+      this.embedModel = model;
+      this.embedFrom = 0;
+    }
     while (this.now() < deadline) {
-      const pending = this.store.pendingChunks(model, 32);
-      if (!pending.length) return;
+      const pending = this.store.pendingChunks(model, 32, this.embedFrom);
+      if (!pending.length) {
+        // At the end: one more look from the start (a passage that arrived with a lower id), then done.
+        if (this.embedFrom === 0) return;
+        this.embedFrom = 0;
+        continue;
+      }
       // What's embedded goes to the embedder's provider: scanned again first, as everything that leaves is.
       const texts = pending.map((c) => scrub(c.text, "passage").text.slice(0, 4000));
       try {
         const e = await this.embedWith(texts, "document");
         this.store.storeVectors(model, pending.map((c, i) => ({ chunk: c.id, entryRow: c.entryRow, vector: e.vectors[i]! })));
+        this.embedFrom = pending.at(-1)!.id;
         this.embedderError = null;
         this.embedFailures = 0;
         this.embedderDims = e.dims;
@@ -426,6 +439,7 @@ export class ArchiveService {
     if (opts.understanding) this.store.forgetUnderstanding();
     this.embedRetryAt = 0;
     this.embedFailures = 0;
+    this.embedFrom = 0;
     this.understandRetryAt = 0;
     void this.tick().catch(() => {});
     return { backlog: this.store.backlog(this.model()), understanding: this.store.understandingBacklog() };

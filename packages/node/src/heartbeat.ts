@@ -80,7 +80,8 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
   }
 
   for (const role of s.roles) {
-    if (role.usable) continue;
+    // A role nobody has hired (the decider, the archive's embedder) is a choice, not a problem.
+    if (role.usable || !role.models.length) continue;
     out.push({
       key: `no-model:${role.role}`,
       severity: CORE_ROLES.has(role.role) ? "warn" : "info",

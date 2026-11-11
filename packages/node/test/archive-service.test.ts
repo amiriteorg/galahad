@@ -22,9 +22,9 @@ import { conceptVector, HOSTILE_PAGE } from "./archive-fixtures.ts";
  */
 
 const FAKE_KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKE";
-const cleanup: (() => void)[] = [];
-afterEach(() => {
-  for (const fn of cleanup.splice(0).reverse()) fn();
+const cleanup: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
 interface World {
@@ -51,12 +51,14 @@ function world(): World {
   const experiments: World["experiments"] = [];
   const stores: ArchiveStore[] = [];
   const services: ArchiveService[] = [];
-  cleanup.push(() => {
-    for (const s of services) void s.stop();
+  cleanup.push(async () => {
+    // Every service stopped (no tick left writing) before its stores close and the files go.
+    for (const s of services) await s.stop();
     for (const s of stores) s.close();
     chats.close();
     mind.close();
-    rmSync(dir, { recursive: true, force: true });
+    // Windows may hold a just-written file a moment longer (an antivirus scan): rm waits for it.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const external: ExternalSource = {
     async listSince(cursor, limit) {
@@ -242,6 +244,31 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     w.clock.now += 86_400_000 + 1;
     await service.drain();
     expect(store.has("memories", late.id)).toBe(true);
+  });
+});
+
+describe("the shapes the experiments and whiteboard branches will plug into", () => {
+  test("a board's versions, each by its description, after a cursor; not hooked up, it waits", async () => {
+    const versions = [
+      { id: "board-1@1", title: "Keep gate, v1", at: 1, description: "A drawbridge sketch: leaf 2.4 m, one hinge." },
+      { id: "board-1@2", title: "Keep gate, v2", at: 2, description: `Two hinges and a counterweight; see art_${"A".repeat(22)}.` },
+    ];
+    const source: ExternalSource = {
+      async listSince(cursor, limit) {
+        const after = versions.filter((v) => cursor === null || v.id > cursor).slice(0, limit);
+        return { records: after.map(({ id, title, at }) => ({ id, title, at })), cursor: after.at(-1)?.id ?? cursor };
+      },
+      async describe(id) {
+        return { description: versions.find((v) => v.id === id)!.description, files: [] };
+      },
+    };
+    const first = await boardsAdapter(source).pull(null, 1);
+    expect(first.entries.map((e) => [e.kind, e.source, e.sourceId, e.title])).toEqual([["board", "boards", "board-1@1", "Keep gate, v1"]]);
+    const second = await boardsAdapter(source).pull(first.cursor, 10);
+    expect(second.entries[0]!.links).toEqual([{ rel: "uses", to: archiveId("artifacts", `art_${"A".repeat(22)}`) }]);
+    expect(second.more).toBe(false);
+    expect(boardsAdapter(null).waiting).toBe(true);
+    expect(await boardsAdapter(null).pull(null, 10)).toEqual({ entries: [], cursor: null, more: false });
   });
 });
 

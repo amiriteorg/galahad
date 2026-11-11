@@ -20,7 +20,7 @@ bun galahad help                       # the CLI
 | `packages/mind` | The replica (log + views), the vault, fleet enrollment and revocation |
 | `packages/link` | Pairing host, the joining client, sync |
 | `packages/brain` | Providers, roster, adapters, chat with fallback, the model gateway |
-| `packages/node` | Daemon, HTTP server, CLI, capabilities, placement |
+| `packages/node` | Daemon, HTTP server, CLI, capabilities, placement, the archive (`src/archive/`) |
 | `apps/web` | The PWA (bundled by the daemon at start) |
 | `docs/` | Architecture, oath, trials, doctrine |
 

@@ -598,14 +598,17 @@ export class ArchiveStore {
 
   // ---- Embedding ---------------------------------------------------------------------
 
-  /** Passages without a vector from this model, oldest first. */
-  pendingChunks(model: string, limit: number): StoredChunk[] {
+  /**
+   * Passages without a vector from this model, oldest first, after a passage id (where the
+   * last batch ended: without it, each batch would walk every embedded passage again).
+   */
+  pendingChunks(model: string, limit: number, after = 0): StoredChunk[] {
     return this.db
-      .query<StoredChunk, [string, number]>(
+      .query<StoredChunk, [string, number, number]>(
         `SELECT c.id, c.entry_row AS entryRow, e.id AS entry, c.text FROM chunks c JOIN entries e ON e.row = c.entry_row
-         LEFT JOIN vectors v ON v.chunk = c.id AND v.model = ? WHERE v.chunk IS NULL AND e.deleted_at IS NULL ORDER BY c.id LIMIT ?`,
+         LEFT JOIN vectors v ON v.chunk = c.id AND v.model = ? WHERE c.id > ? AND v.chunk IS NULL AND e.deleted_at IS NULL ORDER BY c.id LIMIT ?`,
       )
-      .all(model, limit);
+      .all(model, after, limit);
   }
 
   backlog(model: string | null): number {

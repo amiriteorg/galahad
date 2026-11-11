@@ -66,6 +66,9 @@ describe("the heartbeat's checks", () => {
         roles: [
           { role: "engineer", usable: false, models: ["anthropic/claude-opus-5-5"] },
           { role: "swift", usable: false, models: ["ollama/*"] },
+          // Roles nobody has hired (the decider, the archive's embedder) are a choice, not a problem.
+          { role: "decider", usable: false, models: [] },
+          { role: "embedder", usable: false, models: [] },
         ],
       }),
     );

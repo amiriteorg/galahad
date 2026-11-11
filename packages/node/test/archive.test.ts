@@ -26,7 +26,8 @@ const temp = () => {
 };
 afterEach(() => {
   for (const store of stores.splice(0)) store.close();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  // Windows may hold a just-written file a moment longer (an antivirus scan): rm waits for it.
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 function open(dir = temp(), now = () => 1_700_000_000_000) {
