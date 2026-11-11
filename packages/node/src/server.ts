@@ -374,8 +374,8 @@ export function createApp(ctx: AppContext) {
       });
   }
 
-  function fleetView(): FleetView {
-    const devices: DeviceView[] = ctx.store.devices(true).map((d) => ({
+  function deviceViews(): DeviceView[] {
+    return ctx.store.devices(true).map((d) => ({
       id: d.id,
       name: d.name,
       kind: d.kind,
@@ -386,29 +386,32 @@ export function createApp(ctx: AppContext) {
       endpoint: d.profile?.endpoint ?? null,
       caps: d.id === ctx.identity.id ? (ctx.caps() as unknown as Record<string, unknown>) : (d.profile?.caps ?? null),
     }));
+  }
+
+  function fleetView(): FleetView {
     return {
       fleet: ctx.store.fleet!,
       name: ctx.store.genesis?.name ?? "",
       self: ctx.identity.id,
-      devices,
+      devices: deviceViews(),
       peers: ctx.sync.status(),
       events: ctx.store.eventCount(),
+      // A hash of every view (as big as the views, not the log; kept until they change).
       digest: ctx.store.digest(),
     };
   }
 
-  // The world's banners: the fleet's nodes and paired devices, with who's online.
+  // The world's banners: the fleet's nodes and paired devices, with who's online (no state digest).
   ctx.world.setNodes((): WorldNode[] => {
-    const fleet = fleetView();
-    const online = new Map(fleet.peers.map((p) => [p.device, p.online]));
-    return fleet.devices
+    const online = new Map(ctx.sync.status().map((p) => [p.device, p.online]));
+    return deviceViews()
       .filter((d) => !d.revokedAt)
       .map((d) => ({
         id: d.id,
         name: d.name,
         kind: d.kind,
-        self: d.id === fleet.self,
-        online: d.id === fleet.self || (online.get(d.id) ?? false),
+        self: d.id === ctx.identity.id,
+        online: d.id === ctx.identity.id || (online.get(d.id) ?? false),
         sandboxHost: Boolean((d.caps as { sandbox?: { image?: unknown } } | null)?.sandbox?.image),
       }));
   });
@@ -544,10 +547,15 @@ export function createApp(ctx: AppContext) {
       .join("\n\n");
   }
 
-  /** Refuse anything credential-shaped: chat goes to providers, memory replicates in plaintext. */
+  /**
+   * Refuse anything credential-shaped: chat goes to providers, memory replicates in plaintext.
+   * The ids of events in the mind look like random keys but are public to the fleet (Galahad
+   * quotes them from the ledger), so they pass.
+   */
+  const scanOptions = { isPublic: (token: string) => ctx.store.event(token) !== null };
   function guardAgainstSecrets(...texts: string[]): void {
     for (const text of texts) {
-      const finding = findSecrets(text)[0];
+      const finding = findSecrets(text, scanOptions)[0];
       if (finding) throw new HttpError(422, `That looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
     }
   }

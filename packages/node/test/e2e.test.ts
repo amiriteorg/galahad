@@ -277,6 +277,31 @@ describe("M0: one mind, two bodies", () => {
     expect(JSON.stringify(laptop.store.eventsSince({}, 100_000))).not.toContain(key);
   });
 
+  test("a temporary chat whose history names credentials without holding one isn't refused (its whole history is resent)", async () => {
+    const post = (body: unknown) =>
+      fetch(`http://127.0.0.1:${portA}/api/chat`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${homeA.adminToken()}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const eventId = laptop.store.ledger(1)[0]?.id ?? laptop.store.fleet!;
+    const answer = [
+      "Read it from the request, never from the code:",
+      "```ts\nconst token = request.headers.get(\"authorization\");\n```",
+      "and in your shell: `export API_KEY=<your-key-here>`; in compose: `password: ${DB_PASSWORD}`.",
+      `The ledger entry ${eventId} shows it; the lockfile pins "integrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+Tl/aTnqYuEzbJyb4gGkLGsKyE5rUY1oAv8HJTw==".`,
+    ].join("\n");
+    const response = await post({ messages: [{ role: "user", content: "how do I read the token?" }, { role: "assistant", content: answer }, { role: "user", content: "thanks, and then?" }] });
+    expect(response.status).not.toBe(422);
+    await response.body?.cancel();
+    // The same history with a key in it still is.
+    const leaked = await post({ messages: [{ role: "assistant", content: `${answer}\npassword=hunter2hunter2` }, { role: "user", content: "and then?" }] });
+    expect(leaked.status).toBe(422);
+    // An id of the same shape that isn't an event in the mind is still refused.
+    const random = await post({ messages: [{ role: "user", content: "is this one? Xq7vB2mK9pL4wR8tZ3nC6yH1sD5fG0jQzz9Ab3Cd7Ef" }] });
+    expect(random.status).toBe(422);
+  });
+
   test("Galahad can request a credential; filling it on another device resolves the request", async () => {
     const callA = admin(homeA, portA);
     const callB = admin(homeB, portB);
