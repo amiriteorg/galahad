@@ -15,6 +15,7 @@ import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
+import { archiveCommand } from "./archive-cli.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
@@ -90,6 +91,16 @@ Work
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
+Archive (this node's: everything kept for good, searched by words and meaning)
+  archive                         entries, passages embedded, the backlog, the embedder, the last integrity check, disk
+  archive search <words…> [--kind idea,model] [--trust owner,agent] [--source memories] [--since 7d] [--until 2026-11-01] [--limit 10]
+  archive show <id> [file]        an entry: summary, facts, lessons, files and links (or one file, to stdout)
+  archive idea "<title>" [--text "…"] [--tag t]   keep an idea (the text may come on stdin)
+  archive rm <id> --reason "…"    delete for good (a tombstone keeps it from coming back)
+  archive reindex [--summaries]   embed everything again (and summarise again, within the budget)
+  archive verify                  re-hash every stored file now (it runs daily too)
+  archive budget [<n>]            summaries a day by the swift role (unset: a local model only)
+
 Loops (work on a schedule, on one node; every run is recorded in the mind)
   loop ls | loop runs [name] | loop run <name> | loop pause|resume|rm <name>
   loop add <name> (--every 30m | --cron "0 7 * * 1-5") [--tz Europe/Copenhagen] [--on ultra] [--label text]
@@ -134,7 +145,7 @@ Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
 
 Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|file and --advertise <tailnet ip>
-Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>`;
+Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>, GALAHAD_ARCHIVE_DIR=<absolute path>, GALAHAD_ARCHIVE=off`;
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
@@ -334,6 +345,13 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
+      // The archive's filters and ideas.
+      trust: { type: "string" },
+      source: { type: "string" },
+      since: { type: "string" },
+      until: { type: "string" },
+      text: { type: "string" },
+      summaries: { type: "boolean" },
     },
   });
   const [command, sub, ...rest] = positionals;
@@ -719,6 +737,7 @@ Next:
         if (event.type === "conversation") process.stderr.write(dim(`[chat ${event.id}${event.project ? ` · project ${event.project}` : ""}]\n`));
         else if (event.type === "text") process.stdout.write(event.text);
         else if (event.type === "model") process.stderr.write(dim(`[${event.ref}]\n`));
+        else if (event.type === "archive") process.stderr.write(dim(`[from the archive: ${event.entries.map((e) => `${e.id} ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
         else if (event.type === "tool") process.stderr.write(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
         else if (event.type === "tool_result") process.stderr.write(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
         else if (event.type === "fallback") process.stderr.write(dim(`[skipped ${event.from}: ${event.error}]\n`));
@@ -1417,6 +1436,9 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "order":
     case "orders":
       await orderCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "archive":
+      await archiveCommand(new Admin(home), sub, rest, flags, { confirm, readStdin: () => Bun.stdin.text() });
       return;
 
     case "rebuild": {

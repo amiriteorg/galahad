@@ -278,6 +278,45 @@ describe("Galahad learns from it", () => {
   });
 });
 
+describe("the terminal", () => {
+  // Spawned, not spawned synchronously: the node it talks to runs in this very process.
+  const cli = async (...args: string[]) => {
+    const run = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), ...args, "--home", home.dir], { env: { ...process.env, GALAHAD_KEYSTORE: "file" }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const [out, err, code] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
+    return { out, err, code };
+  };
+
+  test(
+    "galahad archive: status, search, show, idea, budget",
+    async () => {
+      const status = await cli("archive");
+      expect(status.code).toBe(0);
+      expect(status.out).toContain("The archive on archive-node");
+      expect(status.out).toContain("embedder embed/concept-embed (local)");
+      expect(status.out).toMatch(/integrity: ✓ \d+ file\(s\) re-hashed/);
+
+      const noted = await cli("archive", "idea", "A windmill for the lab", "--text", "Pump water to the stream.", "--tag", "lab");
+      expect(noted.code).toBe(0);
+      const id = noted.out.match(/(arc_[A-Za-z0-9_-]{22})/)![1]!;
+
+      const found = await cli("archive", "search", "windmill", "--kind", "idea", "--since", "1d");
+      expect(found.out).toContain("A windmill for the lab");
+      expect(found.out).toContain(id);
+      expect((await cli("archive", "search", "windmill", "--kind", "model")).out).toContain('Nothing in the archive about "windmill"');
+
+      const shown = await cli("archive", "show", id);
+      expect(shown.out).toContain("Pump water to the stream.");
+      expect(shown.out).toContain("#idea #lab");
+
+      expect((await cli("archive", "budget", "7")).out).toContain("Up to 7 summaries a day");
+      expect((await cli("archive", "budget")).out).toContain("7 summaries a day");
+      expect((await cli("archive", "budget", "0")).code).toBe(0);
+      expect((await cli("archive", "search", "x", "--since", "soon")).err).toContain("isn't a time");
+    },
+    60_000,
+  );
+});
+
 describe("the bank's gate covers note_idea", () => {
   const api: ToolApi = { call: async <T,>() => ({ id: "arc_x", created: true, trust: "agent", node: "n" }) as T, bytes: async () => ({ bytes: new Uint8Array(), type: "" }) };
   const fake = (name: string, flow: GalahadTool["flow"]): GalahadTool => ({ name, title: name, description: name, input: {}, routes: [], ...(flow ? { flow } : {}), run: async () => "data" });
