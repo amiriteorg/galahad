@@ -12,7 +12,7 @@ import type { TierName } from "./tiers.ts";
  *
  * The hall, from the door (west) to the back (east):
  *   front, north of the aisle   the printer farm (desktop printers on a bench over a collector
- *                               belt), a large-format gantry printer, the dispatch table and hatch
+ *                               belt), a large-format gantry printer, the dispatch table and room
  *   front, south of the aisle   the assembly line (an indexing conveyor past two six-axis arms and
  *                               an inspection arch), a CNC mill
  *   between them                the cart's lane, crossing the aisle once
@@ -203,13 +203,19 @@ export const GANTRY = {
   bedTop: 0.55,
 };
 
-/** Big parts are craned to the dispatch table, whose rollers carry them out by the hatch in the north wall. */
+/**
+ * Big parts are craned to the dispatch table, whose rollers carry them through a roller door into the
+ * dispatch room against the north wall (where they're packed and sent off).
+ */
 export const DISPATCH = {
-  table: { x: 102.5, y: 17.55, hx: 0.95, hy: 1.75 } as Rect,
+  table: { x: 102.5, y: 16.95, hx: 0.95, hy: 1.25 } as Rect,
   top: 0.7,
-  /** Where the crane sets a part down, and the hatch (in the wall, under the window). */
-  drop: { x: 102.5, y: 16.7 },
-  hatch: { x: 102.5, half: 1.2, height: 2.3 },
+  /** Where the crane sets a part down. */
+  drop: { x: 102.5, y: 16.55 },
+  /** The room (its footprint and height) and its door (in its south face). */
+  room: { x: 102.5, y: 18.8, hx: 1.9, hy: 0.6 } as Rect,
+  height: 2.7,
+  door: { half: 1.1, height: 2.05 },
 };
 
 // ---------- the assembly line ----------
@@ -255,7 +261,7 @@ export const MILL: Rect = { x: 82.8, y: -18.05, hx: 2, hy: 1.25 };
 // ---------- the cart ----------
 
 /** The cart's size (it drives lengthways), its deck's height, the tote on it, and how near anything may come before it stops. */
-export const CART = { length: 1.3, width: 0.95, radius: 0.85, deck: 0.38, tote: { length: 0.78, width: 0.62, height: 0.3 } };
+export const CART = { length: 1.3, width: 0.95, radius: 0.85, deck: 0.38, tote: { length: 0.78, width: 0.62, height: 0.24 } };
 
 /**
  * The cart's lane: from its dock (and charger) at the end of the printers' belt, south across the
@@ -309,10 +315,11 @@ export const HALL_WALLS: Collider[] = (() => {
 export const HALL_SOLIDS: Solid[] = (() => {
   const out: Solid[] = [];
   for (const c of COLUMNS) out.push({ name: "", collider: { kind: "box", x: c.x, y: c.y, hx: COLUMN / 2, hy: COLUMN / 2, top: HALL_EAVES } });
-  out.push(box("3D printer farm", FARM.bench, 2));
+  out.push(box("3D printer", FARM.bench, 2));
   out.push(box("Collector belt", { x: (FARM.belt.west + FARM.belt.east) / 2, y: FARM.belt.y, hx: (FARM.belt.east - FARM.belt.west) / 2, hy: FARM.belt.half + 0.06 }, FARM.belt.top + 0.05));
   out.push(box("Large-format printer", GANTRY.frame, GANTRY.height + 0.2));
   out.push(box("Dispatch table", DISPATCH.table, DISPATCH.top + 0.1));
+  out.push(box("Dispatch", DISPATCH.room, DISPATCH.height));
   out.push(box("Assembly line", { x: (LINE.west + LINE.east) / 2, y: LINE.y, hx: (LINE.east - LINE.west) / 2, hy: LINE.half + 0.1 }, LINE.top + 0.25));
   out.push(box("Assembly line", { x: (LINE.infeed[0] + LINE.infeed[1]) / 2, y: LINE.y, hx: (LINE.infeed[1] - LINE.infeed[0]) / 2, hy: 0.85 }, LINE.tunnel));
   out.push(box("Assembly line", { x: (LINE.outfeed[0] + LINE.outfeed[1]) / 2, y: LINE.y, hx: (LINE.outfeed[1] - LINE.outfeed[0]) / 2, hy: 0.85 }, LINE.tunnel));

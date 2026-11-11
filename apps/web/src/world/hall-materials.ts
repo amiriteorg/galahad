@@ -359,12 +359,14 @@ export function glassMaterial(u: HallUniforms): MeshBasicNodeMaterial {
 }
 
 /**
- * Screens and belts, by a `kind` attribute: 0 an oscilloscope (a grid and a live trace), 1 a progress
- * bar (a printer's display), 2 a belt (cleats that travel with it, lit as the room is). `slot` picks
- * the trace's phase, the bar or the belt. The resident's screens fade with it (`fade`).
+ * Screens, belts and wire mesh, by a `kind` attribute: 0 an oscilloscope (a grid and a live trace), 1 a
+ * progress bar (a printer's display), 2 a belt (cleats that travel with it, lit as the room is), 3 a
+ * fence's wire mesh (its holes dropped; far off, where the wires are finer than a pixel, a dither of the
+ * share they cover). `slot` picks the trace's phase, the bar or the belt. A resident's screens fade with
+ * it (`fade`).
  */
 export function screenMaterial(u: HallUniforms): MeshBasicNodeMaterial {
-  const m = new MeshBasicNodeMaterial();
+  const m = new MeshBasicNodeMaterial({ side: DoubleSide });
   const kind = attribute("kind", "float") as unknown as F;
   const slot = attribute("slot", "float") as unknown as F;
   const p = uv();
@@ -377,12 +379,22 @@ export function screenMaterial(u: HallUniforms): MeshBasicNodeMaterial {
   const scope = base.mul(grid.add(0.1)).add(base.mul(trace).mul(1.6));
   // The bar: filled from the left as far as the print has got.
   const bar = base.mul(mix(float(0.14), float(1.25), step(p.x, el(u.bars, slot)).mul(step(0.25, p.y)).mul(step(p.y, 0.75))));
-  // The belt: lit by the room (a grey that follows the sky and the lamps), a lighter cleat every so often, travelling.
+  // Belts and mesh: lit by the room (a grey that follows the sky and the lamps); a belt's lighter cleat every so often, travelling.
   const cleat = step(0.86, fract(p.x.sub(el(u.belts, slot))));
-  const room = u.sky.mul(0.6).add(u.fill).mul(0.5);
+  const room = u.sky.mul(0.55).add(u.fill.mul(1.2)).mul(0.62);
   const belt = base.mul(room).mul(mix(float(0.85), float(1.3), cleat));
   m.colorNode = mix(mix(scope, bar, step(0.5, kind)), belt, step(1.5, kind));
+  // The mesh: wires every 7 cm each way (u along the panel in those units; v across its height).
+  const wx = abs(fract(p.x).sub(0.5));
+  const wy = abs(fract(p.y.mul(FENCE_MESH_ROWS)).sub(0.5));
+  const wire = max(step(0.42, wx), step(0.42, wy));
+  const fine = fwidth(p.x).mul(2.5).clamp(0, 1);
+  const cover = mix(wire, float(0.3), fine);
+  const mesh = float(1).sub(step(2.5, kind)).add(step(2.5, kind).mul(cover));
   const present = el(u.present, attribute("fade", "float") as unknown as F);
-  m.maskNode = occlusionMask().and(threshold().greaterThanEqual(float(1).sub(present).mul(0.999)));
+  m.maskNode = occlusionMask().and(threshold().greaterThanEqual(float(1).sub(present).mul(0.999))).and(mesh.greaterThan(threshold().mul(0.98).add(0.01)));
   return m;
 }
+
+/** The fence's mesh has this many rows of wire over its height. */
+const FENCE_MESH_ROWS = 18;

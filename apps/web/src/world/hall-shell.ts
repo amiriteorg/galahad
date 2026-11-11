@@ -175,18 +175,15 @@ function sign(k: Kit, x: number, y: number, z: number, r: number): void {
 export interface Building {
   /** The cladding and the roof (with `cut`, `lit` and `glow` attributes). */
   shell: BufferGeometry;
-  /** Panes (with `cut`). */
-  glass: BufferGeometry;
   /** The floor indoors and the forecourt outside (with `lit`). */
   floor: BufferGeometry;
   /** Where lamps and lit windows glow at night. */
   warm: Glow[];
 }
 
-/** Builds the shell, the glass and the floor, and adds what never dissolves (the steel frame) to `fixed`. */
-export function buildHall(detail: Detail, fixed: Kit): Building {
+/** Builds the shell and the floor, adds what never dissolves (the steel frame) to `fixed` and the panes to `glass`. */
+export function buildHall(detail: Detail, fixed: Kit, glass: Kit): Building {
   const k = new Kit(detail);
-  const glass = new Kit(detail);
   const warm: Glow[] = [];
   const cutTo = (cut: number) => {
     k.tag("cut", cut);
@@ -289,6 +286,7 @@ export function buildHall(detail: Detail, fixed: Kit): Building {
   cutTo(CUT_EAST + CUT_ROOF);
   k.slab(C.roof, EAST - 0.2, EAST + T + 0.15, SOUTH - T - 0.15, NORTH + T + 0.15, HALL_EAVES - 0.02, HALL_EAVES + 0.14, 0.02);
   cutTo(0);
+  glass.tag("cut", 0);
 
   // ---------- what never dissolves: the frame ----------
   for (const c of COLUMNS) {
@@ -341,7 +339,6 @@ export function buildHall(detail: Detail, fixed: Kit): Building {
 
   return {
     shell: finish(k.build(), { foot: 0.22, height: 1.6 }),
-    glass: glass.build(),
     floor: finish(f.build(), { solids: HALL_SOLIDS }),
     warm,
   };
