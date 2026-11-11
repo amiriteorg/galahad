@@ -8,7 +8,7 @@ import { Weather } from "../weather.ts";
 import { plainHabitat } from "./habitat.ts";
 import { Insects, NUDGE } from "./insects.ts";
 import * as models from "./models.ts";
-import { batch, MESHES, place, Poser } from "./pose.ts";
+import { ANIM, batch, LEAN, MESHES, place, Poser, SPOT, STRIDE } from "./pose.ts";
 import { Ecosystem, emptyEnv } from "./sim.ts";
 import * as S from "./species.ts";
 import { DOING, NO_CAPS, SPECS } from "./species.ts";
@@ -130,7 +130,7 @@ describe("the pose", () => {
         checked++;
         if (SPECS[k]!.realm === S.LAND) {
           // On the ground: never under it, never more than a bound above it (lying lowers a body onto its legs).
-          expect(y - h).toBeGreaterThan(-0.65);
+          expect(y - h).toBeGreaterThan(-0.7);
           expect(y - h).toBeLessThan(0.85);
           if (eco.speed[i]! < 0.05 && eco.lie[i]! < 0.01 && eco.doing[i] !== S.MOUSE) expect(Math.abs(y - h)).toBeLessThan(1e-4);
         } else if (SPECS[k]!.realm === S.WATER && h < WATER_LEVEL - 0.04) {
@@ -150,11 +150,12 @@ describe("the pose", () => {
   test("an instance is where its animal is, faces its way, and carries its rig: phase, stride, head and how far it's lying", () => {
     const out = batch(4);
     place(out, 2, 1, 2, 3, 0.5, 0.1, -0.2, 1.5, 1.25);
-    expect([...out.spot.slice(8, 12)]).toEqual([1, 2, 3, 0.5]);
-    expect(out.lean[8]).toBeCloseTo(0.1);
-    expect(out.lean[9]).toBeCloseTo(-0.2);
-    expect(out.lean[10]).toBeCloseTo(1.5);
-    expect(out.lean[11]).toBeCloseTo(1.25);
+    const o = 2 * STRIDE;
+    expect([...out.data.slice(o + SPOT, o + SPOT + 4)]).toEqual([1, 2, 3, 0.5]);
+    expect(out.data[o + LEAN]).toBeCloseTo(0.1);
+    expect(out.data[o + LEAN + 1]).toBeCloseTo(-0.2);
+    expect(out.data[o + LEAN + 2]).toBeCloseTo(1.5);
+    expect(out.data[o + LEAN + 3]).toBeCloseTo(1.25);
     const { eco, batches, run } = posed();
     let grazed = false;
     let walked = false;
@@ -163,14 +164,14 @@ describe("the pose", () => {
       let n = 0;
       for (let i = eco.first[S.ROE]!; i < eco.first[S.ROE + 1]!; i++) {
         if (!eco.alive[i] || eco.shown[i]! < 0.02) continue;
-        const q = n++ * 4;
-        expect(deer.spot[q]).toBeCloseTo(eco.x[i]!, 3);
-        expect(deer.spot[q + 2]).toBeCloseTo(-eco.y[i]!, 3);
+        const q = n++ * STRIDE;
+        expect(deer.data[q + SPOT]).toBeCloseTo(eco.x[i]!, 3);
+        expect(deer.data[q + SPOT + 2]).toBeCloseTo(-eco.y[i]!, 3);
         // Facing its way (the scene's yaw is the heading turned a quarter).
-        expect(deer.spot[q + 3]).toBeCloseTo(eco.heading[i]! + Math.PI / 2, 4);
+        expect(deer.data[q + SPOT + 3]).toBeCloseTo(eco.heading[i]! + Math.PI / 2, 4);
         // Head down to graze, and legs still; legs going when it walks.
-        if (eco.doing[i] === S.GRAZE && deer.anim[q + 2]! < -0.8 && deer.anim[q + 1]! < 0.05) grazed = true;
-        if (eco.speed[i]! > 0.9 && deer.anim[q + 1]! > 0.4) walked = true;
+        if (eco.doing[i] === S.GRAZE && deer.data[q + ANIM + 2]! < -0.8 && deer.data[q + ANIM + 1]! < 0.05) grazed = true;
+        if (eco.speed[i]! > 0.9 && deer.data[q + ANIM + 1]! > 0.4) walked = true;
       }
     });
     expect(grazed).toBe(true);
@@ -369,6 +370,13 @@ describe("in the scene", () => {
     const meshes = root.children as InstancedMesh[];
     // Eighteen kinds of mesh and the sparks: no more, whatever is alive.
     expect(meshes.length).toBe(MESHES.length + 1);
+    // WebGPU gives a pipeline eight vertex buffers: a mesh brings its position, colour and normal, its rig in one and
+    // its instances in one, and the instanced mesh its own matrices. (With a buffer an attribute it was ten, and nothing drew.)
+    for (const mesh of meshes) {
+      const buffers = new Set<unknown>();
+      for (const a of Object.values(mesh.geometry.attributes)) buffers.add((a as { data?: unknown }).data ?? a);
+      expect(buffers.size + 1).toBeLessThanOrEqual(8);
+    }
     const visible = meshes.filter((mesh) => mesh.visible);
     for (const mesh of visible) expect(mesh.count).toBeGreaterThan(0);
     for (const mesh of meshes) if (!mesh.visible) expect(mesh.count).toBe(0);

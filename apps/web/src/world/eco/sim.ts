@@ -1,7 +1,7 @@
 import { type Ground, MAX_SLOPE, moveOnGround, rng } from "../physics.ts";
 import { emptySeason, type Season } from "../season.ts";
 import { WATER_LEVEL } from "../terrain.ts";
-import { DRY, emptyTree, FOREST, type Habitat, MEADOW, OPEN, PATCH, Patches, SHALLOW, SHORE, treeNear, WET, WOODS } from "./habitat.ts";
+import { DEEP, emptyTree, FOREST, type Habitat, MEADOW, PATCH, Patches, ROCK, SHALLOW, SHORE, treeNear, WET, WOODS } from "./habitat.ts";
 import { clamp, TAU, turnTo } from "./num.ts";
 import * as S from "./species.ts";
 import { about, breeding, type Caps, KIND_COUNT, KINDS, presence, type Spec, SPECS } from "./species.ts";
@@ -185,7 +185,8 @@ export class Ecosystem {
   readonly rings = new Float32Array(RINGS * 4);
   private ring = 0;
 
-  /** Seconds since it began; days of living since. */
+  /** Seconds since it began (and steps); days of living since. */
+  frame = 0;
   t = 0;
   days = 0;
   /** Births, deaths by cause, and comings and goings, per kind. */
@@ -444,6 +445,7 @@ export class Ecosystem {
 
   step(dt: number, env: Env): void {
     this.begin(dt, env);
+    this.frame++;
     if ((this.manage -= dt) <= 0) {
       this.manage = 0.5;
       this.look();
@@ -580,17 +582,20 @@ export class Ecosystem {
   }
 
   private roomAt = -1e9;
+  private readonly shares = new Float32Array(8);
 
   /** How much room the range has for each kind: by the ground it needs, and the months it's here. */
   private survey(): void {
     this.roomAt = this.t;
     const e = this.env;
     const p = this.patches;
-    const open = p.share(e.fx, e.fy, this.reach, OPEN | (1 << MEADOW));
-    const dry = p.share(e.fx, e.fy, this.reach, DRY);
-    const woods = p.share(e.fx, e.fy, this.reach, WOODS);
-    const wet = p.share(e.fx, e.fy, this.reach, WET);
-    const shallow = p.share(e.fx, e.fy, this.reach, 1 << SHALLOW);
+    const g = this.shares;
+    p.census(e.fx, e.fy, this.reach, g);
+    const open = g[MEADOW]! + g[SHORE]!;
+    const dry = open + g[FOREST]! + g[ROCK]!;
+    const woods = g[FOREST]!;
+    const shallow = g[SHALLOW]!;
+    const wet = shallow + g[DEEP]!;
     const year = e.season.year;
     const room = this.room;
     const full = (share: number, enough: number): number => clamp(share / enough);
@@ -1830,7 +1835,7 @@ export class Ecosystem {
     // Asleep on the water at night, head tucked.
     if (active < 0.3) {
       if (d !== S.SLEEP) {
-        this.raft(i, k, 3);
+        this.raft(i, 3);
         this.timer[i] = 30;
       }
       this.doing[i] = S.SLEEP;
@@ -1907,16 +1912,15 @@ export class Ecosystem {
       this.timer[i] = 4 + this.random() * 5;
       return;
     }
-    this.raft(i, k, k === S.SWAN ? 9 : 12);
+    this.raft(i, k === S.SWAN ? 9 : 12);
     this.doing[i] = S.SWIM;
     this.timer[i] = 14;
   }
 
   /** Somewhere on the water within `r` to swim to. */
-  private raft(i: number, k: number, r: number): void {
+  private raft(i: number, r: number): void {
     const x = this.x[i]!;
     const y = this.y[i]!;
-    void k;
     for (let tries = 0; tries < 5; tries++) {
       const a = this.random() * TAU;
       const d = 1 + this.random() * r;
@@ -2328,7 +2332,9 @@ export class Ecosystem {
     this.speed[i] = speed;
     const nx = x + Math.cos(this.heading[i]!) * speed * dt;
     const ny = y + Math.sin(this.heading[i]!) * speed * dt;
-    if (this.habitat.height(nx, ny) < WATER_LEVEL - 0.2) {
+    // (The bank is looked for every fourth frame, a few strokes ahead: a fish goes a centimetre a frame.)
+    const look = ((this.frame + i) & 3) === 0;
+    if (!look || this.habitat.height(x + Math.cos(this.heading[i]!) * (speed * dt * 4 + 0.15), y + Math.sin(this.heading[i]!) * (speed * dt * 4 + 0.15)) < WATER_LEVEL - 0.2) {
       this.x[i] = nx;
       this.y[i] = ny;
     } else {

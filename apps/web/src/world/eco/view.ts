@@ -1,8 +1,8 @@
 import { abs, attribute, cos, float, max, mix, modelWorldMatrix, positionGeometry, sin, smoothstep, step, time, uniform, vec3, vec4 } from "three/tsl";
-import { AdditiveBlending, type BufferGeometry, DoubleSide, type Group, InstancedBufferAttribute, InstancedMesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node, OctahedronGeometry, type Vector3 } from "three/webgpu";
+import { AdditiveBlending, type BufferGeometry, DoubleSide, type Group, InstancedInterleavedBuffer, InstancedMesh, InterleavedBufferAttribute, MeshBasicNodeMaterial, MeshLambertNodeMaterial, type Node, OctahedronGeometry, type Vector3 } from "three/webgpu";
 import { waterUniforms } from "../land.ts";
 import * as models from "./models.ts";
-import { type Batch, M_FIREFLY, M_FISH, M_INSECT, M_RING, MESHES, type MeshName } from "./pose.ts";
+import { ANIM, type Batch, LEAN, LOOK, M_FIREFLY, M_FISH, M_INSECT, M_RING, MESHES, type MeshName, SPOT, STRIDE } from "./pose.ts";
 
 /*
  * The ecosystem on the GPU: one instanced mesh a kind (one draw call each, and
@@ -17,6 +17,9 @@ import { type Batch, M_FIREFLY, M_FISH, M_INSECT, M_RING, MESHES, type MeshName 
  * water (the fish's shadows and the rings, riding its waves), and the
  * fireflies' light.
  */
+
+/** The meshes that cast a shadow on the high tier (each is one more draw in the sun's shadow pass). */
+const SHADOWED: readonly MeshName[] = ["roe", "hare", "fox", "mallard", "swan", "heron", "bird"];
 
 type Vec3Node = Node<"vec3">;
 type FloatNode = Node<"float">;
@@ -68,7 +71,7 @@ export class EcoView {
   /** What pose.ts writes into: each mesh's own attribute arrays. */
   readonly batches: Batch[];
   private readonly meshes: InstancedMesh[] = [];
-  private readonly attributes: InstancedBufferAttribute[][] = [];
+  private readonly buffers: InstancedInterleavedBuffer[] = [];
   private readonly materials: (MeshLambertNodeMaterial | MeshBasicNodeMaterial)[] = [];
   /** The day's light on the insects (they aren't lit by the sun's lamp: too small to shade), 0..1. */
   private readonly daylight = uniform(1);
@@ -101,6 +104,10 @@ export class EcoView {
       // Dark under the water; silver in the air, white as a ring.
       water.colorNode = mix(vec3(0.03, 0.09, 0.1), vec3(0.86, 0.9, 0.93), look.w).mul(max(this.daylight, 0.35));
       water.opacityNode = anim.z;
+      // (A finger's breadth over the water: drawn over it at any distance, as the plants' contact shadows are over the land.)
+      water.polygonOffset = true;
+      water.polygonOffsetFactor = -2;
+      water.polygonOffsetUnits = -2;
     }
     // ---- the fireflies' light ----
     const glow = new MeshBasicNodeMaterial({ color: 0xe6ff7a, transparent: true, depthWrite: false, blending: AdditiveBlending });
@@ -134,25 +141,23 @@ export class EcoView {
       const material = m === M_FISH || m === M_RING ? water : m === M_INSECT ? insect : m === M_FIREFLY ? glow : animal;
       // (A kind this device doesn't draw gets a batch of one that's never filled, and no mesh.)
       const g = n ? geometry[name]() : null;
-      const attributes = (["spot", "lean", "anim", "look"] as const).map((key) => {
-        // (Static usage on purpose, as the plants': only the range that was written is uploaded.)
-        const a = new InstancedBufferAttribute(new Float32Array(Math.max(1, n) * 4), 4);
-        g?.setAttribute(key, a);
-        return a;
-      });
-      this.attributes.push(attributes);
+      // Every instance's sixteen numbers in one buffer (static usage on purpose, as the plants': only the range that
+      // was written is uploaded).
+      const buffer = new InstancedInterleavedBuffer(new Float32Array(Math.max(1, n) * STRIDE), STRIDE);
+      this.buffers.push(buffer);
+      if (g) for (const [key, at] of [["spot", SPOT], ["lean", LEAN], ["anim", ANIM], ["look", LOOK]] as const) g.setAttribute(key, new InterleavedBufferAttribute(buffer, 4, at));
       if (g) {
         const mesh = new InstancedMesh(g, material, n);
         mesh.count = 0;
         mesh.visible = false;
         mesh.frustumCulled = false;
-        // (What walks and what perches throws a shadow where the tier has them; not what's a flicker in the air.)
-        mesh.castShadow = shadows && material === animal;
+        // (The bigger animals and the birds on the ground throw a shadow where the tier has them; not what's a flicker in the air.)
+        mesh.castShadow = shadows && SHADOWED.includes(name);
         mesh.renderOrder = m === M_FISH || m === M_RING ? 2 : 0;
         root.add(mesh);
         this.meshes[m] = mesh;
       }
-      return { spot: attributes[0]!.array as Float32Array, lean: attributes[1]!.array as Float32Array, anim: attributes[2]!.array as Float32Array, look: attributes[3]!.array as Float32Array, room: n, count: 0 };
+      return { data: buffer.array as Float32Array, room: n, count: 0 };
     });
   }
 
@@ -166,13 +171,11 @@ export class EcoView {
       mesh.count = n;
       mesh.visible = n > 0;
       if (!n) continue;
-      const attributes = this.attributes[m]!;
-      for (let a = 0; a < attributes.length; a++) {
-        // Only what was written goes to the GPU.
-        attributes[a]!.clearUpdateRanges();
-        attributes[a]!.addUpdateRange(0, n * 4);
-        attributes[a]!.needsUpdate = true;
-      }
+      // Only what was written goes to the GPU.
+      const buffer = this.buffers[m]!;
+      buffer.clearUpdateRanges();
+      buffer.addUpdateRange(0, n * STRIDE);
+      buffer.needsUpdate = true;
     }
   }
 

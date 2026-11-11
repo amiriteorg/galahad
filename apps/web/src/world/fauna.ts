@@ -51,18 +51,20 @@ export interface Quarry {
   slot: number;
 }
 
-/** How the walkers of the ecosystem are built, among the solids (collide.ts' BUILDS has the deer, the rabbit and the duck). */
+/**
+ * How the walkers of the ecosystem are built, among the solids (collide.ts' BUILDS has the deer, the rabbit and the
+ * duck). The hedgehog and the squirrel aren't among them: too small to be in anyone's way, and every walker there
+ * costs the solids a little each frame.
+ */
 const WALKERS: Partial<Record<number, Build>> = {
   [S.ROE]: BUILDS.deer,
   [S.HARE]: BUILDS.rabbit,
   [S.FOX]: { r: 0.3, height: 0.9, step: 0.2, mass: 9 },
-  [S.HEDGEHOG]: { r: 0.17, height: 0.3, step: 0.06, mass: 1 },
-  [S.SQUIRREL]: { r: 0.14, height: 0.4, step: 0.2, mass: 1 },
   [S.MALLARD]: BUILDS.duck,
   [S.SWAN]: { r: 0.45, height: 1.2, step: 0.05, mass: 12 },
 };
 /** Beyond this far from the view an animal walks the open ground, without the solids (nobody sees it brush a trunk). */
-const CLOSE = 75;
+const CLOSE = 45;
 
 const m = new Matrix4();
 const q = new Quaternion();
@@ -105,8 +107,11 @@ export class Fauna {
   private readonly summed: EcoSummary = emptySummary();
   /** A season to look at instead of the date's (tours: `__sandboxEco.season`), and what a tour reads. */
   private seasonChoice: SeasonChoice | null = null;
-  private readonly trace: { ms: number; calls: number; triangles: number; instances: number } | null = null;
+  private readonly trace: { ms: number; sim: number; insects: number; pose: number; calls: number; triangles: number; instances: number } | null = null;
+  private readonly split = [0, 0, 0];
   private readonly stat = { calls: 0, triangles: 0 };
+  private traceSum = 0;
+  private traceFrames = 0;
   private clock = 0;
 
   readonly particles: Particles;
@@ -165,7 +170,7 @@ export class Fauna {
 
     // The page's `?trace=1`: what a tour reads (globalThis.__sandboxEco), and a season to look at.
     if (typeof location !== "undefined" && /[?&]trace=1(&|$)/.test(location.search)) {
-      const trace = { ms: 0, calls: 0, triangles: 0, instances: 0 };
+      const trace = { ms: 0, sim: 0, insects: 0, pose: 0, calls: 0, triangles: 0, instances: 0 };
       this.trace = trace;
       const eco = this.eco;
       (globalThis as { __sandboxEco?: unknown }).__sandboxEco = {
@@ -191,6 +196,12 @@ export class Fauna {
           }
           return null;
         },
+        /** Where the first insect of a kind is (0 bumblebee, 1 butterfly, 2 dragonfly, 3 mayfly, 4 moth). */
+        bug: (kind: number) => {
+          const b = this.insects;
+          for (let i = 0; i < b.n; i++) if (b.kind[i] === kind && b.shown[i]! > 0.8) return { x: b.x[i]!, y: b.y[i]!, z: b.z[i]! };
+          return null;
+        },
         /** A season to look at ("winter", "spring", "summer", "autumn"), or "live" for the date's. */
         season: (choice: SeasonChoice | null) => void (this.seasonChoice = choice),
         /** How in step the fireflies are, 0..1. */
@@ -198,6 +209,16 @@ export class Fauna {
         /** Milliseconds a frame the ecosystem costs here (a running mean), its draw calls, triangles and instances now. */
         cost: () => ({ ...trace }),
         startle: (x: number, y: number, r: number) => this.startle(x, y, r),
+        /** Sets an animal down somewhere (a tour stages a meeting with it). */
+        put: (slot: number, x: number, y: number) => {
+          eco.x[slot] = eco.tx[slot] = x;
+          eco.y[slot] = eco.ty[slot] = y;
+          const at = this.circles[slot];
+          if (at) {
+            at.x = x;
+            at.y = y;
+          }
+        },
         eco,
       };
     }
@@ -223,9 +244,12 @@ export class Fauna {
       const land = SPECS[eco.kind[slot]!]!.realm === S.LAND;
       const where = land ? eco.land : eco.shore;
       const mover = this.movers[slot];
-      // Near the view, among the solids; far off, on the open ground.
-      if (mover && mover.at.r > 0 && Math.abs(x - eco.env.fx) < CLOSE && Math.abs(y - eco.env.fy) < CLOSE) return slideOnGround(mover, where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
-      return moveOnGround(where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
+      // On the open ground first (most steps meet nothing); only if that step would end inside something solid, and
+      // it's near enough the view to be seen brushing a trunk, the full slide round it.
+      const taken = moveOnGround(where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
+      if (taken === null || !mover || mover.at.r === 0 || Math.abs(x - eco.env.fx) > CLOSE || Math.abs(y - eco.env.fy) > CLOSE) return taken;
+      if (!solids.overlaps(out.x, out.y, mover.at.r, mover.step, mover.height)) return taken;
+      return slideOnGround(mover, where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
     };
     this.joined = true;
   }
@@ -257,8 +281,11 @@ export class Fauna {
     env.dx = dog ? dog.x : Number.NaN;
     env.dy = dog ? dog.y : Number.NaN;
     if (this.joined) this.pulled();
+    const t1 = this.trace ? performance.now() : 0;
+    let t2 = t1;
     if (motion) {
       eco.step(dt, env);
+      if (this.trace) t2 = performance.now();
       this.insects.step(dt, env, eco.midges);
       this.clock += dt;
     } else {
@@ -266,11 +293,27 @@ export class Fauna {
       this.insects.still();
     }
     if (this.joined) this.pushed();
+    const t3 = this.trace ? performance.now() : 0;
     const drawn = this.poser.write(this.view.batches, origin[0], origin[1], this.ground.height, this.clock, seasonState);
+    if (this.trace) {
+      this.split[0] = this.split[0]! + t2 - t1;
+      this.split[1] = this.split[1]! + t3 - t2;
+      this.split[2] = this.split[2]! + performance.now() - t3;
+    }
     this.view.commit(1 - sky.night);
     this.stepParticles(motion ? dt : 0, origin);
     if (this.trace) {
-      this.trace.ms += (performance.now() - started - this.trace.ms) * 0.05;
+      // (A browser's clock ticks in tenths of a millisecond: summed over many frames it's still true.)
+      this.traceSum += performance.now() - started;
+      if (++this.traceFrames >= 300) {
+        this.trace.ms = this.traceSum / this.traceFrames;
+        this.trace.sim = this.split[0]! / this.traceFrames;
+        this.trace.insects = this.split[1]! / this.traceFrames;
+        this.trace.pose = this.split[2]! / this.traceFrames;
+        this.split.fill(0);
+        this.traceSum = 0;
+        this.traceFrames = 0;
+      }
       this.view.stats(this.stat);
       this.trace.calls = this.stat.calls;
       this.trace.triangles = this.stat.triangles;

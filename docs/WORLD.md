@@ -179,6 +179,99 @@ The little machines about the keep are real open-source robots, built from their
 
 `bun scripts/robots/build.ts` fetches each robot's URDF and meshes at a pinned commit, merges rigidly fixed links, simplifies the meshes to a budget (Open Duck 25 000 triangles, SO-101 15 000, Reachy Mini 30 000, the Open Source Rover 9 000) and writes a manifest and a binary per robot (each under 300 KB) into `apps/web/src/world/assets/robots/`, with `NOTICE.txt` and the Apache-2.0 licence. The files are committed, so builds never fetch. The node serves them at `/world-assets/robots/`, cached for good (their URLs carry their content's version). The world fetches them after its first frame; until they arrive, or if they can't, it draws simple stand-ins, so it never breaks. Hover a robot for its name.
 
+## The ecosystem
+
+The land round the view is alive, and it's a real ecosystem in small: every animal is an agent with needs, on land that grows what it eats, and what one eats another loses. It's all in `apps/web/src/world/eco/`: the simulation (`sim.ts`, `wings.ts`, `insects.ts`; pure and seeded, so the tests run it for years without a GPU), the land as the animals see it (`habitat.ts`), their bodies and how they're drawn (`models.ts`, `pose.ts`, `view.ts`). `fauna.ts` joins it to the scene: the land as it's drawn, the trees and flowers that really grow on it, the solids, the real sun and weather, and Galahad and his dog.
+
+### How an animal decides
+
+- **Needs.** Energy (days of an adult's need: burnt by living, more by running, less in winter), thirst, tiredness, fear, and for those that keep together, company.
+- **Choosing.** Each animal scores what it could do (eat by its hunger and the hour, drink by its thirst, rest by its tiredness and the weather, go back to its herd by how far it's strayed) and does the best, with a bonus for carrying on with what it's at, so nobody dithers. Each decides twice a second, staggered; in between it only moves. Danger doesn't wait for a turn: who's near is looked at every frame.
+- **Moving.** It turns, then goes: nobody slides sideways. Legs keep time with the ground covered (a stride of phase for a stride of length, at any speed), feet stand on the ground as it's drawn, bodies lean with the slope, hares and running deer leave the ground between bounds, and the walkers go round trunks and rocks and keep out of each other's and Galahad's way (they're circles among the solids, as he is).
+- **Clocks.** The hour and the season are the world's: the real sun and the real date in Denmark (`season.ts`). A life runs faster: a day of living every four minutes, 96 of them a year of life, so a leveret born as you watch is weaned in half an hour. The real night is many such days long, so whoever sleeps through it burns nothing while it sleeps.
+
+### The food web
+
+The range (100 to 130 m round the view, by tier) is a grid of 8 m patches, each with pools of what there is to eat. A pool grows towards what its ground carries in this season along a logistic curve, in closed form, so a patch is brought up to date only when someone looks at it; whoever feeds there eats it down.
+
+| Pool | Grows on | Follows | Eaten by |
+|---|---|---|---|
+| Grass and herbs | Meadow most, lawn, the forest floor, a little on shore and rock | Leaf and the year's vigour (a third of summer's in winter, and it hardly grows then) | Roe deer, hares; songbirds take its seed |
+| Browse | The forest, a little in the meadow | Leaf | Roe deer; the squirrel, at a pinch |
+| Mast (what falls from the trees) | The forest | Autumn, and what was hidden of it through the winter | Squirrels, songbirds |
+| Beetles and worms | Forest floor and meadow | Vigour | The hedgehog, songbirds, squirrels |
+| Voles | Meadow, some in the forest | Fewest at the winter's end; slow to come back | The fox (the high pounce), the kestrel, the owl |
+| The lake's weed | The shallows, less in deep water | Vigour | Mallards, swans |
+| What hatches on the water | Shallows, deep water, the shore | Vigour | Fish, mallards, the heron (small fry) |
+| What's on the wing | The whole range, as one number | Vigour, the rain, the wind | Swallows, bats; how many insects are shown |
+
+And each other: the fox catches hares (a stalk as near as it can get to one with its head down, then a rush: a grown hare that's seen it outruns it), the heron catches fish. Nothing is gory: what's caught is simply gone, and the fox eats.
+
+### The cast
+
+Each is an original faceted model of a few hundred triangles (`models.ts`), drawn about one and a half times life, as the first deer and rabbits were.
+
+| | When | What it does |
+|---|---|---|
+| Roe deer | All year; most about at dawn and dusk | In small herds that keep together. Graze where there's grass (browse in the wood), drink at the water's edge, lie up under the trees. One has its head up while the others feed, each in turn. A greyer coat in winter; the buck has antlers; fawns from late May |
+| Hare | All year | Grazes alone, sits up to look, rests by day. Leverets from spring to late summer, up to three litters |
+| Red fox | All year; mostly from dusk | Mouses in the meadow (a slow walk, a stand with its head cocked, the high pounce), stalks hares, drinks, lies up by day. A vixen hunts for her cubs (April) |
+| Hedgehog | April to October, at night | Snuffles for beetles. It doesn't run from anyone: it curls up. By day and through the cold months it's under its bush, unseen |
+| Red squirrel | All year, by day, where there are trees | On the ground for what the wood has; up a trunk to rest, and up it at once, round to the far side, when anyone comes |
+| Mallard | All year | On the water in a raft, dabbling in the shallows (tail up), out on the strand to preen, asleep on the water at night, head tucked. Ducklings follow their mother in a line. Drake and duck are told apart |
+| Mute swan | All year | A pair, with grey cygnets from May; feeds with its neck under. It doesn't flee: it turns to face whoever's on the bank, wings a little raised |
+| Grey heron | All year | Stands in the shallows, ankle deep, waiting; strikes; flies off down the shore on slow wings when anyone comes near |
+| Roach | All year | Shoals, seen as shadows on the water (fainter the deeper they swim). At dusk, when the hatch is on, they rise (a ring) and now and then one leaps. They dart from someone at the bank |
+| Songbirds | All year; fewer in winter | One flock with a day of its own: down in the meadow feeding, up into a tree or three, off to another spot; into the trees in rain; to roost at dusk and out at dawn. Fledglings in early summer |
+| Swallows | May to September, by day | Low and fast over the lake after what's hatching, dipping to the water |
+| Starlings | March and April, September to November, at dusk | They come in by the dozen from every side and turn as one over their roost (Denmark's sort sol). Each steers by the six nearest it keeps track of, which is what lets a turn run through the flock as a wave; at dark they pour down into the trees |
+| Greylag geese | The migration months | A skein crosses in a V, south-west in autumn, north-east in spring; the leader drops back now and then and another takes the point |
+| Kestrel | By day, in fair weather | Hangs on the wind over the meadow, nose into it, drops on a vole, moves on |
+| Tawny owl | By night | From perch to perch, low and slow, taking a vole on the way |
+| Pipistrelle bats | April to October, from dusk | Fluttering loops over the water, about the view and round a lit lantern |
+| Bumblebees, butterflies | By day, in bloom, in the dry | Work the flowers that really grow near the view, one to the next |
+| Dragonflies | High summer, by day | Over the water's edge: a dash, a hang in the air, a dash |
+| Mayflies | At dusk, in the growing months | A column of them dances over the shallows: up slowly, down fast |
+| Moths | At night, while the lanterns are lit | Round his desk's lantern, the one at his bed and the bench's |
+| Fireflies | From dusk, in the growing months, in the dry | Each flashes on its own clock, and a neighbour's flash nudges its clock on a little: that one rule is how real ones fall into step, and patches of meadow blink together within a minute or two |
+
+In rain the land animals shelter and the songbirds keep to the trees, swallows and bats leave, and no insects fly; in a storm nothing is in the air. In winter there are no insects, no swallows, bats or hedgehogs, fewer songbirds, and the land carries fewer grazers.
+
+### Galahad and his dog
+
+The animals notice them. Each kind has a distance at which it lifts its head and one at which it goes; someone standing still gets half of it, someone running at it nearly twice (and the dog more than he). So a deer lifts its head and watches him walk by, moves off at a trot if he comes close, and bolts only if he runs at it; a hare's head comes up first and then it goes, jinking; ducks on the strand make for the water, flapping; the heron flies; songbirds flush from the ground, or from a tree he walks under; fish dart from the bank. An animal that's only being stood near gets used to it: it looks, and goes back to what it was at. After a fright it pulls up, looks back, and settles.
+
+For the dog's side (`Fauna` in `fauna.ts`, nothing allocated): `nearestSmall(x, y, r, out)` gives the nearest hare, squirrel on the ground, duck ashore or bird feeding on the ground within `r` metres (something worth a short chase), and `startle(x, y, r)` frightens everything within `r` of a point.
+
+### Young, deaths and numbers
+
+Young come in their season, small, and stay by their mother (at the teat, then at her side) until they're grown. Animals die of hunger, of age, and by being caught. What the land grows bounds them, and so does each device's tier. Where a kind is down to less than half of what the range holds, more wander in from the country beyond (walking in at the edge, or flying in to the water); whoever the view leaves behind is let go. Nobody appears out of the air.
+
+Foxes and hares rise and fall against each other: many foxes bring the hares down, the foxes then dwindle, and the hares come back. A test runs the two alone for eighteen years and holds them to it (the more foxes there are, the more the hares fall over the following year), and another runs the whole cast through four years of seasons: everyone stays alive and within bounds, the young come in spring, the migrants keep their months, and the same seed gives the same years.
+
+### Seen and said
+
+Hover an animal (or tap it) for what it is and what it's doing: "Roe deer · grazing", "Leveret · staying by its mother", "Starling · in the murmuration". `Fauna.summary()` says who's about now: each kind in sight with how many, how many young and what most are doing, and the births, deaths and comings and goings since the page opened (`eco/summary.ts`; `summaryText` makes a line of it). With `?trace=1`, `globalThis.__sandboxEco` has the same (`summary()`), a sample of animals (`sample(n)`), where the first of a kind is (`find("roe", "grazing")`), how in step the fireflies are (`inStep()`), what the ecosystem costs (`cost()`: milliseconds a frame, draw calls, triangles), and `season("winter" | "spring" | "summer" | "autumn" | "live")` to look at another season.
+
+### Budgets
+
+| | low | medium (phones) | high |
+|---|---|---|---|
+| Roe deer, hares, foxes | 2, 3, 1 | 4, 6, 1 | 8, 12, 2 |
+| Hedgehogs, squirrels | 0, 1 | 1, 2 | 2, 4 |
+| Mallards, swans, heron, fish | 3, 0, 1, 4 | 5, 2, 1, 8 | 8, 2, 1, 16 |
+| Songbirds, swallows, starlings, geese | 10, 0, 24, 5 | 24, 5, 70, 9 | 48, 10, 160, 13 |
+| Kestrel, owl, bats | 1, 0, 2 | 1, 1, 4 | 1, 1, 8 |
+| Insects, fireflies | 20, 16 | 60, 40 | 140, 80 |
+| The range's reach | 100 m | 115 m | 130 m |
+
+(Grown ones; their young come on top, half as many again. A kind a tier doesn't have isn't simulated and its mesh isn't made.)
+
+- **One draw call a kind**, and none while nobody of that kind is in sight: eighteen instanced meshes at most (the songbirds and starlings share one, as do all the insects), ten to twelve at any one hour. On the high tier the bigger animals also draw into the sun's shadow.
+- **No bones, no matrices on the CPU.** Every vertex belongs to a part (a leg, the neck and head, a wing) and carries where it hinges; the vertex shader turns the part by its instance's four numbers (stride phase and amount, head down or up, lying or folded), then leans, turns and places the body. An instance is sixteen numbers in one buffer (a WebGPU pipeline may have eight vertex buffers: a test holds every mesh to that).
+- **CPU.** A step and a pose for everything costs 9 to 15 µs a frame on the low tier, 19 to 30 on medium and 26 to 73 on high (a spring dusk with 160 starlings up is the dearest), measured in the tests on a made-up piece of country and held to budgets of 60, 110 and 200 µs. The flock, herds and fireflies it replaces cost 5, 11 and 26 µs. In the page, among the real solids, it measured about 0.2 ms a frame on the high tier. Nothing is allocated while it runs.
+- **Under reduced motion** the animals are there and still, in tidy poses: standing, lying or afloat, the songbirds in their trees; nothing is in the air and nothing flashes.
+
 ## How it's drawn
 
 Low-poly and pastel, every shape procedural (`apps/web/src/world/`). three.js on WebGPU, or WebGL2 where WebGPU isn't there. The facets are small where you look closely and large far off: more, smaller facets near the camera, never smooth.
@@ -203,7 +296,7 @@ Low-poly and pastel, every shape procedural (`apps/web/src/world/`). three.js on
 | At night | Lit windows, lanterns, screens and runes glow warm or cool (`glows.ts`), and a few point lights by tier. Moonlight is brighter when the moon is full, and the air glows silver round the moon; with it down, the sky's glow still lights the night enough to read |
 | His heart | The lodestar on his chest beats: a uniform that brightens only the star (its glow mask's white-hot part), a soft lub-dub at rest and a strong beat for a few seconds when a heartbeat runs (`care.ts`' `lodestarPulse`); steady under reduced motion |
 | The camera | Close and low over his shoulder, so he's large in the frame. While he walks it swings slowly round behind him, to a side where nothing blocks the view; turned by hand, it stays where it's turned for a while. It's a body on a spring arm: carried round with the arm as the view turns, zooms and follows him (so a turn moves it exactly as far as the turn does), then eased to where the arm wants it, never faster in all than the arm's end moves plus 12 m/s. The arm lifts over the land when a hillside rises behind (the proving ground's edge), keeps some room from what it passes and tilts up over something right by him. Every move slides among the solids (round a post, along a wall, over a roof), so it never jumps, by any input, and is never inside anything (a crown, a post, a machine, a wall) or under the land; it never goes under something he isn't under. Held against something it can't slide round on its way (a wall with the arm's end beyond it), it isn't carried on along it but makes for the arm on its own side; left behind, 4 m past its arm and getting nowhere for a second (on the keep's deck as he walks off down the stairs), it cuts to the arm, as it does when he jumps somewhere. Under reduced motion it goes straight where it may. Leaves, posts and walls between it and him aren't looked round: they dissolve in a fine dither (`camera.ts`, `occlusion.ts`). A dense test turns it by hand round the keep, every station, the hall and the proving ground's edge at five distances and holds the most it moves in a frame (`camera.test.ts`); `?trace=1` on the page keeps its last 2000 frames, and Galahad's, in `globalThis.__sandboxTrace` |
-| What's solid | Everything walkers and the camera meet is one world of solids (`collide.ts`): the keep's and each station's footprints (`keep-plan.ts`, held to the drawn keep by a test), the sites' walls and their places' own solids and machines, each tree's trunk and crown and each rock (`flora-plan.ts`, added and dropped with their chunk), and each plot's fence with the gap for its gate, its sign and its dome (`plot-plan.ts`, which `plots.ts` draws from too). What can be stood on has its height: the keep's stairs (each tread, the landing) and deck, the rover course's bridge, flat-topped rocks; a walker steps onto a top within its step of its feet and is stopped by anything taller (`Solids.support`, `BUILDS`). The stairs are one plan (`keep-deck.ts`) that the keep draws them from and the solids are made of, and the test that holds the footprints to the drawing covers them and their rails. Galahad plans his way round it all and off the water (`nav.ts`: the blocked part of the way searched on a grid, pulled taut into a few straight legs; up to the deck by the stairs) and slides along whatever he meets on the way; the dog keeps by him where there's room and follows in his footsteps round what stands between; the Microducks, deer, rabbits and ducks slide along what they meet and keep apart, the small giving way to the large, everyone to a site's machines. Nothing tunnels, however fast he dashes. `?colliders=1` on the page draws it all as lines, coloured by what it stops, with every walker's circle |
+| What's solid | Everything walkers and the camera meet is one world of solids (`collide.ts`): the keep's and each station's footprints (`keep-plan.ts`, held to the drawn keep by a test), the sites' walls and their places' own solids and machines, each tree's trunk and crown and each rock (`flora-plan.ts`, added and dropped with their chunk), and each plot's fence with the gap for its gate, its sign and its dome (`plot-plan.ts`, which `plots.ts` draws from too). What can be stood on has its height: the keep's stairs (each tread, the landing) and deck, the rover course's bridge, flat-topped rocks; a walker steps onto a top within its step of its feet and is stopped by anything taller (`Solids.support`, `BUILDS`). The stairs are one plan (`keep-deck.ts`) that the keep draws them from and the solids are made of, and the test that holds the footprints to the drawing covers them and their rails. Galahad plans his way round it all and off the water (`nav.ts`: the blocked part of the way searched on a grid, pulled taut into a few straight legs; up to the deck by the stairs) and slides along whatever he meets on the way; the dog keeps by him where there's room and follows in his footsteps round what stands between; the Microducks and the animals that walk (deer, hares, foxes, ducks and swans: see "The ecosystem") slide along what they meet and keep apart, the small giving way to the large, everyone to a site's machines. Nothing tunnels, however fast he dashes. `?colliders=1` on the page draws it all as lines, coloured by what it stops, with every walker's circle |
 | Labels | Laid out on the screen so none sits on another: in order of how much each matters (his bubble, the open experiment, the experiments, their bodies, the sites, the stations, the nodes; within each, the nearer first), each stands on its anchor if that's free, else just above what's in its way (at most three times its height), else fades. A margin it has to clear before it changes its mind keeps them still as the view moves; under reduced motion they don't animate. Sizes are measured when a label is shown or changes, not every frame; the layout allocates nothing (`labels.ts`) |
 | Steadiness | Land and plants grow within a few milliseconds a frame, nearest first; a chunk's fine grid is grown in two steps (its samples, then its mesh), each within the same budget. Plant instances live in pages, so a chunk uploads only its own and turning the view uploads nothing; bushes and rocks are written once, and only the trees change pages as their level of detail changes. Shaders compile before the first frame, through the post pipeline too (every material again for its render target). Frames are paced to the display, shadows snap to texels, and labels ease onto device pixels after the camera moves |
 

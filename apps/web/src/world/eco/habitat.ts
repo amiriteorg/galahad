@@ -334,18 +334,22 @@ export class Patches {
     return true;
   }
 
-  /** The share of the range round (x, y) that is one of `codes`: a lattice of looks, 16 m apart. */
-  share(x: number, y: number, reach: number, codes: number): number {
-    let hit = 0;
+  /**
+   * How much of the range round (x, y) is each kind of ground: a lattice of looks, 16 m apart, counted into
+   * `out` (a share for each code, MEADOW … BARRED).
+   */
+  census(x: number, y: number, reach: number, out: Float32Array): void {
+    out.fill(0);
     let all = 0;
     for (let dy = -reach; dy <= reach; dy += 16) {
       for (let dx = -reach; dx <= reach; dx += 16) {
         if (dx * dx + dy * dy > reach * reach) continue;
         all++;
-        if ((1 << this.code[this.at(x + dx, y + dy)]!) & codes) hit++;
+        const code = this.code[this.at(x + dx, y + dy)]!;
+        out[code] = out[code]! + 1;
       }
     }
-    return all ? hit / all : 0;
+    if (all) for (let c = 0; c < out.length; c++) out[c] = out[c]! / all;
   }
 }
 

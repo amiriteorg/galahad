@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferAttribute, type BufferGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, type Matrix4, OctahedronGeometry, TetrahedronGeometry } from "three/webgpu";
+import { BoxGeometry, type BufferGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, InterleavedBuffer, InterleavedBufferAttribute, type Matrix4, OctahedronGeometry, TetrahedronGeometry } from "three/webgpu";
 import { at, groundAO, lumpy, Mesher } from "../mesher.ts";
 
 /*
@@ -68,18 +68,17 @@ class Rig {
     const g = this.m.build(shade ? { ao: groundAO(0.72, 0.5, 0.8) } : {});
     const n = g.getAttribute("position").count;
     const skin = g.getAttribute("skinIndex");
-    const pivot = new Float32Array(n * 3);
-    const rigA = new Float32Array(n * 4);
-    const rigB = new Float32Array(n * 3);
+    // One buffer for the whole rig, ten numbers a vertex (a pipeline may have only eight buffers in all).
+    const rig = new Float32Array(n * 10);
     for (let i = 0; i < n; i++) {
       const p = this.parts[skin ? skin.getX(i) : 0]!;
-      pivot.set(p.pivot, i * 3);
-      rigA.set([p.swing ?? 0, p.offset ?? 0, p.nod ?? 0, p.fold ?? 0], i * 4);
-      rigB.set([p.flap ?? 0, p.tuck ?? 0, p.only ?? 0], i * 3);
+      rig.set(p.pivot, i * 10);
+      rig.set([p.swing ?? 0, p.offset ?? 0, p.nod ?? 0, p.fold ?? 0, p.flap ?? 0, p.tuck ?? 0, p.only ?? 0], i * 10 + 3);
     }
-    g.setAttribute("pivot", new BufferAttribute(pivot, 3));
-    g.setAttribute("rigA", new BufferAttribute(rigA, 4));
-    g.setAttribute("rigB", new BufferAttribute(rigB, 3));
+    const buffer = new InterleavedBuffer(rig, 10);
+    g.setAttribute("pivot", new InterleavedBufferAttribute(buffer, 3, 0));
+    g.setAttribute("rigA", new InterleavedBufferAttribute(buffer, 4, 3));
+    g.setAttribute("rigB", new InterleavedBufferAttribute(buffer, 3, 7));
     g.deleteAttribute("skinIndex");
     g.deleteAttribute("skinWeight");
     return g;

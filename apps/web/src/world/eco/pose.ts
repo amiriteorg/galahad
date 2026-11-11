@@ -31,38 +31,39 @@ export const M_FIREFLY = 17;
 const MESH_OF = [0, 1, 2, 3, 4, 5, 6, 7, M_FISH, M_BIRD, 9, M_BIRD, 10, 11, 12, 13];
 
 /**
- * One mesh's instances, four numbers each of: where it is and the way it faces (x, y, z in the scene, yaw); its
- * tilt and size (nose up, bank, scale across, scale up); its rig (phase, amount, nod, pose); its look (a tint, and
- * the flag for the parts only some have). The vertex shader does the rest (view.ts).
+ * One mesh's instances, sixteen numbers each in one array (one buffer on the GPU: a pipeline may have eight, and a
+ * body has its own to bring): where it is and the way it faces (x, y, z in the scene, yaw); its tilt and size (nose
+ * up, bank, scale across, scale up); its rig (phase, amount, nod, pose); its look (a tint, and the flag for the
+ * parts only some have). The vertex shader does the rest (view.ts).
  */
 export interface Batch {
-  spot: Float32Array;
-  lean: Float32Array;
-  anim: Float32Array;
-  look: Float32Array;
+  data: Float32Array;
   /** How many it has room for, and how many were written. */
   room: number;
   count: number;
 }
+/** Numbers an instance, and where each four begin. */
+export const STRIDE = 16;
+export const SPOT = 0;
+export const LEAN = 4;
+export const ANIM = 8;
+export const LOOK = 12;
 
-export const batch = (room: number): Batch => {
-  const n = Math.max(1, room) * 4;
-  return { spot: new Float32Array(n), lean: new Float32Array(n), anim: new Float32Array(n), look: new Float32Array(n), room: Math.max(1, room), count: 0 };
-};
+export const batch = (room: number): Batch => ({ data: new Float32Array(Math.max(1, room) * STRIDE), room: Math.max(1, room), count: 0 });
 
 /** How far from the view's focus each kind is drawn (metres): the small ones not far, what's in the sky from a long way. */
 const SIGHT = [190, 120, 150, 70, 80, 150, 190, 190, 70, 160, 170, 400, 520, 260, 200, 110];
 /** How much each kind's lying down lowers it, at full size (metres). */
-const DROP = [0.6, 0.06, 0.26, 0, 0.02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const DROP = [0.66, 0.06, 0.26, 0, 0.02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 /** How long each kind is, nose to tail (metres): for the lean of its body on a slope. */
 const LENGTH = [1.1, 0.45, 0.8, 0.3, 0.3, 0.4, 0.9, 0.5, 0, 0, 0, 0, 0, 0, 0, 0];
 /** The songbirds' colours (a robin's, a blue tit's, a blackbird's, a chaffinch's): a tint each. */
 const FEATHERS = [
-  [0.86, 0.5, 0.3],
-  [0.62, 0.74, 0.98],
-  [0.24, 0.23, 0.25],
-  [0.92, 0.78, 0.5],
-  [0.74, 0.64, 0.52],
+  [1, 0.52, 0.28],
+  [0.5, 0.72, 1.08],
+  [0.2, 0.19, 0.22],
+  [1.04, 0.82, 0.36],
+  [0.8, 0.62, 0.46],
 ];
 /** The insects: a tint and a shape (how wide and long, how tall) each. Bumblebee, butterfly (three kinds), dragonfly, mayfly, moth. */
 const INSECT_TINT = [
@@ -82,28 +83,53 @@ const BUTTERFLY_TINT = [
 const INSECT_SHAPE = [
   [0.95, 1.6],
   [1.9, 1],
-  [2.7, 1],
+  [1.7, 1],
   [1.1, 1],
   [1.5, 1],
 ];
 
 /** Writes one instance's place: at (x, y, z) in the scene, facing `yaw`, nose up by `pitch`, banked by `roll` (left wing down for a positive roll), scaled `wide` across and `tall` up. */
 export function place(out: Batch, at: number, x: number, y: number, z: number, yaw: number, pitch: number, roll: number, wide: number, tall: number): void {
-  const o = at * 4;
-  out.spot[o] = x;
-  out.spot[o + 1] = y;
-  out.spot[o + 2] = z;
-  out.spot[o + 3] = yaw;
-  out.lean[o] = pitch;
-  out.lean[o + 1] = roll;
-  out.lean[o + 2] = wide;
-  out.lean[o + 3] = tall;
+  const d = out.data;
+  const o = at * STRIDE;
+  d[o] = x;
+  d[o + 1] = y;
+  d[o + 2] = z;
+  d[o + 3] = yaw;
+  d[o + 4] = pitch;
+  d[o + 5] = roll;
+  d[o + 6] = wide;
+  d[o + 7] = tall;
+}
+
+/** Writes one instance's rig and look. */
+export function dress(out: Batch, at: number, phase: number, amount: number, nod: number, pose: number, r: number, g: number, b: number, flag: number): void {
+  const d = out.data;
+  const o = at * STRIDE + ANIM;
+  d[o] = phase;
+  d[o + 1] = amount;
+  d[o + 2] = nod;
+  d[o + 3] = pose;
+  d[o + 4] = r;
+  d[o + 5] = g;
+  d[o + 6] = b;
+  d[o + 7] = flag;
 }
 
 export class Poser {
   /** Each animal's height as drawn (the scene's y of its feet), and whether it was drawn this frame: for picking. */
   readonly drawnY: Float32Array;
   readonly drawn: Uint8Array;
+  /**
+   * The ground under each animal, remembered while it stays where it is (most of them are standing, lying or
+   * feeding at any moment: the land needn't be asked again): where it was asked, the height there, and the slope
+   * along the way it faced.
+   */
+  private readonly askedX: Float64Array;
+  private readonly askedY: Float64Array;
+  private readonly askedWay: Float32Array;
+  private readonly groundAt: Float32Array;
+  private readonly slopeAt: Float32Array;
 
   constructor(
     private readonly eco: Ecosystem,
@@ -111,6 +137,30 @@ export class Poser {
   ) {
     this.drawnY = new Float32Array(eco.n);
     this.drawn = new Uint8Array(eco.n);
+    this.askedX = new Float64Array(eco.n).fill(Number.NaN);
+    this.askedY = new Float64Array(eco.n).fill(Number.NaN);
+    this.askedWay = new Float32Array(eco.n);
+    this.groundAt = new Float32Array(eco.n);
+    this.slopeAt = new Float32Array(eco.n);
+  }
+
+  /**
+   * The ground's height under animal i, and (for a body `len` long facing `heading`; 0: no matter) its slope along
+   * the body, into `slopeAt`: asked of the land only when it has moved a couple of centimetres or turned.
+   */
+  private foot(i: number, x: number, y: number, heading: number, len: number, height: (x: number, y: number) => number): number {
+    if (Math.abs(x - this.askedX[i]!) + Math.abs(y - this.askedY[i]!) < 0.02 && (len === 0 || Math.abs(heading - this.askedWay[i]!) < 0.06)) return this.groundAt[i]!;
+    this.askedX[i] = x;
+    this.askedY[i] = y;
+    this.askedWay[i] = heading;
+    const h = height(x, y);
+    this.groundAt[i] = h;
+    if (len > 0) {
+      const cx = Math.cos(heading) * len * 0.5;
+      const sy = Math.sin(heading) * len * 0.5;
+      this.slopeAt[i] = Math.atan2(height(x + cx, y + sy) - height(x - cx, y - sy), len);
+    } else this.slopeAt[i] = 0;
+    return h;
   }
 
   /**
@@ -158,20 +208,20 @@ export class Poser {
         if (k === S.FISH) {
           // A shadow under the water (fainter the deeper it swims), or a leap over it.
           const leap = eco.air[i] === 1;
-          py = leap ? eco.z[i]! : WATER_LEVEL + 0.012;
+          py = leap ? eco.z[i]! : WATER_LEVEL + 0.02;
           roll = leap ? Math.PI / 2 : 0;
           pitch = leap ? pitch : 0;
           // (Its rig's third number is how dark its shadow is; its fourth and its flag say it's out in the air, silver.)
-          nod = leap ? 1 : Math.max(0.06, 0.5 - eco.z[i]! * 0.95) * eco.shown[i]!;
+          nod = leap ? 1 : Math.max(0.14, 0.66 - eco.z[i]! * 1.05) * eco.shown[i]!;
           pose = leap ? 1 : 0;
           flag = pose;
-          scale = (0.55 + 0.45 * eco.sizeOf(i, spec)) * (0.8 + 0.5 * eco.own[i]!);
+          scale = (0.55 + 0.45 * eco.sizeOf(i, spec)) * (1.2 + 0.7 * eco.own[i]!);
         } else if (spec.realm === S.AIR) {
           if (eco.air[i]) py = eco.z[i]!;
           else {
             // On the ground: a hop now and then (`vz` counts it down).
             const hop = k === S.SONGBIRD && eco.vz[i]! > 0 ? Math.sin((eco.vz[i]! / 0.16) * Math.PI) * 0.07 : 0;
-            py = height(x, y) + hop;
+            py = this.foot(i, x, y, 0, 0, height) + hop;
           }
           roll = eco.roll[i]!;
           if (k === S.SONGBIRD) {
@@ -179,17 +229,18 @@ export class Poser {
             tr = c[0]!;
             tg = c[1]!;
             tb = c[2]!;
-            scale = size * 1.45;
+            scale = size * 0.9;
           } else if (k === S.STARLING) {
             tr = 0.17;
             tg = 0.18;
             tb = 0.22;
-            scale = size * 1.5;
-          } else if (k === S.OWL && !eco.air[i]) py = height(x, y);
+            scale = size * 1.05;
+          } else if (k === S.OWL && !eco.air[i]) py = this.foot(i, x, y, 0, 0, height);
         } else if (spec.realm === S.WATER) {
-          const afloat = !eco.air[i] && height(x, y) < WATER_LEVEL - 0.04;
+          const bed = eco.air[i] ? 0 : this.foot(i, x, y, 0, 0, height);
+          const afloat = !eco.air[i] && bed < WATER_LEVEL - 0.04;
           // Afloat it rides the water, low; ashore it stands on the bank and waddles.
-          py = eco.air[i] ? eco.z[i]! : afloat ? WATER_LEVEL - (k === S.SWAN ? 0.1 : 0.07) * size + 0.012 * Math.sin(t * 1.3 + i) : height(x, y);
+          py = eco.air[i] ? eco.z[i]! : afloat ? WATER_LEVEL - (k === S.SWAN ? 0.1 : 0.07) * size + 0.012 * Math.sin(t * 1.3 + i) : bed;
           // (The simulation's tip is nose down.)
           pitch = eco.air[i] ? 0 : -pitch;
           if (!afloat && !eco.air[i]) roll = Math.sin(phase) * 0.14 * amount;
@@ -208,18 +259,13 @@ export class Poser {
           // (Wings beat by their own clock only while it flaps.)
           if (amount < 0.02) phase = 0;
         } else if (spec.realm === S.WADER) {
-          py = eco.air[i] ? eco.z[i]! : height(x, y);
+          py = eco.air[i] ? eco.z[i]! : this.foot(i, x, y, 0, 0, height);
           if (eco.air[i]) roll = eco.roll[i]!;
         } else {
           // On the land: feet on the ground as it's drawn, the body leaning with the slope under it.
-          const ground = height(x, y);
-          py = eco.air[i] ? eco.z[i]! : ground;
           const len = LENGTH[k]! * size;
-          if (!eco.air[i] && len > 0.25 && d !== S.MOUSE) {
-            const cx = Math.cos(heading) * len * 0.5;
-            const sy = Math.sin(heading) * len * 0.5;
-            pitch += Math.atan2(height(x + cx, y + sy) - height(x - cx, y - sy), len);
-          }
+          py = eco.air[i] ? eco.z[i]! : this.foot(i, x, y, heading, len > 0.25 ? len : 0, height);
+          if (!eco.air[i] && d !== S.MOUSE) pitch += this.slopeAt[i]!;
           const speed = eco.speed[i]!;
           if (k === S.HARE || k === S.SQUIRREL) {
             // It bounds: off the ground between strides, nose up as it leaves and down as it lands.
@@ -253,15 +299,7 @@ export class Poser {
         this.drawnY[i] = py;
         this.drawn[i] = 1;
         place(out, n, x - ox, py, -(y - oy), yaw, pitch, roll, scale, scale);
-        const q = n * 4;
-        out.anim[q] = phase;
-        out.anim[q + 1] = amount;
-        out.anim[q + 2] = nod;
-        out.anim[q + 3] = pose;
-        out.look[q] = tr;
-        out.look[q + 1] = tg;
-        out.look[q + 2] = tb;
-        out.look[q + 3] = flag;
+        dress(out, n, phase, amount, nod, pose, tr, tg, tb, flag);
       }
     }
     total += this.rings(batches[M_RING]!, ox, oy);
@@ -279,12 +317,8 @@ export class Poser {
       const size = r[n * 4 + 3]! * (0.15 + 0.85 * Math.sqrt(u));
       const at = out.count++;
       place(out, at, r[n * 4]! - ox, WATER_LEVEL + 0.015, -(r[n * 4 + 1]! - oy), 0, 0, 0, size, 1);
-      out.anim[at * 4] = 0;
-      out.anim[at * 4 + 1] = 0;
-      out.anim[at * 4 + 2] = (1 - u) * 0.7;
-      out.anim[at * 4 + 3] = 0;
-      // (White, and riding the waves.)
-      out.look[at * 4] = out.look[at * 4 + 1] = out.look[at * 4 + 2] = out.look[at * 4 + 3] = 1;
+      // (Its rig's third number is how much of it shows; white, and riding the waves.)
+      dress(out, at, 0, 0, (1 - u) * 0.7, 0, 1, 1, 1, 1);
     }
     return out.count;
   }
@@ -300,15 +334,7 @@ export class Poser {
       const s = b.shown[i]!;
       place(out, at, b.x[i]! - ox, b.z[i]!, -(b.y[i]! - oy), b.heading[i]! + Math.PI / 2, 0, 0, shape[0]! * s, shape[1]! * s);
       const tint = k === S.BUTTERFLY ? BUTTERFLY_TINT[i & 3]! : INSECT_TINT[k]!;
-      const q = at * 4;
-      out.anim[q] = b.phase[i]!;
-      out.anim[q + 1] = b.amount[i]!;
-      out.anim[q + 2] = 0;
-      out.anim[q + 3] = 0;
-      out.look[q] = tint[0]!;
-      out.look[q + 1] = tint[1]!;
-      out.look[q + 2] = tint[2]!;
-      out.look[q + 3] = 0;
+      dress(out, at, b.phase[i]!, b.amount[i]!, 0, 0, tint[0]!, tint[1]!, tint[2]!, 0);
     }
     if (b.fireflyLevel > 0.01) {
       for (let i = 0; i < b.fireflies && glow.count < glow.room; i++) {
@@ -317,10 +343,7 @@ export class Poser {
         // A spark while it's dark, a flare as it flashes.
         const size = 0.35 + 0.65 * g;
         place(glow, at, b.fx[i]! - ox, b.fz[i]!, -(b.fy[i]! - oy), 0, 0, 0, size, size);
-        glow.anim[at * 4] = 0;
-        glow.anim[at * 4 + 1] = 0;
-        glow.anim[at * 4 + 2] = (0.06 + 0.94 * g) * b.fireflyLevel;
-        glow.anim[at * 4 + 3] = 0;
+        dress(glow, at, 0, 0, (0.06 + 0.94 * g) * b.fireflyLevel, 0, 1, 1, 1, 0);
       }
     }
     return out.count + glow.count;

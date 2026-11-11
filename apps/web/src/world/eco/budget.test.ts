@@ -12,9 +12,9 @@ import * as S from "./species.ts";
 /*
  * What the whole ecosystem costs a frame on the CPU, tier by tier: the simulation's step, the insects, and the
  * pose written for every instance (everything but the GPU's upload). The old fauna (a flock, three herds that
- * wandered, fireflies) cost 5, 11 and 26 µs a frame on the machine this was written on; the ecosystem is held to
- * a budget of 60, 110 and 200 µs (low, medium, high): a hundredth of a 60 Hz frame at most, on a phone's CPU a
- * few times slower too.
+ * wandered, fireflies) cost 5, 11 and 26 µs a frame on the machine this was written on (low, medium, high); the
+ * ecosystem measures 9 to 15, 19 to 30 and 26 to 73 there, and is held to a budget of 60, 110 and 200 µs: about a
+ * hundredth of a 60 Hz frame at most, with room for a phone's CPU a few times slower.
  */
 
 /** Microseconds a frame, by tier. */
@@ -114,10 +114,10 @@ describe("the ecosystem's budget", () => {
   test("a step and a pose allocate nothing: the same arrays, frame after frame", () => {
     const { batches, frame } = rig("high", 0.5, 0.2, 1);
     for (let k = 0; k < 600; k++) frame();
-    const before = batches.map((b) => b.spot);
+    const before = batches.map((b) => b.data);
     const heap = process.memoryUsage().heapUsed;
     for (let k = 0; k < 3000; k++) frame();
-    batches.forEach((b, i) => expect(b.spot).toBe(before[i]!));
+    batches.forEach((b, i) => expect(b.data).toBe(before[i]!));
     // (Not a byte-exact claim, the runtime has its own business: but nothing that grows with the frames.)
     expect(process.memoryUsage().heapUsed - heap).toBeLessThan(6e6);
   });

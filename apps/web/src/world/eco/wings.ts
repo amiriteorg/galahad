@@ -303,7 +303,7 @@ export class Wings {
   /** A bird's own place where the flock feeds on the ground. */
   private groundOf(eco: Ecosystem, i: number): void {
     const a = eco.own[i]! * TAU * 5;
-    const r = 0.6 + 3.6 * ((eco.own[i]! * 17) % 1);
+    const r = 0.8 + 5.5 * ((eco.own[i]! * 17) % 1);
     let x = this.siteX + Math.cos(a) * r;
     let y = this.siteY + Math.sin(a) * r;
     if (!eco.dry(x, y)) {
@@ -570,7 +570,9 @@ export class Wings {
         eco.midges = Math.max(0, eco.midges - 0.00006);
       }
       // Never into the ground: the mark is lifted over what's between.
-      const floor = this.floor(eco, eco.x[i]! + eco.vx[i]! * 0.5, eco.y[i]! + eco.vy[i]! * 0.5);
+      // (The ground ahead, looked at every third frame: it flies a hand's breadth a frame.)
+      if ((eco.frame + i) % 3 === 0) eco.homeZ[i] = this.floor(eco, eco.x[i]! + eco.vx[i]! * 0.5, eco.y[i]! + eco.vy[i]! * 0.5);
+      const floor = eco.homeZ[i]!;
       const left = this.fly(eco, i, eco.tx[i]!, eco.ty[i]!, Math.max(eco.tz[i]!, floor + 0.3), spec.walk + 3 * eco.own[i]!, spec.accel, dt, 24, 0.75 + 0.25 * Math.sin(eco.t * 3 + i));
       if (eco.z[i]! < floor + 0.15) {
         eco.z[i] = floor + 0.15;
@@ -598,9 +600,11 @@ export class Wings {
       // Over their roost: the nearest wood to the view.
       this.murmuring = true;
       this.murmurT = eco.random() * 100;
-      if (!eco.patches.nearest(e.fx, e.fy, WOODS, 9, this.spot)) {
-        this.spot.x = e.fx + 30;
-        this.spot.y = e.fy + 20;
+      // (A wood some way off from the view if there is one: a murmuration is seen from the side, against the sky.)
+      const way = eco.random() * TAU;
+      if (!eco.patches.nearest(e.fx + Math.cos(way) * 75, e.fy + Math.sin(way) * 75, WOODS, 7, this.spot)) {
+        this.spot.x = e.fx + Math.cos(way) * 75;
+        this.spot.y = e.fy + Math.sin(way) * 75;
       }
       this.roostX = this.spot.x;
       this.roostY = this.spot.y;
@@ -612,7 +616,7 @@ export class Wings {
     if (eco.count[k]! < want && (this.bunch -= dt) <= 0) {
       this.bunch = 1.2 + eco.random() * 2.5;
       const from = this.edge(eco, 1.15);
-      const height = this.floor(eco, this.spot.x, this.spot.y) + 18 + eco.random() * 25;
+      const height = this.floor(eco, this.spot.x, this.spot.y) + 12 + eco.random() * 16;
       const many = Math.min(want - eco.count[k]!, 8 + Math.floor(eco.random() * 14));
       for (let m = 0; m < many; m++) {
         const i = eco.spawn(k, this.spot.x + (eco.random() - 0.5) * 14, this.spot.y + (eco.random() - 0.5) * 14, 1, true);
@@ -630,10 +634,11 @@ export class Wings {
     this.murmurT += dt;
     const t = this.murmurT;
     // What they turn about: a point that wanders over the roost, wide and slow.
-    const R = 30 + n * 0.08;
+    const R = 26 + n * 0.07;
     const ax = this.roostX + Math.cos(t * 0.31) * R * (0.65 + 0.35 * Math.sin(t * 0.17));
     const ay = this.roostY + Math.sin(t * 0.41) * R;
-    const az = this.roostZ + 30 + 11 * Math.sin(t * 0.23);
+    // (Low: they sweep the tree tops, and the view sees little of the sky overhead.)
+    const az = this.roostZ + 19 + 8 * Math.sin(t * 0.23);
     // Now and then something goes through them (as a hawk would): the flock opens round it and folds back.
     if ((this.wave -= dt) <= 0) {
       this.wave = 9 + eco.random() * 9;
@@ -742,7 +747,7 @@ export class Wings {
         }
       }
       // Never down into the trees while they turn.
-      if (z < this.roostZ + 13) fz += (this.roostZ + 13 - z) * 2;
+      if (z < this.roostZ + 9) fz += (this.roostZ + 9 - z) * 2;
       let nx = vx + fx * dt;
       let ny = vy + fy * dt;
       let nz = vz + fz * dt;
@@ -771,10 +776,10 @@ export class Wings {
       this.skein = 150 + eco.random() * 240;
       // South-west in autumn, north-east in spring: across the view, a little to one side of it.
       const way = (e.season.year > 0.5 ? -2.36 : 0.79) + (eco.random() - 0.5) * 0.7;
-      const side = (eco.random() - 0.5) * eco.reach * 0.8;
+      const side = (eco.random() < 0.5 ? -1 : 1) * eco.reach * (0.3 + 0.35 * eco.random());
       const sx = e.fx - Math.cos(way) * eco.reach * 1.75 - Math.sin(way) * side;
       const sy = e.fy - Math.sin(way) * eco.reach * 1.75 + Math.cos(way) * side;
-      const height = this.floor(eco, e.fx, e.fy) + 42 + eco.random() * 22;
+      const height = this.floor(eco, e.fx, e.fy) + 24 + eco.random() * 12;
       const many = Math.max(3, Math.round((b - a) * (0.6 + 0.4 * eco.random())));
       let first = -1;
       for (let m = 0; m < many; m++) {
@@ -1114,7 +1119,8 @@ export class Wings {
         eco.doing[i] = S.HAWK;
         eco.midges = Math.max(0, eco.midges - 0.00004);
       }
-      const floor = this.floor(eco, eco.x[i]!, eco.y[i]!) + 1.6;
+      if ((eco.frame + i) % 3 === 0) eco.homeZ[i] = this.floor(eco, eco.x[i]!, eco.y[i]!);
+      const floor = eco.homeZ[i]! + 1.6;
       this.fly(eco, i, eco.tx[i]!, eco.ty[i]!, Math.max(eco.tz[i]!, floor), spec.walk + 2 * eco.own[i]!, spec.accel, dt, 62, 1);
       if (eco.z[i]! < floor) eco.z[i] = floor;
     }
