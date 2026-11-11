@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  type BoardChange,
   ExperimentEnd,
   ExperimentEnd as ExperimentEndSchema,
   type ExperimentFrame,
@@ -108,6 +109,8 @@ export class WorldHub {
   private nodes: () => WorldNode[] = () => [];
   private weather: () => WorldWeather | null = () => null;
   private wakeWeather: () => void = () => {};
+  /** The chalkboard's version (board.ts), for the hello: a page then knows whether to fetch it. */
+  private boardVersion: () => number | null = () => null;
 
   constructor(private readonly opts: { now?: () => number } = {}) {
     this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now() };
@@ -156,7 +159,8 @@ export class WorldHub {
 
   /** Everything now: what a new watcher sees first. */
   hello(): WorldEvent {
-    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather() };
+    const board = this.boardVersion();
+    return { type: "hello", at: this.now(), galahad: this.galahad, nodes: this.nodes(), experiments: this.views(), thoughts: [...this.thoughts], weather: this.weather(), ...(board === null ? {} : { board: { version: board } }) };
   }
 
   watch(fn: (event: WorldEvent) => void): () => void {
@@ -211,6 +215,18 @@ export class WorldHub {
 
   weatherChanged(): void {
     this.emit({ type: "weather", at: this.now(), weather: this.weather() });
+  }
+
+  /* ---------- the chalkboard ---------- */
+
+  /** Where the board's version comes from (the daemon sets it). */
+  setBoard(version: () => number): void {
+    this.boardVersion = version;
+  }
+
+  /** The board changed: every page fetches it again; an item's region is where he goes to write it. */
+  boardChanged(change: BoardChange): void {
+    this.emit({ type: "board", at: this.now(), ...change });
   }
 
   fleetChanged(): void {

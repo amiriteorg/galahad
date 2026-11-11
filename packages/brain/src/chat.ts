@@ -1,6 +1,6 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, openAIConversation, type ToolCall, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { anthropicConversation, openAIConversation, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
 import { listModels, resolveProvider } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
@@ -32,7 +32,8 @@ export interface ChatTools {
   specs: ToolSpec[];
   /** The tool's title and a short, safe summary of the arguments, for the user's view. */
   describe(call: ToolCall): { title: string; input: string };
-  run(call: ToolCall, signal?: AbortSignal): Promise<{ content: string; isError?: boolean; summary: string }>;
+  /** A result may carry pictures (the chalkboard): models that see get them, the rest their descriptions. */
+  run(call: ToolCall, signal?: AbortSignal): Promise<{ content: string; isError?: boolean; summary: string; images?: ToolImage[] }>;
 }
 
 /** Tool rounds per answer; past it every call is refused, and then the answer ends. */
@@ -155,7 +156,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
               ? { content: `No more tools for this answer (${MAX_TOOL_ROUNDS} rounds). Answer with what you have.`, isError: true, summary: "no more tools for this answer" }
               : await tools!.run(call, req.signal);
           yield { type: "tool_result", id: call.id, name: call.name, ok: !outcome.isError, summary: outcome.summary };
-          outcomes.push({ id: call.id, content: outcome.content, ...(outcome.isError ? { isError: true } : {}) });
+          outcomes.push({ id: call.id, content: outcome.content, ...(outcome.isError ? { isError: true } : {}), ...("images" in outcome && outcome.images?.length ? { images: outcome.images } : {}) });
         }
         conversation.answer(outcomes);
         resumed = spoke;

@@ -10,6 +10,7 @@ import { loadEnv } from "./env.ts";
  *   config.json   node name, fleet id, port, keystore choice
  *   mind.db       this node's replica of the mind (the log + views)
  *   local.db      node-local state that never replicates (gateway tokens)
+ *   boards/       the chalkboard: main.json and the picture you last saw (main.png), node-local
  *   admin.token   local CLI credential (0600)
  *   keys.json     device private keys, only when the OS keychain is unavailable (0600)
  */

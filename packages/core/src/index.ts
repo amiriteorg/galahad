@@ -1,5 +1,7 @@
 export * from "./api.ts";
 export * from "./bank.ts";
+export * from "./board.ts";
+export * from "./board-input.ts";
 export * from "./chats.ts";
 export * from "./world.ts";
 export * from "./world-input.ts";

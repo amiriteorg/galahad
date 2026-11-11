@@ -74,7 +74,10 @@ export function createMcpServer(opts: McpOptions): McpServer {
   for (const t of toolsFor(opts.scopes ?? ARM_DEFAULT_SCOPES)) {
     server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.input, ...(t.annotations ? { annotations: t.annotations } : {}) }, async (args: unknown) => {
       try {
-        return { content: [{ type: "text" as const, text: await t.run(api, args ?? {}) }] };
+        const result = await t.run(api, args ?? {});
+        if (typeof result === "string") return { content: [{ type: "text" as const, text: result }] };
+        // A picture (the chalkboard) goes as MCP image content, after its words.
+        return { content: [{ type: "text" as const, text: result.text }, ...(result.images ?? []).map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))] };
       } catch (error) {
         return { content: [{ type: "text" as const, text: `Galahad: ${(error as Error).message}` }], isError: true };
       }

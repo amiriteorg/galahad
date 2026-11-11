@@ -8,7 +8,7 @@ It's a view of what's happening now, not a record: the ledger, your chats and ke
 
 | Where | How |
 |---|---|
-| The app | **SANDBOX** (`G` then `X`): the world in 3D. **Talk to Galahad** in the composer at its foot (`C`): it's the same conversation as the Chat page, and asking follows him, so you watch him walk off to the library, the watchtower or the treasury to answer. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the experiments, the two test sites, the stations), searchable; picking an experiment opens its readouts. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
+| The app | **SANDBOX** (`G` then `X`): the world in 3D. **Talk to Galahad** in the composer at its foot (`C`): it's the same conversation as the Chat page, and asking follows him, so you watch him walk off to the library, the watchtower or the treasury to answer. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the chalkboard, the experiments, the two test sites, the stations), searchable; picking an experiment opens its readouts, and picking the chalkboard (or tapping it in the world) opens it to draw on. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
 | A terminal | `galahad world` (where he is, the weather, the experiments); `galahad world --follow` keeps watching |
 
 The stream is yours alone: agents can't watch it, because it carries a line of what Galahad is saying in your chats now and then. Once he has read the bank in an answer, nothing more from that answer appears.
@@ -24,11 +24,21 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 | Messenger's post | Calling your services (connectors) |
 | Forge | Sandboxes: running code |
 | Oracle | Decisions |
-| Observatory | Investigations and trials |
+| Observatory | Investigations and trials; the chalkboard (writing on it, reading it) |
 | The field | Out on an experiment's plot, watching it run |
 | The keep | Everything else, and resting |
 
 Agents connected over MCP move him too: their calls are his tools. With nothing to do for half a minute he walks home.
+
+## The chalkboard
+
+A chalkboard stands beside the observatory, on the keep's side: a slate in a wooden frame on two legs with splayed feet, a chalk tray along its foot with sticks of chalk in the board's colours and a felt duster. It's the board you share with Galahad (the app's Chalkboard page: G then D), and its face shows what's on it now: his notes, equations and charts, and your drawing, in chalk.
+
+- **He writes there.** When he (or an agent of yours) writes on the board, he walks to it, stands before the spot the item went to and writes, his right hand moving along its lines with the chalk for a few seconds; the item appears on the face as he starts. Several writes queue (three at most; more just appear). Under reduced motion they just appear.
+- **You draw there.** Tap the board (or hover it: "Chalkboard · tap to open") or pick it in the selector, and it opens over the world to draw on (full screen on a phone). What you draw shows on the face too.
+- **How it's drawn.** Its face is a texture painted from the board's state with the same chalk as the page you draw on (`apps/web/src/ui/chalk.ts`): grain from a small noise tile, a drier second edge to every stroke, the duster rubbing chalk out. It's painted again only when the board changes, never per frame, at 512 pixels across on the low tier, 1024 on medium (phones) and 1600 on high. The frame, legs, tray, chalk and duster are one merged mesh (`apps/web/src/world/board.ts`, a place of its own like the hall and the proving ground); with the face, two draw calls.
+- **Nothing on it is lost.** Every version is kept (the app's History, `galahad board history`): clearing or erasing takes it off the face, not out of the record.
+- **Solid.** The frame and its legs are a solid walkers go round; the space before it, where he stands to write, stays clear (held by a test).
 
 ## The test sites
 

@@ -12,7 +12,9 @@ export type LookTarget =
   | { kind: "galahad" }
   | { kind: "experiment"; id: string }
   | { kind: "site"; site: SiteName }
-  | { kind: "station"; station: Exclude<Station, "field"> };
+  | { kind: "station"; station: Exclude<Station, "field"> }
+  /** The chalkboard at the observatory: it opens, to draw on. */
+  | { kind: "board" };
 
 export type LookGroup = "Galahad" | "Experiments" | "Test sites" | "The keep";
 
@@ -22,7 +24,7 @@ export interface LookOption {
   group: LookGroup;
   label: string;
   meta: string;
-  icon: "user" | "flask" | "compass" | "landscape";
+  icon: "user" | "flask" | "compass" | "landscape" | "board";
   /** A status dot (experiments). */
   tone?: "ok" | "warn" | "neutral" | "danger";
   live?: boolean;
@@ -53,7 +55,11 @@ export function matches(text: string, query: string): boolean {
  */
 export function lookOptions(model: WorldModel, query = ""): LookOption[] {
   const g = model.galahad;
-  const out: LookOption[] = [{ key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: g.doing || `At ${stationLabel(g.station).toLowerCase()}`, icon: "user" }];
+  const out: LookOption[] = [
+    { key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: g.doing || `At ${stationLabel(g.station).toLowerCase()}`, icon: "user" },
+    // The board you share: it opens to draw on.
+    { key: "board", target: { kind: "board" }, group: "Galahad", label: "Chalkboard", meta: "At the observatory: draw on it, read what he wrote", icon: "board" },
+  ];
   const time = (e: (typeof model.experiments)[number]) => e.endedAt ?? e.startedAt;
   const experiments = [...model.experiments].sort((a, b) => Number(experimentEnded(a)) - Number(experimentEnded(b)) || time(b) - time(a));
   for (const e of experiments) {
