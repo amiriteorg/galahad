@@ -165,3 +165,62 @@ describe("the weather on the sky", () => {
     expect(snowing.exposure).toBeGreaterThan(grey.exposure);
   });
 });
+
+describe("the grade", () => {
+  const warmth = (v: readonly number[]) => v[0]! / v[2]!;
+  const copy = (s: typeof sky) => ({ sat: s.gradeSat, shadow: [...s.gradeShadow], light: [...s.gradeLight] });
+  const under = (preset: Heavens, w: { cloud: number; rain: number; mist: number }) => applyWeather(skyFor(preset, sky), w);
+
+  test("golden hour is amber in the light and lavender in the shade, and richer than noon", () => {
+    const noon = copy(skyFor(TIME_PRESETS.day, sky));
+    const golden = copy(skyFor(TIME_PRESETS.golden, sky));
+    expect(warmth(golden.light)).toBeGreaterThan(1.2);
+    expect(warmth(golden.shadow)).toBeLessThan(0.88);
+    expect(golden.sat).toBeGreaterThan(noon.sat + 0.05);
+    // Noon is nearly neutral.
+    expect(Math.abs(warmth(noon.light) - 1)).toBeLessThan(0.08);
+  });
+
+  test("a morning's low sun is cooler than an evening's", () => {
+    const evening = copy(skyFor(heavens(5, { evening: 1 }), sky));
+    const morning = copy(skyFor(heavens(5, { evening: 0 }), sky));
+    expect(warmth(morning.light)).toBeLessThan(warmth(evening.light));
+    expect(warmth(morning.light)).toBeGreaterThan(1.05);
+  });
+
+  test("night is blue in the shade and quieter in colour", () => {
+    const night = copy(skyFor(TIME_PRESETS.night, sky));
+    expect(night.shadow[2]! - night.shadow[0]!).toBeGreaterThan(0.2);
+    expect(night.sat).toBeLessThan(1);
+  });
+
+  test("it never jumps as the sun moves, and stays near neutral", () => {
+    for (const evening of [0, 0.5, 1]) {
+      let last: ReturnType<typeof copy> | null = null;
+      for (let e = -40; e <= 70; e += 0.1) {
+        const g = copy(skyFor(heavens(e, { evening }), sky));
+        for (const v of [g.sat, ...g.shadow, ...g.light]) {
+          expect(v).toBeGreaterThan(0.8);
+          expect(v).toBeLessThan(1.25);
+        }
+        if (last) {
+          expect(Math.abs(g.sat - last.sat)).toBeLessThan(0.01);
+          for (let i = 0; i < 3; i++) {
+            expect(Math.abs(g.shadow[i]! - last.shadow[i]!)).toBeLessThan(0.01);
+            expect(Math.abs(g.light[i]! - last.light[i]!)).toBeLessThan(0.01);
+          }
+        }
+        last = g;
+      }
+    }
+  });
+
+  test("a sky that has clouded over has no sun to grade by: nearly neutral", () => {
+    const g = copy(under(TIME_PRESETS.golden, { cloud: 1, rain: 0.5, mist: 0.2 }));
+    expect(Math.abs(g.sat - 1)).toBeLessThan(0.05);
+    for (const v of [...g.shadow, ...g.light]) expect(Math.abs(v - 1)).toBeLessThan(0.03);
+    // Broken cloud keeps some of it.
+    const broken = copy(under(TIME_PRESETS.golden, { cloud: 0.3, rain: 0, mist: 0 }));
+    expect(warmth(broken.light)).toBeGreaterThan(1.1);
+  });
+});

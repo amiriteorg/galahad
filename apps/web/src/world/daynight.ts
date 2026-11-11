@@ -79,6 +79,15 @@ export interface Sky {
   groundMist: number;
   /** Snow in the air, 0..1 (from applyWeather): a paler, closer sky. */
   snow: number;
+  /**
+   * The grade on everything lit (the fog node applies it, before the air): a
+   * saturation, and tints in linear light for the shadows and the highlights
+   * (cool and warm at golden hour, lavender and peach at dawn, blue at night),
+   * each channel near 1. The weather quietens it.
+   */
+  gradeSat: number;
+  gradeShadow: Vec3;
+  gradeLight: Vec3;
 }
 
 /** The weather as the sky needs it: cloud, rain and mist, and snow if there is any (the world's weather state has all of this). */
@@ -207,6 +216,9 @@ export const emptySky = (): Sky => ({
   rays: 0,
   groundMist: 0,
   snow: 0,
+  gradeSat: 1,
+  gradeShadow: [1, 1, 1],
+  gradeLight: [1, 1, 1],
 });
 
 export const emptyHeavens = (): Heavens => ({ sunElevation: 0, sunAzimuth: Math.PI, evening: 0.5, moonElevation: 0, moonAzimuth: 0, moonLit: 0 });
@@ -311,6 +323,41 @@ const AIR_SWITCH = -10.5;
 /** A fallback for the night light when the moon is down: the sky's glow, from high in the south. */
 const SKYGLOW: Vec3 = [0.18, -0.42, 0.89];
 
+/** A grade: saturation, shadow tint, highlight tint (linear light). */
+interface Grade {
+  sat: number;
+  shadow: Vec3;
+  light: Vec3;
+}
+/** Plain day: a touch more colour, the faintest warm-and-cool. */
+const GRADE_DAY: Grade = { sat: 1.08, shadow: [0.97, 0.99, 1.04], light: [1.02, 1, 0.97] };
+/** An evening's golden hour: amber light, lavender shade, richer colour. */
+const GRADE_GOLDEN: Grade = { sat: 1.16, shadow: [0.9, 0.93, 1.1], light: [1.12, 1, 0.85] };
+/** A morning's: cooler pastels, peach light and lilac shade. */
+const GRADE_DAWN: Grade = { sat: 1.1, shadow: [0.95, 0.94, 1.08], light: [1.07, 0.99, 0.94] };
+/** The blue hour after sunset and before sunrise. */
+const GRADE_TWILIGHT: Grade = { sat: 1.06, shadow: [0.9, 0.95, 1.12], light: [1.04, 0.98, 0.98] };
+/** Night: quieter colour, blue shade, the moonlight a little silver. */
+const GRADE_NIGHT: Grade = { sat: 0.92, shadow: [0.88, 0.95, 1.15], light: [0.98, 1, 1.04] };
+
+function blendGrade(out: Sky, g: Grade, t: number): void {
+  if (t <= 0) return;
+  out.gradeSat += (g.sat - out.gradeSat) * t;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = out.gradeShadow[i]! + (g.shadow[i]! - out.gradeShadow[i]!) * t;
+    out.gradeLight[i] = out.gradeLight[i]! + (g.light[i]! - out.gradeLight[i]!) * t;
+  }
+}
+
+/** The grade towards neutral (1, no tint) by `t`. */
+function quieten(out: Sky, t: number, sat = t): void {
+  out.gradeSat += (1 - out.gradeSat) * sat;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = out.gradeShadow[i]! + (1 - out.gradeShadow[i]!) * t;
+    out.gradeLight[i] = out.gradeLight[i]! + (1 - out.gradeLight[i]!) * t;
+  }
+}
+
 /** The sky for a sun and moon (the real ones, or a preset), written into `out`. */
 export function skyFor(h: Heavens, out: Sky): Sky {
   const e = h.sunElevation * DEG;
@@ -395,6 +442,17 @@ export function skyFor(h: Heavens, out: Sky): Sky {
   out.rays = 0;
   out.groundMist = 0;
   out.snow = 0;
+  // The grade: day, then golden hour (a morning's cooler than an evening's), the blue hour, night.
+  out.gradeSat = GRADE_DAY.sat;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = GRADE_DAY.shadow[i]!;
+    out.gradeLight[i] = GRADE_DAY.light[i]!;
+  }
+  const lowSun = smooth(-6, 2, e) * (1 - smooth(10, 24, e));
+  blendGrade(out, GRADE_DAWN, lowSun * (1 - h.evening));
+  blendGrade(out, GRADE_GOLDEN, lowSun * h.evening);
+  blendGrade(out, GRADE_TWILIGHT, smooth(1, -5, e) * (1 - smooth(-9, -14, e)));
+  blendGrade(out, GRADE_NIGHT, smooth(-9, -16, e));
   return out;
 }
 
@@ -417,6 +475,8 @@ export function applyWeather(out: Sky, w: SkyWeather): Sky {
   const broken = smooth(0.12, 0.32, c) * (1 - smooth(0.62, 0.88, c));
   out.rays = out.lightFromSun ? Math.max(broken, w.mist * 0.7 * (1 - c)) * (1 - 0.6 * smooth(12, 45, e)) * smooth(0, 3, e) : 0;
   out.cloudShadow = out.lightFromSun ? broken * smooth(2, 12, e) : 0;
+  // Mist and cloud quieten the grade (no warm-and-cool without a sun to make it); rain dulls the colour a little.
+  quieten(out, Math.min(1, 0.85 * c + 0.4 * w.mist + 0.3 * snow), Math.min(1, 0.6 * c + 0.25 * w.mist + 0.3 * w.rain));
   if (c <= 0.001 && w.rain <= 0.001 && snow <= 0.001) return out;
   const grey = c * 0.82;
   out.zenith = mixColor(out.zenith, overcastOf(out.zenith, 0.85 + 0.3 * out.night), grey);

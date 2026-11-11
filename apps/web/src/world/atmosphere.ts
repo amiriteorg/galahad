@@ -1,4 +1,4 @@
-import { cameraPosition, exp, float, Fn, length, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { cameraPosition, dot, exp, float, Fn, length, max, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
 import { Color, type Node, Vector2, Vector3 } from "three/webgpu";
 import { air, airColor, lobes, WIND_X, WIND_Z } from "./air.ts";
 import type { Sky } from "./daynight.ts";
@@ -22,6 +22,9 @@ import { only, weatherUniforms } from "./wet.ts";
  * - Cloud shadows: on days of broken cloud, soft shadows drift over the land
  *   with the wind (what's already lit is dimmed a little and cooled).
  * - Lightning: a flash lights the land and the air for an instant.
+ * - The grade: what's lit is given the time of day's colour (daynight.ts: a
+ *   saturation, and tints for its shadows and its highlights) before the air
+ *   lies over it, so the distance still melts into the sky.
  *
  * Mist, cloud shadows and rays each sit behind a branch on their uniform, so a
  * clear day pays for none of them; the uniforms are in the render's shared
@@ -57,6 +60,9 @@ export class Atmosphere {
   private readonly shade = uniform(0).setGroup(renderGroup);
   private readonly shadeCover = uniform(0.4).setGroup(renderGroup);
   private readonly shadeAt = uniform(new Vector2(0, 0)).setGroup(renderGroup);
+  private readonly gradeSat = uniform(1).setGroup(renderGroup);
+  private readonly gradeShadow = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
+  private readonly gradeLight = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
   /** How far the haze reaches (1 clear; rain, snow, cloud and mist bring it in). */
   private reachFactor = 1;
   private level = Number.NaN;
@@ -111,7 +117,11 @@ export class Atmosphere {
     const airTint = mix(hazeColor, mistTint, mist.div(haze.add(mist).max(1e-4)));
     this.node = Fn(() => {
       const lit = output.rgb.mul(mix(vec3(1), SHADOW_TINT, shadow)).mul(float(1).add(weatherUniforms.flash.mul(FLASH_LAND)));
-      return vec4(mix(lit, airTint, total.add(dither().mul(2)).clamp(0, 1)), output.a);
+      // The grade: saturation about the pixel's own brightness, then the shadows' tint giving way to the highlights'.
+      const lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));
+      const rich = max(mix(vec3(lum), lit, this.gradeSat), vec3(0));
+      const graded = rich.mul(mix(this.gradeShadow, this.gradeLight, lum.div(lum.add(0.18))));
+      return vec4(mix(graded, airTint, total.add(dither().mul(2)).clamp(0, 1)), output.a);
     })() as unknown as Node;
   }
 
@@ -148,6 +158,9 @@ export class Atmosphere {
     this.reachFactor = Math.max(0.3, 1 - 0.3 * rain - 0.12 * s.cloud - 0.15 * s.mist - 0.32 * snow);
     this.shade.value = s.cloudShadow * 0.5;
     this.shadeCover.value = Math.min(0.7, Math.max(0.15, s.cloud));
+    this.gradeSat.value = s.gradeSat;
+    this.gradeShadow.value.set(s.gradeShadow[0], s.gradeShadow[1], s.gradeShadow[2]);
+    this.gradeLight.value.set(s.gradeLight[0], s.gradeLight[1], s.gradeLight[2]);
   }
 
   /** How far the haze reaches this frame: to the edge of the loaded land, and never closer than the view needs. */
