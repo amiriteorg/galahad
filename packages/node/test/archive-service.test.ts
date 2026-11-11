@@ -122,7 +122,7 @@ function hireEmbedder(w: World) {
 async function keepArtifact(w: World, files: Record<string, string | Uint8Array>, opts: { label: string; quest?: string }) {
   return (await w.artifacts.save(
     async (_sandbox, _from, dest) => {
-      const out = { files: [] as { path: string; size: number; sha256: string }[], bytes: 0, skipped: [] as string[] };
+      const out = { files: [] as { path: string; size: number; sha256: string }[], bytes: 0, skipped: [] as { path: string; reason: string }[] };
       for (const [path, content] of Object.entries(files)) {
         const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
         mkdirSync(dirname(join(dest, path)), { recursive: true });

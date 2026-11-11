@@ -50,6 +50,7 @@ const LOCAL_DAILY = 200;
 
 export class ArchiveService {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private first: ReturnType<typeof setTimeout> | null = null;
   private running: Promise<void> | null = null;
   private readonly now: () => number;
   private readonly failures = new Map<string, number>();
@@ -78,24 +79,40 @@ export class ArchiveService {
     const interval = this.o.intervalMs ?? 20 * SECOND;
     // The first look a little after start, once the node is serving.
     this.timer = setInterval(() => void this.tick().catch((error) => this.o.log(`archive: ${(error as Error).message}`)), interval);
-    setTimeout(() => void this.tick().catch(() => {}), Math.min(interval, 5 * SECOND));
+    this.first = setTimeout(() => void this.tick().catch((error) => this.o.log(`archive: ${(error as Error).message}`)), Math.min(interval, 5 * SECOND));
   }
 
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    if (this.first) clearTimeout(this.first);
     this.timer = null;
+    this.first = null;
     this.abort.abort();
     await this.running?.catch(() => {});
   }
 
-  /** An answer started: background work keeps out of its way for a while. */
+  private answers = 0;
+
+  /** An answer is streaming: background work waits until it's done (and a little after). Returns its end. */
+  answering(): () => void {
+    this.answers++;
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      this.answers--;
+      this.noteActivity(10 * SECOND);
+    };
+  }
+
+  /** Something happened that wants the machine: background work keeps out of its way for a while. */
   noteActivity(ms = 30 * SECOND): void {
     this.quietUntil = Math.max(this.quietUntil, this.now() + ms);
   }
 
   /** Whether background work waits: answers streaming, recent activity, or the machine loaded. */
   paused(): boolean {
-    if (this.o.busy?.() || this.now() < this.quietUntil) return true;
+    if (this.answers > 0 || this.o.busy?.() || this.now() < this.quietUntil) return true;
     const load = this.o.load ? this.o.load() : (loadavg()[0] ?? 0) / Math.max(1, cpus().length);
     return load > 0.9;
   }

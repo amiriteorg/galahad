@@ -9,6 +9,10 @@ import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "./archive/adapters.ts";
+import { LocalDiskBackend } from "./archive/blobs.ts";
+import { ArchiveService } from "./archive/service.ts";
+import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
 import { ChatStore } from "./chats.ts";
 import { WorldHub } from "./world-hub.ts";
@@ -36,6 +40,8 @@ export interface Daemon {
   bank: BankService;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
+  /** The archive: everything kept for good, and searched by words and meaning. */
+  archive: ArchiveService;
   stop(): Promise<void>;
 }
 
@@ -54,6 +60,8 @@ export interface DaemonOptions {
   fetch?: typeof fetch;
   /** Fetch Denmark's weather for the SANDBOX while someone watches it (default off; `galahad serve` turns it on unless GALAHAD_WEATHER=off). */
   weather?: boolean;
+  /** How often the archive's background work runs (default 20 s); false: never by itself (tests drive it). */
+  archiveIntervalMs?: number | false;
 }
 
 /**
@@ -221,6 +229,30 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     () => weather.current(),
     () => void weather.refresh(),
   );
+  // ---- The archive: node-local, its own database and blob store in the home, never the mind's log.
+  const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
+  const archive = new ArchiveService({
+    store: archiveStore,
+    brain: { store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}) },
+    mind: store,
+    identity,
+    nodeName: config.name,
+    log,
+    ...(opts.archiveIntervalMs ? { intervalMs: opts.archiveIntervalMs } : {}),
+    adapters: [
+      memoriesAdapter(store),
+      investigationsAdapter(store),
+      trialsAdapter(store),
+      artifactsAdapter(artifacts),
+      chatsAdapter(chats, { has: (s, id) => archiveStore.has(s, id), sourceIds: (s, prefix) => archiveStore.sourceIds(s, prefix) }),
+      // HOOK-UP (after the saved-experiments and whiteboard branches merge): pass each one's
+      // ExternalSource ({ listSince(cursor, limit), describe(id) }, see archive/adapters.ts) here.
+      experimentsAdapter(null),
+      boardsAdapter(null),
+    ],
+  });
+  if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();
+
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -276,6 +308,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     world,
+    archive,
     ledger,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
@@ -349,8 +382,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     bank,
     world,
+    archive,
     async stop() {
       clearInterval(outbox);
+      await archive.stop();
+      archiveStore.close();
       bank.close();
       chats.close();
       world.close();

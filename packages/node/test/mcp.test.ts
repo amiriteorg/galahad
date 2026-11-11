@@ -79,7 +79,8 @@ beforeAll(async () => {
       stderr: "ignore",
     }),
   );
-});
+  // It spawns a fresh `bun cli.ts mcp`: on a cold transpile cache (a fresh release on a server) that alone can pass bun's 5 s hook default.
+}, 30_000);
 
 afterAll(async () => {
   await client?.close();
@@ -164,6 +165,8 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "archive_read",
+        "archive_search",
         "artifact_read",
         "artifacts",
         "connector_call",
@@ -172,6 +175,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "fleet",
         "ledger",
         "loops",
+        "note_idea",
         "notices",
         "place",
         "recall",
