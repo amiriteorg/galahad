@@ -21,4 +21,5 @@ export * from "./request-auth.ts";
 export * from "./schedule.ts";
 export * from "./scopes.ts";
 export * from "./secret-scan.ts";
+export * from "./self-action.ts";
 export * from "./trials.ts";

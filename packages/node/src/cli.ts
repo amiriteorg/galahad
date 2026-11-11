@@ -13,12 +13,12 @@ import { startDaemon } from "./daemon.ts";
 import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
-import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, statusLine } from "./loop-cli.ts";
+import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldHeartbeat, WorldPartner, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
@@ -57,7 +57,8 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
-  world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
+  world [--follow] | world --logs   what Galahad is doing in the SANDBOX (his heartbeat, the agents with him);
+                                  how it ran on your devices
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -96,8 +97,11 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
-  loop set <name> [same options]  change a loop (what you leave out stays)
+     | --reflect [--budget 4000]                       a few lines on the day, as his own memory; tokens a day
+  loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
   heartbeat                       run the heartbeat's checks now and print what they find
+  self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
+                                  the allowlist, and what he fixed lately
   notices [--all] | notice dismiss <key>
 
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
@@ -285,6 +289,8 @@ async function main(): Promise<void> {
       tz: { type: "string" },
       heartbeat: { type: "boolean" },
       checklist: { type: "string" },
+      reflect: { type: "boolean" },
+      budget: { type: "string" },
       quest: { type: "string" },
       call: { type: "string" },
       arg: { type: "string", multiple: true },
@@ -754,10 +760,22 @@ Next:
         const pad = padAt(x.plot);
         return pad ? `${SITES[pad.site].label.toLowerCase()} (${pad.id})` : `plot ${x.plot.x},${x.plot.y}`;
       };
+      /** His heartbeat in a line: "♥ 12:30 ✓ all quiet", or what needs you and where he'll go; what he fixed himself. */
+      const heartLine = (h: WorldHeartbeat | null | undefined) => {
+        if (!h) return dim("♥ no heartbeat yet");
+        const time = h.ran ? new Date(h.ran).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "not yet";
+        const open = h.counts.alert + h.counts.warn + h.counts.info;
+        const what = open ? `${open} need${open === 1 ? "s" : ""} you: ${h.findings.map((f) => `${f.title} ${dim(`(${f.place})`)}`).join("; ")}` : "✓ all quiet";
+        const fixed = h.fixed.length ? `\n    fixed himself: ${h.fixed.join("; ")}` : "";
+        return `♥ ${time} ${what}${h.selfAction ? "" : dim(" · self-action off")}${fixed}`;
+      };
+      const partnersLine = (ps: WorldPartner[] | undefined) => (ps?.length ? ps.map((p) => `${bold(p.name)} ${dim(`${p.doing} (${p.station})`)}`).join(", ") : dim("no agents with him"));
       const say = (e: WorldEvent) => {
         const at = dim(new Date(e.at).toLocaleTimeString());
         if (e.type === "hello") {
           console.log(`${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station}${e.galahad.model ? ` · ${e.galahad.model}` : ""})`)}`);
+          console.log(`  ${heartLine(e.heartbeat)}`);
+          console.log(`  partners: ${partnersLine(e.partners)}`);
           console.log(`  ${weatherLine(e.weather)}`);
           for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
@@ -768,6 +786,8 @@ Next:
         else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
         else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
+        else if (e.type === "heartbeat") console.log(`${at} ${heartLine(e.heartbeat)}`);
+        else if (e.type === "partners") console.log(`${at} partners: ${partnersLine(e.partners)}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);
@@ -1398,6 +1418,9 @@ Evidence: galahad artifact ${i!.artifact}`));
 
     case "loop":
       await loopCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "self-action":
+      await selfActionCommand(new Admin(home), sub);
       return;
     case "heartbeat":
       await heartbeatCommand(new Admin(home));

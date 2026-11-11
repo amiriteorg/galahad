@@ -1,11 +1,11 @@
-import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView } from "@galahad/core";
+import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, SelfActionView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
 import type { NetworkMode } from "../types.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { type Child, h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -48,7 +48,11 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   heartbeat: { label: "Heartbeat", icon: "activity" },
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
+  reflect: { label: "Reflection", icon: "scroll" },
 };
+
+/** The reflection's daily budget, as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
+const REFLECT = { budget: 4000, min: 1000, max: 50_000 };
 
 const PRESETS: { label: string; schedule: string }[] = [
   { label: "Every 30 min", schedule: "every 30m" },
@@ -62,7 +66,11 @@ const firstLine = (text: string) => clip(text.split("\n")[0]?.trim() ?? "", 200)
 
 export function describeTask(task: LoopTask | null): string {
   if (!task) return "A task this node can't read (written by a newer version).";
-  if (task.kind === "heartbeat") return task.checklist ? "Heartbeat: checks the fleet, then reads your checklist." : "Heartbeat: checks the fleet and the machine it runs on.";
+  if (task.kind === "heartbeat") {
+    const what = task.checklist ? "Heartbeat: checks the fleet, then reads your checklist." : "Heartbeat: checks the fleet and the machine it runs on.";
+    return `${what}${task.selfAction === false ? " Only reports: self-action is off." : " Then fixes what's safe himself."}`;
+  }
+  if (task.kind === "reflect") return `Daily reflection: a few lines on the day, kept as his own memory, within ${(task.budget ?? REFLECT.budget).toLocaleString("en-US")} tokens a day.`;
   if (task.kind === "quest") return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
@@ -180,6 +188,18 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     field("Your checklist (optional)", checklist, { hint: "Plain words, read each run by the swift role. It answers all clear, or with a short note." }),
   );
 
+  const budget = h("input", { class: "input tnum", type: "number", min: REFLECT.min, max: REFLECT.max, step: 500, value: String(task0?.kind === "reflect" ? (task0.budget ?? REFLECT.budget) : REFLECT.budget) });
+  const reflectPanel = h(
+    "div",
+    { class: "stack" },
+    h(
+      "p",
+      { class: "small muted" },
+      "Once a day he reads the day's ledger, the notices and the titles of the chats you kept (never the bank, never a secret) and writes a few lines: what happened, what he learned, what he'd like to do next. It's kept as his own memory; what he'd like to do becomes a suggestion in your Inbox, never an action.",
+    ),
+    field("Daily budget (tokens)", budget, { hint: `What he reads and writes together, on the cheapest role that can answer. ${REFLECT.min.toLocaleString("en-US")} to ${REFLECT.max.toLocaleString("en-US")}.` }),
+  );
+
   const goal = h("textarea", { class: "textarea", rows: 4, maxlength: 4000, placeholder: "e.g. Read the open issues in amiriteorg/galahad and summarise what changed this week." });
   let network: NetworkMode = task0?.kind === "quest" ? task0.network : "isolated";
   if (task0?.kind === "quest") goal.value = task0.goal;
@@ -234,7 +254,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   connectorSelect.addEventListener("change", () => syncTools());
   toolSelect.addEventListener("change", () => syncArgs());
 
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel };
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -252,7 +272,14 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   function buildTask(): { task: LoopTask } | { problem: string; focus?: HTMLElement } {
     if (kind === "heartbeat") {
       const text = checklist.value.trim();
-      return { task: { kind: "heartbeat", ...(text ? { checklist: text } : {}) } };
+      // The self-action switch is its own control (on the Loops page); a changed heartbeat keeps it.
+      const off = task0?.kind === "heartbeat" && task0.selfAction === false;
+      return { task: { kind: "heartbeat", ...(text ? { checklist: text } : {}), ...(off ? { selfAction: false } : {}) } };
+    }
+    if (kind === "reflect") {
+      const n = Number(budget.value);
+      if (!Number.isInteger(n) || n < REFLECT.min || n > REFLECT.max) return { problem: `A daily budget is a whole number of tokens from ${REFLECT.min} to ${REFLECT.max}.`, focus: budget };
+      return { task: { kind: "reflect", ...(n !== REFLECT.budget ? { budget: n } : {}) } };
     }
     if (kind === "quest") {
       const text = goal.value.trim();
@@ -335,6 +362,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     heartbeatPanel,
     questPanel,
     callPanel,
+    reflectPanel,
     status,
     h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
   );
@@ -640,6 +668,68 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
     });
   }
 
+  // ---------- self-action: the owner's one switch, the allowlist, and what he fixed lately ----------
+  const selfBox = h("div", {}, skeletonBlock(96));
+  let selfSignature = "";
+  function renderSelf(view: SelfActionView): void {
+    const toggle = switchControl(
+      "Galahad fixes what's safe himself",
+      view.on,
+      (on) =>
+        void (async () => {
+          try {
+            const next = await ctx.api.post<SelfActionView>("/api/self-action", { on });
+            toast(on ? "Self-action is on" : "Self-action is off", { tone: "ok", description: on ? "After each heartbeat he fixes what's on the list himself, and asks you about the rest." : "He only reports now: every finding waits for you." });
+            selfSignature = "";
+            renderSelf(next);
+            loopsChanged.update((n) => n + 1);
+          } catch (error) {
+            toast("Couldn't change it", { tone: "error", description: errorMessage(error) });
+            renderSelf(view);
+          }
+        })(),
+      {
+        disabled: !write || !view.heartbeats.length,
+        hint: view.heartbeats.length ? `After each run of ${view.heartbeats.join(", ")}. Everything else (anything outward, your data, the bank, the vault, devices, the roster) stays a notice or an approval.` : "There's no heartbeat loop for it to follow.",
+      },
+    );
+    const allow = h(
+      "ul",
+      { class: "small muted", style: "margin:0;padding-left:18px" },
+      ...view.allowlist.map((a) => h("li", {}, h("span", { class: "mono" }, a.kind), ` (${a.class}): ${a.why}`)),
+    );
+    const recent = view.recent.length
+      ? h(
+          "div",
+          { class: "rows" },
+          ...view.recent.slice(0, 6).map((e) => {
+            const failed = e.reason?.startsWith("Galahad's own fix didn't") ?? false;
+            const at = Number(e.hlc.slice(0, 15));
+            return h(
+              "div",
+              { class: "item" },
+              h("span", { class: "avatar", "data-tone": failed ? "warn" : "ok" }, icon(failed ? "alert" : "check-circle", { size: 14 })),
+              h("div", { class: "grow" }, h("div", { class: "small strong" }, `${failed ? "Tried" : "Fixed"}: ${e.detail ?? e.target}`), h("div", { class: "tiny subtle", title: absoluteTime(at) }, relativeTime(at))),
+            );
+          }),
+        )
+      : h("p", { class: "tiny subtle" }, "Nothing fixed yet.");
+    replace(selfBox, h("div", { class: "card" }, h("div", { class: "card-body stack" }, toggle, h("div", { class: "stack tight" }, h("div", { class: "label" }, "What he may fix"), allow), h("div", { class: "stack tight" }, h("div", { class: "label" }, "Lately"), recent))));
+  }
+  async function refreshSelf(): Promise<void> {
+    try {
+      const view = await ctx.api.get<SelfActionView>("/api/self-action", scope.signal);
+      if (scope.disposed) return;
+      const next = JSON.stringify(view);
+      if (next === selfSignature) return;
+      selfSignature = next;
+      keepPlace(selfBox, () => renderSelf(view));
+    } catch (error) {
+      // An older node has no self-action yet: say nothing.
+      if (!scope.disposed && !selfSignature) replace(selfBox);
+    }
+  }
+
   const checkButton = button("Check now", { icon: "review", onClick: () => void check(checkButton) });
   replace(
     root,
@@ -653,6 +743,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
       ),
       write ? null : callout("quiet", "This device can see loops but not change or run them (no brain:write scope)."),
       checkBox,
+      section("Self-action", {}, selfBox),
       section("Loops", {}, listBox),
     ),
   );
@@ -667,8 +758,10 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
   let tick = 0;
   scope.interval(() => {
     if (pending.size || ++tick % 3 === 0) void refresh();
+    if (tick % 5 === 0) void refreshSelf();
   }, 3000);
   void refresh();
+  void refreshSelf();
   if (opts.intent === "add-loop") openLoopSheet(ctx);
   else if (opts.intent === "check") void check(checkButton);
 };

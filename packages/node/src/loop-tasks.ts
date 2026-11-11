@@ -1,6 +1,6 @@
-import { type ChatStreamEvent, type NodeIdentity, redact, type RouteName, routes } from "@galahad/core";
+import { type ChatStreamEvent, type ConversationSummary, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
-import { chat, excerpt, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
+import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
@@ -8,7 +8,9 @@ import type { ArmTokens } from "./arms.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import type { ConnectorService } from "./connectors.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
-import { loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
+import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
+import { REFLECT_ROLES, reflectOnce } from "./reflect.ts";
+import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
 
@@ -36,6 +38,15 @@ export interface LoopTaskDeps {
   now?: () => number;
   fetch?: typeof fetch;
   bank?: BankService;
+  /* ---- self-action and the reflection (set by the daemon) ---- */
+  /** Start a run of one of this node's loops now (self-action's retry). */
+  runLoop?: (name: string) => void;
+  /** Whether one of this node's loops is running now. */
+  isRunning?: (name: string) => boolean;
+  /** The world's weather, for self-action's refresh: fetched here at all, someone watching, known now. */
+  weather?: { enabled: boolean; watched(): boolean; known(): boolean; refresh(): Promise<void> };
+  /** Your kept chats (their titles are what the reflection reads of them). */
+  chats?: { list(): ConversationSummary[] };
 }
 
 /** A node API client on loopback, holding an arm token. */
@@ -163,9 +174,12 @@ async function askSwift(deps: LoopTaskDeps, prompt: string, signal: AbortSignal)
   return text;
 }
 
-export async function beat(deps: LoopTaskDeps, checklist: string | undefined, signal: AbortSignal): Promise<RunResult & { findings: Finding[] }> {
+export async function beat(deps: LoopTaskDeps, checklist: string | undefined, signal: AbortSignal, selfAction = true): Promise<RunResult & { findings: Finding[]; fixed: SelfActionOutcome[] }> {
   const now = (deps.now ?? Date.now)();
-  const findings = assess(await heartbeatSnapshot(deps));
+  let findings = assess(await heartbeatSnapshot(deps));
+  // What's on the allowlist he fixes himself; then he looks again, so a fixed problem never becomes a notice.
+  const fixed = selfAction ? await selfAct(await selfSnapshot(deps), () => selfSnapshot(deps), selfHands(deps), (entry) => void deps.store.emit(deps.identity, "ledger.recorded", entry)) : [];
+  if (fixed.some((f) => f.ok)) findings = assess(await heartbeatSnapshot(deps));
   let note = "";
   if (checklist?.trim()) {
     try {
@@ -181,7 +195,114 @@ export async function beat(deps: LoopTaskDeps, checklist: string | undefined, si
     ? `${findings.length} finding${findings.length === 1 ? "" : "s"}: ${findings.map((f) => f.title).join("; ")}`
     : "All quiet.";
   const changes = raised || cleared ? ` (${raised} raised, ${cleared} cleared)` : "";
-  return { status: serious.length ? "attention" : "ok", summary: `${summary}${changes}${note}`.slice(0, 2000), findings };
+  const fixes = fixed.length ? ` Fixed himself: ${fixed.map((f) => f.title).join("; ")}.` : "";
+  return { status: serious.length ? "attention" : "ok", summary: `${summary}${changes}${fixes}${note}`.slice(0, 2000), findings, fixed };
+}
+
+/* ---------- self-action: this node as the allowlist's plan reads it, and its hands ---------- */
+
+/** A loop that only reads: one connector tool of class read. */
+function readsOnly(deps: LoopTaskDeps, task: RunnableLoop["task"] | null): boolean {
+  if (task?.kind !== "call") return false;
+  return installedConnector(deps.store, task.connector)?.tools[task.tool]?.class === "read";
+}
+
+export async function selfSnapshot(deps: LoopTaskDeps): Promise<SelfSnapshot> {
+  const now = (deps.now ?? Date.now)();
+  const sandboxes = deps.sandbox ? await deps.sandbox.list().catch(() => null) : null;
+  return {
+    now,
+    sandboxes: sandboxes?.map((s) => ({ id: s.id, expiresAt: s.expiresAt, ephemeral: s.ephemeral, quest: s.quest })) ?? null,
+    loops: loopRecords(deps.store)
+      .filter((l) => l.on === deps.identity.id && l.enabled && l.task)
+      .map((l) => ({
+        name: l.name,
+        readOnly: readsOnly(deps, l.task),
+        running: deps.isRunning?.(l.name) ?? false,
+        recent: deps.store.loopRuns(l.name, 2).map((r) => ({ run: r.body.run, status: r.body.status, finished: r.body.finished })),
+      })),
+    retried: retriedRuns(deps.store.ledger(300).filter((e) => e.body.resource === SELF_ACTION_RESOURCE).map((e) => e.body.target)),
+    weather: deps.weather ? { enabled: deps.weather.enabled, watched: deps.weather.watched(), known: deps.weather.known() } : null,
+  };
+}
+
+function selfHands(deps: LoopTaskDeps) {
+  return {
+    reap: async (sandbox: string, quest: string) => {
+      if (!deps.sandbox) throw new Error("this node is not a sandbox host");
+      return deps.sandbox.destroy(sandbox, { quest });
+    },
+    retry: (loop: string) => {
+      if (!deps.runLoop) throw new Error("loops can't be run from here");
+      deps.runLoop(loop);
+    },
+    refreshWeather: async () => {
+      if (!deps.weather) throw new Error("no weather here");
+      await deps.weather.refresh();
+    },
+  };
+}
+
+/* ---------- the daily reflection ---------- */
+
+async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal): Promise<RunResult> {
+  const now = (deps.now ?? Date.now)();
+  const store = deps.store;
+  const models = roster(store);
+  return reflectOnce(
+    {
+      now,
+      budget,
+      inputs: {
+        now,
+        ledger: store.ledger(300).map((e) => ({ at: hlcMs(e.hlc), class: e.body.class, resource: e.body.resource, target: e.body.target, verdict: e.body.verdict })),
+        notices: store
+          .lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:")
+          .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
+        runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
+        chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
+      },
+      doneToday: (day) => store.memoriesTagged(`day:${day}`, 20).some((m) => m.tags.includes("reflection")),
+      role: () => REFLECT_ROLES.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null,
+      ask: async (role, prompt, maxChars, outer) => {
+        // Stopped as soon as it has written its share of the budget.
+        const stop = new AbortController();
+        const abort = () => stop.abort();
+        outer.addEventListener("abort", abort, { once: true });
+        let text = "";
+        try {
+          for await (const event of chat({ store, vault: deps.vault, fetch: deps.fetch }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
+            if (event.type === "text") text += event.text;
+            else if (event.type === "error") throw new Error(event.error);
+            if (text.length >= maxChars) {
+              stop.abort();
+              break;
+            }
+          }
+        } catch (error) {
+          if (!stop.signal.aborted || outer.aborted) throw error;
+        } finally {
+          outer.removeEventListener("abort", abort);
+        }
+        return text;
+      },
+      remember: (text, tags) => void store.remember(deps.identity, text, { tags, prov: { trust: "agent", source: "reflection" } }),
+      suggest: (day, ideas) =>
+        void reconcile(
+          store,
+          deps.identity,
+          ideas.map((idea, i) => ({
+            key: `suggestion:${day}:${i + 1}`,
+            severity: "info" as const,
+            title: `Galahad suggests: ${idea}`.slice(0, 200),
+            body: `From his reflection on ${day}. He won't do it on his own: if you'd like it done, ask him, or dismiss it.`,
+          })),
+          now,
+          "reflect",
+        ),
+    },
+    signal,
+  );
 }
 
 export function loopExecutor(deps: LoopTaskDeps) {
@@ -189,7 +310,9 @@ export function loopExecutor(deps: LoopTaskDeps) {
     const task = loop.task;
     switch (task.kind) {
       case "heartbeat":
-        return beat(deps, task.checklist, ctx.signal);
+        return beat(deps, task.checklist, ctx.signal, task.selfAction !== false);
+      case "reflect":
+        return reflect(deps, task.budget ?? REFLECT_BUDGET, ctx.signal);
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

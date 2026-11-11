@@ -96,6 +96,8 @@ export interface GalahadState {
   /** The model thinking for him, when he's thinking. */
   model: string | null;
   since: number;
+  /** Nothing to do: the world lets him live his day (its own planner) until there's work. Absent from older nodes. */
+  idle?: boolean;
 }
 
 export interface WorldNode {
@@ -136,7 +138,23 @@ export interface WorldWeather {
 
 export type WorldEvent =
   /** The whole world as it is now: first, on every (re)connect. `weather` is null when it's unknown or turned off. */
-  | { type: "hello"; at: number; galahad: GalahadState; nodes: WorldNode[]; experiments: ExperimentView[]; thoughts: string[]; weather?: WorldWeather | null }
+  | {
+      type: "hello";
+      at: number;
+      galahad: GalahadState;
+      nodes: WorldNode[];
+      experiments: ExperimentView[];
+      thoughts: string[];
+      weather?: WorldWeather | null;
+      /** His heartbeat (null before its first run here, or with no heartbeat). Absent from older nodes. */
+      heartbeat?: WorldHeartbeat | null;
+      /** The agents working with him now. Absent from older nodes. */
+      partners?: WorldPartner[];
+    }
+  /** His heartbeat ran, or what it found changed (a notice cleared or dismissed). */
+  | { type: "heartbeat"; at: number; heartbeat: WorldHeartbeat | null }
+  /** An agent arrived, moved on or went quiet. */
+  | { type: "partners"; at: number; partners: WorldPartner[] }
   /** The weather changed (null: no longer known). */
   | { type: "weather"; at: number; weather: WorldWeather | null }
   /** He moved or started something else. */
@@ -250,3 +268,70 @@ export function padKindFor(engine: ExperimentEngine, extent: number | undefined,
   const cell = PADS.find((p) => p.kind === "cell")!;
   return extent !== undefined && extent <= cell.size * PLOT_FILL ? "cell" : null;
 }
+
+/* ---------- his heartbeat, and the agents who work with him ---------- */
+
+/**
+ * Where a heartbeat finding is, in the world, so he can go to it: a node's spot in the fleet's ring at
+ * the keep, the forge (sandboxes), the workshop's racks (disk), the messenger's post (loops, connectors,
+ * standing orders), the council table (roles without a model) or the keep itself (the vault, the fleet).
+ */
+export type HeartbeatPlace = "keep" | "node" | "council" | "forge" | "messenger" | "racks";
+
+export interface HeartbeatFinding {
+  /** The notice's key: the same problem keeps it from beat to beat. */
+  key: string;
+  severity: "info" | "warn" | "alert";
+  title: string;
+  place: HeartbeatPlace;
+  /** The node it's about (place "node"): its device id. */
+  node: string | null;
+}
+
+/** His heartbeat as the world shows it: when it last ran, and what still needs the owner. Never anything from the bank. */
+export interface WorldHeartbeat {
+  /** When its last run finished (ms); null before the first. */
+  ran: number | null;
+  status: "ok" | "attention" | "failed" | "interrupted" | null;
+  /** What it found that's still open (its notices, less those dismissed), by severity. */
+  counts: { info: number; warn: number; alert: number };
+  /** Those findings, most severe first (at most HEARTBEAT_FINDINGS). */
+  findings: HeartbeatFinding[];
+  /** What he fixed himself after its last run, in a line each (at most HEARTBEAT_FINDINGS). */
+  fixed: string[];
+  /** Whether he fixes what's safe himself (the owner's switch). */
+  selfAction: boolean;
+}
+
+export const HEARTBEAT_FINDINGS = 12;
+
+/** The bank's own findings stay in the inbox: the world never shows anything about the bank. */
+export const isBankFinding = (key: string): boolean => key.startsWith("bank-");
+
+/** Where a finding's notice key puts it (heartbeat.ts names them: `node-offline:<id>`, `disk:<id>`, …). */
+export function heartbeatPlace(key: string): { place: HeartbeatPlace; node: string | null } {
+  const [kind = "", rest = ""] = key.split(/:(.*)/s);
+  if (kind === "node-offline") return { place: "node", node: rest || null };
+  if (kind.startsWith("sandbox-")) return { place: "forge", node: null };
+  if (kind === "disk") return { place: "racks", node: null };
+  if (kind.startsWith("loop-") || kind.startsWith("connector-") || kind.startsWith("order-")) return { place: "messenger", node: null };
+  if (kind === "no-model") return { place: "council", node: null };
+  return { place: "keep", node: null };
+}
+
+/** An agent working with Galahad over MCP (Claude Code, OpenCode…), while it's at work: its name is its arm's label. */
+export interface WorldPartner {
+  name: string;
+  /** Where its latest call sent it (and him). */
+  station: Station;
+  /** Its latest call, in a line ("Recalling memories"). */
+  doing: string;
+  /** When it arrived (its first call after a quiet spell), and its latest call (ms). */
+  since: number;
+  last: number;
+}
+
+/** At most this many partners are shown (the most recently active). */
+export const MAX_PARTNERS = 6;
+/** A partner that's made no call for this long has gone home. */
+export const PARTNER_IDLE_MS = 45_000;
