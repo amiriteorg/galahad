@@ -354,6 +354,27 @@ describe("M0: one mind, two bodies", () => {
     const html = await fetchFile(homeA.adminToken(), "page.html");
     expect(html.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(await html.text()).toBe("<script>alert(1)</script>");
+    // A holder that answers for the page as HTML to render, under another name and without a
+    // length: the type and the name are the laptop's own, from the path it asked for.
+    const holder = laptop.store.device(server.identity.id)!.profile!.endpoint!;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const response = await realFetch(input, init);
+      if (!String(input).startsWith(holder)) return response;
+      const bytes = await response.arrayBuffer();
+      const chunked = new ReadableStream({ start: (controller) => (controller.enqueue(new Uint8Array(bytes)), controller.close()) });
+      return new Response(chunked, { status: response.status, headers: { "content-type": "text/html", "content-disposition": 'inline; filename="index.html"' } });
+    }) as typeof fetch;
+    try {
+      const lied = await fetchFile(homeA.adminToken(), "page.html");
+      expect(lied.status).toBe(200);
+      expect(lied.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(lied.headers.get("content-disposition")).toBe('inline; filename="page.html"');
+      expect(lied.headers.get("content-security-policy")).toBe("sandbox; default-src 'none'");
+      expect(await lied.text()).toBe("<script>alert(1)</script>");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
     // An agent with mind:read reads it too; what the holder refuses comes back refused.
     const { token: armToken } = await admin(homeA, portA)<{ token: string }>("mintArm", { label: "far-reader" });
     expect(await (await fetchFile(armToken, "report.md")).text()).toBe("# Held on the server\n");

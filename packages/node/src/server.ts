@@ -72,7 +72,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore } from "./chats.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
-import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
+import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
@@ -355,6 +355,13 @@ export function createApp(ctx: AppContext) {
     });
   }
 
+  /** How this node serves a kept file at `path`: its type and name decided here, never by whoever sent the bytes. */
+  function keptFileHeaders(path: string): { type: string; disposition: string } {
+    const { type, inline } = contentTypeOf(path);
+    const name = (path.split("/").at(-1) ?? "file").replace(/[^A-Za-z0-9._ -]/g, "_");
+    return { type, disposition: `${inline ? "inline" : "attachment"}; filename="${name}"` };
+  }
+
   /** A kept file from the node that holds it, streamed through with this node's own fences. */
   async function fileFrom(holder: Device, input: { id: string; path: string }): Promise<Response> {
     if (!holder.profile?.endpoint) throw new HttpError(424, `${holder.name} has no reachable endpoint`);
@@ -374,13 +381,13 @@ export function createApp(ctx: AppContext) {
       }
       throw new HttpError(upstream.status, `${holder.name}: ${message}`.slice(0, 500));
     }
-    // Only what the holder decided about the file is kept; every fence is this node's own.
-    const type = upstream.headers.get("content-type") ?? "application/octet-stream";
-    const disposition = /^(?:inline|attachment); filename="[A-Za-z0-9._ -]*"$/.test(upstream.headers.get("content-disposition") ?? "")
-      ? upstream.headers.get("content-disposition")!
-      : "attachment";
-    const length = Number(upstream.headers.get("content-length"));
-    return keptFile(upstream.body, type, disposition, Number.isFinite(length) && length >= 0 ? length : null);
+    // Only the bytes (and their length) come from the holder. The type and the name are this
+    // node's, from the path asked for, as for a file kept here: a holder answering text/html
+    // for a page can't have it rendered on this origin.
+    const { type, disposition } = keptFileHeaders(input.path);
+    // No length (a chunked answer) is no length, not zero.
+    const declared = upstream.headers.get("content-length");
+    return keptFile(upstream.body, type, disposition, declared && /^\d{1,15}$/.test(declared) ? Number(declared) : null);
   }
 
   /**
@@ -1240,8 +1247,8 @@ export function createApp(ctx: AppContext) {
         if (error instanceof ArtifactError) throw new HttpError(error.status, error.message);
         throw error;
       }
-      const name = file.name.replace(/[^A-Za-z0-9._ -]/g, "_");
-      return keptFile(file.bytes, file.type, `${file.inline ? "inline" : "attachment"}; filename="${name}"`, file.bytes.length);
+      const { type, disposition } = keptFileHeaders(input.path);
+      return keptFile(file.bytes, type, disposition, file.bytes.length);
     },
     removeArtifact: async (input, p) => {
       if (p.kind !== "admin" && p.kind !== "client" && p.kind !== "node") throw new HttpError(403, "only you remove kept work");
