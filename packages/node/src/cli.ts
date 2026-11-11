@@ -1014,12 +1014,13 @@ Evidence: galahad artifact ${i!.artifact}`));
 
     case "trials":
     case "trial": {
-      const admin = new Admin(home);
       const suite = "engineering";
+      // The suite is part of Galahad, not of a node: listing it needs no node.
       if (command === "trial" && sub === "problems") {
         for (const p of chooseProblems(suite, [])) console.log(`  ${p.id.padEnd(26)} ${p.domain.padEnd(11)} ${p.title}`);
         return;
       }
+      const admin = new Admin(home);
       if (command === "trial" && sub === "run") {
         const network = str("net") ?? "gateway";
         if (network !== "gateway" && network !== "online") fail("--net must be gateway (models only, the default) or online: a trial needs models");
