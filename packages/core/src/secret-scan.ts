@@ -28,48 +28,117 @@ const PATTERNS: [kind: string, pattern: RegExp][] = [
 
 /**
  * A credential's name (`password`, `DB_PASSWORD`, `api-key`, `access_token`…), `:` or `=`, and
- * its value: quoted, or up to the next space.
+ * its value: quoted, what redact() leaves (`[redacted …]`, with whatever is stuck to it), or up
+ * to the next space.
  */
 const ASSIGNMENT =
-  /\b(?:[A-Za-z0-9]+[_-])*(?:password|passwd|secret|api[_-]?key|access[_-]?key|token)\b["']?\s*[:=]\s*("[^"\n]*"|'[^'\n]*'|`[^`\n]*`|\S+)/gi;
+  /\b(?:[A-Za-z0-9]+[_-])*(?:password|passwd|secret|api[_-]?key|access[_-]?key|token)\b["']?\s*[:=]\s*("[^"\n]*"|'[^'\n]*'|`[^`\n]*`|\[redacted[^\]\n]*\]\S*|\S+)/gi;
 
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
 /** Words a value is named after when it's a variable, not the thing itself. */
 const CREDENTIAL_WORD = /(?:password|passwd|secret|key|token|credential|auth)s?$/i;
 /** Where a value comes from when it's read in code: the environment, configuration, the caller. */
 const CODE_ROOT = /^(?:process|os|env|environ|config|cfg|settings|options|opts|ctx|context|this|self|req|request|args|params|props|import)$/;
+/** A call that looks a credential up by name: its first argument is that name, not the value. */
+const GETTER = /^(?:get|read|fetch|load|lookup|require|resolve)|(?:env|environ|secret|token|password|credential|key)s?$/i;
 
 /**
- * Not a credential, though it sits where one would: a reference to where it's kept, a
- * placeholder, a call that fetches it. Deliberately narrow (when in doubt, it's a secret):
- * a bare word, a number or anything with a literal default in it is still refused.
+ * A name as code spells one: camelCase, snake_case, PascalCase or UPPER_CASE, with digits only at
+ * the end of a word (`oauth2Token`, `S3_KEY`). `Tr0ub4dor3x` is a password with a dot before it.
  */
-function notACredential(value: string): boolean {
-  if (value.length < 8) return true; // too short to be a key (as before)
-  if (/^\$\{(?:[A-Za-z_]+[.:])?[A-Za-z_][A-Za-z0-9_]*\}$/.test(value)) return true; // ${DB_PASSWORD}, ${env:TOKEN}
-  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(value)) return true; // $GITHUB_TOKEN
-  if (/^%[A-Za-z_][A-Za-z0-9_]*%$/.test(value)) return true; // %DB_PASSWORD%
-  if (/^\{\{\s*[A-Za-z_][\w.]*\s*\}\}$/.test(value)) return true; // {{ api_key }}
-  if (/^<[A-Za-z][A-Za-z _-]*>$/.test(value)) return true; // <your-key-here>
-  if (/^(?:\*{4,}|x{4,}|X{4,}|•{4,}|\.{3,}|…)$/.test(value)) return true; // masked
-  if (/^\[redacted\b/i.test(value)) return true; // what redact() leaves
-  if (/^(?:undefined|null|none|nil|true|false)$/i.test(value)) return true;
-  if (/^your[-_]?(?:[a-z]+[-_]?)*(?:key|token|secret|password)(?:[-_]?here)?$/i.test(value)) return true; // your-key-here
+function conventional(name: string): boolean {
+  const bare = name.replace(/^[$_]+|[$_]+$/g, "");
+  return bare
+    .split(/[_$]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/)
+    .every((word) => /^(?:[A-Z]+|[A-Z]?[a-z]+)[0-9]*$/.test(word));
+}
+
+/**
+ * What a value is, where a credential would sit. "harmless": a placeholder, a masked value, a
+ * word too short to be a key. "reference": it names where the credential is kept, or calls
+ * what fetches it (then the rest of its expression is checked for a literal: see literalAfter).
+ * Deliberately narrow (when in doubt, it's a secret): a bare word, a number, a literal default,
+ * a `$` before a lower-case word, a dotted value that isn't code, all stay "credential".
+ */
+function judge(value: string): "credential" | "harmless" | "reference" {
+  if (value.length < 8) return "harmless"; // too short to be a key (as before)
+  if (/^\$\{(?:[A-Za-z_]+[.:])?[A-Za-z_][A-Za-z0-9_]*\}$/.test(value)) return "reference"; // ${DB_PASSWORD}, ${env:TOKEN}
+  if (/^\$[A-Z_][A-Z0-9_]*$/.test(value)) return "reference"; // $GITHUB_TOKEN (environment style only: $uperman1234 is a password)
+  if (/^%[A-Za-z_][A-Za-z0-9_]*%$/.test(value)) return "reference"; // %DB_PASSWORD%
+  if (/^\{\{\s*[A-Za-z_][\w.]*\s*\}\}$/.test(value)) return "reference"; // {{ api_key }}
+  if (/^<[A-Za-z][A-Za-z _-]*>$/.test(value)) return "harmless"; // <your-key-here>
+  if (/^(?:\*{4,}|x{4,}|X{4,}|•{4,}|\.{3,}|…)$/.test(value)) return "harmless"; // masked
+  if (/^\[redacted(?: [^\]]*)?\]$/i.test(value)) return "harmless"; // exactly what redact() leaves
+  if (/^(?:undefined|null|none|nil|true|false)$/i.test(value)) return "harmless";
+  if (/^your[-_]?(?:[a-z]+[-_]?)*(?:key|token|secret|password)(?:[-_]?here)?$/i.test(value)) return "harmless"; // your-key-here
   const path = new RegExp(`^(${NAME}(?:\\??\\.${NAME})*)(.*)$`).exec(value);
   if (path) {
     const [, dotted, rest] = path as unknown as [string, string, string];
     const parts = dotted.split(/\??\./);
+    if (!parts.every(conventional)) return "credential";
+    const root = parts[0]!;
     const leaf = parts.at(-1)!;
     // A call that fetches it: request.headers.get(…), os.getenv("TOKEN"), getToken(). Closed, with
     // nothing after it, or (a method, cut at a space) open.
     const call = /^\((?:[^()]|\([^()]*\))*(\))?[,;)]*$/.exec(rest);
-    if (call && (call[1] ? parts.length > 1 || /^[a-z_$]/.test(dotted) : parts.length > 1)) return true;
-    // Read from somewhere: process.env.API_KEY, config.token, os.environ["TOKEN"]
-    const read = parts.length > 1 && (CODE_ROOT.test(parts[0]!) || CREDENTIAL_WORD.test(leaf));
-    if (read && /^(?:\[\s*["'][A-Za-z0-9_]+["']\s*\])?[,;)]*$/.test(rest)) return true;
-    if (CODE_ROOT.test(dotted) && /^\[\s*["'][A-Za-z0-9_]+["']\s*\][,;)]*$/.test(rest)) return true;
+    if (call && (call[1] ? parts.length > 1 || /^[a-z_$]/.test(dotted) : parts.length > 1)) return "reference";
+    // Read from somewhere: process.env.API_KEY, config.token, creds.password, os.environ["TOKEN"]
+    // (a variable is lower-case and has no digits: Summer2024.Secret is a password).
+    const read = parts.length > 1 && (CODE_ROOT.test(root) || (CREDENTIAL_WORD.test(leaf) && /^[a-z_$][A-Za-z_$]*$/.test(root)));
+    if (read && /^(?:\[\s*["'][A-Za-z0-9_]+["']\s*\])?[,;)]*$/.test(rest)) return "reference";
+    if (CODE_ROOT.test(dotted) && /^\[\s*["'][A-Za-z0-9_]+["']\s*\][,;)]*$/.test(rest)) return "reference";
   }
-  return false;
+  return "credential";
+}
+
+/**
+ * Where a quoted literal of 8 or more characters ends in the expression starting at `from`, or
+ * -1. A reference with a literal beside it (`os.getenv("PW", "…")`, `process.env.X || "…"`)
+ * holds the credential itself. The expression ends at a line break, at a backtick (Markdown
+ * around it) or an unclosed quote (prose), and at a `,`, `;` or closing bracket it didn't open.
+ * A name being looked up is no literal: a getter's first argument
+ * (`request.headers.get("authorization")`) and a key (`os.environ["TOKEN"]`). Looks at most
+ * EXPRESSION characters ahead.
+ */
+const EXPRESSION = 1000;
+function literalAfter(text: string, from: number): number {
+  const open: { bracket: string; lookup: boolean }[] = [];
+  let previous = ""; // the last character that isn't a space
+  const stop = Math.min(text.length, from + EXPRESSION);
+  for (let i = from; i < stop; i++) {
+    const ch = text[i]!;
+    if (ch === "\n" || ch === "`") return -1;
+    if (ch === '"' || ch === "'") {
+      let end = i + 1;
+      while (end < stop && text[end] !== ch && text[end] !== "\n") end += text[end] === "\\" ? 2 : 1;
+      if (end >= stop || text[end] !== ch) return -1;
+      const literal = text.slice(i + 1, end);
+      let after = end + 1;
+      while (after < stop && /\s/.test(text[after]!)) after++;
+      const next = text[after] ?? "";
+      const top = open.at(-1);
+      const looksUp =
+        !!top?.lookup &&
+        ((top.bracket === "(" && previous === "(" && (next === ")" || next === ",")) || (top.bracket === "[" && previous === "[" && next === "]")) &&
+        /^[\w.:/@-]+$/.test(literal);
+      if (literal.length >= 8 && !looksUp) return end + 1;
+      previous = ch;
+      i = end;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      let start = i;
+      while (start > from && /[\w$.?]/.test(text[start - 1]!)) start--;
+      const before = text.slice(start, i);
+      const leaf = before.split(/\??\./).at(-1) ?? "";
+      open.push({ bracket: ch, lookup: ch === "(" ? GETTER.test(leaf) : ch === "[" && (before !== "" || previous === "]" || previous === ")") });
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      if (!open.length) return -1;
+      open.pop();
+    } else if ((ch === "," || ch === ";") && !open.length) return -1;
+    if (!/\s/.test(ch)) previous = ch;
+  }
+  return -1;
 }
 
 function assignments(text: string): SecretFinding[] {
@@ -79,7 +148,14 @@ function assignments(text: string): SecretFinding[] {
     const quoted = /^(["'`]).*\1$/s.test(raw);
     // Unquoted, it ends where the sentence or the Markdown does: `export API_KEY=<key>`; …
     const value = quoted ? raw.slice(1, -1) : raw.replace(/[`'".,;:!?]+$/, "");
-    if (!notACredential(value)) out.push({ kind: "password assignment", index: match.index!, length: match[0].length });
+    const verdict = judge(value);
+    if (verdict === "credential") {
+      out.push({ kind: "password assignment", index: match.index!, length: match[0].length });
+    } else if (verdict === "reference" && !quoted) {
+      // The unquoted value was cut at a space: what follows it in the same expression counts too.
+      const end = literalAfter(text, match.index! + match[0].length - raw.length);
+      if (end > 0) out.push({ kind: "password assignment", index: match.index!, length: end - match.index! });
+    }
   }
   return out;
 }
