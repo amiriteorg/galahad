@@ -297,3 +297,42 @@ describe("keeping the stream open", () => {
     expect(sleeps).toEqual([60_000, 60_000]);
   });
 });
+
+describe("his dog's name", () => {
+  const raw = (over: Record<string, unknown> = {}) => ({ ...(hello() as unknown as Record<string, unknown>), ...over });
+
+  test("unnamed until the node says: a hello with a companion names it, a companion event renames or unnames it", () => {
+    expect(emptyWorld().companion).toBeNull();
+    let w = applyWorldEvent(emptyWorld(), hello());
+    expect(w.companion).toBeNull();
+    w = applyWorldEvent(w, { type: "companion", at: 11, companion: { name: "Bors" } });
+    expect(w.companion).toEqual({ name: "Bors" });
+    expect(w.at).toBe(11);
+    w = applyWorldEvent(w, { type: "companion", at: 12, companion: null });
+    expect(w.companion).toBeNull();
+    // A reconnect's hello is the truth again: named there, named here; not said there, unnamed here.
+    w = applyWorldEvent(w, hello({ at: 20, companion: { name: "Cavall" } }));
+    expect(w.companion).toEqual({ name: "Cavall" });
+    expect(applyWorldEvent(w, hello({ at: 30 })).companion).toBeNull();
+  });
+
+  test("read at the boundary: a name that isn't one is no name, never a reason to lose the world", () => {
+    expect(readWorldEvent(raw({ companion: { name: "Bors" } }))).toMatchObject({ type: "hello", companion: { name: "Bors" } });
+    expect(readWorldEvent(raw({ companion: { name: "Sir Kay-2", breed: "hound" } }))).toMatchObject({ companion: { name: "Sir Kay-2" } });
+    for (const bad of [{ name: "<img src=x>" }, { name: "" }, { name: "x".repeat(25) }, { name: 7 }, "Bors", null, 3]) {
+      const read = readWorldEvent(raw({ companion: bad }));
+      expect(read).toMatchObject({ type: "hello" });
+      expect((read as { companion?: unknown }).companion).toBeUndefined();
+    }
+    // An older node says nothing of a dog's name.
+    expect((readWorldEvent(raw()) as { companion?: unknown }).companion).toBeUndefined();
+  });
+
+  test("the event: a name, or none; a malformed one is ignored", () => {
+    expect(readWorldEvent({ type: "companion", at: 5, companion: { name: "Bors" } })).toEqual({ type: "companion", at: 5, companion: { name: "Bors" } });
+    expect(readWorldEvent({ type: "companion", at: 5, companion: null })).toEqual({ type: "companion", at: 5, companion: null });
+    expect(readWorldEvent({ type: "companion", at: 5, companion: { name: "Rex!" } })).toBeNull();
+    expect(readWorldEvent({ type: "companion", at: 5 })).toBeNull();
+    expect(readWorldEvent({ type: "companion", companion: null })).toBeNull();
+  });
+});

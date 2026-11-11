@@ -36,6 +36,7 @@ import {
   type Station,
   STATIONS,
   walkMs,
+  type WorldCompanion,
   type WorldEvent,
   type WorldHeartbeat,
   type WorldNode,
@@ -155,11 +156,12 @@ export class WorldHub {
   constructor(private readonly opts: { now?: () => number; store?: ExperimentStore } = {}) {
     this.galahad = { station: "keep", doing: "At the keep", experiment: null, model: null, since: this.now(), idle: true };
     // An experiment that stops sending (its sandbox died, its script hung) ends as failed; partners that went quiet go home;
-    // his heartbeat is read again (another node may have run it, or a notice cleared).
+    // his heartbeat is read again (another node may have run it, or a notice cleared), and his dog's name (set on another node).
     this.sweep = setInterval(() => {
       this.quiet();
       this.partnersQuiet();
       if (this.watchers.size) this.heartbeatChanged();
+      if (this.watchers.size) this.companionChanged();
     }, 15_000);
     this.sweep.unref?.();
     // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
@@ -208,6 +210,7 @@ export class WorldHub {
   /** Everything now: what a new watcher sees first. */
   hello(): WorldEvent {
     const board = this.boardVersion();
+    const companion = this.companionNow();
     return {
       type: "hello",
       at: this.now(),
@@ -220,6 +223,7 @@ export class WorldHub {
       ...(board === null ? {} : { board: { version: board } }),
       heartbeat: this.heartbeatNow(),
       partners: this.partnerViews(),
+      ...(companion ? { companion } : {}),
     };
   }
 
@@ -319,6 +323,35 @@ export class WorldHub {
     if (key === this.heartbeatKey) return;
     this.heartbeatKey = key;
     this.emit({ type: "heartbeat", at: this.now(), heartbeat });
+  }
+
+  /* ---------- his dog ---------- */
+
+  private companion: () => WorldCompanion | null = () => null;
+  private companionKey = "null";
+
+  /** Where his dog's name is read from (the daemon sets it: the owner's setting in the mind). */
+  setCompanion(source: () => WorldCompanion | null): void {
+    this.companion = source;
+    this.companionKey = JSON.stringify(this.companionNow());
+  }
+
+  private companionNow(): WorldCompanion | null {
+    try {
+      const companion = this.companion();
+      return companion ? { name: companion.name } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The owner named his dog or took the name back (here, or on another node): watchers hear of it if it changed. */
+  companionChanged(): void {
+    const companion = this.companionNow();
+    const key = JSON.stringify(companion);
+    if (key === this.companionKey) return;
+    this.companionKey = key;
+    this.emit({ type: "companion", at: this.now(), companion });
   }
 
   /* ---------- partners: the agents working with him (their MCP calls) ---------- */

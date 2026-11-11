@@ -13,6 +13,7 @@ import type {
   SceneBody,
   Station,
   WeatherKind,
+  WorldCompanion,
   WorldEvent,
   WorldHeartbeat,
   WorldNode,
@@ -21,6 +22,7 @@ import type {
 } from "@galahad/core/world";
 import { HEARTBEAT_FINDINGS, MAX_PARTNERS, padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
 import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/experiments";
+import { readCompanion } from "@galahad/core/companion";
 
 /*
  * The SANDBOX's model of the world, as the page keeps it: what Galahad is doing,
@@ -63,6 +65,8 @@ export interface WorldModel {
   heartbeat: WorldHeartbeat | null;
   /** The agents working with him now. */
   partners: WorldPartner[];
+  /** His dog, by the name the owner gave it (null: not named, or an older node). */
+  companion: WorldCompanion | null;
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -78,6 +82,7 @@ export const emptyWorld = (): WorldModel => ({
   saved: [],
   heartbeat: null,
   partners: [],
+  companion: null,
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -115,6 +120,7 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
         saved: event.saved ?? [],
         heartbeat: event.heartbeat ?? null,
         partners: event.partners ?? [],
+        companion: event.companion ?? null,
       };
     }
     case "saved":
@@ -153,6 +159,8 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
       return { ...state, at, heartbeat: event.heartbeat };
     case "partners":
       return { ...state, at, partners: event.partners };
+    case "companion":
+      return { ...state, at, companion: event.companion };
     case "cleared": {
       if (!state.experiments.some((e) => e.id === event.experiment)) return state;
       const { [event.experiment]: _gone, ...frames } = state.frames;
@@ -449,7 +457,15 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       if (v.saved !== undefined) hello.saved = readSavedList(v.saved);
       if (v.heartbeat !== undefined) hello.heartbeat = readHeartbeat(v.heartbeat);
       if (v.partners !== undefined) hello.partners = (readList(v.partners, 64, readPartner) ?? []).slice(-MAX_PARTNERS);
+      // His dog's name, when the node says one this page can read (the same check the node makes).
+      const companion = readCompanion(v.companion);
+      if (companion) hello.companion = companion;
       return hello;
+    }
+    case "companion": {
+      if (v.companion === null) return { type: "companion", at, companion: null };
+      const companion = readCompanion(v.companion);
+      return companion ? { type: "companion", at, companion } : null;
     }
     case "heartbeat": {
       if (v.heartbeat === null) return { type: "heartbeat", at, heartbeat: null };

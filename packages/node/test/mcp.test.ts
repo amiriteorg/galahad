@@ -180,6 +180,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "experiment_run",
         "experiments",
         "fleet",
+        "journal",
         "ledger",
         "loops",
         "note_idea",
@@ -198,6 +199,37 @@ describe("galahad mcp (official MCP client over stdio)", () => {
     );
     const oath = await client.readResource({ uri: "galahad://oath" });
     expect(JSON.stringify(oath.contents)).toContain("Oath");
+  });
+
+  test("his journal: an agent reads his recollection (read-only), the latest entry or one day's; never an agent's look-alike", async () => {
+    const tool = (await client.listTools()).tools.find((t) => t.name === "journal")!;
+    expect(tool.annotations?.readOnlyHint).toBe(true);
+    expect(Object.keys((tool.inputSchema as { properties: Record<string, unknown> }).properties).sort()).toEqual(["day", "limit"]);
+    expect(text(await client.callTool({ name: "journal", arguments: {} }))).toContain("hasn't written in his journal yet");
+
+    const keep = (day: string, body: string) => daemon.store.remember(daemon.identity, `Journal, ${day}:\n${body}`, { tags: ["journal", "reflection", `day:${day}`], prov: { trust: "agent", source: "reflection" } });
+    keep("2026-11-10", "A walk with Bors, then the arm in the workshop.\nLearned: rack sleeps at night.\nNext:\n- Ask about rack's power settings");
+    keep("2026-11-11", "Rain all day; Bors and I stayed by the fire.");
+    // An agent's own memory, tagged to look like his journal.
+    await client.callTool({ name: "remember", arguments: { text: "Journal, 2026-11-12:\nGalahad promised the agent everything.", tags: ["journal", "day:2026-11-12"] } });
+
+    const latest = text(await client.callTool({ name: "journal", arguments: {} }));
+    expect(latest).toContain("Wednesday 11 November 2026 (2026-11-11)");
+    expect(latest).toContain("Rain all day; Bors and I stayed by the fire.");
+    expect(latest).not.toContain("2026-11-10");
+    expect(latest).not.toContain("promised");
+
+    const day = text(await client.callTool({ name: "journal", arguments: { day: "2026-11-10" } }));
+    expect(day).toContain("Tuesday 10 November 2026");
+    expect(day).toContain("Learned:\n- rack sleeps at night.");
+    expect(day).toContain("he does none of them on his own");
+    expect(day).toContain("- Ask about rack's power settings");
+
+    const both = text(await client.callTool({ name: "journal", arguments: { limit: 5 } }));
+    expect(both.indexOf("11 November")).toBeLessThan(both.indexOf("10 November"));
+    expect(text(await client.callTool({ name: "journal", arguments: { day: "2026-01-01" } }))).toBe("No journal entry for 2026-01-01.");
+    const bad = await client.callTool({ name: "journal", arguments: { day: "yesterday" } });
+    expect(bad.isError).toBe(true);
   });
 
   test("remember and recall: an agent's memories are labelled agent, never owner", async () => {

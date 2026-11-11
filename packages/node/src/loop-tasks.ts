@@ -1,4 +1,4 @@
-import { type ChatStreamEvent, type ConversationSummary, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE } from "@galahad/core";
+import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, type Examination, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, type SavedSummary, SELF_ACTION_RESOURCE } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
@@ -9,7 +9,8 @@ import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import type { ConnectorService } from "./connectors.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
 import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
-import { REFLECT_ROLES, reflectOnce } from "./reflect.ts";
+import { companionOf, journalEntries } from "./journal.ts";
+import { type JournalInputs, ledgerAgent, REFLECT_ROLES, reflectOnce } from "./reflect.ts";
 import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
 import { streamedError } from "./server.ts";
@@ -38,15 +39,19 @@ export interface LoopTaskDeps {
   now?: () => number;
   fetch?: typeof fetch;
   bank?: BankService;
-  /* ---- self-action and the reflection (set by the daemon) ---- */
+  /* ---- self-action and his journal (set by the daemon) ---- */
   /** Start a run of one of this node's loops now (self-action's retry). */
   runLoop?: (name: string) => void;
   /** Whether one of this node's loops is running now. */
   isRunning?: (name: string) => boolean;
   /** The world's weather, for self-action's refresh: fetched here at all, someone watching, known now. */
   weather?: { enabled: boolean; watched(): boolean; known(): boolean; refresh(): Promise<void> };
-  /** Your kept chats (their titles are what the reflection reads of them). */
+  /** Your kept chats (their titles are what his journal reads of them). */
   chats?: { list(): ConversationSummary[] };
+  /** The experiments this node saved (his journal reads the ones that finished today, and each one's examination). */
+  experiments?: { listing(limit?: number): { experiments: SavedSummary[] }; examination(id: string): Examination | null };
+  /** The chalkboard's history (his journal reads today's versions: who changed it, and how, in a line). */
+  board?: { history: { before(before: number | null, limit: number): { versions: BoardVersionInfo[] } } };
 }
 
 /** A node API client on loopback, holding an arm token. */
@@ -243,7 +248,47 @@ function selfHands(deps: LoopTaskDeps) {
   };
 }
 
-/* ---------- the daily reflection ---------- */
+/* ---------- his journal (the reflect loop) ---------- */
+
+/** At most this many of the day's finished experiments are read (each one's examination is read from its recording). */
+const JOURNAL_EXPERIMENTS = 20;
+
+/** An examination's opening sentence: what ran and how it ended. */
+const openingSentence = (words: string | undefined): string | null => words?.match(/^.*?[.!?](?=\s|$)/s)?.[0]?.trim() || words?.trim() || null;
+
+/** What his journal reads (reflect.ts cuts it to the last day and the budget, and keeps the bank and secrets out). */
+export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "experiments" | "board" | "log">, now: number): JournalInputs {
+  const store = deps.store;
+  const since = now - 24 * 60 * 60_000;
+  /** A source that can't be read today is left out, and the log says so: the journal is still written. */
+  const read = <T,>(what: string, from: () => T[]): T[] => {
+    try {
+      return from();
+    } catch (error) {
+      deps.log(`journal: ${what} not read (${redact(String((error as Error).message)).slice(0, 200)})`);
+      return [];
+    }
+  };
+  return {
+    now,
+    ledger: store.ledger(300).map((e) => ({ at: hlcMs(e.hlc), class: e.body.class, resource: e.body.resource, target: e.body.target, verdict: e.body.verdict, by: ledgerAgent(e.body) })),
+    notices: store
+      .lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:")
+      .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
+    runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
+    chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
+    experiments: read("the experiments", () =>
+      (deps.experiments?.listing(200).experiments ?? [])
+        .filter((e) => e.endedAt !== null && e.endedAt >= since && e.endedAt <= now)
+        .slice(0, JOURNAL_EXPERIMENTS)
+        .map((e) => ({ endedAt: e.endedAt!, title: e.title, engine: e.engine, status: e.status, examination: openingSentence(deps.experiments!.examination(e.id)?.words) })),
+    ),
+    board: read("the chalkboard", () =>
+      (deps.board?.history.before(null, 200).versions ?? []).filter((v) => v.at >= since && v.change !== "start").map((v) => ({ at: v.at, by: v.by, summary: v.summary })),
+    ),
+    dog: companionOf(store)?.name ?? null,
+  };
+}
 
 async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal): Promise<RunResult> {
   const now = (deps.now ?? Date.now)();
@@ -253,16 +298,9 @@ async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal):
     {
       now,
       budget,
-      inputs: {
-        now,
-        ledger: store.ledger(300).map((e) => ({ at: hlcMs(e.hlc), class: e.body.class, resource: e.body.resource, target: e.body.target, verdict: e.body.verdict })),
-        notices: store
-          .lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:")
-          .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
-        runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
-        chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
-      },
-      doneToday: (day) => store.memoriesTagged(`day:${day}`, 20).some((m) => m.tags.includes("reflection")),
+      inputs: journalInputs(deps, now),
+      // Only an entry his loop kept counts: a memory an agent tagged like one doesn't stop him writing.
+      doneToday: (day) => journalEntries(store, { day }).entries.length > 0,
       role: () => REFLECT_ROLES.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null,
       ask: async (role, prompt, maxChars, outer) => {
         // Stopped as soon as it has written its share of the budget.
@@ -286,7 +324,7 @@ async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal):
         }
         return text;
       },
-      remember: (text, tags) => void store.remember(deps.identity, text, { tags, prov: { trust: "agent", source: "reflection" } }),
+      remember: (text, tags) => void store.remember(deps.identity, text, { tags, prov: { trust: "agent", source: JOURNAL_SOURCE } }),
       suggest: (day, ideas) =>
         void reconcile(
           store,
@@ -295,7 +333,7 @@ async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal):
             key: `suggestion:${day}:${i + 1}`,
             severity: "info" as const,
             title: `Galahad suggests: ${idea}`.slice(0, 200),
-            body: `From his reflection on ${day}. He won't do it on his own: if you'd like it done, ask him, or dismiss it.`,
+            body: `From his journal for ${day}. He won't do it on his own: if you'd like it done, ask him, or dismiss it.`,
           })),
           now,
           "reflect",

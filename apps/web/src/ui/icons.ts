@@ -119,6 +119,8 @@ const ICONS = {
   redo: ["M15 5.5l4.5 4.5L15 14.5", "M19.5 10H9a4.5 4.5 0 0 0 0 9h3"],
   expand: ["M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"],
   flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
+  /** His journal: a bound book, its spine and a few lines on the cover. */
+  journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

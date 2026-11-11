@@ -192,7 +192,11 @@ export type WorldEvent =
       heartbeat?: WorldHeartbeat | null;
       /** The agents working with him now. Absent from older nodes. */
       partners?: WorldPartner[];
+      /** His dog, once the owner has named it (companion.ts). Absent while it has no name, and from older nodes. */
+      companion?: WorldCompanion;
     }
+  /** The owner named his dog, or took the name back (null). Older pages ignore it. */
+  | { type: "companion"; at: number; companion: WorldCompanion | null }
   /** The node's saved experiments changed (one ended, was pinned or deleted): the newest, as in hello. */
   | { type: "saved"; at: number; saved: SavedSummary[] }
   /** His heartbeat ran, or what it found changed (a notice cleared or dismissed). */
@@ -389,6 +393,11 @@ export function heartbeatPlace(key: string): { place: HeartbeatPlace; node: stri
   if (kind.startsWith("loop-") || kind.startsWith("connector-") || kind.startsWith("order-")) return { place: "messenger", node: null };
   if (kind === "no-model") return { place: "council", node: null };
   return { place: "keep", node: null };
+}
+
+/** His dog as the world shows it: the name the owner gave it. */
+export interface WorldCompanion {
+  name: string;
 }
 
 /** An agent working with Galahad over MCP (Claude Code, OpenCode…), while it's at work: its name is its arm's label. */

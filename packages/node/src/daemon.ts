@@ -25,6 +25,7 @@ import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./ca
 import { ConnectorService } from "./connectors.ts";
 import { assess, loopNotice } from "./heartbeat.ts";
 import { heartbeatView } from "./heartbeat-world.ts";
+import { companionOf } from "./journal.ts";
 import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
@@ -61,7 +62,7 @@ export interface DaemonOptions {
   capabilities?: Capabilities;
   /** How often the loop runner wakes (default 15 s). */
   loopIntervalMs?: number;
-  /** Let the fleet's founding node create the default loops, the heartbeat and the daily reflection (default true; GALAHAD_HEARTBEAT=off disables). */
+  /** Let the fleet's founding node create the default loops, the heartbeat and his journal (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
@@ -92,8 +93,10 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
 }
 
 /**
- * And a daily reflection, once, the same way: in the evening in Denmark, on the node that runs the heartbeat
- * (an always-on one). Never again after that, so a reflection you removed stays removed.
+ * And his journal, once, the same way: every evening in Denmark (21:30, as he sits down to it in the SANDBOX), on
+ * the node that runs the heartbeat (an always-on one). Never again after that, so a journal you removed stays
+ * removed. The loop and its task are still named `reflect`: it was his daily reflection first, and fleets that
+ * have that loop keep it as it is.
  */
 export function ensureReflection(store: MindStore, identity: NodeIdentity): void {
   if (store.genesis?.device !== identity.id || store.lww("loop:reflect")) return;
@@ -105,7 +108,7 @@ export function ensureReflection(store: MindStore, identity: NodeIdentity): void
     on: beat?.on ?? identity.id,
     enabled: true,
     task: { kind: "reflect" },
-    label: "Galahad's daily reflection",
+    label: "Galahad's journal",
   });
 }
 
@@ -325,12 +328,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       if (loop.task.kind === "heartbeat" || loop.task.kind === "reflect") world.heartbeatChanged();
     },
   });
-  // Self-action's hands, and what the reflection reads.
+  // Self-action's hands, and what his journal reads.
   taskDeps.runLoop = (name) => void loops.runNow(name);
   taskDeps.isRunning = (name) => loops.isRunning(name);
   taskDeps.weather = { enabled: opts.weather ?? false, watched: () => world.watching > 0, known: () => weather.current() !== null, refresh: () => weather.refresh() };
   taskDeps.chats = chats;
+  taskDeps.experiments = experiments;
+  taskDeps.board = board;
   world.setHeartbeat(() => heartbeatView(store));
+  // His dog's name, from the mind: every node's world shows the same one.
+  world.setCompanion(() => companionOf(store));
 
   const shutdown = new AbortController();
   const app = createApp({
@@ -409,7 +416,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     try {
       ensureReflection(store, identity);
     } catch (error) {
-      log(`daily reflection not created: ${(error as Error).message}`);
+      log(`his journal's loop not created: ${(error as Error).message}`);
     }
   }
   loops.start(opts.loopIntervalMs);

@@ -311,7 +311,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices` and `journal` (Galahad's own journal, to read), plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.
@@ -321,11 +321,14 @@ The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet
 
 ## 11. Loops and the heartbeat
 
-Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once, the world's weather) and records each in the ledger as his own; everything else waits for you. Each evening he also writes a short reflection on the day as his own memory, and what he'd like to do next becomes a suggestion in your inbox.
+Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once, the world's weather) and records each in the ledger as his own; everything else waits for you. Each evening (21:30, Denmark's time) he also writes his **journal**: the day recollected in his own words (his work, what he built, tested and examined, the chalkboard, who worked with him, and his day in the SANDBOX with his dog), then what he learned and what he'd like to do next. It's kept as his own memory, read on the app's Journal page, and what he'd like to do becomes a suggestion in your inbox: he does none of it on his own.
 
 ```sh
 bun galahad self-action                    # on or off, what he may fix, what he fixed lately (self-action off to stop it)
-bun galahad loop set reflect --budget 6000 # the reflection's daily budget, in tokens (4000 by default)
+bun galahad journal                        # his latest entry (journal 2026-11-11 for one day's, journal --list for the days he wrote)
+bun galahad loop run reflect               # have him write today's now (the journal's loop is named reflect; once a day)
+bun galahad loop set reflect --budget 6000 # his journal's daily budget, in tokens (4000 by default)
+bun galahad dog name Bors                  # name his dog, on every device: in the SANDBOX and in his journal (dog to see it, dog unname to take it back)
 bun galahad heartbeat                      # run the checks now and print what they find
 bun galahad notices                        # what needs you (notice dismiss <key> to quiet one)
 bun galahad loop ls                        # every loop, where it runs, when next, how the last run went
