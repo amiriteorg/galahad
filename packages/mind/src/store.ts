@@ -171,6 +171,8 @@ export class MindStore {
   private readonly listeners = new Set<(event: GEvent) => void>();
   /** Set only during a replay: chain verdicts for every event in the log. */
   private validity: Validity | null = null;
+  /** digest(), until the views next change (apply and replay are the only writers). */
+  private stateDigest: string | null = null;
 
   /** Called after each event this node writes (e.g. to push it to peers). */
   onEmit(listener: (event: GEvent) => void): () => void {
@@ -491,8 +493,9 @@ export class MindStore {
       if (!parent || compareEvents(event, { hlc: parent.hlc, id: event.prev }) <= 0) return false;
     }
     const newer = this.db
-      .query<{ n: number }, [string, string, string, string]>("SELECT COUNT(*) AS n FROM events WHERE device = ? AND (hlc > ? OR (hlc = ? AND id > ?))")
-      .get(event.device, event.hlc, event.hlc, event.id)!.n;
+      // A row value, so the (device, hlc, id) index serves it: an OR here reads the device's whole log.
+      .query<{ n: number }, [string, string, string]>("SELECT COUNT(*) AS n FROM events WHERE device = ? AND (hlc, id) > (?, ?)")
+      .get(event.device, event.hlc, event.id)!.n;
     let coming = 0;
     for (let i = index + 1; i < batch.length; i++) if (batch[i]!.device === event.device) coming++;
     return newer === coming;
@@ -521,6 +524,7 @@ export class MindStore {
    * revocations, two with.
    */
   private replay(): void {
+    this.stateDigest = null;
     const events = this.db
       .query<{ raw: string }, []>("SELECT raw FROM events ORDER BY hlc, id")
       .all()
@@ -598,6 +602,7 @@ export class MindStore {
   /** From the replayed state: each validly revoked device may keep only the ancestors of its pinned head. */
   private revocationPins(events: GEvent[]): Map<string, Set<string>> {
     const pins = new Map<string, Set<string>>();
+    if (!events.some((event) => event.kind === "device.revoked")) return pins;
     const byId = new Map(events.map((event) => [event.id, event]));
     for (const event of events) {
       if (event.kind !== "device.revoked" || this.rejection(event.id)) continue;
@@ -642,6 +647,7 @@ export class MindStore {
 
   /** `late`: applied after newer events (see lateButHarmless), so the tail stays the newest. */
   private apply(event: GEvent, late = false): void {
+    this.stateDigest = null;
     if (!late) this.setState("tail", { hlc: event.hlc, id: event.id });
     let reason = this.chainReason(event);
     if (reason) this.db.query("INSERT OR IGNORE INTO v_chainbad (device) VALUES (?)").run(event.device);
@@ -1187,6 +1193,7 @@ export class MindStore {
 
   /** Hash of the materialized state. Equal digests ⇒ equal minds. */
   digest(): string {
+    if (this.stateDigest) return this.stateDigest;
     const dump = {
       state: this.db.query("SELECT k, v FROM v_state WHERE k != 'tail' ORDER BY k").all(),
       devices: this.db.query("SELECT * FROM v_devices ORDER BY id").all(),
@@ -1195,7 +1202,8 @@ export class MindStore {
       grants: this.db.query("SELECT * FROM v_grants ORDER BY kid, device").all(),
       rejected: this.db.query("SELECT * FROM v_rejected ORDER BY id").all(),
     };
-    return sha256B64u(canonical(dump as unknown as Json));
+    this.stateDigest = sha256B64u(canonical(dump as unknown as Json));
+    return this.stateDigest;
   }
 }
 

@@ -9,11 +9,12 @@
 // signed and chained; they're written straight into the log and the views rebuilt, as if they
 // had arrived over months. Then each operation the daemon does on a timer is timed (median of
 // several runs). Nothing here touches ~/.galahad.
-import { mkdtempSync, rmSync, copyFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "../packages/core/src/index.ts";
-import { enrollDevice, foundFleet, MindStore } from "../packages/mind/src/index.ts";
+import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, type Json, newNodeIdentity, type NodeIdentity, signEvent } from "../packages/core/src/index.ts";
+import { enrollDevice, foundFleet, MindStore, PullState } from "../packages/mind/src/index.ts";
 
 const sizes = process.argv.slice(2).map(Number).filter((n) => n > 0);
 const SIZES = sizes.length ? sizes : [5_000, 40_000, 400_000];
@@ -117,13 +118,11 @@ function build(n: number): Fleet {
 }
 
 /** An event from `c`, dated after its own head but before the log's newest event: it arrived late. */
-function lateEvent(store: MindStore, c: NodeIdentity): GEvent {
+function lateEvent(store: MindStore, c: NodeIdentity, kind: "ledger.recorded" | "memory.added"): GEvent {
   const head = store.event(store.head(c.id)!)!;
   const { ms, counter } = decodeHlc(head.hlc);
-  return signEvent(
-    { v: 2, fleet: store.fleet!, hlc: encodeHlc({ ms, counter: counter + 1 }), device: c.id, prev: head.id, kind: "ledger.recorded", body: { class: "read", resource: "bench", target: "late", verdict: "allow" } },
-    c,
-  );
+  const body: Json = kind === "ledger.recorded" ? { class: "read", resource: "bench", target: "late", verdict: "allow" } : { text: "a late thought" };
+  return signEvent({ v: 2, fleet: store.fleet!, hlc: encodeHlc({ ms, counter: counter + 1 }), device: c.id, prev: head.id, kind, body }, c);
 }
 
 type Row = Record<string, string>;
@@ -160,6 +159,19 @@ function bench(n: number): Row {
     const behind = { have: { ...self.have, [fleet.b.id]: recent }, digests: self.digests };
 
     row["open"] = openMs.toFixed(1);
+    // First start on a replica from before schema versions: the same log, the old schema.
+    {
+      const old = join(fleet.dir, "old.db");
+      copyFileSync(holePath, old);
+      const raw = new Database(old);
+      raw.exec(`DROP TABLE IF EXISTS log_devices; DROP TABLE IF EXISTS v_slots; DROP TABLE IF EXISTS v_chainbad;
+        DROP INDEX IF EXISTS events_kind; DROP INDEX IF EXISTS events_loop; DROP INDEX IF EXISTS events_device_order;
+        CREATE INDEX IF NOT EXISTS events_device ON events (device, hlc); PRAGMA user_version = 0;`);
+      raw.close();
+      const t = performance.now();
+      new MindStore(old).close();
+      row["first start, migrating"] = (performance.now() - t).toFixed(0);
+    }
     row["frontier"] = time(() => store.frontier()).toFixed(1);
     row["deviceDigests"] = time(() => store.deviceDigests()).toFixed(1);
     row["eventsSince in sync"] = time(() => store.eventsSince(self.have, 500, self.digests)).toFixed(1);
@@ -174,22 +186,51 @@ function bench(n: number): Row {
     row["eventCount"] = time(() => store.eventCount()).toFixed(1);
     row["state digest"] = time(() => store.digest()).toFixed(1);
     row["emit (append)"] = time(() => store.remember(fleet.a, "one more thing", { prov: { trust: "agent" } })).toFixed(2);
-    // Each late arrival is a fresh event; time only its ingest.
-    const lateSamples: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      const event = lateEvent(store, fleet.c);
-      const t = performance.now();
-      const result = store.ingest([event]);
-      if (!result.rebuilt || result.added !== 1) throw new Error(`a late arrival should replay: ${JSON.stringify(result)}`);
-      lateSamples.push(performance.now() - t);
+    // Each late arrival is a fresh event; time only its ingest. A late ledger entry is the
+    // common case (a busy node's sandbox execs reaching the others); a late memory still replays.
+    for (const kind of ["ledger.recorded", "memory.added"] as const) {
+      const samples: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const event = lateEvent(store, fleet.c, kind);
+        const t = performance.now();
+        const result = store.ingest([event]);
+        if (result.added !== 1) throw new Error(`a late arrival should be added: ${JSON.stringify(result)}`);
+        samples.push(performance.now() - t);
+      }
+      row[kind === "memory.added" ? "late memory" : "late ledger entry"] = median(samples).toFixed(1);
     }
-    row["late arrival"] = median(lateSamples).toFixed(1);
+    // The holed peer pulls until it's whole: every page, both sides, end to end.
+    {
+      const holedStore = new MindStore(holePath);
+      opened.push(holedStore);
+      const pull = new PullState(holedStore);
+      pull.begin();
+      let pages = 0;
+      let slowest = 0;
+      const t = performance.now();
+      for (;;) {
+        const page = performance.now();
+        const { have, sets } = pull.request(true);
+        const more = pull.receive(store.eventsSince(have, 500, sets)).more;
+        slowest = Math.max(slowest, performance.now() - page);
+        pages++;
+        if (!more) break;
+      }
+      row["hole repair, end to end"] = (performance.now() - t).toFixed(0);
+      row["hole repair, pages"] = String(pages);
+      row["hole repair, slowest page"] = slowest.toFixed(1);
+      if (holedStore.event(fleet.oldB[0]!) === null) throw new Error("the hole wasn't repaired");
+    }
     const duplicates = store.eventsSince({}, 500).events;
     row["ingest 500 duplicates"] = time(() => store.ingest(duplicates), 3).toFixed(0);
     row["full rebuild"] = time(() => store.rebuild(), 3).toFixed(0);
   } finally {
     for (const s of opened) s.close();
-    rmSync(fleet.dir, { recursive: true, force: true });
+    try {
+      rmSync(fleet.dir, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`  (left ${fleet.dir}: ${(error as Error).message})`);
+    }
   }
   console.error(`  ${n} events: built in ${(built / 1000).toFixed(1)} s`);
   return row;
