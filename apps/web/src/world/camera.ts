@@ -232,9 +232,11 @@ const ARM_SPEED = 12;
 /** Samples of the ground along the arm. */
 const GROUND_SAMPLES = 12;
 /** How far the arm tilts up (radians) to look over something right by him, tried in turn. */
-const TILTS = [0.15, 0.3, 0.45, 0.6, 0.75];
-/** The steepest the arm goes (radians above the horizon): a view from above and to the side, never straight down on him. */
-const STEEPEST = 0.95;
+const TILTS = [0.15, 0.3, 0.45, 0.7, 0.95, 1.2];
+/** How many of TILTS are tried first: up to a view from above and to the side; the rest only when nothing else is clear air. */
+const GENTLE = 3;
+/** The steepest the arm goes (radians above the horizon). */
+const STEEPEST = 1.35;
 
 /**
  * The spring arm from the focus to the camera. Each frame it's told where the
@@ -325,6 +327,8 @@ export class SpringArm {
     let most = -1;
     let over = -1;
     for (let k = -1; k < TILTS.length; k++) {
+      // Steeper than a gentle tilt only when no gentle one has clear air, before what blocks the view or beyond it.
+      if (k >= GENTLE && (most >= 0 || over >= 0)) break;
       const t = k < 0 ? 0 : TILTS[k]!;
       this.aim(dx, dy, dz, t);
       const c = Math.max(least0, this.reach(px, py, pz, solids, ground));

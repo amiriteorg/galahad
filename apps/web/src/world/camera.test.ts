@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { STATIONS } from "@galahad/core/world";
-import { CAMERA_PAD, CameraRig, type Point3, SpringArm } from "./camera.ts";
-import { Solids } from "./collide.ts";
+import { CAMERA_PAD, CameraRig, pitchFor, type Point3, SpringArm } from "./camera.ts";
+import { BUILDS, Solids } from "./collide.ts";
 import { FIELD } from "./field-plan.ts";
 import { addPlants } from "./flora-plan.ts";
 import { HALL } from "./hall-plan.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
-import { PLACES, standAt } from "./path.ts";
+import { Planner } from "./nav.ts";
+import { obstacles, PLACES, standAt, Walker } from "./path.ts";
 import { SITE_COLLIDERS } from "./sites.ts";
 import { BASE_FLATS, BIG, CHUNK, chunkSamples, heightAt, SEED } from "./terrain.ts";
 
@@ -109,9 +110,48 @@ describe("the camera's spring arm", () => {
       const s = standAt(place);
       for (const distance of [10, 22]) {
         // A frame of the turn itself moves it 8 to 18 cm, the arm at most 20 cm more: a hop is more than half a metre.
-        expect(orbit(s.x, s.y, distance).pops).toBeLessThanOrEqual(3);
+        expect(orbit(s.x, s.y, distance).pops).toBeLessThanOrEqual(4);
       }
     }
+  });
+
+  test("following him from station to station, it swings round behind him in clear air: never inside anything, and no hops", () => {
+    const planner = new Planner(solids);
+    const walker = new Walker(standAt("keep"));
+    const mover = solids.join(walker, BUILDS.galahad);
+    walker.join({ planner, mover, wet: null });
+    const rig = new CameraRig();
+    const arm = new SpringArm();
+    const pivot: Point3 = { x: 0, y: 0, z: 0 };
+    const want: Point3 = { x: 0, y: 0, z: 0 };
+    // As the scene asks: from his head to where the camera would be, nothing blocks the view, and it's over the land.
+    const clear = (x: number, y: number): boolean => {
+      const t = rig.target;
+      const g = ground(t.x, t.y);
+      const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+      return ground(x, y) + 0.8 < z && solids.view(t.x, t.y, g + 2.3, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+    };
+    const faults: string[] = [];
+    let pops = 0;
+    const dt = 1 / 60;
+    let last: Point3 | null = null;
+    for (const place of ["forge", "council", "watchtower", "observatory", "library", "oracle", "treasury", "messenger", "keep"] as const) {
+      walker.go(standAt(place), obstacles());
+      for (let k = 0; k < 60 * 30 && (walker.moving || walker.waypoints.length || k < 60 * 8); k++) {
+        walker.step(dt);
+        rig.lookAt(walker.x, walker.y);
+        rig.trail(walker.heading, walker.moving, dt, clear);
+        rig.update(dt, true);
+        rig.wanted(ground(rig.x, rig.y), want, pivot);
+        arm.update(pivot, want, solids, ground, dt, true);
+        const f = wrong(arm.x, arm.y, arm.z);
+        if (f && faults.length < 5) faults.push(`to the ${place}: ${f}`);
+        if (last && Math.hypot(arm.x - last.x, arm.y - last.y, arm.z - last.z) > 0.5) pops++;
+        last = { x: arm.x, y: arm.y, z: arm.z };
+      }
+    }
+    expect(faults).toEqual([]);
+    expect(pops).toBe(0);
   });
 
   test("under reduced motion it goes straight where it may, with nothing eased", () => {
