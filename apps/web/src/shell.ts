@@ -15,6 +15,7 @@ import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
 import { artifactsView } from "./views/artifacts.ts";
+import { archiveView, openNewIdea } from "./views/archive.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
 import { worldView } from "./views/world.ts";
@@ -57,6 +58,7 @@ const ROUTES: RouteSpec[] = [
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
   { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
   { id: "artifacts", label: "Artifacts", icon: "archive", group: "mind", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], view: artifactsView },
+  { id: "archive", label: "Archive", icon: "library", group: "mind", scope: "mind:read", key: "k", keywords: ["kept", "forever", "ideas", "lessons", "experiments", "models", "teachings", "semantic", "search", "vector", "history"], view: archiveView },
   { id: "findings", label: "Findings", icon: "flask", group: "mind", scope: "mind:read", key: "e", keywords: ["investigations", "experiments", "hypotheses", "science", "conclusions", "predictions"], view: findingsView },
   { id: "trials", label: "Trials", icon: "gauge", group: "mind", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], view: trialsView },
   { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
@@ -380,6 +382,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       }
       if (can("mind:read")) actions.push({ id: "search-memory", label: "Search memory", group: "Actions", icon: "search", keywords: ["recall", "find"], run: () => ctx.navigate("memory") });
       if (can("mind:write")) actions.push({ id: "remember", label: "Remember something", group: "Actions", icon: "memory", keywords: ["note", "add memory"], run: () => openRemember(ctx) });
+      if (can("mind:write")) actions.push({ id: "new-idea", label: "New idea", group: "Actions", icon: "lightbulb", keywords: ["archive", "note", "keep", "thought"], run: () => openNewIdea(ctx) });
       if (can("sandbox")) actions.push({ id: "create-sandbox", label: "Create a sandbox", group: "Actions", icon: "sandbox", keywords: ["container", "vm", "new"], run: () => openCreateSandbox(ctx) });
       if (can("mind:read")) actions.push({ id: "place", label: "Where would this run?", group: "Actions", icon: "compass", keywords: ["placement", "playground", "schedule"], run: () => ctx.navigate("fleet", { intent: "place" }) });
       if (can("brain:write")) actions.push({ id: "add-loop", label: "Add a loop", group: "Actions", icon: "repeat", keywords: ["schedule", "cron", "every", "routine"], run: () => openLoopSheet(ctx) });

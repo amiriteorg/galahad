@@ -2,7 +2,7 @@ import type { ChatMessage, ConversationSummary, ConversationView, ProjectView } 
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { filterConversations, groupConversations, stepsOf } from "../lib/chats.ts";
+import { archiveStep, filterConversations, groupConversations, stepsOf } from "../lib/chats.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { lastRole, rememberRole } from "../prefs.ts";
@@ -41,7 +41,8 @@ function toolIcon(name: string): IconName {
   if (name.startsWith("sandbox_")) return "sandbox";
   if (name.startsWith("connector")) return "plug";
   if (name.startsWith("artifact")) return "archive";
-  const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key" };
+  if (name.startsWith("archive_")) return "library";
+  const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key", note_idea: "lightbulb" };
   return icons[name] ?? "zap";
 }
 
@@ -176,7 +177,7 @@ export async function openConversation(api: Api, id: string): Promise<void> {
   for (const fn of keptChanged) fn();
 }
 
-const STEP_ICON: Record<string, IconName> = { asked: "arrow-up", model: "models", fallback: "alert", answer: "chat", error: "x-circle", stopped: "stop" };
+const STEP_ICON: Record<string, IconName> = { asked: "arrow-up", model: "models", fallback: "alert", archive: "library", answer: "chat", error: "x-circle", stopped: "stop" };
 
 /** For the shell: whether Galahad is answering right now, and with which model. */
 export const chatActivity = signal<{ streaming: boolean; model: string | null }>({ streaming: false, model: null });
@@ -253,6 +254,9 @@ async function run(api: Api, turn: Turn, again = false): Promise<void> {
           last.text = `${event.from} didn't answer`;
           last.detail = event.error;
         } else step(turn, { icon: "alert", text: `${event.from} didn't answer`, detail: event.error, state: "warn" });
+      } else if (event.type === "archive") {
+        // What the archive gave this answer, shown like a tool's step: which entries, by id and title.
+        step(turn, { icon: "library", ...archiveStep(event.entries), state: "done" });
       } else if (event.type === "tool") {
         step(turn, { icon: toolIcon(event.name), text: event.title, ...(event.input ? { detail: event.input } : {}), state: "active", tool: event.id });
       } else if (event.type === "tool_result") {
