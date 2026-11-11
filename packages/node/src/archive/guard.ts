@@ -35,6 +35,7 @@ const KEY_FILES = [
   /\.(pem|key|p8|p12|pfx|jks|keystore|kdbx|ppk|gpg|pgp|age)$/i,
   /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/i,
   /(^|\/)\.?env(\.[\w.-]+)?$/i,
+  /\.env$/i,
   /(^|\/)\.(netrc|npmrc|pypirc|pgpass|git-credentials)$/i,
   /(^|\/)(credentials|secrets?|tokens?|keys|keychain|wallet)(\.[\w-]+)?\.(json|ya?ml|toml|txt|ini|db)$/i,
   /(^|\/)(cookies|sessions?)(\.[\w-]+)?\.(json|txt|sqlite|db)$/i,

@@ -185,7 +185,8 @@ export interface ArchiveStatusView {
   /** Chunks still waiting for one. */
   backlog: number;
   embedder: { model: string | null; state: "ready" | "none" | "failing"; error: string | null; dims: number | null; local: boolean | null };
-  understanding: { perDay: number; usedToday: number; backlog: number; lastError: string | null; lastRun: number | null };
+  /** Summaries by the swift role: per day, used today. Until you set a budget, only a local model writes them (nothing leaves). */
+  understanding: { perDay: number; localOnly: boolean; usedToday: number; backlog: number; lastError: string | null; lastRun: number | null };
   integrity: { lastAt: number | null; ok: boolean | null; checked: number; problems: string[] };
   disk: { blobBytes: number; blobs: number; indexBytes: number; backend: string; root: string };
   sources: ArchiveSourceStatus[];

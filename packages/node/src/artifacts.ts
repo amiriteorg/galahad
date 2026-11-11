@@ -185,6 +185,12 @@ export class ArtifactStore {
 
   /** One file's bytes, if this node holds it and the manifest lists it (no other path is ever opened). */
   read(id: string, path: string): { bytes: Uint8Array<ArrayBuffer>; type: string; inline: boolean; name: string } {
+    const full = this.locate(id, path);
+    return { bytes: new Uint8Array(readFileSync(full)), ...contentTypeOf(path), name: path.split("/").at(-1)! };
+  }
+
+  /** Where one listed file is on this node's disk (the archive streams large ones in), with read's checks. */
+  locate(id: string, path: string): string {
     const manifest = this.manifest(id);
     if (!manifest) throw new ArtifactError(this.get(id) ? 421 : 404, this.get(id) ? `its files are on ${this.get(id)!.nodeName}` : "no such artifact");
     const entry = manifest.files.find((f) => f.path === path);
@@ -193,7 +199,7 @@ export class ArtifactStore {
     const full = resolve(root, ...entry.path.split("/"));
     if (!full.startsWith(root + sep)) throw new ArtifactError(400, "bad path");
     if (!statSync(full).isFile()) throw new ArtifactError(404, "no such file in that artifact");
-    return { bytes: new Uint8Array(readFileSync(full)), ...contentTypeOf(entry.path), name: entry.path.split("/").at(-1)! };
+    return full;
   }
 
   /** Delete the files, then record that they're gone. Only you ask for this (fleet:admin). */

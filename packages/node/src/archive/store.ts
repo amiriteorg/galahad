@@ -237,6 +237,14 @@ export class ArchiveStore {
 
   // ---- Ingest --------------------------------------------------------------------
 
+  /** Source ids of one source beginning with a prefix (a chat's archived segments), tombstones included. */
+  sourceIds(source: string, prefix: string): string[] {
+    return this.db
+      .query<{ source_id: string }, [string, string]>("SELECT source_id FROM entries WHERE source = ? AND substr(source_id, 1, length(?)) = ?2")
+      .all(source, prefix)
+      .map((r) => r.source_id);
+  }
+
   /** Already archived (or deleted by you: a tombstone keeps it out for good). */
   has(source: string, sourceId: string): boolean {
     return !!this.db.query("SELECT 1 FROM entries WHERE source = ? AND source_id = ?").get(source, sourceId);

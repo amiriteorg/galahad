@@ -229,6 +229,12 @@ const MODEL_EXT: Record<string, string> = {
   ".ipynb": "Jupyter notebook",
 };
 
+/** Whether a file could be a model (worth reading to find out). */
+export const mightBeModel = (path: string): boolean => {
+  const ext = extOf(path);
+  return ext in MODEL_EXT || ext === ".py" || ext === ".jl" || ext === ".xml";
+};
+
 /** Libraries whose use marks a script as one that builds a model. */
 const BUILDERS = /\b(?:import|from)\s+(build123d|cadquery|gmsh|trimesh|pyvista|OCP|OCC|FreeCAD|mujoco|pybullet|openscad|solid2|sdf|numpy-stl|stl|meshio|bpy|dolfinx|ufl|pygmsh|madcad)\b/;
 
