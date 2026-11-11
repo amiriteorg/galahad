@@ -1,3 +1,5 @@
+import type { Mover } from "./collide.ts";
+
 /*
  * Physics in proportion. The experiments' physics comes from their simulators
  * (MuJoCo, JSBSim, RocketPy) through the frames; the world itself only needs
@@ -5,6 +7,8 @@
  * animals (slopes, no wading into lakes or walking through walls), a
  * spring-damper for the dog, boids for birds and ballistic particles for exhaust
  * and sparks. Typed arrays and no allocations per step. Pure, so unit-tested.
+ *
+ * Among the solids (collide.ts) the same controller slides: slideOnGround.
  *
  * The seam: everything the loop steps is a `Simulation`. If interactive physics is
  * ever needed, a WASM engine would be one more Simulation owning its own bodies;
@@ -49,6 +53,37 @@ export function moveOnGround(ground: Ground, x: number, y: number, heading: numb
 }
 
 const TURNS = [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, 1.8, -1.8];
+
+/**
+ * moveOnGround among the solids (collide.ts): the step slides along whatever
+ * is in its way (move-and-slide, swept, so nothing tunnels), and counts as
+ * blocked when it ends on blocked or too steep ground, or gets less than a
+ * third of the way (head-on into a trunk); then it turns a little either way.
+ * Writes where it ends into `out` and returns the heading actually taken, or
+ * null when every way is blocked (it stays put).
+ */
+export function slideOnGround(mover: Mover, ground: Ground, x: number, y: number, heading: number, step: number, out: { x: number; y: number }, maxSlope = Infinity): number | null {
+  if (step < 1e-9) {
+    out.x = x;
+    out.y = y;
+    return heading;
+  }
+  const here = ground.height(x, y);
+  for (let k = 0; k < TURNS.length; k++) {
+    const h = heading + TURNS[k]!;
+    mover.slide(x, y, Math.cos(h) * step, Math.sin(h) * step, out);
+    const dx = out.x - x;
+    const dy = out.y - y;
+    const moved = Math.hypot(dx, dy);
+    if (moved < step * 0.35) continue;
+    if (ground.blocked(out.x, out.y)) continue;
+    if (Math.abs(ground.height(out.x, out.y) - here) / moved > maxSlope) continue;
+    return Math.atan2(dy, dx);
+  }
+  out.x = x;
+  out.y = y;
+  return null;
+}
 
 /** A 2D spring-damper (semi-implicit Euler): x'' = k (target − x) − c x'. */
 export interface Spring {

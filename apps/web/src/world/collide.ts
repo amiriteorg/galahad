@@ -919,9 +919,13 @@ export class Solids {
           const ux = d > 1e-9 ? dx / d : Math.cos(a * 2.4 + b);
           const uy = d > 1e-9 ? dy / d : Math.sin(a * 2.4 + b);
           const over = R - d + SKIN;
-          if (A.mass > B.mass) this.shove(B, ux, uy, over, A);
-          else if (B.mass > A.mass) this.shove(A, -ux, -uy, over, B);
-          else {
+          if (A.mass > B.mass) {
+            this.shove(B, ux, uy, over, A);
+            this.yieldTo(A, B);
+          } else if (B.mass > A.mass) {
+            this.shove(A, -ux, -uy, over, B);
+            this.yieldTo(B, A);
+          } else {
             this.shove(B, ux, uy, over / 2, A);
             this.shove(A, -ux, -uy, over / 2, B);
           }
@@ -931,14 +935,27 @@ export class Solids {
     }
   }
 
+  /** The lighter couldn't get out of the way (pinned, or the only way out is water): the heavier stops short instead. */
+  private yieldTo(heavy: Mover, light: Mover): void {
+    if (heavy.mass >= FIXED) return;
+    const dx = heavy.at.x - light.at.x;
+    const dy = heavy.at.y - light.at.y;
+    const R = heavy.at.r + light.at.r;
+    const d = Math.hypot(dx, dy);
+    if (R - d <= 1e-4 || d < 1e-9) return;
+    this.shove(heavy, dx / d, dy / d, R - d + SKIN, light);
+  }
+
   /** Moves a mover by `over` along (ux, uy), out of `from`; pinned against something solid, it goes sideways instead. */
   private shove(m: Mover, ux: number, uy: number, over: number, from: Mover): void {
     const at = m.at;
     const spot = this.spot;
-    // Only what's solid stops a shove (other movers are parted in their own turn).
+    // Only what's solid stops a shove (other movers are parted in their own turn), and ground it won't stand on.
     this.slide(at.x, at.y, ux * over, uy * over, at.r, m.step, m.height, spot);
-    at.x = spot.x;
-    at.y = spot.y;
+    if (!m.ground?.(spot.x, spot.y)) {
+      at.x = spot.x;
+      at.y = spot.y;
+    }
     const R = at.r + from.at.r;
     const left = R - Math.hypot(at.x - from.at.x, at.y - from.at.y);
     if (left <= 1e-4) return;
@@ -951,6 +968,7 @@ export class Solids {
       const s = k === 0 ? side : -side;
       const reach = Math.min(R, left * 2 + 0.05);
       this.slide(at.x, at.y, -uy * s * reach, ux * s * reach, at.r, m.step, m.height, spot);
+      if (m.ground?.(spot.x, spot.y)) continue;
       const still = R - Math.hypot(spot.x - from.at.x, spot.y - from.at.y);
       if (still < best - 1e-6) {
         best = still;
@@ -964,10 +982,15 @@ export class Solids {
   }
 }
 
+/** A mover this heavy is never moved by the others (a site's machine: its place is its own). */
+const FIXED = 1e8;
+
 /** A walker in the world of solids: its place (`at`), its build, and how it moves. */
 export class Mover {
   /** True when its last slide met something. */
   touched = false;
+  /** Ground it won't be pushed onto (water, a plot), if any. */
+  ground: ((x: number, y: number) => boolean) | null = null;
   readonly mass: number;
   readonly step: number;
   readonly height: number;

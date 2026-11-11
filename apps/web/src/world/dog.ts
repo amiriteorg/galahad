@@ -1,10 +1,11 @@
 import { attribute, uniform } from "three/tsl";
 import { BoxGeometry, type BufferGeometry, CircleGeometry, Color, CylinderGeometry, Euler, Group, IcosahedronGeometry, type Matrix4, Mesh, MeshBasicMaterial, MeshLambertNodeMaterial, Quaternion, type SkinnedMesh, TorusGeometry, Vector3 } from "three/webgpu";
+import { BUILDS, type Mover, type Solids } from "./collide.ts";
 import { headingToSceneYaw } from "./coords.ts";
 import { FootPlanner } from "./ik.ts";
 import { at, bevelBox, Mesher } from "./mesher.ts";
 import { angleDiff, turnTowards } from "./path.ts";
-import { criticalDamping, type Ground, moveOnGround, rng, type Spring, springStep } from "./physics.ts";
+import { criticalDamping, type Ground, moveOnGround, rng, slideOnGround, type Spring, springStep } from "./physics.ts";
 import { limb, pointIn, Rig } from "./rig.ts";
 
 /*
@@ -13,7 +14,9 @@ import { limb, pointIn, Rig } from "./rig.ts";
  * trots beside him on a spring-damper, sits when he works, and when he's been
  * still a while it wanders off to sniff at things, never far. Its legs are
  * two-bone IK chains whose feet stay planted where they land (a trot: diagonal
- * pairs together), so it never slides; sitting folds its hind legs under it. One
+ * pairs together), so it never slides; sitting folds its hind legs under it.
+ * Among the solids it slides along what it meets and keeps out of Galahad's
+ * way; when something stands between it and him, it follows in his footsteps. One
  * skinned mesh, its shell in bevelled plates with seams and bolts, its lens a
  * ringed camera eye. Its lens glows brighter at night. Scene coordinates (y up),
  * facing +z; about 0.6 m tall.
@@ -50,6 +53,16 @@ const HIPS: [number, number][] = [
 ];
 
 const eul = new Euler(0, 0, 0, "YXZ");
+/** Footsteps of his it remembers. */
+const TRAIL = 48;
+/** Where it keeps by him, best first: [to his right, behind him] (negative: to his left). */
+const SPOTS: readonly [number, number][] = [
+  [1.05, 0.55],
+  [-1.05, 0.55],
+  [0, 1.3],
+  [1.3, -0.2],
+  [-1.3, -0.2],
+];
 
 export class RobotDog {
   readonly root = new Group();
@@ -58,7 +71,13 @@ export class RobotDog {
   private readonly eyeColor = uniform(new Color(0xffb547));
   private readonly material = new MeshLambertNodeMaterial({ vertexColors: true });
   private readonly shadow: Mesh;
-  private readonly spring: Spring = { x: 0, y: -8, vx: 0, vy: 0 };
+  /** Where it is (its place among the solids too: x, y and its radius). */
+  private readonly spring: Spring & { r: number } = { x: 0, y: -8, vx: 0, vy: 0, r: BUILDS.dog.r };
+  private mover: Mover | null = null;
+  /** His footsteps: the last places he walked, every half metre (x, y pairs, a ring). */
+  private readonly trail = new Float64Array(TRAIL * 2);
+  private trailCount = 0;
+  private trailHead = 0;
   private readonly scratch = { x: 0, y: 0 };
   private readonly random = rng(11);
   heading = Math.PI / 2;
@@ -173,9 +192,16 @@ export class RobotDog {
     return this.spring.y;
   }
 
+  /** Walks among the world's solids from now on. */
+  join(solids: Solids, blocked: (x: number, y: number) => boolean): void {
+    this.mover = solids.join(this.spring, BUILDS.dog);
+    this.mover.ground = blocked;
+  }
+
   /** Puts it beside its master at once (first sight, reduced motion). */
   place(m: Master, ground?: (x: number, y: number) => number): void {
     this.besideOf(m);
+    this.trailCount = 0;
     this.spring.x = this.target.x;
     this.spring.y = this.target.y;
     this.spring.vx = this.spring.vy = 0;
@@ -185,11 +211,47 @@ export class RobotDog {
   }
 
   private besideOf(m: Master): void {
-    // On his right and a little behind.
-    const rx = Math.sin(m.heading);
-    const ry = -Math.cos(m.heading);
-    this.target.x = m.x + rx * 1.05 - Math.cos(m.heading) * 0.55;
-    this.target.y = m.y + ry * 1.05 - Math.sin(m.heading) * 0.55;
+    // On his right and a little behind; where that's taken (a wall, a post), on his left, or behind him.
+    const fx = Math.cos(m.heading);
+    const fy = Math.sin(m.heading);
+    for (const [side, back] of SPOTS) {
+      this.target.x = m.x + fy * side - fx * back;
+      this.target.y = m.y - fx * side - fy * back;
+      if (!this.mover || this.mover.fits(this.target.x, this.target.y, 0.05)) return;
+    }
+    this.target.x = m.x + fy * 1.05 - fx * 0.55;
+    this.target.y = m.y - fx * 1.05 - fy * 0.55;
+  }
+
+  /** Remembers where he walks, every half metre. */
+  private footstep(m: Master): void {
+    const last = (this.trailHead + TRAIL - 1) % TRAIL;
+    if (this.trailCount && Math.hypot(this.trail[last * 2]! - m.x, this.trail[last * 2 + 1]! - m.y) < 0.5) return;
+    this.trail[this.trailHead * 2] = m.x;
+    this.trail[this.trailHead * 2 + 1] = m.y;
+    this.trailHead = (this.trailHead + 1) % TRAIL;
+    this.trailCount = Math.min(TRAIL, this.trailCount + 1);
+  }
+
+  /**
+   * Something solid between it and where it wants to be: the newest of his footsteps it can go to straight
+   * (he walked there, so from one to the next is clear), into `target`. False when none is in sight.
+   */
+  private followFootsteps(tx: number, ty: number): boolean {
+    const mover = this.mover!;
+    const x = this.spring.x;
+    const y = this.spring.y;
+    if (mover.sweep(x, y, tx - x, ty - y, 0, false) >= 1) return false;
+    for (let k = 1; k <= this.trailCount; k++) {
+      const i = (this.trailHead + TRAIL - k) % TRAIL;
+      const px = this.trail[i * 2]!;
+      const py = this.trail[i * 2 + 1]!;
+      if (mover.sweep(x, y, px - x, py - y, 0, false) < 1) continue;
+      this.target.x = px;
+      this.target.y = py;
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -208,6 +270,7 @@ export class RobotDog {
       return false;
     }
     this.stillFor = m.moving ? 0 : this.stillFor + dt;
+    if (this.mover) this.footstep(m);
     this.besideOf(m);
     let tx = this.target.x;
     let ty = this.target.y;
@@ -228,6 +291,11 @@ export class RobotDog {
         ty = this.goal.y;
       }
     }
+    // Round what stands in the way: in his footsteps.
+    if (this.mover && this.mode !== "sit" && this.followFootsteps(tx, ty)) {
+      tx = this.target.x;
+      ty = this.target.y;
+    }
     const k = this.mode === "follow" ? 14 : 6;
     const maxSpeed = m.running ? 7 : this.mode === "follow" ? 3.2 : 1.4;
     const sx = this.spring.x;
@@ -238,10 +306,15 @@ export class RobotDog {
     const dy = this.spring.y - sy;
     const d = Math.hypot(dx, dy);
     if (d > 1e-5) {
-      const taken = moveOnGround(ground, sx, sy, Math.atan2(dy, dx), d, this.scratch);
+      const taken = this.mover ? slideOnGround(this.mover, ground, sx, sy, Math.atan2(dy, dx), d, this.scratch) : moveOnGround(ground, sx, sy, Math.atan2(dy, dx), d, this.scratch);
       this.spring.x = this.scratch.x;
       this.spring.y = this.scratch.y;
       if (taken === null) this.spring.vx = this.spring.vy = 0;
+      else if (this.mover?.touched && dt > 0) {
+        // Slid along something: it goes on at the speed it actually moves (no pressing into a wall).
+        this.spring.vx = (this.spring.x - sx) / dt;
+        this.spring.vy = (this.spring.y - sy) / dt;
+      }
     }
     const vx = dt > 0 ? (this.spring.x - sx) / dt : 0;
     const vy = dt > 0 ? (this.spring.y - sy) / dt : 0;
@@ -260,10 +333,14 @@ export class RobotDog {
   }
 
   private pickGoal(m: Master): void {
-    const a = this.random() * Math.PI * 2;
-    const r = 2 + this.random() * 4;
-    this.goal.x = m.x + Math.cos(a) * r;
-    this.goal.y = m.y + Math.sin(a) * r;
+    // Somewhere near him it can stand (not in a wall, a trunk, a rock).
+    for (let tries = 0; tries < 6; tries++) {
+      const a = this.random() * Math.PI * 2;
+      const r = 2 + this.random() * 4;
+      this.goal.x = m.x + Math.cos(a) * r;
+      this.goal.y = m.y + Math.sin(a) * r;
+      if (!this.mover || this.mover.fits(this.goal.x, this.goal.y, 0.1)) break;
+    }
     this.mode = "wander";
     this.timer = 8;
   }
