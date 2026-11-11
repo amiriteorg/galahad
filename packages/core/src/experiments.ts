@@ -161,7 +161,7 @@ type Point = readonly [number, number];
 /**
  * The shape of a readout over time. Steady: it barely moved (under 5 % of its size, with no net change
  * to speak of); oscillating: it turned back four times or more, each swing a fifth of its range or more;
- * peaked or dipped: it went to an extreme in between and came most of the way back; rising or falling:
+ * peaked or dipped: it went to one extreme in between and came most of the way back; rising or falling:
  * its net change is most of its range; fluctuating: none of these.
  */
 export function trendOf(points: readonly Point[]): Trend {
@@ -204,9 +204,10 @@ export function trendOf(points: readonly Point[]): Trend {
     else if (v - ext >= swing) [reversals, dir, ext] = [reversals + 1, 1, v];
   }
   if (reversals >= 4) return "oscillating";
+  // One extreme in between (a hiccup on the way allowed), most of the way there and back.
   const inside = (i: number) => i > 0 && i < n - 1;
-  if (inside(iMax) && max - first >= 0.4 * span && max - final >= 0.4 * span) return "peaked";
-  if (inside(iMin) && first - min >= 0.4 * span && final - min >= 0.4 * span) return "dipped";
+  if (reversals <= 2 && inside(iMax) && max - first >= 0.4 * span && max - final >= 0.4 * span) return "peaked";
+  if (reversals <= 2 && inside(iMin) && first - min >= 0.4 * span && final - min >= 0.4 * span) return "dipped";
   if (Math.abs(net) >= 0.3 * span) return net > 0 ? "rising" : "falling";
   return "fluctuating";
 }
