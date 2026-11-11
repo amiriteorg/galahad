@@ -11,7 +11,7 @@ const Env = z.object({
   GALAHAD_PROXY_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   /** "os" = OS keychain via Bun.secrets (default), "file" = 0600 key file (headless servers). */
   GALAHAD_KEYSTORE: z.enum(["os", "file"]).optional(),
-  /** Override the tailnet address this node advertises and binds, e.g. 100.118.201.75. */
+  /** Override the tailnet address this node advertises and binds, e.g. 100.64.0.1 (Tailscale gives each machine one in 100.64.0.0/10). */
   GALAHAD_ADVERTISE: z.string().min(1).optional(),
   /** The sandbox workspace helper's socket (default /run/galahad-workspace.sock). */
   GALAHAD_WORKSPACE_SOCKET: z.string().startsWith("/").optional(),

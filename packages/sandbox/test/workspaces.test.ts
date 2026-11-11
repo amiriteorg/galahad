@@ -45,7 +45,10 @@ describe("the disk budget", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("talking to the helper", () => {
+const unixSockets = process.platform !== "win32";
+describe.skipIf(!unixSockets)("talking to the helper", () => {
+  // A skipped block's body still runs (to collect it) but its afterAll doesn't: set nothing up.
+  if (!unixSockets) return;
   const dir = mkdtempSync(join(tmpdir(), "galahad-ws-"));
   const path = join(dir, "helper.sock");
   const heard: string[] = [];

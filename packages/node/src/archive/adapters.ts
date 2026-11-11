@@ -340,13 +340,24 @@ export function chatsAdapter(chats: ChatSource, archive: ArchiveLookup, opts: { 
 
 /**
  * What a source outside this module exposes: records since a cursor, and one record's
- * files and plain-text description. The saved experiments (world-hub) and the
- * whiteboard's version history each provide one; plugging either in is one line in
- * daemon.ts (`experiments:` / `boards:` in the archive's sources).
+ * files and plain-text description. On main (after both merged), the hook-up in
+ * daemon.ts is a few lines each, in place of `experimentsAdapter(null)` / `boardsAdapter(null)`:
+ *
+ *   experimentsAdapter({
+ *     listSince: async (c, n) => { const r = experiments.archiveSince(c, n); return { records: r.experiments.map((e) => ({ id: e.id, title: <its name>, at: <when it ended> })), cursor: r.cursor }; },
+ *     describe: async (id) => { const e = experiments.archiveEntry(id)!; return { description: e.text, files: e.files.map((f) => ({ path: f.name, fromPath: f.path })) }; },
+ *   })
+ *   boardsAdapter({
+ *     listSince: async (c, n) => { const r = boardVersionsSince(board, c, n); return { records: r.versions.map((v) => ({ id: String(v.version), title: `Chalkboard, version ${v.version}`, at: v.at })), cursor: r.cursor }; },
+ *     describe: async (id) => { const v = boardVersionForArchive(board, Number(id))!; return { description: v.text, files: v.image ? [{ path: `board-v${id}.png`, bytes: v.image.png }] : [] }; },
+ *   })
+ *
+ * (A null cursor from a source means nothing new: the archive's stays where it was.)
  */
 export interface ExternalSource {
   listSince(cursor: string | null, limit: number): Promise<{ records: { id: string; title: string; at: number }[]; cursor: string | null }>;
-  describe(id: string): Promise<{ description: string; files: { path: string; bytes: Uint8Array }[] }>;
+  /** A file comes as bytes, or as a path on this node to stream in (a recording can be large). */
+  describe(id: string): Promise<{ description: string; files: { path: string; bytes?: Uint8Array; fromPath?: string }[] }>;
 }
 
 function externalAdapter(name: string, kind: string, source: ExternalSource | null | undefined, opts: { trust: Trust; tags: string[] }): ArchiveAdapter {
@@ -355,7 +366,10 @@ function externalAdapter(name: string, kind: string, source: ExternalSource | nu
     waiting: !source,
     async pull(cursor, limit) {
       if (!source) return { entries: [], cursor, more: false };
-      const { records, cursor: next } = await source.listSince(cursor, limit);
+      const listed = await source.listSince(cursor, limit);
+      const records = listed.records;
+      // A source may answer null when nothing is new: the cursor stays where it was.
+      const next = listed.cursor ?? cursor;
       const entries: IncomingEntry[] = [];
       for (const r of records.slice(0, limit)) {
         const { description, files } = await source.describe(r.id);
@@ -371,7 +385,7 @@ function externalAdapter(name: string, kind: string, source: ExternalSource | nu
           createdAt: r.at,
           tags: opts.tags,
           meta: { [kind]: r.id },
-          files: files.map((f) => ({ path: f.path, bytes: f.bytes })),
+          files: files.map((f) => ({ path: f.path, ...(f.bytes ? { bytes: f.bytes } : {}), ...(f.fromPath ? { fromPath: f.fromPath } : {}) })),
           links: used.map((a) => ({ rel: "uses", to: archiveId("artifacts", a) })),
         });
       }

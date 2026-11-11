@@ -65,11 +65,14 @@ SUDOERS
   # The tailnet-facing daemon holds the vault, so it runs sandboxed even though the
   # galahad user itself may sudo: a bug in the listener must not be a root shell via sudo.
   # (Docker group membership is still root-equivalent on sandbox hosts: see docs/SECURITY.md #6.)
+  # After time-sync.target: an approval's 72-hour deadline is read off this clock, so the node
+  # starts once the time is set where the host can say so (the node also refuses to send
+  # while its clock reads behind the events it holds: docs/SECURITY.md).
   cat >/etc/systemd/system/galahad.service <<UNIT
 [Unit]
 Description=Galahad node
-After=network-online.target tailscaled.service docker.service galahad-firewall.service
-Wants=network-online.target
+After=network-online.target time-sync.target tailscaled.service docker.service galahad-firewall.service
+Wants=network-online.target time-sync.target
 
 [Service]
 User=$SVC

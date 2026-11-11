@@ -204,7 +204,7 @@ export class Atmosphere {
     this.near.value = Math.max(far * 0.3, Math.min(far * 0.8, distance * 1.5 + 30));
   }
 
-  /** The ground under the camera's focus: the sheet of mist lies on it (eased, so it never bobs with the view). */
+  /** The land under the camera's focus (the terrain, not a deck on it): the sheet of mist lies on it (eased, so it never bobs with the view). */
   ground(level: number, dt: number): void {
     if (this.sheetDensity.value <= 0 || Number.isNaN(this.level) || Math.abs(level - this.level) > 8) this.level = level;
     else this.level += (level - this.level) * (1 - Math.exp(-dt * 0.5));

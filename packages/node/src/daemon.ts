@@ -14,8 +14,11 @@ import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
 import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
+import { BoardStore, writeOnBoard } from "./board.ts";
+import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
 import { WorldHub } from "./world-hub.ts";
+import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
@@ -40,6 +43,8 @@ export interface Daemon {
   bank: BankService;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
+  /** The chalkboard you and Galahad share (writeOnBoard in board.ts writes on it from the node). */
+  board: BoardStore;
   /** The archive: everything kept for good, and searched by words and meaning. */
   archive: ArchiveService;
   stop(): Promise<void>;
@@ -86,6 +91,8 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
 
 /** No request may make a node buffer more than this (Bun's default is about 128 MB). */
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
+/** How long a stopping node lets requests under way finish (a chat being answered) before it closes them. */
+const SHUTDOWN_GRACE_MS = 10_000;
 
 /** Publish this node's endpoint + capabilities, only when they changed (idempotent). */
 function publishProfile(store: MindStore, identity: NodeIdentity, endpoint: string, caps: Capabilities): void {
@@ -218,7 +225,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
-  const world = new WorldHub();
+  // Every experiment the world shows is saved here, node-local (its view, readouts, recording, code).
+  const experiments = new ExperimentStore({ dir: home.experimentsDir, log });
+  const world = new WorldHub({ store: experiments });
   const weather = new WeatherService({
     enabled: opts.weather ?? false,
     wanted: () => world.watching > 0,
@@ -253,6 +262,17 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   });
   if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();
 
+  const board = new BoardStore({ dir: join(home.dir, "boards"), log, onChange: (change) => world.boardChanged(change) });
+  world.setBoard(() => board.version);
+  // An experiment's examination, written up on the chalkboard at the observatory where it's examined: each in place
+  // of the last write-up (the board's history keeps every one), so the board doesn't fill with them.
+  world.onExamine(
+    writeUpExaminations(
+      (input) => writeOnBoard({ board, world }, input),
+      () => board.view().items,
+      log,
+    ),
+  );
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -284,6 +304,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     },
   });
 
+  const shutdown = new AbortController();
   const app = createApp({
     identity,
     nodeName: config.name,
@@ -308,8 +329,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     world,
+    board,
     archive,
     ledger,
+    shutdown: shutdown.signal,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 
@@ -382,22 +405,33 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     bank,
     world,
+    board,
     archive,
+    /**
+     * In order: take nothing new (stop listening; requests under way go on), start nothing
+     * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
+     * a while), and only then close what they write to.
+     */
     async stop() {
+      const finished = Promise.all(servers.map((s) => s.stop()));
+      shutdown.abort();
       clearInterval(outbox);
-      await archive.stop();
-      archiveStore.close();
-      bank.close();
-      chats.close();
-      world.close();
-      weather.close();
-      await loops.stop();
-      await connectors.drain();
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
       stopPush();
       sync.stop();
+      // The archive starts nothing new, and its round under way (an embedding call) is cut off.
+      await archive.stop();
+      world.close();
+      weather.close();
+      await loops.stop();
+      await connectors.drain();
+      await Promise.race([finished, Bun.sleep(SHUTDOWN_GRACE_MS)]);
       await Promise.all(servers.map((s) => s.stop(true)));
+      bank.close();
+      chats.close();
+      archiveStore.close(); // requests may still have been searching it
+      experiments.close(); // flushes what requests wrote, so after them
       local.close();
       store.close();
     },

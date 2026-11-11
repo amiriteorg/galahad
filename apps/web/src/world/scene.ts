@@ -1,4 +1,5 @@
 import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
+import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
@@ -15,6 +16,7 @@ import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
 import { addPlants } from "./flora-plan.ts";
 import { ProvingGround } from "./field.ts";
+import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { HALL, inHall } from "./hall-plan.ts";
@@ -31,6 +33,7 @@ import type { Ground } from "./physics.ts";
 import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } from "./place.ts";
 import { plotColliders } from "./plot-plan.ts";
 import { originUniform, Plots } from "./plots.ts";
+import { Assembly, benchFor, buildingAt } from "./assembly.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
@@ -104,6 +107,8 @@ export interface WorldOptions {
   forceWebGL?: boolean;
   /** The weather at first sight (it's there at once, not eased into). */
   weather?: WeatherKind;
+  /** The chalkboard was tapped: the page opens it. */
+  onBoard?(): void;
 }
 
 export interface WorldStats {
@@ -142,6 +147,8 @@ export interface WorldHandle {
   stats(): WorldStats;
   /** Where things are now, written into `out` (nothing is allocated). */
   where(out: WorldWhere): WorldWhere;
+  /** The chalkboard's state, for its face (drawn again only when this is called). */
+  setBoard(board: BoardView | null): void;
   dispose(): void;
 }
 
@@ -298,7 +305,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // The built places beyond the keep: the proving ground and the workshop hall.
   const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
   const workshop = new Workshop(placeContext);
-  const places: Place[] = [new ProvingGround(placeContext), workshop];
+  // The chalkboard at the observatory (board.ts): his writing and yours, and where he goes to write.
+  const chalkboard = new Chalkboard(placeContext);
+  const places: Place[] = [new ProvingGround(placeContext), workshop, chalkboard];
+  chalkboard.onStand = () => model && retarget(model);
   // In the hall, Galahad and his dog are lit as it lights itself (every tier: no sun under its roof where there are no shadows).
   knight.lightIndoors(workshop.insideLight());
   dog.lightIndoors(workshop.insideLight());
@@ -313,6 +323,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     glows.set(`place${i}:cool`, place.coolGlows, 0x8fe2ff);
   });
   const placeFrame: PlaceFrame = { dt: 0, t: 0, motion: true, focusX: 0, focusY: 0, distance: 0, follow: true, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0, wind: BREEZE, windHeading: WIND_HEADING };
+  // ---- experiments being built: on the workshop's assembly bench (assembly.ts) ----
+  const assembly = new Assembly();
+  worldRoot.add(assembly.group);
+  let benchSparks = 0;
 
   // ---------- the ground, as each kind of walker sees it ----------
   let stationObstacles: Obstacle[] = obstacles();
@@ -644,7 +658,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   rain.setHallFloor(groundAt(HALL.x, HALL.y));
   let walkKey = "";
   function retarget(m: WorldModel): void {
-    const target = targetFor(m.galahad, m.experiments);
+    // Something to write on the chalkboard comes first; then his station.
+    const target = chalkboard.stand() ?? buildingAt(m.galahad, m.experiments) ?? targetFor(m.galahad, m.experiments);
     const key = `${m.galahad.station}|${m.galahad.experiment}|${target.x.toFixed(2)},${target.y.toFixed(2)}`;
     if (key === walkKey) return;
     walkKey = key;
@@ -706,6 +721,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       dirty = true;
     },
     tap(clientX, clientY) {
+      // The chalkboard opens where you can draw on it.
+      if (groundUnder(clientX, clientY) && chalkboard.hover(hit.x + origin[0], -hit.z + origin[1], hoverPoint)) {
+        options.onBoard?.();
+        return;
+      }
       // A Microduck or an arm under the finger: say what it is (for a moment) rather than select.
       if (probe(clientX, clientY)) {
         hoverAt[0] = clientX;
@@ -1008,9 +1028,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   function shaftColor(): number {
     return skyState.lightFromSun ? skyState.sunGlow : skyState.light;
   }
-  /** How much the clear air scatters, per metre: thicker under a low sun, and in rain and snow. */
+  /** How much the clear air scatters, per metre: a little thicker under a low sun (more, and open lit ground goes milky: there are no shadows there to make shafts), and in rain and snow. */
   function shaftHaze(): number {
-    return 0.004 + 0.009 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
+    return 0.004 + 0.004 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
   }
   /** How strongly the light's shafts show: low suns make them; a closed deck of cloud takes them away; the moon's are faint. */
   function shaftStrength(): number {
@@ -1058,6 +1078,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     active = rig.update(dt, motion) || active;
     active = plots.animate(now, skyState.horizon) || active;
+    active = assembly.animate(now, motion) || active;
     const ambient = motion && now - lastRender >= idleInterval;
     if (!dirty && !active && !ambient) {
       renderedLast = false;
@@ -1110,6 +1131,25 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
     knightState.bench = g?.station === "forge";
     attend();
+    // ---- building an experiment: at the assembly bench he works as at the lab's, blade's tip to the parts ----
+    const atBench = !walker.moving && g ? buildingAt(g, model!.experiments) : null;
+    if (atBench) {
+      knightState.bench = true;
+      knightState.armed = true;
+      attention.x = atBench.bench.x;
+      attention.y = atBench.bench.y;
+      attention.z = atBench.bench.z;
+      attention.on = true;
+      if (motion) {
+        benchSparks -= renderDt;
+        if (benchSparks <= 0) {
+          benchSparks = 0.4;
+          fauna.sparksAt(atBench.bench.x, atBench.bench.y - 0.15, atBench.bench.z + 0.05, 2);
+        }
+      }
+    }
+    // At the chalkboard, writing: his hand at the chalk, not busy at the station's work.
+    knightState.writing = !walker.moving && chalkboard.hand(attention);
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
     if (Number.isNaN(standZ) || !motion || Math.abs(walker.z - standZ) > 2) standZ = walker.z;
     else standZ += (walker.z - standZ) * (1 - Math.exp(-renderDt * 12));
@@ -1189,7 +1229,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       f[k + 6] = standZ;
     }
     camera.updateMatrixWorld();
-    atmosphere.ground(focusGround, renderDt);
+    // The sheet of mist lies on the land under the focus, never on the deck or the stair he stands on (laid there,
+    // it hung in the air at the deck's height and everything below lay in its densest part).
+    atmosphere.ground(Math.max(0, groundAt(rig.x, rig.y)), renderDt);
     occlusion.from.value.copy(camera.position);
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
     occlusion.floor.value = gz;
@@ -1238,6 +1280,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const prev = model;
       model = next;
       if (event?.type === "frame") plots.push(event.frame, event.at, performance.now());
+      if (event?.type === "board") chalkboard.boardChanged(event, !reduced());
       if (!prev || prev.experiments !== next.experiments) {
         if (plots.sync(next.experiments, next.frames)) dirty = true;
         const key = next.experiments.map((e) => `${e.plot.x},${e.plot.y},${e.plot.size}`).join("|");
@@ -1262,7 +1305,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         syncExperimentLabels(next);
         if (selected && !next.experiments.some((e) => e.id === selected)) options.onSelect(null);
       }
-      if (!prev || prev.galahad !== next.galahad || prev.experiments !== next.experiments) retarget(next);
+      if (!prev || prev.galahad !== next.galahad || prev.experiments !== next.experiments) {
+        retarget(next);
+        if (assembly.sync(benchFor(next), event?.at ?? next.at, performance.now())) dirty = true;
+      }
       if (!prev || prev.galahad !== next.galahad || prev.thoughts !== next.thoughts) {
         syncBubble(next);
         dirty = true;
@@ -1276,7 +1322,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       }
       if (!prev) {
         // First sight: put him (and the dog) where he is at once, and the camera on him.
-        walker.go(targetFor(next.galahad, next.experiments), stationObstacles, true);
+        walker.go(buildingAt(next.galahad, next.experiments) ?? targetFor(next.galahad, next.experiments), stationObstacles, true);
         standZ = walker.z;
         knight.place(walker.x, walker.y, walker.heading, feetGround);
         dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
@@ -1357,6 +1403,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (snap) weather.snap(heavens.sunElevation * DEG, heavens.evening);
       dirty = true;
     },
+    setBoard(board) {
+      chalkboard.setBoard(board);
+      dirty = true;
+    },
     where(out) {
       out.galahadX = walker.x;
       out.galahadY = walker.y;
@@ -1402,6 +1452,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       fauna.dispose();
       critters.dispose();
       plots.dispose();
+      assembly.dispose();
       landmarks.dispose();
       glows.dispose();
       rain.dispose();

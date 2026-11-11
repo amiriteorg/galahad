@@ -355,6 +355,28 @@ describe("the SANDBOX, live", () => {
     expect(events.find((e) => e.type === "galahad" && e.galahad.station === "library")!.galahad.doing).toBe("Recall from the shared mind: the round table");
   });
 
+  test("the chalkboard: he walks to the observatory and writes there; he reads your drawing back (in words, for a model that can't see)", async () => {
+    script = [callTool("board_write", { kind: "note", title: "Plan", text: "- measure\n- fit" }), say("Written up.")];
+    const events = await watchWorld(
+      home.adminToken(),
+      () => ask(home.adminToken(), "Write the plan on the board.", { tools: true }),
+      (seen) => seen.some((e) => e.type === "board"),
+    );
+    expect(events.find((e) => e.type === "galahad" && e.galahad.station === "observatory")!.galahad.doing).toBe("Write on the chalkboard: Plan");
+    expect(events.find((e) => e.type === "board")).toMatchObject({ change: "write", by: "agent", region: { x: expect.any(Number), w: expect.any(Number) } });
+    const board = (await (await call("board", undefined, home.adminToken())).json()) as { items: { by: string; kind: string }[] };
+    expect(board.items.at(-1)).toMatchObject({ by: "galahad", kind: "note" });
+
+    // You draw (a picture of the board comes with it); he reads it.
+    await call("boardDraw", { strokes: [{ id: "s_chatdrawing1", color: "pink", width: 8, points: [100, 600, 400, 610, 700, 620] }] }, home.adminToken());
+    script = [callTool("board_read", {}), say("A pink line along the bottom.")];
+    const answer = await ask(home.adminToken(), "What did I draw?");
+    expect(answer.find((e) => e.type === "tool_result")).toMatchObject({ name: "board_read", ok: true });
+    const seen = bodies[1].messages.at(-1).content as string;
+    expect(seen).toContain("1 stroke of the user's");
+    expect(seen).toContain("a pink line in the bottom left");
+  });
+
   test("once he read the bank, what he tries next reaches the world by name only", async () => {
     script = [callTool("bank_status", {}), callTool("remember", { text: "balance 55555.55 DKK" }), say("I won't keep that.")];
     const events = await watchWorld(
@@ -435,6 +457,8 @@ describe("one answer's tools", () => {
       ["request_secret", { name: "balance-1234.56", purpose: "balance 1234.56 DKK" }],
       ["sandbox_save", { id: "0123456789", label: "balance 1234.56 DKK" }],
       ["sandbox_create", { memoryGb: 12, diskGb: 345, providers: ["balance-1234.56"] }],
+      // The chalkboard: every agent that may read the mind reads it.
+      ["board_write", { kind: "text", text: "balance 1234.56 DKK" }],
     ];
     for (const [name, input] of writes) {
       const refused = await tools.run({ id: name, name, input });
@@ -451,11 +475,12 @@ describe("one answer's tools", () => {
 
   test("every tool is classified: it only reads the mind, or it names what it does with data", () => {
     // A new tool that writes or reaches out must say so (egress or record), or the bank's gate can't cover it.
-    // sandbox_destroy is the one exception: it takes an id of his own sandbox and nothing else.
-    const unclassified = TOOLS.filter((t) => !t.flow && !t.routes.every((r) => routes[r].scope === "mind:read")).map((t) => t.name);
-    expect(unclassified).toEqual(["sandbox_destroy"]);
+    // sandbox_destroy and board_erase are the exceptions: each takes ids of his own (a sandbox, items he wrote) and nothing else.
+    // (whoami has no scope: anyone may ask who they are.)
+    const unclassified = TOOLS.filter((t) => !t.flow && !t.routes.every((r) => routes[r].scope === "mind:read" || r === "whoami")).map((t) => t.name);
+    expect(unclassified.sort()).toEqual(["board_erase", "sandbox_destroy"]);
     const flow = (name: string) => TOOLS.find((t) => t.name === name)!.flow;
-    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create"]) expect(flow(name)).toBe("record");
+    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create", "board_write"]) expect(flow(name)).toBe("record");
   });
 
   test("a bank call that failed brought no data: the web stays available", async () => {

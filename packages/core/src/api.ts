@@ -8,7 +8,8 @@ import { TrialRecord } from "./trials.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { WorldReport } from "./world-input.ts";
+import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
+import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 
 /*
@@ -225,6 +226,43 @@ export const routes = {
   /** How the world ran on a device (yours alone), and the latest reports, for `galahad world --logs`. */
   worldReport: { method: "POST", path: "/api/world/report", scope: "mind:read", input: WorldReport },
   worldReports: { method: "GET", path: "/api/world/reports", scope: "mind:read", input: null },
+  /*
+   * The chalkboard you and Galahad share (node-local, a file in the home). Reading is mind:read. Drawing,
+   * writing and erasing are part of your conversation with him (chat): what you draw reaches his models as
+   * a picture, as what you type does. Only you draw or erase your drawing (the node refuses agents); an
+   * agent erases only what it wrote; clearing it all is fleet:admin, which agents never hold.
+   */
+  board: { method: "GET", path: "/api/board", scope: "mind:read", input: null },
+  /** The PNG of the board as you last saw it (uploaded with your strokes), for models that can see. */
+  boardSnapshot: { method: "POST", path: "/api/board/snapshot", scope: "mind:read", input: z.strictObject({}) },
+  boardDraw: { method: "POST", path: "/api/board/draw", scope: "chat", input: BoardDrawInput },
+  boardWrite: { method: "POST", path: "/api/board/write", scope: "chat", input: BoardWriteInput },
+  boardErase: { method: "POST", path: "/api/board/erase", scope: "chat", input: BoardEraseInput },
+  boardClear: { method: "POST", path: "/api/board/clear", scope: "fleet:admin", input: z.strictObject({}) },
+  /** Every version is kept (clearing and erasing destroy nothing): read them, restore one (yours), forget them (yours, fleet:admin). */
+  boardHistory: { method: "POST", path: "/api/board/history", scope: "mind:read", input: BoardHistoryInput },
+  boardVersion: { method: "POST", path: "/api/board/version", scope: "mind:read", input: BoardVersionInput },
+  boardVersionPicture: { method: "POST", path: "/api/board/version/picture", scope: "mind:read", input: BoardVersionInput },
+  boardRestore: { method: "POST", path: "/api/board/restore", scope: "chat", input: BoardVersionInput },
+  boardForget: { method: "POST", path: "/api/board/history/forget", scope: "fleet:admin", input: z.strictObject({}) },
+  /**
+   * Saved experiments: every experiment the world showed, archived for good on the node that ran it
+   * (node-local, never in the mind). Reading them is the world's scope; a favourite is yours (mind:write,
+   * and only you), deleting too (fleet:admin, as with kept work: nothing else ever deletes one). Running
+   * one creates a sandbox: the sandbox scope.
+   */
+  experiments: { method: "GET", path: "/api/experiments", scope: "mind:read", input: null },
+  experiment: { method: "POST", path: "/api/experiments/get", scope: "mind:read", input: z.strictObject({ id: ExperimentId, code: z.boolean().optional() }) },
+  experimentRecording: {
+    method: "POST",
+    path: "/api/experiments/recording",
+    scope: "mind:read",
+    /** hz: a replay's view of it, at most that many frames a second of simulation (the archive keeps every frame). */
+    input: z.strictObject({ id: ExperimentId, from: z.number().int().min(0).max(1_000_000_000).optional(), limit: z.number().int().min(1).max(5000).optional(), hz: z.number().min(1).max(120).optional() }),
+  },
+  pinExperiment: { method: "POST", path: "/api/experiments/pin", scope: "mind:write", input: z.strictObject({ id: ExperimentId, pinned: z.boolean() }) },
+  deleteExperiment: { method: "POST", path: "/api/experiments/delete", scope: "fleet:admin", input: z.strictObject({ id: ExperimentId }) },
+  runExperiment: { method: "POST", path: "/api/experiments/run", scope: "sandbox", input: ExperimentRunInput },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },
@@ -765,6 +803,20 @@ export interface ConnectorView {
   tools: ConnectorToolView[];
 }
 
+/**
+ * How long an approval stays good: the node that filed the action sends it within this of
+ * your approval's recorded time, or never (a node back after weeks doesn't send what you
+ * approved back then).
+ */
+export const APPROVAL_TTL_MS = 72 * 60 * 60_000;
+
+/**
+ * The last moment an approval may be sent, from recorded times only (so every replica agrees):
+ * 72 hours after it was recorded, or never when it was recorded after the request had expired.
+ */
+export const approvalSendBy = (decidedMs: number, requestExpires: number): number =>
+  decidedMs > requestExpires ? requestExpires : decidedMs + APPROVAL_TTL_MS;
+
 export interface ActionView {
   id: string;
   connector: string;
@@ -776,8 +828,12 @@ export interface ActionView {
   why: string | null;
   node: string;
   requestedAt: string;
+  /** Answer by then, or it's "expired" (no answer means no). */
   expires: number;
-  state: "waiting" | "approved" | "denied" | "expired" | "done" | "failed";
+  /** "lapsed": approved, but not sent by `sendBy`, so it never will be. */
+  state: "waiting" | "approved" | "denied" | "expired" | "lapsed" | "done" | "failed";
+  /** For an approval: sent by then or never (approvalSendBy). */
+  sendBy: number | null;
   decidedVia: string | null;
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;

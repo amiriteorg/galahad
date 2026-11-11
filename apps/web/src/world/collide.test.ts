@@ -416,33 +416,43 @@ describe("movers", () => {
 });
 
 describe("the cost", () => {
-  test("a frame's worth of questions is far under a fifth of a millisecond", () => {
-    // A forest: 12 000 solids over 800 m, and 60 movers among them.
-    const s = new Solids();
-    for (let k = 0; k < 120; k++) s.add(scatter(100, 100 + k, 800));
-    const rand = rng(5);
-    const movers = Array.from({ length: 60 }, () => {
-      const at = { x: (rand() - 0.5) * 60, y: (rand() - 0.5) * 60, r: 0.3 };
-      return s.join(at, BUILDS.microduck);
-    });
-    const out = { x: 0, y: 0 };
-    const frame = (i: number) => {
-      for (const m of movers) {
-        const a = i * 0.01 + m.index;
-        m.slide(m.at.x, m.at.y, Math.cos(a) * 0.03, Math.sin(a) * 0.03, out);
-        m.at.x = out.x;
-        m.at.y = out.y;
-      }
-      s.separate();
-      s.sweep(0, 0, 25, 3, 0.5);
+  test("a frame's questions cost the same in a dense forest as in a sparse one, and little", () => {
+    // 60 movers among 12 000 solids over 800 m, and among 1 200: a spatial hash asks only what's near,
+    // so the forest's size mustn't matter. Compared in the same run, fastest of several batches, so a
+    // busy machine (the whole suite running) slows both alike and can't fail it: no wall-clock bound
+    // on its own, only a loose one against something pathological.
+    const world = (layers: number) => {
+      const s = new Solids();
+      for (let k = 0; k < layers; k++) s.add(scatter(100, 100 + k, 800));
+      const rand = rng(5);
+      const movers = Array.from({ length: 60 }, () => s.join({ x: (rand() - 0.5) * 60, y: (rand() - 0.5) * 60, r: 0.3 }, BUILDS.microduck));
+      const out = { x: 0, y: 0 };
+      return (i: number) => {
+        for (const m of movers) {
+          const a = i * 0.01 + m.index;
+          m.slide(m.at.x, m.at.y, Math.cos(a) * 0.03, Math.sin(a) * 0.03, out);
+          m.at.x = out.x;
+          m.at.y = out.y;
+        }
+        s.separate();
+        s.sweep(0, 0, 25, 3, 0.5);
+      };
     };
-    for (let i = 0; i < 300; i++) frame(i);
-    const started = performance.now();
-    const frames = 2000;
-    for (let i = 0; i < frames; i++) frame(i);
-    const each = (performance.now() - started) / frames;
-    // (Measured at about 0.03 ms; the bound leaves room for a slow, busy machine.)
-    expect(each).toBeLessThan(0.2);
+    const fastest = (frame: (i: number) => void) => {
+      for (let i = 0; i < 300; i++) frame(i);
+      let best = Infinity;
+      for (let batch = 0; batch < 6; batch++) {
+        const started = performance.now();
+        for (let i = 0; i < 300; i++) frame(i);
+        best = Math.min(best, (performance.now() - started) / 300);
+      }
+      return best;
+    };
+    const dense = fastest(world(120));
+    const sparse = fastest(world(12));
+    // (Measured at about 0.03 ms a frame either way.)
+    expect(dense).toBeLessThan(sparse * 4 + 0.02);
+    expect(dense).toBeLessThan(1);
     expect(CELL).toBeGreaterThan(0);
   });
 });

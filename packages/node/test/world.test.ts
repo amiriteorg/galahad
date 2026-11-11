@@ -1,8 +1,12 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, jest, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { GatewayTokens } from "@galahad/brain";
-import { PADS, padKindFor, SITES, STATIONS, type WorldEvent } from "@galahad/core";
+import { EXAMINE_MAX_MS, HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent } from "@galahad/core";
 import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
+import { ExperimentStore } from "../src/experiment-store.ts";
 import { cellAt, cellOnSite, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
 
 /*
@@ -117,15 +121,20 @@ describe("the test sites", () => {
 });
 
 describe("an experiment", () => {
-  test("starts, runs on its frames (only with its key), ends; Galahad walks out to watch it", () => {
+  test("starts (being built), runs on its frames (only with its key), ends; Galahad builds it, then goes out to watch it", () => {
     const { world, events } = hub();
     const { id, key } = world.start({ title: "Pendulum", engine: "mujoco", scene: [box] }, origin);
     expect(events.map((e) => e.type)).toEqual(["experiment", "galahad", "thought"]);
+    expect(events[0]).toMatchObject({ experiment: { status: "starting", phase: "building" } });
     expect(events[1]).toMatchObject({ galahad: { station: "field", experiment: id } });
     expect(() => world.frames(id, "A".repeat(43), { frames: [{ t: 0, poses: {} }] })).toThrow(/not yours/);
+    events.length = 0;
     world.frames(id, key, { frames: [{ t: 0.05, poses: { base: [0, 0, 1, 1, 0, 0, 0] }, metrics: { angle: 0.3 } }] });
-    expect(events.filter((e) => e.type === "frame")).toHaveLength(1);
-    expect(events.at(-1)).toMatchObject({ type: "experiment", experiment: { status: "running", metrics: { angle: 0.3 } } });
+    // Its first frame is the test: that's said first, then the frame.
+    expect(events.map((e) => e.type)).toEqual(["experiment", "galahad", "thought", "frame"]);
+    expect(events[0]).toMatchObject({ type: "experiment", experiment: { status: "running", phase: "testing" } });
+    expect(events[1]).toMatchObject({ galahad: { station: "field", experiment: id, doing: "Testing: Pendulum" } });
+    expect((world.hello() as Extract<WorldEvent, { type: "hello" }>).experiments[0]).toMatchObject({ metrics: { angle: 0.3 } });
     const ended = world.end(id, key, { status: "done", summary: "it swung up in 2.1 s" });
     expect(ended).toMatchObject({ status: "done", summary: "it swung up in 2.1 s" });
     expect(() => world.frames(id, key, { frames: [{ t: 1, poses: {} }] })).toThrow(/ended/);
@@ -152,6 +161,138 @@ describe("an experiment", () => {
     const all = (world.hello() as Extract<WorldEvent, { type: "hello" }>).experiments;
     expect(all.find((e) => e.id === fresh.id)!.status).toBe("failed");
     expect(all.find((e) => e.id === other.id)!.status).toBe("failed"); // quiet too
+  });
+});
+
+describe("built, tested, examined", () => {
+  const scene = [
+    { id: "base", shape: { kind: "box" as const, size: [1, 1, 0.2] as [number, number, number] }, fixed: true },
+    { id: "hand", shape: { kind: "sphere" as const, radius: 0.1 } },
+  ];
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  /** A hub that saves to a temp home's store; watched unless said otherwise. */
+  function saving(watched = true) {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-world-"));
+    dirs.push(dir);
+    const store = new ExperimentStore({ dir, limits: { flushMs: 60_000 } });
+    const now = { t: 1_000_000 };
+    const world = new WorldHub({ now: () => now.t, store });
+    const events: WorldEvent[] = [];
+    if (watched) world.watch((e) => events.push(e));
+    return { world, store, events, now };
+  }
+  const galahad = (events: WorldEvent[]) => (events.filter((e) => e.type === "galahad").at(-1) as Extract<WorldEvent, { type: "galahad" }>).galahad;
+
+  test("watched: built at the bench (its first frame held while he gets there and puts it together), tested, examined at the observatory, done", async () => {
+    jest.useFakeTimers();
+    try {
+      const { world, store, events, now } = saving();
+      const examined: { headline: string | undefined; id: string }[] = [];
+      world.onExamine((ex, e) => examined.push({ headline: ex?.headline, id: e.id }));
+      const { id, key, view, build } = world.start({ title: "Arm", engine: "mujoco", scene, extent: 2 }, origin);
+      // From the keep to the bench is a long way: the most the world ever holds a simulation back.
+      expect(build).toBe(HOLD_MAX_MS / 1000);
+      expect(view).toMatchObject({ phase: "building", status: "starting", build: { from: now.t, until: now.t + HOLD_MAX_MS } });
+      expect(galahad(events)).toMatchObject({ station: "field", experiment: id, doing: "Building an experiment: Arm" });
+      expect(world.phase(id, key, { phase: "building", poses: { hand: [0.5, 0, 1, 1, 0, 0, 0], ghost: [0, 0, 0, 1, 0, 0, 0] } }).assembly).toEqual({ hand: [0.5, 0, 1, 1, 0, 0, 0] });
+      now.t += 20_000;
+      expect(world.phase(id, key, { phase: "testing" })).toMatchObject({ phase: "testing", status: "running", assembly: null, phases: { testing: now.t } });
+      expect(galahad(events)).toMatchObject({ station: "field", experiment: id, doing: "Testing: Arm" });
+      world.frames(id, key, { frames: [{ t: 0, poses: { base: [0, 0, 0.1, 1, 0, 0, 0], hand: [0.5, 0, 1, 1, 0, 0, 0] }, metrics: { error_mm: 90 } }] });
+      world.frames(id, key, { frames: [1, 2, 3, 4, 5, 6].map((t) => ({ t, poses: { hand: [0.5, 0, 1, 1, 0, 0, 0] as Pose }, metrics: { error_mm: 90 / (t + 1) } })) });
+      now.t += 10_000;
+      const ended = world.end(id, key, { status: "done", summary: "it tracked the circle" });
+      expect(ended).toMatchObject({ phase: "examining", status: "done", endedAt: now.t });
+      expect(galahad(events)).toMatchObject({ station: "observatory", experiment: id, doing: "Examining: Arm" });
+      // The chalkboard's seam: the examination as data, as examining begins.
+      expect(examined).toEqual([{ id, headline: expect.stringMatching(/^Arm finished: error \(mm\) fell from 90\.0 to 12\.9/) }]);
+      // It's saved already (the panel, the tools and the CLI read it from here).
+      expect(store.get(id)).toMatchObject({ status: "done", phase: "examining", readouts: { error_mm: { count: 7 } } });
+      const settled = world.settled(id);
+      // He walks from the test cell to the observatory, then examines it: held for that, at most a minute.
+      jest.advanceTimersByTime(30_000);
+      expect(world.current(id)).toMatchObject({ phase: "examining" });
+      jest.advanceTimersByTime(EXAMINE_MAX_MS - 30_000);
+      await settled;
+      expect(world.current(id)).toMatchObject({ phase: "done" });
+      expect(store.get(id)).toMatchObject({ phase: "done", phases: { ended: now.t } });
+      expect(events.filter((e) => e.type === "thought").at(-1)).toMatchObject({ text: expect.stringMatching(/^Arm finished/) });
+      // The world's list of saved ones follows.
+      expect(events.filter((e) => e.type === "saved").at(-1)).toMatchObject({ saved: [{ id, phase: "done", readouts: { error_mm: expect.any(Number) } }] });
+      expect((world.hello() as Extract<WorldEvent, { type: "hello" }>).saved?.map((s) => s.id)).toEqual([id]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("the live stream is held to 60 frames a second; the record keeps every readout", () => {
+    const { world, store, events } = saving();
+    const { id, key } = world.start({ title: "Fast", engine: "custom", scene }, origin);
+    const frames = Array.from({ length: 100 }, (_, i) => ({ t: i / 100, poses: { hand: [i / 100, 0, 1, 1, 0, 0, 0] as Pose }, metrics: { v: i } }));
+    expect(world.frames(id, key, { frames }).accepted).toBe(60);
+    expect(events.filter((e) => e.type === "frame")).toHaveLength(60);
+    world.end(id, key, { status: "done" });
+    expect(store.get(id)!.readouts.v).toMatchObject({ count: 100, max: 99, last: [0.99, 99] });
+  });
+
+  test("with nobody watching, nothing waits: no hold before the test, examined at once", () => {
+    const { world, store } = saving(false);
+    const { id, key, build } = world.start({ title: "Quick", engine: "custom", scene }, origin);
+    expect(build).toBe(0);
+    world.frames(id, key, { frames: [{ t: 0, poses: { hand: [0, 0, 1, 1, 0, 0, 0] } }] });
+    expect(world.end(id, key, { status: "failed", summary: "diverged" })).toMatchObject({ phase: "failed", status: "failed" });
+    expect(store.get(id)).toMatchObject({ phase: "failed", summary: "diverged" });
+  });
+
+  test("a run's draft: built while its sandbox spins up, filled in by its simulation's start, placed again by its real size", () => {
+    const { world, events } = saving();
+    const draft = world.draft({ title: "Gripper", engine: "mujoco" }, { ...origin, sandbox: null });
+    expect(draft).toMatchObject({ phase: "building", scene: [], build: null, plot: { x: 110, y: 110, size: 48 } });
+    expect(galahad(events)).toMatchObject({ station: "field", experiment: draft.id });
+    world.attach(draft.id, "abcdef0123");
+    // Quiet for long (a big image starting): the run ends it, not the sweep.
+    world.quiet();
+    // Another sandbox's experiment is its own; this sandbox's start is the draft's.
+    const other = world.start({ title: "Other", engine: "custom", scene }, { ...origin, sandbox: "9999999999" });
+    expect(other.id).not.toBe(draft.id);
+    const filled = world.start({ title: "MuJoCo", engine: "mujoco", scene, extent: 2 }, { ...origin, sandbox: "abcdef0123" });
+    expect(filled.id).toBe(draft.id);
+    // Its title is the run's; its size now says it fits a test cell.
+    expect(filled.view).toMatchObject({ title: "Gripper", scene, plot: { size: 10 }, phase: "building" });
+    expect(filled.build).toBeGreaterThan(0);
+  });
+
+  test("a run's draft that never gets going fails, saying why, and is examined like any other", () => {
+    const { world, store } = saving(false);
+    const draft = world.draft({ title: "Broken", engine: "rocketpy" }, { ...origin, sandbox: null });
+    world.keepCode(draft.id, "experiment.py", "raise SystemExit(3)\n");
+    world.abandon(draft.id, "its script stopped before it started (exit 3)");
+    expect(world.current(draft.id)).toMatchObject({ status: "failed", phase: "failed", summary: "its script stopped before it started (exit 3)" });
+    expect(store.get(draft.id)).toMatchObject({ code: { name: "experiment.py" } });
+    expect(store.examination(draft.id)!.notable).toContain("It sent no readouts.");
+  });
+
+  test("a sandbox that's gone ends what it left running; an experiment cleared while it's examined doesn't come back", async () => {
+    jest.useFakeTimers();
+    try {
+      const { world, events } = saving();
+      const a = world.start({ title: "First flight", engine: "jsbsim", scene, extent: 3000 }, origin);
+      world.frames(a.id, a.key, { frames: [{ t: 0, poses: { hand: [0, 0, 1, 1, 0, 0, 0] } }] });
+      world.sandboxGone(origin.sandbox!);
+      expect(world.current(a.id)).toMatchObject({ status: "failed", phase: "examining", summary: "its sandbox stopped before it finished" });
+      // The runway is wanted again while he's still examining the first.
+      const b = world.start({ title: "Second flight", engine: "jsbsim", scene, extent: 3000 }, { ...origin, sandbox: "aaaaaaaaaa" });
+      expect(events).toContainEqual(expect.objectContaining({ type: "cleared", experiment: a.id }));
+      events.length = 0;
+      jest.advanceTimersByTime(EXAMINE_MAX_MS);
+      expect(events.some((e) => e.type === "experiment" && e.experiment.id === a.id)).toBe(false);
+      expect(world.current(b.id)).toMatchObject({ phase: "building" });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
@@ -194,6 +335,25 @@ describe("from a sandbox, through its gateway", () => {
       { tokens, world, nodeName: "ultra" },
     );
     expect(nan.status).toBe(400);
+  });
+
+  test("phases and code: with the experiment's key only; the start says how long to hold its first frame", async () => {
+    const { token } = tokens.mint({ label: "sandbox:0123456789", providers: ["world"], ttlMinutes: 10, maxRequests: 10 });
+    world.watch(() => {});
+    const started = (await (await post("/world/experiments", { title: "Arm", engine: "mujoco", scene: [{ id: "hand", shape: { kind: "sphere", radius: 0.1 } }], extent: 2 }, { authorization: `Bearer ${token}` })).json()) as { id: string; key: string; build: number };
+    expect(started.build).toBeGreaterThan(0);
+    const key = { "x-experiment-key": started.key };
+    expect((await post(`/world/experiments/${started.id}/phase`, { phase: "building", poses: { hand: [0, 0, 1, 1, 0, 0, 0] } }, { "x-experiment-key": "wrong" })).status).toBe(404);
+    expect((await post(`/world/experiments/${started.id}/phase`, { phase: "examining" }, key)).status).toBe(400);
+    expect((await post(`/world/experiments/${started.id}/phase`, { phase: "building", poses: { hand: [0, 0, 1, 1, 0, 0, Number.MAX_VALUE * 2] } }, key)).status).toBe(400);
+    expect(await (await post(`/world/experiments/${started.id}/phase`, { phase: "building", poses: { hand: [0, 0, 1, 1, 0, 0, 0] } }, key)).json()).toEqual({ phase: "building" });
+    // This hub keeps no experiments: code has nowhere to go, and that's no error.
+    expect((await post(`/world/experiments/${started.id}/code`, { name: "arm.py", source: "print('hi')\n" }, key)).status).toBe(200);
+    expect((await post(`/world/experiments/${started.id}/code`, { name: "../../etc/passwd", source: "" }, key)).status).toBe(400);
+    expect((await post(`/world/experiments/${started.id}/code`, { name: "big.py", source: "x".repeat(64 * 1024 + 1) }, key)).status).toBe(400);
+    expect(await (await post(`/world/experiments/${started.id}/phase`, { phase: "testing" }, key)).json()).toEqual({ phase: "testing" });
+    await post(`/world/experiments/${started.id}/end`, { status: "done" }, key);
+    expect((await post(`/world/experiments/${started.id}/phase`, { phase: "testing" }, key)).status).toBe(409);
   });
 
   test("a sandbox with a network is told where the world is", () => {

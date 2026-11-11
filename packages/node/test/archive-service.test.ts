@@ -267,6 +267,12 @@ describe("the shapes the experiments and whiteboard branches will plug into", ()
     const second = await boardsAdapter(source).pull(first.cursor, 10);
     expect(second.entries[0]!.links).toEqual([{ rel: "uses", to: archiveId("artifacts", `art_${"A".repeat(22)}`) }]);
     expect(second.more).toBe(false);
+    // The whiteboard's own lister answers null when nothing is new: the cursor stays where it was.
+    const quiet: ExternalSource = { listSince: async () => ({ records: [], cursor: null }), describe: source.describe };
+    expect((await boardsAdapter(quiet).pull(second.cursor, 10)).cursor).toBe(second.cursor);
+    // A recording comes as a path on this node, streamed in, never read whole into memory here.
+    const streamed: ExternalSource = { listSince: source.listSince, describe: async () => ({ description: "x", files: [{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }] }) };
+    expect((await experimentsAdapter(streamed).pull(null, 1)).entries[0]!.files).toEqual([{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }]);
     expect(boardsAdapter(null).waiting).toBe(true);
     expect(await boardsAdapter(null).pull(null, 10)).toEqual({ entries: [], cursor: null, more: false });
   });

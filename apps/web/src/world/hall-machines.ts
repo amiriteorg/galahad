@@ -4,7 +4,7 @@ import { CART_PATH } from "./hall-cart.ts";
 import { FIXTURE, type HallFlow, INDEX_TIME, TOTE_FLOOR, TOTE_SLOTS } from "./hall-flow.ts";
 import { type Detail, Kit, Quads } from "./hall-kit.ts";
 import type { HallUniforms } from "./hall-materials.ts";
-import { BENCH, CART, CRANE, DISPATCH, DOCKS, FARM, GANTRY, LINE, MILL, RACKS, SHELVES, stopX, TOOLS, TUNNEL } from "./hall-plan.ts";
+import { ASSEMBLY, BENCH, CART, CRANE, DISPATCH, DOCKS, FARM, GANTRY, LINE, MILL, RACKS, SHELVES, stopX, TOOLS, TUNNEL } from "./hall-plan.ts";
 import { GANTRY_PRINTER, type PartShape, PRINTER } from "./hall-print.ts";
 import { BAR, BELT, Bones, K, SLOT } from "./hall-rig.ts";
 import { at } from "./mesher.ts";
@@ -111,7 +111,26 @@ export class Machines {
     this.cnc();
     this.windTunnel();
     this.electronics();
+    this.assembly();
     this.storage();
+  }
+
+  /** The assembly bench, where Galahad builds each experiment (what he builds on it is drawn by world/assembly.ts). */
+  private assembly(): void {
+    const { solid, detail } = this.b;
+    const A = ASSEMBLY.bench;
+    // A steel-edged worktop on four legs, a lower shelf, a lamp arm over it, a parts tray and a vice at its ends.
+    solid.panel(0xd9d4c8, A.x, A.y, ASSEMBLY.top - 0.03, A.hx * 2, A.hy * 2, 0.06, 0, 0.02, 0.02);
+    for (const sy of [-1, 1]) solid.slab(K.steel, A.x - A.hx, A.x + A.hx, A.y + sy * A.hy - 0.03, A.y + sy * A.hy + 0.03, ASSEMBLY.top - 0.08, ASSEMBLY.top - 0.02);
+    for (const sy of [-1, 1]) for (const sx of [-1, 1]) solid.box(K.steel, A.x + sx * (A.hx - 0.07), A.y + sy * (A.hy - 0.07), (ASSEMBLY.top - 0.08) / 2, 0.07, 0.07, ASSEMBLY.top - 0.08);
+    solid.slab(K.wood, A.x - A.hx + 0.08, A.x + A.hx - 0.08, A.y - A.hy + 0.08, A.y + A.hy - 0.08, 0.22, 0.26);
+    solid.box(K.orange, A.x + A.hx - 0.22, A.y + A.hy - 0.18, ASSEMBLY.top + 0.04, 0.3, 0.22, 0.08);
+    solid.box(K.dark, A.x - A.hx + 0.18, A.y + A.hy - 0.16, ASSEMBLY.top + 0.06, 0.18, 0.12, 0.12);
+    if (detail > 0) {
+      solid.cyl(K.dark, A.x - A.hx + 0.12, A.y + A.hy - 0.08, ASSEMBLY.top, 0.025, 0.75, 6);
+      solid.box(K.dark, A.x - A.hx + 0.42, A.y + A.hy - 0.08, ASSEMBLY.top + 0.75, 0.6, 0.04, 0.04);
+      solid.panel(K.cream, A.x - A.hx + 0.72, A.y + A.hy - 0.08, ASSEMBLY.top + 0.7, 0.18, 0.14, 0.08, 0, 0.02, 0.02);
+    }
   }
 
   // ---------- the printer farm ----------
