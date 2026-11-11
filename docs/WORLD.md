@@ -1,15 +1,15 @@
 # The SANDBOX: Galahad's world
 
-An infinite synthetic world where you watch Galahad work. He walks between the places of his keep as he thinks an answer through, reads memory, searches the web, reads the bank, calls your services or runs code at the forge. Every experiment he runs (a robot arm in MuJoCo, an aircraft in JSBSim, a rocket in RocketPy, anything that can say where its bodies are) stands on its own plot of land, live.
+An infinite synthetic world where you watch Galahad work. He walks between the places of his keep as he thinks an answer through, reads memory, searches the web, reads the bank, calls your services or runs code at the forge. Every experiment he runs (a robot arm in MuJoCo, an aircraft in JSBSim, a rocket in RocketPy, anything that can say where its bodies are) is built in the workshop, tested live where it belongs, and examined at the observatory.
 
-It's a view of what's happening now, not a record: the ledger, your chats and kept artifacts are the records.
+The world itself is a view of what's happening now. Its experiments are also a record: each is archived, complete and for good, on the node that ran it, to replay, examine and learn from (see "Saved experiments").
 
 ## Watching it
 
 | Where | How |
 |---|---|
-| The app | **SANDBOX** (`G` then `X`): the world in 3D. **Talk to Galahad** in the composer at its foot (`C`): it's the same conversation as the Chat page, and asking follows him, so you watch him walk off to the library, the watchtower or the treasury to answer. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the experiments, the two test sites, the stations), searchable; picking an experiment opens its readouts. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
-| A terminal | `galahad world` (where he is, the weather, the experiments); `galahad world --follow` keeps watching |
+| The app | **SANDBOX** (`G` then `X`): the world in 3D. **Talk to Galahad** in the composer at its foot (`C`): it's the same conversation as the Chat page, and asking follows him, so you watch him walk off to the library, the watchtower or the treasury to answer. **The selector** at the top (`L`) says what the view is on and lists everything it can look at (Galahad, the experiments, the saved experiments, the two test sites, the stations), searchable; picking an experiment opens its panel (its readouts; once it has ended, what it showed, charted), picking a saved one replays it. **Follow Galahad** (`F`) shows when the view isn't on him; the **map** (`M`) shows the world, Galahad and where the view looks, and a tap takes the view there; the **sky** button says the time and the weather in Denmark and opens the choices for previewing another |
+| A terminal | `galahad world` (where he is, the weather, the experiments and their phases); `galahad world --follow` keeps watching; `galahad experiments` lists the saved ones, `galahad experiments show <id>` examines one |
 
 The stream is yours alone: agents can't watch it, because it carries a line of what Galahad is saying in your chats now and then. Once he has read the bank in an answer, nothing more from that answer appears.
 
@@ -24,8 +24,9 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 | Messenger's post | Calling your services (connectors) |
 | Forge | Sandboxes: running code |
 | Oracle | Decisions |
-| Observatory | Investigations and trials |
-| The field | Out on an experiment's plot, watching it run |
+| Observatory | Investigations and trials; examining an experiment that has ended, and reading saved ones |
+| The workshop's assembly bench | Building an experiment (its sandbox spinning up, its simulation starting) |
+| The field | Out on an experiment's pad or plot, watching it tested |
 | The keep | Everything else, and resting |
 
 Agents connected over MCP move him too: their calls are his tools. With nothing to do for half a minute he walks home.
@@ -74,6 +75,7 @@ A steel-framed hall of 56 × 40 m with a sawtooth roof whose upright faces are g
 | The bridge crane | Runs the hall's length on rails along the long walls: lifts a finished big part off the large printer with a vacuum lifter and sets it on the dispatch table, whose rollers take it into the dispatch room |
 | The cart (AGV) | Waits under the end of the collector belt until its tote is full, takes it across the aisle on its marked lane to the assembly line, and comes back empty. It slows and stops short of Galahad on its lane, and doesn't move while the arm is reaching into its tote |
 | The assembly line | An indexing conveyor: carriers come out of the infeed tunnel; a six-axis arm picks each part from the tote onto a carrier, the line moves on a stop, a second arm takes a screw from the feeder and drives it in, the part passes the inspection arch (a flash) and goes into the outfeed. The line moves only when there's work |
+| The assembly bench | Between the printers and the first test cell: where Galahad builds every experiment. Its own bodies (its scene's shapes, not its ground) appear on the bench laid out as a kit, then are put together one after another, each lifted across to where it belongs once the simulation has said how they stand (its first frame), sized to the bench; he works there with his blade's tip, sparks flying. Gone when the test begins. One mesh (one draw call while something's on the bench), built once per experiment and put together in its vertex shader, so a frame costs it a uniform's write and allocates nothing (`assembly.ts`) |
 | The test cells | Four, fenced in wire mesh, each with a light-curtain gate on the aisle and a stack light (green: free; red, the curtain armed: an experiment has it). A free cell's resident tests itself: an arm cycling a test weight through its range, a robot leg walking a treadmill (its foot carried by the belt, never slipping), a drone on a tether (spool up, lift off, hold station, land), a shake table under a three-storey frame in bursts. When an experiment takes the cell, the resident clears out (dissolves away) and comes back once it's free |
 | And | A CNC mill cutting a pocket behind its window, a wind tunnel with its fan turning and a model sweeping its angle of attack, an electronics bench of live scopes, pallet racks, a tool wall, spare carts on their chargers, and shelves of filament by the door |
 
@@ -136,6 +138,19 @@ Each tier (`tiers.ts`) caps every count and effect, and has a triangle budget (`
 
 ## Running an experiment
 
+Every experiment has a life, and the world shows it:
+
+| Phase | What happens | Where Galahad is |
+|---|---|---|
+| Building | He writes and starts the simulation; its sandbox spins up; its bodies are put together | At the workshop's assembly bench |
+| Testing | It runs, live | At its pad's gate (the runway, the launch pad, the course, a test cell) or its plot's: where `padKindFor` sends it, or where it asked to stand |
+| Examining | It ended (done or failed): he works out what it showed | At the observatory |
+| Done (or failed) | Examined; saved | Back to rest |
+
+While someone watches the world, the node holds a simulation's first frame until he's at the bench and has put it together (his walk there and 8 s, at most 30 s; the start's answer says how long, `build`), and holds an ended one at the observatory while he examines it (his walk there and 12 s, at most a minute). With nobody watching, neither waits. A module that doesn't know phases still works: its start is building, its first frame the test, its end the examination.
+
+**Galahad builds them himself** with `experiment_run`: a title, an engine, a Python script that uses `galahad_world`, and optionally where to test it (`site`), its extent and a time limit (default 10 minutes, at most 60). It's one job, on a sandbox host: the experiment appears at once (he walks to the bench), a fresh sandbox spins up in the right image (the Lab for MuJoCo, JSBSim, RocketPy and custom work; Gazebo's own for Gazebo) on the gateway network (models only, and the world), his script goes in (base64, never through a shell) and runs; the simulation's start fills in the bodies; then the test, the examination, and its result back to him: the experiment's id, how it ended, the examination in words, and the ends of what the script printed. If the script never starts its experiment, or stops before ending it, or runs out of time, the experiment fails saying why, and is examined like any other. The sandbox is ephemeral and the run's own (or the asking agent's quest's), destroyed afterwards whatever happened. `experiments` lists the saved ones, `experiment_examine` examines one again. His persona's guide tells him to build, test, then examine, and to report what he found. `galahad experiments run <script.py> --title … --engine …` does the same from a terminal.
+
 In a sandbox with a network (`gateway` or `online`), Python's `galahad_world` module streams to the node through the sandbox's gateway. Use the Lab (`lab: true`) for the simulators.
 
 ```sh
@@ -169,7 +184,7 @@ with gw.experiment("Pendulum", scene=[gw.box("base", 0.4, 0.4, 0.1, fixed=True),
         ex.frame(t, {"bob": (x, 0, z, 1, 0, 0, 0)}, metrics={"energy_j": e})
 ```
 
-Metres, z up (x east, y north); orientations as unit quaternions (w, x, y, z). Moving bodies get a pose in every frame; fixed ones (a ground, a ramp) in the first frame only. Frames are paced to `speed` × real time (default 1) so the motion plays as it happened. An experiment ends when its block does: done, or failed with the exception. One that stops sending frames for 90 seconds ends as failed.
+Metres, z up (x east, y north); orientations as unit quaternions (w, x, y, z). Moving bodies get a pose in every frame; fixed ones (a ground, a ramp) in the first frame only. Frames are paced to `speed` × real time (default 1) so the motion plays as it happened. An experiment ends when its block does: done, or failed with the exception. One that stops sending frames for 90 seconds ends as failed. `ex.phase` says where it is (building, testing, examining). The script itself (`__main__`, up to 64 KB) is kept with the experiment.
 
 | Engine | |
 |---|---|
@@ -186,16 +201,51 @@ From a sandbox, through its gateway (`$GALAHAD_WORLD`, the token in `$GALAHAD_TO
 
 | Request | Body | Answer |
 |---|---|---|
-| `POST /world/experiments` with `Authorization: Bearer $GALAHAD_TOKEN` | `{title, engine, scene: [bodies], extent?, plot?: small\|medium\|large, site?: field\|hall\|open}` | `{id, key, plot, scale}` |
-| `POST /world/experiments/<id>/frames` with `x-experiment-key: <key>` | `{frames: [{t, poses: {body: [x,y,z,qw,qx,qy,qz]}, metrics?}]}` (≤ 120 per request) | `{accepted}` |
-| `POST /world/experiments/<id>/end` with `x-experiment-key: <key>` | `{status: done\|failed, summary?, metrics?}` | the experiment |
+| `POST /world/experiments` with `Authorization: Bearer $GALAHAD_TOKEN` | `{title, engine, scene: [bodies], extent?, plot?: small\|medium\|large, site?: field\|hall\|open}` | `{id, key, plot, scale, build}`: it's being built; `build` is how many seconds to hold the first frame (0: don't) |
+| `POST /world/experiments/<id>/phase` with `x-experiment-key: <key>` | `{phase: "building", poses: {body: pose}}` (how its bodies stand once built: the first frame's poses), then `{phase: "testing"}` | `{phase}` |
+| `POST /world/experiments/<id>/code` with `x-experiment-key: <key>` | `{name, source}` (≤ 64 KB) | `{kept}` |
+| `POST /world/experiments/<id>/frames` with `x-experiment-key: <key>` | `{frames: [{t, poses: {body: [x,y,z,qw,qx,qy,qz]}, metrics?}]}` (≤ 120 per request); the first is the test, if `phase` didn't say | `{accepted}` |
+| `POST /world/experiments/<id>/end` with `x-experiment-key: <key>` | `{status: done\|failed, summary?, metrics?}`: then it's examined | the experiment |
+
+A node that predates phases answers `phase` and `code` with 404 and leaves `build` out; the module then asks it nothing new.
 
 A body is `{id, shape, color?, fixed?, label?, trail?}`; shapes are box, sphere, capsule, cylinder, plane, mesh (≤ 20 000 vertices), aircraft and rocket (drawn by the world). The contract, with every check, is `packages/core/src/world.ts`.
+
+## Saved experiments
+
+Every experiment is archived on the node that ran it (`~/.galahad/experiments/<id>/`), complete and for good: nothing is cleared to make room, and only you delete one.
+
+| Kept | As |
+|---|---|
+| What it was and how it went | `view.json`: title, engine, plot and scale, status, its phases and their times, summary, the node and sandbox, each readout's exact figures (count, range and when, first and last), its recording's index |
+| Its model | `scene.json`: its bodies, meshes included, exactly as the simulation sent them |
+| Every frame | `frames/NNNNNN.jsonl.gz`: every frame the node received, in order (one line a frame: `[t, i, x, y, z, qw, qx, qy, qz, i, …]`), gzipped a chunk (about 2 MB of text) at a time. The live stream is held to 60 frames a second; the record isn't |
+| Every readout | `readouts/NNNNNN.jsonl.gz`: every sample (`[t, k, value, …]`), likewise |
+| The code | `code.txt`: the script that ran it, when the module (or the run) sent it |
+
+- **Safety only.** One limit per experiment, against a runaway simulation: 256 MB of frames and 64 MB of readouts as text (a fifth to a tenth of that on disk). That's two hours of a ten-body rig at 60 frames a second; real experiments are kilobytes to a few megabytes. If one reaches it, that stream stops there, and the record and the examination say where.
+- **Small.** A running experiment holds at most one open chunk of each stream in memory, written every 5 s, whole and atomically; a restart finds the last complete write. One that was running when the node stopped is archived as failed ("the node stopped before it finished"). One that can't be read is left on disk, untouched, and logged: it's yours to delete.
+- **Examined.** The examination is a pure function (`examine` in `packages/core/src/experiments.ts`): for each readout its range (and when), its final value, its trend (steady, rising, falling, peaked, dipped, oscillating, fluctuating), whether it ran away (it ended at its largest, ten times its largest in the first half), a series of at most 96 points for a chart (each stretch's extremes); then what's notable (a failure, a runaway, its own summary, a recording cut short) and all of it in words.
+- **Replayed.** Pick one under Saved experiments in the selector (or press Replay in an ended one's panel) and it plays where it was tested, marked as a replay, never live: its panel plays, pauses and scrubs it, shows the readouts at the playhead and a playhead on every chart. It asks for 15 frames a second of simulation (each with what moved in the frames it stands for) and the renderer plays between them, as with a live test. A pad busy with a live test isn't taken: replay it once that's done.
+- **Yours.** `galahad experiments` lists them, `show <id> [--code]` examines one, `pin`/`unpin` marks a favourite (offered first to replay), `rm` deletes one for good. Agents read them (`experiments`, `experiment_examine`); only you pin or delete.
+- **For a general archive.** `ExperimentStore.archiveSince(cursor)` lists every finished experiment after a cursor, oldest first, in a stable order (the order they were finished, a sequence kept with each); `archiveEntry(id)` gives one's files (each with its role: view, scene, frames, readouts, code; its size and SHA-256) and a plain-text description of it (`experimentText` in core: what it was, its bodies, where and when it was tested, how it ended, the examination, the summary, the code) for a semantic index. Its text came from a script: an index keeps it as data.
+
+| Route | Scope | |
+|---|---|---|
+| `GET /api/experiments` | `mind:read` | The newest 200, with the total and the bytes |
+| `POST /api/experiments/get` `{id, code?}` | `mind:read` | One, whole (its scene too), with its examination (and its code) |
+| `POST /api/experiments/recording` `{id, from?, limit?, hz?}` | `mind:read` | A page of its frames; `hz` thins it for a replay |
+| `POST /api/experiments/pin` `{id, pinned}` | `mind:write`, you only | A favourite |
+| `POST /api/experiments/delete` `{id}` | `fleet:admin`, you only | Gone for good |
+| `POST /api/experiments/run` `{title, engine, script, site?, extent?, minutes?, on?}` | `sandbox` | experiment_run: built, tested, examined, kept (long-running; forwarded to a sandbox host) |
+
+The world's `hello` (and a `saved` event when they change) carries the newest 24 that ended, favourites first. Experiments are the node's: the app shows the ones of the node it talks to.
 
 ## Guarantees and limits
 
 - **Contained.** Starting an experiment needs the sandbox's own gateway token with the `world` scope (every sandbox with a network has it); its frames need the experiment's key, compared in constant time. Frames don't spend the token's budget for models.
 - **Checked.** Every scene and frame is validated: known shapes, sizes in range, finite numbers, ids of letters and digits; at most 500 bodies, 60 frames a second per experiment (more are dropped, never queued), 4 MB per request.
 - **Laid out.** The sites' pads are fixed. Plots on open land sit on a spiral grid of 110 m cells around the keep; they never overlap it, each other or a site (cells that would crowd one are skipped). An experiment far bigger than its plot or pad (a flight, a rocket) is scaled down to fit (`scale`).
-- **Kept briefly.** The world is in the node's memory: every running experiment and the 12 that ended most recently. A restart starts it fresh.
+- **Kept for good.** The world itself is in the node's memory (every running experiment and the 12 that ended most recently stand on the map; a restart starts the map fresh), and every experiment is archived complete on the node's disk (see "Saved experiments"), deleted only by you.
+- **Held only while watched.** A build is held at most 30 s before its test, an examination at most a minute, and neither when nobody watches.
 - **One node's world.** The app shows the world of the node it talks to; experiments on another node show in that node's world.
