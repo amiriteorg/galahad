@@ -513,6 +513,11 @@ function together(a: BufferGeometry, b: BufferGeometry, dx: number, dz: number):
   return out;
 }
 
+/** A tree's or a rock's model as it's drawn (so the tests can hold the solids' plan, flora-plan.ts, to it). */
+export function plantModel(name: (typeof TREE_KINDS)[number] | "boulder" | "slab", detail: 0 | 1 = 1): BufferGeometry {
+  return name === "boulder" || name === "slab" ? models[name]() : models[name](detail);
+}
+
 /** Triangles in each tree's models, near to far (for the budgets). */
 export function treeTriangles(): Record<(typeof TREE_KINDS)[number], [number, number]> {
   const out = {} as Record<(typeof TREE_KINDS)[number], [number, number]>;
