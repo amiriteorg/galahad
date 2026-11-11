@@ -4,7 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, SetHash, sha256B64u, signEvent } from "@galahad/core";
-import { enrollDevice, foundFleet, MindStore, PullState } from "../src/index.ts";
+import { enrollDevice, foundFleet, MAX_WALKS, MindStore, PullState } from "../src/index.ts";
 
 /*
  * What sync and the loops read on a timer is kept as events arrive, so it costs the same
@@ -372,6 +372,35 @@ describe("repairing a hole is paged", () => {
     }
     expect(state.walking()).toEqual([]);
     expect(holed.digest()).toBe(full.digest());
+  });
+
+  test("a peer's `repair` is a claim: only devices we hold some of are walked, at most MAX_WALKS a pull", () => {
+    const a = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, a, { fleetName: "claims", nodeName: "a" });
+    const nodes = Array.from({ length: MAX_WALKS + 4 }, () => newNodeIdentity());
+    for (const [i, node] of nodes.entries()) enrollDevice(store, a, { device: node.id, name: `n${i}`, kind: "node", box: b64u(node.boxPublic) });
+    for (const node of nodes) store.emit(node, "memory.added", { text: `from ${node.id}` });
+    const state = new PullState(store);
+    state.begin();
+    // A device we hold nothing of comes by frontier anyway; junk, and a `repair` that isn't a list, start nothing.
+    state.receive({ events: [], more: true, repair: [newNodeIdentity().id, 42 as never, "__proto__", "constructor"] });
+    state.receive({ events: [], more: true, repair: "n_x" as never });
+    expect(state.walking()).toEqual([]);
+    // Every device we hold, named at once: MAX_WALKS of them are walked.
+    const all = [a.id, ...nodes.map((node) => node.id)];
+    state.receive({ events: [], more: true, repair: all });
+    expect(state.walking()).toEqual(all.slice(0, MAX_WALKS));
+    // In the next pull the walks carried over count, so none start until they end.
+    state.begin();
+    state.receive({ events: [], more: true, repair: all });
+    expect(state.walking()).toEqual(all.slice(0, MAX_WALKS));
+    // They end when the peer has nothing more; a pull after that starts at most MAX_WALKS again.
+    expect(state.receive({ events: [], more: false }).more).toBe(false);
+    expect(state.walking()).toEqual([]);
+    state.begin();
+    state.receive({ events: [], more: true, repair: all.slice(MAX_WALKS) });
+    expect(state.walking()).toEqual(all.slice(MAX_WALKS));
   });
 
   test("a replica that's merely behind is caught up by frontier, with nothing to repair", () => {

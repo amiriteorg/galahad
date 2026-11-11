@@ -8,6 +8,12 @@ export interface PullRequest {
   after?: Record<string, string>;
 }
 
+/**
+ * At most this many devices walked per pull (walks carried over from the last one count): a
+ * peer's `repair` is a claim, and each walk reads a device's whole log.
+ */
+export const MAX_WALKS = 8;
+
 /** What a peer answers (see MindStore.eventsSince). */
 export interface PullPage {
   events: unknown[];
@@ -33,7 +39,7 @@ interface Walk {
  * can end between two events dated the same instant, and asking for what's dated after it
  * would skip the second for good. Pages stay one page, whatever the log's size. A walk
  * outlives a pull, since a long log takes several, and each device is walked at most once per
- * pull.
+ * pull, at most MAX_WALKS of them, and only one we hold some of (the rest come by frontier).
  */
 export class PullState {
   private readonly walks = new Map<string, Walk>();
@@ -41,9 +47,9 @@ export class PullState {
 
   constructor(private readonly store: MindStore) {}
 
-  /** A new pull starts (walks in progress go on). */
+  /** A new pull starts (walks in progress go on, and count as this pull's). */
   begin(): void {
-    this.walked = new Set();
+    this.walked = new Set(this.walks.keys());
   }
 
   /** Devices whose logs are being walked. */
@@ -81,12 +87,16 @@ export class PullState {
       }
       // Done once dated past where we were (so events dated the same instant as our newest
       // still come), or when the peer has nothing more at all.
-      if (!page.more || (walk.until && walk.cursor && walk.cursor.hlc > walk.until)) this.walks.delete(device);
+      if (!page.more || (walk.cursor && walk.cursor.hlc > walk.until)) this.walks.delete(device);
     }
-    for (const device of page.repair ?? []) {
-      if (typeof device !== "string" || this.walks.has(device) || this.walked.has(device)) continue;
+    // A peer's claim: only names of devices we hold some of (the rest come by frontier anyway).
+    const named: unknown[] = Array.isArray(page.repair) ? page.repair : [];
+    const held = named.length ? this.store.frontier() : {};
+    for (const device of named) {
+      if (this.walked.size >= MAX_WALKS) break;
+      if (typeof device !== "string" || !Object.hasOwn(held, device) || this.walks.has(device) || this.walked.has(device)) continue;
       this.walked.add(device);
-      this.walks.set(device, { cursor: null, until: this.store.frontier()[device] ?? "" });
+      this.walks.set(device, { cursor: null, until: held[device]! });
     }
     return { added, more: page.more || this.walks.size > 0 };
   }
