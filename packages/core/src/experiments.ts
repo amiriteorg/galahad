@@ -160,7 +160,8 @@ type Point = readonly [number, number];
 
 /**
  * The shape of a readout over time. Steady: it barely moved (under 5 % of its size, with no net change
- * to speak of); oscillating: it turned back four times or more, each swing a fifth of its range or more;
+ * to speak of); oscillating: it turned back four times or more, each swing a fifth of its range or more
+ * (or twice or more, swinging across most of its range between the turns);
  * peaked or dipped: it went to one extreme in between and came most of the way back; rising or falling:
  * its net change is most of its range; fluctuating: none of these.
  */
@@ -190,6 +191,8 @@ export function trendOf(points: readonly Point[]): Trend {
   let ext = first;
   let lo = first;
   let hi = first;
+  /** The values it turned at, in order. */
+  const turns: number[] = [];
   for (let i = 1; i < n; i++) {
     const v = points[i]![1];
     if (dir === 0) {
@@ -199,11 +202,14 @@ export function trendOf(points: readonly Point[]): Trend {
       else if (hi - v >= swing) [dir, ext] = [-1, v];
     } else if (dir > 0) {
       if (v > ext) ext = v;
-      else if (ext - v >= swing) [reversals, dir, ext] = [reversals + 1, -1, v];
+      else if (ext - v >= swing) [reversals, dir, ext] = [reversals + 1, -1, (turns.push(ext), v)];
     } else if (v < ext) ext = v;
-    else if (v - ext >= swing) [reversals, dir, ext] = [reversals + 1, 1, v];
+    else if (v - ext >= swing) [reversals, dir, ext] = [reversals + 1, 1, (turns.push(ext), v)];
   }
-  if (reversals >= 4) return "oscillating";
+  // Four turns or more; or two or more where each swing between them crosses most of the range (a pendulum's first swings).
+  let wide = reversals >= 2;
+  for (let i = 1; i < turns.length && wide; i++) if (Math.abs(turns[i]! - turns[i - 1]!) < 0.6 * span) wide = false;
+  if (reversals >= 4 || wide) return "oscillating";
   // One extreme in between (a hiccup on the way allowed), most of the way there and back.
   const inside = (i: number) => i > 0 && i < n - 1;
   if (reversals <= 2 && inside(iMax) && max - first >= 0.4 * span && max - final >= 0.4 * span) return "peaked";

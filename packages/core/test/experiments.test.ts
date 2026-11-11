@@ -57,8 +57,12 @@ describe("a readout's shape", () => {
     expect(trendOf(series(100, (t) => Math.max(0, 900 - 9 * (t - 5) ** 2 * 3.6)))).toBe("peaked");
     expect(trendOf(series(100, (t) => (t - 5) ** 2))).toBe("dipped");
     expect(trendOf(series(400, (t) => Math.sin(t * 2)))).toBe("oscillating");
-    // A wobble with no clear direction and two extremes, turning back fewer than four times.
-    expect(trendOf([[0, 0], [1, 10], [2, 2], [3, 9], [4, 1]])).toBe("fluctuating");
+    // A pendulum let go at 69°, over a swing and a half: it turned only twice, but right across its range.
+    expect(trendOf(series(300, (t) => 69 * Math.cos(t * Math.PI), 0.01))).toBe("oscillating");
+    // A wobble with no clear direction, no one extreme, turning back fewer than four times, never right across.
+    expect(trendOf([[0, 3], [1, 10], [2, 6], [3, 9], [4, 2], [5, 3]])).toBe("fluctuating");
+    // A rocket's speed: the burn, the coast, the fall, the chute: not an oscillation.
+    expect(trendOf([[0, 0], [3, 200], [10, 50], [20, 120], [30, 10]])).toBe("fluctuating");
     expect(trendOf([[0, 5]])).toBe("steady");
   });
 

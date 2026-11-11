@@ -496,10 +496,11 @@ export class WorldHub {
       e.window.count++;
       accepted.push(f);
       const frame: ExperimentFrame = { experiment: id, t: f.t, poses: f.poses, ...(f.metrics ? { metrics: f.metrics } : {}) };
-      if (f.metrics) e.metrics = { ...e.metrics, ...f.metrics };
       this.emit({ type: "frame", at, frame });
     }
-    if (accepted.length) this.keep((store) => store.record(id, accepted, at));
+    // The record (and the latest readouts) keep every frame: only the live stream is held to MAX_FPS.
+    for (const f of input.frames) if (f.metrics) e.metrics = { ...e.metrics, ...f.metrics };
+    this.keep((store) => store.record(id, input.frames, at));
     return { accepted: accepted.length };
   }
 

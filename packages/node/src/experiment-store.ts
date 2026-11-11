@@ -477,7 +477,8 @@ export class ExperimentStore {
       live.readouts.close();
       // A final readout the end gave (that frames didn't) is still a readout.
       const t = live.frames.last ?? (Number.isFinite(live.lastT) ? live.lastT : 0);
-      const fresh = Object.entries(view.metrics).filter(([key, value]) => saved.readouts[key]?.last[1] !== value);
+      const last = (key: string) => saved.readouts[key]?.last[1];
+      const fresh = Object.entries(view.metrics).filter(([key, value]) => last(key) === undefined || Math.abs(last(key)! - value) > 1e-6 * Math.max(1, Math.abs(value)));
       if (fresh.length) this.sample(saved, live, t, Object.fromEntries(fresh));
       live.readouts.close();
       this.writeLive(saved, live);

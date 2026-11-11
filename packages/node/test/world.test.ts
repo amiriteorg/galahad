@@ -225,6 +225,16 @@ describe("built, tested, examined", () => {
     }
   });
 
+  test("the live stream is held to 60 frames a second; the record keeps every readout", () => {
+    const { world, store, events } = saving();
+    const { id, key } = world.start({ title: "Fast", engine: "custom", scene }, origin);
+    const frames = Array.from({ length: 100 }, (_, i) => ({ t: i / 100, poses: { hand: [i / 100, 0, 1, 1, 0, 0, 0] as Pose }, metrics: { v: i } }));
+    expect(world.frames(id, key, { frames }).accepted).toBe(60);
+    expect(events.filter((e) => e.type === "frame")).toHaveLength(60);
+    world.end(id, key, { status: "done" });
+    expect(store.get(id)!.readouts.v).toMatchObject({ count: 100, max: 99, last: [0.99, 99] });
+  });
+
   test("with nobody watching, nothing waits: no hold before the test, examined at once", () => {
     const { world, store } = saving(false);
     const { id, key, build } = world.start({ title: "Quick", engine: "custom", scene }, origin);
