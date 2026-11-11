@@ -133,6 +133,13 @@ async function refreshProjects(api: Api): Promise<void> {
   }
 }
 
+/** For the command palette: your kept chats and projects, fetched once when nothing is known yet. */
+export function chatsForPalette(api: Api, can: { chat: boolean; read: boolean }): { chats: ConversationSummary[]; projects: ProjectView[] } {
+  if (can.chat && kept === null) void refreshKept(api);
+  if (can.read && projects === null) void refreshProjects(api);
+  return { chats: kept ?? [], projects: projects ?? [] };
+}
+
 /** A kept conversation, back on screen with its answers' steps. */
 export async function openConversation(api: Api, id: string): Promise<void> {
   if (controller) return;
@@ -864,7 +871,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     const sheet = openSheet({ title: "Your chats", description: `Kept privately on ${node}. Temporary chats aren't kept.`, body: [search, listHost], size: "wide" });
     const draw = () => {
       if (!kept) return replace(listHost, skeletonRows(4));
-      const shown = filterConversations(kept, search.value);
+      const shown = filterConversations(kept, search.value, projectName);
       if (!shown.length) return replace(listHost, empty({ icon: "chat", title: search.value ? "No chat matches" : "No chats yet", body: search.value ? undefined : "Ask something: the conversation is kept here.", compact: true }));
       replace(
         listHost,

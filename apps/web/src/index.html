@@ -794,6 +794,11 @@
         .shell[data-route="chat"] main.view { padding-bottom: 0; }
       }
       .shell[data-route="chat"] .activity-pill { display: none; }
+      /* The on-screen keyboard is up (iOS keeps the page full height under it): the tab bar steps aside
+         and the composer sits on the keyboard instead of a tab bar's height above it. */
+      :root[data-keyboard="open"] .tabbar { display: none; }
+      :root[data-keyboard="open"] .composer-wrap { bottom: 0; }
+      :root[data-keyboard="open"] main.view, :root[data-keyboard="open"] .shell[data-route="chat"] main.view { padding-bottom: var(--sp-3); }
       @media (max-width: 639px) {
         .shell:not([data-route="chat"]) .topbar .activity-pill:not([hidden]) ~ .fleet-pill { display: none; }
         .chat-head .new-chat > span { display: none; }
