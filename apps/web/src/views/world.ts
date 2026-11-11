@@ -24,6 +24,8 @@ import { openSheet } from "../ui/dialog.ts";
 import { h, isTyping, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
+import { FIELD, RUNWAY } from "../world/field-plan.ts";
+import { HALL } from "../world/hall-plan.ts";
 
 /*
  * The SANDBOX: a 3D world where Galahad is seen at work, walking between the
@@ -39,7 +41,7 @@ import { toast } from "../ui/toast.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 4;
+const WORLD_API = 5;
 
 /** What each test site is for, in a line (the Go to list). */
 const SITE_ABOUT: Record<SiteName, string> = {
@@ -50,11 +52,11 @@ type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
 type TierName = NonNullable<Parameters<WorldModule["mountWorld"]>[1]["tier"]>;
 const TIME_CHOICES = [
-  { value: "now", label: "Now", icon: "clock" },
-  { value: "dawn", label: "Dawn", icon: "sun" },
-  { value: "day", label: "Day", icon: "sun" },
-  { value: "golden", label: "Golden hour", icon: "sun" },
-  { value: "night", label: "Night", icon: "moon" },
+  { value: "now", label: "Now", short: "Now", icon: "clock" },
+  { value: "dawn", label: "Dawn", short: "Dawn", icon: "sun" },
+  { value: "day", label: "Day", short: "Day", icon: "sun" },
+  { value: "golden", label: "Golden hour", short: "Golden", icon: "sun" },
+  { value: "night", label: "Night", short: "Night", icon: "moon" },
 ] as const;
 type TimeChoice = (typeof TIME_CHOICES)[number]["value"];
 const WEATHER_CHOICES = [
@@ -77,6 +79,23 @@ function storedWeather(): WeatherChoice {
   }
 }
 
+/** Whether this viewer keeps the map open (kept in this browser; open by default where there's room). */
+const MAP_KEY = "galahad.world.map";
+
+function storedMap(): boolean {
+  try {
+    const v = localStorage.getItem(MAP_KEY);
+    if (v === "on" || v === "off") return v === "on";
+  } catch {
+    /* storage off: the default */
+  }
+  return !matchMedia("(max-width: 639px)").matches;
+}
+
+/** The map's colours: paper and ink, the same in both themes (it lies over the world, like the labels). */
+const MAP_INK = "rgb(59 53 80 / 0.6)";
+const MAP_STATUS: Record<ExperimentView["status"], string> = { running: "#3aa66a", starting: "#d89a2b", failed: "#d24b3e", done: "#9a9ea6" };
+
 /** A notice this recent (node's clock) still lights the beacon. */
 const NOTICE_MS = 10 * 60_000;
 const MAX_RESTARTS = 2;
@@ -98,16 +117,41 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
-  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. Arrow keys pan, plus and minus zoom, Q and E turn, F follows Galahad.", tabindex: 0 });
+  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. Arrow keys pan, plus and minus zoom, Q and E turn, F follows Galahad, M shows the map.", tabindex: 0 });
   const loading = h("div", { class: "world-loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", {}, "Opening the world…"));
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
   const followButton = button("Follow Galahad", { icon: "user", size: "sm", onClick: () => setFollow(!following) });
   const goButton = button("Go to", { icon: "compass", size: "sm", onClick: () => openGoTo() });
   const listButton = button("Experiments", { icon: "flask", size: "sm", onClick: () => togglePanel() });
-  const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true });
-  const weatherControl = segmented<WeatherChoice>(WEATHER_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), weatherChoice, (v) => setWeather(v), { label: "Weather", small: true });
-  const clock = h("span", { class: "world-clock tiny tnum", title: "The sky follows the real sun and moon over Denmark" });
+  const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
+  const weatherControl = segmented<WeatherChoice>(WEATHER_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), weatherChoice, (v) => setWeather(v), { label: "Weather", small: true, block: true });
+  // The sky, in one control: the time in Denmark and its weather on the button; the choices behind it.
+  const clock = h("span", { class: "sky-time tnum" });
+  const skyMore = h("span", { class: "sky-more" });
+  const skyButton = h("button", { class: "btn sm world-sky-btn", type: "button", "aria-expanded": "false", "aria-controls": "world-sky", onclick: () => setSky(!skyOpen) }, icon("clock", { size: 15 }), clock, skyMore);
+  const skyNote = h("p", { class: "tiny muted grow" });
+  const skyReset = button("Back to now", {
+    icon: "clock",
+    size: "sm",
+    onClick: () => {
+      time.set("now");
+      weatherControl.set("live");
+      setTime("now");
+      setWeather("live");
+    },
+  });
+  const skyPanel = h(
+    "div",
+    { class: "world-sky card", id: "world-sky", role: "group", "aria-label": "The sky", hidden: true },
+    h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Time"), time.el),
+    h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Weather"), weatherControl.el),
+    h("div", { class: "sky-foot" }, skyNote, skyReset),
+  );
+  let skyOpen = false;
+  let mapOn = storedMap();
+  const mapCanvas = h("canvas", { class: "world-map", "aria-hidden": "true", hidden: !mapOn }) as HTMLCanvasElement;
+  const mapButton = button("Map", { icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
   const panel = h("div", { class: "world-panel card", hidden: true });
   const stats = h("div", { class: "world-stats tiny", "aria-hidden": "true" });
   const controls = h(
@@ -121,7 +165,12 @@ export const worldView: View = (root, ctx, { scope }) => {
   const hud = h(
     "div",
     { class: "world-hud" },
-    h("div", { class: "world-top" }, banner, h("div", { class: "world-tools" }, followButton, goButton, listButton, clock, time.el, weatherControl.el)),
+    h(
+      "div",
+      { class: "world-top" },
+      h("div", { class: "world-left" }, banner, mapCanvas),
+      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, followButton, goButton, listButton, mapButton, skyButton), skyPanel),
+    ),
     h("div", { class: "world-bottom" }, panel, h("div", { class: "world-corner" }, controls, stats)),
   );
   const summary = h("div", { class: "sr-only", "aria-live": "polite" });
@@ -188,15 +237,170 @@ export const worldView: View = (root, ctx, { scope }) => {
     }
   }
 
-  /** The time in Denmark, whatever the device's zone; a preset says it's showing another light. */
+  /** The sky's choices, open or shut. */
+  function setSky(open: boolean): void {
+    skyOpen = open;
+    skyPanel.hidden = !open;
+    skyButton.setAttribute("aria-expanded", String(open));
+  }
+
+  /**
+   * The sky's button and note: the time in Denmark (whatever the device's zone) and its weather; when a
+   * preset is on, that it's a preview of another light or weather, with a way back.
+   */
   function showClock(): void {
     if (!mod) return;
     const w = weatherChoice === "live" ? model.weather : null;
-    const now = `${mod.danishTime(Date.now())} in Denmark${w ? ` · ${weatherLabel(w).toLowerCase()}, ${Math.round(w.temperature)} °C` : ""}`;
-    clock.textContent = timeChoice === "now" ? now : `${now} · showing ${TIME_CHOICES.find((c) => c.value === timeChoice)!.label.toLowerCase()}`;
-    clock.title = w ? `${w.place}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${w.source}` : "";
+    const showing = [timeChoice !== "now" ? TIME_CHOICES.find((c) => c.value === timeChoice)!.label : null, weatherChoice !== "live" ? WEATHER_CHOICES.find((c) => c.value === weatherChoice)!.label : null]
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+      .join(", ")
+      .toLowerCase();
+    const real = w ? `${weatherLabel(w).toLowerCase()}, ${Math.round(w.temperature)} °C` : "";
+    clock.textContent = mod.danishTime(Date.now());
+    skyMore.textContent = ` in Denmark${showing ? ` · showing ${showing}` : real ? ` · ${real}` : ""}`;
+    skyButton.dataset.preview = String(Boolean(showing));
+    skyButton.title = showing ? "A preview of another sky. Open to go back to now." : "The sky follows the real sun, moon and weather over Denmark. Open to preview another.";
+    skyNote.textContent = showing
+      ? "A preview. The real sky is Denmark's, now."
+      : w
+        ? `${w.place}: ${real}, wind ${Math.round(w.wind)} m/s. ${w.source}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+        : "The real sun and moon over Denmark. Its weather isn't known right now, so the sky is shown clear.";
+    skyReset.hidden = !showing;
   }
   scope.interval(showClock, 15_000);
+
+  // ---------- the map: the keep, the two sites, the plots, Galahad and where the view looks; tap it to go there ----------
+  function setMap(on: boolean): void {
+    mapOn = on;
+    mapCanvas.hidden = !on;
+    mapButton.setAttribute("aria-pressed", String(on));
+    try {
+      localStorage.setItem(MAP_KEY, on ? "on" : "off");
+    } catch {
+      /* storage off: the choice lasts this visit */
+    }
+    drawMap();
+  }
+  mapButton.setAttribute("aria-pressed", String(mapOn));
+
+  const where = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0 };
+  const uv: [number, number] = [0, 0];
+  let mapLand: HTMLCanvasElement | null = null;
+
+  /** The land under the markers, sketched once: water, and the ground paler the lower it lies. */
+  function landSketch(m: WorldModule): HTMLCanvasElement {
+    const n = 80;
+    const cells = m.sketchLand(n);
+    const canvas = document.createElement("canvas");
+    canvas.width = n;
+    canvas.height = n;
+    const g = canvas.getContext("2d")!;
+    const image = g.createImageData(n, n);
+    for (let i = 0; i < cells.length; i++) {
+      const v = cells[i]!;
+      const t = (v - 1) / 254;
+      image.data[i * 4] = v ? 228 - 46 * t : 168;
+      image.data[i * 4 + 1] = v ? 235 - 30 * t : 207;
+      image.data[i * 4 + 2] = v ? 203 - 55 * t : 230;
+      image.data[i * 4 + 3] = 238;
+    }
+    g.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  function drawMap(): void {
+    if (!mapOn || !handle || !mod || document.hidden) return;
+    const size = mapCanvas.clientWidth;
+    if (!size) return;
+    const px = Math.round(size * Math.min(2, devicePixelRatio || 1));
+    if (mapCanvas.width !== px) {
+      mapCanvas.width = px;
+      mapCanvas.height = px;
+    }
+    const g = mapCanvas.getContext("2d");
+    if (!g) return;
+    const m = mod;
+    mapLand ??= landSketch(m);
+    // One unit is the whole map; `one` is a CSS pixel.
+    g.setTransform(px, 0, 0, px, 0, 0);
+    const one = 1 / size;
+    const span = m.MAP_VIEW.span;
+    g.clearRect(0, 0, 1, 1);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(mapLand, 0, 0, 1, 1);
+    /** A world point on the map, kept just inside its edge (what's beyond shows at the rim). */
+    const at = (x: number, y: number): [number, number] => {
+      m.mapPoint(x, y, uv);
+      uv[0] = Math.max(0.04, Math.min(0.96, uv[0]));
+      uv[1] = Math.max(0.04, Math.min(0.96, uv[1]));
+      return uv;
+    };
+    const rect = (r: { x: number; y: number; hx: number; hy: number }, fill: string, stroke?: string): void => {
+      m.mapPoint(r.x - r.hx, r.y + r.hy, uv);
+      g.fillStyle = fill;
+      g.fillRect(uv[0], uv[1], (2 * r.hx) / span, (2 * r.hy) / span);
+      if (!stroke) return;
+      g.strokeStyle = stroke;
+      g.lineWidth = one;
+      g.strokeRect(uv[0], uv[1], (2 * r.hx) / span, (2 * r.hy) / span);
+    };
+    const dot = (x: number, y: number, r: number, fill: string, ring?: string): void => {
+      const [u, v] = at(x, y);
+      g.beginPath();
+      g.arc(u, v, r * one, 0, Math.PI * 2);
+      g.fillStyle = fill;
+      g.fill();
+      if (!ring) return;
+      g.strokeStyle = ring;
+      g.lineWidth = 1.5 * one;
+      g.stroke();
+    };
+    // The two sites, the runway and the hall's door; then the keep's stations.
+    rect(FIELD, "rgb(214 230 170 / 0.9)", MAP_INK);
+    rect(RUNWAY, "#8d9097");
+    rect(HALL, "rgb(190 186 178 / 0.95)", MAP_INK);
+    for (const s of Object.values(STATIONS)) dot(s.x, s.y, 1.5, "rgb(59 53 80 / 0.75)");
+    // Every experiment where it stands, in its status's colour.
+    for (const e of model.experiments) {
+      const [u, v] = at(e.plot.x, e.plot.y);
+      const half = Math.max(3 * one, e.plot.size / 2 / span);
+      g.fillStyle = MAP_STATUS[e.status];
+      g.fillRect(u - half, v - half, 2 * half, 2 * half);
+      g.strokeStyle = "rgb(255 255 255 / 0.9)";
+      g.lineWidth = one;
+      g.strokeRect(u - half, v - half, 2 * half, 2 * half);
+    }
+    // Where the view looks: an open wedge from its focus.
+    handle.where(where);
+    const [fu, fv] = at(where.focusX, where.focusY);
+    g.beginPath();
+    for (const side of [-0.45, 0.45]) {
+      g.moveTo(fu, fv);
+      g.lineTo(fu + Math.cos(where.yaw + side) * 13 * one, fv - Math.sin(where.yaw + side) * 13 * one);
+    }
+    g.strokeStyle = MAP_INK;
+    g.lineWidth = 1.5 * one;
+    g.stroke();
+    // Galahad, and the way he faces.
+    const [gu, gv] = at(where.galahadX, where.galahadY);
+    g.beginPath();
+    g.moveTo(gu, gv);
+    g.lineTo(gu + Math.cos(where.galahadHeading) * 7 * one, gv - Math.sin(where.galahadHeading) * 7 * one);
+    g.strokeStyle = "#e8853a";
+    g.lineWidth = 2 * one;
+    g.stroke();
+    dot(where.galahadX, where.galahadY, 3.6, "#e8853a", "#ffffff");
+  }
+  scope.interval(drawMap, 200);
+  scope.listen(mapCanvas, "click", (event) => {
+    if (!handle || !mod) return;
+    const box = mapCanvas.getBoundingClientRect();
+    const { clientX, clientY } = event as MouseEvent;
+    mod.mapToWorld((clientX - box.left) / box.width, (clientY - box.top) / box.height, uv);
+    setFollow(false);
+    handle.goTo({ kind: "point", x: uv[0], y: uv[1] });
+    drawMap();
+  });
 
   // ---------- the model ----------
   let hudTimer: ReturnType<typeof setTimeout> | null = null;
@@ -490,6 +694,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       q: () => handle?.rotate(-1),
       e: () => handle?.rotate(1),
       f: () => setFollow(!following),
+      m: () => setMap(!mapOn),
+      // (Only while the sky's choices are open: Escape belongs to whatever else is.)
+      ...(skyOpen ? { Escape: () => setSky(false) } : {}),
     };
     const run = steps[key.length === 1 ? key.toLowerCase() : key];
     if (!run) return;

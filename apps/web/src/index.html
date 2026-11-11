@@ -908,13 +908,37 @@
 
       .world-hud { position: absolute; inset: 0; pointer-events: none; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: var(--sp-2); gap: var(--sp-2); }
       .world-hud > * { pointer-events: none; }
-      .world-hud .btn, .world-hud .segmented, .world-panel, .world-banner .callout { pointer-events: auto; }
-      .world-top { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
+      .world-hud .btn, .world-hud .segmented, .world-panel, .world-banner .callout, .world-sky, .world-map { pointer-events: auto; }
+      .world-top { display: flex; gap: var(--sp-2); align-items: flex-start; justify-content: space-between; }
+      .world-left { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
+      .world-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; margin-left: auto; }
       .world-tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
       .world-tools .btn, .world-controls .btn { box-shadow: var(--shadow-2); }
       .world-tools .btn[aria-pressed="false"] { background: var(--surface); }
       .world-tools .segmented { box-shadow: var(--shadow-2); background: var(--surface); }
-      @media (max-width: 639px) { .world-tools .seg-label { display: none; } .world-tools .btn > span { display: none; } .world-tools .btn { width: var(--control-h-sm); padding: 0; } }
+      @media (max-width: 639px) { .world-tools .btn > span { display: none; } .world-tools .btn { width: var(--control-h-sm); padding: 0; } }
+      /* The sky: the time in Denmark and its weather on one button; the choices in a small card under it. */
+      .world-tools .world-sky-btn { gap: 6px; font-variant-numeric: tabular-nums; }
+      .world-sky-btn .sky-more { color: var(--text-2); font-weight: 450; white-space: nowrap; }
+      .world-sky-btn[data-preview="true"] { border-color: var(--accent); }
+      .world-sky-btn[data-preview="true"] .sky-more { color: var(--accent-text, var(--accent)); }
+      .world-sky { width: min(340px, 100%); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); box-shadow: var(--shadow-3); }
+      .world-sky .sky-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: var(--sp-2); }
+      .world-sky .segmented svg { display: none; }
+      .world-sky .segmented button { padding: 0 4px; }
+      .world-sky .sky-foot { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-sm); }
+      .world-sky .sky-foot p { margin: 0; }
+      /* The map: paper and ink over the world, like the labels. */
+      .world-map { width: 136px; height: 136px; border-radius: var(--r-lg); box-shadow: var(--shadow-2); background: rgb(255 252 246 / 0.82); cursor: pointer; display: block; }
+      .world-map[hidden] { display: none; }
+      @media (max-width: 639px) {
+        .world-top { flex-direction: column-reverse; align-items: stretch; }
+        .world-right { align-items: stretch; }
+        .world-tools .world-sky-btn { width: auto; padding: 0 10px; }
+        .world-tools .world-sky-btn > .sky-time { display: inline; }
+        .world-sky { width: 100%; }
+        .world-map { width: 108px; height: 108px; }
+      }
       .world-banner .callout { box-shadow: var(--shadow-2); max-width: 560px; }
       .world-bottom { display: flex; align-items: flex-end; gap: var(--sp-2); min-height: 0; }
       .world-panel { width: min(340px, 100%); max-height: min(52vh, 440px); overflow: auto; box-shadow: var(--shadow-3); }
@@ -923,8 +947,6 @@
       .world-metrics dd { text-align: right; }
       .world-corner { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
       .world-controls { display: grid; grid-template-columns: repeat(2, auto); gap: 6px; }
-      .world-clock { align-self: center; color: #3b3550; background: rgb(255 252 246 / 0.78); padding: 3px 9px; border-radius: var(--r-full); box-shadow: var(--shadow-2); white-space: nowrap; }
-      .world-clock:empty { display: none; }
       .world-stats { color: #3b3550; background: rgb(255 252 246 / 0.7); padding: 2px 6px; border-radius: var(--r-full); }
       .world-stats:empty { display: none; }
       @media (max-width: 639px) {

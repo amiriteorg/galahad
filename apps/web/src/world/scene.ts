@@ -59,7 +59,25 @@ import { only, weatherUniforms } from "./wet.ts";
  * or the text summary).
  */
 
-export type GoTo = { kind: "galahad" } | { kind: "station"; station: Exclude<Station, "field"> } | { kind: "site"; site: SiteName } | { kind: "experiment"; id: string };
+export type GoTo =
+  | { kind: "galahad" }
+  | { kind: "station"; station: Exclude<Station, "field"> }
+  | { kind: "site"; site: SiteName }
+  | { kind: "experiment"; id: string }
+  /** A point on the ground (the map): the view moves there, as it is. */
+  | { kind: "point"; x: number; y: number };
+
+/** Where Galahad is and where the camera looks (world metres; headings in the atan2 convention): what the map draws. */
+export interface WorldWhere {
+  galahadX: number;
+  galahadY: number;
+  galahadHeading: number;
+  focusX: number;
+  focusY: number;
+  /** The way the camera looks, and how far it is from its focus. */
+  yaw: number;
+  distance: number;
+}
 
 export interface WorldOptions {
   /** A plot (or empty ground: null) was tapped. */
@@ -110,6 +128,8 @@ export interface WorldHandle {
   /** The real weather (Denmark's, now) to ease towards, as cloud, rain and mist; `snap` goes straight there (first sight). */
   aimWeather(target: WeatherTarget, snap?: boolean): void;
   stats(): WorldStats;
+  /** Where things are now, written into `out` (nothing is allocated). */
+  where(out: WorldWhere): WorldWhere;
   dispose(): void;
 }
 
@@ -1112,6 +1132,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
           const v = SITE_VIEW[target.site];
           rig.lookAt(v.x, v.y, v.distance);
           rig.target.yaw = v.yaw;
+        } else if (target.kind === "point") {
+          if (Number.isFinite(target.x) && Number.isFinite(target.y)) rig.lookAt(target.x, target.y);
         } else {
           const e = plots.get(target.id)?.exp;
           if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(28, e.plot.size * 1.6));
@@ -1158,6 +1180,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       weather.aim(target);
       if (snap) weather.snap(heavens.sunElevation * DEG, heavens.evening);
       dirty = true;
+    },
+    where(out) {
+      out.galahadX = walker.x;
+      out.galahadY = walker.y;
+      out.galahadHeading = walker.heading;
+      out.focusX = rig.x;
+      out.focusY = rig.y;
+      out.yaw = rig.yaw;
+      out.distance = rig.distance;
+      return out;
     },
     stats() {
       return {
