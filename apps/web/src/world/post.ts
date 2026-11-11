@@ -1,6 +1,6 @@
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
-import { float, mix, pass, uniform, vec4 } from "three/tsl";
+import { float, max, mix, pass, uniform, vec4 } from "three/tsl";
 import { Color, type DirectionalLight, type Node, type PerspectiveCamera, RenderPipeline, type Scene, Vector2, type Vector3, type WebGPURenderer } from "three/webgpu";
 import { type ShaftAir, SunShafts } from "./shafts.ts";
 
@@ -53,11 +53,6 @@ export class Post {
     return anyPost(this.flags);
   }
 
-  /** Whether the light shafts are on (the mist then leaves its sunlit share to them). */
-  get shafted(): boolean {
-    return this.flags.shafts;
-  }
-
   /** Turns effects on or off; the pipeline is rebuilt only when they change. */
   set(flags: PostFlags): void {
     if (flags.ao === this.flags.ao && flags.shafts === this.flags.shafts && flags.bloom === this.flags.bloom) return;
@@ -83,8 +78,11 @@ export class Post {
     if (flags.shafts) {
       // Lit air, marched through the sun's shadow map (it only shows where the light really falls).
       this.shafts = new SunShafts(depth, this.camera, this.light, this.air);
-      const lit = (this.shafts.node as unknown as { r: ReturnType<typeof float> }).r;
-      out = out.add(this.shaftColor.mul(lit.mul(this.shaftStrength)));
+      // The light the lit air adds; and where the mist lies in shadow, the sun's share of its light taken away again
+      // (the fog drew all the mist as lit), so shadows stand in it as beams. Never darker than half.
+      const shafts = this.shafts.light();
+      const shade = this.shaftColor.mul(shafts.y.mul(this.shaftStrength).mul(0.9));
+      out = max(out.sub(shade), out.mul(0.5)).add(this.shaftColor.mul(shafts.x.mul(this.shaftStrength)));
     }
     if (flags.bloom) {
       const glow = bloom(color, 1, 0.4, 0.95);

@@ -320,8 +320,6 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const weather = new Weather(options.weather ?? "clear");
   const lightning = new Lightning();
   let lastStrike = 0;
-  /** Whether the high tier's light shafts are on: the mist then leaves its sunlit share to them. */
-  let shafted = false;
 
   let sparkTimer = 0;
   const anvil = forgeAnvil();
@@ -357,7 +355,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const w = weather.state;
     sky.set(s, w.rain, !reduced());
     horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud, s.underlight);
-    atmosphere.set(s, w.rain, w.snow, shafted);
+    atmosphere.set(s, w.rain, w.snow);
     hemi.color.setHex(s.hemiSky);
     hemi.groundColor.setHex(s.hemiGround);
     hemi.intensity = s.hemiIntensity;
@@ -699,8 +697,6 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // The high tier's finish: ambient occlusion, sun shafts, bloom (WebGPU only; none on phones or WebGL2).
   const post = backend === "webgpu" && (tier.post.ao || tier.post.shafts || tier.post.bloom) ? new Post(renderer, scene, camera, governor.post, sun, atmosphere.shaftAir) : null;
-  shafted = post?.shafted ?? false;
-  applySky();
 
   // Every material's pipeline compiled before the first frame (and the night's glows with them), so
   // nothing stalls later when a chunk's grass or the lamps first appear.
@@ -1025,9 +1021,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // The light: from the sun by day, the moon by night, kept over the focus.
     placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightDir);
     if (post?.active) {
-      // The shafts reach from the camera to the far side of the shadow map's box.
+      // The shafts reach from the camera to the far side of the shadow map's box; the air is thicker under a low sun.
       const w = weather.state;
-      post.update(lightDir, shaftStrength(), skyState.lightFromSun ? skyState.sunGlow : skyState.light, rig.distance + shadowRadius * 0.9, 0.0022 + 0.004 * w.rain + 0.003 * w.snow);
+      post.update(lightDir, shaftStrength(), skyState.lightFromSun ? skyState.sunGlow : skyState.light, rig.distance + shadowRadius * 0.9, 0.004 + 0.009 * skyState.golden + 0.004 * w.rain + 0.003 * w.snow);
       post.render();
     } else renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
@@ -1039,13 +1035,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (action === "dpr") {
         renderer.setPixelRatio(governor.dpr);
         resize();
-      } else if (action === "drop-post") {
-        post?.set(governor.post);
-        if (shafted !== (post?.shafted ?? false)) {
-          shafted = post?.shafted ?? false;
-          applySky();
-        }
-      }
+      } else if (action === "drop-post") post?.set(governor.post);
       else if (action === "drop-shadows") setShadows(false);
       else if (action === "drop-grass") vegetation.dropGrass();
     }

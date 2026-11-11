@@ -120,12 +120,8 @@ export class Atmosphere {
     return { mist: this.mistDensity as unknown as Node, sheet: this.sheetDensity as unknown as Node, sheetLevel: this.sheetLevel as unknown as Node };
   }
 
-  /**
-   * The air for this sky and weather (`rain` and `snow` falling, 0..1). With
-   * `shafted`, the light shafts (post.ts) add the sun's share of the mist's
-   * light where the light really falls, so the mist itself is drawn without it.
-   */
-  set(s: Sky, rain: number, snow: number, shafted = false): void {
+  /** The air for this sky and weather (`rain` and `snow` falling, 0..1). */
+  set(s: Sky, rain: number, snow: number): void {
     air.color.value.setHex(s.horizon).multiplyScalar(HAZE);
     air.sun.value.setHex(s.airLight).multiplyScalar(HAZE);
     air.shade.value.setHex(s.horizon).lerp(this.zenith.setHex(s.zenith), 0.5).multiplyScalar(HAZE * 0.92);
@@ -144,8 +140,8 @@ export class Atmosphere {
     air.rayB.value.copy(this.b);
     // The mist takes the haze's colour, lit a little by the low sun (rosy at dawn, white by day, blue at night),
     // and glows towards the light.
-    const own = shafted && s.lightFromSun ? 1 - 0.24 * (1 - 0.85 * s.cloud) : 1;
-    this.mistColor.value.copy(air.color.value).lerp(air.sun.value, 0.3 * (1 - s.cloud)).multiplyScalar(1.04 * own);
+    // (On the high tier the light shafts take the sun's share away again where the mist lies in shadow: post.ts.)
+    this.mistColor.value.copy(air.color.value).lerp(air.sun.value, 0.3 * (1 - s.cloud)).multiplyScalar(1.04);
     this.mistGlow.value.copy(this.mistColor.value).lerp(air.sun.value, 0.75).multiplyScalar(1 + 0.3 * Math.min(1, s.airWarm + s.airGlow));
     this.mistDensity.value = s.mist * MIST_DENSITY;
     this.sheetDensity.value = s.groundMist * SHEET_DENSITY;
