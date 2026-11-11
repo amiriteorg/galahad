@@ -13,7 +13,7 @@
  * caching a new version drops the old one.
  */
 
-const VERSION = "galahad-shell-v5";
+const VERSION = "galahad-shell-v6";
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 /** Cached on first use rather than on install. */
@@ -84,6 +84,8 @@ async function fromShell(event: FetchEventLike, key: string): Promise<Response> 
 
 /** How long opening the app waits for the network before falling back to the cached page. */
 const PAGE_TIMEOUT_MS = 3500;
+/** The navigations that are the app opening: only their page is kept, as "/". */
+const APP_PAGES = ["/", "/index.html"];
 
 /**
  * Opening the app: the page from the network first (it holds all the CSS, so a cached
@@ -95,7 +97,9 @@ async function page(event: FetchEventLike): Promise<Response> {
   try {
     const response = await fetch(event.request, { signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) });
     if (response.ok) {
-      event.waitUntil(cache.put("/", response.clone()));
+      // Anything else opened in a tab (a script, the manifest, the bank's return with its code) is shown, never kept as the app.
+      const app = APP_PAGES.includes(new URL(event.request.url).pathname) && (response.headers.get("content-type") ?? "").startsWith("text/html");
+      if (app) event.waitUntil(cache.put("/", response.clone()));
       return response;
     }
   } catch {
