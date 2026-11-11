@@ -14,18 +14,21 @@
 #   --sudo              give the galahad user passwordless sudo, with every command logged
 #   --expose <port>     publish the PWA with `tailscale serve` on that HTTPS port (tailnet only)
 #   --open-firewall     allow the Galahad port on tailscale0 when UFW is active
+#   --embedder          the archive's local embedder: Ollama (pinned, checksummed) on 127.0.0.1 only,
+#                       with qwen3-embedding:0.6b, hired as the embedder role unless you chose one
+#                       (opt-in; without it a deploy changes nothing here, and leaves an earlier install)
 # other: --port 7777, --skip-tests
 #
 # Transport: plain ssh by default; GALAHAD_SSH="tailscale ssh" uses Tailscale SSH.
 set -euo pipefail
 
 if [[ $# -lt 1 || $1 == -* ]]; then
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 TARGET=$1
 shift
-NAME="-" MODE="update" FLEET="-" INVITE="-" PORT=7777 SKIP_TESTS=0 SUDO=0 EXPOSE=0 OPEN_FIREWALL=0
+NAME="-" MODE="update" FLEET="-" INVITE="-" PORT=7777 SKIP_TESTS=0 SUDO=0 EXPOSE=0 OPEN_FIREWALL=0 EMBEDDER=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --name) NAME=$2; shift 2 ;;
@@ -36,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --sudo) SUDO=1; shift ;;
     --expose) EXPOSE=$2; shift 2 ;;
     --open-firewall) OPEN_FIREWALL=1; shift ;;
+    --embedder) EMBEDDER=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -63,4 +67,4 @@ trap '"${SSH[@]}" "$TARGET" "rm -rf -- $STAGE" || true' EXIT
 git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "tar -x -C $STAGE"
 
 echo "→ setting up the node on $TARGET"
-"${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL"
+"${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL $EMBEDDER"
