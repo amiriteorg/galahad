@@ -436,3 +436,50 @@ describe("the real Open Source Rover", () => {
     expect(Math.abs(Math.max(wheel.max[0], -wheel.min[0], wheel.max[2], -wheel.min[2]) * OSR_SCALE - ROVER.wheelRadius)).toBeLessThan(0.006);
   });
 });
+
+describe("what the proving ground costs to draw", () => {
+  test("a handful of meshes and a triangle budget per tier: at most 60 000 on high, half that on medium", async () => {
+    const { ProvingGround, FIELD_DETAIL } = await import("./field.ts");
+    const { TIERS } = await import("./tiers.ts");
+    const budget = { high: 60_000, medium: 30_000, low: 24_000 } as const;
+    for (const name of ["high", "medium", "low"] as const) {
+      const place = new ProvingGround({ tier: TIERS[name], shadows: TIERS[name].shadows, ground: () => 0 });
+      let meshes = 0;
+      let triangles = 0;
+      place.group.traverse((o) => {
+        const m = o as unknown as { isMesh?: boolean; isInstancedMesh?: boolean; count?: number; geometry?: { index: { count: number } | null; getAttribute(n: string): { count: number } } };
+        if (!m.isMesh || !m.geometry) return;
+        meshes++;
+        const n = (m.geometry.index ? m.geometry.index.count : m.geometry.getAttribute("position").count) / 3;
+        triangles += n * (m.isInstancedMesh ? (m.count ?? 1) : 1);
+      });
+      // Ground, solid, lit, machines, their beams and the halos (the last two only drawn at night); on high, the real rover too, once it's loaded.
+      expect(meshes).toBeLessThanOrEqual(6);
+      if (FIELD_DETAIL[name].realRover) triangles += JSON.parse(await Bun.file(new URL("./assets/robots/open-source-rover.json", import.meta.url)).text()).triangles;
+      expect(triangles).toBeLessThanOrEqual(budget[name]);
+      place.dispose();
+    }
+  });
+
+  test("under reduced motion everything rests where it parks, and stays", async () => {
+    const { ProvingGround } = await import("./field.ts");
+    const { TIERS } = await import("./tiers.ts");
+    const place = new ProvingGround({ tier: TIERS.low, shadows: false, ground: () => 0 });
+    const f = { dt: 1 / 30, t: 0, motion: true, focusX: -120, focusY: -35, distance: 60, follow: false, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0, wind: 5, windHeading: 0.35 };
+    for (let i = 0; i < 900; i++) {
+      f.t += f.dt;
+      place.animate(f);
+    }
+    f.motion = false;
+    place.animate(f);
+    const at = place.movers.map((m) => [m.x, m.y]);
+    expect(Math.hypot(at[0]![0]! - TIE_DOWN.x, at[0]![1]! - TIE_DOWN.y)).toBeLessThan(0.05);
+    expect(Math.hypot(at[2]![0]! - DRONE_PAD.x, at[2]![1]! - DRONE_PAD.y)).toBeLessThan(0.05);
+    for (let i = 0; i < 60; i++) {
+      f.t += f.dt;
+      place.animate(f);
+    }
+    expect(place.movers.map((m) => [m.x, m.y])).toEqual(at);
+    place.dispose();
+  });
+});

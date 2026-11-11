@@ -793,7 +793,7 @@ function course(k: Kit): void {
         for (const e of [o.from, o.to]) k.solid.add(new CylinderGeometry(o.r * 0.96, o.r * 0.96, 0.02, k.d.seg + 2), 0xe0c49a, W(o.x - s * e, o.y + c * e, base + o.h - o.r, o.heading).multiply(at(0, 0, 0, 0, 1, Math.PI / 2)), 0);
       } else k.solid.add(geom, C.concrete, W(x, y, base, o.heading), 0.05);
     } else if (o.kind === "rock") {
-      const g = lumpy(new SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2), o.x * 7 + o.y, 0.04);
+      const g = lumpy(k.d.bevel ? new SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2) : new SphereGeometry(1, 7, 3, 0, Math.PI * 2, 0, Math.PI / 2), o.x * 7 + o.y, 0.04);
       // (Pressed down a touch so the lumps never stand above where the wheels ride.)
       k.solid.add(g, shade(C.stone, 0.92 + 0.12 * Math.abs(Math.sin(o.x * 3.1 + o.y))), W(o.x, o.y, base - 0.01, o.yaw, [o.rx, o.h * 0.96, o.ry]), 0.1);
     } else if (o.kind === "sand") {

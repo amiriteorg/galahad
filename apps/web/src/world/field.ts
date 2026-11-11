@@ -51,7 +51,7 @@ export const FIELD_DETAIL: Record<TierName, { ground: GroundDetail; build: Build
     realRover: true,
   },
   medium: {
-    ground: { turf: 5, tile: 12, fine: true },
+    ground: { turf: 6, tile: 12, fine: true },
     build: { bevel: false, seg: 7, ribs: false, interior: true, props: true, lettering: true, fenceStep: 4.5, edgeStep: 16 },
     machines: { seg: 7, bevel: false },
     halos: 80,
@@ -150,11 +150,12 @@ export class ProvingGround implements Place {
     const wet = weatherUniforms.wetness;
     const puddle = only(wet.greaterThan(0.3), float(0) as unknown as F, () => {
       const p = vec2(positionLocal.x, positionLocal.z);
-      const patch = sin(p.x.mul(0.37).add(sin(p.y.mul(0.29)).mul(1.7))).mul(sin(p.y.mul(0.41).add(sin(p.x.mul(0.23)).mul(1.4))));
-      return smoothstep(0.3, 0.55, patch.add(wet.mul(0.45)).sub(0.45)).mul(smoothstep(0.35, 0.85, wet)).mul(smoothstep(0.7, 0.95, gloss)) as unknown as F;
+      // Puddles a few metres across where the paving dips, more of them the wetter it gets.
+      const patch = sin(p.x.mul(1.13).add(sin(p.y.mul(0.83)).mul(1.7))).mul(sin(p.y.mul(1.31).add(sin(p.x.mul(0.71)).mul(1.4))));
+      return smoothstep(0.5, 0.78, patch.add(wet.mul(0.3)).sub(0.3)).mul(smoothstep(0.4, 0.9, wet)).mul(smoothstep(0.7, 0.95, gloss)) as unknown as F;
     });
-    ground.colorNode = vertexColor().mul(wetDarken(0.8)).mul(mix(float(1), float(0.62), puddle));
-    ground.emissiveNode = wetSheen(1, () => puddle.add(ripples(0.7).mul(max(puddle, gloss.mul(0.14)))) as unknown as F)
+    ground.colorNode = vertexColor().mul(wetDarken(0.8)).mul(mix(float(1), float(0.55), puddle));
+    ground.emissiveNode = wetSheen(1, () => puddle.mul(0.45).add(ripples(0.7).mul(max(puddle, gloss.mul(0.12)))) as unknown as F)
       .mul(gloss.mul(0.8).add(0.2))
       .add(vertexColor().mul(pools()).mul(this.night).mul(WARM));
     const groundMesh = new Mesh(buildGround(detail.ground).build(), ground);
