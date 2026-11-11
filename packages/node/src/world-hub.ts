@@ -9,6 +9,11 @@ import {
   ExperimentStart as ExperimentStartSchema,
   type ExperimentView,
   type GalahadState,
+  PADS,
+  padKindFor,
+  PLOT_FILL,
+  SITE_NAMES,
+  SITES,
   type Station,
   STATIONS,
   type WorldEvent,
@@ -42,7 +47,10 @@ interface Running extends ExperimentView {
   lastFrameAt: number;
   /** Frames accepted in the current second, to hold MAX_FPS. */
   window: { at: number; count: number };
+  /** Its cell of the spiral on open land, or -1 on a pad. */
   cell: number;
+  /** The pad it stands on (a site's), if any. */
+  pad: string | null;
 }
 
 export interface ExperimentOrigin {
@@ -69,6 +77,18 @@ export function cellAt(n: number): { x: number; y: number } {
     [-ring + 1 + step, -ring],
   ][side]!;
   return { x: cx! * CELL, y: cy! * CELL };
+}
+
+/** Room kept between a site and the nearest plot on open land (the land's blend from one level to the other). */
+const SITE_MARGIN = 14;
+
+/** True where a cell's largest plot would stand on a site (the proving ground, the hall) or crowd it. */
+export function cellOnSite(cell: { x: number; y: number }): boolean {
+  const half = PLOT.large / 2 + SITE_MARGIN;
+  return SITE_NAMES.some((name) => {
+    const s = SITES[name];
+    return Math.abs(cell.x - s.x) < s.w / 2 + half && Math.abs(cell.y - s.y) < s.d / 2 + half;
+  });
 }
 
 const clipThought = (text: string) => {
@@ -204,28 +224,45 @@ export class WorldHub {
   }
 
   private view(e: Running): ExperimentView {
-    const { key: _key, window: _window, cell: _cell, lastFrameAt: _last, ...view } = e;
+    const { key: _key, window: _window, cell: _cell, pad: _pad, lastFrameAt: _last, ...view } = e;
     return view;
   }
 
-  /** A new experiment on the next free plot. Returns its id and the key its frames must carry. */
+  /**
+   * A new experiment where it belongs: on a pad of the proving ground or the hall when one of the
+   * right kind is free (an ended experiment still standing there is cleared away), otherwise on the
+   * next free plot of open land. Returns its id and the key its frames must carry.
+   */
   start(input: z.infer<typeof ExperimentStart>, origin: ExperimentOrigin): { id: string; key: string; view: ExperimentView } {
     this.prune();
-    const used = new Set([...this.experiments.values()].map((e) => e.cell));
-    let cell = 0;
-    while (used.has(cell)) cell++;
-    const size = PLOT[input.plot ?? "medium"];
-    const centre = cellAt(cell);
-    const scale = input.extent ? Math.min(1, (size * 0.85) / input.extent) : 1;
+    const at = this.now();
+    const kind = padKindFor(input.engine, input.extent, input.site);
+    const running = new Set([...this.experiments.values()].filter((e) => e.endedAt === null).map((e) => e.pad));
+    const pad = kind ? PADS.find((p) => p.kind === kind && !running.has(p.id)) : undefined;
+    let cell = -1;
+    let plot: ExperimentView["plot"];
+    if (pad) {
+      for (const e of [...this.experiments.values()]) {
+        if (e.pad !== pad.id) continue;
+        this.experiments.delete(e.id);
+        this.emit({ type: "cleared", at, experiment: e.id });
+      }
+      plot = { x: pad.x, y: pad.y, size: pad.size };
+    } else {
+      const used = new Set([...this.experiments.values()].map((e) => e.cell));
+      cell = 0;
+      while (used.has(cell) || cellOnSite(cellAt(cell))) cell++;
+      plot = { ...cellAt(cell), size: PLOT[input.plot ?? "medium"] };
+    }
+    const scale = input.extent ? Math.min(1, (plot.size * PLOT_FILL) / input.extent) : 1;
     const key = randomBytes(32);
     const id = `ex_${randomBytes(9).toString("base64url")}`;
-    const at = this.now();
     const experiment: Running = {
       id,
       title: input.title,
       engine: input.engine,
       status: "starting",
-      plot: { x: centre.x, y: centre.y, size },
+      plot,
       scale,
       scene: input.scene,
       startedAt: at,
@@ -239,6 +276,7 @@ export class WorldHub {
       lastFrameAt: at,
       window: { at, count: 0 },
       cell,
+      pad: pad?.id ?? null,
     };
     this.experiments.set(id, experiment);
     this.emit({ type: "experiment", at, experiment: this.view(experiment) });

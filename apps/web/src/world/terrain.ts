@@ -1,12 +1,14 @@
 import { fbm, hash2, hash3, simplex, smoothstep } from "./noise.ts";
+import { SITE_NAMES } from "@galahad/core/world";
+import { SITE_GATES, SITE_LEVEL, SITE_RECTS } from "./sites.ts";
 
 /*
  * The SANDBOX's land, as numbers: an endless field of 64 m chunks grown from one
  * seed. Gentle hills, meadows, forests, rocky tops, sandy shores and lakes, and
  * streams that come down from the hills in pools and waterfalls (their beds are
  * stepped, so where a stream drops, it falls); the keep's ground (45 m around
- * the origin) and every experiment plot are flat at level 0 and blend into the
- * hills around them. Small things for the fine grid to show: the meadows ripple,
+ * the origin), the two test sites, the roads to them and every experiment plot
+ * are flat at level 0 and blend into the hills around them. Small things for the fine grid to show: the meadows ripple,
  * crags break through the turf, some hillsides step down in gentle terraces and
  * streams cut crisp banks. Each chunk is sampled on a base grid (4 m cells) and,
  * near the camera, a fine one (2 m cells) whose vertices include the base grid's;
@@ -35,15 +37,39 @@ const PLOT_BLEND = 14;
 /** No trees this close to flat ground. */
 const TREE_CLEARANCE = 4;
 
-export type Flat = { kind: "circle"; x: number; y: number; radius: number; blend: number } | { kind: "square"; x: number; y: number; half: number; blend: number };
+/** Ground kept level: at the keep's height (0) unless it says otherwise (`level`, metres). */
+export type Flat = (
+  | { kind: "circle"; x: number; y: number; radius: number; blend: number }
+  | { kind: "square"; x: number; y: number; half: number; blend: number }
+  /** Half-extents east-west (hx) and north-south (hy). */
+  | { kind: "rect"; x: number; y: number; hx: number; hy: number; blend: number }
+) & { level?: number };
 
 export const KEEP_FLAT: Flat = { kind: "circle", x: 0, y: 0, radius: KEEP_RADIUS, blend: KEEP_BLEND };
 export const plotFlat = (plot: { x: number; y: number; size: number }): Flat => ({ kind: "square", x: plot.x, y: plot.y, half: plot.size / 2 + PLOT_MARGIN, blend: PLOT_BLEND });
-export const flatKey = (f: Flat): string => (f.kind === "circle" ? `c${f.x},${f.y},${f.radius}` : `s${f.x},${f.y},${f.half}`);
+/**
+ * The proving ground and the workshop hall stand on level ground, a few metres wider than they are: the hall at the keep's
+ * height, the proving ground up on its plateau. The road east to the hall's door is level too (it skirts the lake's arm);
+ * the road west climbs the hillside as it lies.
+ */
+const SITE_APRON = 5;
+const SITE_BLEND = 18;
+const ROAD_HALF = 4;
+export const SITE_FLATS: Flat[] = [
+  ...SITE_NAMES.map((name): Flat => {
+    const r = SITE_RECTS[name];
+    return { kind: "rect", x: r.x, y: r.y, hx: r.hx + SITE_APRON, hy: r.hy + SITE_APRON, blend: SITE_BLEND, level: SITE_LEVEL[name] };
+  }),
+  { kind: "rect", x: (SITE_GATES.hall.x + KEEP_RADIUS) / 2, y: SITE_GATES.hall.y, hx: (SITE_GATES.hall.x - KEEP_RADIUS) / 2, hy: ROAD_HALF, blend: PLOT_BLEND },
+];
+/** The ground that's level whatever is running: the keep, the two sites and the roads to them. */
+export const BASE_FLATS: Flat[] = [KEEP_FLAT, ...SITE_FLATS];
+export const flatKey = (f: Flat): string => (f.kind === "circle" ? `c${f.x},${f.y},${f.radius}` : f.kind === "square" ? `s${f.x},${f.y},${f.half}` : `r${f.x},${f.y},${f.hx},${f.hy}`) + (f.level ? `@${f.level}` : "");
 
 /** How far (x, y) is outside the flat's level core (negative inside). */
 export function flatDistance(f: Flat, x: number, y: number): number {
   if (f.kind === "circle") return Math.hypot(x - f.x, y - f.y) - f.radius;
+  if (f.kind === "rect") return Math.max(Math.abs(x - f.x) - f.hx, Math.abs(y - f.y) - f.hy);
   return Math.max(Math.abs(x - f.x), Math.abs(y - f.y)) - f.half;
 }
 
@@ -148,12 +174,26 @@ export function flatMix(flats: readonly Flat[], x: number, y: number): number {
   return w;
 }
 
-/** The ground's height at (x, y), with the flats levelled. */
+/**
+ * The ground's height at (x, y), with the flats levelled: each at its own level, and where the blend bands of
+ * two meet (the keep's lawn and the proving ground above it), eased between them by their weights.
+ */
 export function heightAt(seed: number, x: number, y: number, flats: readonly Flat[]): number {
-  const w = flatMix(flats, x, y);
-  if (w >= 1) return FLAT_LEVEL;
+  let most = 0;
+  let sum = 0;
+  let level = 0;
+  for (let i = 0; i < flats.length; i++) {
+    const f = flats[i]!;
+    const w = flatWeight(f, x, y);
+    if (w <= 0) continue;
+    const at = f.level ?? FLAT_LEVEL;
+    if (w >= 1) return at;
+    sum += w;
+    level += w * at;
+    if (w > most) most = w;
+  }
   const h = naturalHeight(seed, x, y);
-  return h + (FLAT_LEVEL - h) * w;
+  return most > 0 ? h + (level / sum - h) * most : h;
 }
 
 export type Ground = "lakebed" | "sand" | "meadow" | "forest" | "rock" | "green";
@@ -373,8 +413,10 @@ function fields(seed: number, x0: number, y0: number, cells: number, built: (x: 
   const n = cells + 1;
   const cell = CHUNK / cells;
   const f: Fields = { rockline: new Float32Array(n * n), woods: new Float32Array(n * n), patch: new Float32Array(n * n), crag: new Float32Array(n * n), built: new Uint8Array(n * n) };
-  // Only near the keep is anything built (and asking is slow).
-  const keep = Math.hypot(Math.max(Math.abs(x0 + CHUNK / 2) - CHUNK / 2, 0), Math.max(Math.abs(y0 + CHUNK / 2) - CHUNK / 2, 0)) < 80;
+  // Only near the keep, on the sites and along the roads to them is anything built (and asking is slow).
+  const keep =
+    Math.hypot(Math.max(Math.abs(x0 + CHUNK / 2) - CHUNK / 2, 0), Math.max(Math.abs(y0 + CHUNK / 2) - CHUNK / 2, 0)) < 80 ||
+    SITE_FLATS.some((f) => flatDistance(f, Math.max(x0, Math.min(f.x, x0 + CHUNK)), Math.max(y0, Math.min(f.y, y0 + CHUNK))) < 2);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const x = x0 + i * cell;
@@ -564,7 +606,8 @@ const RULES: Record<Layer, LayerRule> = {
 };
 
 function clearOfFlats(flats: readonly Flat[], x: number, y: number, clearance: number, lawn = false): boolean {
-  for (const f of flats) if ((!lawn || f.kind === "square") && flatDistance(f, x, y) <= clearance) return false;
+  // (The keep's lawn grows grass and flowers; plots, the sites and the roads are kept bare.)
+  for (const f of flats) if ((!lawn || f.kind !== "circle") && flatDistance(f, x, y) <= clearance) return false;
   return true;
 }
 

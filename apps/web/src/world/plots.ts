@@ -1,4 +1,5 @@
 import type { BodyShape, ExperimentFrame, ExperimentStatus, ExperimentView, Pose, SceneBody } from "@galahad/core/world";
+import { padAt } from "@galahad/core/world";
 import { abs, positionWorld, step, uniform } from "three/tsl";
 import {
   AdditiveBlending,
@@ -31,6 +32,7 @@ import { disposeTree } from "./keep.ts";
 import { at, linear, Mesher } from "./mesher.ts";
 import { plotGate } from "./path.ts";
 import { PoseBuffer } from "./pose.ts";
+import { plotLevel } from "./sites.ts";
 
 /*
  * Experiments on their plots: a fenced lot with a signpost and a status lamp, and
@@ -160,6 +162,8 @@ class Plot {
   private horizon = 0;
   /** The sign's top, world coordinates (z up): where the label floats. */
   readonly signPoint: Vec3 = [0, 0, 0];
+  /** The height of the ground the plot stands on. */
+  private level = 0;
   exp: ExperimentView;
 
   constructor(
@@ -225,18 +229,24 @@ class Plot {
       (child as Mesh).geometry.dispose();
     }
     const { x, y, size } = exp.plot;
-    const [sx, sy, sz] = toScene(x, y, 0);
+    // A pad stands on its site's ground (the proving ground is up on its plateau); open land is levelled at the keep's height.
+    this.level = plotLevel(exp.plot);
+    const [sx, sy, sz] = toScene(x, y, this.level);
     this.base.position.set(sx, sy, sz);
     this.plotUniform.value.set(x, y, size / 2);
     const half = size / 2;
+    // On a pad of the proving ground or the hall, the site is the ground and the fence: only the sign and its lamp are the plot's.
+    const sited = padAt(exp.plot) !== null;
     const fence = new Mesher();
-    fence.add(new BoxGeometry(size + 1.6, 0.08, size + 1.6), 0xbfb092, at(0, 0.03, 0), 0);
-    fence.add(new BoxGeometry(size, 0.08, size), 0xe3d9c0, at(0, 0.06, 0), 0.02);
+    if (!sited) {
+      fence.add(new BoxGeometry(size + 1.6, 0.08, size + 1.6), 0xbfb092, at(0, 0.03, 0), 0);
+      fence.add(new BoxGeometry(size, 0.08, size), 0xe3d9c0, at(0, 0.06, 0), 0.02);
+    }
     const gate = plotGate(exp.plot);
     const gateDir = Math.atan2(gate.y - y, gate.x - x);
     const f = half + 1;
     const corners: [number, number][] = [[-f, -f], [f, -f], [f, f], [-f, f]];
-    for (let side = 0; side < 4; side++) {
+    for (let side = 0; !sited && side < 4; side++) {
       const [ax, ay] = corners[side]!;
       const [bx, by] = corners[(side + 1) % 4]!;
       const len = Math.hypot(bx - ax, by - ay);
@@ -261,14 +271,16 @@ class Plot {
     const signY = Math.sin(gateDir) * (f + 0.8) + Math.sin(side) * 2.2;
     fence.add(new BoxGeometry(0.16, 2.4, 0.16), 0x654330, at(signX, 1.2, -signY));
     fence.add(new BoxGeometry(1.5, 0.85, 0.1), 0xf0e4c6, at(signX, 1.95, -signY, headingToSceneYaw(gateDir)));
-    // A little research dome with a solar panel, behind the pad: test pads sit by the domes.
-    const back = gateDir + Math.PI;
-    const domeX = Math.cos(back) * (f + 2.2) + Math.cos(side) * f * 0.55;
-    const domeY = Math.sin(back) * (f + 2.2) + Math.sin(side) * f * 0.55;
-    fence.add(new SphereGeometry(2, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2), 0xf6f4ef, at(domeX, -0.1, -domeY), 0.03);
-    fence.add(new CylinderGeometry(2.03, 2.03, 0.35, 12), 0xe8853a, at(domeX, 0.45, -domeY), 0);
-    fence.add(new BoxGeometry(2.4, 0.08, 1.5), 0x2e4a86, at(domeX - Math.cos(side) * 3.2, 1.1, -(domeY - Math.sin(side) * 3.2), headingToSceneYaw(gateDir), 1, -0.45), 0.02);
-    fence.add(new BoxGeometry(0.1, 1, 0.1), 0x8b8f97, at(domeX - Math.cos(side) * 3.2, 0.5, -(domeY - Math.sin(side) * 3.2)), 0);
+    if (!sited) {
+      // A little research dome with a solar panel, behind the pad: test pads sit by the domes.
+      const back = gateDir + Math.PI;
+      const domeX = Math.cos(back) * (f + 2.2) + Math.cos(side) * f * 0.55;
+      const domeY = Math.sin(back) * (f + 2.2) + Math.sin(side) * f * 0.55;
+      fence.add(new SphereGeometry(2, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2), 0xf6f4ef, at(domeX, -0.1, -domeY), 0.03);
+      fence.add(new CylinderGeometry(2.03, 2.03, 0.35, 12), 0xe8853a, at(domeX, 0.45, -domeY), 0);
+      fence.add(new BoxGeometry(2.4, 0.08, 1.5), 0x2e4a86, at(domeX - Math.cos(side) * 3.2, 1.1, -(domeY - Math.sin(side) * 3.2), headingToSceneYaw(gateDir), 1, -0.45), 0.02);
+      fence.add(new BoxGeometry(0.1, 1, 0.1), 0x8b8f97, at(domeX - Math.cos(side) * 3.2, 0.5, -(domeY - Math.sin(side) * 3.2)), 0);
+    }
     const fenceMesh = new Mesh(fence.build(), this.fenceMaterial);
     fenceMesh.userData.fence = true;
     fenceMesh.receiveShadow = this.shadows;
@@ -276,7 +288,7 @@ class Plot {
     this.lamp.position.set(signX, 2.6, -signY);
     this.signPoint[0] = x + signX;
     this.signPoint[1] = y + signY;
-    this.signPoint[2] = 3.1;
+    this.signPoint[2] = this.level + 3.1;
     const r = f + 0.6;
     this.ring.geometry.setAttribute("position", new BufferAttribute(new Float32Array([-r, 0.12, -r, r, 0.12, -r, r, 0.12, r, -r, 0.12, r]), 3));
 
@@ -486,7 +498,7 @@ class Plot {
     const s = this.exp.scale;
     out[0] = this.exp.plot.x + p.x * s;
     out[1] = this.exp.plot.y + p.y * s;
-    out[2] = p.z * s + 0.4;
+    out[2] = this.level + p.z * s + 0.4;
     return true;
   }
 

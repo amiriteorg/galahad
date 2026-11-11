@@ -161,7 +161,7 @@ def _quat_from_matrix(m):
 class Experiment:
     """One simulation on its plot of the world. Use it as a context manager: it ends when the block does (failed, if it raised)."""
 
-    def __init__(self, title, engine="custom", scene=(), extent=None, plot=None, speed=1.0):
+    def __init__(self, title, engine="custom", scene=(), extent=None, plot=None, speed=1.0, site=None):
         self.title = title
         self.speed = speed
         self.metrics = {}
@@ -182,6 +182,8 @@ class Experiment:
             body["extent"] = float(extent)
         if plot:
             body["plot"] = plot
+        if site:
+            body["site"] = site
         try:
             started = _post("/experiments", body, {"authorization": f"Bearer {os.environ['GALAHAD_TOKEN']}"})
         except Exception as error:
@@ -271,7 +273,13 @@ class Experiment:
 
 
 def experiment(title, **kw):
-    """Start an experiment in the world: experiment(title, engine=..., scene=[...], extent=metres, plot="small"|"medium"|"large", speed=1.0)."""
+    """Start an experiment in the world: experiment(title, engine=..., scene=[...], extent=metres, plot="small"|"medium"|"large", speed=1.0, site=None).
+
+    site says where it stands: "field" (the proving ground: aircraft over the runway, rockets on the launch pad,
+    anything else on the rover course), "hall" (a test cell in the workshop) or "open" (a plot on open land).
+    Without it the node chooses: aircraft and rockets on the proving ground, anything spanning less than a test
+    cell indoors, the rest on open land. A site whose pads are all in use sends it to open land.
+    """
     return Experiment(title, **kw)
 
 
@@ -339,7 +347,7 @@ def mujoco_poses(model, data, scene=None, fixed=False):
     return poses
 
 
-def mujoco_run(model, data=None, seconds=10.0, control=None, metrics=None, title="MuJoCo", fps=25, speed=1.0, plot=None):
+def mujoco_run(model, data=None, seconds=10.0, control=None, metrics=None, title="MuJoCo", fps=25, speed=1.0, plot=None, site=None):
     """Step a MuJoCo model for `seconds`, showing it in the world. control(model, data) sets data.ctrl each step; metrics(model, data) returns {name: number}."""
     import mujoco
 
@@ -348,7 +356,7 @@ def mujoco_run(model, data=None, seconds=10.0, control=None, metrics=None, title
     scene = mujoco_scene(model)
     every = max(1, round(1.0 / (fps * model.opt.timestep)))
     extent = float(model.stat.extent) * 2 or None
-    with experiment(title, engine="mujoco", scene=scene, extent=extent, plot=plot, speed=speed) as ex:
+    with experiment(title, engine="mujoco", scene=scene, extent=extent, plot=plot, speed=speed, site=site) as ex:
         ex.frame(data.time, mujoco_poses(model, data, scene, fixed=True), metrics(model, data) if metrics else None)
         step = 0
         while data.time < seconds:
@@ -485,7 +493,7 @@ def gazebo_scene(sdf_text):
     return bodies, attach
 
 
-def gazebo_run(world, seconds=20.0, title=None, fps=25, speed=1.0, metrics=None, plot="medium", extent=None):
+def gazebo_run(world, seconds=20.0, title=None, fps=25, speed=1.0, metrics=None, plot="medium", extent=None, site=None):
     """Run a Gazebo world (an SDF file path or SDF text) headlessly for `seconds`, showing its models' visuals in the world. metrics(info, ecm) returns {name: number}."""
     import tempfile
     import xml.etree.ElementTree as ET
@@ -513,7 +521,7 @@ def gazebo_run(world, seconds=20.0, title=None, fps=25, speed=1.0, metrics=None,
     iterations = int(round(seconds / step))
     links, state = {}, {"n": 0, "first": True}
 
-    with experiment(title or f"Gazebo: {root.get('name')}", engine="gazebo", scene=scene, extent=extent or 20.0, plot=plot, speed=speed) as ex:
+    with experiment(title or f"Gazebo: {root.get('name')}", engine="gazebo", scene=scene, extent=extent or 20.0, plot=plot, speed=speed, site=site) as ex:
         fixture = TestFixture(path)
 
         def post(info, ecm):

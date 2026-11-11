@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { STATIONS } from "@galahad/core/world";
+import { PADS, STATIONS } from "@galahad/core/world";
 import { Group } from "three/webgpu";
 import { CameraRig, DEFAULT_DISTANCE, pitchFor } from "./camera.ts";
 import { Land } from "./land.ts";
+import { SITE_LEVEL } from "./sites.ts";
 import { mixColor } from "./daynight.ts";
 import { FootPlanner, solveTwoBone } from "./ik.ts";
-import { CELL, chunkSamples, growLayer, heightAt, KEEP_FLAT, LAYERS, naturalHeight, SEED, STREAM_STEP, streamAt, streamLevel, WATER_LEVEL, waterAt } from "./terrain.ts";
+import { BASE_FLATS, CELL, chunkSamples, growLayer, heightAt, KEEP_FLAT, LAYERS, naturalHeight, plotFlat, SEED, STREAM_STEP, streamAt, streamLevel, WATER_LEVEL, waterAt } from "./terrain.ts";
 import { TIERS } from "./tiers.ts";
 
 /*
@@ -162,6 +163,15 @@ describe("the land", () => {
     for (const place of ["keep", "council", "observatory", "library", "treasury", "messenger", "watchtower"] as const) {
       expect(land.heightAt(STATIONS[place].x, STATIONS[place].y)).toBeCloseTo(0, 5);
     }
+  });
+
+  test("so is the ground of the two sites: the hall's at the keep's height, the proving ground's on its plateau", () => {
+    const land = new Land(new Group(), SEED, false);
+    for (const pad of PADS) expect(land.heightAt(pad.x, pad.y)).toBeCloseTo(SITE_LEVEL[pad.site], 5);
+    // Plots on open land are added to them, never instead of them.
+    land.setFlats([...BASE_FLATS, plotFlat({ x: 110, y: 110, size: 48 })]);
+    for (const pad of PADS) expect(land.heightAt(pad.x, pad.y)).toBeCloseTo(SITE_LEVEL[pad.site], 5);
+    expect(land.heightAt(110, 110)).toBeCloseTo(0, 5);
   });
 });
 

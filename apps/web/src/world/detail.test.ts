@@ -3,7 +3,7 @@ import { Group, Mesh, Raycaster, Vector3 } from "three/webgpu";
 import { COUNCIL_TABLE_TOP, Keep, LAB_BENCH_TOP, stationMatrix } from "./keep.ts";
 import { chunkDistance, fineBand, Land, SKIRT, surfaceArrays, wantsFine } from "./land.ts";
 import { built } from "./path.ts";
-import { CELL, CELLS, CHUNK, chunkSamples, FINE, FINE_CELL, FINE_CELLS, fineSurface, heightAt, KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, surfaceAt, surfaceHeight } from "./terrain.ts";
+import { BASE_FLATS, CELL, CELLS, CHUNK, chunkSamples, FINE, FINE_CELL, FINE_CELLS, fineSurface, heightAt, KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, surfaceAt, surfaceHeight } from "./terrain.ts";
 import { TIERS } from "./tiers.ts";
 import { FAR, MID, NEAR, TREE_KINDS, treeBand, treeTriangles, Vegetation } from "./vegetation.ts";
 
@@ -63,10 +63,10 @@ describe("the land's fine grid", () => {
     for (let k = 0; k < 600; k++) {
       const x = 100 + ((k * 0.618) % 1) * 90;
       const y = -130 + ((k * 0.377) % 1) * 90;
-      const fine = fineSurface(SEED, chunkSamples(SEED, Math.floor(x / CHUNK), Math.floor(y / CHUNK), [KEEP_FLAT], built, BIG), built);
+      const fine = fineSurface(SEED, chunkSamples(SEED, Math.floor(x / CHUNK), Math.floor(y / CHUNK), BASE_FLATS, built, BIG), built);
       const drawn = surfaceHeight(fine, (x - Math.floor(x / CHUNK) * CHUNK) / FINE_CELL, (y - Math.floor(y / CHUNK) * CHUNK) / FINE_CELL);
-      worst = Math.max(worst, Math.abs(surfaceAt(SEED, x, y, [KEEP_FLAT]) - drawn), Math.abs(land.heightAt(x, y) - drawn));
-      off += Math.abs(heightAt(SEED, x, y, [KEEP_FLAT]) - drawn);
+      worst = Math.max(worst, Math.abs(surfaceAt(SEED, x, y, BASE_FLATS) - drawn), Math.abs(land.heightAt(x, y) - drawn));
+      off += Math.abs(heightAt(SEED, x, y, BASE_FLATS) - drawn);
     }
     expect(worst).toBeLessThan(1e-4);
     // And the land's own smooth height is never far from it on average (a few centimetres).

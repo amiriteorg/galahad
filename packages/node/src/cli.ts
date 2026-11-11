@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, type RouteName, routes, type SandboxView, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, type FleetView, type InvestigationView, padAt, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
 import { detectProvider, preset, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -16,7 +16,7 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { streamedError } from "./server.ts";
 import { chooseProblems, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
@@ -728,6 +728,11 @@ Next:
         w
           ? `${w.kind} in ${w.place}, ${Math.round(w.temperature)} °C, wind ${Math.round(w.wind)} m/s${w.precipitation ? `, ${w.precipitation} mm/h` : ""} ${dim(`(${w.source}, ${new Date(w.observed).toLocaleTimeString()})`)}`
           : dim("weather unknown (or GALAHAD_WEATHER=off on the node)");
+      /** "the proving ground (flight)", "the workshop (cell-2)", or its plot on open land. */
+      const whereLine = (x: ExperimentView) => {
+        const pad = padAt(x.plot);
+        return pad ? `${SITES[pad.site].label.toLowerCase()} (${pad.id})` : `plot ${x.plot.x},${x.plot.y}`;
+      };
       const say = (e: WorldEvent) => {
         const at = dim(new Date(e.at).toLocaleTimeString());
         if (e.type === "hello") {
@@ -735,10 +740,11 @@ Next:
           console.log(`  ${weatherLine(e.weather)}`);
           for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
-          for (const x of e.experiments) console.log(`  ${x.status.padEnd(8)} ${x.title} ${dim(`${x.engine} · plot ${x.plot.x},${x.plot.y} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
+          for (const x of e.experiments) console.log(`  ${x.status.padEnd(8)} ${x.title} ${dim(`${x.engine} · ${whereLine(x)} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
         } else if (e.type === "galahad") console.log(`${at} ${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station})`)}`);
         else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
-        else if (e.type === "experiment") console.log(`${at} ${e.experiment.status} ${e.experiment.title}${e.experiment.summary ? dim(` · ${e.experiment.summary}`) : ""}`);
+        else if (e.type === "experiment") console.log(`${at} ${e.experiment.status} ${e.experiment.title} ${dim(`${whereLine(e.experiment)}${e.experiment.summary ? ` · ${e.experiment.summary}` : ""}`)}`);
+        else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
         else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
       };

@@ -1,5 +1,5 @@
-import type { ExperimentView, Station, WorldEvent } from "@galahad/core/world";
-import { STATIONS } from "@galahad/core/world";
+import type { ExperimentView, SiteName, Station, WorldEvent } from "@galahad/core/world";
+import { SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import {
@@ -39,7 +39,13 @@ import { toast } from "../ui/toast.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 3;
+const WORLD_API = 4;
+
+/** What each test site is for, in a line (the Go to list). */
+const SITE_ABOUT: Record<SiteName, string> = {
+  field: "Aircraft, rockets and rovers: the runway, the launch pad, the course",
+  hall: "Robots, assemblies and machines, indoors",
+};
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
 type TierName = NonNullable<Parameters<WorldModule["mountWorld"]>[1]["tier"]>;
@@ -427,6 +433,14 @@ export const worldView: View = (root, ctx, { scope }) => {
             { class: "item item-button", type: "button", onclick: go(() => (setFollow(true), handle?.goTo({ kind: "galahad" }))) },
             icon("user", { size: 16 }),
             h("div", { class: "grow" }, h("div", { class: "strong small" }, "Galahad"), h("div", { class: "meta" }, model.galahad.doing || stationLabel(model.galahad.station))),
+          ),
+          ...SITE_NAMES.map((site) =>
+            h(
+              "button",
+              { class: "item item-button", type: "button", onclick: go(() => (setFollow(false), handle?.goTo({ kind: "site", site }))) },
+              icon("compass", { size: 16 }),
+              h("div", { class: "grow" }, h("div", { class: "strong small" }, SITES[site].label), h("div", { class: "meta" }, SITE_ABOUT[site])),
+            ),
           ),
           ...places.map(([id, s]) =>
             h(

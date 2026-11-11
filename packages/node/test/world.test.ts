@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { GatewayTokens } from "@galahad/brain";
-import { STATIONS, type WorldEvent } from "@galahad/core";
+import { PADS, padKindFor, SITES, STATIONS, type WorldEvent } from "@galahad/core";
 import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
-import { cellAt, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
+import { cellAt, cellOnSite, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
 
 /*
  * The SANDBOX's node side: where Galahad is, the experiments on their plots, and how a
@@ -30,14 +30,89 @@ describe("the world's plots", () => {
     for (const s of Object.values(STATIONS)) expect(Math.max(Math.abs(s.x), Math.abs(s.y))).toBeLessThan(nearest);
   });
 
-  test("an experiment gets the next free plot, scaled to fit; ended ones free theirs only when pruned", () => {
+  test("on open land an experiment gets the next free plot, scaled to fit, and never one that crowds a site", () => {
     const { world } = hub();
-    const a = world.start({ title: "Arm", engine: "mujoco", scene: [box], extent: 2 }, origin);
-    const b = world.start({ title: "Flight", engine: "jsbsim", scene: [box], extent: 20_000, plot: "large" }, origin);
-    expect(a.view.plot).toEqual({ x: 110, y: 0, size: 48 });
+    const a = world.start({ title: "Arm", engine: "mujoco", scene: [box], extent: 2, site: "open" }, origin);
+    const b = world.start({ title: "Survey", engine: "custom", scene: [box], extent: 20_000, plot: "large" }, origin);
+    // East of the keep is the hall's, west the proving ground's: the first free cells are to the north.
+    expect(a.view.plot).toEqual({ x: 110, y: 110, size: 48 });
     expect(a.view.scale).toBe(1);
-    expect(b.view.plot).toMatchObject({ x: 110, y: 110, size: 96 });
+    expect(b.view.plot).toMatchObject({ x: 0, y: 110, size: 96 });
     expect(b.view.scale).toBeCloseTo((96 * 0.85) / 20_000, 10);
+    expect(cellOnSite({ x: 110, y: 0 })).toBe(true);
+    expect(cellOnSite({ x: -110, y: 0 })).toBe(true);
+    expect(cellOnSite({ x: 0, y: -110 })).toBe(false);
+    // Whatever the layout, no cell that's given out lets its largest plot reach a site.
+    for (let n = 0; n < 120; n++) {
+      const c = cellAt(n);
+      if (cellOnSite(c)) continue;
+      for (const s of Object.values(SITES)) expect(Math.abs(c.x - s.x) >= s.w / 2 + 48 || Math.abs(c.y - s.y) >= s.d / 2 + 48).toBe(true);
+    }
+  });
+});
+
+describe("the test sites", () => {
+  const pad = (id: string) => {
+    const p = PADS.find((x) => x.id === id)!;
+    return { x: p.x, y: p.y, size: p.size };
+  };
+
+  test("aircraft fly over the runway, rockets leave the launch pad, bench tests go indoors, the rest stand on open land", () => {
+    expect(padKindFor("jsbsim", 20_000)).toBe("flight");
+    expect(padKindFor("rocketpy", 3000)).toBe("launch");
+    expect(padKindFor("mujoco", 2)).toBe("cell");
+    expect(padKindFor("custom", 8.5)).toBe("cell");
+    expect(padKindFor("gazebo", 9)).toBeNull();
+    expect(padKindFor("mujoco", undefined)).toBeNull();
+    // Asked for, that's where it goes: a rover on the course, a big rig indoors, a small one outdoors.
+    expect(padKindFor("gazebo", 30, "field")).toBe("course");
+    expect(padKindFor("jsbsim", 20_000, "field")).toBe("flight");
+    expect(padKindFor("custom", 40, "hall")).toBe("cell");
+    expect(padKindFor("mujoco", 2, "open")).toBeNull();
+    expect(padKindFor("jsbsim", 20_000, "open")).toBeNull();
+
+    const { world } = hub();
+    const flight = world.start({ title: "Circuits", engine: "jsbsim", scene: [box], extent: 3000, plot: "large" }, origin);
+    const rocket = world.start({ title: "Mk II", engine: "rocketpy", scene: [box], extent: 900, plot: "large" }, origin);
+    const arm = world.start({ title: "Arm", engine: "mujoco", scene: [box], extent: 2, plot: "small" }, origin);
+    const rover = world.start({ title: "Rover", engine: "gazebo", scene: [box], extent: 60, site: "field" }, origin);
+    const ramp = world.start({ title: "Ramp", engine: "gazebo", scene: [box], extent: 9 }, origin);
+    expect(flight.view.plot).toEqual(pad("flight"));
+    expect(flight.view.scale).toBeCloseTo((96 * 0.85) / 3000, 10);
+    expect(rocket.view.plot).toEqual(pad("launch"));
+    expect(arm.view.plot).toEqual(pad("cell-1"));
+    expect(arm.view.scale).toBe(1);
+    expect(rover.view.plot).toEqual(pad("course"));
+    expect(rover.view.scale).toBeCloseTo((42 * 0.85) / 60, 10);
+    expect(ramp.view.plot).toEqual({ x: 110, y: 110, size: 48 });
+    // A view never says which pad or cell: the plot's place is all a renderer needs.
+    expect(Object.keys(arm.view)).not.toContain("pad");
+    expect(Object.keys(arm.view)).not.toContain("cell");
+  });
+
+  test("a pad in use sends the next one on: to the next cell indoors, to open land when the site has no more", () => {
+    const { world } = hub();
+    const cells = [1, 2, 3, 4, 5].map((n) => world.start({ title: `Bench ${n}`, engine: "mujoco", scene: [box], extent: 1 }, origin).view.plot);
+    expect(cells.slice(0, 4)).toEqual([pad("cell-1"), pad("cell-2"), pad("cell-3"), pad("cell-4")]);
+    expect(cells[4]).toEqual({ x: 110, y: 110, size: 48 });
+    world.start({ title: "First flight", engine: "jsbsim", scene: [box], extent: 3000 }, origin);
+    expect(world.start({ title: "Second flight", engine: "jsbsim", scene: [box], extent: 3000, plot: "large" }, origin).view.plot).toEqual({ x: 0, y: 110, size: 96 });
+  });
+
+  test("an ended experiment is cleared from its pad when the next one needs it, and watchers are told", () => {
+    const { world, events } = hub();
+    const first = world.start({ title: "First flight", engine: "jsbsim", scene: [box], extent: 3000 }, origin);
+    world.end(first.id, first.key, { status: "done", summary: "three circuits" });
+    // It stays on the runway, ended, until the runway is wanted.
+    expect((world.hello() as Extract<WorldEvent, { type: "hello" }>).experiments.map((e) => e.id)).toEqual([first.id]);
+    events.length = 0;
+    const second = world.start({ title: "Second flight", engine: "jsbsim", scene: [box], extent: 3000 }, origin);
+    expect(second.view.plot).toEqual(pad("flight"));
+    expect(events[0]).toMatchObject({ type: "cleared", experiment: first.id });
+    expect(events[1]).toMatchObject({ type: "experiment", experiment: { id: second.id } });
+    expect((world.hello() as Extract<WorldEvent, { type: "hello" }>).experiments.map((e) => e.id)).toEqual([second.id]);
+    // Its key no longer opens anything.
+    expect(() => world.frames(first.id, first.key, { frames: [{ t: 1, poses: {} }] })).toThrow(/not yours/);
   });
 });
 

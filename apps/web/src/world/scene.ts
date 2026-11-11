@@ -1,5 +1,5 @@
-import type { Station, WorldEvent } from "@galahad/core/world";
-import { STATIONS } from "@galahad/core/world";
+import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
+import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { cameraPosition, dot, exp, float, fog, length, max, mix, normalize, positionWorld, pow, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform } from "three/tsl";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, type Node, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
@@ -9,7 +9,9 @@ import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, 
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
+import { ProvingGround } from "./field.ts";
 import { Glows } from "./glows.ts";
+import { Workshop } from "./hall.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
 import { Land, waterUniforms } from "./land.ts";
@@ -17,12 +19,14 @@ import { occlusion } from "./occlusion.ts";
 import { readThemeColors } from "./palette.ts";
 import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
+import type { Place, PlaceContext, PlaceFrame } from "./place.ts";
 import { originUniform, Plots } from "./plots.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
+import { onSite, SITE_VIEW } from "./sites.ts";
 import { dither, SkyDome } from "./sky.ts";
-import { KEEP_FLAT, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
+import { BASE_FLATS, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
 import { Vegetation, wind } from "./vegetation.ts";
 import type { WeatherTarget } from "./live-weather.ts";
@@ -55,7 +59,7 @@ import { only, weatherUniforms } from "./wet.ts";
  * or the text summary).
  */
 
-export type GoTo = { kind: "galahad" } | { kind: "station"; station: Exclude<Station, "field"> } | { kind: "experiment"; id: string };
+export type GoTo = { kind: "galahad" } | { kind: "station"; station: Exclude<Station, "field"> } | { kind: "site"; site: SiteName } | { kind: "experiment"; id: string };
 
 export interface WorldOptions {
   /** A plot (or empty ground: null) was tapped. */
@@ -263,6 +267,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   glows.set("keep", keep.warmGlows, 0xffb866);
   glows.set("screens", keep.coolGlows, 0x8fe2ff);
   glows.set("landmarks", landmarks.windows, 0xffc27a);
+  // The built places beyond the keep: the proving ground and the workshop hall.
+  const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
+  const places: Place[] = [new ProvingGround(placeContext), new Workshop(placeContext)];
+  places.forEach((place, i) => {
+    worldRoot.add(place.group);
+    glows.set(`place${i}:warm`, place.warmGlows, 0xffb866);
+    glows.set(`place${i}:cool`, place.coolGlows, 0x8fe2ff);
+  });
+  const placeFrame: PlaceFrame = { dt: 0, t: 0, motion: true, focusX: 0, focusY: 0, distance: 0, follow: true, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0 };
 
   // ---------- the ground, as each kind of walker sees it ----------
   let stationObstacles: Obstacle[] = obstacles();
@@ -280,7 +293,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const wildGround: Ground = {
     height,
     blocked: (x, y) => {
-      if (wet(x, y) || Math.hypot(x, y) < KEEP_RADIUS + 6) return true;
+      if (wet(x, y) || Math.hypot(x, y) < KEEP_RADIUS + 6 || onSite(x, y, 6)) return true;
       for (let i = 0; i < plotsNow.length; i++) if (onPlot(plotsNow[i]!, x, y, 5)) return true;
       return false;
     },
@@ -290,7 +303,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const duckGround: Ground = {
     height,
     blocked: (x, y) => {
-      if (wet(x, y) || insideAny(stationObstacles, x, y) || Math.hypot(x, y) < 8.5) return true;
+      if (wet(x, y) || insideAny(stationObstacles, x, y) || Math.hypot(x, y) < 8.5 || onSite(x, y, 2)) return true;
       for (let i = 0; i < plotsNow.length; i++) if (onPlot(plotsNow[i]!, x, y, 3)) return true;
       return false;
     },
@@ -382,6 +395,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     rain.set(w.rain, s.light, s.night, !reduced());
     // Lamps come on as the sun gets low, before it's fully dark (sooner under cloud).
     keep.setNight(s.lamps);
+    for (const place of places) place.setNight(s.lamps);
     glows.setStrength(s.lamps);
     knight.setNight(s.night);
     dog.setNight(s.night);
@@ -451,6 +465,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     return true;
   };
   for (const place of PLACES) addLabel(`station:${place}`, div("world-label station", STATIONS[place].label), copy(stationLabelPoint(place)), 6);
+  for (const site of SITE_NAMES) addLabel(`site:${site}`, div("world-label station", SITES[site].label), copy(SITE_VIEW[site].label), 14);
 
   const bubble = div("world-bubble");
   const bubbleDoing = div("doing");
@@ -629,12 +644,24 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   };
   canvas.addEventListener("pointerleave", leave);
 
-  /** The ground point (scene, relative to the origin) under a screen point, into `hit`. */
+  /**
+   * The ground point (scene, relative to the origin) under a screen point, into `hit`: on the plane at
+   * the keep's height first, then on the plane at the ground's height there, twice (the proving
+   * ground stands 5 m up; seen from low down that's metres of difference).
+   */
   function groundUnder(clientX: number, clientY: number): boolean {
     const rect = canvas.getBoundingClientRect();
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
-    return raycaster.ray.intersectPlane(groundPlane, hit) !== null;
+    groundPlane.constant = 0;
+    if (raycaster.ray.intersectPlane(groundPlane, hit) === null) return false;
+    for (let i = 0; i < 2; i++) {
+      const level = Math.max(0, groundAt(hit.x + origin[0], -hit.z + origin[1]));
+      if (level < 0.5) break;
+      groundPlane.constant = -level;
+      if (raycaster.ray.intersectPlane(groundPlane, hit) === null) return false;
+    }
+    return true;
   }
 
   // ---------- hover labels: "Open Duck Mini (Antoine Pirrone)", "SO-101 arm (LeRobot)" ----------
@@ -647,7 +674,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let hoverShown = false;
   function probe(clientX: number, clientY: number): string | null {
     if (!groundUnder(clientX, clientY)) return null;
-    return critters.hover(hit.x + origin[0], -hit.z + origin[1], hoverPoint);
+    const x = hit.x + origin[0];
+    const y = -hit.z + origin[1];
+    const text = critters.hover(x, y, hoverPoint);
+    if (text) return text;
+    for (const place of places) {
+      const name = place.hover?.(x, y, hoverPoint);
+      if (name) return name;
+    }
+    return null;
   }
   function placeHover(): void {
     const text = performance.now() < hoverUntil ? probe(hoverAt[0], hoverAt[1]) : null;
@@ -937,6 +972,19 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     dog.apply(groundAt(dog.x, dog.y), ZERO);
     keep.animate(t, motion);
     landmarks.animate(t, motion);
+    placeFrame.dt = renderDt;
+    placeFrame.t = t;
+    placeFrame.motion = motion;
+    placeFrame.focusX = rig.x;
+    placeFrame.focusY = rig.y;
+    placeFrame.distance = rig.distance;
+    placeFrame.follow = rig.follow;
+    placeFrame.galahadX = walker.x;
+    placeFrame.galahadY = walker.y;
+    placeFrame.night = skyState.night;
+    placeFrame.rain = weather.state.rain;
+    placeFrame.wetness = weather.state.wetness;
+    for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
 
     // Sparks fly from the bench where his blade's tip works.
     if (motion && atWork && g?.station === "forge") {
@@ -1008,7 +1056,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
           flatsKey = key;
           plotsNow = next.experiments.map((e) => e.plot);
           stationObstacles = obstacles(next.experiments);
-          land.setFlats([KEEP_FLAT, ...next.experiments.map((e) => plotFlat(e.plot))]);
+          // Pads on the sites stand on ground that's level already; their machines make way for the experiment.
+          const open = next.experiments.filter((e) => !padAt(e.plot));
+          land.setFlats([...BASE_FLATS, ...open.map((e) => plotFlat(e.plot))]);
+          const occupied = new Set<string>();
+          for (const e of next.experiments) {
+            const pad = padAt(e.plot);
+            if (pad) occupied.add(pad.id);
+          }
+          for (const place of places) place.setOccupied(occupied);
           dirty = true;
         }
         syncExperimentLabels(next);
@@ -1051,6 +1107,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         if (target.kind === "station") {
           const s = STATIONS[target.station];
           rig.lookAt(s.x, s.y, STATION_DISTANCE);
+        } else if (target.kind === "site") {
+          const v = SITE_VIEW[target.site];
+          rig.lookAt(v.x, v.y, v.distance);
+          rig.target.yaw = v.yaw;
         } else {
           const e = plots.get(target.id)?.exp;
           if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(28, e.plot.size * 1.6));
@@ -1126,6 +1186,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       land.dispose();
       vegetation.dispose();
       keep.dispose();
+      for (const place of places) place.dispose();
       knight.dispose();
       dog.dispose();
       fauna.dispose();

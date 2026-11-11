@@ -1,6 +1,8 @@
 import type { ExperimentView, GalahadState, Station } from "@galahad/core/world";
-import { STATIONS } from "@galahad/core/world";
+import { padAt, STATIONS } from "@galahad/core/world";
+import { aisleAt, HALL, HALL_DOOR_IN, HALL_DOOR_OUT, inHall } from "./hall-plan.ts";
 import { type Ground, moveOnGround } from "./physics.ts";
+import { paved, SITE_GATES, SITE_OBSTACLES } from "./sites.ts";
 
 /** Seconds without getting closer before he's set down at the waypoint. */
 const STUCK_S = 3;
@@ -8,8 +10,8 @@ const STUCK_S = 3;
 /*
  * Where Galahad stands for each kind of work, and how he walks there: straight
  * lines between waypoints, going round the keep and the other buildings rather
- * than through them. World coordinates (metres, x east, y north). Pure, so
- * unit-tested.
+ * than through them, and into the workshop hall by its door and along its
+ * aisle. World coordinates (metres, x east, y north). Pure, so unit-tested.
  */
 
 export interface Point {
@@ -63,8 +65,15 @@ export function standAt(place: Place): Target {
   return { x, y, facing: place === "keep" ? out : out + Math.PI };
 }
 
-/** The gate of an experiment's plot: on its edge nearest the keep, just outside the fence, facing in. */
+/**
+ * The gate of an experiment's plot: on its edge nearest the keep, just outside the fence, facing in.
+ * A test cell in the hall opens onto the aisle instead.
+ */
 export function plotGate(plot: { x: number; y: number; size: number }): Target {
+  if (padAt(plot)?.site === "hall") {
+    const side = plot.y >= HALL.y ? 1 : -1;
+    return { x: plot.x, y: plot.y - side * (plot.size / 2 + 1.4), facing: (side * Math.PI) / 2 };
+  }
   const len = Math.hypot(plot.x, plot.y);
   const ux = len > 1e-6 ? -plot.x / len : 0;
   const uy = len > 1e-6 ? -plot.y / len : -1;
@@ -82,10 +91,11 @@ export function targetFor(galahad: GalahadState, experiments: readonly Experimen
   return standAt(galahad.station);
 }
 
-/** The buildings, and the fenced plots, he walks round. */
+/** The buildings (the keep's, the hall, the proving ground's) and the fenced plots he walks round. Pads on a site have no fence. */
 export function obstacles(experiments: readonly ExperimentView[] = []): Obstacle[] {
   const out: Obstacle[] = PLACES.filter((p) => LAYOUT[p].r > 0).map((p) => ({ x: STATIONS[p].x, y: STATIONS[p].y, r: LAYOUT[p].r }));
-  for (const e of experiments) out.push({ x: e.plot.x, y: e.plot.y, r: (e.plot.size / 2) * Math.SQRT2 });
+  for (const o of SITE_OBSTACLES) out.push({ x: o.x, y: o.y, r: o.r });
+  for (const e of experiments) if (!padAt(e.plot)) out.push({ x: e.plot.x, y: e.plot.y, r: (e.plot.size / 2) * Math.SQRT2 });
   return out;
 }
 
@@ -128,9 +138,57 @@ function detours(a: Point, b: Point, obs: readonly Obstacle[], depth: number): P
   return [...detours(a, d, obs, depth + 1), d, ...detours(d, b, obs, depth + 1)];
 }
 
-/** Waypoints from `from` to `to` (ending at `to`), round whatever stands between. */
+/** How far outside the hall's walls he passes when he has to go round a corner of it. */
+const HALL_CLEAR = 4;
+
+/**
+ * From a point outside the hall to its door: nothing if the door is in plain view (west of the
+ * hall's front), otherwise round the nearer front corner, and from behind the hall round the back
+ * corner first.
+ */
+function hallApproach(p: Point): Point[] {
+  const front = HALL.x - HALL.hx - HALL_CLEAR;
+  if (p.x <= front) return [];
+  const side = (p.y >= HALL.y ? 1 : -1) * (HALL.hy + HALL_CLEAR);
+  const corner = { x: front, y: HALL.y + side };
+  if (Math.abs(p.y - HALL.y) >= HALL.hy + HALL_CLEAR) return [corner];
+  return [{ x: HALL.x + HALL.hx + HALL_CLEAR, y: HALL.y + side }, corner];
+}
+
+/**
+ * Waypoints from `from` to `to` (ending at `to`), round whatever stands between. Into and out of
+ * the workshop hall he goes by its door, and inside it along the aisle.
+ */
 export function planPath(from: Point, to: Point, obs: readonly Obstacle[]): Point[] {
-  return [...detours(from, to, obs, 0), { x: to.x, y: to.y }];
+  const fromHall = inHall(from.x, from.y);
+  const toHall = inHall(to.x, to.y);
+  if (!fromHall && !toHall) return [...detours(from, to, obs, 0), { x: to.x, y: to.y }];
+  const out: Point[] = [];
+  let here: Point = from;
+  /** On to `p`: straight (indoors, through the door) or round what is in the way (outdoors). */
+  const leg = (p: Point, outdoors: boolean): void => {
+    if (Math.hypot(p.x - here.x, p.y - here.y) < 0.05) return;
+    if (outdoors) out.push(...detours(here, p, obs, 0));
+    out.push({ x: p.x, y: p.y });
+    here = p;
+  };
+  if (fromHall) {
+    leg(aisleAt(from.x), false);
+    if (toHall) leg(aisleAt(to.x), false);
+    else {
+      leg(HALL_DOOR_IN, false);
+      leg(HALL_DOOR_OUT, false);
+      for (const p of hallApproach(to).reverse()) leg(p, true);
+    }
+  } else {
+    for (const p of hallApproach(from)) leg(p, true);
+    leg(HALL_DOOR_OUT, true);
+    leg(HALL_DOOR_IN, false);
+    leg(aisleAt(to.x), false);
+  }
+  leg(to, !toHall);
+  if (!out.length) out.push({ x: to.x, y: to.y });
+  return out;
 }
 
 /** The keep's paths (from the foot of its stairs to every station), planned once. */
@@ -157,8 +215,43 @@ function circles(): Float64Array {
   return builtCircles;
 }
 
-/** True where the keep has built something: a station's footprint, a path, a place to stand. Nothing grows there. */
+/** The roads from the foot of the keep's stairs out to the two sites, planned once. */
+let siteRoads: Point[][] | null = null;
+export function roads(): Point[][] {
+  if (siteRoads) return siteRoads;
+  const from = standAt("keep");
+  const obs = obstacles();
+  siteRoads = Object.values(SITE_GATES).map((gate) => [{ x: from.x, y: from.y }, ...planPath(from, gate, obs)]);
+  return siteRoads;
+}
+
+/** Within `half` metres of a polyline (asked thousands of times when the ground is coloured: no allocation). */
+function along(line: readonly Point[], x: number, y: number, half: number): boolean {
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1]!;
+    const b = line[i]!;
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len2 = ex * ex + ey * ey;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / len2)) : 0;
+    const dx = a.x + ex * t - x;
+    const dy = a.y + ey * t - y;
+    if (dx * dx + dy * dy < half * half) return true;
+  }
+  return false;
+}
+
+/** The roads out to the sites are this wide (half of it). */
+const ROAD_HALF = 1.7;
+
+/**
+ * True where something is built: a station's footprint, a path, a place to stand, a road to a
+ * site, a site's paving or floor. Nothing grows there.
+ */
 export function built(x: number, y: number): boolean {
+  if (paved(x, y)) return true;
+  const out = roads();
+  for (let i = 0; i < out.length; i++) if (along(out[i]!, x, y, ROAD_HALF)) return true;
   if (x * x + y * y > 70 * 70) return false;
   const c = circles();
   for (let i = 0; i < c.length; i += 3) {
@@ -166,20 +259,9 @@ export function built(x: number, y: number): boolean {
     const dy = y - c[i + 1]!;
     if (dx * dx + dy * dy < c[i + 2]! * c[i + 2]!) return true;
   }
-  // Within 1.3 m of a path (asked thousands of times when the ground near the keep is coloured: no allocation).
-  for (const line of paths()) {
-    for (let i = 1; i < line.length; i++) {
-      const a = line[i - 1]!;
-      const b = line[i]!;
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      const len2 = ex * ex + ey * ey;
-      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / len2)) : 0;
-      const dx = a.x + ex * t - x;
-      const dy = a.y + ey * t - y;
-      if (dx * dx + dy * dy < 1.3 * 1.3) return true;
-    }
-  }
+  // Within 1.3 m of a path.
+  const lines = paths();
+  for (let i = 0; i < lines.length; i++) if (along(lines[i]!, x, y, 1.3)) return true;
   return false;
 }
 

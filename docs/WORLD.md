@@ -30,6 +30,17 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 
 Agents connected over MCP move him too: their calls are his tools. With nothing to do for half a minute he walks home.
 
+## The test sites
+
+Beyond the keep there are two places built for testing, and experiments run there when they fit.
+
+| Site | Where | What runs there |
+|---|---|---|
+| The proving ground | On the heights west of the keep, 5 m above it, looking down on the keep and the lake: a north-south runway, a taxiway and an apron, a launch pad, a rover course | Aircraft (JSBSim) over the runway; rockets (RocketPy) from the launch pad; anything that asks for the field (`site: "field"`) on the course |
+| The workshop | East of the keep, at the end of a level road, by the lake's arm: a hall with a wide door facing the keep, an aisle and four test cells | Anything that spans less than a test cell (10 m: an arm, a gripper, a small rig) at full size; anything that asks for the hall (`site: "hall"`), scaled to fit |
+
+Everything else, and whatever finds its site's pads in use, stands on its own plot of open land (`site: "open"` asks for that). An ended experiment stays on its pad, dimmed, until the next one needs it; then it's cleared away (a `cleared` event). Galahad walks out to each: up the hillside to the proving ground, and into the hall by its door and along its aisle, never through a wall. The sites' places are fixed in the contract (`SITES` and `PADS` in `packages/core/src/world.ts`), so the node and every renderer agree; their plans (walls, door, runway, paving) are `hall-plan.ts` and `field-plan.ts`.
+
 ## The weather
 
 The world has Denmark's weather, now: the node asks Open-Meteo for DMI's own forecast model (HARMONIE) at Copenhagen and sends it down the stream as a `weather` event (cloud, rain or snow in mm an hour, visibility, wind, temperature, humidity). Clear, cloudy, overcast, mist, drizzle, rain, snow and thunder are what the world can show; weather it doesn't know is shown as unknown.
@@ -101,6 +112,9 @@ gw.mujoco_run(model, seconds=20, control=my_controller, metrics=lambda m, d: {"e
 gw.rocketpy_play(flight, title="Mk II", speed=2)
 gw.jsbsim_fly("c172x", seconds=300, bank_deg=25)
 
+# Say where it stands, if the node's choice isn't yours: a rover on the proving ground's course.
+gw.mujoco_run(rover, seconds=60, title="Rover on the course", site="field")
+
 # Or pose bodies yourself.
 with gw.experiment("Pendulum", scene=[gw.box("base", 0.4, 0.4, 0.1, fixed=True), gw.sphere("bob", 0.1, trail=True)], extent=2) as ex:
     for t, x, z in steps:
@@ -124,7 +138,7 @@ From a sandbox, through its gateway (`$GALAHAD_WORLD`, the token in `$GALAHAD_TO
 
 | Request | Body | Answer |
 |---|---|---|
-| `POST /world/experiments` with `Authorization: Bearer $GALAHAD_TOKEN` | `{title, engine, scene: [bodies], extent?, plot?: small\|medium\|large}` | `{id, key, plot, scale}` |
+| `POST /world/experiments` with `Authorization: Bearer $GALAHAD_TOKEN` | `{title, engine, scene: [bodies], extent?, plot?: small\|medium\|large, site?: field\|hall\|open}` | `{id, key, plot, scale}` |
 | `POST /world/experiments/<id>/frames` with `x-experiment-key: <key>` | `{frames: [{t, poses: {body: [x,y,z,qw,qx,qy,qz]}, metrics?}]}` (≤ 120 per request) | `{accepted}` |
 | `POST /world/experiments/<id>/end` with `x-experiment-key: <key>` | `{status: done\|failed, summary?, metrics?}` | the experiment |
 
@@ -134,6 +148,6 @@ A body is `{id, shape, color?, fixed?, label?, trail?}`; shapes are box, sphere,
 
 - **Contained.** Starting an experiment needs the sandbox's own gateway token with the `world` scope (every sandbox with a network has it); its frames need the experiment's key, compared in constant time. Frames don't spend the token's budget for models.
 - **Checked.** Every scene and frame is validated: known shapes, sizes in range, finite numbers, ids of letters and digits; at most 500 bodies, 60 frames a second per experiment (more are dropped, never queued), 4 MB per request.
-- **Laid out.** Plots sit on a spiral grid of 110 m cells around the keep; they never overlap it or each other. An experiment far bigger than its plot (a flight, a rocket) is scaled down to fit (`scale`).
+- **Laid out.** The sites' pads are fixed. Plots on open land sit on a spiral grid of 110 m cells around the keep; they never overlap it, each other or a site (cells that would crowd one are skipped). An experiment far bigger than its plot or pad (a flight, a rocket) is scaled down to fit (`scale`).
 - **Kept briefly.** The world is in the node's memory: every running experiment and the 12 that ended most recently. A restart starts it fresh.
 - **One node's world.** The app shows the world of the node it talks to; experiments on another node show in that node's world.

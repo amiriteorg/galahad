@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExperimentView, WorldEvent, WorldWeather } from "@galahad/core/world";
-import { applyWorldEvent, backoffMs, emptyWorld, followWorld, MAX_ENDED, MAX_THOUGHTS, metricLabel, metricValue, readWorldEvent, type StreamStatus, weatherLabel, worldSummary } from "./world.ts";
+import { PADS } from "@galahad/core/world";
+import { applyWorldEvent, backoffMs, emptyWorld, experimentPlace, followWorld, MAX_ENDED, MAX_THOUGHTS, metricLabel, metricValue, readWorldEvent, type StreamStatus, weatherLabel, worldSummary } from "./world.ts";
 
 const experiment = (over: Partial<ExperimentView> = {}): ExperimentView => ({
   id: "x1",
@@ -193,10 +194,37 @@ describe("words", () => {
     const text = worldSummary(w);
     expect(text).toContain("Galahad is out at Rocket: Watching the rocket.");
     expect(text).toContain("Thinking with m1.");
-    expect(text).toContain("Arm reach (MuJoCo), running on ultra.");
-    expect(text).toContain("Rocket (RocketPy), done on ultra: Apogee 900 m.");
+    expect(text).toContain("Arm reach (MuJoCo), running on open land, on ultra.");
+    expect(text).toContain("Rocket (RocketPy), done on open land, on ultra: Apogee 900 m.");
     const moved = applyWorldEvent(w, { type: "frame", at: 12, frame: { experiment: "x1", t: 1, poses: { link: [1, 2, 3, 1, 0, 0, 0] }, metrics: { reward: 1 } } });
     expect(worldSummary(moved)).toBe(text);
+  });
+
+  test("an experiment on a pad is said to be on the proving ground or in the workshop", () => {
+    const pad = (id: string) => {
+      const p = PADS.find((x) => x.id === id)!;
+      return { x: p.x, y: p.y, size: p.size };
+    };
+    expect(experimentPlace(experiment({ plot: pad("flight") }))).toBe("on the proving ground");
+    expect(experimentPlace(experiment({ plot: pad("course") }))).toBe("on the proving ground");
+    expect(experimentPlace(experiment({ plot: pad("cell-3") }))).toBe("in the workshop");
+    expect(experimentPlace(experiment())).toBe("on open land");
+    const w = applyWorldEvent(emptyWorld(), hello({ experiments: [experiment({ plot: pad("cell-1") })] }));
+    expect(worldSummary(w)).toContain("Arm reach (MuJoCo), running in the workshop, on ultra.");
+  });
+
+  test("an experiment cleared from its pad leaves the model, with its frames; clearing one it doesn't know changes nothing", () => {
+    let w = applyWorldEvent(emptyWorld(), hello({ experiments: [experiment(), experiment({ id: "x2", status: "done", endedAt: 5 })] }));
+    w = applyWorldEvent(w, { type: "frame", at: 11, frame: { experiment: "x2", t: 1, poses: { link: [1, 2, 3, 1, 0, 0, 0] } } });
+    expect(Object.keys(w.frames)).toEqual(["x2"]);
+    const event = readWorldEvent({ type: "cleared", at: 12, experiment: "x2" })!;
+    expect(event).toEqual({ type: "cleared", at: 12, experiment: "x2" });
+    const cleared = applyWorldEvent(w, event);
+    expect(cleared.experiments.map((e) => e.id)).toEqual(["x1"]);
+    expect(cleared.frames).toEqual({});
+    expect(applyWorldEvent(cleared, event)).toBe(cleared);
+    expect(readWorldEvent({ type: "cleared", at: 12 })).toBeNull();
+    expect(readWorldEvent({ type: "cleared", at: 12, experiment: "x".repeat(500) })).toBeNull();
   });
 
   test("the summary says the weather in Denmark when it's known", () => {

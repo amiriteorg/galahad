@@ -3,7 +3,7 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, type Group, Mesh, M
 import { toScene } from "./coords.ts";
 import { flatNormals, linear } from "./mesher.ts";
 import { built } from "./path.ts";
-import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, KEEP_FLAT, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
+import { BIG, CELL, CELLS, CHUNK, chunkKey, type ChunkSamples, chunkSamples, chunksAround, FINE_CELL, type Flat, flatKey, flatsTouching, fineSurface, growLayer, heightAt, BASE_FLATS, type Layer, SPLITS, streamAt, streamLevel, type Surface, surfaceAt, surfaceHeight, WATER_LEVEL, waterAt, waterAtHeight } from "./terrain.ts";
 import { ripples, wetDarken, wetSheen } from "./wet.ts";
 
 /*
@@ -111,8 +111,8 @@ export class Land {
   private readonly waterNear = waterMaterial(true);
   private readonly streamMaterial = waterMaterial(false);
   private readonly waterCell: number;
-  /** The keep's ground is level from the start: plots add theirs (setFlats), and a node with none never calls it. */
-  private flats: Flat[] = [KEEP_FLAT];
+  /** The keep's ground, the sites' and their roads' are level from the start: plots add theirs (setFlats), and a node with none never calls it. */
+  private flats: Flat[] = BASE_FLATS;
   /** Bumped whenever the set of loaded chunks changes. */
   version = 0;
   /** Told of every chunk as it's grown and dropped (the vegetation). */

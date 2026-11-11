@@ -30,13 +30,18 @@ export const SceneBodySchema = z.strictObject({
   trail: z.boolean().optional(),
 });
 
-/** A new experiment: what it is and what it draws. `extent` is how far it spans (metres), so the node can scale it onto its plot. */
+/**
+ * A new experiment: what it is and what it draws. `extent` is how far it spans (metres), so the node can scale it onto its plot.
+ * `site` asks for the proving ground ("field"), the workshop hall ("hall") or open land ("open"); without it the node chooses
+ * (padKindFor in world.ts), and falls back to open land when the site's pads are taken.
+ */
 export const ExperimentStart = z.strictObject({
   title: z.string().trim().min(1).max(120),
   engine: z.enum(["mujoco", "gazebo", "isaac", "jsbsim", "rocketpy", "custom"]),
   scene: z.array(SceneBodySchema).min(1).max(500),
   extent: z.number().finite().positive().max(10_000_000).optional(),
   plot: z.enum(["small", "medium", "large"]).optional(),
+  site: z.enum(["field", "hall", "open"]).optional(),
 });
 
 const PoseSchema = z.tuple([Finite, Finite, Finite, Finite, Finite, Finite, Finite]);

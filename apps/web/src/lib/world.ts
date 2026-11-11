@@ -1,5 +1,5 @@
 import type { BodyShape, ExperimentEngine, ExperimentFrame, ExperimentStatus, ExperimentView, GalahadState, Pose, SceneBody, Station, WeatherKind, WorldEvent, WorldNode, WorldWeather } from "@galahad/core/world";
-import { STATIONS } from "@galahad/core/world";
+import { padAt, SITES, STATIONS } from "@galahad/core/world";
 
 /*
  * The SANDBOX's model of the world, as the page keeps it: what Galahad is doing,
@@ -99,6 +99,11 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
       return { ...state, at, notice: { at: event.at, severity: event.severity, title: event.title } };
     case "weather":
       return { ...state, at, weather: event.weather };
+    case "cleared": {
+      if (!state.experiments.some((e) => e.id === event.experiment)) return state;
+      const { [event.experiment]: _gone, ...frames } = state.frames;
+      return { ...state, at, experiments: state.experiments.filter((e) => e.id !== event.experiment), frames };
+    }
     default:
       return state;
   }
@@ -312,6 +317,8 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
     }
     case "notice":
       return typeof v.severity === "string" && SEVERITIES.has(v.severity) && str(v.title) ? { type: "notice", at, severity: v.severity as WorldNotice["severity"], title: v.title } : null;
+    case "cleared":
+      return id(v.experiment) ? { type: "cleared", at, experiment: v.experiment } : null;
     case "weather": {
       if (v.weather === null) return { type: "weather", at, weather: null };
       const weather = readWeather(v.weather);
@@ -378,6 +385,13 @@ export const weatherLabel = (w: WorldWeather): string => WEATHER_LABEL[w.kind];
 
 export const stationLabel = (station: Station): string => (station === "field" ? "the field" : STATIONS[station].label);
 
+/** Where an experiment stands, in words: "on the proving ground", "in the workshop", "on open land". */
+export function experimentPlace(e: ExperimentView): string {
+  const pad = padAt(e.plot);
+  if (!pad) return "on open land";
+  return pad.site === "hall" ? `in the ${SITES.hall.label.toLowerCase()}` : `on the ${SITES.field.label.toLowerCase()}`;
+}
+
 /** "altitude_m" → "altitude (m)", "speed_mps" → "speed (m/s)". */
 export function metricLabel(key: string): string {
   const units: Record<string, string> = { m: "m", mps: "m/s", s: "s", kt: "kt", deg: "°", rad: "rad", n: "N", kn: "kN", kg: "kg", pct: "%", hz: "Hz", ms: "ms" };
@@ -413,7 +427,7 @@ export function worldSummary(model: WorldModel): string {
   if (!model.experiments.length) parts.push("No experiments.");
   else {
     parts.push(`${model.experiments.length} experiment${model.experiments.length === 1 ? "" : "s"}${ended.length ? `, ${ended.length} ended` : ""}:`);
-    for (const e of [...running, ...ended]) parts.push(`${e.title} (${ENGINE_LABEL[e.engine]}), ${STATUS_LABEL[e.status].toLowerCase()} on ${e.nodeName}${e.summary && isEnded(e) ? `: ${e.summary}` : ""}.`);
+    for (const e of [...running, ...ended]) parts.push(`${e.title} (${ENGINE_LABEL[e.engine]}), ${STATUS_LABEL[e.status].toLowerCase()} ${experimentPlace(e)}, on ${e.nodeName}${e.summary && isEnded(e) ? `: ${e.summary}` : ""}.`);
   }
   return parts.join(" ");
 }
