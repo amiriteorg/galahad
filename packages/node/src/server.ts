@@ -1108,7 +1108,7 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
       return { trial: trialViews().find((t) => t.id === id) };
     },
-    bankStatus: () => ctx.bank.status(),
+    bankStatus: () => bankErrors(async () => ctx.bank.status()),
     bankAccounts: () => bankErrors(async () => ctx.bank.accounts()),
     bankBalances: (input) => bankErrors(() => ctx.bank.balances(input)),
     bankTransactions: (input) => bankErrors(() => ctx.bank.transactions(input)),

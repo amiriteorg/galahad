@@ -43,6 +43,8 @@ const root = mkdtempSync(join(tmpdir(), "galahad-chat-"));
 const home = new Home(join(root, "node"));
 const port = freePort();
 let daemon: Daemon;
+/** What the node logged. */
+const logs: string[] = [];
 
 /** The stand-in model: each request gets the next scripted answer; bodies are kept. */
 const bodies: any[] = [];
@@ -96,7 +98,7 @@ beforeAll(async () => {
   const fleet = foundFleet(store, identity, { fleetName: "camelot", nodeName: "chat-node" });
   store.close();
   home.writeConfig({ v: 1, name: "chat-node", fleet, port, keystore, advertise: "127.0.0.1" });
-  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {} });
+  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: (message) => logs.push(message) });
   const admin = home.adminToken();
   expect((await call("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` }, admin)).status).toBe(200);
   expect((await call("setRoster", { role: "planner", models: ["stand-in/m"] }, admin)).status).toBe(200);
@@ -180,6 +182,29 @@ describe("Galahad's chat has his tools", () => {
     expect(daemon.store.recall("98765.43")).toEqual([]);
     const { requests } = (await (await call("secretRequests", undefined, admin)).json()) as { requests: { name: string }[] };
     expect(requests.some((r) => r.name === "bank-note")).toBe(false);
+  });
+
+  test("a bank failure that quotes a file (a broken session's parse error) reaches no log, answer or model", async () => {
+    const admin = home.adminToken();
+    const original = daemon.bank.status;
+    // What reading a broken session.json throws: the parser quotes the file's text.
+    daemon.bank.status = () => {
+      throw new SyntaxError('JSON Parse error: Unexpected identifier "fake-session-text"');
+    };
+    try {
+      logs.length = 0;
+      const response = await call("bankStatus", undefined, admin);
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain("fake-session-text");
+      script = [callTool("bank_status", {}), say("The bank isn't answering.")];
+      const events = await ask(admin, "How's my bank connection?");
+      expect(events.find((e) => e.type === "tool_result")).toMatchObject({ ok: false });
+      expect(JSON.stringify(events)).not.toContain("fake-session-text");
+      expect(JSON.stringify(bodies)).not.toContain("fake-session-text");
+      expect(logs.join("\n")).not.toContain("fake-session-text");
+    } finally {
+      daemon.bank.status = original;
+    }
   });
 
   test("quests turn the tools off: their roles have their own", async () => {

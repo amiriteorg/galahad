@@ -39,7 +39,7 @@ interface Seen {
 }
 
 /** Enable Banking, as far as these tests need it. */
-function fakeBank(options: { aspsps?: unknown[]; accounts?: unknown[]; balances?: () => Response; pages?: unknown[][]; silentExpiry?: boolean } = {}) {
+function fakeBank(options: { aspsps?: unknown[]; accounts?: unknown[]; balances?: () => Response; pages?: unknown[][]; silentExpiry?: boolean; session?: () => Response } = {}) {
   const seen: Seen[] = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -65,7 +65,8 @@ function fakeBank(options: { aspsps?: unknown[]; accounts?: unknown[]; balances?
       const n = Number(url.searchParams.get("continuation_key") ?? 0);
       return Response.json({ transactions: pages[n] ?? [], continuation_key: n + 1 < pages.length ? String(n + 1) : null });
     }
-    if (url.pathname.startsWith("/sessions/")) return Response.json({ message: "deleted" });
+    // GET: the session's own status (Enable Banking's record of the consent); DELETE: ended.
+    if (url.pathname.startsWith("/sessions/")) return (init?.method ?? "GET") === "GET" ? (options.session?.() ?? Response.json({ status: "AUTHORIZED", access: { valid_until: "2027-02-07T12:00:00Z" } })) : Response.json({ message: "deleted" });
     return new Response("{}", { status: 404 });
   }) as typeof globalThis.fetch;
   return { fetch, seen, data: () => seen.filter((s) => s.path.startsWith("/accounts/")) };
@@ -302,10 +303,16 @@ describe("what agents read", () => {
   });
 
   test("an expired or revoked consent says: ask the human to re-authorize, and nothing more", async () => {
-    for (const [status, error] of [[422, "EXPIRED_SESSION"], [401, null], [403, "ACCESS_DENIED"]] as const) {
-      const s = await connected({ balances: () => Response.json(error ? { error } : {}, { status }) });
+    // A code that says the session is over; or a refusal, and the session, asked once, says it ended.
+    for (const [status, error, session, asked] of [
+      [422, "EXPIRED_SESSION", "AUTHORIZED", 0],
+      [401, null, "EXPIRED", 1],
+      [403, "ACCESS_DENIED", "REVOKED", 1],
+    ] as const) {
+      const s = await connected({ balances: () => Response.json(error ? { error } : {}, { status }), session: () => Response.json({ status: session }) });
       const result = await s.service.balances({ account: ACCOUNT, refresh: true });
       expect(result).toEqual({ reauthorization_required: true, message: expect.stringContaining("Ask the human to re-authorize") });
+      expect(s.bank.seen.filter((x) => x.method === "GET" && x.path.startsWith("/sessions/")).length).toBe(asked);
       expect(s.service.status()).toMatchObject({ reauthorizationRequired: true });
       // From then on, nothing goes to the bank until you re-authorize.
       const before = s.bank.seen.length;
@@ -316,6 +323,44 @@ describe("what agents read", () => {
     late.advance(90 * DAY);
     expect(await late.service.balances({ account: ACCOUNT })).toMatchObject({ reauthorization_required: true });
     expect(late.service.status().message).toContain("Ask the human to re-authorize");
+  });
+
+  test("a refusal while the consent holds is a temporary failure, never the end of the consent", async () => {
+    for (const [status, session] of [
+      [403, () => Response.json({ status: "AUTHORIZED", access: { valid_until: "2027-02-07T12:00:00Z" } })],
+      [401, () => Response.json({ status: "AUTHORIZED" })],
+      // The session can't be asked just now: not proof the consent ended either.
+      [403, () => Response.json({}, { status: 503 })],
+      [401, () => Response.json({ error: "UNAUTHORIZED_ACCESS" }, { status: 401 })],
+    ] as const) {
+      const s = await connected({ balances: () => Response.json({ error: "ACCESS_DENIED" }, { status }), session });
+      const failed = await s.service.balances({ account: ACCOUNT, refresh: true }).catch((error) => error);
+      expect(failed).toBeInstanceOf(BankError);
+      expect(failed).toMatchObject({ status: 503, message: expect.stringContaining("the consent still holds") });
+      // Asked once, and the consent stands: no re-authorisation, and the next fetch goes to the bank.
+      expect(s.bank.seen.filter((x) => x.method === "GET" && x.path.startsWith("/sessions/")).length).toBe(1);
+      expect(s.service.status()).toMatchObject({ reauthorizationRequired: false, daysRemaining: 89 });
+      const before = s.bank.data().length;
+      await s.service.balances({ account: ACCOUNT, refresh: true }).catch(() => {});
+      expect(s.bank.data().length).toBe(before + 1);
+      expect(readFileSync(join(s.dir, "audit.log"), "utf8")).toMatch(new RegExp(`bank_balances …e2b5 refused-${status}`));
+    }
+  });
+
+  test("a broken session file: bank access is off, and nothing of the file is quoted", async () => {
+    const s = await connected();
+    writePrivate(join(s.dir, "session.json"), '{"session_id": fake-broken-0000 "accounts"');
+    const status = s.service.status();
+    expect(status).toMatchObject({ problem: expect.stringContaining("session file"), reauthorizationRequired: false });
+    const failed = await s.service.balances({ account: ACCOUNT }).catch((error) => error);
+    expect(failed).toBeInstanceOf(BankError);
+    for (const said of [JSON.stringify(status), failed.message, s.service.problem()]) expect(said).not.toContain("fake");
+    // Valid JSON of the wrong shape is no better.
+    writePrivate(join(s.dir, "session.json"), '{"session_id": "fake-shape-0000", "accounts": "fake"}');
+    expect(s.service.problem()).toContain("session file");
+    // Disconnecting still forgets it.
+    expect(await s.service.disconnect()).toEqual({ ended: false });
+    expect(s.service.status()).toMatchObject({ problem: null, reauthorizationRequired: true });
   });
 
   test("status: expiry, days left, budget and cache age; IBANs masked", async () => {
