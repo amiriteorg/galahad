@@ -154,7 +154,7 @@ A key added on any full node is sealed into the vault and usable by every full n
 ## 6. Models and roles
 
 ```sh
-bun galahad roster                                  # planner / engineer / reviewer / swift
+bun galahad roster                                  # planner / engineer / reviewer / swift / decider / embedder
 bun galahad provider models deepseek                # what the provider serves
 bun galahad roster set reviewer deepseek/<model-id> # a different family reviews the work
 bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
@@ -426,6 +426,46 @@ galahad arms grant claude-code bank:read     # one agent may read it
 ```
 
 Then authorise in the PWA (**Bank → Connect**, in the paired browser), and again every 89 days: the inbox reminds you a week before.
+
+## 14. The archive: everything kept, and searched by meaning
+
+Every node keeps an archive of what it holds: kept work and the models in it, what Galahad was taught and found (memories, investigations, trials), ideas, kept chats (never one where he read the bank), saved experiments and whiteboards (once those land), and lessons drawn from them. Nothing is ever evicted; only you delete. It works at once, searching by words; an **embedder** adds search by meaning.
+
+```sh
+galahad archive                                   # what's in it, what's embedded, the embedder, the last integrity check
+galahad archive search "cantilever deflection" --kind teaching,experiment --since 30d
+galahad archive show arc_…                        # summary, facts, lessons, files, links
+galahad archive idea "A windmill for the lab" --text "Pump water to the stream"
+```
+
+In the app: **Archive** (`G` then `K`), and **New idea** from the palette.
+
+### Turning on the local embedder (recommended)
+
+On the server, the archive's words never have to leave it: deploy with `--embedder` (a root target, like `--sudo`):
+
+```sh
+scripts/deploy.sh root@ultra --embedder
+```
+
+The deploy installs **Ollama 0.40.7** (checked against the SHA-256 GitHub records for it) as its own unprivileged service, `galahad-ollama`, listening on `127.0.0.1:11434` only, pulls **qwen3-embedding:0.6b** (about 640 MB; its layer digest is checked against the one pinned in the script), configures the `ollama` provider if it isn't, and hires it as the `embedder` role, unless you've hired one yourself. The archive then embeds its backlog in the background (it pauses while answers stream). Deploys without the flag change nothing here and leave an earlier install as it is.
+
+By hand, anywhere: run any OpenAI-compatible `/embeddings` server (Ollama, llama.cpp's `llama-server --embeddings`), then
+
+```sh
+galahad provider add ollama
+galahad roster set embedder ollama/qwen3-embedding:0.6b   # name the model: vectors from different models can't be mixed
+```
+
+A **remote** embedder works too (any OpenAI-compatible provider with an embeddings endpoint, e.g. Cloudflare Workers AI as its own provider: `galahad provider add workers-ai --kind openai --base-url https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1` with a Workers AI token, then `roster set embedder workers-ai/@cf/baai/bge-m3`), but then every passage the archive keeps goes to that provider. Changing the model re-embeds everything in the background; until it's done, search falls back to words.
+
+### Summaries and lessons
+
+The `swift` role writes each entry's summary, facts, tags and named things, and lessons for experiments and teachings, a few at a time in the background. Until you set a budget, **only a local swift model** does it (an Ollama chat model on the server, which `ollama/*` picks up: `sudo -u galahad-ollama OLLAMA_HOST=127.0.0.1:11434 /opt/ollama/bin/ollama pull qwen3:8b`), so nothing leaves. `galahad archive budget 200` allows 200 a day by the role's models in order (a cloud model among them gets the entries' text); `galahad archive budget 0` stops it.
+
+### Where it lives
+
+`archive.db` (the index, mode 600) and `archive/` (the files, by SHA-256, 600 in 700 directories) in the node's home. `GALAHAD_ARCHIVE_DIR=/path` moves the files (the service may write only its home, so a path elsewhere needs `ReadWritePaths` in its unit); `GALAHAD_ARCHIVE=off` stops it pulling anything new. `galahad archive verify` re-hashes every file now (it runs daily, and tells your inbox if one changed or went missing).
 
 ## Troubleshooting
 

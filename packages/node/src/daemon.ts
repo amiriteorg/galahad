@@ -9,6 +9,11 @@ import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "./archive/adapters.ts";
+import { boardSource, experimentSource } from "./archive/external.ts";
+import { LocalDiskBackend } from "./archive/blobs.ts";
+import { ArchiveService } from "./archive/service.ts";
+import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
 import { BoardStore, writeOnBoard } from "./board.ts";
 import { writeUpExaminations } from "./board-examination.ts";
@@ -42,6 +47,8 @@ export interface Daemon {
   world: WorldHub;
   /** The chalkboard you and Galahad share (writeOnBoard in board.ts writes on it from the node). */
   board: BoardStore;
+  /** The archive: everything kept for good, and searched by words and meaning. */
+  archive: ArchiveService;
   stop(): Promise<void>;
 }
 
@@ -60,6 +67,8 @@ export interface DaemonOptions {
   fetch?: typeof fetch;
   /** Fetch Denmark's weather for the SANDBOX while someone watches it (default off; `galahad serve` turns it on unless GALAHAD_WEATHER=off). */
   weather?: boolean;
+  /** How often the archive's background work runs (default 20 s); false: never by itself (tests drive it). */
+  archiveIntervalMs?: number | false;
 }
 
 /**
@@ -260,6 +269,30 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       log,
     ),
   );
+  // ---- The archive: node-local, its own database and blob store in the home, never the mind's log.
+  const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
+  const archive = new ArchiveService({
+    store: archiveStore,
+    brain: { store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}) },
+    mind: store,
+    identity,
+    nodeName: config.name,
+    log,
+    ...(opts.archiveIntervalMs ? { intervalMs: opts.archiveIntervalMs } : {}),
+    adapters: [
+      memoriesAdapter(store),
+      investigationsAdapter(store),
+      trialsAdapter(store),
+      artifactsAdapter(artifacts),
+      chatsAdapter(chats, { has: (s, id) => archiveStore.has(s, id), sourceIds: (s, prefix) => archiveStore.sourceIds(s, prefix) }),
+      // Every finished experiment (its recording streamed from disk), and the chalkboard's versions (a run of
+      // strokes as one; each as trusted as the least trusted hand on it): archive/external.ts.
+      experimentsAdapter(experimentSource(experiments)),
+      boardsAdapter(boardSource(board)),
+    ],
+  });
+  if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();
+
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
@@ -325,6 +358,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     chats,
     world,
     board,
+    archive,
     ledger,
     shutdown: shutdown.signal,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
@@ -405,6 +439,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     world,
     board,
+    archive,
     /**
      * In order: take nothing new (stop listening; requests under way go on), start nothing
      * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
@@ -418,6 +453,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       if (reaper) clearInterval(reaper);
       stopPush();
       sync.stop();
+      // The archive starts nothing new, and its round under way (an embedding call) is cut off.
+      await archive.stop();
       world.close();
       weather.close();
       await loops.stop();
@@ -426,6 +463,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await Promise.all(servers.map((s) => s.stop(true)));
       bank.close();
       chats.close();
+      archiveStore.close(); // requests may still have been searching it
       experiments.close(); // flushes what requests wrote, so after them
       local.close();
       store.close();

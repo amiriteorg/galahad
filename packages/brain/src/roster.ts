@@ -37,6 +37,13 @@ export const ROLES: Record<string, RoleSpec> = {
     defaults: [],
     effort: "low",
   },
+  // The archive's search by meaning. None until you hire one: a local model (deploy --embedder) keeps
+  // the archive on your machines. Its first model is the archive's model (vectors can't be mixed).
+  embedder: {
+    description: "turns text into vectors for the archive's search by meaning; local first, so the archive never leaves your machines",
+    defaults: [],
+    effort: "low",
+  },
 };
 
 export function roleModels(store: MindStore, role: string): string[] {

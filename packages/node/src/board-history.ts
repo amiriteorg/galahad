@@ -321,6 +321,8 @@ interface Archivable {
 }
 
 const CURSOR = /^board:main:(\d+)$/;
+/** The archive's cursor after a version. */
+export const boardCursor = (version: number): string => `board:main:${version}`;
 
 /**
  * Board versions after `cursor` (null: from the first), oldest first, in a stable
@@ -335,7 +337,7 @@ export function boardVersionsSince(board: Archivable, cursor: string | null, lim
   const after = cursor === null ? null : Number(cursor.match(CURSOR)?.[1] ?? Number.NaN);
   if (after !== null && !Number.isFinite(after)) throw new Error(`not a board cursor: ${cursor}`);
   const versions = board.history.since(after, Math.max(1, Math.min(1000, limit)));
-  return { versions, cursor: versions.length ? `board:main:${versions.at(-1)!.version}` : null };
+  return { versions, cursor: versions.length ? boardCursor(versions.at(-1)!.version) : null };
 }
 
 /**

@@ -248,7 +248,8 @@ export async function runNodeQuest(
         ask: async (role, messages) => {
           let text = "";
           let model = "";
-          for await (const event of node.stream("chat", { role, messages, tools: false })) {
+          // The archive's relevant entries go with the plan (the start), not with every step.
+          for await (const event of node.stream("chat", { role, messages, tools: false, ...(role === "planner" && messages.length === 1 ? { archive: true } : {}) })) {
             if (event.type === "text") text += event.text;
             else if (event.type === "model") model = event.ref;
             else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
@@ -451,7 +452,8 @@ export async function runNodeInvestigation(
         ask: async (role, messages) => {
           let text = "";
           let model = "";
-          for await (const event of node.stream("chat", { role, messages, tools: false })) {
+          // The archive's relevant entries go with the plan (the start), not with every step.
+          for await (const event of node.stream("chat", { role, messages, tools: false, ...(role === "planner" && messages.length === 1 ? { archive: true } : {}) })) {
             if (event.type === "text") text += event.text;
             else if (event.type === "model") model = event.ref;
             else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);

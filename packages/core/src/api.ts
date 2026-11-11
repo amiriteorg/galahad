@@ -10,6 +10,7 @@ import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./b
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
+import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -215,6 +216,11 @@ export const routes = {
       project: ProjectId.optional(),
       /** Ask again: the conversation's last exchange is replaced by this one. */
       retry: z.boolean().optional(),
+      /**
+       * Offer the archive's most relevant entries as context (fenced as data). Default: on when
+       * the answer has tools, off without them; quests turn it on for the plan only.
+       */
+      archive: z.boolean().optional(),
     }),
   },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */
@@ -573,6 +579,26 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/) }),
   },
+
+  // ---- The archive (node-local: what this node keeps, for good) -----------------
+  /** Entries, chunks embedded, the backlog, the embedder, the last integrity check, disk used. */
+  archiveStatus: { method: "GET", path: "/api/archive", scope: "mind:read", input: null },
+  /** Hybrid search (words and meaning, fused), filtered by kind, trust, source and time. */
+  archiveSearch: { method: "POST", path: "/api/archive/search", scope: "mind:read", input: ArchiveSearchInput },
+  /** One entry: its description, understanding, files and links. */
+  archiveEntry: { method: "POST", path: "/api/archive/entry", scope: "mind:read", input: z.strictObject({ id: ArchiveId }) },
+  /** One file of an entry, as bytes (checked against its SHA-256 before it's sent). */
+  archiveFile: { method: "POST", path: "/api/archive/file", scope: "mind:read", input: z.strictObject({ id: ArchiveId, path: z.string().min(1).max(512) }) },
+  /** An idea, kept: yours from the app or a terminal, Galahad's from his note_idea tool. */
+  noteIdea: { method: "POST", path: "/api/archive/ideas", scope: "mind:write", input: NoteIdeaInput },
+  /** Only you delete, with a reason; a tombstone stays so it's never archived again. */
+  deleteArchived: { method: "POST", path: "/api/archive/delete", scope: "fleet:admin", input: ArchiveDeleteInput },
+  /** Embed (and optionally summarise) everything again, in the background. */
+  reindexArchive: { method: "POST", path: "/api/archive/reindex", scope: "fleet:admin", input: ArchiveReindexInput },
+  /** Re-hash every stored file now (it also runs daily). */
+  verifyArchive: { method: "POST", path: "/api/archive/verify", scope: "fleet:admin", input: z.strictObject({}) },
+  /** How many entries the swift role may summarise per day. */
+  setArchiveBudget: { method: "POST", path: "/api/archive/budget", scope: "brain:write", input: ArchiveBudgetInput },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;
@@ -911,6 +937,8 @@ export type ChatStreamEvent =
   | { type: "tool"; id: string; name: string; title: string; input: string }
   /** How it went, in a line (never the whole result). */
   | { type: "tool_result"; id: string; name: string; ok: boolean; summary: string }
+  /** Archived entries offered to the model as context for this answer (data, never instructions). */
+  | { type: "archive"; entries: ArchiveContextEntry[] }
   | { type: "fallback"; from: string; error: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };

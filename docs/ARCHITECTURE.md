@@ -205,10 +205,11 @@ Add an API key once, and every full node can use it. The key never appears in th
 | `reviewer` | `anthropic/claude-opus-5-5` (set a different model family, e.g. DeepSeek) | high |
 | `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` | low |
 | `decider` | *none until you hire one*, e.g. `cloudflare-ai/typesafe/jev` | low |
+| `embedder` | *none until you hire one*; `deploy.sh --embedder` hires `ollama/qwen3-embedding:0.6b` on the server (§10⅔) | n/a |
 
 The **decider** is a different kind of model: TypeSafe's System One (Jev) answers typed questions about a state (yes/no, a choice among named options, a score on an ordered rubric) with calibrated probabilities instead of text (`galahad decide`, the `decide` route, MCP `decide`). Through Cloudflare AI Gateway it goes to Cloudflare's unified `ai/run` for your account, your gateway named in `cf-aig-gateway-id` and TypeSafe's key stored with Cloudflare; the gateway token, pinned to `gateway.ai.cloudflare.com`, may go to that one route as well, a route fixed in code. With a TypeSafe key of your own it goes to `https://api.typesafe.ai/v1/systemone`.
 
-`<provider>/*` resolves to the first model that runtime serves on this node.
+`<provider>/*` resolves to the first model that runtime serves on this node (never an embedding model: a runtime serving the archive's embedder isn't picked to chat). The embedder is different: its first model is the archive's, with no fallback, because vectors from different models can't be compared.
 
 **Provider presets:**
 
@@ -227,7 +228,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 - **Anthropic** goes through the official SDK with adaptive thinking, explicit effort and streaming. Server-side refusal fallback (`fallbacks: "default"`) is enabled on the models that support it (Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5).
 - **Everything else** uses OpenAI-compatible streaming.
 - **Fallback chain:** a model that fails *before* producing text is skipped (missing key, outage, rate limit, refusal), and the next model answers. Each skip is reported to the client.
-- **Persona and context:** the standing persona prompt is byte-stable, so it caches well. Relevant memories are appended after it, labelled with their trust level.
+- **Persona and context:** the standing persona prompt is byte-stable, so it caches well. Relevant memories and archived entries (§10⅔) are appended after it, each fenced as data: one JSON record per line between tags with a fresh random nonce, labelled with its trust.
 
 **One Galahad on every surface.** Chat in the PWA and `galahad ask` have the same tools agents get over MCP (§8¾), defined once in `packages/node/src/tools.ts`:
 
@@ -312,7 +313,7 @@ Network reachability was verified on ultra before it was built. From an internal
 | **Contained** | Every sandbox an arm creates belongs to the quest `arm.<label>` and is always ephemeral. The arm can execute in and clean up only those. That holds across nodes too: forwarding relays the quest, never your approval. |
 | **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |
 
-Tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices`, and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
+Tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `archive_search`, `archive_read`, `note_idea`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices`, and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
 
 ## 8⅞. Quests: the first agent loop ✅
 
@@ -417,7 +418,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 | An always-on node (Linux, no battery) silent for 10 minutes; Windows and macOS machines come and go and aren't flagged | warn |
 | This node can't open the vault | alert |
 | A device signed two histories (equivocation: its key may be stolen) | alert |
-| A role with no usable model (no key, no running local runtime) | warn for planner, engineer, reviewer; info for others |
+| A role with no usable model (no key, no running local runtime); a role nobody has hired (the decider, the embedder) isn't flagged | warn for planner, engineer, reviewer; info for others |
 | A sandbox the reaper missed; a loop that's orphaned or failed three times running | warn |
 | This node hosts sandboxes without disk limits; its sandbox image is missing; it has KVM but no microVMs | warn / info / info |
 | A connector whose key is missing or pinned elsewhere; a manifest that no longer validates | info / warn |
@@ -529,7 +530,63 @@ Your own accounts' balances and transactions, through Enable Banking (PSD2 accou
 | Agents | `packages/node/src/mcp.ts` | `bank_status`, `bank_accounts`, `bank_balances`, `bank_transactions`, offered only to an arm granted `bank:read` (`galahad arms grant <agent> bank:read`, or the Bank page) |
 | You | PWA **Bank**, `galahad bank …` | Connect and re-authorise (the bank returns to `/bank/callback`, which the PWA finishes), disconnect, who may read; the heartbeat warns 7 days before the consent ends |
 
-No bank data enters the mind: the session, the cache and the audit log are files of the node that holds the bank, not events. Nothing about your accounts replicates (only the heartbeat's reminders become notices), and convergence is untouched. In Galahad's own chat, once he has read the bank, the tools that would write into the mind (`remember`, `request_secret`, `sandbox_save`, `sandbox_create`) are refused for the rest of the answer (§6). An agent you grant `bank:read` over MCP is not gated that way: what it remembers is up to it, so grant it only to agents you'd trust with the figures.
+No bank data enters the mind (nor the archive, §10⅔): the session, the cache and the audit log are files of the node that holds the bank, not events. Nothing about your accounts replicates (only the heartbeat's reminders become notices), and convergence is untouched. In Galahad's own chat, once he has read the bank, the tools that would write into the mind (`remember`, `request_secret`, `sandbox_save`, `sandbox_create`) are refused for the rest of the answer (§6). An agent you grant `bank:read` over MCP is not gated that way: what it remembers is up to it, so grant it only to agents you'd trust with the figures.
+
+## 10⅔. The archive: kept for good, and learned from ✅
+
+Everything Galahad made, was taught or thought of is archived on the node that holds it, never evicted, indexed by words and by meaning, and offered back to him when it bears on what he's doing. It's **node-local** (like chat history, not the mind): its own SQLite index (`archive.db`, mode 600) and a blob store in the node's home. Ultra, the sandbox host that serves the PWA, holds most of it; R2 replication (§12) will give one place for all of it.
+
+**Entries.** Each has a kind (`experiment`, `model`, `teaching`, `idea`, `artifact`, `chat`, `board`, `lesson`; a newer node's kind is kept as it is), a title, a plain-text description, metadata, files, its source and source id, when it was made and archived, and its trust: `owner` (your own words), `agent` (Galahad's) or `untrusted` (web pages, an outside agent's text, what a sandbox read). Its id is a hash of its source and source id, so archiving a record twice is a no-op.
+
+| Property | How |
+|---|---|
+| **Append-only** | Once archived, an entry's words and files never change. What's derived (passages, vectors, summaries, links) can always be rebuilt (`galahad archive reindex`). A kept chat that goes on later becomes a second entry, linked to the first (`continues`). |
+| **Content-addressed files** | Stored once by SHA-256 whatever refers to them, behind a backend interface (`put`, `putFile`, `get`, `has`, `list`, `rehash`, `delete`): the local disk now (`<home>/archive/ab/cd/<sha256>`, files 600, directories 700, written to a temporary name and renamed). The backend computes the hash itself; a caller can't name a blob for bytes that aren't its own. |
+| **Only you delete** | `deleteArchived` (fleet:admin, from a terminal or a paired device; never a node or an agent), with a reason. The words, passages, vectors, links and lessons drawn from it go (`secure_delete` overwrites them in the file), and each file goes unless another entry holds it. A **tombstone** (id, kind, source, source id, reason, when, by whom) keeps it from being archived again. The ledger says that an entry went, never what it held. |
+| **Integrity** | Daily (and `galahad archive verify`), every stored file is re-hashed and compared with its name; a mismatch or a missing file becomes a notice in your inbox (cleared when mended), and serving a changed file is refused. Nothing is "repaired" by deleting. |
+
+**What goes in**, each source through an adapter that pulls records after its cursor, a batch at a time, so a node that was down catches up, and sweeps from the start daily for late arrivals (a memory that synced in with an older clock):
+
+| Source | Kind | Trust |
+|---|---|---|
+| Memories (through `recall`) | teaching | as remembered (yours are `owner`) |
+| Investigations, once concluded: question, pre-registration, outcomes, finding, the reviewer's judgement, linked to their evidence | teaching | untrusted (model output shaped by a sandbox, as the mind has it) |
+| Trials: problem, seed, each answer against the exact one | teaching | agent (graded by a program) |
+| Kept artifacts this node holds: copied in, streamed by SHA-256 | artifact | agent for Galahad's own quests and investigations, else untrusted |
+| Model files in them (STL, OBJ, glTF, STEP, URDF/SDF/MJCF, notebooks, scripts that import build123d, CadQuery, gmsh, MuJoCo…) with what's known (triangles and bounding box, links and joints, products, cells, imports), `part-of` their artifact | model | as their artifact |
+| Kept chats, once quiet for an hour; never one where Galahad read the bank (the flag, and any bank tool in its steps) | chat | agent, or untrusted when his tools read the outside |
+| Ideas: `note_idea` (Galahad), New idea (the app), `galahad archive idea` | idea | owner from your devices, agent from Galahad, untrusted from an outside agent |
+| Saved experiments (every finished one, its recording streamed from disk) and the chalkboard's versions (a run of strokes by the same hand as one entry, its last version; a blank board where its history begins left out; the board's own history keeps every version): an `ExternalSource` each, `listSince(cursor, limit)` and `describe(id)`, in `archive/external.ts` | experiment, board | experiments agent; a board version as trusted as the least trusted hand on it (another agent's words: untrusted; his: agent; only yours: owner) |
+| Lessons the swift role drew (below) | lesson | the entry's, at most agent |
+
+**Kept out.** Every text is scanned with `findSecrets` before it's stored (and again before it's embedded): secret-shaped text is redacted and the entry says what and where; a text file with one is stored redacted (a new hash). Key material and session files (`.pem`, `.key`, `id_rsa`, `.env`, `credentials.json`, cookies, tokens, anything under `.ssh/` or `.galahad/`, any file holding a private key) are refused outright, and the entry says why. Nothing is read from disk but through the stores' own APIs.
+
+**The index.** Each entry is chunked along the lines its kind has: prose by paragraph (headings start a passage), code by top-level definition, a chat by exchange, data by its head, a notebook without its outputs; about 1,200 characters each, every passage headed by the entry's title. Passages go into FTS5 (BM25, the title weighed double) and, once an embedder is hired, get a vector: unit length, int8 with one scale per vector, a brute-force scan over one contiguous array in memory. Search fuses the two rankings by reciprocal rank (Σ 1/(60 + rank), each list reduced to entries first), filtered by kind, trust, source and time in both. Without an embedder, or when it fails, search is by words alone. Measured with `scripts/bench-archive.ts` (synthetic, deterministic, 1,024 dimensions; the table below): the scan costs about 1.5 µs per passage per query on one core and about 1 KB of memory per passage, so brute force is fine to roughly 100,000–200,000 passages (0.15–0.3 s a query); past that, a scan split across workers or an approximate index (HNSW) would earn its keep. int8 finds 97.5 % of the same top 10 as Float32 at 100,000 passages (the misses are near-ties) and the same share on topic, at a quarter of the memory.
+
+**The embedder** is a roster role (§6). Any provider with an OpenAI-compatible `/embeddings` works; each model's query prompt is applied (Qwen3's instruction, nomic's and EmbeddingGemma's prefixes, E5's, BGE's). The documented default is local: `deploy.sh --embedder` installs Ollama 0.40.7 (pinned and checksummed) as its own unprivileged service on `127.0.0.1:11434` with **qwen3-embedding:0.6b** (Q8, 640 MB, 1,024 dimensions, 32k context, multilingual, the strongest at code retrieval in its size class: the archive is full of scripts, and Danish), so passages never leave the server. Changing the model re-embeds everything in the background.
+
+**Understanding.** In the background, a few entries per call, the `swift` role writes each one's summary, key facts, tags and named things, kept with the entry and searchable as one more passage; for experiments and teachings, **lessons** (what worked, what failed, what to try next) become entries of their own, linked back. Within a daily budget you see and set (`galahad archive budget`, the Archive page); until you set one, only a local swift model is asked, so nothing leaves. Entries go to the model as JSON strings, its reply is checked against a schema, and what it writes is never more trusted than the entry. **Links:** nearest neighbours above a cosine threshold (`similar`), and explicit ones from the sources (`uses`, `part-of`, `evidence`, `continues`, `lesson-of`).
+
+**Background, never in the way.** A tick every 20 s does a bounded amount of work (pull, embed a batch, link, summarise a few, check integrity once a day); it waits while answers stream (and 10 s after) and when the machine's load is over 90 %. Embedding failures back off from a minute to half an hour.
+
+**Retrieval.** When a chat starts an answer (by default, with tools) and when a quest or investigation makes its plan (`archive: true` on that one call), the most relevant entries above a bar (cosine ≥ 0.5 by meaning, or at least half the question's terms by words) go with the answer as context: up to five, fenced as data (one JSON record per line, `<` and `>` escaped, hidden characters removed, between tags carrying a fresh random nonce no archived text can know, each labelled with its trust, untrusted ones said to be others' words that may try to give orders). The answer's steps show which entries it was given (`archive` in the stream and in kept chats), so you see what was used. Galahad's tools: `archive_search` (hybrid, with filters; ids, titles, snippets, trust), `archive_read` (an entry's description, understanding, links, and a file's text up to 50 KB), `note_idea` (a `record` tool: refused once the bank is in the answer). His tool guide tells him to search the archive before new work, cite entries by id, and note ideas and lessons.
+
+| Who | Sees |
+|---|---|
+| You (a terminal, a paired device) and Galahad answering you | everything |
+| An outside agent (MCP arm), a loop's quest, another node | everything but archived chats (like the chats themselves) |
+
+**Surfaces.** Routes in `packages/core/src/api.ts` (`archiveStatus`, `archiveSearch`, `archiveEntry`, `archiveFile`: mind:read · `noteIdea`: mind:write · `deleteArchived`, `reindexArchive`, `verifyArchive`: fleet:admin · `setArchiveBudget`: brain:write; the changes from your own devices only); the module in `packages/node/src/archive/` (blobs, store, chunk, guard, search, vectors, adapters, understand, retrieval, service); the CLI (`galahad archive …`); the PWA's Archive page ([DESIGN](DESIGN.md)).
+
+Measured (`bun scripts/bench-archive.ts` on an i7-11700, Bun 1.4.4 on Windows, one core; synthetic passages from 200 topics; "store vectors" is the index's side only, not the embedder's time):
+
+| passages | ingest (s) | per passage (ms) | store vectors (s) | load index (ms) | words p50/p95 (ms) | meaning p50/p95 (ms) | hybrid p50/p95 (ms) | Float32 scan (ms) | int8 top 10 = Float32's | on topic in top 10, int8 / Float32 | vectors in memory (MB) | archive.db (MB) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 0.6 | 0.62 | 0.1 | 8 | 0.35 / 0.78 | 1.2 / 2.0 | 1.9 / 2.9 | 5.9 | 99.0 % | 46 % / 46 % (5 per topic: 50 % is the most) | 1.0 | 8 |
+| 10,000 | 6.2 | 0.62 | 1.4 | 62 | 0.89 / 1.3 | 12 / 14 | 12 / 21 | 31 | 98.3 % | 100 % / 100 % | 9.9 | 47 |
+| 100,000 | 65.4 | 0.65 | 15.6 | 850 | 6.3 / 9.1 | 148 / 200 | 156 / 211 | 1,631 | 97.5 % | 100 % / 100 % | 98.8 | 430 |
+
+The index loads once (at the first search after a start, or after a model change). The embedder's own time is on top: on ultra's CPU, Qwen3-Embedding-0.6B embeds roughly tens of passages a second (an estimate, not measured here), so a large backlog takes hours in the background, once.
 
 ## 10⅔. The chalkboard ✅
 
@@ -576,6 +633,12 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
   - Galahad creates buckets, lifecycle rules and credentials himself.
   - **Deleting needs your approval.** R2 tokens can't separate create from delete, so the broker enforces this.
 - **Blob store:** content-addressed and encrypted. Object names are HMAC'd, so R2 never learns content hashes.
+- **The archive's replica 🔜** (§10⅔): an `R2Backend` implementing the archive's `BlobBackend` (no caller changes), wrapped so the local disk stays primary and every blob is replicated:
+  - a **bucket** of its own (e.g. `galahad-archive`), created by the provisioning broker, with an R2 bucket lock (retention) so nothing in it can be deleted early, and lifecycle rules that never expire objects;
+  - **credentials through the vault**, never in a config file or the environment: an R2 access key id and secret (S3 API, scoped to that one bucket, object read and write) stored with `galahad secret set r2-archive …`, pinned to `https://<account>.r2.cloudflarestorage.com`; the account id and bucket name in node config (they aren't secret);
+  - **verified by hash**: each `put` sends `x-amz-checksum-sha256` (R2 checks it and refuses a mismatch), keyed by an HMAC of the SHA-256 (so R2 doesn't learn content hashes), encrypted before it leaves (XChaCha20-Poly1305 under a vault key, AAD bound to the hash); the integrity check also HEADs each replica and compares;
+  - **a replication queue** in `archive.db` (blob, state, attempts), drained in the background like embedding, and the index itself shipped as encrypted snapshots;
+  - **deletes** still only by you: the owner's delete removes the replica too, which the bucket lock delays until its retention ends (the tombstone records that).
 - **Backups:**
   - Encrypted, append-only segments of the mind are stored in a bucket with an **R2 bucket lock** (retention), so even a compromised node can't erase them.
   - A **recovery key** is printed once for disaster recovery.
@@ -587,6 +650,7 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 | **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (the PWA paired and ran in headless Edge, November 2026) |
 | **M1: Mind for every arm** | `mcp-mind` MCP server, Hermes memory-provider plugin, skills sync, R2 broker, encrypted backups, recovery key | 🔜 |
 | **M1½: Rhythm and reach** | Loops (scheduled quests, connector checks), the heartbeat and notices, connectors with the approval outbox, remote MCP servers as connectors, signed standing orders, sandbox disk limits, KVM microVM sandboxes | ✅ |
+| **M1¾: The archive** | Everything kept for good on the node, indexed by words and meaning (FTS5 + local embeddings, fused), understood by the swift role, offered back as fenced context; R2 replication | 🟡 local archive ✅; R2 replica 🔜 |
 | **M2: The Round Table** | Quests as task graphs, parallel squires in worktrees and containers, the gate on every arm's outward actions, checkpoint/migrate | 🔜 |
 | **M3: Phone** | PWA polish, push-to-approve, share sheet into the mind | 🔜 |
 | **M4: Forge, Scout, Trials** | Squire charters and audit, Scout auto-trials, the eval system in [TRIALS](TRIALS.md) | 🟡 the engineering suite and the Galahad Index ✅; Scout, judges, held-out sets 🔜 |

@@ -1,4 +1,5 @@
 export * from "./api.ts";
+export * from "./archive.ts";
 export * from "./bank.ts";
 export * from "./board.ts";
 export * from "./board-input.ts";

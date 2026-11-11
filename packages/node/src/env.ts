@@ -15,6 +15,13 @@ const Env = z.object({
   GALAHAD_ADVERTISE: z.string().min(1).optional(),
   /** The sandbox workspace helper's socket (default /run/galahad-workspace.sock). */
   GALAHAD_WORKSPACE_SOCKET: z.string().startsWith("/").optional(),
+  /** Where the archive keeps its files (default <home>/archive); an absolute path the node's user may write. */
+  GALAHAD_ARCHIVE_DIR: z
+    .string()
+    .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
+    .optional(),
+  /** off: the archive keeps what it has and serves it, but pulls, embeds and summarises nothing new. */
+  GALAHAD_ARCHIVE: z.enum(["on", "off"]).optional(),
 });
 
 export type Env = z.infer<typeof Env>;

@@ -1,6 +1,7 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, openAIConversation, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
 import { listModels, resolveProvider } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
@@ -54,7 +55,8 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
     const resolved = resolveProvider(ctx.store, ctx.vault, provider);
     if (!resolved) continue;
     try {
-      const first = (await listModels(resolved, ctx.fetch))[0];
+      // An embedding model can't chat: a local runtime serving the archive's embedder isn't picked for a chat role.
+      const first = (await listModels(resolved, ctx.fetch)).find((m) => !isEmbeddingModel(m));
       if (first) out.push(`${provider}/${first}`);
     } catch {
       /* local runtime not running on this node */

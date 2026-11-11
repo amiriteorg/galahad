@@ -216,8 +216,14 @@ export function findSecrets(text: string, opts: ScanOptions = {}): SecretFinding
 export function redact(text: string, knownValues: (string | null | undefined)[] = []): string {
   let out = text;
   for (const value of knownValues) if (value && value.length >= 6) out = out.split(value).join("[redacted]");
-  const findings = findSecrets(out);
-  for (const f of [...findings].reverse()) out = `${out.slice(0, f.index)}[redacted ${f.kind}]${out.slice(f.index + f.length)}`;
+  // One key can match several patterns (an Anthropic key is also an sk-… key): one marker per span.
+  const spans: { index: number; end: number; kind: string }[] = [];
+  for (const f of findSecrets(out)) {
+    const last = spans.at(-1);
+    if (last && f.index < last.end) last.end = Math.max(last.end, f.index + f.length);
+    else spans.push({ index: f.index, end: f.index + f.length, kind: f.kind });
+  }
+  for (const s of [...spans].reverse()) out = `${out.slice(0, s.index)}[redacted ${s.kind}]${out.slice(s.end)}`;
   return out;
 }
 

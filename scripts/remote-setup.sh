@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs ON the target host, from the staged release (see scripts/deploy.sh). Idempotent.
-#   remote-setup.sh <stage> <rev> <mode> <name|-> <fleet|-> <invite|-> <port> <skip-tests> <sudo> <expose|0> <open-firewall>
+#   remote-setup.sh <stage> <rev> <mode> <name|-> <fleet|-> <invite|-> <port> <skip-tests> <sudo> <expose|0> <open-firewall> [<embedder>]
 set -euo pipefail
-STAGE=$1 REV=$2 MODE=$3 NAME=$4 FLEET=$5 INVITE=$6 PORT=$7 SKIP_TESTS=$8 SUDO=$9 EXPOSE=${10} OPEN_FIREWALL=${11}
+STAGE=$1 REV=$2 MODE=$3 NAME=$4 FLEET=$5 INVITE=$6 PORT=$7 SKIP_TESTS=$8 SUDO=$9 EXPOSE=${10} OPEN_FIREWALL=${11} EMBEDDER=${12:-0}
 [[ $NAME == - ]] && NAME=$(hostname -s)
 SYSTEM_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -285,6 +285,102 @@ UNIT
     done
   fi
 
+  # The archive's embedder, only with --embedder: Ollama, pinned and checksum-verified (the digest
+  # GitHub records for the release asset), as its own unprivileged service listening on 127.0.0.1
+  # only, with one embedding model whose layer digest is checked against the one pinned here. So the
+  # archive's words never leave this machine to be embedded. Without the flag nothing here runs, and
+  # an install from an earlier deploy is left as it is.
+  OLLAMA_VERSION=0.40.7
+  OLLAMA_SHA256=7f082e625b4c334df84ed1558fe282d6d8091fe3545790aef30b3a9c50d44d41
+  EMBED_MODEL=qwen3-embedding:0.6b
+  EMBED_MODEL_DIGEST=sha256:06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439
+  EMBEDDER_READY=0
+  if [[ $EMBEDDER == 1 ]]; then
+    if [[ $(uname -m) != x86_64 ]]; then
+      echo "no pinned Ollama for $(uname -m): the archive keeps searching by words" >&2
+    else
+      if [[ $(/opt/ollama/bin/ollama --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | tail -1) != "$OLLAMA_VERSION" ]]; then
+        command -v zstd >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zstd >/dev/null
+        mkdir -p /var/cache/galahad
+        OLLAMA_TAR=/var/cache/galahad/ollama-linux-amd64-$OLLAMA_VERSION.tar.zst
+        if ! echo "$OLLAMA_SHA256  $OLLAMA_TAR" | sha256sum -c --quiet - >/dev/null 2>&1; then
+          echo "→ downloading Ollama $OLLAMA_VERSION (about 1.5 GB, once)"
+          curl -fsSL -o "$OLLAMA_TAR.part" "https://github.com/ollama/ollama/releases/download/v$OLLAMA_VERSION/ollama-linux-amd64.tar.zst" &&
+            mv "$OLLAMA_TAR.part" "$OLLAMA_TAR"
+        fi
+        if echo "$OLLAMA_SHA256  $OLLAMA_TAR" | sha256sum -c --quiet - >/dev/null 2>&1; then
+          rm -rf /opt/ollama.new && mkdir -p /opt/ollama.new && tar --zstd -xf "$OLLAMA_TAR" -C /opt/ollama.new &&
+            [[ -x /opt/ollama.new/bin/ollama ]] && rm -rf /opt/ollama && mv /opt/ollama.new /opt/ollama &&
+            echo "→ Ollama $OLLAMA_VERSION installed in /opt/ollama"
+        else
+          rm -f "$OLLAMA_TAR.part"
+          echo "Ollama didn't download or failed its checksum: not installed (the archive keeps searching by words)" >&2
+        fi
+      fi
+      if [[ -x /opt/ollama/bin/ollama ]]; then
+        id galahad-ollama >/dev/null 2>&1 || useradd --system --home-dir /var/lib/galahad-ollama --create-home --shell /usr/sbin/nologin galahad-ollama
+        install -d -m 0700 -o galahad-ollama -g galahad-ollama /var/lib/galahad-ollama /var/lib/galahad-ollama/models
+        cat >/etc/systemd/system/galahad-ollama.service <<'UNIT'
+[Unit]
+Description=Galahad's local embedder (Ollama, loopback only)
+After=network-online.target
+Before=galahad.service
+
+[Service]
+User=galahad-ollama
+Group=galahad-ollama
+Environment=HOME=/var/lib/galahad-ollama
+Environment=OLLAMA_HOST=127.0.0.1:11434
+Environment=OLLAMA_MODELS=/var/lib/galahad-ollama/models
+Environment=OLLAMA_CONTEXT_LENGTH=8192
+Environment=OLLAMA_KEEP_ALIVE=30m
+ExecStart=/opt/ollama/bin/ollama serve
+Restart=always
+RestartSec=3
+# Background work: the node and its sandboxes come first.
+Nice=10
+CPUWeight=50
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/galahad-ollama
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        systemctl daemon-reload
+        systemctl enable galahad-ollama.service >/dev/null 2>&1
+        systemctl restart galahad-ollama.service
+        for _ in $(seq 1 30); do
+          curl -fs -o /dev/null http://127.0.0.1:11434/api/version && break
+          sleep 1
+        done
+        OLLAMA_MANIFEST=/var/lib/galahad-ollama/models/manifests/registry.ollama.ai/library/${EMBED_MODEL%%:*}/${EMBED_MODEL##*:}
+        if ! grep -q "$EMBED_MODEL_DIGEST" "$OLLAMA_MANIFEST" 2>/dev/null; then
+          echo "→ pulling $EMBED_MODEL (about 640 MB, once)"
+          runuser -u galahad-ollama -- env HOME=/var/lib/galahad-ollama OLLAMA_HOST=127.0.0.1:11434 /opt/ollama/bin/ollama pull "$EMBED_MODEL" >/dev/null 2>&1 || true
+        fi
+        # Ollama checks every blob's SHA-256 as it downloads; this checks it's the model pinned here.
+        if grep -q "$EMBED_MODEL_DIGEST" "$OLLAMA_MANIFEST" 2>/dev/null; then
+          EMBEDDER_READY=1
+          echo "→ local embedder ready: $EMBED_MODEL on 127.0.0.1:11434 (galahad-ollama.service)"
+        else
+          runuser -u galahad-ollama -- env HOME=/var/lib/galahad-ollama OLLAMA_HOST=127.0.0.1:11434 /opt/ollama/bin/ollama rm "$EMBED_MODEL" >/dev/null 2>&1 || true
+          echo "$EMBED_MODEL didn't arrive, or isn't the model pinned here: not used (the archive keeps searching by words)" >&2
+        fi
+      fi
+    fi
+  fi
+
   systemctl daemon-reload
   systemctl enable galahad.service >/dev/null 2>&1
   # Restarting the node cuts off any quest or investigation it is driving. Wait for running
@@ -320,6 +416,16 @@ UNIT
     sleep 1
   done
   /usr/local/bin/galahad status
+  # The embedder role, once the local model is there: the ollama provider (the preset: 127.0.0.1, no key)
+  # if it isn't configured, and the role only if you haven't hired one yourself.
+  if [[ $EMBEDDER_READY == 1 ]]; then
+    /usr/local/bin/galahad provider list 2>/dev/null | grep -q '^  ollama ' || /usr/local/bin/galahad provider add ollama >/dev/null
+    if /usr/local/bin/galahad roster 2>/dev/null | grep -Eq '^  embedder +\(default\)$'; then
+      /usr/local/bin/galahad roster set embedder "ollama/$EMBED_MODEL" >/dev/null && echo "→ the archive embeds with ollama/$EMBED_MODEL (the embedder role); its backlog is embedded in the background"
+    else
+      echo "→ the embedder role is yours already: $(/usr/local/bin/galahad roster 2>/dev/null | grep -E '^  embedder' | sed 's/^  embedder *//')"
+    fi
+  fi
   rm -rf "$STAGE"
   exit 0
 fi

@@ -101,12 +101,16 @@ describe("a partner", () => {
     f.sync(Array.from({ length: MAX }, (_, i) => partner(`agent-${i}`)));
     const leader = { x: -18, y: 12, heading: 0, moving: true };
     for (let k = 0; k < 60; k++) f.step(1 / 30, leader, true);
-    const t0 = performance.now();
-    for (let k = 0; k < 1000; k++) {
-      leader.heading += 0.01;
-      f.step(1 / 30, leader, true);
+    // The fastest of a few batches: what the code costs, not what the machine was busy with (the suite runs alongside).
+    let per = Infinity;
+    for (let batch = 0; batch < 5; batch++) {
+      const t0 = performance.now();
+      for (let k = 0; k < 300; k++) {
+        leader.heading += 0.01;
+        f.step(1 / 30, leader, true);
+      }
+      per = Math.min(per, (performance.now() - t0) / 300);
     }
-    const per = (performance.now() - t0) / 1000;
     expect(per).toBeLessThan(0.2);
     console.log(`partners: ${(per * 1000).toFixed(1)} µs a frame for ${MAX}`);
   });

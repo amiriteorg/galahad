@@ -35,12 +35,19 @@ export function filterConversations(list: ConversationSummary[], query: string, 
 }
 
 export interface KeptStep {
-  kind: "asked" | "model" | "fallback" | "tool" | "answer" | "error" | "stopped";
+  kind: "asked" | "model" | "fallback" | "archive" | "tool" | "answer" | "error" | "stopped";
   text: string;
   detail?: string;
   state: "done" | "warn" | "error";
   /** For tool steps: the tool's name (for its icon) and the call's id. */
   tool?: { name: string; id: string };
+}
+
+/** The archived entries an answer was given, as one step: how many, and each by its id and title. */
+export function archiveStep(entries: { id: string; title: string; kind: string; trust: string }[]): { text: string; detail?: string } {
+  const text = `Read ${entries.length} archived ${entries.length === 1 ? "entry" : "entries"}`;
+  if (!entries.length) return { text };
+  return { text, detail: entries.map((e) => `[${e.id}] ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ") };
 }
 
 /** A kept answer's steps, as the chat shows them while one streams. */
@@ -49,7 +56,8 @@ export function stepsOf(answer: StoredMessage, role: string): KeptStep[] {
   for (const s of answer.steps) {
     if (s.kind === "model") steps.push({ kind: "model", text: `Thinking with ${s.ref}`, state: "done" });
     else if (s.kind === "fallback") steps.push({ kind: "fallback", text: `${s.from} didn't answer`, detail: s.error, state: "warn" });
-    else {
+    else if (s.kind === "archive") steps.push({ kind: "archive", ...archiveStep(s.entries), state: "done" });
+    else if (s.kind === "tool") {
       const detail = [s.input, s.summary].filter(Boolean).join(" → ");
       steps.push({ kind: "tool", text: s.title, ...(detail ? { detail } : {}), state: s.ok === false ? "warn" : "done", tool: { name: s.name, id: s.id } });
     }

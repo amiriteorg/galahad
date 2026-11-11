@@ -103,6 +103,9 @@ const ICONS = {
   landscape: ["M3.5 19h17", "M3.5 19l5-6.5 3.75 4.25 2.75-3.25 5.5 5.5", circle(16.5, 7.5, 2.25)],
   /** Artifacts: a sandbox's work, kept in a box after it's gone. */
   archive: [rect(3.5, 4.5, 17, 4.5, 1.25), "M5 9v9a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V9", "M10 12.75h4"],
+  // The Archive (everything kept): books on a shelf, one leaning.
+  library: [rect(4, 4.5, 4, 15, 1), rect(9.5, 6.5, 4, 13, 1), "M15.4 7.3l3.4-.85 2.85 12.15-3.4.85z", "M3 19.5h12.5"],
+  lightbulb: ["M9 17.5h6M10 20.5h4", "M12 3.5a5.75 5.75 0 0 0-3.5 10.3c.6.45 1 1.15 1 1.9v.3h5v-.3c0-.75.4-1.45 1-1.9A5.75 5.75 0 0 0 12 3.5z"],
   file: ["M6.5 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z", "M13.5 3.5V8H18"],
   download: ["M12 4v11", "M7.5 10.5 12 15l4.5-4.5", "M4.5 19.5h15"],
   /** The Lab: mathematics, physics and engineering. */
