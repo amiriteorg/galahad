@@ -48,6 +48,8 @@ export interface Squire {
   /** Its stride's phase (radians) and how much it walks (0..1). */
   phase: number;
   walk: number;
+  /** Busy with its hands where it stands (0..1): his helpers at a station (helpers.ts). */
+  work?: number;
 }
 
 export interface Leader {
@@ -305,7 +307,9 @@ export class Partners {
         this.part.updateMatrix();
         this.legs.setMatrixAt(n * 2 + side, this.part.matrix.premultiply(this.root.matrixWorld));
         this.part.position.set(sign * 0.22, 0.4, 0);
-        this.part.rotation.set(-sign * swing * 0.8, 0, sign * 0.12);
+        // Walking, its arms swing against its legs; at work, both are up before it, going in turn.
+        const work = s.work ?? 0;
+        this.part.rotation.set(-sign * swing * 0.8 - work * (1.05 + 0.4 * Math.sin(s.phase + side * Math.PI)), 0, sign * 0.12);
         this.part.updateMatrix();
         this.arms.setMatrixAt(n * 2 + side, this.part.matrix.premultiply(this.root.matrixWorld));
       }

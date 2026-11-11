@@ -7,6 +7,7 @@ import { FIELD } from "./field-plan.ts";
 import { addPlants } from "./flora-plan.ts";
 import { Workshop } from "./hall.ts";
 import { HALL } from "./hall-plan.ts";
+import { DESK_SEAT } from "./hearth-plan.ts";
 import { DECK_REST } from "./keep-deck.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
 import { Planner } from "./nav.ts";
@@ -38,6 +39,14 @@ for (let cx = Math.floor(-230 / CHUNK); cx <= Math.floor(150 / CHUNK); cx++) {
     const s = chunkSamples(SEED, cx, cy, BASE_FLATS, () => false, BIG);
     addPlants(solids, s.layers.trees, s.layers.rocks);
   }
+}
+
+/** As the scene asks where the following camera may stand: an open view from his head to there, as the arm will see it (what's overhead where he isn't under it reaches the ground). */
+function openTo(hx: number, hy: number, hz: number, x: number, y: number, z: number): boolean {
+  solids.cameraAt(hx, hy);
+  const open = solids.view(hx, hy, hz, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+  solids.cameraAt(Number.NaN, Number.NaN);
+  return open;
 }
 
 /** Is the camera at (x, y, z) inside anything it keeps out of, or below the land? */
@@ -285,7 +294,7 @@ describe("the camera's spring arm", () => {
       const t = rig.target;
       const g = ground(t.x, t.y);
       const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
-      return ground(x, y) + 0.8 < z && solids.view(t.x, t.y, g + 2.3, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+      return ground(x, y) + 0.8 < z && openTo(t.x, t.y, g + 2.3, x, y, z);
     };
     const faults: string[] = [];
     let pops = 0;
@@ -337,7 +346,7 @@ describe("the camera's spring arm", () => {
           const t = rig.target;
           const g = ground(t.x, t.y);
           const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
-          return ground(x, y) + 0.8 < z && solids.view(t.x, t.y, g + 2.3, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+          return ground(x, y) + 0.8 < z && openTo(t.x, t.y, g + 2.3, x, y, z);
         };
         rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
         rig.target.yaw = walker.heading + Math.PI - turnBy;
@@ -367,6 +376,153 @@ describe("the camera's spring arm", () => {
         }
         const end = Math.hypot(arm.x - walker.x, arm.y - walker.y);
         if (longest > 1.5 || end > DEFAULT_DISTANCE + 4) failures.push(`to ${name} (begun ${turnBy} off his front): ${longest.toFixed(1)} s more than 4 m behind its arm (at worst ${worst.toFixed(1)} m), ${end.toFixed(1)} m from him at the end`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test("standing at a station he walked to, it's never left pressed against the lantern beside him, looking at him through it", () => {
+    // At the council table it once stayed 0.6 m behind the lantern's post: held there, the post between it and its
+    // arm, no farther from him than the arm reaches (so never counted as left behind).
+    const planner = new Planner(solids);
+    const walker = new Walker(standAt("keep"));
+    const mover = solids.join(walker, BUILDS.galahad);
+    walker.join({ planner, mover, wet: null, height: ground });
+    const failures: string[] = [];
+    const dt = 1 / 60;
+    const starts: [string, { x: number; y: number; facing: number }][] = [
+      ["his desk", DESK_SEAT],
+      ["the keep's door", standAt("keep")],
+      ["the forge", standAt("forge")],
+      ["the library", standAt("library")],
+    ];
+    for (const [from, start] of starts) {
+      for (const place of PLACES) {
+        if (place === "keep") continue;
+        const to = standAt(place);
+        if (Math.hypot(to.x - start.x, to.y - start.y) < 1) continue;
+        walker.go(start, obstacles(), true);
+        const rig = new CameraRig();
+        const arm = new SpringArm();
+        const pivot: Point3 = { x: 0, y: 0, z: 0 };
+        const want: Point3 = { x: 0, y: 0, z: 0 };
+        const clear = (x: number, y: number): boolean => {
+          const t = rig.target;
+          const g = ground(t.x, t.y);
+          const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+          return ground(x, y) + 0.8 < z && openTo(t.x, t.y, g + 2.3, x, y, z);
+        };
+        rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
+        rig.target.yaw = walker.heading + Math.PI - 0.6;
+        rig.trail(walker.heading, false, 0, clear);
+        rig.update(0, false);
+        rig.wanted(ground(rig.x, rig.y), want, pivot);
+        arm.update(pivot, want, solids, ground, dt, true);
+        walker.go(to, obstacles());
+        let after = 0;
+        for (let k = 0; k < 60 * 90 && after < 60 * 14; k++) {
+          if (!walker.moving && !walker.waypoints.length) after++;
+          walker.step(dt);
+          rig.lookAt(walker.x, walker.y);
+          rig.trail(walker.heading, walker.moving, dt, clear);
+          rig.update(dt, true);
+          rig.wanted(ground(rig.x, rig.y), want, pivot);
+          arm.update(pivot, want, solids, ground, dt, true);
+        }
+        // The lantern at this station: on a post 1.9 m to his left.
+        const lx = to.x + Math.cos(to.facing + Math.PI / 2) * 1.9;
+        const ly = to.y + Math.sin(to.facing + Math.PI / 2) * 1.9;
+        const d = Math.hypot(arm.x - lx, arm.y - ly);
+        if (d < 1.1 && arm.z < 3.4) failures.push(`from ${from} to the ${place}: ${d.toFixed(2)} m from its lantern, ${Math.hypot(arm.x - walker.x, arm.y - walker.y).toFixed(1)} m from him`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test("turned by hand to a view its arm can't take (under the keep's crown, as he stands at the council), it's out on its arm again soon after the view moves on: never held for good in the corner by the lantern", () => {
+    // Follow resumed while he stood there, the view left pointing under the crown: the camera was drawn in beside
+    // him, wedged between the lantern's post and the crown's reach, and held there for good (what it was making
+    // for, the arm near him, is somewhere it may not go while he isn't under the crown).
+    const planner = new Planner(solids);
+    const at = standAt("council");
+    const walker = new Walker(at);
+    const mover = solids.join(walker, BUILDS.galahad);
+    walker.join({ planner, mover, wet: null, height: ground });
+    const failures: string[] = [];
+    const dt = 1 / 60;
+    for (const yaw of [Math.PI / 2, Math.PI / 2 + 0.5, Math.PI / 2 - 0.5, 0.3, Math.PI - 0.3]) {
+      const rig = new CameraRig();
+      const arm = new SpringArm();
+      const pivot: Point3 = { x: 0, y: 0, z: 0 };
+      const want: Point3 = { x: 0, y: 0, z: 0 };
+      const clear = (x: number, y: number): boolean => {
+        const t = rig.target;
+        const g = ground(t.x, t.y);
+        const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+        return ground(x, y) + 0.8 < z && openTo(t.x, t.y, g + 2.3, x, y, z);
+      };
+      rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
+      rig.target.yaw = yaw;
+      // (Turned by hand: the view is left alone for a few seconds.)
+      rig.rotateBy(0);
+      rig.update(0, false);
+      rig.wanted(ground(rig.x, rig.y), want, pivot);
+      arm.update(pivot, want, solids, ground, dt, true);
+      for (let k = 0; k < 60 * 25; k++) {
+        rig.lookAt(walker.x, walker.y);
+        rig.trail(walker.heading, false, dt, clear);
+        rig.update(dt, true);
+        rig.wanted(ground(rig.x, rig.y), want, pivot);
+        arm.update(pivot, want, solids, ground, dt, true);
+      }
+      const lx = at.x + Math.cos(at.facing + Math.PI / 2) * 1.9;
+      const ly = at.y + Math.sin(at.facing + Math.PI / 2) * 1.9;
+      const fromHim = Math.hypot(arm.x - walker.x, arm.y - walker.y);
+      const fromLantern = Math.hypot(arm.x - lx, arm.y - ly);
+      const f = wrong(arm.x, arm.y, arm.z);
+      if (f) failures.push(`left at ${yaw.toFixed(2)}: ${f}`);
+      if (fromHim < DEFAULT_DISTANCE * 0.6 || fromLantern < 1.1) failures.push(`left at ${yaw.toFixed(2)}: ${fromHim.toFixed(1)} m from him, ${fromLantern.toFixed(2)} m from the lantern (cuts ${arm.cuts})`);
+    }
+    // And coming back to him from a look at another station (the selector's "Galahad"): the view slides over to
+    // him from there, still turned as it was.
+    for (const from of ["observatory", "forge", "library", "watchtower"] as const) {
+      for (const yaw of [1.07, 2.2, -0.4]) {
+        const rig = new CameraRig();
+        const arm = new SpringArm();
+        const pivot: Point3 = { x: 0, y: 0, z: 0 };
+        const want: Point3 = { x: 0, y: 0, z: 0 };
+        const clear = (x: number, y: number): boolean => {
+          const t = rig.target;
+          const g = ground(t.x, t.y);
+          const z = g + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
+          return ground(x, y) + 0.8 < z && openTo(t.x, t.y, g + 2.3, x, y, z);
+        };
+        rig.follow = false;
+        rig.lookAt(STATIONS[from].x, STATIONS[from].y, 26);
+        rig.target.yaw = yaw;
+        rig.update(0, false);
+        rig.wanted(ground(rig.x, rig.y), want, pivot);
+        arm.update(pivot, want, solids, ground, dt, true);
+        for (let k = 0; k < 60 * 28; k++) {
+          if (k === 60 * 2) {
+            // (He'd turned the view by hand while looking at the station: it's left alone for a few seconds yet.)
+            rig.rotateBy(0);
+            rig.follow = true;
+            rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
+          }
+          if (rig.follow) {
+            rig.lookAt(walker.x, walker.y);
+            rig.trail(walker.heading, false, dt, clear);
+          }
+          rig.update(dt, true);
+          rig.wanted(ground(rig.x, rig.y), want, pivot);
+          arm.update(pivot, want, solids, ground, dt, true);
+        }
+        const lx = at.x + Math.cos(at.facing + Math.PI / 2) * 1.9;
+        const ly = at.y + Math.sin(at.facing + Math.PI / 2) * 1.9;
+        const fromHim = Math.hypot(arm.x - walker.x, arm.y - walker.y);
+        const fromLantern = Math.hypot(arm.x - lx, arm.y - ly);
+        if (fromHim < DEFAULT_DISTANCE * 0.6 || fromLantern < 1.1) failures.push(`back from the ${from}, turned ${yaw}: ${fromHim.toFixed(1)} m from him, ${fromLantern.toFixed(2)} m from the lantern (cuts ${arm.cuts})`);
       }
     }
     expect(failures).toEqual([]);

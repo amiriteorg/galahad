@@ -503,15 +503,18 @@ export interface ComputeSuggestion {
 
 /**
  * What he'd suggest about the fleet's compute, never do: anything that installs, downloads or
- * changes who is hired is yours. Pure, from the census and the roster.
+ * changes who is hired is yours. Pure, from the census and the roster. A machine that's away
+ * (`online: false`) gets none: it can't be set up, measured or answer until it's back, and a
+ * machine you keep off on purpose shouldn't be asked for again and again.
  */
 export function computeSuggestions(
-  nodes: readonly { id: string; name: string; body: ComputeBody; calibration: Calibration | null }[],
+  nodes: readonly { id: string; name: string; body: ComputeBody; calibration: Calibration | null; online?: boolean }[],
   roster: Record<string, readonly string[]>,
 ): ComputeSuggestion[] {
   const out: ComputeSuggestion[] = [];
   const swift = roster.swift ?? [];
   for (const node of nodes) {
+    if (node.online === false) continue;
     const vram = Math.max(0, ...node.body.gpu.map((g) => g.memoryGb ?? 0));
     const serving = node.body.localModels.some((r) => r.models.length > 0);
     if (vram >= LOCAL_MODEL_VRAM_GB && !serving) {

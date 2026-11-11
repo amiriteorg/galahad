@@ -3,6 +3,7 @@ import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
 import { Care, type CareFrame, CareLook, lodestarPulse } from "./care.ts";
 import { ACTIVITIES, type Activity, withDog } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
@@ -23,6 +24,7 @@ import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
+import { HelperFigures } from "./helpers.ts";
 import { FIRE } from "./hearth-plan.ts";
 import { emptySeason, type SeasonChoice, seasonFor, seasonState } from "./season.ts";
 import { HALL, inHall } from "./hall-plan.ts";
@@ -392,6 +394,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const careLook = new CareLook(worldRoot, shadows);
   const partners = new Partners(worldRoot, shadows);
   partners.figures.join(solids, dogGround);
+  // His helpers: one figure for each attempt a quest runs in parallel, at the station its work is at (helpers.ts).
+  const helperLook = new Partners(worldRoot, shadows);
+  const helpers = new HelperFigures(helperLook.figures.squires);
   {
     // Tours and debugging: ?life=<activity> fixes his day to one part of it, ?charge=0.15 sets the dog's battery.
     const q = new URLSearchParams(location.search);
@@ -474,7 +479,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const pz = ground + 2.3;
     const z = ground + 1.5 + t.distance * Math.sin(pitchFor(t.distance));
     if (land.heightAt(x, y) + 0.8 > z) return false;
-    return solids.view(t.x, t.y, pz, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+    // As its arm will see it (collide.ts' cameraAt): what stands overhead where he isn't under it reaches the ground,
+    // so a place under the keep's crown isn't offered while he stands just outside it (the arm would refuse it, and
+    // pull the camera in against whatever is beside him).
+    solids.cameraAt(t.x, t.y);
+    const open = solids.view(t.x, t.y, pz, x, y, z, 0.3, CAMERA_PAD) > 0.97;
+    solids.cameraAt(Number.NaN, Number.NaN);
+    return open;
   };
   const galahadLead = { x: 0, y: 0, heading: 0 };
   const dogLead = { x: 0, y: 0, heading: 0 };
@@ -755,7 +766,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     for (const spot of keep.spots) {
       const el = div("world-label node");
       el.dataset.online = String(spot.node.online);
-      el.append(div("dot"), document.createTextNode(spot.node.name + (spot.node.sandboxHost ? " · sandboxes" : "")));
+      // Its sandbox slots as pips, the busy ones filled (once the node has said what it carries).
+      const carries = computeOfNode(model?.compute ?? null, spot.node.id);
+      const pips = carries ? slotPips(carries) : "";
+      el.append(div("dot"), document.createTextNode(spot.node.name + (pips ? "" : spot.node.sandboxHost ? " · sandboxes" : "")));
+      if (carries && pips) {
+        const slots = div("slots", pips);
+        slots.title = slotWords(carries);
+        slots.setAttribute("aria-label", slotWords(carries));
+        el.append(slots);
+      }
       addLabel(`node:${spot.node.id}`, el, copy(spot.label), 3, RANK.node);
     }
   }
@@ -936,7 +956,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       hoverPoint[2] = groundAt(dog.x, dog.y) + 1;
       return `${dogName || "His dog"} · battery ${Math.round(care.charge * 100)} %${care.docked ? ", charging" : ""}`;
     }
-    const text = critters.hover(x, y, hoverPoint) ?? partners.hover(x, y, hoverPoint);
+    const text = critters.hover(x, y, hoverPoint) ?? partners.hover(x, y, hoverPoint) ?? helpers.hover(x, y, hoverPoint);
     if (text) return text;
     for (const place of places) {
       const name = place.hover?.(x, y, hoverPoint);
@@ -1267,6 +1287,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       fauna.place(originScene);
       critters.place(originScene);
       partners.place(originScene);
+      helperLook.place(originScene);
       originUniform.value.set(origin[0], origin[1]);
     }
     // Land and what grows on it: nearest first, within this frame's budget.
@@ -1446,6 +1467,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // His partners beside him, and the ball in the air.
     partners.figures.step(renderDt, master, motion);
     partners.pose(groundAt, origin, t);
+    helpers.step(renderDt, motion);
+    helperLook.pose(groundAt, origin, t);
     careLook.update(care, groundAt, renderDt, motion);
 
     // The camera, over a smoothed ground; then everything that depends on where it is.
@@ -1559,6 +1582,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         lastRan = ran;
       }
       if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
+      // His helpers at work, and each node's slots on its label.
+      if (!prev || prev.compute !== next.compute) {
+        helpers.sync(next.compute?.attempts ?? []);
+        if (prev) syncNodeLabels();
+        dirty = true;
+      }
       // The dog's name, once you've given it one (the node's `companion`; older nodes don't send it).
       const name = next.companion?.name.trim() ?? "";
       if (name !== dogName) {
@@ -1595,6 +1624,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     goTo(target) {
       if (target.kind === "galahad") {
         rig.follow = true;
+        rig.takeUp();
         options.onFollow(true);
         rig.lookAt(walker.x, walker.y, DEFAULT_DISTANCE);
       } else {
@@ -1723,6 +1753,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       critters.dispose();
       careLook.dispose();
       partners.dispose();
+      helperLook.dispose();
       plots.dispose();
       assembly.dispose();
       landmarks.dispose();

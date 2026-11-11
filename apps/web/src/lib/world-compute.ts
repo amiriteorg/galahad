@@ -58,5 +58,27 @@ export function helpersLine(compute: WorldCompute | null): string | null {
   return `${n} helper${n === 1 ? "" : "s"} at work: ${compute.attempts.map((a) => `${a.label} (${where(a.station)})`).join(", ")}.`;
 }
 
+/** What a helper is doing at its station (an attempt is planned at the council, worked at the forge, reviewed at the observatory). */
+export function helperDoing(station: Station): string {
+  return station === "council" ? "Planning at the council table" : station === "forge" ? "Working at the forge" : station === "observatory" ? "Being reviewed at the observatory" : "At work";
+}
+
+/**
+ * A node's slots as pips, in use first ("●●○○"), with how many wait ("●●●● +2"); beyond eight slots, numbers
+ * ("5/12"). Empty when it carries no sandboxes.
+ */
+export function slotPips(node: Pick<WorldComputeNode, "slots" | "inUse" | "queued">): string {
+  if (node.slots <= 0) return "";
+  const used = Math.min(node.slots, node.inUse);
+  const pips = node.slots <= 8 ? "●".repeat(used) + "○".repeat(node.slots - used) : `${used}/${node.slots}`;
+  return node.queued > 0 ? `${pips} +${node.queued}` : pips;
+}
+
+/** The same in words, for a title and a screen reader: "2 of 4 sandbox slots busy, 1 waiting". */
+export function slotWords(node: Pick<WorldComputeNode, "slots" | "inUse" | "queued">): string {
+  if (node.slots <= 0) return "";
+  return `${Math.min(node.slots, node.inUse)} of ${node.slots} sandbox slot${node.slots === 1 ? "" : "s"} busy${node.queued > 0 ? `, ${node.queued} waiting` : ""}`;
+}
+
 /** A node's compute by its device id (the world's `nodes` carry the same ids). */
 export const computeOfNode = (compute: WorldCompute | null, id: string): WorldComputeNode | null => compute?.nodes.find((n) => n.id === id) ?? null;

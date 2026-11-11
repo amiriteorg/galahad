@@ -92,6 +92,12 @@ The coding agents that work with him over MCP (Claude Code, OpenCode…) are in 
 
 The fleet's nodes are his partners too: he tends a silent one's spot (above). The selector's **Partners** group lists the agents with him, then the nodes (online or silent); picking one takes the view there.
 
+### His helpers, and what each node carries
+
+When a quest runs several attempts at once (effort 2 or 3: more compute spent for a better answer, ARCHITECTURE §11), each attempt is a helper in the world (`helpers.ts`): a figure in the squires' style at the station its work is at, in a row to the left of where he'd stand and a step behind (clear of the lantern there). It's at the council table while its attempt is planned, at the forge while it's worked (its hands going), at the observatory while it's reviewed; when its work moves on it shrinks away and appears at the next station, and when its attempt ends it's gone. He stays at the council table, leading them ("Leading 3 attempts at a quest: …"). So more compute is something you see: three at the forge at once, where there was one. Hover a helper for which attempt it is and what it's doing; the selector lists them under **Partners** ("His helper 2 of 3 · Working at the forge").
+
+Each node's label at the keep shows its sandbox slots as pips, the busy ones filled, with how many wait ("ultra ●●○ +1"; beyond eight slots, numbers), and the selector says the same in words. It comes with the world stream's `compute` (`hello.compute` and the `compute` event; `packages/core/src/world-compute.ts`): a node from before it sends nothing and the world goes on without.
+
 ## The chalkboard
 
 A chalkboard stands beside the observatory, on the keep's side: a slate in a wooden frame on two legs with splayed feet, a chalk tray along its foot with sticks of chalk in the board's colours and a felt duster. It's the board you share with Galahad (the app's Chalkboard page: G then D), and its face shows what's on it now: his notes, equations and charts, and your drawing, in chalk.

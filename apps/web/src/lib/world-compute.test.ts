@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { WorldEvent } from "@galahad/core/world";
 import type { WorldCompute } from "@galahad/core/world-compute";
+import { lookOptions } from "./look.ts";
 import { applyWorldEvent, emptyWorld, readWorldEvent, worldSummary } from "./world.ts";
+import { helperDoing, slotPips, slotWords } from "./world-compute.ts";
 
 /*
  * Compute in the world's stream: each node's slots and strength, and his helpers at
@@ -86,5 +88,45 @@ describe("words", () => {
     expect(worldSummary(model)).toContain("2 helpers at work: Attempt 1 of 3: compute the tip deflection (at Forge), Attempt 2 of 3: compute the tip deflection (at Council table).");
     const none = applyWorldEvent(emptyWorld(), readWorldEvent(hello({ compute: compute({ attempts: [] }) }))!);
     expect(worldSummary(none)).not.toContain("helper");
+  });
+});
+
+describe("compute, as the SANDBOX says it", () => {
+  test("a node's slots as pips, the busy ones filled, with what waits; numbers beyond eight; nothing for a node that carries none", () => {
+    expect(slotPips({ slots: 4, inUse: 2, queued: 0 })).toBe("●●○○");
+    expect(slotPips({ slots: 3, inUse: 3, queued: 2 })).toBe("●●● +2");
+    expect(slotPips({ slots: 3, inUse: 7, queued: 0 })).toBe("●●●");
+    expect(slotPips({ slots: 12, inUse: 5, queued: 0 })).toBe("5/12");
+    expect(slotPips({ slots: 0, inUse: 0, queued: 0 })).toBe("");
+    expect(slotWords({ slots: 4, inUse: 2, queued: 0 })).toBe("2 of 4 sandbox slots busy");
+    expect(slotWords({ slots: 1, inUse: 1, queued: 3 })).toBe("1 of 1 sandbox slot busy, 3 waiting");
+    expect(slotWords({ slots: 0, inUse: 0, queued: 0 })).toBe("");
+  });
+
+  test("what a helper is doing follows where its attempt's work is", () => {
+    expect(helperDoing("council")).toBe("Planning at the council table");
+    expect(helperDoing("forge")).toBe("Working at the forge");
+    expect(helperDoing("observatory")).toBe("Being reviewed at the observatory");
+    expect(helperDoing("keep")).toBe("At work");
+  });
+
+  test("the selector lists his helpers with what each is doing, and each node with its slots", () => {
+    const hello = (c: WorldCompute | null): WorldEvent => ({
+      type: "hello",
+      at: 1,
+      galahad: { station: "council", doing: "Leading 3 attempts at a quest", experiment: null, model: null, since: 0 },
+      nodes: [{ id: "n_ultra", name: "ultra", kind: "node", online: true, self: true, sandboxHost: true }],
+      experiments: [],
+      thoughts: [],
+      compute: c,
+    });
+    const options = lookOptions(applyWorldEvent(emptyWorld(), hello(compute())));
+    const partners = options.filter((o) => o.group === "Partners");
+    expect(partners.map((o) => o.label)).toEqual(["His helper 1 of 3", "His helper 2 of 3", "ultra"]);
+    expect(partners[0]).toMatchObject({ target: { kind: "station", station: "forge" }, live: true, meta: "Working at the forge · Attempt 1 of 3: compute the tip deflection" });
+    expect(partners[2]!.meta).toBe("Online · 2 of 3 sandbox slots busy, 1 waiting · this node");
+    // A node from before compute says only that it hosts sandboxes.
+    const before = lookOptions(applyWorldEvent(emptyWorld(), hello(null))).filter((o) => o.group === "Partners");
+    expect(before.map((o) => o.meta)).toEqual(["Online · sandboxes · this node"]);
   });
 });

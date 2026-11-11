@@ -211,9 +211,24 @@ describe("the camera", () => {
     // Looking south from the keep's door would put the camera in the tree.
     rig.target.yaw = -Math.PI / 2;
     const clear = (x: number, y: number) => Math.hypot(x, y) > 9.5;
-    rig.trail(-Math.PI / 2, false, 0.016, clear);
     const back = rig.target.distance * Math.cos(pitchFor(rig.target.distance));
-    expect(clear(rig.target.x - Math.cos(rig.target.yaw) * back, rig.target.y - Math.sin(rig.target.yaw) * back)).toBe(true);
+    const stands = () => clear(rig.target.x - Math.cos(rig.target.yaw) * back, rig.target.y - Math.sin(rig.target.yaw) * back);
+    // Round to it at a pace the eye can follow: never a wide swing in one frame, and there within a second or two.
+    let most = 0;
+    for (let i = 0; i < 120 && !stands(); i++) {
+      const before = rig.target.yaw;
+      rig.trail(-Math.PI / 2, false, 0.016, clear);
+      most = Math.max(most, Math.abs(rig.target.yaw - before));
+    }
+    expect(stands()).toBe(true);
+    expect(most).toBeGreaterThan(0);
+    expect(most).toBeLessThan(0.05);
+    // At first sight (no time has passed) it's there at once.
+    const first = new CameraRig();
+    first.lookAt(0, -8.5);
+    first.target.yaw = -Math.PI / 2;
+    first.trail(-Math.PI / 2, false, 0, clear);
+    expect(clear(first.target.x - Math.cos(first.target.yaw) * back, first.target.y - Math.sin(first.target.yaw) * back)).toBe(true);
   });
 
   test("blocked behind him at his work, it looks over his shoulder from the side rather than at his face (his work stays in view)", () => {

@@ -2,6 +2,7 @@ import { padAt, phaseOf, type SiteName, SITE_NAMES, SITES, type Station, STATION
 import { BENCH_AREA, CAMP } from "../world/hearth-plan.ts";
 import { relativeTime } from "./time.ts";
 import { ENGINE_LABEL, experimentEnded, experimentPlace, heartbeatLine, isIdle, PHASE_LABEL, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
+import { computeOfNode, helperDoing, slotWords } from "./world-compute.ts";
 
 /*
  * The SANDBOX's one selector: what the view is looking at, in a few words, and
@@ -149,14 +150,29 @@ export function lookOptions(model: WorldModel, query = "", life = "", now = Date
   for (const p of model.partners) {
     out.push({ key: `partner:${p.name}`, target: { kind: "partner", name: p.name }, group: "Partners", label: p.name, meta: p.doing || `At ${stationLabel(p.station).toLowerCase()}`, icon: "code", tone: "ok", live: true, here: g.station === p.station });
   }
+  // His helpers: the attempts a quest runs at once when there's compute for more than one (each at the station its work is at).
+  for (const a of model.compute?.attempts ?? []) {
+    out.push({
+      key: `helper:${a.id}`,
+      target: a.station === "field" ? { kind: "galahad" } : { kind: "station", station: a.station },
+      group: "Partners",
+      label: `His helper ${a.index} of ${a.of}`,
+      meta: `${helperDoing(a.station)} · ${a.label}`,
+      icon: "user",
+      tone: "ok",
+      live: true,
+    });
+  }
   for (const n of model.nodes) {
     if (n.kind !== "node") continue;
+    const carries = computeOfNode(model.compute, n.id);
+    const slots = carries ? slotWords(carries) : "";
     out.push({
       key: `node:${n.id}`,
       target: { kind: "node", id: n.id },
       group: "Partners",
       label: n.name,
-      meta: `${n.online ? "Online" : "Silent"}${n.sandboxHost ? " · sandboxes" : ""}${n.self ? " · this node" : ""}`,
+      meta: `${n.online ? "Online" : "Silent"}${slots ? ` · ${slots}` : n.sandboxHost ? " · sandboxes" : ""}${n.self ? " · this node" : ""}`,
       icon: "server",
       tone: n.online ? "ok" : "danger",
     });

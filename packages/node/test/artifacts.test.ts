@@ -276,3 +276,33 @@ describe("where a fetched file lands", () => {
     }
   });
 });
+
+describe("a directory only just written, renamed", () => {
+  const refuse = (code: string, times: number) => {
+    let calls = 0;
+    const rename = () => {
+      if (calls++ < times) throw Object.assign(new Error(code), { code });
+    };
+    return { rename, calls: () => calls };
+  };
+
+  test("on Windows a momentary refusal (a scanner still reading it) is waited out; a lasting one stands", async () => {
+    const { renameSettled } = await import("../src/artifacts.ts");
+    const brief = refuse("EPERM", 2);
+    await renameSettled("a", "b", brief.rename, "win32");
+    expect(brief.calls()).toBe(3);
+    const lasting = refuse("EBUSY", 99);
+    await expect(renameSettled("a", "b", lasting.rename, "win32")).rejects.toThrow("EBUSY");
+    expect(lasting.calls()).toBe(6);
+  });
+
+  test("anywhere else, and for any other error, the first refusal stands", async () => {
+    const { renameSettled } = await import("../src/artifacts.ts");
+    const linux = refuse("EPERM", 1);
+    await expect(renameSettled("a", "b", linux.rename, "linux")).rejects.toThrow("EPERM");
+    expect(linux.calls()).toBe(1);
+    const missing = refuse("ENOENT", 1);
+    await expect(renameSettled("a", "b", missing.rename, "win32")).rejects.toThrow("ENOENT");
+    expect(missing.calls()).toBe(1);
+  });
+});

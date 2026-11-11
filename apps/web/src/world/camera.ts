@@ -41,6 +41,8 @@ export function pitchFor(distance: number): number {
 
 /** How far over his shoulder the following view sits: the camera looks along his heading, turned this much. */
 const SHOULDER = 0.5;
+/** How fast the following view is turned to a place it may stand when where it stood no longer is (radians a second). */
+const RETARGET = 1.8;
 
 export class CameraRig {
   /** Focus on the ground, world metres. */
@@ -94,7 +96,10 @@ export class CameraRig {
       for (const sign of [1, -1]) {
         const yaw = t.yaw + sign * k * (Math.PI / 15);
         if (at(yaw, back)) {
-          t.yaw = yaw;
+          // Round to it at a pace the eye can follow (a wide swing taken in one frame reads as a jump); at once
+          // only at first sight (dt 0).
+          const step = k * (Math.PI / 15);
+          t.yaw += sign * (dt > 0 ? Math.min(step, RETARGET * dt) : step);
           return;
         }
       }
@@ -197,6 +202,11 @@ export class CameraRig {
   rotateBy(radians: number): void {
     this.target.yaw += radians;
     this.sinceTurn = 0;
+  }
+
+  /** Following him was asked for: a turn by hand a moment ago (looking at somewhere else) no longer holds the view. */
+  takeUp(): void {
+    this.sinceTurn = Math.max(this.sinceTurn, 6);
   }
 
   lookAt(x: number, y: number, distance?: number): void {
@@ -456,6 +466,12 @@ export class SpringArm {
       if (solids.firstAlong(this.x, this.y, this.z, gx, gy, gz, CAMERA_PAD, Math.min(0.5, (CAMERA_PAD * 0.5) / l)) >= 1) this.held = false;
       else {
         goal = Math.max(least, Math.min(goal, solids.firstAlong(px, py, pz, px + this.ax, py + this.ay, pz + this.az, ROOM, least)));
+        // (Somewhere it may be: where he stands just outside the reach of something overhead (the keep's crown, at
+        // the council), the arm's first stretch is under it, and the camera, never going under what he isn't
+        // under, would press for good into the corner between that and whatever is beside him. The nearest place
+        // on the arm it may stand, then.)
+        const may = solids.clearAlong(px, py, pz, px + this.ax, py + this.ay, pz + this.az, CAMERA_PAD, goal, least, 1);
+        if (may >= 0) goal = may;
         gx = px + this.ax * goal;
         gy = py + this.ay * goal;
         gz = pz + this.az * goal;

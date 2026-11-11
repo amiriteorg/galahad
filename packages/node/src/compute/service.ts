@@ -238,7 +238,7 @@ export class ComputeService {
   /** What the heartbeat reads: the suggestions he'd make, and nodes that should have measured themselves by now. */
   suggestions(nodes = this.nodes()) {
     const models = Object.fromEntries(Object.entries(roster(this.deps.store)).map(([role, spec]) => [role, spec.models]));
-    return computeSuggestions(nodes.flatMap((n) => (n.body ? [{ id: n.id, name: n.name, body: n.body, calibration: n.calibration }] : [])), models);
+    return computeSuggestions(nodes.flatMap((n) => (n.body ? [{ id: n.id, name: n.name, body: n.body, calibration: n.calibration, online: n.online }] : [])), models);
   }
 
   view(): ComputeView {

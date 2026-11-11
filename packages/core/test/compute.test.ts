@@ -274,6 +274,17 @@ describe("what more compute would buy, and what he suggests (never does)", () =>
     expect(suggestions[0]!.body).toMatch(/won't install or download anything himself/);
   });
 
+  test("a machine that's away gets no suggestion: it can't be set up, measured or answer until it's back", () => {
+    const gpu: ComputeBody = { cores: 16, memoryGb: 32, gpu: [{ name: "RTX A4000", memoryGb: 16 }], sandboxHost: false, microVMs: false, localModels: [] };
+    expect(computeSuggestions([{ id: "n_laptop", name: "laptop", body: gpu, calibration: null, online: false }], { swift: [] })).toEqual([]);
+    // Its local model, measured before it went away, isn't offered for hire either.
+    const body: ComputeBody = { ...ultra, localModels: [{ runtime: "ollama", models: ["qwen3:8b"] }] };
+    const calibration = measured(body, 16, 15.6, { models: [{ runtime: "ollama", model: "qwen3:8b", tps: 41.3 }] });
+    expect(computeSuggestions([{ id: "n_away", name: "away", body, calibration, online: false }], { swift: [] })).toEqual([]);
+    // Back online (or with nothing said about it): suggested as before.
+    expect(computeSuggestions([{ id: "n_laptop", name: "laptop", body: gpu, calibration: null, online: true }], { swift: [] })).toHaveLength(1);
+  });
+
   test("a local model that measured well and isn't hired: he suggests the roster change, never makes it", () => {
     const body: ComputeBody = { ...ultra, localModels: [{ runtime: "ollama", models: ["qwen3:8b"] }] };
     const calibration = measured(body, 16, 15.6, { models: [{ runtime: "ollama", model: "qwen3:8b", tps: 41.3 }] });

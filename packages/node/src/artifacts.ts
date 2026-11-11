@@ -126,7 +126,7 @@ export class ArtifactStore {
     }
     const manifest: Manifest = { id, files: result.files, bytes: result.bytes };
     writeFileSync(join(staging, "manifest.json"), JSON.stringify(manifest));
-    renameSync(staging, join(this.o.dir, id));
+    await renameSettled(staging, join(this.o.dir, id));
 
     const listed: Manifest["files"] = [];
     let size = 0;
@@ -210,5 +210,23 @@ export class ArtifactStore {
     rmSync(join(this.o.dir, id), { recursive: true, force: true });
     this.o.store.emit(this.o.identity, "artifact.removed", { id });
     this.o.ledger({ class: "delete", resource: "artifact", target: id, verdict: "approved", reason: "you asked for it", detail: `${artifact.label} · ${by}` });
+  }
+}
+
+/**
+ * Renames a directory that was only just written. On Windows that can be refused for a moment (EPERM, EBUSY,
+ * EACCES) while something else still has a file in it open (a virus scanner reading what was just written): it's
+ * asked again after a short wait, a few times; anywhere else, and after that, the error stands.
+ */
+export async function renameSettled(from: string, to: string, rename: (from: string, to: string) => void = renameSync, platform: string = process.platform): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (platform !== "win32" || attempt >= 5 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+    }
   }
 }
