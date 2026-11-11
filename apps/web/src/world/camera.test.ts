@@ -268,7 +268,7 @@ describe("the camera's spring arm", () => {
     // And it's on its arm's line (within 3 m) nineteen frames in twenty, at his stands as everywhere: it isn't left behind.
     expect(behind / turns).toBeLessThan(0.07);
     expect(behindAtStands / stands).toBeLessThan(0.07);
-  });
+  }, 30_000); // (A dense sweep: about 5 s here, more on a busy machine.)
 
   test("following him from station to station, it swings round behind him in clear air: never inside anything, and no hops", () => {
     const planner = new Planner(solids);

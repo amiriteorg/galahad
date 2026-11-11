@@ -8,6 +8,7 @@ import { BUILDS, Solids } from "./collide.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
 import { ColliderLines, wantsColliders } from "./debug-colliders.ts";
+import { type LabelBox, layoutLabels } from "./labels.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
@@ -161,6 +162,8 @@ interface Label {
   point: (out: Vec3) => boolean;
   /** Fade out beyond this many camera distances. */
   fade: number;
+  /** How much it matters when labels would overlap (labels.ts): its kind's rank, less a little for each metre away. */
+  rank: number;
   /** Eased screen position (CSS px), and the last one written. */
   sx: number;
   sy: number;
@@ -168,7 +171,27 @@ interface Label {
   y: number;
   opacity: number;
   shown: boolean;
+  /** Its size (CSS px), measured when it first shows or its text changes (NaN: to measure). */
+  w: number;
+  h: number;
+  /** Its place in the layout this frame, and how far it's faded in there (eased; 0 while it gives way to another). */
+  box: LabelBox;
+  present: number;
+  /** How far it fades with distance this frame (0..1), and how far up it stands out of another's way (eased, CSS px). */
+  far: number;
+  lift: number;
+  /** Where its anchor is on the screen this frame (CSS px); and, as drawn, how far its box is moved by its top margin, and its tail's reach below. */
+  ax: number;
+  ay: number;
+  up: number;
+  tail: number;
 }
+
+/** How far the speech bubble's tail reaches below its box (index.html's .world-bubble::after), CSS px. */
+const BUBBLE_TAIL = 6;
+
+/** How much each kind of label matters (labels.ts' rank): his speech bubble most, then the experiment that's open. */
+const RANK = { bubble: 1000, open: 900, experiment: 800, body: 700, site: 600, station: 500, node: 300 };
 
 /** What the device can carry: its GPU adapter (if WebGPU) and screen. */
 export async function detectDevice(): Promise<DeviceInfo> {
@@ -511,20 +534,34 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const labels = new Map<string, Label>();
   /** The same labels as a list, walked every frame without an iterator. */
   const labelList: Label[] = [];
-  const addLabel = (key: string, el: HTMLElement, point: (out: Vec3) => boolean, fade = 4.5): void => {
+  /** Their boxes (labels.ts), in the same order; and the order they're laid out in (sorted by rank, from the last frame's). */
+  const labelBoxes: LabelBox[] = [];
+  let labelOrder = new Int32Array(0);
+  const addLabel = (key: string, el: HTMLElement, point: (out: Vec3) => boolean, fade = 4.5, rank = RANK.station): void => {
     removeLabel(key);
     el.style.visibility = "hidden";
     overlay.append(el);
-    const label: Label = { el, point, fade, sx: Number.NaN, sy: Number.NaN, x: Number.NaN, y: Number.NaN, opacity: -1, shown: false };
+    const box: LabelBox = { x: 0, y: 0, w: 0, h: 0, rank, on: false, lift: 0, shown: false };
+    const label: Label = { el, point, fade, rank, sx: Number.NaN, sy: Number.NaN, x: Number.NaN, y: Number.NaN, opacity: -1, shown: false, w: Number.NaN, h: Number.NaN, box, present: 0, far: 0, lift: 0, ax: 0, ay: 0, up: 0, tail: 0 };
     labels.set(key, label);
     labelList.push(label);
+    labelBoxes.push(box);
+    labelOrder = Int32Array.from(labelList.keys());
   };
   const removeLabel = (key: string): void => {
     const label = labels.get(key);
     if (!label) return;
     label.el.remove();
     labels.delete(key);
-    labelList.splice(labelList.indexOf(label), 1);
+    const at = labelList.indexOf(label);
+    labelList.splice(at, 1);
+    labelBoxes.splice(at, 1);
+    labelOrder = Int32Array.from(labelList.keys());
+  };
+  /** Its text changed: measured again before it's next laid out. */
+  const remeasure = (key: string): void => {
+    const label = labels.get(key);
+    if (label) label.w = Number.NaN;
   };
   const div = (className: string, text?: string): HTMLElement => {
     const el = document.createElement("div");
@@ -538,8 +575,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     out[2] = src[2];
     return true;
   };
-  for (const place of PLACES) addLabel(`station:${place}`, div("world-label station", STATIONS[place].label), copy(stationLabelPoint(place)), 6);
-  for (const site of SITE_NAMES) addLabel(`site:${site}`, div("world-label station", SITES[site].label), copy(SITE_VIEW[site].label), 14);
+  for (const place of PLACES) addLabel(`station:${place}`, div("world-label station", STATIONS[place].label), copy(stationLabelPoint(place)), 6, RANK.station);
+  for (const site of SITE_NAMES) addLabel(`site:${site}`, div("world-label station", SITES[site].label), copy(SITE_VIEW[site].label), 14, RANK.site);
 
   const bubble = div("world-bubble");
   const bubbleDoing = div("doing");
@@ -557,6 +594,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return true;
     },
     10,
+    RANK.bubble,
   );
 
   function syncExperimentLabels(m: WorldModel): void {
@@ -583,16 +621,19 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
             return true;
           },
           6,
+          RANK.experiment,
         );
         label = labels.get(key)!;
       }
       const el = label.el;
       el.dataset.status = e.status;
       el.setAttribute("aria-pressed", String(e.id === selected));
+      label.rank = e.id === selected ? RANK.open : RANK.experiment;
       const text = `${e.title} · ${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]}`;
       if (el.title !== text) {
         el.title = text;
         el.replaceChildren(div("dot"), div("name", e.title), div("meta", `${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]}`));
+        label.w = Number.NaN;
       }
     }
   }
@@ -603,7 +644,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const el = div("world-label node");
       el.dataset.online = String(spot.node.online);
       el.append(div("dot"), document.createTextNode(spot.node.name + (spot.node.sandboxHost ? " · sandboxes" : "")));
-      addLabel(`node:${spot.node.id}`, el, copy(spot.label), 3);
+      addLabel(`node:${spot.node.id}`, el, copy(spot.label), 3, RANK.node);
     }
   }
 
@@ -613,7 +654,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const plot = plots.get(selected);
     if (!plot) return;
     plot.labelled.forEach((body, i) => {
-      addLabel(`body:${i}`, div("world-label body", body.def.label ?? ""), (out) => plot.bodyPoint(body, out), 5);
+      addLabel(`body:${i}`, div("world-label body", body.def.label ?? ""), (out) => plot.bodyPoint(body, out), 5, RANK.body);
     });
   }
 
@@ -626,6 +667,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     bubbleThinking.hidden = !g.model;
     if (g.model) bubbleThinking.replaceChildren(div("dots"), document.createTextNode(`thinking with ${g.model}`));
     bubble.hidden = !g.doing && !thought;
+    remeasure("bubble");
   }
 
   // ---------- Galahad ----------
@@ -822,47 +864,77 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const projected = new Vector3();
   const point: Vec3 = [0, 0, 0];
   /**
-   * Projects every label with the camera as it is this frame, eases it there
-   * (screen space, quickly: it smooths sub-pixel wobble without lagging) and
-   * snaps it to device pixels, writing styles only when they change.
+   * Projects every label with the camera as it is this frame and lays them out so none sits on another (labels.ts:
+   * the one that matters more keeps its place, the other moves up out of its way or fades); eases each there (screen
+   * space, quickly: it smooths sub-pixel wobble without lagging; at once under reduced motion) and snaps it to device
+   * pixels, writing styles only when they change.
    */
   function placeLabels(dt: number): void {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     const dpr = devicePixelRatio || 1;
-    const ease = 1 - Math.exp(-dt * 28);
+    const motion = !reduced();
+    const ease = motion ? 1 - Math.exp(-dt * 28) : 1;
+    const settle = motion ? 1 - Math.exp(-dt * 12) : 1;
+    // Where each would stand, and how far it fades with distance.
     for (let i = 0; i < labelList.length; i++) {
       const label = labelList[i]!;
+      const box = label.box;
+      box.on = false;
       if (label.el.hidden) continue;
-      let visible = label.point(point);
-      let opacity = 0;
-      if (visible) {
-        projected.set(point[0] - origin[0], point[2], -(point[1] - origin[1]));
-        const dist = projected.distanceTo(camera.position);
-        projected.project(camera);
-        visible = !(projected.z > 1 || projected.x < -1.2 || projected.x > 1.2 || projected.y < -1.2 || projected.y > 1.3);
-        opacity = Math.max(0, Math.min(1, 1 - dist / (rig.distance * label.fade)));
-        visible = visible && opacity > 0.02;
+      if (!label.point(point)) continue;
+      projected.set(point[0] - origin[0], point[2], -(point[1] - origin[1]));
+      const dist = projected.distanceTo(camera.position);
+      projected.project(camera);
+      if (projected.z > 1 || projected.x < -1.2 || projected.x > 1.2 || projected.y < -1.2 || projected.y > 1.3) continue;
+      label.far = Math.max(0, Math.min(1, 1 - dist / (rig.distance * label.fade)));
+      if (label.far <= 0.02) continue;
+      if (Number.isNaN(label.w)) {
+        // Its box as drawn: its size, raised by its top margin (the bubble's), and down to its tail if it has one.
+        const style = getComputedStyle(label.el);
+        label.w = label.el.offsetWidth;
+        label.h = label.el.offsetHeight;
+        label.up = Number.parseFloat(style.marginTop) || 0;
+        label.tail = label.el === bubble ? BUBBLE_TAIL : 0;
       }
-      if (!visible) {
+      box.on = true;
+      label.ax = ((projected.x + 1) / 2) * w;
+      label.ay = ((1 - projected.y) / 2) * h;
+      box.x = label.ax;
+      box.y = label.ay + label.up + label.tail;
+      box.w = label.w;
+      box.h = label.h + label.tail;
+      box.rank = label.rank - dist * 0.5;
+    }
+    layoutLabels(labelBoxes, labelList.length, labelOrder);
+    for (let i = 0; i < labelList.length; i++) {
+      const label = labelList[i]!;
+      const box = label.box;
+      // Faded in where it has its place; out while it gives way to another.
+      label.present = box.on ? label.present + ((box.shown ? 1 : 0) - label.present) * settle : 0;
+      const opacity = box.on ? label.far * label.present : 0;
+      if (opacity <= 0.02) {
         if (label.shown) {
           label.el.style.visibility = "hidden";
           label.shown = false;
         }
+        if (!box.on) label.present = 0;
         continue;
       }
-      const tx = ((projected.x + 1) / 2) * w;
-      const ty = ((1 - projected.y) / 2) * h;
-      // A label that just appeared, or jumped (a cut), goes straight there.
+      const tx = label.ax;
+      const ty = label.ay;
+      // A label that just appeared, or jumped (a cut), goes straight there; out of another's way, it eases up there.
       if (!label.shown || Number.isNaN(label.sx) || Math.abs(tx - label.sx) + Math.abs(ty - label.sy) > 60) {
         label.sx = tx;
         label.sy = ty;
+        if (!label.shown) label.lift = box.lift;
       } else {
         label.sx += (tx - label.sx) * ease;
         label.sy += (ty - label.sy) * ease;
       }
+      label.lift += (box.lift - label.lift) * settle;
       const x = Math.round(label.sx * dpr) / dpr;
-      const y = Math.round(label.sy * dpr) / dpr;
+      const y = Math.round((label.sy + label.lift) * dpr) / dpr;
       if (!label.shown) {
         label.el.style.visibility = "visible";
         label.shown = true;
