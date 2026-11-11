@@ -14,7 +14,6 @@ import {
   IcosahedronGeometry,
   Line,
   LineBasicMaterial,
-  LineLoop,
   Matrix3,
   Matrix4,
   Mesh,
@@ -151,7 +150,8 @@ class Plot {
   private readonly planeMaterial = new MeshLambertNodeMaterial({ vertexColors: true, side: DoubleSide });
   private readonly plotUniform = uniform(new Vector3());
   private readonly lamp: Mesh;
-  private readonly ring: LineLoop;
+  /** The selection's ring: a closed Line (the WebGPU renderer draws no LineLoop). */
+  private readonly ring: Line;
   private readonly bodies = new Map<string, Body>();
   readonly labelled: Body[] = [];
   private baked: Mesh | null = null;
@@ -175,7 +175,7 @@ class Plot {
   ) {
     this.exp = exp;
     this.lamp = new Mesh(new IcosahedronGeometry(0.22, 0), new MeshBasicMaterial({ color: 0xffffff }));
-    this.ring = new LineLoop(new BufferGeometry(), new LineBasicMaterial({ color: colors.accent }));
+    this.ring = new Line(new BufferGeometry(), new LineBasicMaterial({ color: colors.accent }));
     this.ring.visible = false;
     this.frame.rotation.x = -Math.PI / 2;
     this.base.add(this.frame, this.lamp, this.ring);
@@ -280,7 +280,7 @@ class Plot {
     this.signPoint[1] = y + signY;
     this.signPoint[2] = this.level + (layout.sign ? 3.1 : 3.4);
     const r = layout.half + 0.6;
-    this.ring.geometry.setAttribute("position", new BufferAttribute(new Float32Array([-r, 0.12, -r, r, 0.12, -r, r, 0.12, r, -r, 0.12, r]), 3));
+    this.ring.geometry.setAttribute("position", new BufferAttribute(new Float32Array([-r, 0.12, -r, r, 0.12, -r, r, 0.12, r, -r, 0.12, r, -r, 0.12, -r]), 3));
 
     // The experiment's own frame: z up, scaled, centred on the plot.
     this.frame.scale.setScalar(exp.scale);

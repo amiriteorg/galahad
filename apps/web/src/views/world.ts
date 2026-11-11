@@ -1,5 +1,5 @@
-import type { ExperimentView, SiteName, Station, WorldEvent } from "@galahad/core/world";
-import { SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
+import type { ExperimentView, WorldEvent } from "@galahad/core/world";
+import { STATIONS } from "@galahad/core/world";
 import { isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import {
@@ -7,23 +7,24 @@ import {
   emptyWorld,
   ENGINE_LABEL,
   experimentEnded,
+  experimentPlace,
   followWorld,
   metricLabel,
   metricValue,
   STATUS_LABEL,
   STATUS_TONE,
   type StreamStatus,
-  stationLabel,
   type WorldModel,
   weatherLabel,
   worldSummary,
 } from "../lib/world.ts";
 import { relativeTime } from "../lib/time.ts";
 import { badge, button, callout, dot, segmented } from "../ui/controls.ts";
-import { openSheet } from "../ui/dialog.ts";
 import { h, isTyping, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
+import { type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
+import { createLook } from "./world-look.ts";
 import { FIELD, RUNWAY } from "../world/field-plan.ts";
 import { HALL } from "../world/hall-plan.ts";
 
@@ -43,11 +44,6 @@ const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
 const WORLD_API = 5;
 
-/** What each test site is for, in a line (the Go to list). */
-const SITE_ABOUT: Record<SiteName, string> = {
-  field: "Aircraft, rockets and rovers: the runway, the launch pad, the course",
-  hall: "Robots, assemblies and machines, indoors",
-};
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
 type TierName = NonNullable<Parameters<WorldModule["mountWorld"]>[1]["tier"]>;
@@ -117,19 +113,22 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
-  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. Arrow keys pan, plus and minus zoom, Q and E turn, F follows Galahad, M shows the map.", tabindex: 0 });
+  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. L picks what to look at, F follows Galahad, M shows the map, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
   const loading = h("div", { class: "world-loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", {}, "Opening the world…"));
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
-  const followButton = button("Follow Galahad", { icon: "user", size: "sm", onClick: () => setFollow(!following) });
-  const goButton = button("Go to", { icon: "compass", size: "sm", onClick: () => openGoTo() });
-  const listButton = button("Experiments", { icon: "flask", size: "sm", onClick: () => togglePanel() });
+  // One selector for what the view is on (Galahad, an experiment, a site, a station), and a way back to him when it isn't.
+  const lookFocus = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0 };
+  const look = createLook({ model: () => model, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
+  scope.add(() => look.dispose());
+  const followButton = button("Follow Galahad", { iconOnly: true, icon: "user", size: "sm", onClick: () => lookAt({ kind: "galahad" }) });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
   const weatherControl = segmented<WeatherChoice>(WEATHER_CHOICES.map((c) => ({ value: c.value, label: c.label, icon: c.icon })), weatherChoice, (v) => setWeather(v), { label: "Weather", small: true, block: true });
   // The sky, in one control: the time in Denmark and its weather on the button; the choices behind it.
   const clock = h("span", { class: "sky-time tnum" });
   const skyMore = h("span", { class: "sky-more" });
   const skyButton = h("button", { class: "btn sm world-sky-btn", type: "button", "aria-expanded": "false", "aria-controls": "world-sky", onclick: () => setSky(!skyOpen) }, icon("clock", { size: 15 }), clock, skyMore);
+  const skyWrap = h("div", { class: "world-sky-wrap" });
   const skyNote = h("p", { class: "tiny muted grow" });
   const skyReset = button("Back to now", {
     icon: "clock",
@@ -148,12 +147,12 @@ export const worldView: View = (root, ctx, { scope }) => {
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Weather"), weatherControl.el),
     h("div", { class: "sky-foot" }, skyNote, skyReset),
   );
+  skyWrap.append(skyButton, skyPanel);
   let skyOpen = false;
   let mapOn = storedMap();
   const mapCanvas = h("canvas", { class: "world-map", "aria-hidden": "true", hidden: !mapOn }) as HTMLCanvasElement;
-  const mapButton = button("Map", { icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
+  const mapButton = button("Map", { iconOnly: true, icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
   const panel = h("div", { class: "world-panel card", hidden: true });
-  const stats = h("div", { class: "world-stats tiny", "aria-hidden": "true" });
   const controls = h(
     "div",
     { class: "world-controls" },
@@ -169,9 +168,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       "div",
       { class: "world-top" },
       h("div", { class: "world-left" }, banner, mapCanvas),
-      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, followButton, goButton, listButton, mapButton, skyButton), skyPanel),
+      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, skyWrap)),
     ),
-    h("div", { class: "world-bottom" }, panel, h("div", { class: "world-corner" }, controls, stats)),
+    h("div", { class: "world-bottom" }, panel, h("div", { class: "world-corner" }, controls)),
   );
   const summary = h("div", { class: "sr-only", "aria-live": "polite" });
   stage.append(loading, fallback, hud);
@@ -206,11 +205,37 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   function setFollow(on: boolean): void {
     following = on;
-    followButton.setAttribute("aria-pressed", String(on));
-    followButton.classList.toggle("primary", on);
+    followButton.hidden = on;
     handle?.setFollow(on);
+    updateLook();
   }
   setFollow(true);
+
+  /** Looks at what was picked in the selector: following Galahad, an experiment (its panel opens), a site or a station. */
+  function lookAt(target: LookTarget): void {
+    if (target.kind === "experiment") {
+      setFollow(false);
+      select(target.id);
+      return;
+    }
+    if (selected) select(null);
+    if (target.kind === "galahad") {
+      setFollow(true);
+      handle?.goTo({ kind: "galahad" });
+    } else {
+      setFollow(false);
+      handle?.goTo(target.kind === "site" ? { kind: "site", site: target.site } : { kind: "station", station: target.station });
+    }
+    updateLook();
+  }
+
+  /** The selector's button: what the view is on now (what's under the camera's focus when not following), and what's running. */
+  function updateLook(): void {
+    handle?.where(lookFocus);
+    const at = lookingAt(model, { x: lookFocus.focusX, y: lookFocus.focusY }, following, selected);
+    look.show(at.label, at.meta, runningCount(model));
+  }
+  scope.interval(updateLook, 400);
 
   function setTime(choice: TimeChoice): void {
     timeChoice = choice;
@@ -239,6 +264,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   /** The sky's choices, open or shut. */
   function setSky(open: boolean): void {
+    if (open) look.close();
     skyOpen = open;
     skyPanel.hidden = !open;
     skyButton.setAttribute("aria-expanded", String(open));
@@ -425,6 +451,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       hudTimer = null;
       if (scope.disposed) return;
       renderPanel();
+      look.refresh();
       updateBeacon();
       updateSummary();
     }, 250);
@@ -528,36 +555,12 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   scope.add(ctx.live.notices.subscribe(() => updateBeacon()));
 
-  // ---------- the panel: the experiments, or the one selected ----------
-  let panelOpen = !matchMedia("(max-width: 639px)").matches;
-
-  function togglePanel(): void {
-    if (selected) select(null);
-    else panelOpen = !panelOpen;
-    listButton.setAttribute("aria-pressed", String(panelOpen && !selected));
-    renderPanel();
-  }
-
+  // ---------- the panel: the selected experiment's readouts (the selector lists them all) ----------
   function select(id: string | null): void {
     selected = id;
     handle?.select(id);
     if (id) handle?.goTo({ kind: "experiment", id });
     renderPanel();
-  }
-
-  function experimentRow(e: ExperimentView): HTMLElement {
-    return h(
-      "button",
-      { class: "item item-button", type: "button", "data-key": e.id, onclick: () => select(e.id), "aria-label": `${e.title}: ${STATUS_LABEL[e.status]}` },
-      dot(STATUS_TONE[e.status], { live: e.status === "running" }),
-      h(
-        "div",
-        { class: "grow", style: "min-width:0" },
-        h("div", { class: "strong small ellipsis" }, e.title),
-        h("div", { class: "meta" }, h("span", {}, ENGINE_LABEL[e.engine]), h("span", {}, e.nodeName), experimentEnded(e) && e.endedAt ? h("span", {}, `ended ${relativeTime(e.endedAt)}`) : null),
-      ),
-      icon("chevron-right", { size: 14, class: "subtle" }),
-    );
   }
 
   function renderPanel(): void {
@@ -566,8 +569,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       selected = null;
       handle?.select(null);
     }
-    listButton.setAttribute("aria-pressed", String(panelOpen && !selected));
-    replace(listButton.querySelector("span") ?? listButton, `Experiments${model.experiments.length ? ` (${model.experiments.length})` : ""}`);
+    updateLook();
     if (e) {
       panel.hidden = false;
       const metrics = Object.entries(e.metrics);
@@ -583,94 +585,30 @@ export const worldView: View = (root, ctx, { scope }) => {
         h(
           "div",
           { class: "card-body stack tight" },
-          h("div", { class: "row wrap" }, badge(STATUS_LABEL[e.status], STATUS_TONE[e.status]), badge(ENGINE_LABEL[e.engine], "neutral")),
+          // The facts in one line; the readouts are what the panel is for.
+          h(
+            "p",
+            { class: "tiny muted world-facts" },
+            [
+              `${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]} ${experimentPlace(e)}`,
+              `on ${e.nodeName}`,
+              model.frames[e.id] ? `sim ${model.frames[e.id]!.t.toFixed(1)} s` : null,
+              `started ${relativeTime(e.startedAt)}`,
+              e.quest ? `quest ${e.quest}` : null,
+              e.sandbox ? `sandbox ${e.sandbox}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          ),
           metrics.length
             ? h("dl", { class: "kv tnum world-metrics" }, ...metrics.flatMap(([k, v]) => [h("dt", {}, metricLabel(k)), h("dd", { class: "mono" }, metricValue(v))]))
             : h("p", { class: "small muted" }, "No readouts yet."),
-          h(
-            "dl",
-            { class: "kv" },
-            h("dt", {}, "Node"),
-            h("dd", {}, e.nodeName),
-            h("dt", {}, "Sandbox"),
-            h("dd", { class: "mono" }, e.sandbox ?? "—"),
-            h("dt", {}, "Quest"),
-            h("dd", {}, e.quest ?? "—"),
-            h("dt", {}, "Started"),
-            h("dd", {}, relativeTime(e.startedAt)),
-            model.frames[e.id] ? [h("dt", {}, "Sim time"), h("dd", { class: "mono tnum" }, `${model.frames[e.id]!.t.toFixed(1)} s`)] : null,
-          ),
           e.summary ? callout(e.status === "failed" ? "danger" : "quiet", e.summary, { title: experimentEnded(e) ? "How it ended" : undefined }) : null,
         ),
       );
       return;
     }
-    panel.hidden = !panelOpen;
-    if (!panelOpen) return;
-    replace(
-      panel,
-      h("div", { class: "card-head" }, icon("flask", { size: 16 }), h("h3", { class: "grow" }, "Experiments"), h("span", { class: "tiny subtle tnum" }, String(model.experiments.length))),
-      model.experiments.length
-        ? h("div", { class: "rows world-list" }, ...[...model.experiments].reverse().map(experimentRow))
-        : h("p", { class: "card-body small muted" }, "No experiments yet. When Galahad runs a simulation, it appears here and on its own plot."),
-    );
-  }
-
-  // ---------- go to ----------
-  function openGoTo(): void {
-    const go = (fn: () => void) => () => {
-      sheet.close();
-      fn();
-    };
-    const places = Object.entries(STATIONS) as [Exclude<Station, "field">, { label: string }][];
-    const sheet = openSheet({
-      title: "Go to",
-      size: "small",
-      body: h(
-        "div",
-        { class: "stack" },
-        h(
-          "div",
-          { class: "rows card" },
-          h(
-            "button",
-            { class: "item item-button", type: "button", onclick: go(() => (setFollow(true), handle?.goTo({ kind: "galahad" }))) },
-            icon("user", { size: 16 }),
-            h("div", { class: "grow" }, h("div", { class: "strong small" }, "Galahad"), h("div", { class: "meta" }, model.galahad.doing || stationLabel(model.galahad.station))),
-          ),
-          ...SITE_NAMES.map((site) =>
-            h(
-              "button",
-              { class: "item item-button", type: "button", onclick: go(() => (setFollow(false), handle?.goTo({ kind: "site", site }))) },
-              icon("compass", { size: 16 }),
-              h("div", { class: "grow" }, h("div", { class: "strong small" }, SITES[site].label), h("div", { class: "meta" }, SITE_ABOUT[site])),
-            ),
-          ),
-          ...places.map(([id, s]) =>
-            h(
-              "button",
-              { class: "item item-button", type: "button", onclick: go(() => (setFollow(false), handle?.goTo({ kind: "station", station: id }))) },
-              icon("compass", { size: 16 }),
-              h("div", { class: "grow" }, h("div", { class: "strong small" }, s.label)),
-            ),
-          ),
-        ),
-        model.experiments.length
-          ? h(
-              "div",
-              { class: "rows card" },
-              ...model.experiments.map((e) =>
-                h(
-                  "button",
-                  { class: "item item-button", type: "button", onclick: go(() => (setFollow(false), select(e.id))) },
-                  dot(STATUS_TONE[e.status]),
-                  h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small ellipsis" }, e.title), h("div", { class: "meta" }, `${ENGINE_LABEL[e.engine]} · ${STATUS_LABEL[e.status]}`)),
-                ),
-              ),
-            )
-          : null,
-      ),
-    });
+    panel.hidden = true;
   }
 
   // ---------- keyboard ----------
@@ -693,7 +631,8 @@ export const worldView: View = (root, ctx, { scope }) => {
       "-": () => handle?.zoom(-1),
       q: () => handle?.rotate(-1),
       e: () => handle?.rotate(1),
-      f: () => setFollow(!following),
+      f: () => (following ? setFollow(false) : lookAt({ kind: "galahad" })),
+      l: () => look.open(),
       m: () => setMap(!mapOn),
       // (Only while the sky's choices are open: Escape belongs to whatever else is.)
       ...(skyOpen ? { Escape: () => setSky(false) } : {}),
@@ -747,8 +686,8 @@ export const worldView: View = (root, ctx, { scope }) => {
         onSelect: (id) => select(id),
         onFollow: (on) => {
           following = on;
-          followButton.setAttribute("aria-pressed", String(on));
-          followButton.classList.toggle("primary", on);
+          followButton.hidden = on;
+          updateLook();
         },
         onLost: (reason) => void lostDevice(reason),
       });
@@ -798,7 +737,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   scope.interval(() => {
     const s = handle?.stats();
     if (!s) return;
-    stats.textContent = `${s.backend === "webgpu" ? "WebGPU" : "WebGL2"} · ${s.tier} · ${s.fps} fps`;
+    look.setFoot(`${s.backend === "webgpu" ? "WebGPU" : "WebGL2"} · ${s.tier} · ${s.fps} fps`);
+    stage.dataset.backend = s.backend;
     if (document.visibilityState === "visible" && s.fps > 0) {
       diag.fps.push(s.fps);
       if (diag.fps.length > 30) diag.fps.shift();

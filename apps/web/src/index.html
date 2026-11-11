@@ -909,15 +909,43 @@
 
       .world-hud { position: absolute; inset: 0; pointer-events: none; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: var(--sp-2); gap: var(--sp-2); }
       .world-hud > * { pointer-events: none; }
-      .world-hud .btn, .world-hud .segmented, .world-panel, .world-banner .callout, .world-sky, .world-map { pointer-events: auto; }
+      .world-hud .btn, .world-hud .segmented, .world-panel, .world-banner .callout, .world-sky, .world-map, .world-look-card { pointer-events: auto; }
       .world-top { display: flex; gap: var(--sp-2); align-items: flex-start; justify-content: space-between; }
       .world-left { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
       .world-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; margin-left: auto; }
-      .world-tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+      .world-tools { display: flex; flex-wrap: nowrap; gap: 6px; justify-content: flex-end; align-items: flex-start; min-width: 0; }
+      /* The selector: what the view is on, on one button; everything else to look at in a card under it. */
+      .world-look, .world-sky-wrap { position: relative; min-width: 0; }
+      .world-tools .world-look-btn { gap: 7px; max-width: min(440px, 58vw); min-width: 0; }
+      .world-look-btn .look-text { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
+      .world-look-btn .look-label { font-weight: 650; flex: none; max-width: 100%; }
+      .world-look-btn .look-meta { color: var(--text-2); font-weight: 450; min-width: 0; }
+      .world-look-btn .look-running { flex: none; font-size: var(--fs-11); font-weight: 650; color: var(--ok); background: var(--ok-soft); border-radius: var(--r-full); padding: 1px 7px; }
+      .world-look-btn .look-running[hidden] { display: none; }
+      .world-look-card { position: absolute; top: calc(100% + 6px); right: 0; width: min(360px, calc(100vw - 32px)); max-height: min(62vh, 520px); display: flex; flex-direction: column; box-shadow: var(--shadow-3); z-index: 3; overflow: hidden; }
+      .world-look-card[hidden] { display: none; }
+      .world-look-card .look-search { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
+      .world-look-card .look-search .input { flex: 1; min-width: 0; border: 0; box-shadow: none; background: transparent; padding-left: 0; }
+      .world-look-card .look-list { overflow: auto; overscroll-behavior: contain; padding: 4px 0; }
+      .world-look-card .look-group { padding: 10px var(--sp-3) 4px; color: var(--text-3); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+      .world-look-card .look-option { display: flex; align-items: center; gap: 10px; padding: 7px var(--sp-3); min-height: 40px; cursor: pointer; }
+      .world-look-card .look-option[aria-selected="true"] { background: var(--surface-2); }
+      .world-look-card .look-option-text { display: flex; flex-direction: column; min-width: 0; }
+      .world-look-card .look-option-text .meta { color: var(--text-3); font-size: var(--fs-12); }
+      .world-look-card .look-here { flex: none; color: var(--accent); font-weight: 650; }
+      .world-look-card .look-none { padding: var(--sp-3); margin: 0; }
+      .world-look-card .look-foot { display: flex; align-items: center; gap: var(--sp-2); padding: 7px var(--sp-3); border-top: 1px solid var(--border); }
+      .world-sky-wrap .world-sky { position: absolute; top: calc(100% + 6px); right: 0; z-index: 3; }
+      @media (pointer: coarse) {
+        .world-look-card .look-option { min-height: 46px; }
+        .world-look-card .look-foot > :last-child { display: none; }
+        /* Pinch, twist and drag do these on a touch screen. */
+        .world-controls { display: none; }
+      }
       .world-tools .btn, .world-controls .btn { box-shadow: var(--shadow-2); }
       .world-tools .btn[aria-pressed="false"] { background: var(--surface); }
       .world-tools .segmented { box-shadow: var(--shadow-2); background: var(--surface); }
-      @media (max-width: 639px) { .world-tools .btn > span { display: none; } .world-tools .btn { width: var(--control-h-sm); padding: 0; } }
+      @media (max-width: 639px) { .world-tools > .btn > span { display: none; } .world-tools > .btn { width: var(--control-h-sm); padding: 0; } }
       /* The sky: the time in Denmark and its weather on one button; the choices in a small card under it. */
       .world-tools .world-sky-btn { gap: 6px; font-variant-numeric: tabular-nums; }
       .world-sky-btn .sky-more { color: var(--text-2); font-weight: 450; white-space: nowrap; }
@@ -934,10 +962,23 @@
       .world-map[hidden] { display: none; }
       @media (max-width: 639px) {
         .world-top { flex-direction: column-reverse; align-items: stretch; }
-        .world-right { align-items: stretch; }
+        /* (No auto margin here: in a column it would cancel the stretch, and the row would run off the screen.) */
+        .world-right { align-items: stretch; margin-left: 0; }
         .world-tools .world-sky-btn { width: auto; padding: 0 10px; }
         .world-tools .world-sky-btn > .sky-time { display: inline; }
-        .world-sky { width: 100%; }
+        .world-tools .world-sky-btn > .sky-more { display: none; }
+        /* On a phone both cards span the row of tools, under it. */
+        .world-tools { position: relative; }
+        .world-look, .world-sky-wrap { position: static; }
+        .world-sky-wrap .world-sky.card { left: 0; right: 0; width: auto; }
+        .world-tools { width: 100%; }
+        .world-look { flex: 1 1 0; }
+        .world-tools .world-look-btn { max-width: none; width: 100%; padding: 0 10px; overflow: hidden; }
+        /* A block that clips, round inline words: the ellipsis falls wherever the room runs out. */
+        .world-look-btn .look-text { display: block; flex: 1 1 0; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .world-look-btn .look-label, .world-look-btn .look-meta { display: inline; }
+        .world-tools > .btn, .world-sky-wrap { flex: none; }
+        .world-look-card { left: 0; right: 0; width: auto; }
         .world-map { width: 108px; height: 108px; }
       }
       .world-banner .callout { box-shadow: var(--shadow-2); max-width: 560px; }

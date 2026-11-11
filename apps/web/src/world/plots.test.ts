@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type ExperimentView, PADS } from "@galahad/core/world";
-import { Box3, type Mesh } from "three/webgpu";
+import { Box3, type Line, type Mesh, type Object3D } from "three/webgpu";
 import { HALL, HALL_AISLE } from "./hall-plan.ts";
 import { plotColliders, plotLayout } from "./plot-plan.ts";
 import { Plots } from "./plots.ts";
@@ -76,6 +76,24 @@ describe("a plot's own furniture", () => {
     const sign = plots.get("ex1")!.signPoint;
     expect(Math.abs(sign[0] - cell.x)).toBeLessThanOrEqual(cell.size / 2);
     expect(Math.abs(sign[1] - cell.y)).toBeLessThanOrEqual(cell.size / 2);
+    plots.dispose();
+  });
+
+  test("a selected plot's ring is a closed line the WebGPU renderer can draw (it has no LineLoop)", () => {
+    // (A LineLoop logged an error every frame while an experiment was selected.)
+    const plots = new Plots(COLORS, false, emitter);
+    plots.sync([experiment({ x: 110, y: 110, size: 48 })], {});
+    plots.select("ex1");
+    const lines: Object3D[] = [];
+    plots.get("ex1")!.base.traverse((o) => {
+      if ((o as { isLine?: boolean }).isLine) lines.push(o);
+    });
+    const ring = lines.find((o) => o.visible)!;
+    expect(ring).toBeDefined();
+    expect((ring as { isLineLoop?: boolean }).isLineLoop).toBeFalsy();
+    const p = (ring as Line).geometry.getAttribute("position");
+    // Closed: it ends where it starts.
+    expect([p.getX(p.count - 1), p.getY(p.count - 1), p.getZ(p.count - 1)]).toEqual([p.getX(0), p.getY(0), p.getZ(0)]);
     plots.dispose();
   });
 
