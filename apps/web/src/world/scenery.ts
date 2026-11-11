@@ -192,6 +192,7 @@ export class Horizon {
   private readonly cloudLit = uniform(new Color(1, 1, 1));
   private readonly cloudShade = uniform(new Color(0xd8d0f0));
   private readonly sunDir = uniform(new Vector3(0, 1, 0));
+  private readonly underlight = uniform(0);
   private readonly spin = uniform(1);
   private readonly materials: MeshBasicNodeMaterial[] = [];
   private readonly scratch = new Color();
@@ -214,7 +215,9 @@ export class Horizon {
     cloud.fog = false;
     const side = max(dot(normalWorld, this.sunDir), 0);
     const top = normalWorld.y.mul(0.5).add(0.5);
-    cloud.colorNode = mix(this.cloudShade, this.cloudLit, side.mul(0.55).add(top.mul(0.45)).min(1)).mul(vertexColor());
+    // With the sun at the horizon the clouds are lit from below: their bellies glow, their tops go to shade.
+    const facing = mix(top, float(1).sub(top), this.underlight);
+    cloud.colorNode = mix(this.cloudShade, this.cloudLit, side.mul(0.55).add(facing.mul(0.45)).min(1)).mul(vertexColor());
     const puffs = new Mesh(clouds(5), cloud);
     puffs.renderOrder = -6;
     puffs.frustumCulled = false;
@@ -250,7 +253,8 @@ export class Horizon {
   }
 
   /** Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze; `overcast` greys and darkens the clouds. */
-  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0): void {
+  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0, underlight = 0): void {
+    this.underlight.value = underlight;
     const l = this.scratch.setHex(light);
     this.tint.value.setRGB(1, 1, 1).lerp(l, 0.3).multiplyScalar(1 - night * 0.72);
     this.haze.value.setHex(horizon).multiplyScalar(0.8);

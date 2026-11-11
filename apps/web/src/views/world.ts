@@ -41,7 +41,7 @@ import { HALL } from "../world/hall-plan.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 5;
+const WORLD_API = 6;
 
 /** What each test site is for, in a line (the Go to list). */
 const SITE_ABOUT: Record<SiteName, string> = {
@@ -65,6 +65,8 @@ const WEATHER_CHOICES = [
   { value: "clear", label: "Clear", icon: "sun" },
   { value: "mist", label: "Mist", icon: "mist" },
   { value: "rain", label: "Rain", icon: "rain" },
+  { value: "snow", label: "Snow", icon: "snow" },
+  { value: "storm", label: "Storm", icon: "storm" },
 ] as const;
 type WeatherChoice = (typeof WEATHER_CHOICES)[number]["value"];
 /** This viewer's weather (only theirs: it's kept in this browser). */
