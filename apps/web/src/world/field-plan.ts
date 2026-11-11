@@ -298,4 +298,8 @@ export const FIELD_NAMES: readonly { name: string; x: number; y: number; r: numb
   { name: "Drone pad", x: DRONE_PAD.x, y: DRONE_PAD.y, r: 1.8, z: 1.4 },
   ...DRONE_GATES.map((g) => ({ name: "Drone gate", x: g.x, y: g.y, r: 2.2, z: g.z + DRONE_GATE_RADIUS + 0.8 })),
   { name: "Proving ground: the gate", x: ENTRANCE_POSTS.x, y: FIELD_GATE.y, r: 4.5, z: 4 },
+  ...FLOODLIGHTS.map((f) => ({ name: "Apron floodlight", x: f.x, y: f.y, r: 1.2, z: f.height + 0.8 })),
+  { name: "Stevenson screen (thermometers)", x: STEVENSON.x, y: STEVENSON.y, r: 1, z: 2.3 },
+  ...LIGHTNING_MASTS.map((m) => ({ name: "Lightning mast", x: m.x, y: m.y, r: 1.4, z: LIGHTNING_MAST_HEIGHT + 2 })),
+  ...PROPS.filter((p) => p.kind === "tug").map((p) => ({ name: "Tow tug", x: p.x, y: p.y, r: 1.6, z: 2 })),
 ];
