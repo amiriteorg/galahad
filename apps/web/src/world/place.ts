@@ -43,7 +43,15 @@ export interface PlaceFrame {
   night: number;
   rain: number;
   wetness: number;
+  /** The wind: its speed (m/s; Denmark's now when the weather is live, a light breeze otherwise) and the way it blows towards (atan2 convention). */
+  wind: number;
+  windHeading: number;
 }
+
+/** A light breeze, when the real wind isn't known (m/s). */
+export const BREEZE = 3;
+/** The way the wind blows towards: east-north-east (Denmark's prevailing wind is from the west-south-west). */
+export const WIND_HEADING = 0.35;
 
 export interface Place {
   /** In the world's root: absolute scene coordinates (x east, y up, z south = −north). */
@@ -53,6 +61,12 @@ export interface Place {
   readonly coolGlows: readonly Glow[];
   /** What nobody walks through here, beyond what the plan already lists. */
   readonly colliders: readonly Collider[];
+  /**
+   * What moves here and shouldn't be walked through or into (a rover, a cart, a taxiing aircraft): the same
+   * objects every frame, their x and y (and r) updated in place by animate; a mover that's away (airborne,
+   * hidden) has r 0.
+   */
+  readonly movers?: readonly { x: number; y: number; r: number }[];
   /** Lamps come on as the sun gets low: 0 by day to 1 at night. */
   setNight(lamps: number): void;
   /** The pads (core's PADS, by id) that have an experiment standing on them: the place's own machines keep clear. */

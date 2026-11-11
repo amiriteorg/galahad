@@ -19,7 +19,7 @@ import { occlusion } from "./occlusion.ts";
 import { readThemeColors } from "./palette.ts";
 import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
-import type { Place, PlaceContext, PlaceFrame } from "./place.ts";
+import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } from "./place.ts";
 import { originUniform, Plots } from "./plots.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
@@ -275,7 +275,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     glows.set(`place${i}:warm`, place.warmGlows, 0xffb866);
     glows.set(`place${i}:cool`, place.coolGlows, 0x8fe2ff);
   });
-  const placeFrame: PlaceFrame = { dt: 0, t: 0, motion: true, focusX: 0, focusY: 0, distance: 0, follow: true, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0 };
+  const placeFrame: PlaceFrame = { dt: 0, t: 0, motion: true, focusX: 0, focusY: 0, distance: 0, follow: true, galahadX: 0, galahadY: 0, night: 0, rain: 0, wetness: 0, wind: BREEZE, windHeading: WIND_HEADING };
 
   // ---------- the ground, as each kind of walker sees it ----------
   let stationObstacles: Obstacle[] = obstacles();
@@ -984,6 +984,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     placeFrame.night = skyState.night;
     placeFrame.rain = weather.state.rain;
     placeFrame.wetness = weather.state.wetness;
+    placeFrame.wind = model?.weather?.wind ?? BREEZE;
     for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
 
     // Sparks fly from the bench where his blade's tip works.
