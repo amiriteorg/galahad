@@ -75,13 +75,6 @@ const CHAIN = {
   afterInvalid: "follows an invalid event",
 } as const;
 
-/**
- * The reasons that say a device's chain is broken (v_chainbad). A refused unchained (v1) event
- * isn't in any chain: no v2 event can follow it (its predecessor would be missing), so it changes
- * nothing a replay would decide about the device's later events.
- */
-const CHAIN_BROKEN: string[] = [CHAIN.gap, CHAIN.early, CHAIN.fork, CHAIN.revoked, CHAIN.afterInvalid];
-
 /** Chain verdicts computed over the whole log before a replay (deterministic). */
 interface Validity {
   bad: Map<string, string>;
@@ -212,8 +205,13 @@ export class MindStore {
   }
 
   /**
-   * Upgrade a replica in place, in one transaction, on its first start with this code.
-   * Nothing in the log or the existing views changes: the new tables are derived from them.
+   * Upgrade a replica in place, in one transaction, on its first start with this code. The log
+   * doesn't change. The views are replayed from it, so they are what a rebuild (and a replica
+   * that joins today) holds: the older code could leave verdicts a replay gives differently (a
+   * revoked node's in-order event refused as "signer is not an active device", see SECURITY.md),
+   * and every later in-order event would have kept the difference. All in the transaction that
+   * sets the version, so a start cut short leaves the replica as the older code left it, at its
+   * old version, and the next start migrates it whole.
    */
   private migrate(): void {
     const from = this.schemaVersion();
@@ -222,11 +220,12 @@ export class MindStore {
         // (device, hlc, id) serves every query (device, hlc) did, without a sort.
         this.db.exec("DROP INDEX IF EXISTS events_device");
         this.recountLog();
-        this.refillDerived();
+        this.replay();
       } else if (this.loggedCount() !== this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM events").get()!.n) {
-        // Opened by an older version in between, which wrote events without keeping these.
+        // Opened by an older version in between, which wrote events without keeping these, and
+        // applied them its own way.
         this.recountLog();
-        this.refillDerived();
+        this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     })();
@@ -240,22 +239,6 @@ export class MindStore {
       this.count(deltas, row);
     }
     this.writeCounts(deltas);
-  }
-
-  /** The views this version added, from the log and v_rejected (lastSlot read v_slots this way before). */
-  private refillDerived(): void {
-    this.db.exec("DELETE FROM v_chainbad");
-    this.db
-      .query(`INSERT INTO v_chainbad (device) SELECT DISTINCT e.device FROM v_rejected r JOIN events e ON e.id = r.id WHERE r.reason IN (${CHAIN_BROKEN.map(() => "?").join(", ")})`)
-      .run(...CHAIN_BROKEN);
-    this.db.exec("DELETE FROM v_slots");
-    this.db.exec(
-      `INSERT INTO v_slots (loop, device, slot)
-       SELECT json_extract(e.raw, '$.body.loop'), e.device, MAX(json_extract(e.raw, '$.body.slot'))
-       FROM events e LEFT JOIN v_rejected r ON r.id = e.id
-       WHERE e.kind = 'loop.ran' AND r.id IS NULL AND json_extract(e.raw, '$.body.slot') IS NOT NULL
-       GROUP BY 1, 2`,
-    );
   }
 
   private count(deltas: Map<string, LogDelta>, event: { id: string; hlc: string; device: string }): void {
@@ -657,7 +640,9 @@ export class MindStore {
     this.stateDigest = null;
     if (!late) this.setState("tail", { hlc: event.hlc, id: event.id });
     let reason = this.chainReason(event);
-    // Only a v2 event's chain verdict marks its device (see CHAIN_BROKEN).
+    // Only a v2 event's chain verdict marks its device. A refused unchained (v1) event is in no
+    // chain: a v2 event naming it as its predecessor is a gap, so it changes nothing a replay
+    // would decide about the device's later events.
     if (reason && event.v === 2) this.db.query("INSERT OR IGNORE INTO v_chainbad (device) VALUES (?)").run(event.device);
     // A chain-valid event advances its device's head even if it is later refused as unauthorized:
     // the chain records what the device *signed*, authorization what it was *allowed* to do.

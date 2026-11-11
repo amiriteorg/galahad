@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, SetHash, sha256B64u, signEvent } from "@galahad/core";
 import { enrollDevice, foundFleet, MAX_WALKS, MindStore, PullState } from "../src/index.ts";
 
@@ -641,5 +642,121 @@ describe("migrating a replica in place", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /*
+   * From the review: a fleet founded before chains that adopted them, as the owner's is, written
+   * by the store at 391be80 (throwaway keys). Node b wrote an unchained event after the adoption
+   * (an old binary), and the revoked node c wrote in order after its revocation, which that store
+   * refused as "signer is not an active device" where a rebuild says "written after the device
+   * was revoked": a state no other replica could reach, kept by every later in-order event.
+   */
+  describe("a fleet that adopted chains (fixtures/review-legacy-v0.db)", () => {
+    const legacyFixture = join(import.meta.dir, "fixtures", "review-legacy-v0.db");
+    const legacy = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "review-legacy-v0.json"), "utf8"));
+    /** What the old store refused, with the reason a rebuild gives (the one it got wrong). */
+    const rebuilt = (legacy.rejected as { id: string; reason: string }[]).map((r) =>
+      r.reason === "signer is not an active device" ? { ...r, reason: "written after the device was revoked" } : r,
+    );
+    const rejected = (db: { query: Database["query"] }) => db.query("SELECT id, reason FROM v_rejected ORDER BY id").all();
+
+    test("it migrates with nothing lost, to what a rebuild holds and a replica that joins today", () => {
+      const { dir, path } = copyOf(legacyFixture);
+      try {
+        const store = new MindStore(path);
+        expect(store.schemaVersion()).toBe(1);
+        expect(store.eventCount()).toBe(legacy.count);
+        expect(store.pendingCount()).toBe(legacy.pending);
+        expect(rejected(store.db)).toEqual(rebuilt);
+        const migrated = store.digest();
+        expect(migrated).not.toBe(legacy.digest); // the old store's own, which no other replica has
+        const fresh = new MindStore(":memory:");
+        fresh.expectFleet(store.fleet!);
+        pull(store, fresh);
+        expect(fresh.digest()).toBe(migrated);
+        store.rebuild();
+        expect(store.digest()).toBe(migrated);
+        store.close();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("after migrating, the replica agrees with a rebuild of the same log", () => {
+      const { dir, path } = copyOf(legacyFixture);
+      try {
+        const store = new MindStore(path);
+        const migrated = store.digest();
+        store.rebuild();
+        expect(store.digest()).toBe(migrated);
+        store.close();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("the node that once wrote an unchained event doesn't replay the log for each of its events from now on", () => {
+      const { dir, path } = copyOf(legacyFixture);
+      try {
+        const store = new MindStore(path);
+        expect(store.db.query("SELECT device FROM v_chainbad").all()).toEqual([{ device: legacy.devices.c }]);
+        store.close();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("a first start killed mid-migration leaves the replica as the old store left it, and the next start migrates it whole", () => {
+      const { dir, path } = copyOf(legacyFixture);
+      try {
+        // A process that starts migrating it and is killed partway through the replay: no
+        // exception, no rollback statement, as when the power goes.
+        const script = join(dir, "killed.mjs");
+        writeFileSync(
+          script,
+          `import { writeSync } from "node:fs";
+const { MindStore } = await import(process.env.MIND_SRC);
+const apply = MindStore.prototype.apply;
+let applied = 0;
+MindStore.prototype.apply = function (...args) {
+  if (++applied === 150) {
+    writeSync(2, "killed after " + applied + " applied\\n");
+    process.kill(process.pid, "SIGKILL");
+  }
+  return apply.apply(this, args);
+};
+new MindStore(process.env.MIND_DB);
+writeSync(2, "opened after " + applied + " applied\\n");
+`,
+        );
+        const child = Bun.spawnSync([process.execPath, script], {
+          env: { ...process.env, MIND_SRC: pathToFileURL(join(import.meta.dir, "..", "src", "index.ts")).href, MIND_DB: path },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        // (Computed in the child, so an error that quotes its source can't pass for it.)
+        expect(child.stderr.toString()).toContain("killed after 150 applied");
+        expect(child.stderr.toString()).not.toContain("opened after");
+        expect(child.success).toBe(false);
+
+        const raw = new Database(path);
+        expect(raw.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version).toBe(0);
+        expect(rejected(raw)).toEqual(legacy.rejected); // the old store's views, untouched
+        expect(raw.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM log_devices").get()!.n).toBe(0);
+        raw.close();
+
+        const store = new MindStore(path);
+        expect(store.schemaVersion()).toBe(1);
+        expect(store.eventCount()).toBe(legacy.count);
+        expect(rejected(store.db)).toEqual(rebuilt);
+        const migrated = store.digest();
+        store.rebuild();
+        expect(store.digest()).toBe(migrated);
+        expectKeptMatchesLog(store);
+        store.close();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

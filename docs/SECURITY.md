@@ -61,7 +61,7 @@ Every replica must reach the same state from the same events, whatever the order
 
 - A device's next event beside a sibling refused for its date ("dated before its own predecessor") was accepted; a rebuild sees two children of one event, a fork.
 - A gap's child dated before the event that later filled the gap kept the reason "predecessor missing", where a rebuild says "dated before its own predecessor".
-- What a revoked node signed after its revocation, arriving in order, was refused as "signer is not an active device", where a rebuild says "written after the device was revoked" (its pinned head).
+- What a revoked node signed after its revocation, arriving in order, was refused as "signer is not an active device", where a rebuild says "written after the device was revoked" (its pinned head). A replica the older code wrote can hold this verdict, so migrating it replays its views once, in the migration's transaction (`packages/mind/test/log.test.ts`, against a replica the older store wrote, `fixtures/review-legacy-v0.db`).
 
 Since then, a device whose chain holds a refused event, and a revoked device, have every later event judged by a replay. A refused unchained (v1) event is in no chain (nothing chained can follow it), so it doesn't mark its node: the review of this work found that one would have made every later event of that node replay the whole log (`packages/mind/test/log.test.ts`; the property tests in `packages/mind/test/misbehaving.test.ts` cover unchained events, in a fleet chained from its founding and in one that adopted chains). **Residual cost:** a stolen key that keeps writing makes each of its events cost a replay, as backdated ones already did.
 
