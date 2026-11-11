@@ -36,7 +36,9 @@ export interface ProjectView {
 export type StoredStep =
   | { kind: "model"; ref: string }
   | { kind: "fallback"; from: string; error: string }
-  | { kind: "tool"; id: string; name: string; title: string; input: string; ok: boolean | null; summary: string | null };
+  | { kind: "tool"; id: string; name: string; title: string; input: string; ok: boolean | null; summary: string | null }
+  /** Archived entries Galahad was given as context for this answer. */
+  | { kind: "archive"; entries: { id: string; title: string; kind: string; trust: string }[] };
 
 export interface StoredMessage {
   id: number;

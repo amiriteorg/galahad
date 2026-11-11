@@ -13,3 +13,4 @@ export * from "./trials.ts";
 export * from "./trial-suite.ts";
 export * from "./agents.ts";
 export * from "./decisions.ts";
+export * from "./embeddings.ts";

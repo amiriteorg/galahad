@@ -35,4 +35,9 @@ describe("secret scanning", () => {
     expect(out).not.toContain("sk-ant-");
     expect(out).toContain("[redacted");
   });
+
+  test("a key that matches two patterns is redacted once, and what follows it stays", () => {
+    // An Anthropic key is also an sk-… key: overlapping findings must not eat the rest of the text.
+    expect(redact("before sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKE after")).toBe("before [redacted Anthropic API key] after");
+  });
 });
