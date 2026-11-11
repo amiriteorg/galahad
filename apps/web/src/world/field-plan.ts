@@ -260,8 +260,26 @@ export const FIELD_COLLIDERS: Collider[] = (() => {
   // (The front's jambs with the door leaves stacked open in front of them.)
   out.push(box(h.x + h.hx + 0.05, h.y + h.door + jamb + 0.15, 0.45, jamb + 0.2, h.eaves));
   out.push(box(h.x + h.hx + 0.05, h.y - h.door - jamb - 0.15, 0.45, jamb + 0.2, h.eaves));
-  // The aircraft inside, its wings across the hangar.
-  out.push(box(HANGAR_AIRCRAFT.x - 1.45, HANGAR_AIRCRAFT.y, 3.95, 5.3, 3.1));
+  // Inside, a floor he can walk (field-build.ts draws it): the aircraft, nose to the door, as it's built
+  // (aircraftParts: its fuselage, its high wing with the struts under it, lower than his head, its tailplane and fin,
+  // its main wheels), the engine on its stand and the tool chest, stepladder and trolley by it; along the back wall
+  // the drums, the workbench and the shelving.
+  const a = HANGAR_AIRCRAFT;
+  const floor = (x: number, y: number, hx: number, hy: number, top: number, bottom = 0): Collider => ({ ...box(x, y, hx, hy, top), ...(bottom > 0 ? { bottom } : {}) });
+  out.push(
+    floor(a.x - 1.55, a.y, 3.8, 0.6, 2.2),
+    floor(a.x - 0.02, a.y, 0.83, 5.25, 2.3, 0.9),
+    floor(a.x - 4.95, a.y, 0.42, 1.68, 1.72, 1.5),
+    floor(a.x - 4.66, a.y, 0.48, 0.08, 3.12, 1.5),
+    floor(a.x, a.y + 1.12, 0.4, 0.3, 0.95),
+    floor(a.x, a.y - 1.12, 0.4, 0.3, 0.95),
+    floor(a.x + 2.6, a.y - 4.6, 0.4, 0.6, 1.25),
+    floor(a.x + 2.4, a.y - 2.0, 0.35, 0.35, 1.75),
+    floor(a.x + 2.6, a.y + 2.4, 0.45, 0.35, 0.85),
+    circle(h.x - h.hx + t + 0.75, h.y - h.hy + t + 0.75, 0.85, 0.95),
+    floor(h.x - h.hx + t + 0.4, h.y - h.hy + 4.2, 0.45, 1.7, 1.0),
+    floor(h.x - h.hx + t + 0.4, h.y + h.hy - t - 1.8, 0.4, 1.6, 3.1),
+  );
   // The tower (its stair on the east side) and the blockhouse.
   out.push(box(TOWER.x, TOWER.y, TOWER.half, TOWER.half, TOWER.roof));
   out.push(box(TOWER.x + TOWER.half + 0.7, TOWER.y, 0.7, TOWER.half, 3));

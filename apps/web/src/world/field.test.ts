@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { PADS } from "@galahad/core/world";
 import type { Collider } from "./colliders.ts";
 import { BUILDS, Solids } from "./collide.ts";
+import { Planner } from "./nav.ts";
 import { aircraft, CIRCUIT_HEIGHT, ROUTES, runwayFor, stepAircraft, TAXI_KEEP_CLEAR, TAXI_OUT } from "./field-circuit.ts";
 import { onPaving, rubberStreaks, runwayPaint } from "./field-ground.ts";
 import { launcher, LOWERED, stepLauncher, UPRIGHT } from "./field-launcher.ts";
@@ -16,6 +17,8 @@ import {
   FIELD_OBSTACLES,
   FIELD_RIM,
   BRIDGE,
+  HANGAR,
+  HANGAR_AIRCRAFT,
   LAUNCH_SLAB,
   LAUNCHER_PARK,
   RUNWAY,
@@ -26,7 +29,7 @@ import { MISSIONS, PAD_TOP, quad, stepQuad } from "./field-quad.ts";
 import { sample, routeSample } from "./field-route.ts";
 import { COURSE_ROUTE, courseHeight, OSR_SCALE, ROVER, ROVER_KEEP_CLEAR, roverState, stepRover, wheelHeight } from "./field-rover.ts";
 import { bandFill, sockPose, windsock } from "./field-wind.ts";
-import { obstacles, planPath, plotGate, type Point, standAt } from "./path.ts";
+import { obstacles, planPath, plotGate, type Point, standAt, Walker } from "./path.ts";
 
 /*
  * The proving ground: its plan (what stands where, and that nothing stands in
@@ -63,6 +66,28 @@ function* walk(from: Point, path: readonly Point[]): Generator<Point> {
 }
 
 describe("the proving ground's plan", () => {
+  test("the hangar's inside can be walked: in by its open door, round the aircraft (which stays solid) to the workbench", () => {
+    const s = new Solids();
+    s.add(FIELD_COLLIDERS);
+    const planner = new Planner(s);
+    const w = new Walker({ x: HANGAR.x + HANGAR.hx + 6, y: HANGAR.y, facing: Math.PI });
+    const m = s.join(w, BUILDS.galahad);
+    w.join({ planner, mover: m, wet: null });
+    // In front of the workbench at the back wall, south of the aircraft's wing.
+    const bench = { x: HANGAR.x - HANGAR.hx + 1.6, y: HANGAR.y - 3.6, facing: Math.PI };
+    w.go(bench, []);
+    let through = false;
+    for (let k = 0; k < 60 * 40 && (w.moving || w.waypoints.length); k++) {
+      w.step(1 / 60);
+      through ||= s.overlaps(w.x, w.y, w.r - 0.02, BUILDS.galahad.step, BUILDS.galahad.height);
+    }
+    expect([Math.round(w.x * 100) / 100, Math.round(w.y * 100) / 100, through, w.fallbacks]).toEqual([bench.x, bench.y, false, 0]);
+    // And the aircraft is where it's drawn: its fuselage, its wing (lower than his head), its tail.
+    for (const [x, y] of [[HANGAR_AIRCRAFT.x - 2, HANGAR_AIRCRAFT.y], [HANGAR_AIRCRAFT.x, HANGAR_AIRCRAFT.y + 4], [HANGAR_AIRCRAFT.x - 4.9, HANGAR_AIRCRAFT.y - 1.2]] as const) {
+      expect(s.overlaps(x, y, 0.1, BUILDS.galahad.step, BUILDS.galahad.height)).toBe(true);
+    }
+  });
+
   test("the rover course's bridge is walked on as it's drawn: up its ramp within 5 cm of the slope, along its deck at its height", () => {
     const s = new Solids();
     s.add(FIELD_COLLIDERS);
