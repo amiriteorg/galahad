@@ -152,11 +152,19 @@ export function keyHeaders(provider: { kind: ProviderKind; baseUrl: string; apiK
   return { [KEY_HEADERS[originOf(provider.baseUrl) ?? ""] ?? "authorization"]: `Bearer ${provider.apiKey}` };
 }
 
+/**
+ * A fetch that never follows a redirect. A provider's key is pinned to one origin, and
+ * fetch would carry key headers such as x-api-key and cf-aig-authorization (and resend
+ * the body) to wherever a Location header points.
+ */
+export const withoutRedirects = (base: typeof fetch = fetch): typeof fetch =>
+  ((input: Parameters<typeof fetch>[0], init?: RequestInit) => base(input, { ...init, redirect: "manual" })) as typeof fetch;
+
 /** Ask a provider which models it serves (OpenAI-style and Anthropic `/v1/models`). */
 export async function listModels(provider: ResolvedProvider, fetchImpl: typeof fetch = fetch): Promise<string[]> {
   const url = provider.kind === "anthropic" ? `${provider.baseUrl}/v1/models?limit=100` : `${provider.baseUrl}/models`;
   const headers: Record<string, string> = { ...keyHeaders(provider), ...(provider.kind === "anthropic" ? { "anthropic-version": "2023-06-01" } : {}) };
-  const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(provider.local ? 1500 : 10_000) });
+  const response = await fetchImpl(url, { headers, redirect: "manual", signal: AbortSignal.timeout(provider.local ? 1500 : 10_000) });
   if (!response.ok) throw new Error(`${provider.id} /models → ${response.status}`);
   const json = (await response.json()) as { data?: { id: string }[] };
   return (json.data ?? []).map((m) => m.id).sort();

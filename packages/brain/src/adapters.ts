@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import { keyHeaders, type ResolvedProvider } from "./providers.ts";
+import { keyHeaders, type ResolvedProvider, withoutRedirects } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -66,7 +66,7 @@ const SERVER_FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "
 
 /** Claude via the official SDK: adaptive thinking, explicit effort, streaming, tools. */
 export function anthropicConversation(input: CompletionInput): Conversation {
-  const client = new Anthropic({ apiKey: input.provider.apiKey ?? "", baseURL: input.provider.baseUrl, maxRetries: 2, ...(input.fetch ? { fetch: input.fetch } : {}) });
+  const client = new Anthropic({ apiKey: input.provider.apiKey ?? "", baseURL: input.provider.baseUrl, maxRetries: 2, fetch: withoutRedirects(input.fetch) });
   const serverFallback = input.provider.baseUrl === "https://api.anthropic.com" && SERVER_FALLBACK_MODELS.has(input.model);
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
   let last: Anthropic.Beta.BetaContentBlockParam[] = [];
@@ -154,6 +154,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
           messages,
           ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) } : {}),
         }),
+        redirect: "manual",
         signal: input.signal,
       });
       if (!response.ok || !response.body) {
