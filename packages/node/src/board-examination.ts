@@ -1,4 +1,4 @@
-import { BOARD_LIMITS as L, type BoardWriteInput, type Examination, type ReadoutExamination } from "@galahad/core";
+import { BOARD_LIMITS as L, type BoardItem, type BoardWriteInput, type Examination, type ReadoutExamination } from "@galahad/core";
 
 /*
  * An experiment's examination, written up on the chalkboard at the observatory
@@ -17,6 +17,9 @@ function movement(r: ReadoutExamination): number {
 }
 
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
+
+/** The write-up's note is titled this, then the experiment's title. */
+const NOTE_TITLE = "Examined: ";
 
 /** A readout that changed less than this over the run, for its size, says nothing as a chart. */
 const FLAT = 0.05;
@@ -55,7 +58,7 @@ function charted(ex: Examination): ReadoutExamination | undefined {
 /** The write-up: a note, and a chart when a readout has a series worth drawing. Each within the board's limits. */
 export function examinationOnBoard(ex: Examination): BoardWriteInput[] {
   const note: BoardWriteInput = {
-    item: { kind: "note", title: clip(`Examined: ${ex.title}`, L.title), text: clip(noteLines(ex).join("\n"), L.note) },
+    item: { kind: "note", title: clip(`${NOTE_TITLE}${ex.title}`, L.title), text: clip(noteLines(ex).join("\n"), L.note) },
     x: 40,
     y: 40,
     width: 760,
@@ -82,23 +85,33 @@ export function examinationOnBoard(ex: Examination): BoardWriteInput[] {
 }
 
 /**
- * What the daemon listens to the world with (WorldHub.onExamine): each examination written up on the board, in
- * place of the last write-up's items when they're still there (so the board doesn't fill with them; its history
- * keeps every one). A write that fails is logged, never thrown into the world.
+ * The last write-up on the board, found there (so a restart doesn't lose it): his note titled "Examined: X", and his
+ * chart titled "X: …" beside it. Only his own items: the owner's are never taken for one.
  */
-export function writeUpExaminations(write: (input: BoardWriteInput) => { id: string }, has: (id: string) => boolean, log: (line: string) => void = () => {}): (examination: Examination | null) => void {
-  let last: string[] = [];
+export function lastWriteUp(items: readonly BoardItem[], by = "galahad"): { note?: string; chart?: string } {
+  const note = items.find((i) => i.by === by && i.kind === "note" && i.title?.startsWith(NOTE_TITLE));
+  if (!note) return {};
+  const about = (note.kind === "note" ? (note.title ?? "") : "").slice(NOTE_TITLE.length).replace(/…$/, "");
+  const chart = items.find((i) => i.by === by && i.kind === "chart" && i.title?.startsWith(about));
+  return { note: note.id, chart: chart?.id };
+}
+
+/**
+ * What the daemon listens to the world with (WorldHub.onExamine): each examination written up on the board, in
+ * place of the last write-up's items (so the board doesn't fill with them; its history keeps every one). A write
+ * that fails is logged, never thrown into the world.
+ */
+export function writeUpExaminations(write: (input: BoardWriteInput) => { id: string }, items: () => readonly BoardItem[], log: (line: string) => void = () => {}): (examination: Examination | null) => void {
   return (examination) => {
     if (!examination) return;
-    const written: string[] = [];
-    for (const [i, input] of examinationOnBoard(examination).entries()) {
-      const previous = last[i];
+    const last = lastWriteUp(items());
+    for (const input of examinationOnBoard(examination)) {
+      const previous = input.item.kind === "note" ? last.note : last.chart;
       try {
-        written.push(write(previous && has(previous) ? { ...input, replace: previous } : input).id);
+        write(previous ? { ...input, replace: previous } : input);
       } catch (error) {
         log(`chalkboard: the examination of ${examination.id} wasn't written up (${error instanceof Error ? error.message : String(error)})`);
       }
     }
-    last = written;
   };
 }

@@ -235,7 +235,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   world.onExamine(
     writeUpExaminations(
       (input) => writeOnBoard({ board, world }, input),
-      (id) => board.view().items.some((item) => item.id === id),
+      () => board.view().items,
       log,
     ),
   );

@@ -100,7 +100,7 @@ describe("an examination on the chalkboard", () => {
     const world = { doing: (_station: string, text: string) => shown.push(text) } as never;
     const listener = writeUpExaminations(
       (input) => writeOnBoard({ board, world }, input),
-      (id) => board.view().items.some((item) => item.id === id),
+      () => board.view().items,
     );
     listener(examination());
     expect(board.view().items.map((i) => i.kind).sort()).toEqual(["chart", "note"]);
@@ -112,5 +112,20 @@ describe("an examination on the chalkboard", () => {
     // An examination that couldn't be made writes nothing.
     listener(null);
     expect(board.view().items).toHaveLength(2);
+  });
+
+  test("after a restart the next write-up still takes the last one's place, and leaves the owner's items alone", () => {
+    const dir = tempDir();
+    const before = new BoardStore({ dir });
+    writeUpExaminations((input) => writeOnBoard({ board: before }, input), () => before.view().items)(examination());
+    // The owner writes a note of their own that happens to look like one.
+    before.write(BoardWriteInput.parse({ item: { kind: "note", title: "Examined: my own notes", text: "mine" }, x: 40, y: 600 }), "owner", true);
+    // The node restarts: a new store on the same board, and a new listener with nothing in memory.
+    const after = new BoardStore({ dir });
+    writeUpExaminations((input) => writeOnBoard({ board: after }, input), () => after.view().items)(examination({ id: "ex_mnopqrstuvwx", title: "Pendulum" }));
+    const items = after.view().items;
+    expect(items.filter((i) => i.by === "galahad")).toHaveLength(2);
+    expect(items.find((i) => i.by === "galahad" && i.kind === "note")).toMatchObject({ title: "Examined: Pendulum", x: 40, y: 40 });
+    expect(items.find((i) => i.by === "owner")).toMatchObject({ title: "Examined: my own notes" });
   });
 });
