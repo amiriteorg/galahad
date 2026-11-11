@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import {
   type ActionView,
+  approvalSendBy,
   argStrings,
   type ArgValue,
   type BuiltRequest,
@@ -12,6 +13,7 @@ import {
   decide,
   decodeHlc,
   findSecrets,
+  MAX_CLOCK_DRIFT_MS,
   MAX_ORDER_DAYS,
   type NativeName,
   type NodeIdentity,
@@ -100,6 +102,8 @@ export class ConnectorService {
   private draining: Promise<void> | null = null;
   /** Sends under way in this process; an outbox row marked "sending" that isn't here is a crash. */
   private readonly inFlight = new Set<string>();
+  /** Said once in the log while this node's clock reads behind what it holds (clockGoneBack). */
+  private clockWarned = false;
 
   constructor(private readonly o: ConnectorServiceOptions) {
     this.now = o.now ?? Date.now;
@@ -226,8 +230,11 @@ export class ConnectorService {
         const orderId = decision?.value?.order;
         const order = orderId ? this.o.store.lww<StoredOrder>(`order:${orderId}`)?.value : null;
         const done = this.o.store.lww<{ ok: boolean; receipt: string }>(`action-done:${body.id}`)?.value ?? null;
+        // From recorded times only: the approval's own hlc, the request's own deadline.
+        const sendBy = decision?.value?.verdict === "approved" ? approvalSendBy(decodeHlc(decision.hlc).ms, body.expires) : null;
         let state: ActionView["state"];
         if (done) state = done.ok ? "done" : "failed";
+        else if (sendBy !== null && now > sendBy) state = "lapsed";
         else if (decision?.value) state = decision.value.verdict;
         else state = body.expires <= now ? "expired" : "waiting";
         return {
@@ -243,6 +250,7 @@ export class ConnectorService {
           requestedAt: entry.hlc,
           expires: body.expires,
           state,
+          sendBy,
           decidedVia: decision?.value?.via ?? decision?.device ?? null,
           order: orderId ? { id: orderId, label: order?.label ?? orderId } : null,
           receipt: done?.receipt ?? null,
@@ -287,7 +295,7 @@ export class ConnectorService {
   }
 
   private async drainOnce(): Promise<void> {
-    const mine = this.actions(10_000).filter((a) => a.node === this.o.identity.id && a.state === "approved");
+    const mine = this.actions(10_000).filter((a) => a.node === this.o.identity.id && (a.state === "approved" || a.state === "lapsed"));
     for (const action of mine) {
       if (this.inFlight.has(action.id)) continue;
       const row = this.o.local.query<{ state: string }, [string]>("SELECT state FROM outbox WHERE id = ?").get(action.id);
@@ -300,11 +308,48 @@ export class ConnectorService {
     }
   }
 
+  /** An approval past its send deadline: never sent, and said so in the ledger, once. */
+  private lapse(action: ActionView): { ok: false; status: number; receipt: string } {
+    const receipt = `not sent: your approval expired at ${new Date(action.sendBy!).toISOString()} before this node could send it, so it never will`;
+    if (!this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
+      this.o.ledger({
+        class: action.class as LedgerEntryInput["class"],
+        resource: `connector.${action.connector}`,
+        target: action.target,
+        verdict: "deny",
+        reason: "the approval expired before it could be sent",
+        detail: `action ${action.id}, asked by ${action.by} · ${receipt}`.slice(0, 2000),
+      });
+      this.o.local.query("INSERT OR IGNORE INTO outbox (id, state, at) VALUES (?, 'expired', ?)").run(action.id, this.now());
+    }
+    return { ok: false, status: 410, receipt };
+  }
+
+  /**
+   * This node's clock has gone back (a dead clock battery, a restored snapshot, a boot before
+   * the time is set): it reads earlier than the newest event it holds, by more than any clock
+   * may lead another (no event dated further ahead is ever accepted, so no other node can make
+   * this true). Such a clock would read a deadline that has passed as one still to come.
+   */
+  private clockGoneBack(): boolean {
+    let newest = 0;
+    for (const hlc of Object.values(this.o.store.frontier())) newest = Math.max(newest, decodeHlc(hlc).ms);
+    const behind = newest - this.now() > MAX_CLOCK_DRIFT_MS;
+    if (behind && !this.clockWarned) this.o.log(`outbox: this node's clock reads ${new Date(this.now()).toISOString()}, before events it holds from ${new Date(newest).toISOString()}; nothing is sent until it's right`);
+    this.clockWarned = behind;
+    return behind;
+  }
+
   /** Send one approved action at most once, through the outbox, and write its receipt. */
   private async sendApproved(action: ActionView, why: string): Promise<{ ok: boolean; status?: number; receipt: string; result?: ConnectorResult }> {
     if (this.inFlight.has(action.id) || this.o.local.query("SELECT 1 FROM outbox WHERE id = ?").get(action.id)) {
       return { ok: false, status: 409, receipt: "already sent or being sent" };
     }
+    // Checked again here, at the moment of sending: an approval is good for APPROVAL_TTL_MS,
+    // by a clock that hasn't gone back. Nothing is marked, so it's judged again once it's right.
+    if (action.sendBy === null) return { ok: false, status: 409, receipt: "not approved" };
+    if (this.clockGoneBack()) return { ok: false, status: 503, receipt: "not sent yet: this node's clock is behind the events it holds; it's sent (or lapses) once the clock is right" };
+    if (this.now() > action.sendBy) return this.lapse(action);
     this.inFlight.add(action.id);
     this.o.local.query("INSERT INTO outbox (id, state, at) VALUES (?, 'sending', ?)").run(action.id, this.now());
     let ok = false;

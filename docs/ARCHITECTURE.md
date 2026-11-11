@@ -55,7 +55,7 @@ The mind is an **append-only log of signed events**. Each event has the form `{v
 - **Ordered by a hybrid logical clock (HLC):** the format is `<15-digit ms>.<6-digit counter>`, and ties are broken by id. Timestamps more than 5 minutes in the future are refused, so a broken or hostile clock can't win every last-writer-wins race.
 - **State is a pure function of the event set:**
   - Views (devices, memories with FTS5 search, LWW records, vault grants, rejections) are materialized by replaying events in `(hlc, id)` order.
-  - An event that arrives out of order triggers a deterministic replay.
+  - An event that arrives out of order triggers a deterministic replay, unless a replay would apply it the same way (a late ledger entry or loop run from a sound chain, see Sync).
   - So two replicas holding the same events have identical state. `digest()` proves this, and a property test checks it under shuffled delivery with duplicates.
 - **Authorization is part of the log's rules:**
   - Only active full nodes may enroll or revoke devices, write secrets, configure providers or change the roster.
@@ -95,8 +95,42 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 **Sync:**
 
 - Each device's events form an HLC-ordered prefix on every replica. A peer's **frontier** (the highest HLC per device) therefore fully describes what it has.
-- `eventsSince(frontier)` returns exactly the missing events, paginated.
+- `eventsSince(frontier)` returns exactly the missing events, a page at a time (500).
 - Nodes pull from every peer independently every few seconds, and also push fresh events immediately.
+- **Holes below the frontier** (an event that reached only some replicas, a partial delivery) are found by comparing **set hashes**: with each pull goes, per device, how many events this replica holds and an LtHash of their ids (`packages/core/src/set-hash.ts`: 1024 lanes of 16 bits, ChaCha20-expanded, the parameters analysed for 200+ bits of security; a plain XOR or sum would let a forked device hide behind a matching hash). The peer takes its own hash, removes what's above the frontier, and compares. If it holds a different set there and at least as much, it names the device in `repair`, and the puller walks that device's log from its start, a page at a time, until it's past where it was (`PullState` in `packages/mind/src/pull.ts`). No answer is ever more than a page; a walk carries over into the next pull. A walk's place is an event, not an instant: each request after the first says, in `after`, which event at `have` it reached, and the answer goes on from there in `(hlc, id)` order, so a page that ends between two events dated the same instant (only a misbehaving signer writes those) still delivers the second. Nodes that don't send `after` are answered by hlc, as before. A peer's `repair` is only a claim: the puller walks only devices it holds some of (the rest come by frontier anyway) and at most 8 per pull, counting walks carried over.
+- **Mixed versions:** set hashes travel as `sets`, sent only to a peer that said it compares them (`sets: true` in its answer). Nodes from before set hashes get the frontier alone, and their `digests` are accepted and ignored, so a fleet keeps syncing while it's upgraded (holes are found again once both sides are new).
+
+**Costs that don't grow with the log** (`bun scripts/bench-mind.ts` builds 5k, 40k and 400k-event logs in temp homes and times each):
+
+| What | How |
+|---|---|
+| Frontier, set hashes, event count | Kept per device in `log_devices` (count, newest hlc, set hash), updated in the same transaction as each insert |
+| A peer's pull, in sync or a little behind | One page query per device on `(device, hlc, id)`; the hole check costs one set-hash step per event above the peer's frontier, and waits while it's more than a page behind |
+| Each loop's latest slot | The view `v_slots`, a maximum kept as runs are applied |
+| Loop runs, the ledger | Indexes on `kind` and on loop runs by loop (`events_kind`, `events_loop`) |
+| Events already held | Skipped before their signature is checked (an id is its content's hash) |
+| A late ledger entry or loop run | Applied in place when a replay would decide it the same way: from a node enrolled before it and never revoked, extending its own chain after everything held of that device, and the chain has no refused event (`v_chainbad`; a refused unchained event is in no chain and doesn't count). Anything else that arrives late still replays |
+| The state digest | Kept until the views change, here or in another process (the CLI beside the daemon: `PRAGMA data_version`) |
+
+| Operation (ms, median) | 5,000 events | 40,000 | 400,000 | 400,000, before |
+|---|---:|---:|---:|---:|
+| `deviceDigests` (each pull) | 0.2 | 0.1 | 0.2 | 2,671 |
+| `frontier` (each pull) | 0.0 | 0.0 | 0.1 | 117 |
+| `eventsSince`, a peer in sync (each pull it answers) | 0.2 | 0.2 | 0.4 | 1,965 |
+| `eventsSince`, a peer 10 events behind | 0.4 | 0.4 | 0.6 | 2,312 |
+| `eventsSince`, a peer with a hole | 0.3 | 0.2 | 0.3 | 4,328, and 279,674 events in one answer |
+| `lastSlot` (each loop, every tick) | 0.01 | 0.01 | 0.01 | 716 |
+| `loopRuns(name, 1)` | 0.05 | 0.03 | 0.07 | 693 |
+| A late ledger entry | 3.2 | 2.6 | 4.0 | 6,955 (a replay) |
+| 500 events already held | 2 | 2 | 6 | 466 |
+| A late memory (still replays) | 100 | 699 | 5,470 | 6,955 |
+| A hole's repair, end to end (pages of 500; the page that fills it replays) | 212 | 1,236 | 27,985 | one answer, above |
+| First start on a replica from before (migrates once, replaying the views) | 167 | 1,215 | 30,699 | – |
+| `rebuild` (now also recounts) | 200 | 1,520 | 12,988 | 6,643 |
+
+What still grows with the log: a replay (a late memory, notice or action, a revocation, a hole's fill, a fork), a `rebuild`, and the first start on a replica from before schema versions, which migrates it once.
+
+**Schema versions.** A replica records its version (`PRAGMA user_version`). On its first start with newer code it migrates in place, in one transaction: version 1 adds `log_devices`, `v_slots`, `v_chainbad` and the indexes, counts the log and replays the views from it, so they are what a rebuild holds. The log doesn't change. Views the older code got right don't change either (tested against a replica the old store wrote, `packages/mind/test/fixtures/mind-v0.db`: the log's bytes, every view and the state digest are unchanged); one it got wrong does (`fixtures/review-legacy-v0.db`, a fleet that adopted chains: the older code refused a revoked node's in-order event for another reason than a rebuild gives, so its digest was its own, and the migrated replica agrees with a rebuild and with a replica that joins today). The version is set in the same transaction, so a start killed partway leaves the replica as the older code left it, at its old version, and the next start migrates it whole (tested by killing a real process mid-migration). If an older version wrote to it in between, the next start recounts and replays.
 
 **Planned 🔜:** snapshots, cold segments moved to the blob store, partial replicas on phones, and the compiled-knowledge layer (an LLM wiki, see [DOCTRINE](DOCTRINE.md)).
 
@@ -153,7 +187,7 @@ Add an API key once, and every full node can use it. The key never appears in th
 | Door | Rule |
 |---|---|
 | Entering keys | A hidden terminal prompt (`galahad key add`, `secret set`) or the PWA's password field. Never on the command line, never in chat. |
-| Chat and memory | **Secret scanning** refuses anything credential-shaped with `422` and points to the vault. It catches `sk-ant-`, `sk-orca-`, `sk-or-`, `sk-…`, GitHub, AWS, Google, Slack and HF tokens, private keys, Galahad tokens and invites, `password=…`, and high-entropy tokens. Chat goes to providers and memory replicates in plaintext, so both doors are guarded. |
+| Chat and memory | **Secret scanning** refuses anything credential-shaped with `422` and points to the vault. It catches `sk-ant-`, `sk-orca-`, `sk-or-`, `sk-…`, GitHub, AWS, Google, Slack and HF tokens, private keys, Galahad tokens and invites, a credential's name with a value (`password=…`, `DB_PASSWORD=…`, `"api_key": …`), and high-entropy tokens. Text that only names one passes, so Galahad's own answers about code don't block a temporary chat that resends them: a reference (`${DB_PASSWORD}`, `$TOKEN`, `process.env.API_KEY`), a placeholder (`<your-key-here>`), a call that fetches it (`request.headers.get(…)`), a masked or redacted value; and of high-entropy tokens, integrity hashes (`sha512-…` of exactly that length) and the ids of events in the mind. A bare word, a number or a literal default (`${X:-…}`) is still refused. Chat goes to providers and memory replicates in plaintext, so both doors are guarded. |
 | Errors | Provider error text is **redacted** of the key in use and of anything secret-shaped before it reaches chat, logs or arms. |
 | Asking | Galahad files a **secret request** (`secret.requested`: name, provider, purpose). You fill it from any device, and he learns only that it exists. |
 | Using keys | The **model gateway** (`/gw/<provider>/…`, loopback only) injects the real key on the way out. Arms hold `gw_…` tokens that are scoped to providers, expiring, request-capped, stored as hashes and revocable. |
@@ -263,7 +297,7 @@ Network reachability was verified on ultra before it was built. From an internal
 
 **The Lab.** A second image, `galahad/lab:1` (`sandbox/lab/`), for mathematics, physics and engineering, under the same hardening as every sandbox. The heavy compiled stacks come from Debian so their ABIs agree: SciPy, SymPy, statsmodels, FEniCSx with PETSc and MPI, gmsh, OpenFOAM, ngspice, Octave, Maxima, Z3. Pinned wheels add the rest without shadowing Debian's numpy: build123d on OpenCascade, MuJoCo, CoolProp, Cantera, OpenSees, scikit-fem, python-control, cvxpy, Pint, uncertainties and SALib. `lab-check` proves every tool against a known answer before anyone relies on it: a Poisson solve against its analytic peak, the cantilever deflection PL³/3EI, free fall, an RC time constant, an adiabatic flame temperature, water's density, the lid-driven cavity. All 20 pass on ultra with a read-only root, no capabilities and no network. `--lab` (or `lab: true`) gives a sandbox or quest the Lab. Deploys build it (7 GB, the first time takes a while) and a keeper holds it like the workshop image.
 
-**Artifacts.** A sandbox is disposable; its results aren't. Whatever a quest writes to `/work/out` (reports, plots, data, CAD files, code) is kept when the quest ends, and `galahad sandbox save` (MCP `sandbox_save`) keeps any directory under `/work` of any sandbox. The node copies it out with `docker cp` (container or microVM alike) through its own tar parser, which treats the sandbox as hostile: only regular files and directories land; links, devices and FIFOs are refused; no path may climb out; bytes and file count are capped while streaming (512 MB, 5,000 files; 20 GB per node). Each file is hashed as it's written. The files stay on that node; an `artifact.saved` event records what they are (paths, sizes, SHA-256s), so every device sees them and can fetch them from the holding node, checked against their hashes (`galahad artifact <id> --out dir`). Only files the manifest lists are ever served, HTML and SVG as their source, never rendered, with `CSP: sandbox`. Removing kept work is yours alone, and only the node holding the files can record that they're gone.
+**Artifacts.** A sandbox is disposable; its results aren't. Whatever a quest writes to `/work/out` (reports, plots, data, CAD files, code) is kept when the quest ends, and `galahad sandbox save` (MCP `sandbox_save`) keeps any directory under `/work` of any sandbox. The node copies it out with `docker cp` (container or microVM alike) through its own tar parser, which treats the sandbox as hostile: only regular files and directories land; links, devices and FIFOs are refused; no path may climb out; bytes and file count are capped while streaming (512 MB, 5,000 files; 20 GB per node). Each file is hashed as it's written. The files stay on that node; an `artifact.saved` event records what they are (paths, sizes, SHA-256s), so every device sees them and can fetch them from the holding node, checked against their hashes (`galahad artifact <id> --out dir`): asked of any node, a file is fetched from the one holding it, signed as the asking node, under the same scope, and never sent on again. Only files the manifest lists are ever served, HTML and SVG as their source, never rendered, with `CSP: sandbox`. Removing kept work is yours alone, and only the node holding the files can record that they're gone.
 
 🔜 Next: an egress allowlist for `online`.
 
@@ -415,7 +449,7 @@ Every call goes through the oath gate and into the ledger:
 | read, create, modify | runs | runs |
 | outward, delete | runs: your request *is* the approval | an **action request** in your inbox; nothing is sent |
 
-**The outbox.** An action request (`action.requested`) is recorded in the mind before anything is sent. You approve or decline from any device (`fleet:admin`; never a node or an agent on its own behalf), and **the first decision stands** on every replica. Only the node that filed the request sends it: it marks the send in local storage first, sends once, and records the receipt (`action.done`). If it dies mid-send it reports *outcome unknown* and never retries. No answer within 24 hours means no.
+**The outbox.** An action request (`action.requested`) is recorded in the mind before anything is sent. You approve or decline from any device (`fleet:admin`; never a node or an agent on its own behalf), and **the first decision stands** on every replica. Only the node that filed the request sends it: it marks the send in local storage first, sends once, and records the receipt (`action.done`). If it dies mid-send it reports *outcome unknown* and never retries. No answer within 24 hours means no. **An approval is good for 72 hours** from its own recorded time (`APPROVAL_TTL_MS`, `approvalSendBy` in `packages/core/src/api.ts`): the node that filed it sends it within that or never, so a node back after weeks doesn't send what you approved back then. It says so in the ledger instead, and every device shows the action as expired, never sent (`lapsed`; `sendBy` in the view). An approval recorded after the request had expired is never sent either. Both come from recorded times only, so every replica agrees.
 
 Built in (`galahad connector add <id>`): **GitHub** (repos, issues, pulls, Actions runs, notifications; creating a branch is free, opening an issue or commenting asks), **Cloudflare** (accounts, zones, DNS, Workers, R2; creating a bucket is free, deleting one asks) and **Home Assistant** (at your address; reading state is free, calling any service asks every time). Your own connector is a JSON manifest: `galahad connector add --manifest my.json`.
 

@@ -87,7 +87,7 @@ function setup(options: Parameters<typeof fakeBank>[0] & { modes?: Record<string
   };
   const service = new BankService({ dir: join(dir, "bank"), fetch: bank.fetch, now, readKey: () => PEM, stat, uid: 1000, platform: "linux" });
   services.push(service);
-  service.setup({ appId: APP_ID, keyPath, redirectUrl: "https://ultra.tail719902.ts.net:8443/bank/callback" });
+  service.setup({ appId: APP_ID, keyPath, redirectUrl: "https://bank-node.example.ts.net:8443/bank/callback" });
   return { service, bank, dir: join(dir, "bank"), advance: (ms: number) => (clock += ms) };
 }
 
@@ -133,7 +133,7 @@ describe("authorising (yours alone)", () => {
     const auth = bank.seen.find((x) => x.path === "/auth")!.body;
     expect(Object.keys(auth).sort()).toEqual(["access", "aspsp", "psu_type", "redirect_url", "state"]);
     expect(auth.access).toEqual({ valid_until: new Date(Date.parse("2026-11-10T12:00:00Z") + 89 * DAY).toISOString() });
-    expect(auth).toMatchObject({ aspsp: { name: "Lunar", country: "DK" }, psu_type: "personal", redirect_url: "https://ultra.tail719902.ts.net:8443/bank/callback" });
+    expect(auth).toMatchObject({ aspsp: { name: "Lunar", country: "DK" }, psu_type: "personal", redirect_url: "https://bank-node.example.ts.net:8443/bank/callback" });
     expect(auth.state).toMatch(/^[A-Za-z0-9_-]{43}$/);
     // Only a hash of the state is kept.
     expect(readFileSync(join(dir, "pending.json"), "utf8")).not.toContain(auth.state);

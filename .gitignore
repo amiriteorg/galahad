@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.db
+# …except the migration test's replica: throwaway keys, fake vault values (make-mind-v0.ts).
+!packages/mind/test/fixtures/mind-v0.db
 *.db-wal
 *.db-shm
 .galahad*/

@@ -8,6 +8,7 @@ import {
   type ConversationSummary,
   type ProjectView,
   type StoredStep,
+  SyncRequest,
   titleFrom,
   ConnectorManifest,
   type ConnectorView,
@@ -32,6 +33,7 @@ import {
   NonceCache,
   OWNER_SCOPES,
   type Presence,
+  PushRequest,
   type RouteName,
   routes,
   type Scope,
@@ -62,7 +64,7 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { PairingError, type PairingHost, signedPost, type SyncEngine } from "@galahad/link";
+import { answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { type LedgerEntryInput, SandboxError, type SandboxHost } from "@galahad/sandbox";
 import { z, ZodError } from "zod";
@@ -72,7 +74,7 @@ import type { ChatStore } from "./chats.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ExperimentError } from "./experiment-store.ts";
 import { RunError, runExperiment } from "./experiment-run.ts";
-import { ArtifactError, type ArtifactStore } from "./artifacts.ts";
+import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
@@ -130,6 +132,8 @@ export interface AppContext {
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
   fetch?: typeof fetch;
+  /** Aborted when the node stops: streams that would never end on their own (the world) end. */
+  shutdown?: AbortSignal;
 }
 
 interface Principal {
@@ -260,11 +264,6 @@ export function streamedError(body: unknown): { error: string; status: number } 
   return null;
 }
 
-const SyncInput = z.strictObject({
-  have: z.record(z.string().max(100), z.string().max(32)),
-  digests: z.record(z.string().max(100), z.strictObject({ n: z.number().int().min(0), h: z.string().max(64) })).optional(),
-});
-const PushInput = z.strictObject({ events: z.array(z.unknown()).max(500) });
 const StatusInput = z.strictObject({ invite: z.string().max(64), device: z.string().max(100), proof: z.string().max(100) });
 
 const secretView = (s: SecretInfo): SecretView => ({
@@ -348,6 +347,55 @@ export function createApp(ctx: AppContext) {
     return result;
   }
 
+  /** A kept file's bytes, fenced: opened directly, it can do nothing on this origin. */
+  function keptFile(body: BodyInit | null, type: string, disposition: string, length: number | null): Response {
+    return new Response(body, {
+      headers: {
+        "content-type": type,
+        ...(length !== null ? { "content-length": String(length) } : {}),
+        "content-disposition": disposition,
+        "cache-control": "no-store",
+        "content-security-policy": "sandbox; default-src 'none'",
+        ...SECURITY_HEADERS,
+      },
+    });
+  }
+
+  /** How this node serves a kept file at `path`: its type and name decided here, never by whoever sent the bytes. */
+  function keptFileHeaders(path: string): { type: string; disposition: string } {
+    const { type, inline } = contentTypeOf(path);
+    const name = (path.split("/").at(-1) ?? "file").replace(/[^A-Za-z0-9._ -]/g, "_");
+    return { type, disposition: `${inline ? "inline" : "attachment"}; filename="${name}"` };
+  }
+
+  /** A kept file from the node that holds it, streamed through with this node's own fences. */
+  async function fileFrom(holder: Device, input: { id: string; path: string }): Promise<Response> {
+    if (!holder.profile?.endpoint) throw new HttpError(424, `${holder.name} has no reachable endpoint`);
+    let upstream: Response;
+    try {
+      upstream = await signedFetch(ctx.identity, holder.profile.endpoint, routes.artifactFile.path, input, { timeoutMs: 10 * 60_000 });
+    } catch {
+      throw new HttpError(502, `${holder.name} is unreachable`);
+    }
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => "");
+      let message = text;
+      try {
+        message = (JSON.parse(text) as { error?: string }).error ?? text;
+      } catch {
+        /* plain text */
+      }
+      throw new HttpError(upstream.status, `${holder.name}: ${message}`.slice(0, 500));
+    }
+    // Only the bytes (and their length) come from the holder. The type and the name are this
+    // node's, from the path asked for, as for a file kept here: a holder answering text/html
+    // for a page can't have it rendered on this origin.
+    const { type, disposition } = keptFileHeaders(input.path);
+    // No length (a chunked answer) is no length, not zero.
+    const declared = upstream.headers.get("content-length");
+    return keptFile(upstream.body, type, disposition, declared && /^\d{1,15}$/.test(declared) ? Number(declared) : null);
+  }
+
   /**
    * Run here, or forward (signed, as this node) to the node that should run it.
    * A request that another node forwarded always runs where it lands: never re-forwarded,
@@ -387,8 +435,8 @@ export function createApp(ctx: AppContext) {
       });
   }
 
-  function fleetView(): FleetView {
-    const devices: DeviceView[] = ctx.store.devices(true).map((d) => ({
+  function deviceViews(): DeviceView[] {
+    return ctx.store.devices(true).map((d) => ({
       id: d.id,
       name: d.name,
       kind: d.kind,
@@ -399,29 +447,32 @@ export function createApp(ctx: AppContext) {
       endpoint: d.profile?.endpoint ?? null,
       caps: d.id === ctx.identity.id ? (ctx.caps() as unknown as Record<string, unknown>) : (d.profile?.caps ?? null),
     }));
+  }
+
+  function fleetView(): FleetView {
     return {
       fleet: ctx.store.fleet!,
       name: ctx.store.genesis?.name ?? "",
       self: ctx.identity.id,
-      devices,
+      devices: deviceViews(),
       peers: ctx.sync.status(),
       events: ctx.store.eventCount(),
+      // A hash of every view (as big as the views, not the log; kept until they change).
       digest: ctx.store.digest(),
     };
   }
 
-  // The world's banners: the fleet's nodes and paired devices, with who's online.
+  // The world's banners: the fleet's nodes and paired devices, with who's online (no state digest).
   ctx.world.setNodes((): WorldNode[] => {
-    const fleet = fleetView();
-    const online = new Map(fleet.peers.map((p) => [p.device, p.online]));
-    return fleet.devices
+    const online = new Map(ctx.sync.status().map((p) => [p.device, p.online]));
+    return deviceViews()
       .filter((d) => !d.revokedAt)
       .map((d) => ({
         id: d.id,
         name: d.name,
         kind: d.kind,
-        self: d.id === fleet.self,
-        online: d.id === fleet.self || (online.get(d.id) ?? false),
+        self: d.id === ctx.identity.id,
+        online: d.id === ctx.identity.id || (online.get(d.id) ?? false),
         sandboxHost: Boolean((d.caps as { sandbox?: { image?: unknown } } | null)?.sandbox?.image),
       }));
   });
@@ -561,10 +612,15 @@ export function createApp(ctx: AppContext) {
       .join("\n\n");
   }
 
-  /** Refuse anything credential-shaped: chat goes to providers, memory replicates in plaintext. */
+  /**
+   * Refuse anything credential-shaped: chat goes to providers, memory replicates in plaintext.
+   * The ids of events in the mind look like random keys but are public to the fleet (Galahad
+   * quotes them from the ledger), so they pass.
+   */
+  const scanOptions = { isPublic: (token: string) => ctx.store.event(token) !== null };
   function guardAgainstSecrets(...texts: string[]): void {
     for (const text of texts) {
-      const finding = findSecrets(text)[0];
+      const finding = findSecrets(text, scanOptions)[0];
       if (finding) throw new HttpError(422, `That looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
     }
   }
@@ -1002,7 +1058,7 @@ export function createApp(ctx: AppContext) {
           send(ctx.world.hello());
           const stop = ctx.world.watch(send);
           const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
-          req.signal.addEventListener("abort", () => {
+          const end = () => {
             stop();
             clearInterval(heartbeat);
             if (open) {
@@ -1013,7 +1069,10 @@ export function createApp(ctx: AppContext) {
                 /* already closed */
               }
             }
-          });
+          };
+          req.signal.addEventListener("abort", end);
+          if (ctx.shutdown?.aborted) end();
+          else ctx.shutdown?.addEventListener("abort", end);
         },
       });
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
@@ -1274,7 +1333,15 @@ export function createApp(ctx: AppContext) {
         }),
       );
     },
-    artifactFile: (input) => {
+    artifactFile: async (input, p) => {
+      const artifact = ctx.artifacts.get(input.id);
+      // Any device can fetch any artifact: the files stay where they were kept, so ask that node,
+      // signed as this one (it checks the same scope). A forwarded request is never sent on.
+      if (artifact && !artifact.here && p.kind !== "node") {
+        const holder = ctx.store.activeDevice(artifact.node);
+        if (!holder) throw new HttpError(409, `${artifact.nodeName} is gone; its files went with it`);
+        return fileFrom(holder, input);
+      }
       let file: ReturnType<ArtifactStore["read"]>;
       try {
         file = ctx.artifacts.read(input.id, input.path);
@@ -1282,18 +1349,8 @@ export function createApp(ctx: AppContext) {
         if (error instanceof ArtifactError) throw new HttpError(error.status, error.message);
         throw error;
       }
-      const name = file.name.replace(/[^A-Za-z0-9._ -]/g, "_");
-      return new Response(file.bytes, {
-        headers: {
-          "content-type": file.type,
-          "content-length": String(file.bytes.length),
-          "content-disposition": `${file.inline ? "inline" : "attachment"}; filename="${name}"`,
-          "cache-control": "no-store",
-          // Opened directly, a kept file can do nothing on this origin.
-          "content-security-policy": "sandbox; default-src 'none'",
-          ...SECURITY_HEADERS,
-        },
-      });
+      const { type, disposition } = keptFileHeaders(input.path);
+      return keptFile(file.bytes, type, disposition, file.bytes.length);
     },
     removeArtifact: async (input, p) => {
       if (p.kind !== "admin" && p.kind !== "client" && p.kind !== "node") throw new HttpError(403, "only you remove kept work");
@@ -1521,10 +1578,9 @@ export function createApp(ctx: AppContext) {
       if (!principal || principal.kind !== "node") throw new HttpError(401, "link requests must come from an enrolled node");
       const payload = JSON.parse(new TextDecoder().decode(body));
       if (path === "/link/sync") {
-        const { have, digests } = SyncInput.parse(payload);
-        return json({ ...ctx.store.eventsSince(have, 500, digests), presence: await ctx.presence() });
+        return json({ ...answerSync(ctx.store, SyncRequest.parse(payload)), presence: await ctx.presence() });
       }
-      const { events } = PushInput.parse(payload);
+      const { events } = PushRequest.parse(payload);
       return json({ added: ctx.store.ingest(events).added });
     }
 

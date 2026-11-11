@@ -777,6 +777,20 @@ export interface ConnectorView {
   tools: ConnectorToolView[];
 }
 
+/**
+ * How long an approval stays good: the node that filed the action sends it within this of
+ * your approval's recorded time, or never (a node back after weeks doesn't send what you
+ * approved back then).
+ */
+export const APPROVAL_TTL_MS = 72 * 60 * 60_000;
+
+/**
+ * The last moment an approval may be sent, from recorded times only (so every replica agrees):
+ * 72 hours after it was recorded, or never when it was recorded after the request had expired.
+ */
+export const approvalSendBy = (decidedMs: number, requestExpires: number): number =>
+  decidedMs > requestExpires ? requestExpires : decidedMs + APPROVAL_TTL_MS;
+
 export interface ActionView {
   id: string;
   connector: string;
@@ -788,8 +802,12 @@ export interface ActionView {
   why: string | null;
   node: string;
   requestedAt: string;
+  /** Answer by then, or it's "expired" (no answer means no). */
   expires: number;
-  state: "waiting" | "approved" | "denied" | "expired" | "done" | "failed";
+  /** "lapsed": approved, but not sent by `sendBy`, so it never will be. */
+  state: "waiting" | "approved" | "denied" | "expired" | "lapsed" | "done" | "failed";
+  /** For an approval: sent by then or never (approvalSendBy). */
+  sendBy: number | null;
   decidedVia: string | null;
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;

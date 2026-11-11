@@ -123,7 +123,10 @@ describe.if(enabled && existsSync(WORKSPACE_SOCKET))("size-limited workspaces on
 });
 
 /* With Kata installed (deploy --sudo on a host with /dev/kvm): online code runs in its own KVM microVM. */
-describe.if(enabled && microVMsAvailable())("KVM microVMs on real Docker", () => {
+const microVMs = enabled && microVMsAvailable();
+describe.if(microVMs)("KVM microVMs on real Docker", () => {
+  // A skipped block's body still runs (to collect it) but its afterAll doesn't: set nothing up.
+  if (!microVMs) return;
   const node = `n_it_${randomId(6)}`;
   const tokens = { mint: () => ({ token: `gw_${randomId(32)}`, info: { hash: randomId(16) } }), revoke: () => true };
   const dir = mkdtempSync(join(tmpdir(), "galahad-vm-it-"));
