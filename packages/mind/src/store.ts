@@ -920,6 +920,36 @@ export class MindStore {
         this.putLww(`trial:${body.id}`, event, body as Json);
         return null;
       }
+      case "trial.run": {
+        if (!isFullNode(signer)) return "only full nodes run trials";
+        const body = bodyOf(event, "trial.run");
+        if (this.lww(`trial-run:${body.run}`)) return "run already recorded";
+        this.putLww(`trial-run:${body.run}`, event, body as Json);
+        return null;
+      }
+      case "compute.calibrated": {
+        // A node measures itself: whose calibration it is, is who signed it. Its latest stands.
+        if (signer.kind !== "node") return "only nodes calibrate";
+        this.putLww(`calibration:${event.device}`, event, bodyOf(event, "compute.calibrated").measured as Json);
+        return null;
+      }
+      case "compute.limit": {
+        if (!isFullNode(signer)) return "only full nodes may set a ceiling";
+        const body = bodyOf(event, "compute.limit");
+        if (this.deviceAt(body.node, event.hlc)?.kind !== "node") return "a ceiling is for an active node";
+        this.putLww(`compute-limit:${body.node}`, event, body.limit as Json);
+        return null;
+      }
+      case "compute.policy": {
+        if (!isFullNode(signer)) return "only full nodes may set the compute policy";
+        this.putLww("compute-policy", event, bodyOf(event, "compute.policy").policy as Json);
+        return null;
+      }
+      case "compute.adapted": {
+        if (!isFullNode(signer)) return "only full nodes record a compute plan";
+        this.putLww("compute-plan", event, bodyOf(event, "compute.adapted") as Json);
+        return null;
+      }
       case "artifact.saved": {
         if (!isFullNode(signer)) return "only full nodes keep artifacts";
         const body = bodyOf(event, "artifact.saved");
@@ -1181,6 +1211,20 @@ export class MindStore {
   /** The latest scheduled slot a device has recorded for a loop (null: it never ran on schedule). */
   lastSlot(loop: string, device: string): number | null {
     return this.db.query<{ slot: number }, [string, string]>("SELECT slot FROM v_slots WHERE loop = ? AND device = ?").get(loop, device)?.slot ?? null;
+  }
+
+  /**
+   * How many accepted ledger entries of one resource were recorded since `sinceMs` (by their own clocks):
+   * an exact count, whatever else fills the ledger (the day's budget of extra attempts is counted this way).
+   */
+  ledgerCount(resource: string, sinceMs: number): number {
+    const since = `${String(Math.max(0, Math.floor(sinceMs))).padStart(15, "0")}.000000`;
+    return this.db
+      .query<{ n: number }, [string, string]>(
+        `SELECT COUNT(*) AS n FROM events e LEFT JOIN v_rejected r ON r.id = e.id
+         WHERE e.kind = 'ledger.recorded' AND e.hlc >= ? AND json_extract(e.raw, '$.body.resource') = ? AND r.id IS NULL`,
+      )
+      .get(since, resource)!.n;
   }
 
   /** Devices caught signing two different histories (a stolen key, or worse). */

@@ -30,3 +30,5 @@ export * from "./set-hash.ts";
 export * from "./sync.ts";
 export * from "./self-action.ts";
 export * from "./trials.ts";
+export * from "./compute.ts";
+export * from "./world-compute.ts";

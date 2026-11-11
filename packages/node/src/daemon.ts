@@ -6,7 +6,13 @@ import { canonical, type NodeIdentity } from "@galahad/core";
 import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, SandboxHost, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
+import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
+import type { HostLoad } from "@galahad/core";
+import { calibrate, spawnBench } from "./compute/calibrate.ts";
+import { GovernedSandboxHost } from "./compute/governed-host.ts";
+import { Governor } from "./compute/governor.ts";
+import { modelSpeed, sandboxStart } from "./compute/measure.ts";
+import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "./archive/adapters.ts";
@@ -25,7 +31,7 @@ import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./ca
 import { ConnectorService } from "./connectors.ts";
 import { assess, loopNotice } from "./heartbeat.ts";
 import { heartbeatView } from "./heartbeat-world.ts";
-import { heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
+import { computeUpkeep, heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
@@ -49,6 +55,8 @@ export interface Daemon {
   board: BoardStore;
   /** The archive: everything kept for good, and searched by words and meaning. */
   archive: ArchiveService;
+  /** Compute: the census, this node's calibration and slots, the plan, effort. */
+  compute: ComputeService;
   stop(): Promise<void>;
 }
 
@@ -69,6 +77,17 @@ export interface DaemonOptions {
   weather?: boolean;
   /** How often the archive's background work runs (default 20 s); false: never by itself (tests drive it). */
   archiveIntervalMs?: number | false;
+  /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
+  docker?: DockerRunner;
+  /**
+   * How this node measures itself. Default: the real benchmark, a few seconds at low priority (and never in
+   * tests that pass their own capabilities, unless they give one here). false: it doesn't.
+   */
+  measure?: Measure | false;
+  /** The machine's live load, for admitting sandboxes (default: the real one; null with test capabilities, where only the ceiling counts). */
+  hostLoad?: () => Omit<HostLoad, "oursRecently"> | null;
+  /** The longest a sandbox waits for a slot (default 30 minutes). */
+  slotWaitMs?: number;
 }
 
 /**
@@ -208,19 +227,32 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   };
 
+  // Compute: this node's slots. Every sandbox it creates and every background model call takes one, and waits when
+  // there's none; the ceiling is the owner's (or the default half), read from the mind as it is each time.
+  let computeService: ComputeService | null = null;
+  const governor = new Governor({
+    capacity: () => computeService!.selfCapacity(),
+    host: opts.hostLoad ?? (opts.capabilities ? () => null : liveHost),
+    ...(opts.slotWaitMs ? { maxWaitMs: opts.slotWaitMs } : {}),
+    onChange: () => computeService?.changed(),
+  });
+
   // Sandbox host: only when Docker is reachable on this machine.
-  let sandbox: SandboxHost | null = null;
+  let sandbox: GovernedSandboxHost | null = null;
   const sandboxContext = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox");
   if (caps.sandbox !== undefined && caps.sandbox !== null) {
     // Online microVMs can't use Docker's DNS (it lives on the host side): they get the host's resolvers.
     const resolvConf = join(home.dir, "sandbox-resolv.conf");
     const readIf = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : null);
     writeFileSync(resolvConf, vmResolvConf(readIf("/run/systemd/resolve/resolv.conf"), readIf("/etc/resolv.conf")), { mode: 0o644 });
-    sandbox = new SandboxHost({
+    const microVMs = caps.sandbox.vm ?? microVMsAvailable();
+    sandbox = new GovernedSandboxHost(
+      {
       node: identity.id,
       tokens,
       tokenStore: sandboxTokens,
       ledger,
+      ...(opts.docker ? { runner: opts.docker } : {}),
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
       // Size-limited workspaces when the root helper is installed (scripts/remote-setup.sh); otherwise
@@ -228,9 +260,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET),
       imageContext: sandboxContext,
       // Online sandboxes run in KVM microVMs where Kata is installed (scripts/remote-setup.sh).
-      microVMs: caps.sandbox.vm ?? microVMsAvailable(),
+      microVMs,
       resolvConf,
-    });
+      },
+      { governor, capacity: () => computeService!.selfCapacity(), microVMs },
+    );
     try {
       await sandbox.ensureNetworks();
       // Keep the image in use, so pruning (Coolify's nightly cleanup) doesn't take it.
@@ -242,6 +276,28 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   }
 
   const startedAt = Date.now();
+  // How this node measures itself: the benchmark in its own low-priority process, a sandbox's start-up through
+  // its own governed host, a local model's speed through the roster's local runtimes. Nothing leaves the machine.
+  const measuring = sandbox;
+  const measure: Measure | null =
+    opts.measure === false
+      ? null
+      : (opts.measure ??
+        (opts.capabilities
+          ? null
+          : (reason, body, limit) =>
+              calibrate(reason, {
+                body,
+                limit,
+                dir: home.dir,
+                load: () => liveHost().load,
+                now: Date.now,
+                bench: spawnBench,
+                ...(measuring ? { sandboxStart: () => sandboxStart(measuring, governor, () => computeService!.selfCapacity(), !!caps.sandbox?.vm) } : {}),
+                modelSpeed: () => modelSpeed({ store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}) }, caps, (o, signal) => governor.enterModel(o, signal)),
+              })));
+  const compute = new ComputeService({ store, identity, nodeName: config.name, caps: () => caps, peers: () => sync.status(), governor, ledger, log, measure });
+  computeService = compute;
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
@@ -312,6 +368,31 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     startedAt,
     log,
     fetch: opts.fetch,
+    compute,
+  };
+  // This node's own upkeep of its compute, one look at a time: it measures itself when that's due.
+  let upkeeping: Promise<unknown> | null = null;
+  let lookAgain = false;
+  let stopping = false;
+  const upkeep = (): void => {
+    if (stopping) return;
+    if (upkeeping) {
+      // Something changed while he was looking: one more look when this one ends.
+      lookAgain = true;
+      return;
+    }
+    upkeeping = computeUpkeep(taskDeps)
+      .then((done) => {
+        for (const fix of done) log(`compute: ${fix.title}`);
+      })
+      .catch((error) => log(`compute upkeep: ${(error as Error).message}`))
+      .finally(() => {
+        upkeeping = null;
+        if (lookAgain) {
+          lookAgain = false;
+          upkeep();
+        }
+      });
   };
   const loops = new LoopRunner({
     store,
@@ -331,6 +412,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   taskDeps.weather = { enabled: opts.weather ?? false, watched: () => world.watching > 0, known: () => weather.current() !== null, refresh: () => weather.refresh() };
   taskDeps.chats = chats;
   world.setHeartbeat(() => heartbeatView(store));
+  // The world shows each node's slots and his helpers at work.
+  world.setCompute(() => compute.worldView());
+  compute.onChange(() => world.computeChanged());
 
   const shutdown = new AbortController();
   const app = createApp({
@@ -346,9 +430,13 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     adminToken: home.adminToken(),
     assets: await buildAssets(),
     caps: () => caps,
-    presence,
+    // What this node's own work holds goes with its presence, so every node's census and placement know it.
+    presence: async () => ({ ...(await presence()), compute: compute.usage() }),
     log,
     sandbox,
+    governor,
+    compute,
+    computeUpkeep: upkeep,
     sandboxContext,
     connectors,
     artifacts,
@@ -387,6 +475,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       log(`sandbox gateway listener unavailable: ${(error as Error).message}`);
     }
     const host = sandbox;
+    // Sandboxes from before this start hold their slots.
+    void host.reconcile().catch((error) => log(`sandbox slots: ${(error as Error).message}`));
     reaper = setInterval(() => {
       host
         .reap()
@@ -413,6 +503,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   }
   loops.start(opts.loopIntervalMs);
+  // A node that just joined (or whose body or ceiling changed while it was down) measures itself now.
+  if (measure) upkeep();
   const drain = () => connectors.drain().catch((error) => log(`outbox: ${(error as Error).message}`));
   void drain();
   const outbox = setInterval(drain, 5_000);
@@ -421,6 +513,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     : setInterval(() => {
         void refreshCapabilities(probeCapabilities, (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
           if (fresh) caps = fresh;
+          // A GPU, a local runtime, more memory, a new ceiling: it measures itself again.
+          upkeep();
         });
       }, 5 * 60_000);
 
@@ -440,6 +534,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     world,
     board,
     archive,
+    compute,
     /**
      * In order: take nothing new (stop listening; requests under way go on), start nothing
      * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
@@ -453,6 +548,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       if (reaper) clearInterval(reaper);
       stopPush();
       sync.stop();
+      stopping = true;
+      governor.close();
+      await upkeeping;
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
       await archive.stop();
       world.close();

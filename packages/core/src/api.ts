@@ -4,7 +4,8 @@ import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, Not
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
-import { TrialRecord } from "./trials.ts";
+import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
+import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
@@ -58,6 +59,17 @@ export type PlacementNeeds = z.infer<typeof PlacementNeeds>;
 /** A node, by name or device id. */
 const NodeRef = z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/);
 const SandboxId = z.string().regex(/^[a-f0-9]{10}$/);
+
+/**
+ * One of several attempts at the same quest (effort): the node shows where each is, and counts
+ * nothing by it. Its quest must be one an effort was granted for; otherwise it's ignored.
+ */
+export const AttemptTag = z.strictObject({
+  quest: z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/),
+  index: z.number().int().min(1).max(8),
+  of: z.number().int().min(1).max(8),
+});
+export type AttemptTag = z.infer<typeof AttemptTag>;
 
 export const SandboxNetwork = z.enum(["isolated", "gateway", "online"]);
 export type SandboxNetwork = z.infer<typeof SandboxNetwork>;
@@ -221,6 +233,10 @@ export const routes = {
        * the answer has tools, off without them; quests turn it on for the plan only.
        */
       archive: z.boolean().optional(),
+      /** Start the role's models at this position: each parallel attempt takes another one first (the rest stay its fallbacks). */
+      rotate: z.number().int().min(0).max(15).optional(),
+      /** This call is one attempt's (effort): the world shows it as a helper's, not his own. */
+      attempt: AttemptTag.optional(),
     }),
   },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */
@@ -335,7 +351,12 @@ export const routes = {
   },
   ledger: { method: "GET", path: "/api/ledger", scope: "mind:read", input: null },
   sandboxes: { method: "POST", path: "/api/sandboxes/list", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional() }) },
-  createSandbox: { method: "POST", path: "/api/sandboxes", scope: "sandbox", input: SandboxRequest.extend({ on: NodeRef.optional() }) },
+  /**
+   * A sandbox takes a slot on its host, and waits for one when the host is full (the answer comes when it
+   * has started). Unpinned, it goes to the sandbox host with the most room. More CPUs or memory than the
+   * host's ceiling gets the ceiling.
+   */
+  createSandbox: { method: "POST", path: "/api/sandboxes", scope: "sandbox", input: SandboxRequest.extend({ on: NodeRef.optional(), attempt: AttemptTag.optional() }) },
   execSandbox: {
     method: "POST",
     path: "/api/sandboxes/exec",
@@ -482,6 +503,54 @@ export const routes = {
    * Galahad keeps, so the thing being measured can't write its own marks.
    */
   recordTrial: { method: "POST", path: "/api/trials", scope: "brain:write", input: TrialRecord },
+  /** A run's settings (its effort), recorded once when it starts: the Index per effort level reads them. */
+  startTrialRun: {
+    method: "POST",
+    path: "/api/trials/runs",
+    scope: "brain:write",
+    input: z.strictObject({ run: TrialRunId, suite: z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/), effort: EffortLevel, parallel: z.number().int().min(1).max(64).optional() }),
+  },
+
+  // ---- Compute: what the fleet can carry, and how he spends it (compute.ts) ----------
+  /** The census: every node's body, what it measured, its ceiling, slots in use and waiting; his plan; the day's budget. */
+  compute: { method: "GET", path: "/api/compute", scope: "mind:read", input: null },
+  /** A node measures itself now: a few seconds, at low priority, within its ceiling. Yours to ask (brain:write: never an agent's). */
+  calibrateCompute: { method: "POST", path: "/api/compute/calibrate", scope: "brain:write", input: z.strictObject({ on: NodeRef.optional() }) },
+  /**
+   * The ceiling for one node: the threads and memory he may use there, how many sandboxes and model calls at
+   * once. Yours alone (fleet:admin, from a terminal or a paired device; never an agent, never a node on its own).
+   */
+  setComputeLimit: {
+    method: "POST",
+    path: "/api/compute/limit",
+    scope: "fleet:admin",
+    input: z.strictObject({
+      node: NodeRef,
+      cores: z.number().int().min(1).max(4096).optional(),
+      memoryGb: z.number().min(1).max(65_536).optional(),
+      sandboxes: z.number().int().min(0).max(256).optional(),
+      modelCalls: z.number().int().min(1).max(256).optional(),
+      /** Back to the defaults first (then whatever else is given). */
+      reset: z.boolean().optional(),
+    }),
+  },
+  /** The level auto may reach, and the day's budget of extra attempts. It steers how he spends: brain:write, and yours alone. */
+  setComputePolicy: {
+    method: "POST",
+    path: "/api/compute/policy",
+    scope: "brain:write",
+    input: z.strictObject({ effort: EffortAsk.optional(), attemptsPerDay: z.number().int().min(0).max(500).optional() }),
+  },
+  /**
+   * How many attempts a quest runs at once: the node decides, from the slots free now and the day's budget
+   * (decideEffort), and records each extra attempt in the ledger. Whoever may create sandboxes may ask.
+   */
+  effort: {
+    method: "POST",
+    path: "/api/compute/effort",
+    scope: "sandbox",
+    input: z.strictObject({ quest: z.string().regex(/^[A-Za-z0-9._:-]{1,48}$/), effort: EffortAsk, on: NodeRef.optional(), label: z.string().max(160).optional() }),
+  },
   /** Your bank connection: consent, accounts (masked), budget. */
   bankStatus: { method: "GET", path: "/api/bank/status", scope: "bank:read", input: null },
   bankAccounts: { method: "GET", path: "/api/bank/accounts", scope: "bank:read", input: null },
@@ -636,6 +705,8 @@ export interface Presence {
   freeMemoryGb: number;
   onBattery: boolean | null;
   batteryPercent: number | null;
+  /** What the node's own work holds now and what waits (absent from older nodes). */
+  compute?: ComputeUsage;
 }
 
 export interface FleetView {
@@ -892,6 +963,9 @@ export interface TrialView extends TrialRecord {
   /** The node that ran it. */
   nodeName: string;
 }
+
+/** The runs that recorded their settings (their effort), by run id. A run not here ran at effort 1. */
+export type TrialRunsView = Record<string, TrialRunSettings>;
 
 export interface ArtifactView {
   id: string;

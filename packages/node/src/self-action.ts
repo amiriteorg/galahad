@@ -1,4 +1,4 @@
-import { SELF_ACTION_QUEST, SELF_ACTION_RESOURCE, SELF_ACTIONS, SelfAction, selfActionTarget, selfActionTitle } from "@galahad/core";
+import { RECALIBRATE_AFTER_MS, SELF_ACTION_QUEST, SELF_ACTION_RESOURCE, SELF_ACTIONS, SelfAction, selfActionTarget, selfActionTitle } from "@galahad/core";
 import { OFFLINE_AFTER_MS } from "./heartbeat.ts";
 
 /*
@@ -28,6 +28,20 @@ export interface SelfSnapshot {
   retried: string[];
   /** The world's weather: fetched at all here, someone has the world open, and it's known now. */
   weather: { enabled: boolean; watched: boolean; known: boolean } | null;
+  /** This node's compute (absent: nothing about it is his to fix here). */
+  compute?: {
+    /** It can measure itself here. */
+    canMeasure: boolean;
+    /** It should: it never has, or its body or ceiling isn't what it measured. */
+    due: "joined" | "changed" | null;
+    /** When it last did, and when the owner last set its ceiling (ms; null: never). */
+    lastAt: number | null;
+    limitSetAt: number | null;
+    /** This node records the fleet's plan (it runs a heartbeat); and whether the recorded plan is what the mind gives now. */
+    adapts: boolean;
+    planDigest: string;
+    recordedDigest: string | null;
+  } | null;
 }
 
 /** At most this many fixes after one heartbeat. */
@@ -53,6 +67,14 @@ export function planSelfActions(s: SelfSnapshot): SelfAction[] {
     out.push({ kind: "retry-loop", loop: loop.name, after: last.run });
   }
   if (s.weather?.enabled && s.weather.watched && !s.weather.known) out.push({ kind: "refresh-weather" });
+  const c = s.compute;
+  if (c) {
+    // Measured for the first time at once; again when its body or ceiling changed, but not in a loop: at most once
+    // an hour (a runtime that comes and goes, a busy day), unless the owner changed its ceiling since.
+    const settled = c.lastAt === null || s.now - c.lastAt >= RECALIBRATE_AFTER_MS || (c.limitSetAt !== null && c.limitSetAt > c.lastAt);
+    if (c.canMeasure && c.due && settled) out.push({ kind: "calibrate", why: c.lastAt === null ? "joined" : "changed" });
+    if (c.adapts && c.planDigest !== c.recordedDigest) out.push({ kind: "adapt-compute" });
+  }
   return out.slice(0, MAX_SELF_ACTIONS);
 }
 
@@ -64,6 +86,10 @@ export interface SelfActionHands {
   retry(loop: string): void;
   /** Ask for Denmark's weather again (the weather service keeps its own pace). */
   refreshWeather(): Promise<void>;
+  /** Measure this node (a few seconds, low priority, within its ceiling) and record it. */
+  calibrate?(why: "joined" | "changed"): Promise<void>;
+  /** Record his compute defaults as the mind gives them now; returns what changed, a line each. */
+  adaptCompute?(): string[] | null;
 }
 
 export interface LedgerWrite {
@@ -96,7 +122,7 @@ export async function runSelfAction(raw: unknown, fresh: SelfSnapshot, hands: Se
   if (!parsed.success) throw new SelfActionRefused("not on the self-action allowlist");
   const action = parsed.data;
   if (!planSelfActions(fresh).some((wanted) => same(wanted, action))) throw new SelfActionRefused("nothing calls for it now");
-  const title = selfActionTitle(action);
+  let title = selfActionTitle(action);
   let ok = true;
   let why = "";
   try {
@@ -116,6 +142,17 @@ export async function runSelfAction(raw: unknown, fresh: SelfSnapshot, hands: Se
       case "refresh-weather":
         await hands.refreshWeather();
         break;
+      case "calibrate":
+        if (!hands.calibrate) throw new Error("this node can't measure itself here");
+        await hands.calibrate(action.why);
+        break;
+      case "adapt-compute": {
+        if (!hands.adaptCompute) throw new Error("this node doesn't record the plan");
+        const changes = hands.adaptCompute();
+        // What changed is the line the owner reads.
+        if (changes?.length) title = `${title}: ${changes.join(" ")}`.slice(0, 1500);
+        break;
+      }
     }
   } catch (error) {
     ok = false;

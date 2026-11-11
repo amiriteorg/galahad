@@ -36,6 +36,7 @@ import {
   type Station,
   STATIONS,
   walkMs,
+  type WorldCompute,
   type WorldEvent,
   type WorldHeartbeat,
   type WorldNode,
@@ -160,6 +161,7 @@ export class WorldHub {
       this.quiet();
       this.partnersQuiet();
       if (this.watchers.size) this.heartbeatChanged();
+      this.computeChanged();
     }, 15_000);
     this.sweep.unref?.();
     // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
@@ -217,6 +219,7 @@ export class WorldHub {
       thoughts: [...this.thoughts],
       weather: this.weather(),
       saved: this.saved(),
+      ...(this.compute ? { compute: this.computeNow() } : {}),
       ...(board === null ? {} : { board: { version: board } }),
       heartbeat: this.heartbeatNow(),
       partners: this.partnerViews(),
@@ -291,6 +294,35 @@ export class WorldHub {
 
   fleetChanged(): void {
     this.emit({ type: "fleet", at: this.now(), nodes: this.nodes() });
+  }
+
+  /* ---------- compute: each node's slots, and his helpers at work ---------- */
+
+  private compute: (() => WorldCompute) | null = null;
+  private computeKey = "null";
+
+  /** Where the fleet's compute is read from (the daemon sets it: compute/service.ts). */
+  setCompute(source: () => WorldCompute): void {
+    this.compute = source;
+    this.computeKey = JSON.stringify(this.computeNow());
+  }
+
+  private computeNow(): WorldCompute | null {
+    try {
+      return this.compute?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A slot filled or freed, a helper started, moved or finished: watchers hear of it if what the world shows changed. */
+  computeChanged(): void {
+    if (!this.watchers.size) return;
+    const compute = this.computeNow();
+    const key = JSON.stringify(compute);
+    if (!compute || key === this.computeKey) return;
+    this.computeKey = key;
+    this.emit({ type: "compute", at: this.now(), compute });
   }
 
   /* ---------- his heartbeat ---------- */

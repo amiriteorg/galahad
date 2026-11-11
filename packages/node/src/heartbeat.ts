@@ -43,6 +43,8 @@ export interface HeartbeatSnapshot {
   disk: { freeGb: number; totalGb: number } | null;
   /** The bank connection on this node (null: not set up here). */
   bank?: { problem: string | null; connected: boolean; daysRemaining: number | null; hadSession: boolean } | null;
+  /** The fleet's compute: nodes that joined a while ago and haven't measured themselves, and what he'd suggest (never do). */
+  compute?: { unmeasured: { id: string; name: string }[]; suggestions: { key: string; title: string; body: string }[] } | null;
 }
 
 /** How long an always-on node may be silent before it's worth telling you. */
@@ -197,6 +199,17 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
       out.push({ key: `bank-expiring:${s.self.id}`, severity: "info", title: `The bank consent ends in ${s.bank.daysRemaining} day${s.bank.daysRemaining === 1 ? "" : "s"}`, body: "Re-authorize before then (Bank → Re-authorize) so your agents keep read access.", node: s.self.id });
     }
   }
+
+  for (const node of s.compute?.unmeasured ?? []) {
+    out.push({
+      key: `compute-unmeasured:${node.id}`,
+      severity: "info",
+      title: `${node.name} hasn't measured itself`,
+      body: `He counts one sandbox slot on it until it has. Ask it to: galahad compute calibrate ${node.name} (it takes a few seconds, at low priority).`,
+    });
+  }
+  // What more compute could do, as suggestions: installing, downloading and hiring are yours.
+  for (const suggestion of s.compute?.suggestions ?? []) out.push({ key: suggestion.key, severity: "info", title: suggestion.title, body: suggestion.body });
 
   if (s.disk) {
     const share = s.disk.totalGb ? s.disk.freeGb / s.disk.totalGb : 1;

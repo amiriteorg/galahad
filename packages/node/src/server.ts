@@ -46,7 +46,12 @@ import {
   type SecretView,
   type TrialRecord,
   trialProblem,
+  type TrialRunsView,
+  TrialRunSettings,
   type TrialView,
+  ComputeLimit,
+  COMPUTE_RESOURCE,
+  type Station,
   utf8,
   verifyRequestSignature,
 } from "@galahad/core";
@@ -72,7 +77,10 @@ import {
 } from "@galahad/brain";
 import { answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
-import { type LedgerEntryInput, SandboxError, type SandboxHost } from "@galahad/sandbox";
+import { type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
+import type { GovernedSandboxHost } from "./compute/governed-host.ts";
+import type { Governor } from "./compute/governor.ts";
+import type { ComputeService } from "./compute/service.ts";
 import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
@@ -122,8 +130,14 @@ export interface AppContext {
   caps: () => Capabilities | null;
   presence: () => Promise<Presence>;
   log: (message: string) => void;
-  /** Present when this node is a sandbox host. */
-  sandbox?: SandboxHost | null;
+  /** Present when this node is a sandbox host: every sandbox it creates takes a slot first (compute/governed-host.ts). */
+  sandbox?: GovernedSandboxHost | null;
+  /** This node's slots: sandboxes and model calls. */
+  governor: Governor;
+  /** Compute: the census, this node's calibration, the plan, effort. */
+  compute: ComputeService;
+  /** Look at this node's compute now (a ceiling of its own changed): it measures itself again if that's due. */
+  computeUpkeep?: () => void;
   /** Build context for the sandbox image (repo `sandbox/`). */
   sandboxContext?: string;
   connectors: ConnectorService;
@@ -328,7 +342,18 @@ export function createApp(ctx: AppContext) {
     return node;
   }
 
-  /** Pick the best sandbox host in the fleet for work nobody pinned to a node. */
+  /** Where a sandbox nobody pinned was placed, when that's another node: what follows (its commands, its end) goes there. */
+  const placed = new Map<string, string>();
+  const remember = (sandbox: string, node: string): void => {
+    if (node === ctx.identity.id) return;
+    placed.set(sandbox, node);
+    while (placed.size > 512) placed.delete(placed.keys().next().value!);
+  };
+
+  /**
+   * Pick the best sandbox host in the fleet for work nobody pinned to a node: the one with room (this node
+   * among them), by what each measured; when every host is full, the one with the shortest queue.
+   */
   function placeSandbox(): Device {
     const { ranked } = place({ docker: true, untrusted: true }, candidates());
     const best = ranked.find((p) => {
@@ -422,8 +447,12 @@ export function createApp(ctx: AppContext) {
     path: string,
     body: Record<string, unknown>,
     local: () => Promise<T>,
+    /** A new sandbox goes where there's room; what follows goes where its sandbox is. */
+    where: { create?: boolean; sandbox?: string } = {},
   ): Promise<T> {
-    const target = p.kind === "node" ? null : on ? resolveNode(on) : ctx.sandbox ? null : placeSandbox();
+    const elsewhere = where.sandbox ? placed.get(where.sandbox) : undefined;
+    const target =
+      p.kind === "node" ? null : on ? resolveNode(on) : elsewhere ? (ctx.store.activeDevice(elsewhere) ?? null) : where.create ? placeSandbox() : ctx.sandbox ? null : placeSandbox();
     if (!target || target.id === ctx.identity.id) {
       if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
       return local();
@@ -433,12 +462,15 @@ export function createApp(ctx: AppContext) {
 
   function candidates(): Candidate[] {
     const statuses = new Map(ctx.sync.status().map((s) => [s.device, s]));
+    const compute = new Map(ctx.compute.nodes().map((n) => [n.id, n]));
     return ctx.store
       .devices()
       .filter((d) => d.kind === "node")
       .map((d) => {
         const self = d.id === ctx.identity.id;
         const status = statuses.get(d.id);
+        const known = compute.get(d.id);
+        const localTps = Math.max(0, ...(known?.calibration?.models ?? []).map((m) => m.tps));
         return {
           device: d.id,
           name: d.name,
@@ -446,6 +478,8 @@ export function createApp(ctx: AppContext) {
           online: self || !!status?.online,
           self,
           presence: status?.presence ?? null,
+          // What it measured and what's free there now: placement's reasons name both.
+          compute: known?.capacity ? { capacity: known.capacity, free: known.free, queued: known.use?.queued ?? 0, ...(localTps ? { localTps } : {}) } : null,
         };
       });
   }
@@ -771,6 +805,19 @@ export function createApp(ctx: AppContext) {
     });
   }
 
+  /** The runs that recorded their settings (their effort). */
+  function trialRuns(): TrialRunsView {
+    const runs: TrialRunsView = {};
+    for (const entry of ctx.store.lwwPrefix<{ run: string; settings: unknown }>("trial-run:")) {
+      const settings = TrialRunSettings.safeParse(entry.value!.settings);
+      if (settings.success) runs[entry.value!.run] = settings.data;
+    }
+    return runs;
+  }
+
+  /** Where an attempt's call takes its helper: planning at the council, working at the forge, reviewed at the observatory. */
+  const attemptStation = (role: string): Station => (role === "planner" ? "council" : role === "reviewer" ? "observatory" : "forge");
+
   function trialViews(): TrialView[] {
     return ctx.store
       .lwwPrefix<TrialRecord & { id: string }>("trial:")
@@ -949,7 +996,9 @@ export function createApp(ctx: AppContext) {
     chat: (input, p, req) => {
       // Every message goes to a provider, whoever "said" it, so all of them are scanned.
       guardAgainstSecrets(...input.messages.map((m: { content: string }) => m.content));
-      const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, ...request } = input as z.infer<NonNullable<(typeof routes)["chat"]["input"]>>;
+      const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, ...request } = input as z.infer<NonNullable<(typeof routes)["chat"]["input"]>>;
+      // One of several attempts at a quest: a helper's call, shown as the helper's (he stays where he leads them from).
+      const helper = attempt && ctx.compute.isHelper(attempt) ? attempt : null;
       const asked = request.messages.at(-1)!;
       // Kept chats are yours alone: an agent (or a quest) never writes into your history.
       if ((save || continued) && !isOwner(p)) throw new HttpError(403, "only you keep chats");
@@ -1003,11 +1052,16 @@ export function createApp(ctx: AppContext) {
             answerId = ctx.chats.startAnswer(kept.id);
             send({ type: "conversation", id: kept.id, title: kept.title, project: kept.project });
           }
-          const seen = worldWatcher(request.role ?? "planner", wantTools === false, answer);
+          const seen = helper ? (event: ChatStreamEvent) => void (event.type === "model" && ctx.compute.attemptModel(helper, event.ref)) : worldWatcher(request.role ?? "planner", wantTools === false, answer);
           // Background archiving waits while an answer streams.
           const answered = ctx.archive.answering();
           let context = known;
+          // A model call takes a slot. Yours, with his tools, never waits; a quest's or an agent's waits its turn.
+          let leave: (() => void) | null = null;
+          let attemptEnded: (() => void) | null = null;
           try {
+            leave = await ctx.governor.enterModel({ wait: !(isOwner(p) && wantTools !== false) }, req.signal);
+            if (attempt) attemptEnded = ctx.compute.attemptBegin(attempt, { station: attemptStation(request.role ?? "planner"), doing: `The ${request.role ?? "planner"} is thinking` });
             if (fromArchive) {
               const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
                 ctx.log(`archive context: ${(error as Error).message}`);
@@ -1029,8 +1083,10 @@ export function createApp(ctx: AppContext) {
             answer.error = String((error as Error).message ?? error);
             send({ type: "error", error: answer.error });
           } finally {
+            leave?.();
+            attemptEnded?.();
             answered();
-            ctx.world.rest();
+            if (!helper) ctx.world.rest();
             clearInterval(heartbeat);
             if (kept && answerId !== null) {
               const status = answer.error ? "error" : req.signal.aborted ? "stopped" : "done";
@@ -1288,30 +1344,45 @@ export function createApp(ctx: AppContext) {
     }),
     sandboxes: (input, p) =>
       onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
-    createSandbox: (input, p) => {
-      const { on, ...request } = input;
+    createSandbox: (input, p, req) => {
+      const { on, attempt, ...request } = input;
       // Model providers only, and only ones this fleet has: the gateway's own scopes were refused by the contract.
       const unknown = ((request.providers ?? []) as string[]).filter((id) => !providerRecord(ctx.store, id));
       if (unknown.length) throw new HttpError(400, `no model provider ${unknown.join(", ")} on this fleet (galahad providers lists them)`);
       // An arm's sandboxes all belong to its own quest and are always ephemeral.
       const scoped = p.kind === "arm" ? { ...request, quest: armQuest(p.label!), persistent: false } : request;
       // Creating may pull an image: long-running.
+      // It takes a slot on its host first, and waits for one when the host is full (a caller that goes away leaves the queue).
       return longRunning(
-        onNode(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped) })),
+        onNode<{ sandbox: { id: string; node: string } }>(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped, { signal: req.signal }) }), { create: true }).then((made) => {
+          remember(made.sandbox.id, made.sandbox.node);
+          if (attempt) ctx.compute.attemptSandbox(attempt, made.sandbox.id, ctx.store.device(made.sandbox.node)?.name ?? made.sandbox.node);
+          return made;
+        }),
       );
     },
     execSandbox: (input, p) => {
       const { on, quest: relayed, ...rest } = input;
       const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
+      // An attempt's command: its helper is at the forge while it runs.
+      const tag = ctx.compute.attemptOf(rest.id);
+      const ended = tag ? ctx.compute.attemptBegin(tag, { station: "forge", doing: "Running a command" }) : null;
       return longRunning(
-        onNode(p, on, routes.execSandbox.path, { ...rest, ...(quest ? { quest } : {}) }, async () => {
-          if (quest) {
-            const sandbox = await ctx.sandbox!.get(rest.id);
-            if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
-            if (sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
-          }
-          return ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec);
-        }),
+        onNode(
+          p,
+          on,
+          routes.execSandbox.path,
+          { ...rest, ...(quest ? { quest } : {}) },
+          async () => {
+            if (quest) {
+              const sandbox = await ctx.sandbox!.get(rest.id);
+              if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
+              if (sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
+            }
+            return ctx.sandbox!.exec(rest.id, rest.cmd, rest.timeoutSec);
+          },
+          { sandbox: rest.id },
+        ).finally(() => ended?.()),
       );
     },
     investigations: () => ({ investigations: investigationViews() }),
@@ -1345,7 +1416,62 @@ export function createApp(ctx: AppContext) {
       });
       return { investigation: investigationViews().find((i) => i.id === input.id) };
     },
-    trials: () => ({ trials: trialViews() }),
+    trials: () => ({ trials: trialViews(), runs: trialRuns() }),
+    startTrialRun: (input) => {
+      ctx.store.emit(ctx.identity, "trial.run", { run: input.run, suite: input.suite, settings: { effort: input.effort, ...(input.parallel ? { parallel: input.parallel } : {}) } });
+      return { run: input.run, settings: trialRuns()[input.run] };
+    },
+
+    // ---------- compute: what the fleet can carry, and how he spends it ----------
+    compute: () => ctx.compute.view(),
+    calibrateCompute: (input, p) => {
+      // Yours to ask (a node may relay it); a node only ever measures itself.
+      if (!isOwner(p) && p.kind !== "node") throw new HttpError(403, "only you ask a node to measure itself");
+      const target = p.kind === "node" || !input.on ? null : resolveNode(input.on);
+      if (target && target.id !== ctx.identity.id) return forward(target, routes.calibrateCompute.path, {});
+      if (!ctx.compute.canMeasure()) throw new HttpError(424, `${ctx.nodeName} can't measure itself here`);
+      return longRunning(
+        ctx.compute
+          .calibrate("asked", p.kind === "node" ? `you, through ${ctx.store.device(p.device)?.name ?? "another node"}` : "you")
+          .then((calibration) => ({ node: ctx.nodeName, calibration, capacity: ctx.compute.selfCapacity() })),
+      );
+    },
+    setComputeLimit: (input, p) => {
+      // The ceiling is yours alone: never an agent's (they can't hold fleet:admin), never a node's on its own.
+      if (!isOwner(p)) throw new HttpError(403, "only you set a node's ceiling");
+      const { node: ref, reset, ...given } = input;
+      const node = resolveNode(ref);
+      const limit = ComputeLimit.parse({ ...(reset ? {} : (ctx.compute.limitOf(node.id) ?? {})), ...given });
+      ctx.store.emit(ctx.identity, "compute.limit", { node: node.id, limit: limit as Record<string, unknown> }, p.kind === "client" ? { via: p.device, trust: "owner" } : undefined);
+      ctx.ledger?.({
+        class: "modify",
+        resource: COMPUTE_RESOURCE,
+        target: `ceiling:${node.name}`,
+        verdict: "approved",
+        reason: "you set it",
+        detail: Object.keys(limit).length ? Object.entries(limit).map(([k, v]) => `${k} ${v}`).join(" · ") : "back to the defaults",
+      });
+      // This node measures itself again if its own ceiling's threads changed; another node sees it at its next look.
+      if (node.id === ctx.identity.id) ctx.computeUpkeep?.();
+      ctx.compute.changed();
+      return { node: node.name, limit, capacity: ctx.compute.view().nodes.find((n) => n.id === node.id)?.capacity ?? null };
+    },
+    setComputePolicy: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you set how he spends compute");
+      const policy = { ...ctx.compute.policy(), ...input };
+      ctx.store.emit(ctx.identity, "compute.policy", { policy });
+      return { policy: ctx.compute.policy(), budget: { perDay: policy.attemptsPerDay, usedToday: ctx.compute.usedToday() } };
+    },
+    effort: (input, p) => {
+      guardAgainstSecrets(input.label ?? "");
+      const owner = isOwner(p);
+      const by = owner ? "you" : p.kind === "arm" ? `arm:${p.label}` : `node:${ctx.store.device(p.device)?.name ?? p.device}`;
+      // An agent's quests are its own: it can't name (or pre-empt) one of yours.
+      const quest = owner ? input.quest : `${p.kind === "arm" ? armQuest(p.label!) : "node"}.${input.quest}`.slice(0, 64);
+      const grant = ctx.compute.grant({ quest, effort: input.effort, ...(input.on ? { on: resolveNode(input.on).id } : {}), ...(input.label ? { label: input.label } : {}) }, { by, owner });
+      if (grant.attempts > 1) ctx.world.doing("council", `Leading ${grant.attempts} attempts at a quest${input.label ? `: ${input.label}` : ""}`);
+      return grant;
+    },
     recordTrial: (input) => {
       // Every replica checks this too: verdicts and the score must follow from the numbers.
       const problem = trialProblem(input);
@@ -1412,7 +1538,7 @@ export function createApp(ctx: AppContext) {
             if (error instanceof ArtifactError) throw new HttpError(error.status, error.message);
             throw error;
           }
-        }),
+        }, { sandbox: rest.sandbox }),
       );
     },
     artifactFile: async (input, p) => {
@@ -1453,10 +1579,22 @@ export function createApp(ctx: AppContext) {
       const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.kind === "arm" ? undefined : p.device;
       const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? input.quest : undefined;
       const relay = { id: input.id, ...(approver ? { onBehalfOf: approver } : {}), ...(quest ? { quest } : {}) };
-      return onNode(p, input.on, routes.destroySandbox.path, relay, async () => {
-        const decision = await ctx.sandbox!.destroy(input.id, approver ? { approvedBy: approver } : quest ? { quest } : {});
-        if (decision.verdict !== "allow") throw new HttpError(409, `the oath requires approval: ${decision.reason}`);
-        return { ok: true };
+      return onNode(
+        p,
+        input.on,
+        routes.destroySandbox.path,
+        relay,
+        async () => {
+          const decision = await ctx.sandbox!.destroy(input.id, approver ? { approvedBy: approver } : quest ? { quest } : {});
+          if (decision.verdict !== "allow") throw new HttpError(409, `the oath requires approval: ${decision.reason}`);
+          return { ok: true };
+        },
+        { sandbox: input.id },
+      ).then((done) => {
+        // Its attempt (if it was one) has finished, and it's nowhere any more.
+        ctx.compute.sandboxGone(input.id);
+        placed.delete(input.id);
+        return done;
       });
     },
     loops: () => ({ loops: loopViews() }),

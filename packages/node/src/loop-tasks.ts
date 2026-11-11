@@ -6,7 +6,9 @@ import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { ArmTokens } from "./arms.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
+import type { ComputeService } from "./compute/service.ts";
 import type { ConnectorService } from "./connectors.ts";
+import { selfActionOn } from "./heartbeat-world.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
 import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
 import { REFLECT_ROLES, reflectOnce } from "./reflect.ts";
@@ -47,7 +49,12 @@ export interface LoopTaskDeps {
   weather?: { enabled: boolean; watched(): boolean; known(): boolean; refresh(): Promise<void> };
   /** Your kept chats (their titles are what the reflection reads of them). */
   chats?: { list(): ConversationSummary[] };
+  /** This node's compute: its calibration and the fleet's plan (self-action), what he'd suggest (the heartbeat). */
+  compute?: ComputeService;
 }
+
+/** A node that joined this long ago and still hasn't measured itself is worth a line. */
+const UNMEASURED_AFTER_MS = 60 * 60_000;
 
 /** A node API client on loopback, holding an arm token. */
 export class LocalClient implements NodeClient {
@@ -151,6 +158,18 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
       .map((o) => ({ id: o.id, label: o.label, tool: `${o.connector}.${o.tool}`, stale: o.state === "stale", until: o.until })),
     disk: diskOf(deps.home),
     bank: bankOf(deps.bank),
+    compute: deps.compute ? computeOf(deps, now) : null,
+  };
+}
+
+/** Compute, as the heartbeat sees it: nodes that should have measured themselves by now, and what he'd suggest. */
+function computeOf(deps: LoopTaskDeps, now: number): HeartbeatSnapshot["compute"] {
+  const nodes = deps.compute!.nodes();
+  return {
+    unmeasured: nodes
+      .filter((n) => n.online && n.body && !n.calibration && now - hlcMs(deps.store.device(n.id)?.enrolledHlc ?? "") > UNMEASURED_AFTER_MS)
+      .map((n) => ({ id: n.id, name: n.name })),
+    suggestions: deps.compute!.suggestions(nodes),
   };
 }
 
@@ -223,7 +242,26 @@ export async function selfSnapshot(deps: LoopTaskDeps): Promise<SelfSnapshot> {
       })),
     retried: retriedRuns(deps.store.ledger(300).filter((e) => e.body.resource === SELF_ACTION_RESOURCE).map((e) => e.body.target)),
     weather: deps.weather ? { enabled: deps.weather.enabled, watched: deps.weather.watched(), known: deps.weather.known() } : null,
+    // The node that runs a heartbeat keeps the fleet's plan; every node measures itself.
+    compute: computeSnapshot(deps, true),
   };
+}
+
+function computeSnapshot(deps: LoopTaskDeps, adapts: boolean): SelfSnapshot["compute"] {
+  if (!deps.compute) return null;
+  const drift = deps.compute.planDrift();
+  return { canMeasure: deps.compute.canMeasure(), ...deps.compute.due(), adapts, planDigest: drift.digest, recordedDigest: drift.recorded };
+}
+
+/**
+ * A node's own upkeep of its compute, between heartbeats (at its start, and when its body changes): it
+ * measures itself when that's due. The same allowlist, checks, ledger and owner's switch as after a
+ * heartbeat; only the plan is left to the node that runs one.
+ */
+export async function computeUpkeep(deps: LoopTaskDeps): Promise<SelfActionOutcome[]> {
+  if (!deps.compute || !selfActionOn(deps.store).on) return [];
+  const snapshot = (): SelfSnapshot => ({ now: (deps.now ?? Date.now)(), sandboxes: null, loops: [], retried: [], weather: null, compute: computeSnapshot(deps, false) });
+  return selfAct(snapshot(), async () => snapshot(), selfHands(deps), (entry) => void deps.store.emit(deps.identity, "ledger.recorded", entry));
 }
 
 function selfHands(deps: LoopTaskDeps) {
@@ -239,6 +277,14 @@ function selfHands(deps: LoopTaskDeps) {
     refreshWeather: async () => {
       if (!deps.weather) throw new Error("no weather here");
       await deps.weather.refresh();
+    },
+    calibrate: async (why: "joined" | "changed") => {
+      if (!deps.compute) throw new Error("no compute here");
+      await deps.compute.calibrate(why, "his own upkeep");
+    },
+    adaptCompute: () => {
+      if (!deps.compute) throw new Error("no compute here");
+      return deps.compute.adapt();
     },
   };
 }
