@@ -314,6 +314,33 @@ describe("a late arrival replays whenever a replay could judge it differently", 
     store.rebuild();
     expect(store.digest()).toBe(live);
   });
+
+  test("a refused unchained (v1) event is no part of its node's chain: that node's later events don't replay", () => {
+    // Found by the review: a v1 refusal marked its node's chain as broken, so every later event
+    // of that node, in order or late, replayed the whole log.
+    const { b, full, replica, tick } = twoNodes();
+    const other = replica();
+    pull(full, other);
+    // One unchained (v1) event signed by b: an old binary, say. Refused, harmlessly.
+    tick();
+    const v1 = signEvent({ v: 1, fleet: full.fleet!, hlc: new HlcClock(() => Date.UTC(2026, 10, 1) + 5).tick(), device: b.id, kind: "memory.added", body: { text: "old binary" } } as never, b);
+    other.ingest([v1]);
+    expect(other.rejection(v1.id)).toMatch(/unchained/);
+    expect(other.db.query("SELECT device FROM v_chainbad").all()).toEqual([]);
+    // b's ordinary, in-order, chained events from then on are applied in place.
+    let replays = 0;
+    for (let i = 0; i < 5; i++) {
+      tick();
+      const event = full.emit(b, "ledger.recorded", { class: "read", resource: "t", target: `x${i}`, verdict: "allow" });
+      if (other.ingest([event]).rebuilt) replays++;
+    }
+    expect(replays).toBe(0);
+    // And a rebuild judges b's chain the same way.
+    const live = other.digest();
+    other.rebuild();
+    expect(other.digest()).toBe(live);
+    expect(other.db.query("SELECT device FROM v_chainbad").all()).toEqual([]);
+  });
 });
 
 describe("repairing a hole is paged", () => {

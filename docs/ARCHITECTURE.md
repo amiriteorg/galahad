@@ -109,7 +109,7 @@ Open-ended parts of an event (a loop's task, a connector's manifest, a call's ar
 | Each loop's latest slot | The view `v_slots`, a maximum kept as runs are applied |
 | Loop runs, the ledger | Indexes on `kind` and on loop runs by loop (`events_kind`, `events_loop`) |
 | Events already held | Skipped before their signature is checked (an id is its content's hash) |
-| A late ledger entry or loop run | Applied in place when a replay would decide it the same way: from a node enrolled before it and never revoked, extending its own chain after everything held of that device, and the chain has no refused event (`v_chainbad`). Anything else that arrives late still replays |
+| A late ledger entry or loop run | Applied in place when a replay would decide it the same way: from a node enrolled before it and never revoked, extending its own chain after everything held of that device, and the chain has no refused event (`v_chainbad`; a refused unchained event is in no chain and doesn't count). Anything else that arrives late still replays |
 | The state digest | Kept until the views change |
 
 | Operation (ms, median) | 5,000 events | 40,000 | 400,000 | 400,000, before |

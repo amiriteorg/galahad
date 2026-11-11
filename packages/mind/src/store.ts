@@ -75,6 +75,13 @@ const CHAIN = {
   afterInvalid: "follows an invalid event",
 } as const;
 
+/**
+ * The reasons that say a device's chain is broken (v_chainbad). A refused unchained (v1) event
+ * isn't in any chain: no v2 event can follow it (its predecessor would be missing), so it changes
+ * nothing a replay would decide about the device's later events.
+ */
+const CHAIN_BROKEN: string[] = [CHAIN.gap, CHAIN.early, CHAIN.fork, CHAIN.revoked, CHAIN.afterInvalid];
+
 /** Chain verdicts computed over the whole log before a replay (deterministic). */
 interface Validity {
   bad: Map<string, string>;
@@ -239,8 +246,8 @@ export class MindStore {
   private refillDerived(): void {
     this.db.exec("DELETE FROM v_chainbad");
     this.db
-      .query(`INSERT INTO v_chainbad (device) SELECT DISTINCT e.device FROM v_rejected r JOIN events e ON e.id = r.id WHERE r.reason IN (${Object.values(CHAIN).map(() => "?").join(", ")})`)
-      .run(...Object.values(CHAIN));
+      .query(`INSERT INTO v_chainbad (device) SELECT DISTINCT e.device FROM v_rejected r JOIN events e ON e.id = r.id WHERE r.reason IN (${CHAIN_BROKEN.map(() => "?").join(", ")})`)
+      .run(...CHAIN_BROKEN);
     this.db.exec("DELETE FROM v_slots");
     this.db.exec(
       `INSERT INTO v_slots (loop, device, slot)
@@ -650,7 +657,8 @@ export class MindStore {
     this.stateDigest = null;
     if (!late) this.setState("tail", { hlc: event.hlc, id: event.id });
     let reason = this.chainReason(event);
-    if (reason) this.db.query("INSERT OR IGNORE INTO v_chainbad (device) VALUES (?)").run(event.device);
+    // Only a v2 event's chain verdict marks its device (see CHAIN_BROKEN).
+    if (reason && event.v === 2) this.db.query("INSERT OR IGNORE INTO v_chainbad (device) VALUES (?)").run(event.device);
     // A chain-valid event advances its device's head even if it is later refused as unauthorized:
     // the chain records what the device *signed*, authorization what it was *allowed* to do.
     if (!reason && event.v === 2) this.setState(`head:${event.device}`, event.id);

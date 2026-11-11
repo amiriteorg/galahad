@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { b64u, decodeHlc, encodeHlc, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, signEvent } from "@galahad/core";
-import { enrollDevice, foundFleet, MindStore } from "../src/index.ts";
+import { adoptChains, enrollDevice, foundFleet, MindStore } from "../src/index.ts";
 
 /*
- * Review: convergence under misbehaving signers, with the new incremental paths ("late",
- * v_chainbad, v_slots) in play. Any delivery order and batching must give the state a
- * rebuild gives, including v_slots (lastSlot), which the digest doesn't cover.
+ * Convergence under misbehaving signers (written by the review of the incremental paths:
+ * "late", v_chainbad, v_slots), in a fleet chained from its founding and in one that adopted
+ * chains: forks, children dated before their parents, same-instant twins, a revoked node that
+ * keeps writing, a node that writes before its enrollment, unknown signers, unchained events.
+ * Any delivery order and batching must give the state a rebuild gives, including v_slots
+ * (lastSlot) and v_chainbad, which the digest doesn't cover. More seeds: REVIEW_SEEDS=60.
  */
 
 function rng(seed: number) {
@@ -28,15 +31,32 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return out;
 }
 
-function universe(seed: number, rounds = 220): { fleet: string; events: GEvent[] } {
+/**
+ * `legacy`: the fleet was founded before chains (v1 events, the owner's fleet among them) and
+ * adopted them, so an unchained event after that is refused for a reason of its own.
+ */
+function universe(seed: number, rounds = 220, legacy = false): { fleet: string; events: GEvent[] } {
   const random = rng(seed);
   let now = Date.UTC(2026, 10, 1);
   const nodes = Array.from({ length: 5 }, () => newNodeIdentity());
   const [a, b, c, d, e] = nodes as [NodeIdentity, NodeIdentity, NodeIdentity, NodeIdentity, NodeIdentity];
   const founder = new MindStore(":memory:", new HlcClock(() => now));
-  foundFleet(founder, a, { fleetName: "chaos", nodeName: "a" });
-  enrollDevice(founder, a, { device: b.id, name: "b", kind: "node", box: b64u(b.boxPublic) });
-  enrollDevice(founder, a, { device: c.id, name: "c", kind: "node", box: b64u(c.boxPublic) });
+  if (legacy) {
+    const clock = new HlcClock(() => now);
+    const v1 = (signer: NodeIdentity, kind: string, body: unknown, fleet: string) =>
+      signEvent({ v: 1, fleet, hlc: clock.tick(), device: signer.id, kind, body } as never, signer);
+    const genesis = v1(a, "fleet.genesis", { name: "chaos", created: 1 }, "");
+    founder.expectFleet(genesis.id);
+    const enroll = (node: NodeIdentity, name: string) =>
+      v1(a, "device.enrolled", { device: node.id, name, kind: "node", role: "full", box: b64u(node.boxPublic), scopes: [] }, genesis.id);
+    founder.ingest([genesis, enroll(a, "a"), enroll(b, "b"), enroll(c, "c")]);
+    founder.ingest([v1(b, "memory.added", { text: "legacy b" }, genesis.id), v1(c, "memory.added", { text: "legacy c" }, genesis.id)]);
+    adoptChains(founder, a);
+  } else {
+    foundFleet(founder, a, { fleetName: "chaos", nodeName: "a" });
+    enrollDevice(founder, a, { device: b.id, name: "b", kind: "node", box: b64u(b.boxPublic) });
+    enrollDevice(founder, a, { device: c.id, name: "c", kind: "node", box: b64u(c.boxPublic) });
+  }
   for (const [node, name] of [[a, "backup"], [b, "heartbeat"], [c, "poll"]] as const) {
     founder.emit(a, "loop.set", { name, schedule: "every 30m", on: node.id, enabled: true, task: { kind: "heartbeat" } });
   }
@@ -120,6 +140,11 @@ function universe(seed: number, rounds = 220): { fleet: string; events: GEvent[]
         keep(ev);
       } else if (k < 0.88) {
         keep(signEvent({ v: 2, fleet: store.fleet!, hlc: encodeHlc({ ms: now, counter: 0 }), device: e.id, prev: null, kind: "memory.added", body: { text: `e ${round}` } } as never, e));
+      } else if (k < 0.9) {
+        // An unchained (v1) event, from an old binary say: refused, and no part of the node's chain.
+        const v1 = signEvent({ v: 1, fleet: store.fleet!, hlc: encodeHlc({ ms: now, counter: 3 }), device: node.id, kind: "ledger.recorded", body: { class: "read", resource: "v1", target: `v${round}`, verdict: "allow" } } as never, node);
+        store.ingest([v1]);
+        keep(v1);
       }
     } catch {
       /* an emit the writer's own replica refused (a forked writer, say) */
@@ -158,10 +183,15 @@ function snapshot(store: MindStore) {
   };
 }
 
-describe("review: convergence with misbehaving signers", () => {
-  for (let seed = 1; seed <= Number(process.env.REVIEW_SEEDS ?? 12); seed++) {
-    test(`PROPERTY seed ${seed}: any order and batching gives what a rebuild gives`, () => {
-      const { fleet, events } = universe(seed);
+describe("convergence with misbehaving signers", () => {
+  const seeds = Number(process.env.REVIEW_SEEDS ?? 12);
+  const cases = [
+    ...Array.from({ length: seeds }, (_, i) => ({ seed: i + 1, legacy: false })),
+    ...Array.from({ length: Math.ceil(seeds / 2) }, (_, i) => ({ seed: 1000 + i, legacy: true })),
+  ];
+  for (const { seed, legacy } of cases) {
+    test(`PROPERTY seed ${seed}${legacy ? " (a fleet that adopted chains)" : ""}: any order and batching gives what a rebuild gives`, () => {
+      const { fleet, events } = universe(seed, 220, legacy);
       const random = rng(seed * 7919);
       const reference = new MindStore(":memory:");
       reference.expectFleet(fleet);

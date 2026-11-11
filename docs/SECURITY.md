@@ -63,7 +63,7 @@ Every replica must reach the same state from the same events, whatever the order
 - A gap's child dated before the event that later filled the gap kept the reason "predecessor missing", where a rebuild says "dated before its own predecessor".
 - What a revoked node signed after its revocation, arriving in order, was refused as "signer is not an active device", where a rebuild says "written after the device was revoked" (its pinned head).
 
-Since then, a device whose chain holds a refused event, and a revoked device, have every later event judged by a replay. **Residual cost:** a stolen key that keeps writing makes each of its events cost a replay, as backdated ones already did.
+Since then, a device whose chain holds a refused event, and a revoked device, have every later event judged by a replay. A refused unchained (v1) event is in no chain (nothing chained can follow it), so it doesn't mark its node: the review of this work found that one would have made every later event of that node replay the whole log (`packages/mind/test/log.test.ts`; the property tests in `packages/mind/test/misbehaving.test.ts` cover unchained events, in a fleet chained from its founding and in one that adopted chains). **Residual cost:** a stolen key that keeps writing makes each of its events cost a replay, as backdated ones already did.
 
 ## Loops, connectors and approvals (tested)
 
