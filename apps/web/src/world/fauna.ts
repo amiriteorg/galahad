@@ -1,336 +1,349 @@
-import { abs, cos, float, instanceIndex, positionGeometry, positionLocal, sin, time, uniform, vec3 } from "three/tsl";
-import {
-  AdditiveBlending,
-  BoxGeometry,
-  BufferGeometry,
-  ConeGeometry,
-  DynamicDrawUsage,
-  type Group,
-  IcosahedronGeometry,
-  InstancedMesh,
-  Matrix4,
-  MeshBasicNodeMaterial,
-  MeshLambertNodeMaterial,
-  OctahedronGeometry,
-  Quaternion,
-  TetrahedronGeometry,
-  Vector3,
-} from "three/webgpu";
+import { AdditiveBlending, DynamicDrawUsage, type Group, InstancedMesh, Matrix4, MeshBasicNodeMaterial, Quaternion, TetrahedronGeometry, Vector3 } from "three/webgpu";
 import { type Build, BUILDS, type Mover, type Solids } from "./collide.ts";
-import { headingToSceneYaw } from "./coords.ts";
-import { at, Mesher } from "./mesher.ts";
-import { Boids, type Ground, MAX_SLOPE, moveOnGround, Particles, rng, slideOnGround } from "./physics.ts";
-import { WATER_LEVEL } from "./terrain.ts";
+import type { Sky } from "./daynight.ts";
+import { type Habitat } from "./eco/habitat.ts";
+import { Insects } from "./eco/insects.ts";
+import { MESHES, type MeshName, Poser } from "./eco/pose.ts";
+import { Ecosystem, emptyEnv } from "./eco/sim.ts";
+import * as S from "./eco/species.ts";
+import { type Caps, KIND_COUNT, KINDS, SPECS } from "./eco/species.ts";
+import { type EcoSummary, emptySummary, labelOf, summarise, summaryText } from "./eco/summary.ts";
+import { EcoView } from "./eco/view.ts";
+import { BENCH, DESK_LANTERN, POLE } from "./hearth-plan.ts";
+import { type Ground, MAX_SLOPE, moveOnGround, Particles, rng, slideOnGround } from "./physics.ts";
+import { type SeasonChoice, seasonFor, seasonState } from "./season.ts";
+import { groundAt, type Layer, SEED } from "./terrain.ts";
 import type { Tier } from "./tiers.ts";
+import type { WeatherState } from "./weather.ts";
 
 /*
- * Life around the keep: a flock of birds (boids, on the CPU: a few dozen birds
- * cost less than a compute pass), deer and rabbits that wander and graze,
- * steering round water, steep ground, the keep's lawn and the plots, ducks on the
- * lakes, fireflies at dusk, and sparks and exhaust as ballistic particles. Each
- * kind is one instanced mesh; the CPU writes matrices into pooled objects, nothing
- * is allocated per frame. All of it is procedural. Among the solids the deer,
- * rabbits and ducks are circles that slide round trees and rocks and keep out
- * of each other's (and Galahad's) way.
+ * Life in the SANDBOX: the ecosystem (eco/: every animal an agent with needs,
+ * on land that grows what it eats; see eco/sim.ts), drawn (eco/view.ts), and
+ * joined to the world it lives in: the land as it's drawn, the trees and
+ * flowers that really grow on it, the solids, the real sun and weather, and
+ * Galahad and his dog. Also the sparks and exhaust (ballistic particles), which
+ * have always lived here.
+ *
+ * A frame: the simulation steps (decisions twice a second an animal, staggered;
+ * in between they only move), the pose is written straight into the instanced
+ * meshes' arrays, and that's all. Nothing is allocated; each kind is one draw
+ * call, and none while nobody of it is in sight.
  */
+
+/** As much of the land as the ecosystem asks of it (the scene's Land). */
+export interface Country {
+  /** The chunks that are grown: where each is, and what grows on it. */
+  readonly list: readonly { cx: number; cy: number; samples: { layers: Partial<Record<Layer, Float64Array>> } }[];
+}
+
+/** Someone the animals notice: where they are (world metres). */
+export interface Passer {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** What the dog's side is told of something to chase. */
+export interface Quarry {
+  x: number;
+  y: number;
+  /** What it is ("hare", "squirrel", "mallard", "songbird"). */
+  kind: string;
+  slot: number;
+}
+
+/** How the walkers of the ecosystem are built, among the solids (collide.ts' BUILDS has the deer, the rabbit and the duck). */
+const WALKERS: Partial<Record<number, Build>> = {
+  [S.ROE]: BUILDS.deer,
+  [S.HARE]: BUILDS.rabbit,
+  [S.FOX]: { r: 0.3, height: 0.9, step: 0.2, mass: 9 },
+  [S.HEDGEHOG]: { r: 0.17, height: 0.3, step: 0.06, mass: 1 },
+  [S.SQUIRREL]: { r: 0.14, height: 0.4, step: 0.2, mass: 1 },
+  [S.MALLARD]: BUILDS.duck,
+  [S.SWAN]: { r: 0.45, height: 1.2, step: 0.05, mass: 12 },
+};
+/** Beyond this far from the view an animal walks the open ground, without the solids (nobody sees it brush a trunk). */
+const CLOSE = 75;
 
 const m = new Matrix4();
 const q = new Quaternion();
 const v = new Vector3();
 const s = new Vector3();
-const UP = new Vector3(0, 1, 0);
 
-function instanced(geometry: BufferGeometry, material: MeshLambertNodeMaterial | MeshBasicNodeMaterial, count: number, root: Group): InstancedMesh {
-  const mesh = new InstancedMesh(geometry, material, Math.max(1, count));
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-  mesh.count = 0;
-  mesh.frustumCulled = false;
-  root.add(mesh);
-  return mesh;
+/** A tier's caps as the ecosystem counts them. */
+export function capsOf(tier: Tier): Caps {
+  const w = tier.wild;
+  return { roe: tier.deer, hare: tier.rabbits, fox: w.fox, hedgehog: w.hedgehog, squirrel: w.squirrel, mallard: tier.ducks, swan: w.swan, heron: w.heron, fish: w.fish, songbird: tier.birds, swallow: w.swallow, starling: w.starling, goose: w.goose, kestrel: w.kestrel, owl: w.owl, bat: w.bat, insects: w.insects, fireflies: tier.fireflies };
 }
 
-/** A bird: a body and two wings that flap in the vertex shader (span along local x). */
-function birdGeometry(): BufferGeometry {
-  const g = new Mesher().add(new BoxGeometry(0.1, 0.08, 0.34), 0x5d6577, at(0, 0, 0)).add(new ConeGeometry(0.05, 0.1, 4), 0xf0b35a, at(0, 0, 0.22, 0, 1, Math.PI / 2), 0);
-  // Wings: two flat triangles each side.
-  g.triangles([0.04, 0, 0.1, 0.55, 0, -0.05, 0.04, 0, -0.1, 0.04, 0, -0.1, 0.55, 0, -0.05, 0.04, 0, 0.1], 0x7c879c);
-  g.triangles([-0.04, 0, 0.1, -0.04, 0, -0.1, -0.55, 0, -0.05, -0.04, 0, -0.1, -0.04, 0, 0.1, -0.55, 0, -0.05], 0x7c879c);
-  return g.build();
-}
-
-const deerGeometry = (): BufferGeometry =>
-  new Mesher()
-    .add(new BoxGeometry(0.42, 0.42, 1.05), 0xc58a5a, at(0, 0.95, 0))
-    .add(new BoxGeometry(0.2, 0.42, 0.22), 0xc58a5a, at(0, 1.3, 0.48, 0, 1, -0.35))
-    .add(new BoxGeometry(0.22, 0.22, 0.34), 0xcf9666, at(0, 1.55, 0.62))
-    .add(new BoxGeometry(0.08, 0.08, 0.08), 0x2d2a28, at(0, 1.55, 0.8), 0)
-    .add(new ConeGeometry(0.05, 0.32, 3), 0xe9dcc4, at(0.1, 1.82, 0.58, 0, 1, -0.2, 0.3), 0)
-    .add(new ConeGeometry(0.05, 0.32, 3), 0xe9dcc4, at(-0.1, 1.82, 0.58, 0, 1, -0.2, -0.3), 0)
-    .add(new BoxGeometry(0.1, 0.78, 0.1), 0xa87048, at(0.14, 0.39, 0.38))
-    .add(new BoxGeometry(0.1, 0.78, 0.1), 0xa87048, at(-0.14, 0.39, 0.38))
-    .add(new BoxGeometry(0.1, 0.78, 0.1), 0xa87048, at(0.14, 0.39, -0.38))
-    .add(new BoxGeometry(0.1, 0.78, 0.1), 0xa87048, at(-0.14, 0.39, -0.38))
-    .add(new BoxGeometry(0.16, 0.14, 0.1), 0xf3ead8, at(0, 1.06, -0.55), 0)
-    .build();
-
-const rabbitGeometry = (): BufferGeometry =>
-  new Mesher()
-    .add(new IcosahedronGeometry(0.17, 0), 0xb9ab9a, at(0, 0.17, 0, 0, [1, 0.9, 1.3]))
-    .add(new IcosahedronGeometry(0.11, 0), 0xc4b6a4, at(0, 0.3, 0.17))
-    .add(new BoxGeometry(0.04, 0.2, 0.05), 0xc4b6a4, at(0.04, 0.46, 0.14, 0, 1, -0.2), 0)
-    .add(new BoxGeometry(0.04, 0.2, 0.05), 0xc4b6a4, at(-0.04, 0.46, 0.14, 0, 1, -0.2), 0)
-    .add(new IcosahedronGeometry(0.05, 0), 0xf6f1ea, at(0, 0.2, -0.22), 0)
-    .build();
-
-const duckGeometry = (): BufferGeometry =>
-  new Mesher()
-    .add(new IcosahedronGeometry(0.17, 0), 0xf1ede2, at(0, 0.08, 0, 0, [1, 0.7, 1.45]))
-    .add(new IcosahedronGeometry(0.1, 0), 0x3f8a5c, at(0, 0.24, 0.18))
-    .add(new ConeGeometry(0.035, 0.09, 4), 0xf2a93b, at(0, 0.23, 0.3, 0, 1, Math.PI / 2), 0)
-    .build();
-
-interface Herd {
-  mesh: InstancedMesh;
-  /** Where each one is, and its radius among the solids (0 while it's away). */
-  at: { x: number; y: number; r: number }[];
-  build: Build;
-  /** Each one's place among the solids, once joined. */
-  movers: Mover[];
-  heading: Float64Array;
-  /** Seconds left in the current state; state 0 grazes, 1 walks. */
-  timer: Float32Array;
-  state: Uint8Array;
-  phase: Float32Array;
-  active: Uint8Array;
-  speed: number;
-  hop: number;
-  water: boolean;
+/** How many instances each mesh needs for a set of caps (the grown ones, their young, and the birds two kinds share). */
+export function roomOf(eco: Ecosystem, caps: Caps): Record<MeshName, number> {
+  const slots = (k: number): number => eco.first[k + 1]! - eco.first[k]!;
+  const room = {} as Record<MeshName, number>;
+  for (const name of MESHES) room[name] = 0;
+  for (let k = 0; k < KIND_COUNT; k++) {
+    const name = KINDS[k]!;
+    if (k === S.SONGBIRD || k === S.STARLING) room.bird += slots(k);
+    else room[name as MeshName] = slots(k);
+  }
+  room.ring = slots(S.FISH) || slots(S.MALLARD) || slots(S.SWAN) ? 12 : 0;
+  room.insect = caps.insects;
+  room.firefly = caps.fireflies;
+  return room;
 }
 
 export class Fauna {
-  private readonly birds: Boids;
-  private readonly birdMesh: InstancedMesh;
-  private readonly herds: Herd[];
-  private readonly fireflies: InstancedMesh;
-  private readonly fireflyOpacity = uniform(0);
-  private readonly fireflyAnchors: Float64Array;
-  private fireflyCentre = { x: Number.NaN, y: Number.NaN };
+  /** The ecosystem itself: the simulation, and the insects. */
+  readonly eco: Ecosystem;
+  readonly insects: Insects;
+  private readonly view: EcoView;
+  private readonly poser: Poser;
+  private readonly env = emptyEnv();
+  /** Each walker's place among the solids (a radius of 0 while it's away, in the air or out of sight), its mover, and its build. */
+  private readonly circles: ({ x: number; y: number; r: number } | null)[];
+  private readonly movers: (Mover | null)[];
+  private joined = false;
+  private readonly summed: EcoSummary = emptySummary();
+  /** A season to look at instead of the date's (tours: `__sandboxEco.season`), and what a tour reads. */
+  private seasonChoice: SeasonChoice | null = null;
+  private readonly trace: { ms: number; calls: number; triangles: number; instances: number } | null = null;
+  private readonly stat = { calls: 0, triangles: 0 };
+  private clock = 0;
+
   readonly particles: Particles;
   private readonly sparks: InstancedMesh;
+  private readonly sparkMaterial: MeshBasicNodeMaterial;
   private readonly random = rng(23);
-  private readonly scratch = { x: 0, y: 0 };
-  private readonly materials: (MeshLambertNodeMaterial | MeshBasicNodeMaterial)[] = [];
-  private readonly flap = uniform(1);
-  /** Ducks keep to the water. */
-  private readonly water: Ground = { height: (x, y) => this.ground.height(x, y), blocked: (x, y) => this.ground.height(x, y) > WATER_LEVEL - 0.3 };
 
   constructor(
     root: Group,
     tier: Tier,
     private readonly ground: Ground,
+    /** The land's own account of what grows where (trees to roost in, flowers to work); without it there are neither. */
+    country: Country | null = null,
   ) {
-    this.birds = new Boids(tier.birds, 5);
-    const birdMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
-    const i = float(instanceIndex);
-    birdMaterial.positionNode = positionLocal.add(vec3(0, abs(positionGeometry.x).mul(sin(time.mul(13).add(i.mul(1.7)))).mul(0.55).mul(this.flap), 0));
-    this.birdMesh = instanced(birdGeometry(), birdMaterial, tier.birds, root);
-
-    const animal = new MeshLambertNodeMaterial({ vertexColors: true });
-    const herd = (geometry: BufferGeometry, n: number, speed: number, hop: number, water: boolean, build: Build): Herd => ({
-      mesh: instanced(geometry, animal, n, root),
-      at: Array.from({ length: n }, () => ({ x: 0, y: 0, r: 0 })),
-      build,
-      movers: [],
-      heading: new Float64Array(n),
-      timer: new Float32Array(n),
-      state: new Uint8Array(n),
-      phase: new Float32Array(n),
-      active: new Uint8Array(n),
-      speed,
-      hop,
-      water,
+    const caps = capsOf(tier);
+    // The land as the ecosystem sees it: the ground as it's drawn, and the trees and flowers that really grow there.
+    const chunk = (cx: number, cy: number, layer: Layer): Float64Array | null => {
+      if (!country) return null;
+      const list = country.list;
+      for (let i = 0; i < list.length; i++) if (list[i]!.cx === cx && list[i]!.cy === cy) return list[i]!.samples.layers[layer] ?? null;
+      return null;
+    };
+    const habitat: Habitat = {
+      height: (x, y) => ground.height(x, y),
+      blocked: (x, y) => ground.blocked(x, y),
+      kind: (x, y, h) => groundAt(SEED, x, y, h, 0),
+      trees: (cx, cy) => chunk(cx, cy, "trees"),
+      flowers: (cx, cy) => chunk(cx, cy, "flowers"),
+    };
+    this.eco = new Ecosystem(habitat, { caps, seed: 0x5eed, reach: tier.wild.reach });
+    this.insects = new Insects(habitat, caps.insects, caps.fireflies, 0x1b);
+    this.view = new EcoView(root, roomOf(this.eco, caps), tier.shadows);
+    this.poser = new Poser(this.eco, this.insects);
+    this.circles = Array.from({ length: this.eco.n }, () => null);
+    this.movers = Array.from({ length: this.eco.n }, () => null);
+    // The lanterns of his camp and the bench by the lake: where the moths come, and the bats after them.
+    const gz = (p: { x: number; y: number }): number => ground.height(p.x, p.y);
+    const lanterns: [number, number, number][] = [
+      [POLE.x + 0.38, POLE.y, gz(POLE) + POLE.lantern + 0.03],
+      [DESK_LANTERN.x, DESK_LANTERN.y, gz(DESK_LANTERN) + DESK_LANTERN.z],
+      [BENCH.x + BENCH.half + 0.35, BENCH.y, gz(BENCH) + 1.7],
+    ];
+    lanterns.forEach((l, i) => {
+      this.insects.lights.set(l, i * 3);
+      this.eco.wings.lights.set(l, i * 3);
     });
-    this.herds = [herd(deerGeometry(), tier.deer, 1.3, 0.03, false, BUILDS.deer), herd(rabbitGeometry(), tier.rabbits, 2.6, 0.22, false, BUILDS.rabbit), herd(duckGeometry(), tier.ducks, 0.5, 0, true, BUILDS.duck)];
-
-    const glow = new MeshBasicNodeMaterial({ color: 0xe8ff8a, transparent: true, depthWrite: false, blending: AdditiveBlending });
-    glow.fog = false;
-    glow.opacityNode = this.fireflyOpacity.mul(sin(time.mul(3.1).add(i.mul(5.3))).mul(0.45).add(0.55));
-    glow.positionNode = positionLocal.add(vec3(sin(time.mul(0.7).add(i.mul(1.7))), sin(time.mul(1.3).add(i.mul(2.1))).mul(0.4), cos(time.mul(0.6).add(i.mul(1.1)))).mul(1.3));
-    this.fireflies = instanced(new OctahedronGeometry(0.06, 0), glow, tier.fireflies, root);
-    this.fireflyAnchors = new Float64Array(tier.fireflies * 2);
+    this.insects.lightCount = this.eco.wings.lightCount = lanterns.length;
 
     this.particles = new Particles(tier.particles);
-    const spark = new MeshBasicNodeMaterial({ color: 0xffb056, transparent: true, depthWrite: false, blending: AdditiveBlending });
-    this.sparks = instanced(new TetrahedronGeometry(0.07, 0), spark, tier.particles, root);
-    this.materials.push(birdMaterial, animal, glow, spark);
+    this.sparkMaterial = new MeshBasicNodeMaterial({ color: 0xffb056, transparent: true, depthWrite: false, blending: AdditiveBlending });
+    this.sparks = new InstancedMesh(new TetrahedronGeometry(0.07, 0), this.sparkMaterial, Math.max(1, tier.particles));
+    this.sparks.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.sparks.count = 0;
+    this.sparks.frustumCulled = false;
+    root.add(this.sparks);
+
+    // The page's `?trace=1`: what a tour reads (globalThis.__sandboxEco), and a season to look at.
+    if (typeof location !== "undefined" && /[?&]trace=1(&|$)/.test(location.search)) {
+      const trace = { ms: 0, calls: 0, triangles: 0, instances: 0 };
+      this.trace = trace;
+      const eco = this.eco;
+      (globalThis as { __sandboxEco?: unknown }).__sandboxEco = {
+        /** Who's about now, with counts and what most are doing; births, deaths, comings and goings so far. */
+        summary: () => {
+          const sum = this.summary();
+          return { ...sum, lines: sum.lines.map((l) => ({ ...l })), text: summaryText(sum) };
+        },
+        /** A sample of animals: what each is, where, and what it's doing. */
+        sample: (n = 24) => {
+          const out: { slot: number; label: string; x: number; y: number; z: number; speed: number; energy: number }[] = [];
+          for (let i = 0; i < eco.n && out.length < n; i++) {
+            if (eco.alive[i] && eco.shown[i]! > 0.5) out.push({ slot: i, label: labelOf(eco, i), x: eco.x[i]!, y: eco.y[i]!, z: this.poser.drawnY[i]!, speed: eco.speed[i]!, energy: eco.energy[i]! / SPECS[eco.kind[i]!]!.reserve });
+          }
+          return out;
+        },
+        /** Where the first of a kind is (to point the view at it): null when there's none. */
+        find: (kind: string, doing = "") => {
+          const k = (KINDS as readonly string[]).indexOf(kind);
+          if (k < 0) return null;
+          for (let i = eco.first[k]!; i < eco.first[k + 1]!; i++) {
+            if (eco.alive[i] && eco.shown[i]! > 0.5 && (!doing || labelOf(eco, i).includes(doing))) return { slot: i, label: labelOf(eco, i), x: eco.x[i]!, y: eco.y[i]!, z: this.poser.drawnY[i]! };
+          }
+          return null;
+        },
+        /** A season to look at ("winter", "spring", "summer", "autumn"), or "live" for the date's. */
+        season: (choice: SeasonChoice | null) => void (this.seasonChoice = choice),
+        /** How in step the fireflies are, 0..1. */
+        inStep: () => this.insects.inStep(),
+        /** Milliseconds a frame the ecosystem costs here (a running mean), its draw calls, triangles and instances now. */
+        cost: () => ({ ...trace }),
+        startle: (x: number, y: number, r: number) => this.startle(x, y, r),
+        eco,
+      };
+    }
   }
 
-  /** The deer, rabbits and ducks walk (and swim) among the world's solids from now on. */
+  /** The animals that walk (and the ducks and swans) are among the world's solids from now on: they go round trunks and rocks, and keep out of each other's and Galahad's way. */
   join(solids: Solids): void {
-    for (const herd of this.herds) {
-      const where = herd.water ? this.water : this.ground;
-      for (const at of herd.at) {
-        const m = solids.join(at, herd.build);
-        m.ground = (x, y) => (herd.water ? where.blocked(x, y) : !this.landOk(herd, where, x, y));
-        herd.movers.push(m);
+    const eco = this.eco;
+    for (let k = 0; k < KIND_COUNT; k++) {
+      const build = WALKERS[k];
+      if (!build) continue;
+      const afloat = SPECS[k]!.realm === S.WATER;
+      for (let i = eco.first[k]!; i < eco.first[k + 1]!; i++) {
+        const at = { x: 0, y: 0, r: 0 };
+        const mover = solids.join(at, build);
+        // (Nothing pushes one where it couldn't go itself.)
+        mover.ground = afloat ? (x, y) => eco.shore.blocked(x, y) : (x, y) => eco.land.blocked(x, y);
+        this.circles[i] = at;
+        this.movers[i] = mover;
       }
+    }
+    eco.walk = (slot, x, y, heading, step, out) => {
+      const land = SPECS[eco.kind[slot]!]!.realm === S.LAND;
+      const where = land ? eco.land : eco.shore;
+      const mover = this.movers[slot];
+      // Near the view, among the solids; far off, on the open ground.
+      if (mover && mover.at.r > 0 && Math.abs(x - eco.env.fx) < CLOSE && Math.abs(y - eco.env.fy) < CLOSE) return slideOnGround(mover, where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
+      return moveOnGround(where, x, y, heading, step, out, land ? MAX_SLOPE : Infinity);
+    };
+    this.joined = true;
+  }
+
+  /**
+   * Steps the ecosystem and the particles and writes what's drawn (relative to the floating origin). `focus` is
+   * where the view looks: the range is round it. The sky and the weather are the world's; Galahad and his dog are
+   * noticed. Returns true when anything is visible and moving.
+   */
+  step(dt: number, focusX: number, focusY: number, origin: [number, number], sky: Sky, weather: WeatherState, galahad: Passer | null, dog: Passer | null, motion: boolean): boolean {
+    const started = this.trace ? performance.now() : 0;
+    const eco = this.eco;
+    const env = this.env;
+    if (this.seasonChoice) seasonFor(this.seasonChoice, Date.now(), seasonState);
+    env.season = seasonState;
+    env.night = sky.night;
+    // The twilights: either side of the sun's setting and rising, and a little of the golden hour before.
+    env.twilight = Math.max(0, 1 - Math.abs(sky.night - 0.45) / 0.45, 0.5 * sky.golden * (1 - sky.night));
+    env.evening = sky.evening;
+    env.lamps = sky.lamps;
+    env.rain = Math.max(weather.rain, weather.snow);
+    env.storm = weather.storm;
+    env.wind = weather.wind;
+    env.windHeading = weather.windHeading;
+    env.fx = focusX;
+    env.fy = focusY;
+    env.gx = galahad ? galahad.x : Number.NaN;
+    env.gy = galahad ? galahad.y : Number.NaN;
+    env.dx = dog ? dog.x : Number.NaN;
+    env.dy = dog ? dog.y : Number.NaN;
+    if (this.joined) this.pulled();
+    if (motion) {
+      eco.step(dt, env);
+      this.insects.step(dt, env, eco.midges);
+      this.clock += dt;
+    } else {
+      eco.still(env);
+      this.insects.still();
+    }
+    if (this.joined) this.pushed();
+    const drawn = this.poser.write(this.view.batches, origin[0], origin[1], this.ground.height, this.clock, seasonState);
+    this.view.commit(1 - sky.night);
+    this.stepParticles(motion ? dt : 0, origin);
+    if (this.trace) {
+      this.trace.ms += (performance.now() - started - this.trace.ms) * 0.05;
+      this.view.stats(this.stat);
+      this.trace.calls = this.stat.calls;
+      this.trace.triangles = this.stat.triangles;
+      this.trace.instances = drawn;
+    }
+    return motion && drawn > 0;
+  }
+
+  /** What the solids did to the walkers since last frame (someone heavier pushed one aside): taken up. */
+  private pulled(): void {
+    const eco = this.eco;
+    for (let i = 0; i < eco.n; i++) {
+      const at = this.circles[i];
+      if (!at || at.r === 0) continue;
+      if (at.x !== eco.x[i] || at.y !== eco.y[i]) {
+        eco.x[i] = at.x;
+        eco.y[i] = at.y;
+      }
+    }
+  }
+
+  /** Where each walker is now, for the solids: on the ground and in sight it's a circle, else it's away. */
+  private pushed(): void {
+    const eco = this.eco;
+    for (let i = 0; i < eco.n; i++) {
+      const at = this.circles[i];
+      if (!at) continue;
+      if (!eco.alive[i] || eco.air[i] || eco.shown[i]! < 0.5 || eco.going[i]) {
+        at.r = 0;
+        continue;
+      }
+      const k = eco.kind[i]!;
+      at.x = eco.x[i]!;
+      at.y = eco.y[i]!;
+      at.r = WALKERS[k]!.r * (0.5 + 0.5 * eco.sizeOf(i, SPECS[k]!));
     }
   }
 
   /**
-   * Steps every creature and writes their matrices (relative to the floating
-   * origin). `focus` is where the camera looks; things too far from it come back
-   * near it. Returns true when anything is visible and moving.
+   * The animal under the pointer, for a hover label ("Roe deer · grazing"): the ray's origin and direction in the
+   * scene, the floating origin, and where to put the label (x, y, and how far above the ground there), into `out`.
    */
-  step(dt: number, focusX: number, focusY: number, origin: [number, number], night: number, dusk: number, motion: boolean): boolean {
-    const ground = this.ground;
-    if (!motion) {
-      this.flap.value = 0;
-      this.birdMesh.visible = false;
-      this.fireflies.visible = false;
-      for (const h of this.herds) {
-        h.mesh.visible = false;
-        // Hidden, they're in nobody's way.
-        for (const at of h.at) at.r = 0;
-      }
-      this.sparks.visible = false;
-      return false;
-    }
-    this.flap.value = 1;
-    this.stepBirds(dt, focusX, focusY, origin, night);
-    for (const herd of this.herds) this.stepHerd(herd, dt, focusX, focusY, origin, ground, night);
-    this.stepFireflies(focusX, focusY, origin, ground, dusk);
-    this.stepParticles(dt, origin);
-    return true;
+  hover(ray: { origin: { x: number; y: number; z: number }; direction: { x: number; y: number; z: number } }, origin: readonly [number, number], out: [number, number, number]): string | null {
+    const slot = this.poser.pick(origin[0], origin[1], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
+    if (slot < 0) return null;
+    const eco = this.eco;
+    const spec = SPECS[eco.kind[slot]!]!;
+    out[0] = eco.x[slot]!;
+    out[1] = eco.y[slot]!;
+    out[2] = this.poser.drawnY[slot]! - this.ground.height(out[0], out[1]) + spec.tall * eco.sizeOf(slot, spec) + 0.25;
+    return labelOf(eco, slot);
   }
 
-  private stepBirds(dt: number, fx: number, fy: number, origin: [number, number], night: number): void {
-    const b = this.birds;
-    if (!b.count) return;
-    // Far from the flock's home (the camera flew off): bring them along.
-    const hx = fx + 30;
-    const hy = fy + 20;
-    if (Math.hypot(hx - b.home.x, hy - b.home.y) > 250) b.shift(hx - b.home.x, hy - b.home.y);
-    b.home.x = hx;
-    b.home.y = hy;
-    b.home.z = 26;
-    b.step(dt);
-    const mesh = this.birdMesh;
-    mesh.visible = night < 0.6;
-    for (let i = 0; i < b.count; i++) {
-      const k = i * 3;
-      const vx = b.vel[k]!;
-      const vy = b.vel[k + 1]!;
-      v.set(b.pos[k]! - origin[0], b.pos[k + 2]!, -(b.pos[k + 1]! - origin[1]));
-      q.setFromAxisAngle(UP, headingToSceneYaw(Math.atan2(vy, vx)));
-      s.setScalar(1.2);
-      m.compose(v, q, s);
-      mesh.setMatrixAt(i, m);
-    }
-    mesh.count = b.count;
-    mesh.instanceMatrix.needsUpdate = true;
+  /**
+   * For the dog: the nearest small animal within `r` metres of (x, y) that it might give a short chase (a hare, a
+   * squirrel on the ground, a duck ashore, a bird feeding on the ground), into `out`. False: nothing to chase.
+   * Nothing is allocated.
+   */
+  nearestSmall(x: number, y: number, r: number, out: Quarry): boolean {
+    return this.eco.nearestSmall(x, y, r, out);
   }
 
-  private landOk(herd: Herd, ground: Ground, x: number, y: number): boolean {
-    const h = ground.height(x, y);
-    return herd.water ? h < WATER_LEVEL - 0.3 : !ground.blocked(x, y) && h > WATER_LEVEL + 0.3;
+  /** A fright at (x, y): everything within `r` metres runs, flies up, takes to the water or dives (a bark, a thrown ball landing). */
+  startle(x: number, y: number, r: number): void {
+    this.eco.startle(x, y, r);
   }
 
-  private stepHerd(herd: Herd, dt: number, fx: number, fy: number, origin: [number, number], ground: Ground, night: number): void {
-    const n = herd.at.length;
-    const reach = herd.water ? 160 : 120;
-    let shown = 0;
-    // Water birds keep to the water; land animals to the land (the ground's `blocked`).
-    const where = herd.water ? this.water : ground;
-    for (let i = 0; i < n; i++) {
-      const at = herd.at[i]!;
-      const mover = herd.movers[i];
-      if (herd.active[i] && Math.hypot(at.x - fx, at.y - fy) > reach * 1.3) {
-        herd.active[i] = 0;
-        at.r = 0;
-      }
-      if (!herd.active[i]) {
-        // Try a few spots near the focus; come back next frame if none suits.
-        for (let tries = 0; tries < 4; tries++) {
-          const a = this.random() * Math.PI * 2;
-          const r = 25 + this.random() * (reach - 25);
-          const x = fx + Math.cos(a) * r;
-          const y = fy + Math.sin(a) * r;
-          if (!this.landOk(herd, ground, x, y)) continue;
-          // Not inside a trunk or a rock, nor in another's way.
-          if (mover?.solids.overlaps(x, y, herd.build.r + 0.1, mover.step, mover.height)) continue;
-          at.x = x;
-          at.y = y;
-          at.r = herd.build.r;
-          herd.heading[i] = this.random() * Math.PI * 2;
-          herd.timer[i] = 1 + this.random() * 4;
-          herd.state[i] = 0;
-          herd.active[i] = 1;
-          break;
-        }
-        if (!herd.active[i]) continue;
-      }
-      at.r = herd.build.r;
-      herd.timer[i] = herd.timer[i]! - dt;
-      if (herd.timer[i]! <= 0) {
-        // Rabbits and deer rest more at night.
-        herd.state[i] = this.random() < (night > 0.5 ? 0.25 : 0.55) ? 1 : 0;
-        herd.timer[i] = herd.state[i] ? 2 + this.random() * 4 : 3 + this.random() * 6;
-      }
-      let moving = false;
-      if (herd.state[i]) {
-        herd.heading[i] = herd.heading[i]! + (this.random() - 0.5) * 1.6 * dt;
-        const slope = herd.water ? Infinity : MAX_SLOPE;
-        const taken = mover ? slideOnGround(mover, where, at.x, at.y, herd.heading[i]!, herd.speed * dt, this.scratch, slope) : moveOnGround(where, at.x, at.y, herd.heading[i]!, herd.speed * dt, this.scratch, slope);
-        if (taken === null) {
-          herd.heading[i] = herd.heading[i]! + Math.PI * (0.5 + this.random());
-        } else {
-          herd.heading[i] = taken;
-          at.x = this.scratch.x;
-          at.y = this.scratch.y;
-          moving = true;
-        }
-      }
-      herd.phase[i] = herd.phase[i]! + dt * (moving ? 9 : 1.5);
-      const z = herd.water ? WATER_LEVEL + 0.02 * Math.sin(herd.phase[i]!) : ground.height(at.x, at.y);
-      const bob = moving ? Math.abs(Math.sin(herd.phase[i]!)) * herd.hop : 0;
-      v.set(at.x - origin[0], z + bob, -(at.y - origin[1]));
-      q.setFromAxisAngle(UP, headingToSceneYaw(herd.heading[i]!));
-      s.setScalar(1);
-      m.compose(v, q, s);
-      herd.mesh.setMatrixAt(shown++, m);
-    }
-    herd.mesh.count = shown;
-    herd.mesh.visible = shown > 0;
-    herd.mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  private stepFireflies(fx: number, fy: number, origin: [number, number], ground: Ground, dusk: number): void {
-    const n = this.fireflyAnchors.length / 2;
-    this.fireflyOpacity.value = dusk;
-    this.fireflies.visible = dusk > 0.02 && n > 0;
-    if (!this.fireflies.visible) return;
-    const c = this.fireflyCentre;
-    const moved = !(Math.hypot(fx - c.x, fy - c.y) < 40);
-    if (moved) {
-      c.x = fx;
-      c.y = fy;
-      for (let i = 0; i < n; i++) {
-        const a = this.random() * Math.PI * 2;
-        const r = 6 + this.random() * 40;
-        this.fireflyAnchors[i * 2] = fx + Math.cos(a) * r;
-        this.fireflyAnchors[i * 2 + 1] = fy + Math.sin(a) * r;
-      }
-    }
-    for (let i = 0; i < n; i++) {
-      const x = this.fireflyAnchors[i * 2]!;
-      const y = this.fireflyAnchors[i * 2 + 1]!;
-      v.set(x - origin[0], Math.max(ground.height(x, y), WATER_LEVEL) + 0.8 + (i % 5) * 0.25, -(y - origin[1]));
-      m.makeTranslation(v.x, v.y, v.z);
-      this.fireflies.setMatrixAt(i, m);
-    }
-    this.fireflies.count = n;
-    this.fireflies.instanceMatrix.needsUpdate = true;
+  /**
+   * Who's about now: each kind in sight with how many, how many young, and what most are doing; and the births,
+   * deaths and comings and goings since the page opened. The same object every time (ask as often as you like).
+   */
+  summary(): EcoSummary {
+    return summarise(this.eco, this.insects, this.summed);
   }
 
   private stepParticles(dt: number, origin: [number, number]): void {
@@ -370,15 +383,18 @@ export class Fauna {
 
   /** The instanced meshes sit at the floating origin (their instances are relative to it). */
   place(originScene: Vector3): void {
-    for (const mesh of [this.birdMesh, this.fireflies, this.sparks, ...this.herds.map((h) => h.mesh)]) mesh.position.copy(originScene);
+    this.view.place(originScene);
+    this.sparks.position.copy(originScene);
   }
 
   dispose(): void {
-    for (const mesh of [this.birdMesh, this.fireflies, this.sparks, ...this.herds.map((h) => h.mesh)]) {
-      mesh.removeFromParent();
-      mesh.geometry.dispose();
-      mesh.dispose();
-    }
-    for (const material of this.materials) material.dispose();
+    this.view.dispose();
+    this.sparks.removeFromParent();
+    this.sparks.geometry.dispose();
+    this.sparks.dispose();
+    this.sparkMaterial.dispose();
+    if (this.trace) delete (globalThis as { __sandboxEco?: unknown }).__sandboxEco;
   }
 }
+
+export type { EcoSummary };

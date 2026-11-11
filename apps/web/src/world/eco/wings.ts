@@ -107,7 +107,7 @@ export class Wings {
           eco.air[i] = 1;
           eco.doing[i] = S.PERCH;
         }
-        const sitting = eco.doing[i] === S.PERCH || d === S.ROOST;
+        const sitting = eco.doing[i] === S.PERCH || d === S.ROOST || (k === S.SONGBIRD && d === S.PECK);
         eco.shown[i] = sitting ? 1 : 0;
         eco.lie[i] = 1;
         eco.amount[i] = 0;

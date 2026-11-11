@@ -41,6 +41,8 @@ export interface Tier {
   /** Microducks, the little biped duck robots round the keep. */
   microducks: number;
   fireflies: number;
+  /** The rest of the ecosystem's cast (eco/species.ts), the most of each at once; the reach of its range round the view, metres. */
+  wild: Wild;
   particles: number;
   /** Cheap point lights at night (the forge first). */
   lights: number;
@@ -80,6 +82,29 @@ export interface Tier {
   post: PostEffects;
 }
 
+/**
+ * The wild animals a tier has beyond its birds (songbirds), deer (roe), rabbits (hares), ducks (mallards) and
+ * fireflies: grown ones of each at most (0: that kind isn't there on this tier, nor its mesh).
+ */
+export interface Wild {
+  fox: number;
+  hedgehog: number;
+  squirrel: number;
+  swan: number;
+  heron: number;
+  fish: number;
+  swallow: number;
+  starling: number;
+  goose: number;
+  kestrel: number;
+  owl: number;
+  bat: number;
+  /** Bumblebees, butterflies, dragonflies, mayflies and moths together. */
+  insects: number;
+  /** How far round the view's focus the range reaches, metres. */
+  reach: number;
+}
+
 export const TIERS: Record<TierName, Tier> = {
   low: {
     name: "low",
@@ -99,6 +124,7 @@ export const TIERS: Record<TierName, Tier> = {
     ducks: 3,
     microducks: 6,
     fireflies: 16,
+    wild: { fox: 1, hedgehog: 0, squirrel: 1, swan: 0, heron: 1, fish: 4, swallow: 0, starling: 24, goose: 5, kestrel: 1, owl: 0, bat: 2, insects: 20, reach: 100 },
     particles: 96,
     lights: 1,
     radius: 200,
@@ -134,6 +160,7 @@ export const TIERS: Record<TierName, Tier> = {
     ducks: 5,
     microducks: 9,
     fireflies: 40,
+    wild: { fox: 1, hedgehog: 1, squirrel: 2, swan: 2, heron: 1, fish: 8, swallow: 5, starling: 70, goose: 9, kestrel: 1, owl: 1, bat: 4, insects: 60, reach: 115 },
     particles: 192,
     lights: 2,
     radius: 280,
@@ -169,6 +196,7 @@ export const TIERS: Record<TierName, Tier> = {
     ducks: 8,
     microducks: 14,
     fireflies: 80,
+    wild: { fox: 2, hedgehog: 2, squirrel: 4, swan: 2, heron: 1, fish: 16, swallow: 10, starling: 160, goose: 13, kestrel: 1, owl: 1, bat: 8, insects: 140, reach: 130 },
     particles: 384,
     lights: 3,
     radius: 380,

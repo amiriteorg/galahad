@@ -370,7 +370,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return false;
     },
   };
-  const fauna = new Fauna(worldRoot, tier, wildGround);
+  const fauna = new Fauna(worldRoot, tier, wildGround, land);
   const plots = new Plots(colors, shadows, fauna);
   const duckGround: Ground = {
     height,
@@ -891,7 +891,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let hoverUntil = 0;
   let hoverShown = false;
   function probe(clientX: number, clientY: number): string | null {
-    if (!groundUnder(clientX, clientY)) return null;
+    // (Over the sky there's no ground under the pointer, but there may be a bird.)
+    if (!groundUnder(clientX, clientY)) return fauna.hover(raycaster.ray, origin, hoverPoint);
     const x = hit.x + origin[0];
     const y = -hit.z + origin[1];
     // His dog first: its name (once it has one) and its battery.
@@ -907,7 +908,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const name = place.hover?.(x, y, hoverPoint);
       if (name) return name;
     }
-    return null;
+    // An animal: what it is and what it's doing ("Roe deer · grazing").
+    return fauna.hover(raycaster.ray, origin, hoverPoint);
   }
   function placeHover(): void {
     const text = performance.now() < hoverUntil ? probe(hoverAt[0], hoverAt[1]) : null;
@@ -1398,8 +1400,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         fauna.sparksAt(anvil[0], anvil[1], anvil[2], 3);
       }
     }
-    const dusk = Math.min(1, skyState.night * 1.4) * (skyState.evening > 0.5 ? 1 : 0.4) * (1 - weather.state.rain);
-    fauna.step(renderDt, rig.x, rig.y, origin, skyState.night, dusk, motion);
+    fauna.step(renderDt, rig.x, rig.y, origin, skyState, weather.state, walker, dog, motion);
     galahadLead.x = walker.x;
     galahadLead.y = walker.y;
     galahadLead.heading = walker.heading;
