@@ -116,7 +116,11 @@ async function refreshKept(api: Api): Promise<void> {
     if (mine) current = { id: mine.id, title: mine.title, project: mine.project, bank: mine.bank, pinned: mine.pinned };
     for (const fn of keptChanged) fn();
   } catch {
-    /* a node without chat history yet: chats still work, unkept */
+    // A node without chat history yet (or out of reach): chats still work; no recent ones to show.
+    if (kept === null) {
+      kept = [];
+      for (const fn of keptChanged) fn();
+    }
   }
 }
 
@@ -875,7 +879,10 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   }
 
   function recentChats(): HTMLElement | null {
-    if (!kept?.length || temporary) return null;
+    if (temporary) return null;
+    // Until your chats arrive, their place is held (the welcome above them doesn't jump).
+    if (kept === null && canChat) return h("div", { class: "recent-chats", "aria-hidden": "true" }, h("div", { class: "tiny subtle" }, " "), h("div", { class: "card" }, skeletonRows(4, { avatar: true })));
+    if (!kept?.length) return null;
     const recent = (startIn ? kept.filter((c) => c.project === startIn) : kept).slice(0, 4);
     if (!recent.length) return null;
     return h("div", { class: "recent-chats" }, h("div", { class: "tiny subtle" }, startIn ? `Recent in ${projectName(startIn)}` : "Recent"), h("div", { class: "card" }, h("div", { class: "rows" }, ...recent.map((c) => chatRow(c, () => {})))), button("All chats", { variant: "ghost", size: "sm", icon: "clock", onClick: () => openHistory() }));

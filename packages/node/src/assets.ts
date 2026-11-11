@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { brotli, gzip, pickEncoding } from "./compress.ts";
 
 /** The PWA, bundled in memory at daemon start so every node serves the same app it runs. */
 
@@ -52,23 +52,6 @@ function prepare(asset: Asset): Prepared {
   const bytes = typeof asset.body === "string" ? new TextEncoder().encode(asset.body) : asset.body;
   // Weak: the same file, whichever encoding carried it.
   return { etag: `W/"${createHash("sha256").update(bytes).digest("base64url").slice(0, 27)}"`, bytes: bytes as Uint8Array<ArrayBuffer> };
-}
-
-/** The encoding to send, from the browser's Accept-Encoding: brotli, else gzip, else none. */
-export function pickEncoding(accept: string | null): "br" | "gzip" | null {
-  const offered = new Map(
-    (accept ?? "")
-      .toLowerCase()
-      .split(",")
-      .map((part) => {
-        const [name, ...params] = part.trim().split(";");
-        const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
-        return [name!.trim(), q ? Number(q.slice(2)) : 1] as const;
-      }),
-  );
-  if ((offered.get("br") ?? 0) > 0) return "br";
-  if ((offered.get("gzip") ?? 0) > 0) return "gzip";
-  return null;
 }
 
 /** Does If-None-Match name this version (weak comparison, as RFC 9110 has it for GET)? */
@@ -165,11 +148,11 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
       if (holds(request?.headers.get("if-none-match") ?? null, ready.etag)) return new Response(null, { status: 304, headers });
       const encoding = compressible ? pickEncoding(request?.headers.get("accept-encoding") ?? null) : null;
       if (encoding === "br") {
-        ready.br ??= new Uint8Array(brotliCompressSync(ready.bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9, [constants.BROTLI_PARAM_SIZE_HINT]: ready.bytes.length } }));
+        ready.br ??= brotli(ready.bytes, 9);
         return new Response(ready.br, { headers: { ...headers, "content-encoding": "br" } });
       }
       if (encoding === "gzip") {
-        ready.gzip ??= new Uint8Array(gzipSync(ready.bytes, { level: 9 }));
+        ready.gzip ??= gzip(ready.bytes, 9);
         return new Response(ready.gzip, { headers: { ...headers, "content-encoding": "gzip" } });
       }
       return new Response(ready.bytes, { headers });

@@ -492,8 +492,8 @@ function placementPlayground(ctx: Ctx, scope: Scope): HTMLElement {
 
 export const fleetView: View = (root, ctx, { scope, opts }) => {
   const admin = ctx.can("fleet:admin");
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(92), skeletonBlock(92), skeletonBlock(92));
-  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(180), skeletonBlock(180));
+  const stats = h("div", { class: "grid stats" }, skeletonBlock(110), skeletonBlock(110), skeletonBlock(110));
+  const nodesBox = h("div", { class: "grid wide" }, skeletonBlock(240), skeletonBlock(240));
   const clientsBox = h("div", { class: "card" });
   const revokedBox = h("div");
   const errorBox = h("div");

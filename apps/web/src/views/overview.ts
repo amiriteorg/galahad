@@ -15,7 +15,7 @@ import { openAddKey, vaultChanged } from "./vault.ts";
 /* Home: is everything well, does anything need me, what has Galahad been doing. */
 
 export const overviewView: View = (root, ctx, { scope }) => {
-  const stats = h("div", { class: "grid stats" }, skeletonBlock(96), skeletonBlock(96), skeletonBlock(96), skeletonBlock(96));
+  const stats = h("div", { class: "grid stats" }, skeletonBlock(110), skeletonBlock(110), skeletonBlock(110), skeletonBlock(110));
   const health = h("div", { class: "card" }, skeletonRows(2, { avatar: true }));
   const recent = h("div", { class: "card" }, skeletonRows(4));
   const autonomyBox = h("div", {}, autonomyCard(null));

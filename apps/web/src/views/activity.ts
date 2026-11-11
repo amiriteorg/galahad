@@ -93,11 +93,16 @@ export function autonomyCard(entries: LedgerEntry[] | null): HTMLElement {
   );
 }
 
+const PAGE = 60;
+
 export const activityView: View = (root, ctx, { scope }) => {
   let entries: LedgerEntry[] = [];
   let signature = "";
+  /** How many rows are drawn: a page at a time, so a long ledger stays light on a phone. */
+  let limit = PAGE;
   const filter: LedgerFilter = { classes: new Set(), verdict: "all", query: "" };
-  const timeline = h("div", { class: "card" }, skeletonRows(6));
+  // As tall as a screenful of rows, so nothing below it jumps when they arrive.
+  const timeline = h("div", { class: "card" }, skeletonRows(12));
   const autonomyBox = h("div", {}, autonomyCard(null));
   const countLabel = h("span", { class: "count-label tnum" });
   const search = h("input", { class: "input", type: "search", placeholder: "Search activity", "aria-label": "Search activity", autocomplete: "off", spellcheck: "false" });
@@ -158,6 +163,7 @@ export const activityView: View = (root, ctx, { scope }) => {
         filter.classes.clear();
         filter.verdict = "all";
       }
+      limit = PAGE;
       render();
     },
   });
@@ -193,7 +199,7 @@ export const activityView: View = (root, ctx, { scope }) => {
     }
     const nodes: HTMLElement[] = [];
     let day = "";
-    for (const entry of list) {
+    for (const entry of list.slice(0, limit)) {
       const ms = hlcMs(entry.hlc) ?? 0;
       if (dayKey(ms) !== day) {
         day = dayKey(ms);
@@ -201,8 +207,29 @@ export const activityView: View = (root, ctx, { scope }) => {
       }
       nodes.push(ledgerItem(ctx, entry));
     }
+    const more = list.length - limit;
     // Opened details and keyboard focus stay where they were.
-    keepPlace(timeline, () => replace(timeline, h("div", { class: "timeline" }, ...nodes)));
+    keepPlace(timeline, () =>
+      replace(
+        timeline,
+        h("div", { class: "timeline" }, ...nodes),
+        more > 0
+          ? h(
+              "div",
+              { class: "card-foot", style: "justify-content:center" },
+              button(`Show ${Math.min(more, PAGE)} more`, {
+                variant: "ghost",
+                icon: "chevron-down",
+                label: `Show ${Math.min(more, PAGE)} more (${more} not shown)`,
+                onClick: () => {
+                  limit += PAGE;
+                  render();
+                },
+              }),
+            )
+          : null,
+      ),
+    );
   }
 
   async function load(): Promise<void> {
@@ -238,6 +265,7 @@ export const activityView: View = (root, ctx, { scope }) => {
 
   const renderSoon = debounce(() => {
     filter.query = search.value;
+    limit = PAGE;
     render();
   }, 120);
   search.addEventListener("input", renderSoon);
