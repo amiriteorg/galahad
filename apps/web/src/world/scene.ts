@@ -1,4 +1,5 @@
 import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
+import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
@@ -14,6 +15,7 @@ import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
 import { addPlants } from "./flora-plan.ts";
 import { ProvingGround } from "./field.ts";
+import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { HALL } from "./hall-plan.ts";
@@ -103,6 +105,8 @@ export interface WorldOptions {
   forceWebGL?: boolean;
   /** The weather at first sight (it's there at once, not eased into). */
   weather?: WeatherKind;
+  /** The chalkboard was tapped: the page opens it. */
+  onBoard?(): void;
 }
 
 export interface WorldStats {
@@ -141,6 +145,8 @@ export interface WorldHandle {
   stats(): WorldStats;
   /** Where things are now, written into `out` (nothing is allocated). */
   where(out: WorldWhere): WorldWhere;
+  /** The chalkboard's state, for its face (drawn again only when this is called). */
+  setBoard(board: BoardView | null): void;
   dispose(): void;
 }
 
@@ -272,7 +278,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   glows.set("landmarks", landmarks.windows, 0xffc27a);
   // The built places beyond the keep: the proving ground and the workshop hall.
   const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
-  const places: Place[] = [new ProvingGround(placeContext), new Workshop(placeContext)];
+  // The chalkboard at the observatory (board.ts): his writing and yours, and where he goes to write.
+  const chalkboard = new Chalkboard(placeContext);
+  const places: Place[] = [new ProvingGround(placeContext), new Workshop(placeContext), chalkboard];
+  chalkboard.onStand = () => model && retarget(model);
   solids.add(KEEP_COLLIDERS);
   solids.add(SITE_COLLIDERS, (x, y) => land.heightAt(x, y));
   places.forEach((place, i) => {
@@ -588,7 +597,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   rain.setHallFloor(groundAt(HALL.x, HALL.y));
   let walkKey = "";
   function retarget(m: WorldModel): void {
-    const target = targetFor(m.galahad, m.experiments);
+    // Something to write on the chalkboard comes first; then his station.
+    const target = chalkboard.stand() ?? targetFor(m.galahad, m.experiments);
     const key = `${m.galahad.station}|${m.galahad.experiment}|${target.x.toFixed(2)},${target.y.toFixed(2)}`;
     if (key === walkKey) return;
     walkKey = key;
@@ -650,6 +660,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       dirty = true;
     },
     tap(clientX, clientY) {
+      // The chalkboard opens where you can draw on it.
+      if (groundUnder(clientX, clientY) && chalkboard.hover(hit.x + origin[0], -hit.z + origin[1], hoverPoint)) {
+        options.onBoard?.();
+        return;
+      }
       // A Microduck or an arm under the finger: say what it is (for a moment) rather than select.
       if (probe(clientX, clientY)) {
         hoverAt[0] = clientX;
@@ -1024,6 +1039,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
     knightState.bench = g?.station === "forge";
     attend();
+    // At the chalkboard, writing: his hand at the chalk, not busy at the station's work.
+    knightState.writing = !walker.moving && chalkboard.hand(attention);
     const gz = groundAt(walker.x, walker.y);
     // Characters sit in the world root at their absolute place (only instanced things are origin-relative).
     knight.root.position.set(walker.x, gz, -walker.y);
@@ -1133,6 +1150,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const prev = model;
       model = next;
       if (event?.type === "frame") plots.push(event.frame, event.at, performance.now());
+      if (event?.type === "board") chalkboard.boardChanged(event, !reduced());
       if (!prev || prev.experiments !== next.experiments) {
         if (plots.sync(next.experiments, next.frames)) dirty = true;
         const key = next.experiments.map((e) => `${e.plot.x},${e.plot.y},${e.plot.size}`).join("|");
@@ -1249,6 +1267,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     aimWeather(target, snap = false) {
       weather.aim(target);
       if (snap) weather.snap(heavens.sunElevation * DEG, heavens.evening);
+      dirty = true;
+    },
+    setBoard(board) {
+      chalkboard.setBoard(board);
       dirty = true;
     },
     where(out) {

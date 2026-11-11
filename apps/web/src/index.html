@@ -1119,6 +1119,49 @@
         .world-corner { flex-direction: row; align-items: center; }
         .world-controls { grid-template-columns: repeat(4, auto); }
       }
+
+      /* ---------- the chalkboard: a page of its own, and a sheet over the SANDBOX ---------- */
+      .shell[data-route="board"] { height: 100vh; height: 100dvh; min-height: 0; }
+      .shell[data-route="board"] .main-col { min-height: 0; }
+      .shell[data-route="board"] main.view {
+        display: flex; flex-direction: column; min-height: 0;
+        padding: var(--sp-3) calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-2)) calc(var(--sp-3) + var(--safe-left));
+      }
+      @media (min-width: 960px) { .shell[data-route="board"] main.view { padding: var(--sp-4) var(--sp-6) var(--sp-5); } }
+      .board-page { flex: 1; min-height: 0; gap: var(--sp-3); width: 100%; margin: 0; }
+      .board-head h1 { font-size: var(--fs-20); }
+      @media (max-width: 639px) { .board-head .lede { display: none; } }
+      .board { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+      .board-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+      .board-swatches, .board-history { display: flex; gap: 4px; }
+      .chalk-swatch { width: var(--control-h-sm); height: var(--control-h-sm); border-radius: var(--r-full); border: 1px solid var(--border-strong); background: #2f3b36; display: grid; place-items: center; padding: 0; cursor: pointer; }
+      .chalk-swatch > span { width: 60%; height: 60%; border-radius: var(--r-full); background: var(--chalk); }
+      .chalk-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+      .chalk-swatch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus); }
+      .board-tools .btn[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
+      .board-stage { position: relative; flex: 1; min-height: 240px; overflow: hidden; border-radius: var(--r-lg); background: #4a3a2c; border: 1px solid var(--border); touch-action: none; outline: none; cursor: crosshair; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+      .board-stage[data-tool="duster"] { cursor: cell; }
+      .board-stage:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
+      .board-layers { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+      .board-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .board-foot { display: flex; align-items: center; gap: var(--sp-2); min-height: 28px; }
+      .board-status { color: var(--text-3); }
+      .board-status[data-tone="warn"] { color: var(--warn); }
+      .board-list:not(.sr-only) { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); max-height: 38vh; overflow: auto; }
+      .board-item-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+      .board-item { border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+      .board-item .row { display: flex; align-items: center; gap: var(--sp-2); }
+      .board-item-text { color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+      dialog.sheet.full { width: min(1240px, calc(100vw - 32px)); height: min(860px, calc(100dvh - 32px)); max-height: none; }
+      dialog.sheet.full .sheet-body.board-sheet-body { flex: 1; min-height: 0; overflow: hidden; padding-top: 0; }
+      @media (max-width: 639px) {
+        dialog.sheet.full { width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; border: 0; padding-top: var(--safe-top); }
+        dialog.sheet.full .sheet-handle { display: none; }
+        dialog.sheet.full .sheet-head { padding: var(--sp-2) var(--sp-3); }
+        dialog.sheet.full .sheet-head .sub { display: none; }
+        dialog.sheet.full .sheet-body.board-sheet-body { padding: 0 var(--sp-2) var(--sp-2); }
+        .board-tools { gap: 6px; }
+      }
     </style>
   </head>
   <body>

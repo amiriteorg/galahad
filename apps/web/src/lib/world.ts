@@ -34,6 +34,8 @@ export interface WorldModel {
   notice: WorldNotice | null;
   /** Denmark's weather now, as the node says (null: unknown, or turned off there). */
   weather: WorldWeather | null;
+  /** The chalkboard's version as the node last said it (-1: not said; an older node). */
+  boardVersion: number;
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -45,6 +47,7 @@ export const emptyWorld = (): WorldModel => ({
   thoughts: [],
   notice: null,
   weather: null,
+  boardVersion: -1,
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -69,7 +72,7 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
   switch (event.type) {
     case "hello": {
       const { experiments, frames } = prune(dedupe(event.experiments), state.frames);
-      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null };
+      return { at, galahad: event.galahad, nodes: event.nodes, experiments, frames, thoughts: event.thoughts.slice(-MAX_THOUGHTS), notice: state.notice, weather: event.weather ?? null, boardVersion: event.board?.version ?? state.boardVersion };
     }
     case "galahad":
       return { ...state, at, galahad: event.galahad };
@@ -99,6 +102,8 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
       return { ...state, at, notice: { at: event.at, severity: event.severity, title: event.title } };
     case "weather":
       return { ...state, at, weather: event.weather };
+    case "board":
+      return { ...state, at, boardVersion: event.version };
     case "cleared": {
       if (!state.experiments.some((e) => e.id === event.experiment)) return state;
       const { [event.experiment]: _gone, ...frames } = state.frames;
@@ -294,8 +299,9 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       const experiments = readList(v.experiments, LIMITS.experiments, readExperiment);
       const thoughts = readList(v.thoughts, 64, (t) => (str(t) ? t : null));
       if (!(galahad && nodes && experiments && thoughts)) return null;
-      // Weather it can't read is unknown weather: never a reason to lose the world.
-      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null };
+      // Weather it can't read is unknown weather: never a reason to lose the world. The board's version, when the node says it.
+      const board = isObj(v.board) && num(v.board.version) && v.board.version >= 0 ? { board: { version: v.board.version } } : {};
+      return v.weather === undefined ? { type: "hello", at, galahad, nodes, experiments, thoughts, ...board } : { type: "hello", at, galahad, nodes, experiments, thoughts, weather: readWeather(v.weather) ?? null, ...board };
     }
     case "galahad": {
       const galahad = readGalahad(v.galahad);
@@ -319,6 +325,15 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       return typeof v.severity === "string" && SEVERITIES.has(v.severity) && str(v.title) ? { type: "notice", at, severity: v.severity as WorldNotice["severity"], title: v.title } : null;
     case "cleared":
       return id(v.experiment) ? { type: "cleared", at, experiment: v.experiment } : null;
+    case "board": {
+      // The chalkboard changed: its version, what kind of change, and where an item went (bounded to the board).
+      const change = v.change === "draw" || v.change === "write" || v.change === "erase" || v.change === "clear" ? v.change : null;
+      const by = v.by === "owner" || v.by === "agent" ? v.by : null;
+      const r = v.region;
+      const region = isObj(r) && num(r.x) && num(r.y) && num(r.w) && num(r.h) && r.x >= 0 && r.y >= 0 && r.w >= 0 && r.h >= 0 && r.x + r.w <= 1600 && r.y + r.h <= 900 ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
+      if (!num(v.version) || !change || !by || (r !== null && r !== undefined && !region)) return null;
+      return { type: "board", at, version: v.version, change, by, region };
+    }
     case "weather": {
       if (v.weather === null) return { type: "weather", at, weather: null };
       const weather = readWeather(v.weather);

@@ -26,6 +26,7 @@ import { toast } from "../ui/toast.ts";
 import { type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
 import { createWorldChat } from "./world-chat.ts";
 import { createLook } from "./world-look.ts";
+import { boardFeed, fetchBoard, openBoardSheet } from "./board.ts";
 import { FIELD, RUNWAY } from "../world/field-plan.ts";
 import { HALL } from "../world/hall-plan.ts";
 
@@ -43,7 +44,7 @@ import { HALL } from "../world/hall-plan.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 6;
+const WORLD_API = 7;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -217,8 +218,12 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
   setFollow(true);
 
-  /** Looks at what was picked in the selector: following Galahad, an experiment (its panel opens), a site or a station. */
+  /** Looks at what was picked in the selector: following Galahad, an experiment (its panel opens), a site or a station; the chalkboard opens. */
   function lookAt(target: LookTarget): void {
+    if (target.kind === "board") {
+      openBoard();
+      return;
+    }
     if (target.kind === "experiment") {
       setFollow(false);
       select(target.id);
@@ -439,10 +444,38 @@ export const worldView: View = (root, ctx, { scope }) => {
   let lastSummary = "";
   let summaryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ---------- the chalkboard: its face in the world, and the sheet you draw on ----------
+  const boardChanges = boardFeed();
+  let boardShown = -1;
+  let boardFetching = false;
+  /** The board's state to the world's face whenever its version moves (one fetch at a time; the latest wins). */
+  async function syncBoard(): Promise<void> {
+    if (boardFetching || model.boardVersion < 0 || model.boardVersion === boardShown || demoTimer) return;
+    boardFetching = true;
+    const want = model.boardVersion;
+    try {
+      const board = await fetchBoard(ctx, scope.signal);
+      boardShown = board?.version ?? want;
+      handle?.setBoard(board);
+    } catch {
+      /* the face keeps what it had; the next change tries again */
+    } finally {
+      boardFetching = false;
+    }
+    if (!scope.disposed && model.boardVersion !== boardShown) void syncBoard();
+  }
+  function openBoard(): void {
+    openBoardSheet(ctx, boardChanges);
+  }
+
   function apply(event: WorldEvent): void {
     const next = applyWorldEvent(model, event);
     if (next === model) return;
     model = next;
+    if (event.type === "board" || (event.type === "hello" && model.boardVersion >= 0)) {
+      boardChanges.announce(model.boardVersion);
+      void syncBoard();
+    }
     handle?.update(model, event);
     if ((event.type === "weather" || event.type === "hello") && weatherChoice === "live") {
       applyWeather();
@@ -698,6 +731,7 @@ export const worldView: View = (root, ctx, { scope }) => {
           updateLook();
         },
         onLost: (reason) => void lostDevice(reason),
+        onBoard: () => openBoard(),
       });
       if (scope.disposed) {
         mounted.dispose();
@@ -709,6 +743,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       note("start", `${s.backend} · ${s.tier} · dpr ${s.dpr}${restarts ? ` (restart ${restarts})` : ""}`);
       setTimeout(() => void sendReport(), 6000);
       handle.update(model, null);
+      // A new world (a restart) draws the board's face again.
+      boardShown = -1;
+      void syncBoard();
       handle.select(selected);
       handle.setFollow(following);
       handle.setTimeOfDay(timeChoice === "now" ? null : timeChoice);

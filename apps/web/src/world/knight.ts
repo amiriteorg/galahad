@@ -70,6 +70,8 @@ export interface KnightState {
   armed: boolean;
   /** At the lab's bench (he works there with the sword's tip). */
   bench: boolean;
+  /** Writing on the chalkboard: his right hand at the chalk (the attention point), in small strokes. */
+  writing?: boolean;
 }
 
 /** What he's attending to, in the world (z up), or nothing. */
@@ -144,6 +146,7 @@ export class Knight {
   private guard = 0;
   private bench = 0;
   private draw = 0;
+  private write = 0;
   private bow = 0;
   private wasMoving = false;
   private pelvisY = HIP_Y;
@@ -470,6 +473,7 @@ export class Knight {
       this.guard = s.armed && !s.bench ? 1 : 0;
       this.bench = s.armed && s.bench ? 1 : 0;
       this.draw = s.armed ? 1 : 0;
+      this.write = s.writing ? 1 : 0;
       this.feet.place(x, y, heading, ground);
       this.vx = this.vy = 0;
     } else {
@@ -482,7 +486,8 @@ export class Knight {
       this.think += ((still && s.thinking ? 1 : 0) - this.think) * e;
       this.guard += ((still && s.armed && !s.bench && !s.thinking ? 1 : 0) - this.guard) * e;
       this.bench += ((still && s.armed && s.bench ? 1 : 0) - this.bench) * e;
-      this.work += ((still && s.working && !s.thinking && !s.armed ? 1 : 0) - this.work) * e;
+      this.work += ((still && s.working && !s.thinking && !s.armed && !s.writing ? 1 : 0) - this.work) * e;
+      this.write += ((still && s.writing ? 1 : 0) - this.write) * e;
       this.draw = Math.max(0, Math.min(1, this.draw + (s.armed && still ? 1 : -1) * dt * 1.5));
       // The feet: a walk (long stance) or a run (flight between steps), the stride with the pace.
       this.feet.duty = 0.62 - 0.24 * runAmount;
@@ -686,6 +691,14 @@ export class Knight {
         this.t2.set(-1, 0, 0.3).normalize();
         blendDir(grip, this.t2, this.bench);
         curl += (0.25 - curl) * this.bench;
+      }
+      // The chalkboard: the right hand at the chalk on the slate, in small strokes as it writes.
+      if (i === 1 && look && this.write > 0.01) {
+        this.t1.copy(look).add(this.t2.set(Math.sin(t * 9) * 0.03, Math.sin(t * 13) * 0.012, -0.04));
+        blend(target, this.t1, this.write);
+        this.t2.set(0, 0.35, 1).normalize();
+        blendDir(grip, this.t2, this.write);
+        curl += (1.1 - curl) * this.write;
       }
       // The right hand and the sword: to the hilt and up into the armed pose, or back.
       if (i === 1) {
