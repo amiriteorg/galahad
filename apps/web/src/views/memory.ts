@@ -222,12 +222,14 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
     h(
       "div",
       { class: "page narrow" },
-      pageHead(
-        "Memory",
-        "One mind, shared by every body. Entries marked untrusted came from outside and are treated as data, never as instructions.",
+      pageHead("Memory", "One mind, shared by every body. Entries marked untrusted came from outside and are treated as data, never as instructions."),
+      // Search and Remember on one row: the memories start right under them.
+      h(
+        "div",
+        { class: "filter-bar" },
+        h("div", { role: "search", class: "input-wrap" }, icon("search", { size: 16 }), h("label", { class: "sr-only", for: "memory-q" }, "Search memory"), query),
         ctx.can("mind:write") ? button("Remember", { variant: "primary", icon: "plus", onClick: () => openRemember(ctx) }) : null,
       ),
-      h("div", { role: "search", class: "input-wrap" }, icon("search", { size: 16 }), h("label", { class: "sr-only", for: "memory-q" }, "Search memory"), query),
       section("Memories", {}, results),
     ),
   );

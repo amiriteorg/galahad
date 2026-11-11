@@ -1,7 +1,7 @@
 import type { BankStatusView } from "@galahad/core";
 import { isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { type BankCallback, budgetLabel, consentLeft } from "../lib/bank.ts";
+import { type BankCallback, budgetLabel, consentLeft, offReason } from "../lib/bank.ts";
 import { badge, busy, button, callout, empty, errorState, meter, pageHead, section, skeletonRows, switchControl } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
@@ -114,12 +114,14 @@ export const bankView: View = (root, ctx, { scope }) => {
             h("span", { class: "strong" }, s.aspsp ?? "Your bank"),
             s.problem ? badge("off", "danger", "alert") : connected ? badge("connected", "ok", "check") : badge(s.configured ? "not connected" : "not set up", "warn"),
           ),
-          h("p", { class: "small" }, s.message),
+          // Off: the node's reason, once, with what it means (not "off" three times over).
+          s.problem
+            ? callout("warn", [offReason(s.message), " Agents can't read the bank while it's off", admin ? h("span", {}, "; ", h("span", { class: "mono" }, "galahad bank status"), " on the node says more.") : "."], { title: "Bank access is off on this node" })
+            : h("p", { class: "small" }, s.message),
           connected && s.daysRemaining !== null
             ? h("div", { class: "stack tight" }, meter(consentLeft(s), s.daysRemaining > 14 ? "var(--ok)" : "var(--warn)", "Consent left"), h("span", { class: "tiny subtle" }, `${s.daysRemaining} day${s.daysRemaining === 1 ? "" : "s"} left, until ${new Date(s.validUntil!).toLocaleDateString()}`))
             : null,
-          s.problem && admin ? callout("warn", "Fix this on the node (galahad bank status shows the details there). Agents can't read the bank while it's off.", { title: "Bank access is off" }) : null,
-          !s.configured && admin ? callout("quiet", h("span", {}, "Set up on the node first: ", h("span", { class: "mono" }, "galahad bank setup --app-id … --key … --redirect-url …"), ". See docs/BANK.md.")) : null,
+          !s.configured && !s.problem && admin ? callout("quiet", h("span", {}, "Set up on the node first: ", h("span", { class: "mono" }, "galahad bank setup --app-id … --key … --redirect-url …"), ". See docs/BANK.md.")) : null,
           actions,
         ),
       ),
