@@ -125,6 +125,8 @@ export interface AppContext {
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
   fetch?: typeof fetch;
+  /** Aborted when the node stops: streams that would never end on their own (the world) end. */
+  shutdown?: AbortSignal;
 }
 
 interface Principal {
@@ -950,7 +952,7 @@ export function createApp(ctx: AppContext) {
           send(ctx.world.hello());
           const stop = ctx.world.watch(send);
           const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
-          req.signal.addEventListener("abort", () => {
+          const end = () => {
             stop();
             clearInterval(heartbeat);
             if (open) {
@@ -961,7 +963,10 @@ export function createApp(ctx: AppContext) {
                 /* already closed */
               }
             }
-          });
+          };
+          req.signal.addEventListener("abort", end);
+          if (ctx.shutdown?.aborted) end();
+          else ctx.shutdown?.addEventListener("abort", end);
         },
       });
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });

@@ -78,6 +78,8 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
 
 /** No request may make a node buffer more than this (Bun's default is about 128 MB). */
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
+/** How long a stopping node lets requests under way finish (a chat being answered) before it closes them. */
+const SHUTDOWN_GRACE_MS = 10_000;
 
 /** Publish this node's endpoint + capabilities, only when they changed (idempotent). */
 function publishProfile(store: MindStore, identity: NodeIdentity, endpoint: string, caps: Capabilities): void {
@@ -252,6 +254,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     },
   });
 
+  const shutdown = new AbortController();
   const app = createApp({
     identity,
     nodeName: config.name,
@@ -277,6 +280,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     chats,
     world,
     ledger,
+    shutdown: shutdown.signal,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 
@@ -349,19 +353,27 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     bank,
     world,
+    /**
+     * In order: take nothing new (stop listening; requests under way go on), start nothing
+     * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
+     * a while), and only then close what they write to.
+     */
     async stop() {
+      const finished = Promise.all(servers.map((s) => s.stop()));
+      shutdown.abort();
       clearInterval(outbox);
-      bank.close();
-      chats.close();
-      world.close();
-      weather.close();
-      await loops.stop();
-      await connectors.drain();
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
       stopPush();
       sync.stop();
+      world.close();
+      weather.close();
+      await loops.stop();
+      await connectors.drain();
+      await Promise.race([finished, Bun.sleep(SHUTDOWN_GRACE_MS)]);
       await Promise.all(servers.map((s) => s.stop(true)));
+      bank.close();
+      chats.close();
       local.close();
       store.close();
     },
