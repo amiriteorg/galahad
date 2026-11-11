@@ -10,11 +10,12 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DodecahedronGeometry,
+  Euler,
   Group,
   IcosahedronGeometry,
   Line,
   type Material,
-  type Matrix4,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshBasicNodeMaterial,
@@ -26,7 +27,7 @@ import {
   TorusGeometry,
 } from "three/webgpu";
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
-import { fleetSlot } from "./keep-plan.ts";
+import { fleetSlot, STAIRS, tread } from "./keep-plan.ts";
 import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
 import { pathSheen, puddleDarken } from "./wet.ts";
@@ -319,25 +320,27 @@ function buildKeep(p: Parts): void {
     octagon.push([Math.sin(a) * 6.15, Math.cos(a) * 6.15]);
   }
   railing(solid, octagon, D + 0.15, new Set([6]));
-  // Stairs: from the deck's south-west down towards the keep's door, with stringers, handrails and lanterns.
-  const top: [number, number] = [-5.4, 3.0];
-  const foot: [number, number] = [-1.6, 6.9];
-  const steps = 12;
-  const yaw = Math.atan2(foot[0] - top[0], foot[1] - top[1]);
-  const run = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
-  const pitch = Math.atan2(D, run);
-  for (let i = 0; i < steps; i++) {
-    const t = (i + 0.5) / steps;
-    solid.add(board(1.4, 0.09, 0.46), i % 2 ? C.wood : C.plank, at(top[0] + (foot[0] - top[0]) * t, D - D * t, top[1] + (foot[1] - top[1]) * t, yaw), 0.05);
+  // Stairs: from the deck's south-west down towards the keep's door, with stringers, handrails and lanterns (their
+  // measures, and their solids, are keep-plan.ts' STAIRS).
+  const S = STAIRS;
+  const { top, foot, yaw, pitch } = S;
+  for (let i = 0; i < S.steps; i++) {
+    const t = tread(i);
+    solid.add(board(S.tread.w, S.tread.t, S.tread.d), i % 2 ? C.wood : C.plank, at(t.x, t.top - S.tread.t / 2, t.z, yaw), 0.05);
   }
-  for (const side of [-0.74, 0.74]) {
+  // The stringers and handrails run down the stairs: turned to their way first, then pitched about their own
+  // across (yaw, then pitch: not `at`'s order, which would pitch them about the scene's x and slew them off the steps).
+  const along = (x: number, y: number, z: number): Matrix4 => new Matrix4().makeRotationFromEuler(new Euler(pitch, yaw, 0, "YXZ")).setPosition(x, y, z);
+  for (const side of [-S.side, S.side]) {
     const ox = Math.cos(yaw) * side;
     const oz = -Math.sin(yaw) * side;
-    solid.add(new BoxGeometry(0.1, 0.3, Math.hypot(run, D)), C.woodDark, at((top[0] + foot[0]) / 2 + ox, D / 2 - 0.1, (top[1] + foot[1]) / 2 + oz, yaw, 1, pitch), 0.03);
-    solid.add(new BoxGeometry(0.08, 0.08, Math.hypot(run, D)), C.wood, at((top[0] + foot[0]) / 2 + ox, D / 2 + 0.95, (top[1] + foot[1]) / 2 + oz, yaw, 1, pitch), 0.03);
-    for (let i = 0; i <= 4; i++) {
-      const t = i / 4;
-      solid.add(new BoxGeometry(0.08, 0.98, 0.08), C.woodDark, at(top[0] + (foot[0] - top[0]) * t + ox, D - D * t + 0.46, top[1] + (foot[1] - top[1]) * t + oz));
+    const mx = (top[0] + foot[0]) / 2 + ox;
+    const mz = (top[1] + foot[1]) / 2 + oz;
+    solid.add(new BoxGeometry(S.stringer.w, S.stringer.h, S.length), C.woodDark, along(mx, D / 2 + S.stringer.y, mz), 0.03);
+    solid.add(new BoxGeometry(S.rail.w, S.rail.h, S.length), C.wood, along(mx, D / 2 + S.rail.y, mz), 0.03);
+    for (let i = 0; i <= S.posts; i++) {
+      const t = i / S.posts;
+      solid.add(new BoxGeometry(0.08, S.post, 0.08), C.woodDark, at(top[0] + (foot[0] - top[0]) * t + ox, D - D * t + S.post / 2 - 0.03, top[1] + (foot[1] - top[1]) * t + oz));
     }
   }
   for (const side of [-1, 1]) {

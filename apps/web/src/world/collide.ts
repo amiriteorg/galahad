@@ -1336,6 +1336,16 @@ export class Solids {
       }
       if (!moved) break;
     }
+    // Solids have the last word: a push out of a heavier walker never leaves it inside one (it may still touch the
+    // walker, which separate() parts next).
+    for (let k = 0; k < this.count; k++) {
+      const i = this.found[k]!;
+      if (!this.blocks(i, step, height)) continue;
+      const depth = this.push(i, x, y, r);
+      if (depth <= 0) continue;
+      x += nX * (depth + SKIN / 2);
+      y += nY * (depth + SKIN / 2);
+    }
     out.x = x;
     out.y = y;
     return met;

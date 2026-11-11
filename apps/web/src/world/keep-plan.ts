@@ -76,32 +76,81 @@ function keep(): Collider[] {
     const c = [Math.sin(a) * 3.4, DECK - 0.9, Math.cos(a) * 3.4];
     out.push(f.box(c[0]!, c[2]!, 0.17, Math.hypot(v[0]!, v[2]!) + 0.15, c[1]! + Math.abs(v[1]!) + 0.2, c[1]! - Math.abs(v[1]!) - 0.2, Math.atan2(v[0]!, v[2]!)));
   }
-  // The stairs from the deck down to the keep's door, in three flights' worth of height, and a lantern each side of their foot.
-  // (Their stringers and handrails are drawn turned a few degrees off the steps, so the solid is a little wider than the steps.)
-  const top: [number, number] = [-5.4, 3.0];
-  const foot: [number, number] = [-1.6, 6.9];
-  const yaw = Math.atan2(foot[0] - top[0], foot[1] - top[1]);
-  const run = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
-  for (let k = 0; k < 3; k++) {
-    const t = (k + 0.5) / 3;
-    const lx = top[0] + (foot[0] - top[0]) * t;
-    const lz = top[1] + (foot[1] - top[1]) * t;
-    // Along the stairs, its x half is across them: the box's hx lies along local x turned by the stairs' yaw.
-    out.push(f.box(lx, lz, 0.82, run / 6 + 0.12, DECK * (1 - k / 3) + 1.1, 0, yaw));
-  }
-  // The stringers and handrails (keep.ts turns them by the stairs' yaw, then pitches them about the scene's x: they run along v).
-  const pitch = Math.atan2(DECK, run);
-  const vx = Math.sin(yaw);
-  const vz = Math.cos(pitch) * Math.cos(yaw);
-  const half = (Math.hypot(run, DECK) / 2) * Math.hypot(vx, vz);
-  for (const side of [-0.74, 0.74]) {
-    const lx = (top[0] + foot[0]) / 2 + Math.cos(yaw) * side;
-    const lz = (top[1] + foot[1]) / 2 - Math.sin(yaw) * side;
-    out.push(f.box(lx, lz, 0.1, half + 0.1, DECK + 0.3, 0, Math.atan2(vx, vz)));
-  }
-  for (const side of [-1, 1]) out.push(f.circle(foot[0] + Math.cos(yaw) * side * 0.9, foot[1] - Math.sin(yaw) * side * 0.9, 0.2, 2.1));
+  out.push(...STAIR_COLLIDERS);
   return out;
 }
+
+/**
+ * The stairs from the deck's south-west down towards the keep's door, as keep.ts draws them (the keep's frame, which
+ * is the scene's: x east, z south): twelve treads from `top` (the deck's edge) to `foot`, a stringer under a
+ * handrail each side, `side` metres from the middle, on posts. Everything about them comes from here.
+ */
+export const STAIRS = (() => {
+  const top: [number, number] = [-5.4, 3.0];
+  const foot: [number, number] = [-1.6, 6.9];
+  const run = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
+  return {
+    top,
+    foot,
+    run,
+    deck: DECK,
+    steps: 12,
+    /** The way down them (a yaw about the scene's y, keep.ts' `at` convention), and how steeply. */
+    yaw: Math.atan2(foot[0] - top[0], foot[1] - top[1]),
+    pitch: Math.atan2(DECK, run),
+    length: Math.hypot(run, DECK),
+    /** Each tread: across, thick, along. */
+    tread: { w: 1.4, t: 0.09, d: 0.46 },
+    side: 0.74,
+    /** The stringers' and handrails' cross-sections (wide, tall) and how far their middles are from the line of the treads' middles, up. */
+    stringer: { w: 0.1, h: 0.3, y: -0.1 },
+    rail: { w: 0.08, h: 0.08, y: 0.95 },
+    /** The posts under each handrail: this many gaps, each this tall. */
+    posts: 4,
+    post: 0.98,
+  };
+})();
+
+/** Tread i's middle (from the deck's end: 0 is the top) in the keep's frame, and how high its top is. */
+export function tread(i: number): { x: number; z: number; top: number } {
+  const t = (i + 0.5) / STAIRS.steps;
+  return {
+    x: STAIRS.top[0] + (STAIRS.foot[0] - STAIRS.top[0]) * t,
+    z: STAIRS.top[1] + (STAIRS.foot[1] - STAIRS.top[1]) * t,
+    top: STAIRS.deck * (1 - t) + STAIRS.tread.t / 2,
+  };
+}
+
+/**
+ * The stairs' solids, exactly as drawn: each tread a block from the ground to its top (what a walker stands on), and
+ * beside each, the stringer and handrail over it, from the stringer's underside to the handrail's top there (three
+ * to a tread, the tread first); and the lantern each side of their foot.
+ */
+export const STAIR_COLLIDERS: readonly Collider[] = (() => {
+  const f = frame("keep");
+  const S = STAIRS;
+  const out: Collider[] = [];
+  const along = S.run / S.steps / 2;
+  const cos = Math.cos(S.yaw);
+  const sin = Math.sin(S.yaw);
+  // The line of the treads' middles falls from the deck (s = 0) to the ground (s = 1); a stringer or rail of
+  // height h is h / cos(pitch) tall, seen straight up.
+  const line = (s: number) => S.deck * (1 - s);
+  const below = S.stringer.y - S.stringer.h / 2 / Math.cos(S.pitch);
+  const above = S.rail.y + S.rail.h / 2 / Math.cos(S.pitch);
+  for (let i = 0; i < S.steps; i++) {
+    const t = tread(i);
+    // Along the stairs, a box's own y (hy); across them, its x (hx), turned by the stairs' yaw.
+    out.push(f.box(t.x, t.z, S.tread.w / 2, S.tread.d / 2, t.top, 0, S.yaw));
+    const s0 = i / S.steps;
+    const s1 = (i + 1) / S.steps;
+    for (const side of [-S.side, S.side]) {
+      out.push(f.box(t.x + cos * side, t.z - sin * side, Math.max(S.stringer.w, S.rail.w) / 2, along, line(s0) + above, Math.max(0, line(s1) + below), S.yaw));
+    }
+  }
+  for (const side of [-1, 1]) out.push(f.circle(S.foot[0] + cos * side * 0.9, S.foot[1] - sin * side * 0.9, 0.2, 2.1));
+  return out;
+})();
 
 function council(): Collider[] {
   const f = frame("council");
