@@ -18,7 +18,8 @@ import { runMcpServer } from "./mcp.ts";
 import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
+import { boardLines } from "./board-cli.ts";
+import type { BankStatusView, BoardView, ConversationSummary, ConversationView, ExperimentView, ProjectView, WorldEvent, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
@@ -58,6 +59,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX; how it ran on your devices
+  board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -768,11 +770,34 @@ Next:
         else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
         else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
         else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
+        else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
         say(event as WorldEvent);
         if (!flags.follow) return;
       }
+      return;
+    }
+
+    case "board": {
+      // The chalkboard in words: what Galahad and your agents wrote, and your drawing. `board clear` takes it all off.
+      const admin = new Admin(home);
+      if (sub === "clear") {
+        if (!flags.yes && !confirm("Clear the chalkboard (your drawing and everything written on it) for good?")) return;
+        await admin.call("boardClear", {});
+        console.log("Cleared. The board is clean on every device that has it open.");
+        return;
+      }
+      if (sub) fail("usage: galahad board | galahad board clear [-y]");
+      const { head, items, drawing } = boardLines(await admin.call<BoardView>("board"));
+      console.log(bold(head));
+      if (!items.length) console.log(dim("Nothing written on it."));
+      for (const item of items) {
+        console.log(`\n${dim(item.title)}`);
+        for (const line of item.lines) console.log(`  ${line}`);
+      }
+      console.log(`\n${drawing}`);
+      console.log(dim("\nDraw on it in the app: Chalkboard (G then D), or tap the board at the observatory in the SANDBOX."));
       return;
     }
 

@@ -80,8 +80,9 @@ describe("what the node takes", () => {
   });
 
   test("an agent's text is cleaned: no control characters, no bidirectional overrides; markup stays text", () => {
-    const parsed = BoardWriteInput.parse({ item: { kind: "text", text: "pay ‮exe.txt‬ now\u0007\r\nok <script>" } });
-    expect(parsed.item.kind === "text" && parsed.item.text).toBe("pay exe.txt now\nok <script>");
+    const parsed = BoardWriteInput.parse({ item: { kind: "text", text: "pay \u202Eexe.txt\u202C now\u0007\u009b31m\r\nok <script>" } });
+    // C1's CSI (U+009B) goes too: a terminal (galahad board) would read it as an escape.
+    expect(parsed.item.kind === "text" && parsed.item.text).toBe("pay exe.txt now31m\nok <script>");
   });
 
   test("erasing names at least one stroke or item, by id", () => {

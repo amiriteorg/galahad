@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { type BoardChange, type BoardView, BOARD_LIMITS, type RouteName, routes, type WorldEvent } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { BoardError, BoardStore, checkPng, writeOnBoard } from "../src/board.ts";
+import { boardLines } from "../src/board-cli.ts";
 import { png } from "./png-fixture.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
@@ -134,6 +135,21 @@ describe("the snapshot is a PNG we'd draw, or it's refused", () => {
   test("taken: RGB and RGBA at the board's shape", () => {
     expect(checkPng(png(1280, 720)).height).toBe(720);
     expect(checkPng(png(640, 360, { channels: 3 })).width).toBe(640);
+  });
+});
+
+describe("galahad board", () => {
+  test("in words: each item in full, who wrote it, then the drawing", () => {
+    const board = new BoardStore({ dir: dir() });
+    board.write({ item: { kind: "note", title: "Plan", text: "- measure\n- fit" } }, "galahad");
+    board.write({ item: { kind: "chart", title: "Speed", series: [{ name: "v", values: [1, 4, 2] }] } }, "claude-code");
+    board.draw([strokeAt(1)]);
+    const { head, items, drawing } = boardLines(board.view());
+    expect(head).toContain("version 3");
+    expect(items.map((i) => i.title.split(" at ")[0])).toEqual(["note by Galahad", "chart by claude-code"]);
+    expect(items[0]!.lines).toEqual(["Plan", "- measure", "- fit"]);
+    expect(items[1]!.lines[1]).toBe("v: 3 values, 1 to 4");
+    expect(drawing).toContain("1 stroke of chalk");
   });
 });
 

@@ -8,8 +8,8 @@ import { BOARD_H, BOARD_LIMITS as L, BOARD_W, CHALK, ITEM_ID, STROKE_ID } from "
  * control and bidirectional-override characters, and only ever drawn as text.
  */
 
-/** Control characters (but tab and newline) and the bidirectional overrides that could make text read other than it is. */
-const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f‎‏‪-‮⁦-⁩]/g;
+/** Control characters (C0 but tab and newline, DEL, C1) and the bidirectional overrides that could make text read other than it is. */
+const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const clean = (max: number) =>
   z
     .string()
