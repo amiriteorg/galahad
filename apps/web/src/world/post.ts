@@ -53,6 +53,11 @@ export class Post {
     return anyPost(this.flags);
   }
 
+  /** Whether the light shafts are on (they draw the near air's glow, so the fog leaves it out). */
+  get shafting(): boolean {
+    return this.active && this.flags.shafts;
+  }
+
   /** Turns effects on or off; the pipeline is rebuilt only when they change. */
   set(flags: PostFlags): void {
     if (flags.ao === this.flags.ao && flags.shafts === this.flags.shafts && flags.bloom === this.flags.bloom) return;

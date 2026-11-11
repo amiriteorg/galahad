@@ -1,4 +1,4 @@
-import { cameraPosition, dot, exp, float, Fn, length, max, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { cameraPosition, dot, exp, float, Fn, length, max, min, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
 import { Color, type Node, Vector2, Vector3 } from "three/webgpu";
 import { air, airColor, lobes, WIND_X, WIND_Z } from "./air.ts";
 import type { Sky } from "./daynight.ts";
@@ -14,11 +14,15 @@ import { only, weatherUniforms } from "./wet.ts";
  *   warm and glowing towards the sun, cooler away from it, with rays where
  *   broken cloud or mist breaks the light.
  * - Mist: fog that thins with height above the water, summed along the line of
- *   sight in closed form, so it lies in hollows and over lakes; and a thin sheet
- *   of it on the ground where the camera is, at dawn and after dark. Both drift
- *   in slow banks, read at the point looked at and halfway to it, so the banks
- *   slide over the land as you move: they read as air, not as paint on the hills.
- *   Mist glows towards the light.
+ *   sight in closed form, so it lies in hollows and over lakes (its top rising
+ *   and falling across the land, so a bank over a lake has no ruled edge); and a
+ *   thin sheet of it on the ground where the camera is, at dawn and after dark.
+ *   Both drift in slow banks, broad ones and smaller ones, read at the point
+ *   looked at and halfway to it, so the banks slide over the land as you move:
+ *   they read as air, not as paint on the hills. Mist glows towards the light.
+ * - Light in the near air: forward scattering towards a low sun (or the moon),
+ *   the glow of the light shafts without their shadows, for the tiers that have
+ *   no shafts (on the high tier post.ts marches the real thing and this is off).
  * - Cloud shadows: on days of broken cloud, soft shadows drift over the land
  *   with the wind (what's already lit is dimmed a little and cooled).
  * - Lightning: a flash lights the land and the air for an instant.
@@ -63,6 +67,10 @@ export class Atmosphere {
   private readonly gradeSat = uniform(1).setGroup(renderGroup);
   private readonly gradeShadow = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
   private readonly gradeLight = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
+  /** The near air's glow towards the light: how strong, its colour (linear), and how much the air scatters per metre. */
+  private readonly nearOn = uniform(0).setGroup(renderGroup);
+  private readonly nearColor = uniform(new Color(1, 1, 1)).setGroup(renderGroup);
+  private readonly nearDensity = uniform(0.004).setGroup(renderGroup);
   /** How far the haze reaches (1 clear; rain, snow, cloud and mist bring it in). */
   private reachFactor = 1;
   private level = Number.NaN;
@@ -80,28 +88,38 @@ export class Atmosphere {
 
     // Mist: two layers, each exp(−height / scale) above its own level, averaged along the ray in closed form.
     const drift = this.mistDrift;
+    const distance = length(toPoint);
     const mist = only(this.mistDensity.add(this.sheetDensity).greaterThan(1e-5), float(0) as unknown as F, () => {
-      const layer = (level: F | number, height: number, floor: number) => {
-        const k = 1 / height;
+      const layer = (level: F | number, height: F | number, floor: number) => {
+        const k = float(1).div(height);
         const above = (y: F) => y.sub(level).max(floor);
         const yc = above(cameraPosition.y as unknown as F);
         const yp = above(positionWorld.y as unknown as F);
-        const ec = exp(yc.mul(-k));
-        const ep = exp(yp.mul(-k));
+        const ec = exp(yc.mul(k).negate());
+        const ep = exp(yp.mul(k).negate());
         const dy = yp.sub(yc);
         const steep = dy.abs().greaterThan(0.05);
         return select(steep, ec.sub(ep).div(select(steep, dy, float(1)).mul(k)), ep);
       };
-      // Banks: two warped sines (cheap), at the point looked at and halfway to it.
+      // Banks: warped sines (cheap), broad ones at the point looked at and halfway to it, and smaller ones (tens of
+      // metres) halfway, which drift a little faster.
       const bank = (x: F, z: F) =>
         sin(x.mul(0.021).add(sin(z.mul(0.017).add(drift)).mul(1.7)).add(drift.mul(0.6))).mul(sin(z.mul(0.026).add(sin(x.mul(0.013)).mul(1.3)).sub(drift.mul(0.4))));
       const half = positionWorld.add(cameraPosition).mul(0.5);
+      const hx = half.x as unknown as F;
+      const hz = half.z as unknown as F;
+      const small = sin(hx.mul(0.11).add(sin(hz.mul(0.09).add(drift.mul(1.9))).mul(1.4)).add(drift.mul(2.1))).mul(sin(hz.mul(0.13).add(sin(hx.mul(0.07)).mul(1.2)).sub(drift.mul(1.5))));
       const banks = bank(positionWorld.x as unknown as F, positionWorld.z as unknown as F)
-        .add(bank(half.x as unknown as F, half.z as unknown as F))
-        .mul(0.35)
+        .add(bank(hx, hz))
+        .mul(0.3)
+        .add(small.mul(0.3))
         .add(1);
-      const depth = this.mistDensity.mul(layer(WATER_LEVEL, MIST_HEIGHT, -1.5)).add(this.sheetDensity.mul(layer(this.sheetLevel as unknown as F, SHEET_HEIGHT, -0.35)));
-      return float(1).sub(exp(depth.mul(length(toPoint)).mul(banks).negate())) as unknown as F;
+      // The mist's top rises and falls across the land (gently, at the point looked at).
+      const px = positionWorld.x as unknown as F;
+      const pz = positionWorld.z as unknown as F;
+      const swell = sin(px.mul(0.06).add(sin(pz.mul(0.05).add(drift)).mul(1.6))).mul(sin(pz.mul(0.07).sub(drift.mul(0.8)))).mul(0.45).add(1);
+      const depth = this.mistDensity.mul(layer(WATER_LEVEL, swell.mul(MIST_HEIGHT), -1.5)).add(this.sheetDensity.mul(layer(this.sheetLevel as unknown as F, SHEET_HEIGHT, -0.35)));
+      return float(1).sub(exp(depth.mul(distance).mul(banks).negate())) as unknown as F;
     });
     const mistTint = mix(this.mistColor, this.mistGlow, l.broad.mul(0.6).add(l.tight.mul(0.4))).mul(float(1).add(weatherUniforms.flash));
 
@@ -113,6 +131,12 @@ export class Atmosphere {
       return smoothstep(edge.sub(0.3), edge, n.mul(0.5).add(0.5)).mul(this.shade) as unknown as F;
     });
 
+    // The near air's glow towards the light (as the shafts' phase: a broad lobe and a tight one), over its first 40 m.
+    const glow = only(this.nearOn.greaterThan(0.003), vec3(0) as unknown as Node<"vec3">, () => {
+      const scattered = float(1).sub(exp(min(distance, 40).mul(this.nearDensity).negate()));
+      return this.nearColor.mul(l.broad.mul(0.4).add(l.tight.mul(1.2)).add(0.03).mul(scattered).mul(this.nearOn)) as unknown as Node<"vec3">;
+    });
+
     const total = float(1).sub(float(1).sub(haze).mul(float(1).sub(mist)));
     const airTint = mix(hazeColor, mistTint, mist.div(haze.add(mist).max(1e-4)));
     this.node = Fn(() => {
@@ -121,7 +145,7 @@ export class Atmosphere {
       const lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));
       const rich = max(mix(vec3(lum), lit, this.gradeSat), vec3(0));
       const graded = rich.mul(mix(this.gradeShadow, this.gradeLight, lum.div(lum.add(0.18))));
-      return vec4(mix(graded, airTint, total.add(dither().mul(2)).clamp(0, 1)), output.a);
+      return vec4(mix(graded, airTint, total.add(dither().mul(2)).clamp(0, 1)).add(glow), output.a);
     })() as unknown as Node;
   }
 
@@ -161,6 +185,16 @@ export class Atmosphere {
     this.gradeSat.value = s.gradeSat;
     this.gradeShadow.value.set(s.gradeShadow[0], s.gradeShadow[1], s.gradeShadow[2]);
     this.gradeLight.value.set(s.gradeLight[0], s.gradeLight[1], s.gradeLight[2]);
+  }
+
+  /**
+   * The near air's glow towards the light, for tiers without light shafts: its strength (0 turns it off, as when
+   * the shafts draw it), its colour (sRGB) and how much the air scatters per metre.
+   */
+  nearLight(strength: number, color: number, density: number): void {
+    this.nearOn.value = strength;
+    this.nearColor.value.setHex(color);
+    this.nearDensity.value = density;
   }
 
   /** How far the haze reaches this frame: to the edge of the loaded land, and never closer than the view needs. */

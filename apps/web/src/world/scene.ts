@@ -320,6 +320,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const weather = new Weather(options.weather ?? "clear");
   const lightning = new Lightning();
   let lastStrike = 0;
+  /** Whether the high tier's light shafts are on: they draw the near air's glow then (with its shadows). */
+  let shafted = false;
 
   let sparkTimer = 0;
   const anvil = forgeAnvil();
@@ -356,6 +358,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     sky.set(s, w.rain, !reduced());
     horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud, s.underlight, Math.min(1, w.rain * 0.8 + w.snow));
     atmosphere.set(s, w.rain, w.snow);
+    // (Half the shafts' glow: with no shadows in it, all of the near air would glow.)
+    atmosphere.nearLight(shafted ? 0 : 0.5 * shaftStrength(), shaftColor(), shaftHaze());
     hemi.color.setHex(s.hemiSky);
     hemi.groundColor.setHex(s.hemiGround);
     hemi.intensity = s.hemiIntensity;
@@ -697,6 +701,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // The high tier's finish: ambient occlusion, sun shafts, bloom (WebGPU only; none on phones or WebGL2).
   const post = backend === "webgpu" && (tier.post.ao || tier.post.shafts || tier.post.bloom) ? new Post(renderer, scene, camera, governor.post, sun, atmosphere.shaftAir) : null;
+  shafted = post?.shafting ?? false;
+  applySky();
 
   // Every material's pipeline compiled before the first frame (and the night's glows with them), so
   // nothing stalls later when a chunk's grass or the lamps first appear.
@@ -862,6 +868,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // (Re-lighting marks the frame dirty; falling rain and snow want every frame.)
     return motion && (w.rain > 0.01 || w.snow > 0.01);
   }
+  /** The light in the air: the sun's glow by day, the moon's light by night (sRGB). */
+  function shaftColor(): number {
+    return skyState.lightFromSun ? skyState.sunGlow : skyState.light;
+  }
+  /** How much the clear air scatters, per metre: thicker under a low sun, and in rain and snow. */
+  function shaftHaze(): number {
+    return 0.004 + 0.009 * skyState.golden + 0.004 * weather.state.rain + 0.003 * weather.state.snow;
+  }
   /** How strongly the light's shafts show: low suns, mist and rain make them; cloud takes them away; the moon's are faint. */
   function shaftStrength(): number {
     const s = skyState;
@@ -1023,7 +1037,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (post?.active) {
       // The shafts reach from the camera to the far side of the shadow map's box; the air is thicker under a low sun.
       const w = weather.state;
-      post.update(lightDir, shaftStrength(), skyState.lightFromSun ? skyState.sunGlow : skyState.light, rig.distance + shadowRadius * 0.9, 0.004 + 0.009 * skyState.golden + 0.004 * w.rain + 0.003 * w.snow);
+      post.update(lightDir, shaftStrength(), shaftColor(), rig.distance + shadowRadius * 0.9, shaftHaze());
       post.render();
     } else renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
@@ -1035,7 +1049,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (action === "dpr") {
         renderer.setPixelRatio(governor.dpr);
         resize();
-      } else if (action === "drop-post") post?.set(governor.post);
+      } else if (action === "drop-post") {
+        post?.set(governor.post);
+        // Shafts shed: the near air's glow goes back to the fog.
+        shafted = post?.shafting ?? false;
+        applySky();
+      }
       else if (action === "drop-shadows") setShadows(false);
       else if (action === "drop-grass") vegetation.dropGrass();
     }
