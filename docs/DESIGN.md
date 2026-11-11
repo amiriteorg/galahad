@@ -248,7 +248,7 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~330 KB; ~100 KB as brotli) | Always; cached by the service worker |
+| `/app.js` | The app (~338 KB; ~103 KB as brotli). Script is a small part of a phone's work (style and layout weigh more), so views aren't split out of it | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 
