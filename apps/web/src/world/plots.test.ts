@@ -68,6 +68,11 @@ describe("a plot's own furniture", () => {
     const box = furniture(plots, "ex1");
     // Nothing of it reaches the aisle (the cell's own fence, gate and stack light are the hall's).
     if (box) expect(box.minY).toBeGreaterThan(HALL.y + HALL_AISLE);
+    // And nothing empty is left to draw (the GPU warns about a draw of no vertices).
+    plots.get("ex1")!.base.traverse((o) => {
+      const mesh = o as Mesh;
+      if (mesh.isMesh) expect(mesh.geometry.getAttribute("position")?.count ?? 0).toBeGreaterThan(0);
+    });
     const sign = plots.get("ex1")!.signPoint;
     expect(Math.abs(sign[0] - cell.x)).toBeLessThanOrEqual(cell.size / 2);
     expect(Math.abs(sign[1] - cell.y)).toBeLessThanOrEqual(cell.size / 2);

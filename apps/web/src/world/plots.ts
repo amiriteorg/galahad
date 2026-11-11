@@ -267,10 +267,14 @@ class Plot {
       fence.add(new BoxGeometry(2.4, 0.08, 1.5), 0x2e4a86, at(panelX, 1.1, -panelY, headingToSceneYaw(gateDir), 1, -0.45), 0.02);
       fence.add(new BoxGeometry(0.1, 1, 0.1), 0x8b8f97, at(panelX, 0.5, -panelY), 0);
     }
-    const fenceMesh = new Mesh(fence.build(), this.fenceMaterial);
-    fenceMesh.userData.fence = true;
-    fenceMesh.receiveShadow = this.shadows;
-    this.base.add(fenceMesh);
+    // (A test cell in the hall has none of it: nothing to draw, and a draw of nothing is a GPU warning.)
+    const furniture = fence.build();
+    if (furniture.getAttribute("position")?.count) {
+      const fenceMesh = new Mesh(furniture, this.fenceMaterial);
+      fenceMesh.userData.fence = true;
+      fenceMesh.receiveShadow = this.shadows;
+      this.base.add(fenceMesh);
+    } else furniture.dispose();
     this.lamp.position.set(signX, 2.6, -signY);
     this.signPoint[0] = x + signX;
     this.signPoint[1] = y + signY;
