@@ -1,5 +1,6 @@
 import type { PerspectiveCamera } from "three/webgpu";
 
+import type { Solids } from "./collide.ts";
 import { angleDiff } from "./path.ts";
 
 /*
@@ -12,6 +13,14 @@ import { angleDiff } from "./path.ts";
  * the focus on him and, while he walks, swings slowly round behind him (unless
  * you've just turned it yourself); panning stops following. The ground under the
  * focus is smoothed, so the view doesn't bob over every facet of a hill.
+ *
+ * Between the focus and the camera is a spring arm (SpringArm): when the
+ * ground rises behind, the camera lifts over it; when something solid stands
+ * in the way (a wall, the keep's deck, a hill) the arm shortens, so the camera
+ * stays in clear air. It shortens quickly and lengthens slowly, eased both
+ * ways, and wherever it is, the camera is never inside anything (a crown, a
+ * post, a machine), nor below the land. Thin things and leaves between it and
+ * him aren't looked round: they dissolve in the dither (occlusion.ts).
  */
 
 export const MIN_DISTANCE = 5;
@@ -129,20 +138,41 @@ export class CameraRig {
     return true;
   }
 
-  /** Places the camera, relative to the floating origin, `ground` metres up at the focus. */
-  apply(camera: PerspectiveCamera, origin: [number, number], ground: number): void {
+  /** How high over the ground at the focus the camera looks: close in, at his chest rather than his feet. */
+  lookHeight(): number {
+    return Math.max(0, 1.5 - Math.max(0, this.distance - 10) * 0.025);
+  }
+
+  /**
+   * Where the camera wants to be, `ground` metres up at the focus (world, z up): into `out`, with the spring
+   * arm's pivot in `pivot`: over the focus at his head's height, above the benches, tables and decks he stands
+   * by (the camera still looks at his chest; what's between them dissolves).
+   */
+  wanted(ground: number, out: Point3, pivot: Point3): void {
     const pitch = pitchFor(this.distance);
     const back = this.distance * Math.cos(pitch);
-    const cx = this.x - Math.cos(this.yaw) * back - origin[0];
-    const cy = this.y - Math.sin(this.yaw) * back - origin[1];
-    // Close in, look at his chest rather than his feet.
-    const lift = Math.max(0, 1.5 - Math.max(0, this.distance - 10) * 0.025);
+    const look = ground + this.lookHeight();
+    pivot.x = this.x;
+    pivot.y = this.y;
+    pivot.z = ground + PIVOT_HEIGHT;
+    out.x = this.x - Math.cos(this.yaw) * back;
+    out.y = this.y - Math.sin(this.yaw) * back;
+    out.z = look + this.distance * Math.sin(pitch);
+  }
+
+  /** Places the camera, relative to the floating origin, `ground` metres up at the focus: where `arm` puts it, if given. */
+  apply(camera: PerspectiveCamera, origin: [number, number], ground: number, arm: SpringArm | null = null): void {
+    this.wanted(ground, this.spot, this.pivot);
+    const at = arm ?? this.spot;
     // On a tall (portrait) screen, look a little past the focus, so it sits lower and the land ahead shows.
     const ahead = camera.aspect < 1 ? this.distance * 0.3 * (1 - camera.aspect) : 0;
     // Scene axes: (x, z, −y).
-    camera.position.set(cx, ground + lift + this.distance * Math.sin(pitch), -cy);
-    camera.lookAt(this.x + Math.cos(this.yaw) * ahead - origin[0], ground + lift, -(this.y + Math.sin(this.yaw) * ahead - origin[1]));
+    camera.position.set(at.x - origin[0], at.z, -(at.y - origin[1]));
+    camera.lookAt(this.x + Math.cos(this.yaw) * ahead - origin[0], ground + this.lookHeight(), -(this.y + Math.sin(this.yaw) * ahead - origin[1]));
   }
+
+  private readonly spot: Point3 = { x: 0, y: 0, z: 0 };
+  private readonly pivot: Point3 = { x: 0, y: 0, z: 0 };
 
   /** Pans by a drag of (dx, dy) CSS pixels on a viewport `height` pixels tall. */
   panPixels(dx: number, dy: number, height: number, fov: number): void {
@@ -175,6 +205,197 @@ export class CameraRig {
     this.target.x = x;
     this.target.y = y;
     if (distance !== undefined) this.target.distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance));
+  }
+}
+
+export interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Nothing solid is ever nearer the camera than this (its near plane is a quarter metre out, its corners a little more). */
+export const CAMERA_PAD = 0.35;
+/** The room it eases to keep round it, where it can. */
+const ROOM = 0.7;
+/** The line of sight from the focus is this thick: what it meets, the arm shortens before. */
+const SIGHT_PAD = 0.3;
+/** The spring arm turns about a point this high over the focus (his head's height). */
+const PIVOT_HEIGHT = 2.3;
+/** How far above the land the camera keeps, and the arm on its way out to it. */
+const GROUND_CLEAR = 0.8;
+/** The arm is never shorter than this when it can help it (any shorter and it's in his head); this, when it can't. */
+const MIN_ARM = 1.6;
+const LEAST_ARM = 0.6;
+/** The fastest the camera moves along its arm (m/s). */
+const ARM_SPEED = 12;
+/** Samples of the ground along the arm. */
+const GROUND_SAMPLES = 12;
+/** How far the arm tilts up (radians) to look over something right by him, tried in turn. */
+const TILTS = [0.15, 0.3, 0.45, 0.7, 0.95, 1.2];
+/** How many of TILTS are tried first: up to a view from above and to the side; the rest only when nothing else is clear air. */
+const GENTLE = 3;
+/** The steepest the arm goes (radians above the horizon). */
+const STEEPEST = 1.35;
+
+/**
+ * The spring arm from the focus to the camera. Each frame it's told where the
+ * camera wants to be; it lifts the camera over the ground along the arm, then
+ * shortens the arm before whatever solid blocks the view (collide.ts' view
+ * query: walls, decks, hills; not leaves or posts, which dissolve), and keeps
+ * some room from anything it would pass. Where even that leaves too little
+ * room (something right by him), it tilts the arm up to look over it. It eases,
+ * in fast and out slowly, so a corner sweeping past doesn't pop the view; and
+ * it never leaves the camera inside anything (within its near plane's reach)
+ * or under the land, eased or not. Pure; world metres, z up. No allocation.
+ */
+export class SpringArm {
+  /** Where the camera is (world, z up). */
+  x = 0;
+  y = 0;
+  z = 0;
+  /** How much of the arm is in use (1: all of it), how far the camera is lifted over where it wanted to be, and how far the arm is tilted up. */
+  share = 1;
+  lift = 0;
+  tilt = 0;
+  // The arm as it's tried (scratch).
+  private ax = 0;
+  private ay = 0;
+  private az = 0;
+
+  /** The arm (dx, dy, dz) from the pivot, tilted up by `tilt`: into ax, ay, az. */
+  private aim(dx: number, dy: number, dz: number, tilt: number): void {
+    const h = Math.hypot(dx, dy);
+    if (tilt <= 0 || h < 1e-6) {
+      this.ax = dx;
+      this.ay = dy;
+      this.az = dz;
+      return;
+    }
+    const len = Math.hypot(h, dz);
+    const e = Math.min(STEEPEST, Math.atan2(dz, h) + tilt);
+    const k = (len * Math.cos(e)) / h;
+    this.ax = dx * k;
+    this.ay = dy * k;
+    this.az = len * Math.sin(e);
+  }
+
+  /** How much of the arm (ax, ay, az) from (px, py, pz) is clear: above the ground, and before whatever blocks the view. */
+  private reach(px: number, py: number, pz: number, solids: Solids | null, ground: (x: number, y: number) => number): number {
+    const { ax, ay, az } = this;
+    let clear = 1;
+    for (let k = 1; k <= GROUND_SAMPLES; k++) {
+      const s = k / GROUND_SAMPLES;
+      if (pz + az * s < ground(px + ax * s, py + ay * s) + GROUND_CLEAR * s - 1e-6) {
+        clear = (k - 1) / GROUND_SAMPLES;
+        break;
+      }
+    }
+    if (solids && clear > 0) clear = Math.min(clear, solids.view(px, py, pz, px + ax, py + ay, pz + az, SIGHT_PAD, ROOM, false, true));
+    return clear;
+  }
+
+  /** Where on the arm (ax, ay, az) the camera can be, nearest `want` within lo..hi; −1: nowhere. */
+  private free(solids: Solids, px: number, py: number, pz: number, want: number, lo: number, hi: number): number {
+    return solids.clearAlong(px, py, pz, px + this.ax, py + this.ay, pz + this.az, CAMERA_PAD, want, lo, hi);
+  }
+
+  update(pivot: Point3, want: Point3, solids: Solids | null, ground: (x: number, y: number) => number, dt: number, motion: boolean): void {
+    const px = pivot.x;
+    const py = pivot.y;
+    const pz = pivot.z;
+    const dx = want.x - px;
+    const dy = want.y - py;
+    let dz = want.z - pz;
+    const len = Math.max(1e-6, Math.hypot(dx, dy, dz));
+    // Over the ground: the least lift that keeps the whole arm above it (a hillside behind, a ridge between).
+    let need = 0;
+    for (let k = 1; k <= GROUND_SAMPLES; k++) {
+      const s = k / GROUND_SAMPLES;
+      const lift = (ground(px + dx * s, py + dy * s) + GROUND_CLEAR * s - pz) / s - dz;
+      if (lift > need) need = lift;
+    }
+    need = Math.min(need, len * 0.9 + 2);
+    if (!motion || need >= this.lift) this.lift = need;
+    else this.lift += (need - this.lift) * (1 - Math.exp(-dt * 2));
+    dz += this.lift;
+    // Too little room that way (something right by him, or no place on the arm outside everything): tilt the arm
+    // up until there's enough, or as much as there is.
+    const room = Math.min(len, Math.max(MIN_ARM + 1, len * 0.35));
+    const least0 = Math.min(1, MIN_ARM / len);
+    let tilt = 0;
+    let most = -1;
+    let over = -1;
+    for (let k = -1; k < TILTS.length; k++) {
+      // Steeper than a gentle tilt only when no gentle one has clear air, before what blocks the view or beyond it.
+      if (k >= GENTLE && (most >= 0 || over >= 0)) break;
+      const t = k < 0 ? 0 : TILTS[k]!;
+      this.aim(dx, dy, dz, t);
+      const c = Math.max(least0, this.reach(px, py, pz, solids, ground));
+      const usable = solids ? this.free(solids, px, py, pz, c, least0, c) : c;
+      if (usable > most + 1e-3) {
+        most = usable;
+        tilt = t;
+      }
+      if (usable * len >= room) break;
+      // Failing any place before what blocks the view, the least tilt with one beyond it.
+      if (most < 0 && over < 0 && solids && this.free(solids, px, py, pz, c, c, 1) >= 0) over = t;
+    }
+    if (most < 0 && over >= 0) tilt = over;
+    const before = this.tilt;
+    if (!motion) this.tilt = tilt;
+    else {
+      // Eased, and no faster round the pivot than the camera moves along its arm.
+      const turn = (tilt - this.tilt) * (1 - Math.exp(-dt * (tilt > this.tilt ? 6 : 2)));
+      const most = (ARM_SPEED * dt) / len;
+      this.tilt += Math.max(-most, Math.min(most, turn));
+    }
+    // The arm as tilted now, how much of it is clear, and where on it the camera eases to.
+    this.aim(dx, dy, dz, this.tilt);
+    const least = Math.min(1, MIN_ARM / len);
+    let clear = Math.max(least, this.reach(px, py, pz, solids, ground));
+    let next = clear;
+    if (motion) {
+      // Eased (in quicker than out), and never faster than a camera should move along its arm.
+      const step = (clear - this.share) * (1 - Math.exp(-dt * (clear < this.share ? 8 : 2.2)));
+      const most = (ARM_SPEED * dt) / len;
+      next = this.share + Math.max(-most, Math.min(most, step));
+    }
+    // Never inside anything: there if it's free; else where it was, if that still is (it waits behind a post
+    // sweeping past rather than jump it); else the nearest free place on the arm; else tilted as far as it needs, at once.
+    if (solids) {
+      let at = this.free(solids, px, py, pz, next, next, next);
+      if (at < 0 && motion) at = this.free(solids, px, py, pz, this.share, this.share, this.share);
+      if (at < 0 && motion && this.tilt !== before) {
+        // Or where it was before the arm tilted this frame.
+        this.aim(dx, dy, dz, before);
+        at = this.free(solids, px, py, pz, this.share, this.share, this.share);
+        if (at >= 0) this.tilt = before;
+        else this.aim(dx, dy, dz, this.tilt);
+      }
+      if (at < 0) at = this.free(solids, px, py, pz, next, least, Math.max(clear, Math.min(1, this.share + (ROOM * 3) / len)));
+      if (at < 0 && this.tilt !== tilt) {
+        this.tilt = tilt;
+        this.aim(dx, dy, dz, tilt);
+        clear = Math.max(least, this.reach(px, py, pz, solids, ground));
+        at = this.free(solids, px, py, pz, clear, least, clear);
+      }
+      // Nowhere before what blocks the view (he's in among things): beyond it, where it dissolves between.
+      if (at < 0) at = this.free(solids, px, py, pz, clear, clear, 1);
+      if (at < 0 && this.tilt !== tilt) {
+        this.tilt = tilt;
+        this.aim(dx, dy, dz, tilt);
+        clear = Math.max(least, this.reach(px, py, pz, solids, ground));
+        at = this.free(solids, px, py, pz, clear, clear, 1);
+      }
+      if (at < 0) at = this.free(solids, px, py, pz, clear, Math.min(1, LEAST_ARM / len), clear);
+      next = at < 0 ? least : at;
+    }
+    this.share = next;
+    const { ax, ay, az } = this;
+    this.x = px + ax * this.share;
+    this.y = py + ay * this.share;
+    this.z = pz + az * this.share;
   }
 }
 

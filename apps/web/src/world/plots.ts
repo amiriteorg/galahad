@@ -30,7 +30,7 @@ import { experimentEnded } from "../lib/world.ts";
 import { headingToSceneYaw, onPlot, toScene, type Vec3 } from "./coords.ts";
 import { disposeTree } from "./keep.ts";
 import { at, linear, Mesher } from "./mesher.ts";
-import { plotGate } from "./path.ts";
+import { plotLayout } from "./plot-plan.ts";
 import { PoseBuffer } from "./pose.ts";
 import { plotLevel } from "./sites.ts";
 
@@ -234,7 +234,6 @@ class Plot {
     const [sx, sy, sz] = toScene(x, y, this.level);
     this.base.position.set(sx, sy, sz);
     this.plotUniform.value.set(x, y, size / 2);
-    const half = size / 2;
     // On a pad of the proving ground or the hall, the site is the ground and the fence: only the sign and its lamp are the plot's.
     const sited = padAt(exp.plot) !== null;
     const fence = new Mesher();
@@ -242,52 +241,31 @@ class Plot {
       fence.add(new BoxGeometry(size + 1.6, 0.08, size + 1.6), 0xbfb092, at(0, 0.03, 0), 0);
       fence.add(new BoxGeometry(size, 0.08, size), 0xe3d9c0, at(0, 0.06, 0), 0.02);
     }
-    const gate = plotGate(exp.plot);
-    const gateDir = Math.atan2(gate.y - y, gate.x - x);
-    const f = half + 1;
-    // Where the gate is: on the square fence, the way the keep lies (a corner, for a plot diagonal from it), as plotGate has it.
-    const toGate = f / Math.max(Math.abs(Math.cos(gateDir)), Math.abs(Math.sin(gateDir)));
-    const corners: [number, number][] = [[-f, -f], [f, -f], [f, f], [-f, f]];
-    for (let side = 0; !sited && side < 4; side++) {
-      const [ax, ay] = corners[side]!;
-      const [bx, by] = corners[(side + 1) % 4]!;
-      const len = Math.hypot(bx - ax, by - ay);
-      const n = Math.max(2, Math.round(len / 2.5));
-      for (let i = 0; i < n; i++) {
-        const px = ax + ((bx - ax) * i) / n;
-        const py = ay + ((by - ay) * i) / n;
-        const qx = ax + ((bx - ax) * (i + 1)) / n;
-        const qy = ay + ((by - ay) * (i + 1)) / n;
-        const mx = (px + qx) / 2;
-        const my = (py + qy) / 2;
-        fence.add(new BoxGeometry(0.16, 1.2, 0.16), 0x8d5f3d, at(px, 0.6, -py));
-        // The gate: a gap in the fence where the path from the keep arrives.
-        if (Math.hypot(mx - Math.cos(gateDir) * toGate, my - Math.sin(gateDir) * toGate) < 1.6) continue;
-        const yaw = headingToSceneYaw(Math.atan2(qy - py, qx - px));
-        for (const h of [0.45, 0.95]) fence.add(new BoxGeometry(0.08, 0.1, (len / n) * 1.02), 0xa77b52, at(mx, h, -my, yaw));
-      }
+    // The fence (a gap for the gate), the signpost beside the gate and the dome behind: plot-plan.ts lays them out, where walkers meet them too.
+    const layout = plotLayout(exp.plot);
+    const gateDir = layout.gateDir;
+    for (const [px, py] of layout.posts) fence.add(new BoxGeometry(0.16, 1.2, 0.16), 0x8d5f3d, at(px, 0.6, -py));
+    for (const [px, py, qx, qy] of layout.rails) {
+      const yaw = headingToSceneYaw(Math.atan2(qy - py, qx - px));
+      const len = Math.hypot(qx - px, qy - py);
+      for (const h of [0.45, 0.95]) fence.add(new BoxGeometry(0.08, 0.1, len * 1.02), 0xa77b52, at((px + qx) / 2, h, -(py + qy) / 2, yaw));
     }
-    // The signpost beside the gate, facing the keep, with a lamp of its status. A test cell in the hall
-    // has its own stack light and opens onto the aisle: no post there (it would stand in his way), and
-    // the label floats over the cell.
-    const indoor = padAt(exp.plot)?.site === "hall";
-    const side = gateDir + Math.PI / 2;
-    const signX = indoor ? 0 : Math.cos(gateDir) * (toGate + 0.8) + Math.cos(side) * 2.2;
-    const signY = indoor ? 0 : Math.sin(gateDir) * (toGate + 0.8) + Math.sin(side) * 2.2;
-    if (!indoor) {
+    // The signpost beside the gate, facing the keep, with a lamp of its status. A test cell in the hall has its own stack
+    // light and none (see plot-plan.ts): its label floats over the cell.
+    const [signX, signY] = layout.sign ?? [0, 0];
+    if (layout.sign) {
       fence.add(new BoxGeometry(0.16, 2.4, 0.16), 0x654330, at(signX, 1.2, -signY));
       fence.add(new BoxGeometry(1.5, 0.85, 0.1), 0xf0e4c6, at(signX, 1.95, -signY, headingToSceneYaw(gateDir)));
     }
-    this.lamp.visible = !indoor;
-    if (!sited) {
+    this.lamp.visible = layout.sign !== null;
+    if (layout.dome && layout.panel) {
       // A little research dome with a solar panel, behind the pad: test pads sit by the domes.
-      const back = gateDir + Math.PI;
-      const domeX = Math.cos(back) * (f + 2.2) + Math.cos(side) * f * 0.55;
-      const domeY = Math.sin(back) * (f + 2.2) + Math.sin(side) * f * 0.55;
+      const [domeX, domeY] = layout.dome;
+      const [panelX, panelY] = layout.panel;
       fence.add(new SphereGeometry(2, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2), 0xf6f4ef, at(domeX, -0.1, -domeY), 0.03);
       fence.add(new CylinderGeometry(2.03, 2.03, 0.35, 12), 0xe8853a, at(domeX, 0.45, -domeY), 0);
-      fence.add(new BoxGeometry(2.4, 0.08, 1.5), 0x2e4a86, at(domeX - Math.cos(side) * 3.2, 1.1, -(domeY - Math.sin(side) * 3.2), headingToSceneYaw(gateDir), 1, -0.45), 0.02);
-      fence.add(new BoxGeometry(0.1, 1, 0.1), 0x8b8f97, at(domeX - Math.cos(side) * 3.2, 0.5, -(domeY - Math.sin(side) * 3.2)), 0);
+      fence.add(new BoxGeometry(2.4, 0.08, 1.5), 0x2e4a86, at(panelX, 1.1, -panelY, headingToSceneYaw(gateDir), 1, -0.45), 0.02);
+      fence.add(new BoxGeometry(0.1, 1, 0.1), 0x8b8f97, at(panelX, 0.5, -panelY), 0);
     }
     const fenceMesh = new Mesh(fence.build(), this.fenceMaterial);
     fenceMesh.userData.fence = true;
@@ -296,8 +274,8 @@ class Plot {
     this.lamp.position.set(signX, 2.6, -signY);
     this.signPoint[0] = x + signX;
     this.signPoint[1] = y + signY;
-    this.signPoint[2] = this.level + (indoor ? 3.4 : 3.1);
-    const r = f + 0.6;
+    this.signPoint[2] = this.level + (layout.sign ? 3.1 : 3.4);
+    const r = layout.half + 0.6;
     this.ring.geometry.setAttribute("position", new BufferAttribute(new Float32Array([-r, 0.12, -r, r, 0.12, -r, r, 0.12, r, -r, 0.12, r]), 3));
 
     // The experiment's own frame: z up, scaled, centred on the plot.

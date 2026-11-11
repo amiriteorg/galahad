@@ -16,9 +16,10 @@ import {
   TetrahedronGeometry,
   Vector3,
 } from "three/webgpu";
+import { type Build, BUILDS, type Mover, type Solids } from "./collide.ts";
 import { headingToSceneYaw } from "./coords.ts";
 import { at, Mesher } from "./mesher.ts";
-import { Boids, type Ground, MAX_SLOPE, moveOnGround, Particles, rng } from "./physics.ts";
+import { Boids, type Ground, MAX_SLOPE, moveOnGround, Particles, rng, slideOnGround } from "./physics.ts";
 import { WATER_LEVEL } from "./terrain.ts";
 import type { Tier } from "./tiers.ts";
 
@@ -28,7 +29,9 @@ import type { Tier } from "./tiers.ts";
  * steering round water, steep ground, the keep's lawn and the plots, ducks on the
  * lakes, fireflies at dusk, and sparks and exhaust as ballistic particles. Each
  * kind is one instanced mesh; the CPU writes matrices into pooled objects, nothing
- * is allocated per frame. All of it is procedural.
+ * is allocated per frame. All of it is procedural. Among the solids the deer,
+ * rabbits and ducks are circles that slide round trees and rocks and keep out
+ * of each other's (and Galahad's) way.
  */
 
 const m = new Matrix4();
@@ -88,8 +91,11 @@ const duckGeometry = (): BufferGeometry =>
 
 interface Herd {
   mesh: InstancedMesh;
-  x: Float64Array;
-  y: Float64Array;
+  /** Where each one is, and its radius among the solids (0 while it's away). */
+  at: { x: number; y: number; r: number }[];
+  build: Build;
+  /** Each one's place among the solids, once joined. */
+  movers: Mover[];
   heading: Float64Array;
   /** Seconds left in the current state; state 0 grazes, 1 walks. */
   timer: Float32Array;
@@ -130,10 +136,11 @@ export class Fauna {
     this.birdMesh = instanced(birdGeometry(), birdMaterial, tier.birds, root);
 
     const animal = new MeshLambertNodeMaterial({ vertexColors: true });
-    const herd = (geometry: BufferGeometry, n: number, speed: number, hop: number, water: boolean): Herd => ({
+    const herd = (geometry: BufferGeometry, n: number, speed: number, hop: number, water: boolean, build: Build): Herd => ({
       mesh: instanced(geometry, animal, n, root),
-      x: new Float64Array(n),
-      y: new Float64Array(n),
+      at: Array.from({ length: n }, () => ({ x: 0, y: 0, r: 0 })),
+      build,
+      movers: [],
       heading: new Float64Array(n),
       timer: new Float32Array(n),
       state: new Uint8Array(n),
@@ -143,7 +150,7 @@ export class Fauna {
       hop,
       water,
     });
-    this.herds = [herd(deerGeometry(), tier.deer, 1.3, 0.03, false), herd(rabbitGeometry(), tier.rabbits, 2.6, 0.22, false), herd(duckGeometry(), tier.ducks, 0.5, 0, true)];
+    this.herds = [herd(deerGeometry(), tier.deer, 1.3, 0.03, false, BUILDS.deer), herd(rabbitGeometry(), tier.rabbits, 2.6, 0.22, false, BUILDS.rabbit), herd(duckGeometry(), tier.ducks, 0.5, 0, true, BUILDS.duck)];
 
     const glow = new MeshBasicNodeMaterial({ color: 0xe8ff8a, transparent: true, depthWrite: false, blending: AdditiveBlending });
     glow.fog = false;
@@ -158,6 +165,18 @@ export class Fauna {
     this.materials.push(birdMaterial, animal, glow, spark);
   }
 
+  /** The deer, rabbits and ducks walk (and swim) among the world's solids from now on. */
+  join(solids: Solids): void {
+    for (const herd of this.herds) {
+      const where = herd.water ? this.water : this.ground;
+      for (const at of herd.at) {
+        const m = solids.join(at, herd.build);
+        m.ground = (x, y) => (herd.water ? where.blocked(x, y) : !this.landOk(herd, where, x, y));
+        herd.movers.push(m);
+      }
+    }
+  }
+
   /**
    * Steps every creature and writes their matrices (relative to the floating
    * origin). `focus` is where the camera looks; things too far from it come back
@@ -169,7 +188,11 @@ export class Fauna {
       this.flap.value = 0;
       this.birdMesh.visible = false;
       this.fireflies.visible = false;
-      for (const h of this.herds) h.mesh.visible = false;
+      for (const h of this.herds) {
+        h.mesh.visible = false;
+        // Hidden, they're in nobody's way.
+        for (const at of h.at) at.r = 0;
+      }
       this.sparks.visible = false;
       return false;
     }
@@ -214,13 +237,18 @@ export class Fauna {
   }
 
   private stepHerd(herd: Herd, dt: number, fx: number, fy: number, origin: [number, number], ground: Ground, night: number): void {
-    const n = herd.x.length;
+    const n = herd.at.length;
     const reach = herd.water ? 160 : 120;
     let shown = 0;
     // Water birds keep to the water; land animals to the land (the ground's `blocked`).
     const where = herd.water ? this.water : ground;
     for (let i = 0; i < n; i++) {
-      if (herd.active[i] && Math.hypot(herd.x[i]! - fx, herd.y[i]! - fy) > reach * 1.3) herd.active[i] = 0;
+      const at = herd.at[i]!;
+      const mover = herd.movers[i];
+      if (herd.active[i] && Math.hypot(at.x - fx, at.y - fy) > reach * 1.3) {
+        herd.active[i] = 0;
+        at.r = 0;
+      }
       if (!herd.active[i]) {
         // Try a few spots near the focus; come back next frame if none suits.
         for (let tries = 0; tries < 4; tries++) {
@@ -229,8 +257,11 @@ export class Fauna {
           const x = fx + Math.cos(a) * r;
           const y = fy + Math.sin(a) * r;
           if (!this.landOk(herd, ground, x, y)) continue;
-          herd.x[i] = x;
-          herd.y[i] = y;
+          // Not inside a trunk or a rock, nor in another's way.
+          if (mover?.solids.overlaps(x, y, herd.build.r + 0.1, mover.step, mover.height)) continue;
+          at.x = x;
+          at.y = y;
+          at.r = herd.build.r;
           herd.heading[i] = this.random() * Math.PI * 2;
           herd.timer[i] = 1 + this.random() * 4;
           herd.state[i] = 0;
@@ -239,6 +270,7 @@ export class Fauna {
         }
         if (!herd.active[i]) continue;
       }
+      at.r = herd.build.r;
       herd.timer[i] = herd.timer[i]! - dt;
       if (herd.timer[i]! <= 0) {
         // Rabbits and deer rest more at night.
@@ -248,20 +280,21 @@ export class Fauna {
       let moving = false;
       if (herd.state[i]) {
         herd.heading[i] = herd.heading[i]! + (this.random() - 0.5) * 1.6 * dt;
-        const taken = moveOnGround(where, herd.x[i]!, herd.y[i]!, herd.heading[i]!, herd.speed * dt, this.scratch, herd.water ? Infinity : MAX_SLOPE);
+        const slope = herd.water ? Infinity : MAX_SLOPE;
+        const taken = mover ? slideOnGround(mover, where, at.x, at.y, herd.heading[i]!, herd.speed * dt, this.scratch, slope) : moveOnGround(where, at.x, at.y, herd.heading[i]!, herd.speed * dt, this.scratch, slope);
         if (taken === null) {
           herd.heading[i] = herd.heading[i]! + Math.PI * (0.5 + this.random());
         } else {
           herd.heading[i] = taken;
-          herd.x[i] = this.scratch.x;
-          herd.y[i] = this.scratch.y;
+          at.x = this.scratch.x;
+          at.y = this.scratch.y;
           moving = true;
         }
       }
       herd.phase[i] = herd.phase[i]! + dt * (moving ? 9 : 1.5);
-      const z = herd.water ? WATER_LEVEL + 0.02 * Math.sin(herd.phase[i]!) : ground.height(herd.x[i]!, herd.y[i]!);
+      const z = herd.water ? WATER_LEVEL + 0.02 * Math.sin(herd.phase[i]!) : ground.height(at.x, at.y);
       const bob = moving ? Math.abs(Math.sin(herd.phase[i]!)) * herd.hop : 0;
-      v.set(herd.x[i]! - origin[0], z + bob, -(herd.y[i]! - origin[1]));
+      v.set(at.x - origin[0], z + bob, -(at.y - origin[1]));
       q.setFromAxisAngle(UP, headingToSceneYaw(herd.heading[i]!));
       s.setScalar(1);
       m.compose(v, q, s);

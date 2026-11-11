@@ -26,6 +26,7 @@ import {
   TorusGeometry,
 } from "three/webgpu";
 import { headingToSceneYaw, toScene, type Vec3 } from "./coords.ts";
+import { fleetSlot } from "./keep-plan.ts";
 import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
 import { pathSheen, puddleDarken } from "./wet.ts";
@@ -818,12 +819,7 @@ export class Keep {
     const lit = new Mesher();
     shown.forEach((node, i) => {
       // Slots on both sides of the way to the stairs, nearest first.
-      const side = i % 2 === 0 ? 1 : -1;
-      const k = Math.floor(i / 2);
-      const angle = -Math.PI / 2 + side * (0.62 + k * 0.28);
-      const r = 12 + (k % 2) * 1.6;
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
+      const { x, y } = fleetSlot(i);
       const [sx, , sz] = toScene(x, y, 0);
       const cloth = node.online ? (node.self ? C.orange : 0xf1b26a) : 0x9a9ea6;
       if (node.sandboxHost) {

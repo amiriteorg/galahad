@@ -1,17 +1,27 @@
 import type { ExperimentView, GalahadState, Station } from "@galahad/core/world";
 import { padAt, STATIONS } from "@galahad/core/world";
+import { BUILDS, type Mover } from "./collide.ts";
 import { aisleAt, HALL, HALL_DOOR_IN, HALL_DOOR_OUT, inHall } from "./hall-plan.ts";
+import { MARGIN as PLAN_MARGIN, type Planner, type Wet } from "./nav.ts";
 import { type Ground, moveOnGround } from "./physics.ts";
 import { paved, SITE_GATES, SITE_OBSTACLES } from "./sites.ts";
 
-/** Seconds without getting closer before he's set down at the waypoint. */
+/** Seconds without getting closer before he looks for another way (round whatever stopped him). */
+const REPLAN_S = 0.4;
+/** Seconds without getting closer before he's set down at the waypoint: a last resort, never needed on the real land. */
 const STUCK_S = 3;
+/** This near a place he can't get to (something stands on it), he's there. */
+const NEAR_ENOUGH = 1.2;
 
 /*
  * Where Galahad stands for each kind of work, and how he walks there: straight
  * lines between waypoints, going round the keep and the other buildings rather
  * than through them, and into the workshop hall by its door and along its
- * aisle. World coordinates (metres, x east, y north). Pure, so unit-tested.
+ * aisle. Among the world's solids (collide.ts) each leg is planned round every
+ * footprint, tree and rock (nav.ts), and he moves and slides: nothing he meets
+ * on the way (a machine, something that just grew) is walked through, and he
+ * finds another way round it. World coordinates (metres, x east, y north).
+ * Pure, so unit-tested.
  */
 
 export interface Point {
@@ -29,7 +39,8 @@ type Place = Exclude<Station, "field">;
 const LAYOUT: Record<Place, { r: number; stand: number }> = {
   // The giant tree, its deck's posts and the stairs; he stands at the foot of the stairs.
   keep: { r: 7.5, stand: 8.5 },
-  council: { r: 1.7, stand: 2.4 },
+  // Clear of the deck the table stands on (it reaches 2.3 m out).
+  council: { r: 1.7, stand: 2.85 },
   library: { r: 3.2, stand: 4.1 },
   watchtower: { r: 2.6, stand: 3.6 },
   treasury: { r: 3, stand: 4 },
@@ -78,7 +89,11 @@ export function plotGate(plot: { x: number; y: number; size: number }): Target {
   const ux = len > 1e-6 ? -plot.x / len : 0;
   const uy = len > 1e-6 ? -plot.y / len : -1;
   const edge = plot.size / 2 / Math.max(Math.abs(ux), Math.abs(uy));
-  const d = edge + 1.6;
+  // 1.6 m out from the plot's edge, and clear of its fence (its corner posts too, when the keep lies off a corner).
+  const fence = plot.size / 2 + 1;
+  let d = edge + 1.6;
+  const outside = (k: number) => Math.hypot(Math.max(0, Math.abs(ux * k) - fence), Math.max(0, Math.abs(uy * k) - fence));
+  while (outside(d) < 0.595) d += 0.05;
   return { x: plot.x + ux * d, y: plot.y + uy * d, facing: Math.atan2(-uy, -ux) };
 }
 
@@ -288,22 +303,49 @@ export function paceFor(remaining: number): { speed: number; running: boolean } 
   return { speed: Math.max(RUN_SPEED, remaining / MAX_TRAVEL_S), running: true };
 }
 
+/** Galahad among the solids: the planner (it knows the world's solids), his place among them, and the ground he won't walk on. */
+export interface WalkWorld {
+  planner: Planner;
+  /** His circle in the world (joined with the walker itself as its place). */
+  mover: Mover;
+  /** Ground the way keeps off (the water and its very edge). */
+  wet: Wet;
+  /** Ground he never steps on (water deeper than a puddle at the edge); `wet` if not given. */
+  deep?: Wet;
+}
+
+/** Turns tried, either way, when a step would end in water. */
+const ASIDE = [0.5, -0.5, 1.0, -1.0, 1.5, -1.5];
+
 /**
  * Galahad's feet: follows a path at his pace, turning towards where he goes, and
  * towards the work once he arrives. `teleport` (reduced motion) skips the walk.
+ * Among the solids (`join`), every leg is planned round what's there and he
+ * moves and slides on it; whatever stops him on the way (a machine, a tree that
+ * just grew), he plans round from where he is. He's set down at the waypoint
+ * only as a last resort (`fallbacks` counts it).
  */
 export class Walker {
   x: number;
   y: number;
+  /** His radius among the solids. */
+  r: number = BUILDS.galahad.r;
   heading: number;
   moving = false;
   running = false;
+  /** Times he was set down at a waypoint because no way there opened. */
+  fallbacks = 0;
+  /** Times he planned again on the way. */
+  replans = 0;
   private path: Point[] = [];
   private facing: number;
   private pace = WALK_SPEED;
   private readonly scratch = { x: 0, y: 0 };
   private best = Infinity;
   private stuck = 0;
+  private world: WalkWorld | null = null;
+  /** The solids' version his path was last checked against. */
+  private seen = -1;
 
   private resetProgress(): void {
     this.best = Infinity;
@@ -315,6 +357,11 @@ export class Walker {
     this.y = start.y;
     this.heading = start.facing;
     this.facing = start.facing;
+  }
+
+  /** Walks among the world's solids from now on. */
+  join(world: WalkWorld): void {
+    this.world = world;
   }
 
   /** Remaining waypoints (for tests and debugging). */
@@ -336,20 +383,50 @@ export class Walker {
       this.path = [];
       return;
     }
-    this.path = planPath(this, target, obs);
+    const plan = planPath(this, target, obs);
+    this.path = this.world ? this.refine(plan) : plan;
+    this.seen = this.world ? this.world.planner.solids.version : -1;
     this.resetProgress();
     const pace = paceFor(pathLength(this, this.path));
     this.pace = pace.speed;
     this.running = pace.running;
   }
 
+  /** The way's legs, each planned round what's solid (a waypoint inside something is passed by). */
+  private refine(plan: readonly Point[]): Point[] {
+    const { planner, mover, wet } = this.world!;
+    const out: Point[] = [];
+    let x = this.x;
+    let y = this.y;
+    for (let i = 0; i < plan.length; i++) {
+      const p = plan[i]!;
+      if (i < plan.length - 1 && !mover.fits(p.x, p.y, PLAN_MARGIN)) continue;
+      planner.route(x, y, p.x, p.y, mover, wet, out);
+      x = p.x;
+      y = p.y;
+    }
+    return out;
+  }
+
+  /** From where he is to the waypoint ahead, round whatever is there now. */
+  private replan(): void {
+    const { planner, mover, wet } = this.world!;
+    const next = this.path[0]!;
+    const way: Point[] = [];
+    planner.route(this.x, this.y, next.x, next.y, mover, wet, way);
+    this.path.splice(0, 1, ...way);
+    this.replans++;
+  }
+
   /**
    * Advances by dt seconds. With `ground`, it's a kinematic controller: a step that
    * would land in water or a wall turns aside instead, and if no way forward opens
    * for a few seconds he's set down at the waypoint (never stuck for good).
+   * Among the solids (`join`), the ground is theirs (`ground` is not used).
    * Returns true while anything (position or heading) changes.
    */
   step(dt: number, ground?: Ground): boolean {
+    if (this.world) return this.walk(dt);
     let budget = this.pace * dt;
     this.moving = this.path.length > 0;
     while (budget > 0 && this.path.length) {
@@ -391,8 +468,14 @@ export class Walker {
         this.y = next.y;
         this.path.shift();
         this.resetProgress();
+        this.fallbacks++;
       }
     }
+    return this.settle(dt);
+  }
+
+  /** Once there: he turns to his work. True while he's still turning (or walking). */
+  private settle(dt: number): boolean {
     if (!this.path.length) {
       this.moving = false;
       this.running = false;
@@ -401,6 +484,100 @@ export class Walker {
       return Math.abs(angleDiff(before, this.facing)) > 1e-3;
     }
     return true;
+  }
+
+  /** A step among the solids: move and slide along the way, round whatever is met. */
+  private walk(dt: number): boolean {
+    const { planner, mover, wet } = this.world!;
+    this.moving = this.path.length > 0;
+    // Something grew (or went) since the way was planned: if it's now in the way ahead, plan round it.
+    const version = planner.solids.version;
+    if (this.path.length && version !== this.seen) {
+      this.seen = version;
+      const next = this.path[0]!;
+      if (!planner.clear(this.x, this.y, next.x, next.y, mover, wet, 0)) this.replan();
+    }
+    let budget = this.pace * dt;
+    for (let guard = 0; budget > 1e-9 && this.path.length && guard < 6; guard++) {
+      const next = this.path[0]!;
+      const dx = next.x - this.x;
+      const dy = next.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-6) {
+        this.path.shift();
+        this.resetProgress();
+        continue;
+      }
+      const len = Math.min(budget, d);
+      const out = this.scratch;
+      mover.slide(this.x, this.y, (dx / d) * len, (dy / d) * len, out);
+      const deep = this.world!.deep ?? wet;
+      if (deep?.(out.x, out.y)) this.aside(dx / d, dy / d, len, out, deep);
+      const mx = out.x - this.x;
+      const my = out.y - this.y;
+      if (mx * mx + my * my > 1e-12) this.heading = turnTowards(this.heading, Math.atan2(my, mx), 10 * dt);
+      this.x = out.x;
+      this.y = out.y;
+      const left = Math.hypot(next.x - this.x, next.y - this.y);
+      if (left < 0.02 || (!mover.touched && len >= d - 1e-9)) {
+        // There (exactly: the plan's ends are clear of everything).
+        if (!mover.touched) {
+          this.x = next.x;
+          this.y = next.y;
+        }
+        budget -= len;
+        this.path.shift();
+        this.resetProgress();
+        continue;
+      }
+      budget = 0;
+      this.progress(left, dt);
+    }
+    return this.settle(dt);
+  }
+
+  /** Getting no closer: another way round; near a place that's taken, that will do; as a last resort, set down there. */
+  private progress(left: number, dt: number): void {
+    if (left < this.best - 0.02) {
+      this.best = left;
+      this.stuck = 0;
+      return;
+    }
+    const before = this.stuck;
+    this.stuck += dt;
+    const { mover } = this.world!;
+    if (this.path.length === 1 && left < NEAR_ENOUGH && !mover.fits(this.path[0]!.x, this.path[0]!.y)) {
+      // Something stands where he was going: this near, he's arrived.
+      this.path.length = 0;
+      this.resetProgress();
+      return;
+    }
+    if (before < REPLAN_S && this.stuck >= REPLAN_S) {
+      this.replan();
+      return;
+    }
+    if (this.stuck > STUCK_S) {
+      const next = this.path.shift()!;
+      if (mover.fits(next.x, next.y)) {
+        this.x = next.x;
+        this.y = next.y;
+      }
+      this.fallbacks++;
+      this.resetProgress();
+    }
+  }
+
+  /** The step would end in water: turn aside, a little and then more, either way; or stay put. */
+  private aside(ux: number, uy: number, len: number, out: { x: number; y: number }, deep: (x: number, y: number) => boolean): void {
+    const { mover } = this.world!;
+    const h = Math.atan2(uy, ux);
+    for (let k = 0; k < ASIDE.length; k++) {
+      const a = h + ASIDE[k]!;
+      mover.slide(this.x, this.y, Math.cos(a) * len, Math.sin(a) * len, out);
+      if (!deep(out.x, out.y)) return;
+    }
+    out.x = this.x;
+    out.y = this.y;
   }
 }
 

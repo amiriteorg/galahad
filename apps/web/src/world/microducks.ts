@@ -1,4 +1,5 @@
-import { type Ground, moveOnGround, rng } from "./physics.ts";
+import { BUILDS, type Mover, type Solids } from "./collide.ts";
+import { type Ground, moveOnGround, rng, slideOnGround } from "./physics.ts";
 import { turnTowards } from "./path.ts";
 
 /*
@@ -6,7 +7,9 @@ import { turnTowards } from "./path.ts";
  * Mini v2, drawn from its URDF) pottering round the keep. They waddle in a loose flock,
  * stop to look about, bob their heads, peck, hop now and then, and sometimes tag
  * along behind Galahad or the dog for a few seconds. They keep off water, the
- * keep's buildings and the plots, and stay near home. Pure (the renderer reads
+ * keep's buildings and the plots, and stay near home. Among the solids each is
+ * a small circle that slides along what it meets, keeps out of the others' way
+ * and is moved aside by Galahad and the dog. Pure (the renderer reads
  * the pose of each), so unit-tested. World coordinates, metres.
  */
 
@@ -15,6 +18,8 @@ export type DuckMode = "walk" | "look" | "bob" | "peck" | "hop";
 export interface Duck {
   x: number;
   y: number;
+  /** Its radius among the solids. */
+  r: number;
   heading: number;
   /** Walking speed now, m/s (0 while busy with something else). */
   speed: number;
@@ -43,6 +48,7 @@ const HOME_RADIUS = 34;
 
 export class MicroduckFlock {
   readonly ducks: Duck[] = [];
+  private readonly movers: Mover[] = [];
   private readonly random: () => number;
   private readonly scratch = { x: 0, y: 0 };
 
@@ -63,7 +69,26 @@ export class MicroduckFlock {
         y = Math.sin(a) * r - 6;
         if (!ground.blocked(x, y)) break;
       }
-      this.ducks.push({ x, y, heading: this.random() * Math.PI * 2, speed: 0, mode: "look", timer: this.random() * 2, following: 0, followTimer: 0, phase: this.random() * 6, hop: 0, headYaw: 0, headPitch: 0, beak: 0, wander: this.random() * Math.PI * 2 });
+      this.ducks.push({ x, y, r: BUILDS.microduck.r, heading: this.random() * Math.PI * 2, speed: 0, mode: "look", timer: this.random() * 2, following: 0, followTimer: 0, phase: this.random() * 6, hop: 0, headYaw: 0, headPitch: 0, beak: 0, wander: this.random() * Math.PI * 2 });
+    }
+  }
+
+  /** Walks among the world's solids from now on (each standing where it fits). */
+  join(solids: Solids): void {
+    for (const d of this.ducks) {
+      const m = solids.join(d, BUILDS.microduck);
+      m.ground = (x, y) => this.ground.blocked(x, y);
+      for (let tries = 0; tries < 30 && !m.fits(d.x, d.y, 0.05); tries++) {
+        const a = this.random() * Math.PI * 2;
+        const r = 11 + this.random() * 8;
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r - 6;
+        if (!this.ground.blocked(x, y)) {
+          d.x = x;
+          d.y = y;
+        }
+      }
+      this.movers.push(m);
     }
   }
 
@@ -130,7 +155,8 @@ export class MicroduckFlock {
       }
       if (d.speed > 0) {
         d.heading = turnTowards(d.heading, Math.atan2(ty, tx), 4 * dt);
-        const taken = moveOnGround(this.ground, d.x, d.y, d.heading, d.speed * dt, this.scratch, 0.9);
+        const mover = this.movers[i];
+        const taken = mover ? slideOnGround(mover, this.ground, d.x, d.y, d.heading, d.speed * dt, this.scratch, 0.9) : moveOnGround(this.ground, d.x, d.y, d.heading, d.speed * dt, this.scratch, 0.9);
         if (taken === null) {
           d.wander += Math.PI * (0.5 + this.random());
           d.heading += 0.8;

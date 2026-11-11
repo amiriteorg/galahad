@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type ExperimentView, PADS } from "@galahad/core/world";
 import { Box3, type Mesh } from "three/webgpu";
 import { HALL, HALL_AISLE } from "./hall-plan.ts";
+import { plotColliders, plotLayout } from "./plot-plan.ts";
 import { Plots } from "./plots.ts";
 
 const COLORS = { accent: 0xe8853a, ok: 0x3aa66a, warn: 0xd89a2b, danger: 0xd24b3e, neutral: 0x9a9ea6 };
@@ -42,6 +43,24 @@ function furniture(plots: Plots, id: string): { minX: number; maxX: number; minY
 }
 
 describe("a plot's own furniture", () => {
+  test("the gate is a gap in the fence on the keep's side, with no post standing in it, and a test cell has no sign to bump into", () => {
+    for (const plot of [{ x: 110, y: 110, size: 48 }, { x: 0, y: 110, size: 48 }, { x: 0, y: 110, size: 96 }, { x: -110, y: 110, size: 24 }]) {
+      const l = plotLayout(plot);
+      const f = l.half;
+      const to = f / Math.max(Math.abs(Math.cos(l.gateDir)), Math.abs(Math.sin(l.gateDir)));
+      const [gx, gy] = [Math.cos(l.gateDir) * to, Math.sin(l.gateDir) * to];
+      // The gate point is on the square fence.
+      expect(Math.max(Math.abs(gx), Math.abs(gy))).toBeCloseTo(f, 9);
+      for (const [px, py] of l.posts) expect(Math.hypot(px - gx, py - gy)).toBeGreaterThan(0.5);
+      for (const [ax, ay, bx, by] of l.rails) expect(Math.hypot((ax + bx) / 2 - gx, (ay + by) / 2 - gy)).toBeGreaterThanOrEqual(1.6);
+      // And there is a gap: fewer rails than a whole fence.
+      expect(l.rails.length).toBeLessThan(l.posts.length + 1);
+    }
+    const cell = PADS.find((p) => p.id === "cell-2")!;
+    expect(plotLayout(cell).sign).toBeNull();
+    expect(plotColliders(cell)).toEqual([]);
+  });
+
   test("a test cell in the hall has no signpost of its own: nothing stands in the aisle, and the label floats over the cell", () => {
     const cell = PADS.find((p) => p.id === "cell-1")!;
     const plots = new Plots(COLORS, false, emitter);
