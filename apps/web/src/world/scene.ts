@@ -3,8 +3,8 @@ import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
-import { Care, type CareFrame, CareLook, DOCK_COLLIDERS, lodestarPulse } from "./care.ts";
-import { ACTIVITIES, type Activity } from "@galahad/core/life";
+import { Care, type CareFrame, CareLook, lodestarPulse } from "./care.ts";
+import { ACTIVITIES, type Activity, withDog } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";
@@ -22,10 +22,12 @@ import { ProvingGround } from "./field.ts";
 import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
+import { Hearth } from "./hearth.ts";
+import { FIRE } from "./hearth-plan.ts";
 import { HALL, inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
-import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
+import { type Attention, Knight, type KnightState } from "./knight.ts";
 import { Land, waterUniforms } from "./land.ts";
 import { Lightning } from "./lightning.ts";
 import { occlusion } from "./occlusion.ts";
@@ -82,8 +84,8 @@ export type GoTo =
   | { kind: "station"; station: Exclude<Station, "field"> }
   | { kind: "site"; site: SiteName }
   | { kind: "experiment"; id: string }
-  /** A point on the ground (the map): the view moves there, as it is. */
-  | { kind: "point"; x: number; y: number }
+  /** A point on the ground (the map): the view moves there, as it is (`close`: in near, for something small: his dog, his hearth). */
+  | { kind: "point"; x: number; y: number; close?: boolean }
   /** One of his partners: an agent's figure, or a node's spot at the keep (the selector's "Partners"). */
   | { kind: "partner"; name: string }
   | { kind: "node"; id: string };
@@ -100,6 +102,11 @@ export interface WorldWhere {
   distance: number;
   /** With no work, what he's doing in his day ("Walking the dog", "Needs you: …"); "" at work. */
   life: string;
+  /** His dog: where it is, its battery (0..1), and whether it's lying down or asleep. */
+  dogX: number;
+  dogY: number;
+  dogCharge: number;
+  dogState: "with him" | "lying by him" | "asleep" | "charging" | "playing";
 }
 
 export interface WorldOptions {
@@ -117,6 +124,8 @@ export interface WorldOptions {
   weather?: WeatherKind;
   /** The chalkboard was tapped: the page opens it. */
   onBoard?(): void;
+  /** His journal, on the desk at his hearth, was tapped: the page opens it. */
+  onJournal?(): void;
 }
 
 export interface WorldStats {
@@ -316,7 +325,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // The chalkboard at the observatory (board.ts): his writing and yours, and where he goes to write.
   const chalkboard = new Chalkboard(placeContext);
   const provingGround = new ProvingGround(placeContext);
-  const places: Place[] = [provingGround, workshop, chalkboard];
+  // His hearth south of the keep and the bench by the lake (hearth.ts): where his day begins and ends.
+  const hearth = new Hearth(placeContext);
+  const places: Place[] = [provingGround, workshop, chalkboard, hearth];
   chalkboard.onStand = () => model && retarget(model);
   // In the hall, Galahad and his dog are lit as it lights itself (every tier: no sun under its roof where there are no shadows).
   knight.lightIndoors(workshop.insideLight());
@@ -376,7 +387,6 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // ---------- his life when there's no work, and those he looks after (care.ts, life.ts, partners.ts) ----------
   const care = new Care(dog, critters.flock, provingGround, (on) => (critters.reachyTalk = on));
   const careLook = new CareLook(worldRoot, shadows);
-  solids.add(DOCK_COLLIDERS);
   const partners = new Partners(worldRoot, shadows);
   partners.figures.join(solids, dogGround);
   {
@@ -404,7 +414,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     motion: true,
     working: false,
     concern: null,
-    galahad: { x: 0, y: 0, heading: 0, moving: false },
+    galahad: { x: 0, y: 0, heading: 0, moving: false, raised: false },
     dog: { x: 0, y: 0, speed: 0 },
     nodeSpot: spotOf,
     height: (x, y) => land.heightAt(x, y),
@@ -419,7 +429,30 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let beatSeen = -1e9;
   let lastRan: number | null = null;
   /** ?trace=1: where his day is, for a tour to read. */
-  const lifeTrace = { activity: "", intent: "", charge: 0, docked: false, ball: "", beat: 0, squireGap: -1, force: (a: string | null) => void (care.forced = a && (ACTIVITIES as readonly string[]).includes(a) ? (a as Activity) : null), setCharge: (c: number) => void (care.charge = Math.max(0, Math.min(1, c))) };
+  const lifeTrace = {
+    activity: "",
+    intent: "",
+    label: "",
+    charge: 0,
+    docked: false,
+    ball: "",
+    beat: 0,
+    squireGap: -1,
+    /** How he is: seated, lying back, asleep, writing; the dog lying down, how far it is from him; the fire burning. */
+    sitting: false,
+    lying: false,
+    asleep: false,
+    writing: false,
+    dogLying: false,
+    dogGap: 0,
+    fire: false,
+    force: (a: string | null) => void (care.forced = a && (ACTIVITIES as readonly string[]).includes(a) ? (a as Activity) : null),
+    setCharge: (c: number) => void (care.charge = Math.max(0, Math.min(1, c))),
+  };
+  /** The dog's name, once you've given it one (it's in what the world says he's doing). */
+  let dogName = "";
+  /** Embers from the fire, now and then. */
+  let emberTimer = 0;
   /** The fleet's banners, the beacon and the plots' fences: solids that come and go with the model. */
   let fleetSolids = 0;
   let beaconSolids = 0;
@@ -633,7 +666,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     (out) => {
       out[0] = walker.x;
       out[1] = walker.y;
-      out[2] = (Number.isNaN(standZ) ? groundAt(walker.x, walker.y) : standZ) + HEAD_HEIGHT;
+      // Over his head, wherever it is: lower when he sits or lies.
+      out[2] = (Number.isNaN(standZ) ? groundAt(walker.x, walker.y) : standZ) + knight.headHeight;
       return true;
     },
     10,
@@ -799,6 +833,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         options.onBoard?.();
         return;
       }
+      // His journal, on his desk: it opens to read.
+      if (options.onJournal && groundUnder(clientX, clientY) && hearth.overJournal(hit.x + origin[0], -hit.z + origin[1])) {
+        options.onJournal();
+        return;
+      }
       // A Microduck or an arm under the finger: say what it is (for a moment) rather than select.
       if (probe(clientX, clientY)) {
         hoverAt[0] = clientX;
@@ -855,6 +894,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (!groundUnder(clientX, clientY)) return null;
     const x = hit.x + origin[0];
     const y = -hit.z + origin[1];
+    // His dog first: its name (once it has one) and its battery.
+    if (Math.hypot(x - dog.x, y - dog.y) < 0.7) {
+      hoverPoint[0] = dog.x;
+      hoverPoint[1] = dog.y;
+      hoverPoint[2] = groundAt(dog.x, dog.y) + 1;
+      return `${dogName || "His dog"} · battery ${Math.round(care.charge * 100)} %${care.docked ? ", charging" : ""}`;
+    }
     const text = critters.hover(x, y, hoverPoint) ?? partners.hover(x, y, hoverPoint);
     if (text) return text;
     for (const place of places) {
@@ -1209,6 +1255,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     careFrame.galahad.y = walker.y;
     careFrame.galahad.heading = walker.heading;
     careFrame.galahad.moving = walker.moving;
+    careFrame.galahad.raised = walker.raised;
     careFrame.dog.x = dog.x;
     careFrame.dog.y = dog.y;
     careFrame.dog.speed = Number.isNaN(dogLast.x) || renderDt <= 0 ? 0 : Math.hypot(dog.x - dogLast.x, dog.y - dogLast.y) / renderDt;
@@ -1233,19 +1280,30 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (model) firstLife = false;
     careKey = life.key;
     careIntent = life.intent;
-    if (idle && life.label !== bubbleLife) {
-      bubbleLife = life.label;
+    // What the world says he's doing, with the dog's name in it once it has one.
+    const lifeLabel = dogName ? withDog(life.label, dogName) : life.label;
+    if (idle && lifeLabel !== bubbleLife) {
+      bubbleLife = lifeLabel;
       if (model) syncBubble(model);
-      bubbleDoing.textContent = life.label || g?.doing || "";
+      bubbleDoing.textContent = lifeLabel || g?.doing || "";
       bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden;
       remeasure("bubble");
     }
+    hearth.setLying(knight.lying);
     if (trace) {
       care.trace(lifeTrace);
+      lifeTrace.label = lifeLabel;
       lifeTrace.squireGap = partners.gap(walker.x, walker.y);
+      lifeTrace.sitting = idle && life.pose.sit > 0 && !walker.moving;
+      lifeTrace.lying = knight.lying;
+      lifeTrace.asleep = idle && life.pose.asleep > 0;
+      lifeTrace.writing = idle && life.writing && !walker.moving;
+      lifeTrace.dogLying = dog.lying;
+      lifeTrace.dogGap = Math.hypot(dog.x - walker.x, dog.y - walker.y);
+      lifeTrace.fire = hearth.lit;
     }
-    // His heartbeat in the lodestar: softly at rest, harder for a few seconds after a heartbeat ran.
-    knight.pulse.value = motion ? lodestarPulse(t, (performance.now() - beatSeen) / 1000) : 0.15;
+    // His heartbeat in the lodestar: softly at rest (slower asleep), harder for a few seconds after a heartbeat ran.
+    knight.pulse.value = motion ? lodestarPulse(idle && life.pose.asleep > 0 ? t * 0.6 : t, (performance.now() - beatSeen) / 1000) : 0.15;
     const atWork = idle ? life.busy && !walker.moving : !walker.moving && Boolean(g?.doing);
     knightState.moving = walker.moving;
     knightState.running = walker.running;
@@ -1279,6 +1337,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       attention.y = life.attention.y;
       attention.z = life.attention.z;
       attention.on = true;
+      // At his desk, his journal: his hand on the page.
+      if (life.writing) knightState.writing = true;
     }
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
     if (Number.isNaN(standZ) || !motion || Math.abs(walker.z - standZ) > 2) standZ = walker.z;
@@ -1322,6 +1382,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     placeFrame.windHeading = weather.state.windHeading;
     for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
 
+    // Embers rise from the fire at his hearth.
+    if (motion && hearth.lit) {
+      emberTimer -= renderDt;
+      if (emberTimer <= 0) {
+        emberTimer = 0.5 + 0.7 * Math.abs(Math.sin(t * 3.7));
+        fauna.sparksAt(FIRE.x, FIRE.y, groundAt(FIRE.x, FIRE.y) + 0.45, 1);
+      }
+    }
     // Sparks fly from the bench where his blade's tip works.
     if (motion && atWork && g?.station === "forge") {
       sparkTimer -= renderDt;
@@ -1455,6 +1523,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         lastRan = ran;
       }
       if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
+      // The dog's name, once you've given it one (the node's `companion`; older nodes don't send it).
+      const name = (next as { companion?: { name?: string } | null }).companion?.name?.trim() ?? "";
+      if (name !== dogName) {
+        dogName = name;
+        hearth.dogName = name;
+        dirty = true;
+      }
       if (!prev || prev.nodes !== next.nodes) {
         keep.setNodes(next.nodes);
         solids.remove(fleetSolids);
@@ -1496,7 +1571,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
           rig.lookAt(v.x, v.y, v.distance);
           rig.target.yaw = v.yaw;
         } else if (target.kind === "point") {
-          if (Number.isFinite(target.x) && Number.isFinite(target.y)) rig.lookAt(target.x, target.y);
+          if (Number.isFinite(target.x) && Number.isFinite(target.y)) rig.lookAt(target.x, target.y, target.close ? 14 : undefined);
         } else if (target.kind === "partner") {
           const at = { x: 0, y: 0 };
           if (partners.find(target.name, at)) rig.lookAt(at.x, at.y, 12);
@@ -1564,7 +1639,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       out.focusY = rig.y;
       out.yaw = rig.yaw;
       out.distance = rig.distance;
-      out.life = care.out.intent === "work" ? "" : care.out.label;
+      out.life = care.out.intent === "work" ? "" : dogName ? withDog(care.out.label, dogName) : care.out.label;
+      out.dogX = dog.x;
+      out.dogY = dog.y;
+      out.dogCharge = care.charge;
+      out.dogState = care.docked ? "charging" : dog.mood.asleep > 0.5 ? "asleep" : care.ball !== "held" ? "playing" : dog.lying ? "lying by him" : "with him";
       return out;
     },
     stats() {

@@ -50,20 +50,28 @@ The stream carries it as a `heartbeat` event (and in `hello`): when its last run
 
 ## His day
 
-When there's no work he lives a day (`life.ts`), planned from the real time in Denmark and a seed, so he's doing the same thing on every device at the same moment:
+The SANDBOX is where he does everything: he builds at the workshop's bench, tests on the sites, examines at the observatory, writes on the chalkboard, thinks, walks, sleeps and writes his journal. When there's no work he lives a day, planned from the real time in Denmark and a seed (`packages/core/src/life.ts`, so the node reads the same day the world shows), so he's doing the same thing on every device at the same moment:
 
 | When (Denmark) | What |
 |---|---|
-| Night, until he wakes (06:15 to 06:45) | Resting on the keep's deck |
+| Night, until the dog wakes him (06:15 to 06:45) | Asleep at his hearth: lying back on his bed under his blanket, his sword on its stand, the dog asleep on its cushion against the bed |
+| Then, for a few minutes | Woken by the dog: it's up first, tail going; he wakes, pats it from where he lies, gets up and down to it, and they sit by the fire |
 | Then | Morning rounds: each station of the keep in turn, a pause and a look at each |
-| Then | Walking the dog: fetch on the lawns south of the keep, then on to the next spot |
-| The day | Visits, 35 to 70 minutes each, in an order of the day's own: his friends the Microducks, reading at the library, the workshop, the proving ground, the council table, the observatory; a short walk with the dog at noon |
+| Then | Out for a walk with the dog: the trail down to the lake, along the shore and back over the meadow, the dog out in front; at each view he stops and looks out, and goes down to it for a pat |
+| The day | Visits, 35 to 70 minutes each, in an order of the day's own: his friends the Microducks, reading at the library, the workshop, the proving ground, the council table, the observatory, thinking on the bench by the lake; fetch with the dog at noon |
 | 18:30 | A walk with the dog |
-| Then | The council table with Reachy Mini |
-| Until bedtime (21:45 to 22:15) | By the board at the observatory |
-| Then | Resting on the deck |
+| Then | The council table with Reachy Mini, then the board at the observatory |
+| From about 20:40 | By the fire with the dog: seated on the log, the dog lying at his side |
+| 21:28 | Writing his journal at his desk (the node's nightly reflection runs at 21:30: he's writing as it's written); he stops now and then, hand to his chin, and thinks back over the day |
+| Bedtime (21:52 to 22:12) | A last pat for the dog, and asleep |
 
-Real work always comes first: the moment the stream has work for him (a chat, a tool, a quest, an agent's call, an experiment), he drops what he's doing and goes. When it's done he picks his day up where it would be (the plan is a function of the time, so it's simply the block for now). What needs you comes next, then the dog's battery, then the plan. Under reduced motion he stays put, resting on the deck. The selector and his bubble say what he's doing ("Walking the dog · Heartbeat ✓ 12:30").
+Real work always comes first: the moment the stream has work for him (a chat, a tool, a quest, an agent's call, an experiment), he drops what he's doing and goes. When it's done, the dog comes first: if he was at it for half a minute or more, the dog bounds to his feet and he crouches and pats it before anything else (not up on the keep's deck, where the dog can't come). Then he picks his day up where it would be (the plan is a function of the time, so it's simply the block for now). What needs you comes next, then the dog's battery, then the plan. Under reduced motion he stays put, resting on the deck. The selector and his bubble say what he's doing ("Out for a walk with the dog · Heartbeat ✓ 12:30"), with the dog's name in it once you've given it one.
+
+### His hearth
+
+South of the keep, down a path from the foot of its stairs, is his own camp (`hearth-plan.ts` has where everything stands, `hearth.ts` draws it): a fire in a ring of stones under a tripod with a kettle (it burns from dusk to morning and whenever he's there, not in a downpour; embers rise from it); his bed, a woven mat with a wedge to lean back on, his feet to the fire, a footlocker at its foot with his blanket folded on it (spread over his legs while he lies there); the dog's cushion tucked against the mat on his right, with its charge post (the cushion is its dock: it sleeps within reach of his hand, charging); a log to sit on by the fire; his desk with a chair, a lantern and his journal lying open (tap it, or pick "His journal" in the selector, to read what he wrote); a stand where his sword rests while he sleeps; and a pole with his pennant and a lantern. A second path leads on to a bench on the lake's shore, looking south over the water, with a lantern on a post.
+
+He sits down where he stands (the seat is just behind him: his hips come down and back, his feet out before him, his hands on his thighs, his scabbard swung forward beside his thigh) and lies back the same way, onto the wedge; asleep his head goes back, his eyes and seams dim to a glimmer (never the lodestar, which beats slower), and he breathes slowly (`knight.ts`). A seat is solid only where he never stands (a chair's back, the log's ends, the desk's far half), and a test walks him to every seat, the bed, the bench and round the whole trail on the real land among the real solids. `?life=sleep` (or wake, hearth, journal, ponder, walk) shows each.
 
 ## Those he looks after
 
@@ -71,12 +79,12 @@ Real work always comes first: the moment the stream has work for him (a chat, a 
 
 | Who | What he does |
 |---|---|
-| His dog | Pats it (he crouches, his hand on its head), throws a ball it runs for, picks up and brings back to his feet, three throws a game. Its battery is four cells on its back, green to red: it drains as it goes (faster running) and lasts a good half hour of play; when it's low he walks it to its charging dock by the keep (a pad and a post with a light, beside the way to the stairs), sees it settled and pats it, and it sits there until it's full (about two minutes) while he goes on; flat while he works, it goes on its own. Its mood shows: its tail up and wagging when it plays or is patted, low and slow when it's tired; its ears pricked or drooped; the light in its eye dimmed when it's low |
+| His dog | It's with him through all of it. It watches him: sitting or lying, its head turns to wherever he is. When he settles to something (his work, his journal, the fire, the bench) it lies down by him, forelegs out, within reach of his hand, and he pats it now and then; it wanders off for a sniff far less often than it did, and comes back. On a walk it's out in front, leading. When the work's done it gets its pat before anything else, bouncing on its forelegs as it's greeted. At night it sleeps on its cushion against his bed (head on its paws, its eye a glimmer) after a last pat, and in the morning it's up first and wakes him. He throws a ball it runs for, picks up and brings back to his feet, three throws a game. Its battery is four cells on its back, green to red: it drains as it goes (faster running) and lasts a good half hour of play; its cushion is its dock, so it charges as it sleeps, and when it's low by day he walks it there, sees it settled and pats it, and it lies there until it's full (about two minutes) while he goes on; flat while he works, it goes on its own. Its mood shows: its tail up and wagging when it plays or is patted, low and slow when it's tired; its ears pricked or drooped; the light in its eye dimmed when it's low. Hover it (or pick it in the selector) for its name and battery; you name it in Settings or with `galahad dog name` |
 | His friends | The Microducks gather round him in a ring when he visits, heads up at him; he crouches to look one over; one that has wandered far from the others he walks to and leads home (it follows him back). At the council table Reachy Mini and he look at each other and "talk": their heads tilt and nod |
 | His companions | On the proving ground: before the aircraft flies he walks round it, a pause at each of six points (it waits at its tie-down, engine off, until he's done; it's never held in the air or on its way); he swaps the quadcopter's battery on its pad once it's down (it's ready to fly a moment later); he checks the rover at its start gate as it comes by. In the workshop he clears a finished print at the printer farm and looks over the assembly line's arms. The machines run their own simulations (`field*.ts`, `hall*.ts`); care only reads them and holds the aircraft for the walk-round |
 | His partners | See below |
 
-`?life=walk-dog` (or rounds, friends, library, workshop, field, council, observatory, rest) on the page fixes his day to one part of it, and `?charge=0.15` sets the dog's battery, for tours; with `?trace=1`, `globalThis.__sandboxLife` says what he's doing (and its `force(activity)` and `setCharge(c)` change it).
+`?life=walk-dog` (or sleep, wake, rounds, walk, friends, library, workshop, field, council, observatory, ponder, hearth, journal) on the page fixes his day to one part of it, and `?charge=0.15` sets the dog's battery, for tours; with `?trace=1`, `globalThis.__sandboxLife` says what he's doing, how he is (sitting, lying, asleep, writing), whether the dog's lying down and how far it is from him, and whether the fire's lit (and its `force(activity)` and `setCharge(c)` change it).
 
 ## His partners
 

@@ -24,7 +24,7 @@ import { badge, button, callout, dot, segmented } from "../ui/controls.ts";
 import { h, isTyping, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
-import { type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
+import { HIS_PLACES, type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
 import { createWorldChat } from "./world-chat.ts";
 import { createLook } from "./world-look.ts";
 import { boardFeed, fetchBoard, openBoardSheet } from "./board.ts";
@@ -32,6 +32,7 @@ import { busyPlot, decodeRecording, frameAt, posesAt, type Recording, ReplayCloc
 import { examinationView, type ReplayPanel, replayPanel } from "./world-replay.ts";
 import { FIELD, RUNWAY } from "../world/field-plan.ts";
 import { HALL } from "../world/hall-plan.ts";
+import type { WorldWhere } from "../world/scene.ts";
 
 /*
  * The SANDBOX: a 3D world where Galahad is seen at work, walking between the
@@ -50,7 +51,7 @@ import { HALL } from "../world/hall-plan.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 8;
+const WORLD_API = 9;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -148,8 +149,10 @@ export const worldView: View = (root, ctx, { scope }) => {
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
   // One selector for what the view is on (Galahad, an experiment, a site, a station), and a way back to him when it isn't.
-  const lookFocus = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "" };
-  const look = createLook({ model: () => model, life: () => lookFocus.life, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
+  const lookFocus: WorldWhere = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "", dogX: 0, dogY: 0, dogCharge: 1, dogState: "with him" };
+  /** His dog, for the selector: its name (the node's `companion`, once you've named it), what it's doing, its battery. */
+  const dogLook = () => (handle ? { name: (model as { companion?: { name?: string } | null }).companion?.name ?? "", state: lookFocus.dogState, charge: lookFocus.dogCharge } : null);
+  const look = createLook({ model: () => model, life: () => lookFocus.life, dog: dogLook, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
   scope.add(() => look.dispose());
   const followButton = button("Follow Galahad", { iconOnly: true, icon: "user", size: "sm", onClick: () => lookAt({ kind: "galahad" }) });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
@@ -250,6 +253,10 @@ export const worldView: View = (root, ctx, { scope }) => {
       openBoard();
       return;
     }
+    if (target.kind === "journal") {
+      openJournal();
+      return;
+    }
     if (target.kind === "saved") {
       void startReplay(target.id);
       return;
@@ -263,6 +270,14 @@ export const worldView: View = (root, ctx, { scope }) => {
     if (target.kind === "galahad") {
       setFollow(true);
       handle?.goTo({ kind: "galahad" });
+    } else if (target.kind === "dog") {
+      // Wherever it is now (it's never far from him).
+      setFollow(false);
+      handle?.where(lookFocus);
+      handle?.goTo({ kind: "point", x: lookFocus.dogX, y: lookFocus.dogY, close: true });
+    } else if (target.kind === "place") {
+      setFollow(false);
+      handle?.goTo({ kind: "point", x: HIS_PLACES[target.place].x, y: HIS_PLACES[target.place].y, close: true });
     } else {
       setFollow(false);
       handle?.goTo(target);
@@ -354,7 +369,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
   mapButton.setAttribute("aria-pressed", String(mapOn));
 
-  const where = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "" };
+  const where: WorldWhere = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "", dogX: 0, dogY: 0, dogCharge: 1, dogState: "with him" };
   const uv: [number, number] = [0, 0];
   let mapLand: HTMLCanvasElement | null = null;
 
@@ -500,6 +515,10 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
   function openBoard(): void {
     openBoardSheet(ctx, boardChanges);
+  }
+  /** His journal (the book on his desk, the selector's entry): its own view. */
+  function openJournal(): void {
+    location.hash = "#/journal";
   }
 
   function apply(event: WorldEvent): void {
@@ -880,6 +899,7 @@ export const worldView: View = (root, ctx, { scope }) => {
         },
         onLost: (reason) => void lostDevice(reason),
         onBoard: () => openBoard(),
+        onJournal: () => openJournal(),
       });
       if (scope.disposed) {
         mounted.dispose();

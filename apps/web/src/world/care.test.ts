@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { HeartbeatFinding } from "@galahad/core/world";
 import { BUILDS, Solids } from "./collide.ts";
-import { ballFlight, Care, type CareDog, type CareField, type CareFrame, CRITICAL, DOCK, DOCK_COLLIDERS, DOCK_STAND, FULL, LOW, lodestarPulse, ROUND_PLANE, stepCharge, WALK } from "./care.ts";
+import { ballFlight, Care, type CareDog, type CareField, type CareFrame, CRITICAL, DOCK, DOCK_STAND, FULL, LOW, lodestarPulse, PAT_AFTER, ROUND_PLANE, stepCharge, WALK } from "./care.ts";
+import { BED, BENCH_DOG, BENCH_SEAT, DESK_DOG, DESK_SEAT, FIRE, HEARTH_COLLIDERS, JOURNAL, LOG_DOG, LOG_SEAT, TRAIL } from "./hearth-plan.ts";
 import { DECK_REST } from "./keep-deck.ts";
 import { fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
 import { MicroduckFlock } from "./microducks.ts";
@@ -54,21 +55,18 @@ describe("the dog's battery", () => {
     expect(CRITICAL).toBeLessThan(LOW);
   });
 
-  test("its dock stands clear of the keep, its stairs and every banner of a full fleet; the dog fits on it, he fits beside it", () => {
+  test("its dock is its cushion against his bed: clear of the keep and every banner of a full fleet; the dog fits on it, he fits beside it", () => {
     const solids = new Solids();
     solids.add(KEEP_COLLIDERS);
     solids.add(fleetColliders(Array.from({ length: 16 }, (_, i) => i % 3 === 0)));
+    solids.add(HEARTH_COLLIDERS);
     const dog = solids.join({ x: DOCK.x, y: DOCK.y, r: BUILDS.dog.r }, BUILDS.dog);
     const him = solids.join({ x: DOCK_STAND.x, y: DOCK_STAND.y, r: BUILDS.galahad.r }, BUILDS.galahad);
-    expect(dog.fits(DOCK.x, DOCK.y, 0.05)).toBe(true);
+    expect(dog.fits(DOCK.x, DOCK.y, 0.02)).toBe(true);
     expect(him.fits(DOCK_STAND.x, DOCK_STAND.y, 0.05)).toBe(true);
-    // Its own post doesn't stand where the dog sits, or where he stands.
-    solids.add(DOCK_COLLIDERS);
-    expect(dog.fits(DOCK.x, DOCK.y, 0)).toBe(true);
-    expect(him.fits(DOCK_STAND.x, DOCK_STAND.y, 0)).toBe(true);
-    // And it's off the way to the stairs (he stands at the keep's door).
-    const door = standAt("keep");
-    expect(Math.hypot(DOCK.x - door.x, DOCK.y - door.y)).toBeGreaterThan(2);
+    // Within reach of where he lies: a dog's length from his bed.
+    expect(Math.hypot(DOCK.x - BED.x, DOCK.y - BED.y)).toBeLessThan(1);
+    expect(Math.hypot(DOCK.x - BED.x, DOCK.y - BED.y)).toBeGreaterThanOrEqual(BUILDS.dog.r + BUILDS.galahad.r);
   });
 });
 
@@ -95,8 +93,8 @@ function world(opts: { motion?: boolean } = {}) {
   const dog: CareDog & { x: number; y: number } = {
     x: 0,
     y: -9,
-    lead: { on: false, x: 0, y: 0, sit: false, run: false, faceX: Number.NaN, faceY: Number.NaN },
-    mood: { wag: 0.5, ears: 0.6, eye: 1 },
+    lead: { on: false, x: 0, y: 0, sit: false, lie: false, run: false, faceX: Number.NaN, faceY: Number.NaN },
+    mood: { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0 },
     charge: { value: 1 },
     mouth: (out) => {
       out[0] = dog.x;
@@ -307,5 +305,197 @@ describe("his day, stepped", () => {
     // A thousand frames of care (and the test's own stepping) well within a frame's budget each.
     expect(per).toBeLessThan(0.05);
     console.log(`care: ${(per * 1000).toFixed(1)} µs a frame`);
+  });
+});
+
+describe("his hearth, and his dog through the day", () => {
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, d = 0.05) => Math.hypot(a.x - b.x, a.y - b.y) < d;
+
+  test("night: he lies back on his bed, the dog comes to its cushion against it, a last pat, and they sleep", () => {
+    const w = world();
+    w.care.forced = "sleep";
+    let out = w.run(3);
+    expect(near(out.target, BED)).toBe(true);
+    // Lying back, the dog on its way to its cushion (to lie there, its head towards him); a last pat before he sleeps.
+    out = w.run(3);
+    expect(out.pose.lie).toBe(1);
+    expect(out.pose.asleep).toBe(0);
+    expect(w.dog.lead).toMatchObject({ on: true, x: DOCK.x, y: DOCK.y, lie: true });
+    expect(out.label).toBe("Turning in: a last pat for the dog");
+    let patted = false;
+    for (let i = 0; i < 40; i++) {
+      out = w.run(0.1);
+      if (out.pose.reach === 1 && out.attention.on && near(out.attention, w.dog, 0.01)) patted = true;
+    }
+    expect(patted).toBe(true);
+    // Asleep, both of them: his eyes closed, its eye a glimmer, its tail still.
+    out = w.run(8);
+    expect(out.pose).toMatchObject({ lie: 1, asleep: 1, reach: 0 });
+    expect(out.label).toBe("Asleep at his hearth, the dog beside him");
+    expect(w.dog.mood.asleep).toBeGreaterThan(0.95);
+    expect(w.dog.mood.eye).toBeLessThan(0.15);
+    expect(w.dog.mood.wag).toBeLessThan(0.05);
+    // It charges there as it sleeps (it began at three quarters).
+    expect(w.care.docked).toBe(true);
+    expect(w.care.charge).toBeGreaterThan(0.8);
+  });
+
+  test("morning: the dog's up first and wakes him; he pats it from his bed, gets up and down to it, and they sit by the fire", () => {
+    const w = world();
+    w.care.forced = "wake";
+    // (After a night on its cushion its battery is full.)
+    w.care.charge = 1;
+    w.him.x = BED.x;
+    w.him.y = BED.y;
+    w.dog.x = DOCK.x;
+    w.dog.y = DOCK.y;
+    let out = w.run(2);
+    expect(out.pose).toMatchObject({ lie: 1, asleep: 1 });
+    // The dog, up and keen, while he still sleeps.
+    out = w.run(3);
+    expect(out.pose.asleep).toBe(1);
+    expect(w.dog.lead.lie).toBe(false);
+    expect(w.dog.mood.joy).toBeGreaterThan(0.2);
+    // He wakes and pats it from where he lies.
+    out = w.run(5);
+    expect(out.pose).toMatchObject({ lie: 1, asleep: 0, reach: 1 });
+    // Up, and down to it.
+    out = w.run(6);
+    expect(out.pose).toMatchObject({ lie: 0, crouch: 1, reach: 1 });
+    expect(w.dog.mood.joy).toBeGreaterThan(0.9);
+    // Then the fire, the two of them, until his rounds.
+    out = w.run(8);
+    expect(near(out.target, LOG_SEAT)).toBe(true);
+    expect(out.pose.sit).toBe(1);
+    expect(w.dog.lead).toMatchObject({ on: true, x: LOG_DOG.x, y: LOG_DOG.y, lie: true });
+  });
+
+  test("the evening by the fire: seated on the log looking into it, the dog lying at his side, patted now and then", () => {
+    const w = world();
+    w.care.forced = "hearth";
+    let out = w.run(6);
+    expect(out.pose.sit).toBe(1);
+    expect(out.attention).toMatchObject({ on: true, x: FIRE.x, y: FIRE.y });
+    expect(near(w.dog, LOG_DOG, 0.1)).toBe(true);
+    let pats = 0;
+    let was = false;
+    for (let i = 0; i < 600; i++) {
+      out = w.run(0.1);
+      const pat = out.pose.reach === 1;
+      if (pat && !was) pats++;
+      was = pat;
+    }
+    expect(pats).toBeGreaterThanOrEqual(2);
+  });
+
+  test("his journal: seated at his desk he writes, his hand on the page; he stops to think back; the dog lies by his chair", () => {
+    const w = world();
+    w.care.forced = "journal";
+    let out = w.run(8);
+    expect(near(out.target, DESK_SEAT)).toBe(true);
+    expect(out.pose.sit).toBe(1);
+    expect(w.dog.lead).toMatchObject({ on: true, x: DESK_DOG.x, y: DESK_DOG.y, lie: true });
+    let wrote = 0;
+    let thought = 0;
+    for (let i = 0; i < 600; i++) {
+      out = w.run(0.1);
+      expect(out.pose.sit).toBe(1);
+      if (out.writing) {
+        wrote++;
+        // His hand is on the open journal.
+        expect(Math.hypot(out.attention.x - JOURNAL.x, out.attention.y - JOURNAL.y)).toBeLessThan(0.25);
+        expect(out.attention.z).toBeCloseTo(JOURNAL.z, 5);
+        expect(out.thinking).toBe(false);
+      } else if (out.thinking) thought++;
+    }
+    expect(wrote).toBeGreaterThan(350);
+    expect(thought).toBeGreaterThan(80);
+    expect(out.label).toBe("Writing his journal");
+  });
+
+  test("thinking by the lake: seated on the bench looking out over the water, the dog at his feet", () => {
+    const w = world();
+    w.care.forced = "ponder";
+    let out = w.run(30);
+    expect(near(out.target, BENCH_SEAT)).toBe(true);
+    expect(out.pose.sit).toBe(1);
+    expect(out.attention.y).toBeLessThan(BENCH_SEAT.y - 10);
+    expect(near(w.dog, BENCH_DOG, 0.1)).toBe(true);
+    let thought = false;
+    for (let i = 0; i < 500; i++) {
+      out = w.run(0.1);
+      if (out.thinking) thought = true;
+    }
+    expect(thought).toBe(true);
+  });
+
+  test("out for a walk: the trail's points in turn, the dog out in front on the way; at a view he stops, looks out, and goes down to it for a pat", () => {
+    const w = world();
+    w.care.forced = "walk";
+    const visited: number[] = [];
+    let led = 0;
+    let patted = false;
+    let looked = false;
+    for (let i = 0; i < 2400 && visited.length < TRAIL.length + 1; i++) {
+      const out = w.run(0.1);
+      const k = TRAIL.findIndex((p) => p.x === out.target.x && p.y === out.target.y);
+      if (k >= 0 && visited.at(-1) !== k) visited.push(k);
+      if (w.him.moving && w.dog.lead.on) {
+        // Ahead of him, the way he's going.
+        const ahead = (w.dog.lead.x - w.him.x) * Math.cos(w.him.heading) + (w.dog.lead.y - w.him.y) * Math.sin(w.him.heading);
+        expect(ahead).toBeGreaterThan(2.5);
+        led++;
+      }
+      if (!w.him.moving && out.pose.crouch === 1 && out.pose.reach === 1) patted = true;
+      if (!w.him.moving && out.attention.on && out.attention.z > 1) looked = true;
+    }
+    // Round the whole trail and on to its start again.
+    expect(visited).toEqual([...TRAIL.keys(), 0]);
+    expect(led).toBeGreaterThan(50);
+    expect(patted).toBe(true);
+    expect(looked).toBe(true);
+  });
+
+  test("the work's done: the dog first. It comes bounding to his feet and he crouches and pats it, then his day goes on", () => {
+    const w = world();
+    w.care.forced = "library";
+    w.run(5);
+    w.frame.working = true;
+    w.run(PAT_AFTER + 2);
+    w.frame.working = false;
+    let out = w.run(0.1);
+    expect(out.intent).toBe("life");
+    expect(out.label).toBe("Work's done: the dog first");
+    // He stays where the work left him.
+    expect(near(out.target, w.him, 0.01)).toBe(true);
+    expect(w.dog.lead).toMatchObject({ on: true, run: true });
+    let patted = false;
+    for (let i = 0; i < 100 && out.label.startsWith("Work's done"); i++) {
+      out = w.run(0.1);
+      if (out.pose.crouch === 1 && out.pose.reach === 1) patted = true;
+      if (out.label.startsWith("Work's done")) expect(w.dog.mood.joy).toBeGreaterThan(0);
+    }
+    expect(patted).toBe(true);
+    // And back to his day.
+    out = w.run(1);
+    expect(out.label).toBe("Reading at the library");
+    expect(w.dog.lead.on).toBe(false);
+  });
+
+  test("a moment's work earns no ceremony; nor does work that ends up on the deck, where the dog can't come", () => {
+    const brief = world();
+    brief.care.forced = "library";
+    brief.run(5);
+    brief.frame.working = true;
+    brief.run(5);
+    brief.frame.working = false;
+    expect(brief.run(0.1).label).toBe("Reading at the library");
+    const up = world();
+    up.care.forced = "library";
+    up.frame.working = true;
+    up.run(PAT_AFTER + 2);
+    up.frame.galahad.raised = true;
+    up.frame.working = false;
+    expect(up.run(0.1).label).toBe("Reading at the library");
   });
 });

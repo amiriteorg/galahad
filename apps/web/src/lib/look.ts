@@ -1,12 +1,14 @@
 import { padAt, phaseOf, type SiteName, SITE_NAMES, SITES, type Station, STATIONS } from "@galahad/core/world";
+import { BENCH_AREA, CAMP } from "../world/hearth-plan.ts";
 import { relativeTime } from "./time.ts";
 import { ENGINE_LABEL, experimentEnded, experimentPlace, heartbeatLine, isIdle, PHASE_LABEL, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
 
 /*
  * The SANDBOX's one selector: what the view is looking at, in a few words, and
- * everything it can look at instead (Galahad, the experiments, the saved ones to
- * replay, his partners: the agents working with him and the fleet's nodes, the
- * two test sites, the keep's stations), ranked and searchable. Pure, so
+ * everything it can look at instead (Galahad, his dog, the chalkboard, his
+ * journal, the experiments, the saved ones to replay, his partners: the agents
+ * working with him and the fleet's nodes, the two test sites, his hearth, the
+ * bench by the lake and the keep's stations), ranked and searchable. Pure, so
  * unit-tested; the view draws it (views/world-look.ts).
  */
 
@@ -19,11 +21,35 @@ export type LookTarget =
   | { kind: "station"; station: Exclude<Station, "field"> }
   /** The chalkboard at the observatory: it opens, to draw on. */
   | { kind: "board" }
+  /** His dog, wherever it is. */
+  | { kind: "dog" }
+  /** His journal: it opens, to read. */
+  | { kind: "journal" }
+  /** A place of his own: his hearth south of the keep, the bench by the lake. */
+  | { kind: "place"; place: HisPlace }
   /** An agent working with him (its figure in the world), or one of the fleet's nodes (its spot at the keep). */
   | { kind: "partner"; name: string }
   | { kind: "node"; id: string };
 
 export type LookGroup = "Galahad" | "Experiments" | "Saved experiments" | "Partners" | "Test sites" | "The keep";
+
+export type HisPlace = "hearth" | "bench";
+
+/** His own places: where they are, what they're called, what they're for, and what of his day happens there. */
+export const HIS_PLACES: Record<HisPlace, { x: number; y: number; near: number; label: string; meta: string; life: RegExp }> = {
+  hearth: { x: CAMP.x, y: CAMP.y, near: 7, label: "His hearth", meta: "His bed, the fire, his desk and journal, the dog's bed", life: /hearth|fire|journal|turning in|woken|bed to charge/i },
+  bench: { x: BENCH_AREA.x, y: BENCH_AREA.y, near: 6, label: "The bench by the lake", meta: "Where he sits and thinks", life: /by the lake/i },
+};
+
+/** His dog, as the selector says it: its name (once it has one), what it's doing, its battery (0..1). */
+export interface DogLook {
+  name: string;
+  state: string;
+  charge: number;
+}
+
+/** The dog's line: "Lying by him · battery 82 %". */
+export const dogLine = (dog: DogLook): string => `${dog.state.charAt(0).toUpperCase()}${dog.state.slice(1)} · battery ${Math.round(Math.max(0, Math.min(1, dog.charge)) * 100)} %`;
 
 export interface LookOption {
   key: string;
@@ -31,7 +57,7 @@ export interface LookOption {
   group: LookGroup;
   label: string;
   meta: string;
-  icon: "user" | "flask" | "compass" | "landscape" | "board" | "play-circle" | "code" | "server";
+  icon: "user" | "flask" | "compass" | "landscape" | "board" | "play-circle" | "code" | "server" | "paw" | "scroll" | "flame";
   /** A status dot (experiments). */
   tone?: "ok" | "warn" | "neutral" | "danger";
   live?: boolean;
@@ -72,18 +98,24 @@ export function galahadLine(model: WorldModel, life = ""): string {
 }
 
 /**
- * Everything the view can look at, in the order it's offered: Galahad and the
- * chalkboard; the experiments (running ones first, then those that ended, newest
- * first); the saved ones to replay (newest first; the most recent few, or every
- * match of a search); his partners (the agents with him, then the fleet's nodes);
- * the test sites; the keep's stations, the one he's at marked. Filtered by `query`.
+ * Everything the view can look at, in the order it's offered: Galahad, his dog, the
+ * chalkboard and his journal; the experiments (running ones first, then those that
+ * ended, newest first); the saved ones to replay (newest first; the most recent few,
+ * or every match of a search); his partners (the agents with him, then the fleet's
+ * nodes); the test sites; his hearth, the bench by the lake and the keep's stations,
+ * the one he's at marked. Filtered by `query`.
  */
-export function lookOptions(model: WorldModel, query = "", life = "", now = Date.now()): LookOption[] {
+export function lookOptions(model: WorldModel, query = "", life = "", now = Date.now(), dog: DogLook | null = null): LookOption[] {
   const g = model.galahad;
+  const idle = isIdle(g);
   const out: LookOption[] = [
     { key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: galahadLine(model, life), icon: "user" },
+    // His dog: by its name once it has one.
+    { key: "dog", target: { kind: "dog" }, group: "Galahad", label: dog?.name || "His dog", meta: dog ? dogLine(dog) : "Always with him", icon: "paw" },
     // The board you share: it opens to draw on.
     { key: "board", target: { kind: "board" }, group: "Galahad", label: "Chalkboard", meta: "At the observatory: draw on it, read what he wrote", icon: "board" },
+    // What he wrote of each day: it opens to read.
+    { key: "journal", target: { kind: "journal" }, group: "Galahad", label: "His journal", meta: "What he wrote of each day, every evening at his desk", icon: "scroll" },
   ];
   const time = (e: (typeof model.experiments)[number]) => e.endedAt ?? e.startedAt;
   const experiments = [...model.experiments].sort((a, b) => Number(experimentEnded(a)) - Number(experimentEnded(b)) || time(b) - time(a));
@@ -134,8 +166,13 @@ export function lookOptions(model: WorldModel, query = "", life = "", now = Date
   for (const site of SITE_NAMES) {
     out.push({ key: `site:${site}`, target: { kind: "site", site }, group: "Test sites", label: SITES[site].label, meta: SITE_ABOUT[site], icon: "landscape", here: atPad?.site === site });
   }
+  for (const [place, p] of Object.entries(HIS_PLACES) as [HisPlace, (typeof HIS_PLACES)[HisPlace]][]) {
+    out.push({ key: `place:${place}`, target: { kind: "place", place }, group: "The keep", label: p.label, meta: p.meta, icon: place === "hearth" ? "flame" : "landscape", here: idle && p.life.test(life) });
+  }
   for (const [id, s] of Object.entries(STATIONS) as [Exclude<Station, "field">, { label: string }][]) {
-    out.push({ key: `station:${id}`, target: { kind: "station", station: id }, group: "The keep", label: s.label, meta: g.station === id ? "Galahad is here" : "", icon: "compass", here: g.station === id });
+    // (With no work he's wherever his day has him, not at the keep the stream leaves him at.)
+    const here = g.station === id && !(idle && life);
+    out.push({ key: `station:${id}`, target: { kind: "station", station: id }, group: "The keep", label: s.label, meta: here ? "Galahad is here" : "", icon: "compass", here });
   }
   return searching ? out.filter((o) => matches(`${o.label} ${o.meta} ${o.group}`, query)) : out;
 }
@@ -162,6 +199,9 @@ export function lookingAt(model: WorldModel, focus: { x: number; y: number }, fo
   for (const site of SITE_NAMES) {
     const s = SITES[site];
     if (Math.abs(focus.x - s.x) <= s.w / 2 && Math.abs(focus.y - s.y) <= s.d / 2) return { label: s.label, meta: "", target: { kind: "site", site } };
+  }
+  for (const [place, p] of Object.entries(HIS_PLACES) as [HisPlace, (typeof HIS_PLACES)[HisPlace]][]) {
+    if (Math.hypot(focus.x - p.x, focus.y - p.y) < p.near) return { label: p.label, meta: "", target: { kind: "place", place } };
   }
   let best: { id: Exclude<Station, "field">; d: number } | null = null;
   for (const [id, s] of Object.entries(STATIONS) as [Exclude<Station, "field">, { x: number; y: number }][]) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type ExperimentView, PADS, SITES, STATIONS } from "@galahad/core/world";
-import { lookingAt, lookOptions, matches, runningCount } from "./look.ts";
+import { dogLine, HIS_PLACES, lookingAt, lookOptions, matches, runningCount } from "./look.ts";
 import { applyWorldEvent, emptyWorld, type WorldModel } from "./world.ts";
 
 const experiment = (over: Partial<ExperimentView> = {}): ExperimentView => ({
@@ -61,7 +61,8 @@ describe("the SANDBOX's selector", () => {
     expect(groups.indexOf("The keep")).toBeGreaterThan(groups.lastIndexOf("Test sites"));
     // He's out at the flight, on the proving ground: that site is marked.
     expect(options.find((o) => o.label === SITES.field.label)?.here).toBe(true);
-    expect(options.filter((o) => o.group === "The keep")).toHaveLength(Object.keys(STATIONS).length);
+    // His own places, then the keep's stations.
+    expect(options.filter((o) => o.group === "The keep").map((o) => o.label)).toEqual(["His hearth", "The bench by the lake", ...Object.values(STATIONS).map((s) => s.label)]);
   });
 
   test("the station he's at is marked, and the search narrows everything", () => {
@@ -90,5 +91,34 @@ describe("the SANDBOX's selector", () => {
 
   test("counts what's still running", () => {
     expect(runningCount(world([experiment(), experiment({ id: "b", status: "starting" }), experiment({ id: "c", status: "done", endedAt: 3 })]))).toBe(2);
+  });
+
+  test("his dog by its name and what it's doing, his journal, his hearth and the bench: there to look at, and marked when his day has him there", () => {
+    const m = world([], { idle: true });
+    const unnamed = lookOptions(m, "", "Morning rounds", 0, null);
+    expect(unnamed.slice(0, 4).map((o) => o.label)).toEqual(["Galahad", "His dog", "Chalkboard", "His journal"]);
+    expect(unnamed[1]).toMatchObject({ target: { kind: "dog" }, meta: "Always with him", icon: "paw" });
+    expect(unnamed[3]).toMatchObject({ target: { kind: "journal" }, icon: "scroll" });
+    // Named, with its battery and what it's doing.
+    const named = lookOptions(m, "", "Writing his journal", 0, { name: "Bors", state: "lying by him", charge: 0.823 });
+    expect(named[1]).toMatchObject({ label: "Bors", meta: "Lying by him · battery 82 %" });
+    expect(dogLine({ name: "", state: "asleep", charge: 1.4 })).toBe("Asleep · battery 100 %");
+    expect(lookOptions(m, "bors", "", 0, { name: "Bors", state: "with him", charge: 1 }).map((o) => o.label)).toEqual(["Bors"]);
+    // At his desk in the evening: his hearth is where he is, not the keep the stream leaves him at.
+    const hearth = named.find((o) => o.label === "His hearth")!;
+    expect(hearth).toMatchObject({ here: true, target: { kind: "place", place: "hearth" }, icon: "flame" });
+    expect(named.find((o) => o.label === STATIONS.keep.label)).toMatchObject({ here: false, meta: "" });
+    expect(named.find((o) => o.label === "The bench by the lake")?.here).toBe(false);
+    for (const life of ["Asleep at his hearth, the dog beside him", "By the fire with Bors", "Woken by the dog", "Turning in: a last pat for the dog"]) {
+      expect(lookOptions(m, "", life).find((o) => o.label === "His hearth")?.here).toBe(true);
+    }
+    expect(lookOptions(m, "", "Thinking by the lake, the dog at his feet").find((o) => o.label === "The bench by the lake")?.here).toBe(true);
+    // At work, his station is where he is, whatever his day would have been.
+    const working = lookOptions(world([], { station: "library", doing: "Reading" }), "", "");
+    expect(working.find((o) => o.label === STATIONS.library.label)?.here).toBe(true);
+    expect(working.find((o) => o.label === "His hearth")?.here).toBe(false);
+    // The view over one of his places says so.
+    expect(lookingAt(m, { x: HIS_PLACES.hearth.x + 2, y: HIS_PLACES.hearth.y }, false, null)).toMatchObject({ label: "His hearth", target: { kind: "place", place: "hearth" } });
+    expect(lookingAt(m, { x: HIS_PLACES.bench.x, y: HIS_PLACES.bench.y + 3 }, false, null).label).toBe("The bench by the lake");
   });
 });

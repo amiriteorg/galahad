@@ -1,25 +1,27 @@
 import type { HeartbeatFinding, Station } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { BoxGeometry, CylinderGeometry, type Group, IcosahedronGeometry, Mesh, MeshLambertMaterial } from "three/webgpu";
-import type { Collider } from "./colliders.ts";
-import { toScene } from "./coords.ts";
+import { type Group, IcosahedronGeometry, Mesh, MeshLambertMaterial } from "three/webgpu";
 import { DRONE_PAD, START_GATE, TIE_DOWN } from "./field-plan.ts";
 import { FARM, LINE, printerX, RACKS } from "./hall-plan.ts";
+import { BED, BENCH_DOG, BENCH_SEAT, DESK_DOG, DESK_SEAT, DOG_BED, FIRE, JOURNAL, LOG_DOG, LOG_SEAT, TRAIL } from "./hearth-plan.ts";
 import { DECK_REST } from "./keep-deck.ts";
 import type { Attention, CarePose } from "./knight.ts";
 import { type Activity, ACTIVITY_LABEL, type Block, blockPhase, type Intent, intentFor, lifeAt, roundsStop, STILL_LABEL } from "@galahad/core/life";
-import { at, Mesher } from "./mesher.ts";
 import type { MicroduckFlock } from "./microducks.ts";
 import { standAt, type Target } from "./path.ts";
 
 /*
  * Galahad's life when he isn't working, and how he looks after those in it.
  *
- *   his day      life.ts says what (from Denmark's time); this says where he goes
- *                for it, beat by beat, and what he does there;
- *   his dog      a battery that drains as it runs and charges at its dock by the
- *                keep (he walks it there when it's low); fetch on the lawns; its
- *                mood in its tail, ears and eye;
+ *   his day      core's life.ts says what (from Denmark's time); this says where he
+ *                goes for it, beat by beat, and what he does there: woken by the
+ *                dog, his rounds, the trail, his visits, the bench by the lake, the
+ *                fire, his journal at his desk, asleep on his bed;
+ *   his dog      with him through all of it: out in front on a walk, lying by him
+ *                wherever he sits, patted when the work's done, asleep on its
+ *                cushion against his bed (its dock: it charges there, and he walks
+ *                it there when its battery's low); fetch on the lawns; its mood in
+ *                its tail, ears and eye;
  *   his friends  the Microducks gather round when he visits, a stray is led home,
  *                he crouches to look one over; Reachy Mini and he talk at the table;
  *   companions   a walk round the aircraft before it flies, the quadcopter's
@@ -62,12 +64,14 @@ export function stepCharge(charge: number, dt: number, speed: number, docked: bo
   return Math.max(0, charge - (0.00035 + 0.0011 * Math.min(1, speed / 2.5)) * dt);
 }
 
-/** Its dock by the keep: a pad it sits on, a post with a light, beside the way to the stairs (clear of the fleet's banners). */
-export const DOCK = { x: 3.1, y: -10.2 };
-/** Where he stands to see to it: a step to the west of the pad, facing it. */
-export const DOCK_STAND: Target = { x: DOCK.x - 1.35, y: DOCK.y - 0.2, facing: 0 };
-/** The dock's post (its pad is low enough to step onto). */
-export const DOCK_COLLIDERS: readonly Collider[] = [{ kind: "circle", x: DOCK.x, y: DOCK.y + 0.55, r: 0.12, top: 0.75, seeThrough: true }];
+/** Its dock: the cushion tucked against his bed at the hearth (hearth-plan.ts), a post with its charge light beside it. */
+export const DOCK = { x: DOG_BED.x, y: DOG_BED.y };
+/** Where he stands to see to it: a step to the east of the cushion, facing it. */
+export const DOCK_STAND: Target = { x: DOCK.x + 1.25, y: DOCK.y - 0.3, facing: Math.PI };
+
+/** He's worked this long (seconds) before the dog gets its pat when the work's done; and how long that takes. */
+export const PAT_AFTER = 30;
+const PAT_S = 6;
 
 // ---------- the ball ----------
 
@@ -127,7 +131,7 @@ export interface CareFrame {
   working: boolean;
   /** The most serious open heartbeat finding that needs you (lib/world.ts' heartbeatConcern), or null. */
   concern: HeartbeatFinding | null;
-  galahad: { x: number; y: number; heading: number; moving: boolean };
+  galahad: { x: number; y: number; heading: number; moving: boolean; /** Up on something (the deck, the stairs): the dog can't come to him there. */ raised?: boolean };
   dog: { x: number; y: number; speed: number };
   /** A node's spot at the keep (its label's place), into `out`; false if it isn't shown. */
   nodeSpot(id: string, out: { x: number; y: number }): boolean;
@@ -148,14 +152,16 @@ export interface CareOut {
   /** Thinking (hand on chin: concerned, or watching), or busy with his hands (reading). */
   thinking: boolean;
   busy: boolean;
+  /** At his desk, writing: his hand at the page (the attention point). */
+  writing: boolean;
   /** What he's doing, for the selector and his bubble ("" at work: the stream's words are). */
   label: string;
 }
 
 /** The dog, as care moves it (dog.ts' lead, mood, charge, mouth). */
 export interface CareDog {
-  readonly lead: { on: boolean; x: number; y: number; sit: boolean; run: boolean; faceX: number; faceY: number };
-  readonly mood: { wag: number; ears: number; eye: number };
+  readonly lead: { on: boolean; x: number; y: number; sit: boolean; lie: boolean; run: boolean; faceX: number; faceY: number };
+  readonly mood: { wag: number; ears: number; eye: number; joy: number; asleep: number };
   readonly charge: { value: number };
   mouth(out: [number, number, number]): [number, number, number];
 }
@@ -173,10 +179,11 @@ export class Care {
     intent: "life",
     target: { x: DECK_REST.x, y: DECK_REST.y, z: DECK_REST.z, facing: DECK_REST.facing },
     key: 0,
-    pose: { crouch: 0, reach: 0, throw: 0, tilt: 0 },
+    pose: { crouch: 0, reach: 0, throw: 0, tilt: 0, sit: 0, lie: 0, asleep: 0 },
     attention: { x: 0, y: 0, z: 0, on: false },
     thinking: false,
     busy: false,
+    writing: false,
     label: STILL_LABEL,
   };
   /** The dog's battery (0..1), and whether it's on its dock. */
@@ -206,6 +213,12 @@ export class Care {
   private stray = -1;
   private chargePatted = false;
   private lastConcern = "";
+  /** How long he's been at work (seconds), and what's left of the dog's pat once it's done. */
+  private worked = 0;
+  private pat = 0;
+  /** What the dog feels this frame, beyond its battery and the ball: greeted (0..1), asleep (0..1). */
+  private joy = 0;
+  private dogSleep = 0;
 
   constructor(
     private readonly dog: CareDog,
@@ -278,10 +291,13 @@ export class Care {
   step(f: CareFrame): CareOut {
     const out = this.out;
     const pose = out.pose;
-    pose.crouch = pose.reach = pose.throw = pose.tilt = 0;
+    pose.crouch = pose.reach = pose.throw = pose.tilt = pose.sit = pose.lie = pose.asleep = 0;
     out.attention.on = false;
     out.thinking = false;
     out.busy = false;
+    out.writing = false;
+    this.joy = 0;
+    this.dogSleep = 0;
     this.talk(0);
     this.flock.gather.on = false;
 
@@ -296,6 +312,13 @@ export class Care {
     const dogLow = this.charge < LOW && !this.chargePatted;
 
     const intent = intentFor({ working: f.working, concern: f.concern !== null, dogLow, motion: f.motion });
+    // The work's done: the dog first (if he was at it a while, and it can come to him).
+    if (intent === "work") this.worked += f.dt;
+    else if (this.intent === "work") {
+      if (this.worked >= PAT_AFTER && !f.galahad.raised && !this.docked && this.charge >= LOW) this.pat = PAT_S;
+      this.worked = 0;
+    }
+    if (intent !== "life" && intent !== "concern") this.pat = 0;
     if (intent !== this.intent || (intent === "concern" && f.concern!.key !== this.lastConcern)) {
       this.intent = intent;
       this.lastConcern = f.concern?.key ?? "";
@@ -314,6 +337,7 @@ export class Care {
     // The dog: by him unless care sends it (to its dock, after a ball).
     lead.on = false;
     lead.sit = false;
+    lead.lie = false;
     lead.run = false;
     lead.faceX = lead.faceY = Number.NaN;
     if (this.docked || (this.charge < CRITICAL && intent === "work")) this.toDockLead();
@@ -322,30 +346,81 @@ export class Care {
     else if (intent === "still") {
       this.go(DECK_REST);
       out.label = STILL_LABEL;
-    } else if (intent === "concern") this.tend(f.concern!, f);
+    } else if (this.pat > 0) this.welcome(f);
+    else if (intent === "concern") this.tend(f.concern!, f);
     else if (intent === "charge") this.toDock(f);
     else this.live(f);
 
-    // The dog's mood: keen when it's playing or been patted, tired when it's low.
+    // The dog's mood: keen when it's playing, greeted or patted; tired when it's low; at peace asleep.
     const mood = this.dog.mood;
-    const playing = this.ball === "flying" || this.ball === "resting" || this.ball === "carried" || pose.reach > 0;
+    const playing = this.ball === "flying" || this.ball === "resting" || this.ball === "carried" || pose.reach > 0 || this.joy > 0;
     const low = this.charge < LOW;
+    const asleep = this.dogSleep > 0;
     const e = f.motion ? 1 - Math.exp(-f.dt * 3) : 1;
-    mood.wag += ((low ? 0.12 : playing ? 1 : 0.5) - mood.wag) * e;
-    mood.ears += ((low ? 0.1 : this.ball === "flying" || this.ball === "resting" ? 1 : 0.6) - mood.ears) * e;
-    mood.eye += ((low ? 0.35 : 1) - mood.eye) * e;
+    mood.wag += ((asleep ? 0 : low ? 0.12 : playing ? 1 : 0.5) - mood.wag) * e;
+    mood.ears += ((asleep ? 0.2 : low ? 0.1 : this.ball === "flying" || this.ball === "resting" || this.joy > 0 ? 1 : 0.6) - mood.ears) * e;
+    mood.eye += ((asleep ? 0.07 : low ? 0.35 : 1) - mood.eye) * e;
+    mood.joy += (this.joy - mood.joy) * (f.motion ? 1 - Math.exp(-f.dt * 5) : 1);
+    mood.asleep += (this.dogSleep - mood.asleep) * (f.motion ? 1 - Math.exp(-f.dt * 1.5) : 1);
     if (this.ball === "carried") this.dog.mouth(this.ballAt);
     return out;
   }
 
+  /** The dog to its cushion: it lies there (charging), its head towards his bed. */
   private toDockLead(): void {
+    this.dogDown(DOCK.x, DOCK.y, BED.x - 0.5, BED.y);
+  }
+
+  /** The dog to a spot by him, lying there, facing a point. */
+  private dogDown(x: number, y: number, faceX: number, faceY: number): void {
+    // (While it charges it stays on its cushion, wherever he sits.)
+    if (this.docked && (x !== DOCK.x || y !== DOCK.y)) return;
     const lead = this.dog.lead;
     lead.on = true;
-    lead.x = DOCK.x;
-    lead.y = DOCK.y;
+    lead.x = x;
+    lead.y = y;
     lead.sit = true;
-    lead.faceX = DOCK.x;
-    lead.faceY = DOCK.y - 3;
+    lead.lie = true;
+    lead.run = false;
+    lead.faceX = faceX;
+    lead.faceY = faceY;
+  }
+
+  /** Seated with the dog lying by him: every `every` seconds he reaches down and pats it for three (true while he does). */
+  private patSeated(f: CareFrame, held: number, every: number): boolean {
+    if (held % every < every - 3.2 || Math.hypot(f.dog.x - f.galahad.x, f.dog.y - f.galahad.y) > 1.5) return false;
+    this.look(f.dog.x, f.dog.y, 0.42);
+    this.out.pose.reach = 1;
+    return true;
+  }
+
+  /** The work's done: before anything else the dog comes bounding to his feet, and he crouches and pats it. */
+  private welcome(f: CareFrame): void {
+    const g = f.galahad;
+    const lead = this.dog.lead;
+    this.out.label = "Work's done: the dog first";
+    if (this.sub === 0) {
+      // He stays where the work left him, turned to the dog.
+      this.sub = 1;
+      const far = Math.hypot(f.dog.x - g.x, f.dog.y - g.y) > 0.3;
+      this.go(this.aim(g.x, g.y, far ? f.dog.x : g.x + Math.cos(g.heading), far ? f.dog.y : g.y + Math.sin(g.heading)));
+    }
+    const t = this.out.target;
+    const fx = t.x + Math.cos(t.facing) * 0.95;
+    const fy = t.y + Math.sin(t.facing) * 0.95;
+    lead.on = true;
+    lead.x = fx;
+    lead.y = fy;
+    lead.sit = true;
+    lead.run = true;
+    this.joy = 1;
+    this.look(f.dog.x, f.dog.y, 0.5);
+    if (Math.hypot(f.dog.x - fx, f.dog.y - fy) < 0.5 && !g.moving) {
+      this.out.pose.crouch = 1;
+      this.out.pose.reach = 1;
+      this.pat -= f.dt;
+    } else this.pat -= f.dt * 0.25;
+    if (this.pat <= 0) this.restart();
   }
 
   /** What needs you: he goes to where it is and stays, concerned, until it's resolved or dismissed. */
@@ -387,9 +462,9 @@ export class Care {
     }
   }
 
-  /** The dog's low: he walks it to its dock, sees it settled, pats it, and goes on with his day. */
+  /** The dog's low: he walks it to its cushion, sees it settled, pats it, and goes on with his day. */
   private toDock(f: CareFrame): void {
-    this.out.label = "Taking the dog to charge";
+    this.out.label = "Taking the dog to its bed to charge";
     this.go(DOCK_STAND);
     this.toDockLead();
     if (this.held(f) < 0) return;
@@ -410,12 +485,17 @@ export class Care {
     out.label = ACTIVITY_LABEL[a];
     switch (a) {
       case "sleep":
+        return this.sleep(f);
       case "wake":
+        return this.wake(f);
       case "hearth":
+        return this.byFire(f);
       case "journal":
+        return this.journal(f);
       case "ponder":
-        this.go(DECK_REST);
-        return;
+        return this.ponder(f);
+      case "walk":
+        return this.trail(f);
       case "rounds": {
         const stop = roundsStop(this.block ? blockPhase(this.block, f.now) : 0);
         this.go(AT[stop]);
@@ -452,7 +532,6 @@ export class Care {
           this.talk(1);
         }
         return;
-      case "walk":
       case "walk-dog":
         return this.walkDog(f);
       case "friends":
@@ -464,7 +543,153 @@ export class Care {
     }
   }
 
-  // ---------- walking the dog, and fetch ----------
+  // ---------- his hearth: asleep, woken, the fire, his journal ----------
+
+  /** Night: he lies back on his bed, the dog comes to its cushion against it, a last pat, and they sleep. */
+  private sleep(f: CareFrame): void {
+    this.go(BED);
+    const held = this.held(f);
+    if (held < 0) {
+      this.out.label = "Turning in";
+      return;
+    }
+    this.out.pose.lie = 1;
+    this.toDockLead();
+    const dogDown = Math.hypot(f.dog.x - DOCK.x, f.dog.y - DOCK.y) < 0.5;
+    if (held < 7.5) {
+      this.out.label = "Turning in: a last pat for the dog";
+      if (held > 2 && dogDown) {
+        this.look(f.dog.x, f.dog.y, 0.35);
+        this.out.pose.reach = 1;
+      }
+      return;
+    }
+    this.out.pose.asleep = 1;
+    if (dogDown) this.dogSleep = 1;
+  }
+
+  /** Morning: the dog's up first, on its feet by his bed with its tail going; he wakes, pats it from where he lies, gets up to it, and they sit by the fire till his rounds. */
+  private wake(f: CareFrame): void {
+    if (this.beat > 0) return this.byFire(f);
+    this.go(BED);
+    const held = this.held(f);
+    if (held < 0) return;
+    const lead = this.dog.lead;
+    const pose = this.out.pose;
+    if (held < 3) {
+      // Still asleep, both of them.
+      pose.lie = pose.asleep = 1;
+      this.toDockLead();
+      this.dogSleep = 1;
+      return;
+    }
+    // The dog, up: sitting by him, watching him, then bouncing.
+    lead.on = true;
+    lead.x = DOCK.x;
+    lead.y = DOCK.y;
+    lead.sit = true;
+    lead.lie = false;
+    lead.faceX = BED.x - 0.4;
+    lead.faceY = BED.y;
+    this.joy = held > 6 ? 1 : 0.45;
+    if (held < 6.5) {
+      pose.lie = pose.asleep = 1;
+      return;
+    }
+    this.look(f.dog.x, f.dog.y, 0.45);
+    if (held < 12) {
+      // Awake: a pat from where he lies.
+      pose.lie = 1;
+      pose.reach = held > 8 ? 1 : 0;
+      return;
+    }
+    if (held < 18.5) {
+      // Up, and down to it properly.
+      pose.crouch = held > 14 ? 1 : 0;
+      pose.reach = held > 14.5 ? 1 : 0;
+      return;
+    }
+    this.next();
+  }
+
+  /** By the fire: seated on the log, looking into it, the dog lying at his side; a pat now and then. */
+  private byFire(f: CareFrame): void {
+    this.go(LOG_SEAT);
+    const held = this.held(f);
+    if (held < 0) return;
+    this.out.pose.sit = 1;
+    this.dogDown(LOG_DOG.x, LOG_DOG.y, FIRE.x, FIRE.y);
+    this.look(FIRE.x, FIRE.y, 0.45);
+    this.patSeated(f, held, 26);
+  }
+
+  /** His journal: seated at his desk, writing; he stops now and then, looks up and thinks back over the day; the dog lies by his chair. */
+  private journal(f: CareFrame): void {
+    this.go(DESK_SEAT);
+    const held = this.held(f);
+    if (held < 0) return;
+    const out = this.out;
+    out.pose.sit = 1;
+    this.dogDown(DESK_DOG.x, DESK_DOG.y, DESK_SEAT.x, DESK_SEAT.y);
+    if (held < 1.5) return;
+    const k = held % 24;
+    if (k > 17.5) {
+      // Recollecting: his hand to his chin, looking out past the lantern.
+      out.thinking = true;
+      return;
+    }
+    out.writing = true;
+    // Along the line and down the page, a little.
+    this.look(JOURNAL.x + 0.1 + 0.05 * Math.sin(held * 0.9), JOURNAL.y - 0.02 * Math.sin(held * 0.13), JOURNAL.z);
+  }
+
+  /** The bench by the lake: seated, looking out over the water, thinking; the dog lies at his feet; a pat now and then. */
+  private ponder(f: CareFrame): void {
+    this.go(BENCH_SEAT);
+    const held = this.held(f);
+    if (held < 0) return;
+    const out = this.out;
+    out.pose.sit = 1;
+    this.dogDown(BENCH_DOG.x, BENCH_DOG.y, BENCH_SEAT.x, BENCH_SEAT.y - 30);
+    this.look(BENCH_SEAT.x + 6 * Math.sin(held * 0.05), BENCH_SEAT.y - 30, 0.4);
+    if (this.patSeated(f, held, 34)) return;
+    out.thinking = held % 50 > 22;
+  }
+
+  // ---------- out for a walk: the trail, the dog in front ----------
+
+  private trail(f: CareFrame): void {
+    const stop = TRAIL[this.beat % TRAIL.length]!;
+    const g = f.galahad;
+    this.go(this.aim(stop.x, stop.y, stop.look[0], stop.look[1]));
+    const held = this.held(f);
+    if (held < 0) {
+      // A point he only passes: on to the next as he reaches it, without stopping.
+      if (stop.pause <= 0 && Math.hypot(g.x - stop.x, g.y - stop.y) < 1.6) return this.next();
+      // On the way the dog's out in front, leading (it stays on its cushion while it charges).
+      if (g.moving && !this.docked) {
+        const lead = this.dog.lead;
+        lead.on = true;
+        lead.x = g.x + Math.cos(g.heading) * 3.3;
+        lead.y = g.y + Math.sin(g.heading) * 3.3;
+        // Never into the water after it.
+        if (f.wet(lead.x, lead.y)) lead.on = false;
+      }
+      return;
+    }
+    if (stop.pause <= 0) return this.next();
+    // Looking out, the dog beside him; halfway through, down to it for a pat.
+    this.look(stop.look[0], stop.look[1], 1.2);
+    const at = held - stop.pause * 0.45;
+    if (at > 0 && at < 4 && Math.hypot(f.dog.x - g.x, f.dog.y - g.y) < 1.8) {
+      this.look(f.dog.x, f.dog.y, 0.45);
+      this.out.pose.crouch = 1;
+      this.out.pose.reach = at > 0.6 ? 1 : 0;
+    }
+    if (held > stop.pause) this.next();
+  }
+
+  // ---------- fetch with the dog ----------
 
   private walkDog(f: CareFrame): void {
     this.go(WALK[this.walk % WALK.length]!);
@@ -769,28 +994,16 @@ export class Care {
   }
 }
 
-/** Drawn: the ball (while it's out of his hand) and the dog's dock, in the world root at their absolute place, as the characters are. */
+/** Drawn: the ball (while it's out of his hand), in the world root at its absolute place, as the characters are. (The dog's cushion is the hearth's: hearth.ts.) */
 export class CareLook {
   private readonly ball: Mesh;
-  private readonly dock: Mesh;
-  private readonly material = new MeshLambertMaterial({ vertexColors: true });
   private readonly ballMaterial = new MeshLambertMaterial({ color: 0xffa630, emissive: 0x6a2c00 });
 
   constructor(group: Group, shadows: boolean) {
     this.ball = new Mesh(new IcosahedronGeometry(0.11, 1), this.ballMaterial);
     this.ball.castShadow = shadows;
     this.ball.visible = false;
-    const [sx, , sz] = toScene(DOCK.x, DOCK.y, 0);
-    const m = new Mesher()
-      .add(new BoxGeometry(0.95, 0.07, 0.8), 0x5b606b, at(sx, 0.035, sz), 0.02)
-      .add(new BoxGeometry(0.8, 0.012, 0.65), 0xe8853a, at(sx, 0.076, sz), 0)
-      .add(new CylinderGeometry(0.07, 0.09, 0.72, 8), 0xf0e8d6, at(sx, 0.36, sz - 0.55), 0.03)
-      .add(new BoxGeometry(0.16, 0.06, 0.16), 0x43474f, at(sx, 0.74, sz - 0.55), 0)
-      .add(new IcosahedronGeometry(0.045, 1), 0x7cf0a0, at(sx, 0.8, sz - 0.55), 0);
-    this.dock = new Mesh(m.build(), this.material);
-    this.dock.castShadow = shadows;
-    this.dock.receiveShadow = true;
-    group.add(this.ball, this.dock);
+    group.add(this.ball);
   }
 
   /** The ball where care says (hidden while it's in his hand). */
@@ -805,10 +1018,7 @@ export class CareLook {
 
   dispose(): void {
     this.ball.geometry.dispose();
-    this.dock.geometry.dispose();
-    this.material.dispose();
     this.ballMaterial.dispose();
     this.ball.removeFromParent();
-    this.dock.removeFromParent();
   }
 }

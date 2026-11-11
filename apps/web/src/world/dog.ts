@@ -23,8 +23,15 @@ import { limb, pointIn, Rig } from "./rig.ts";
  * facing +z; about 0.6 m tall.
  *
  * Galahad looks after it (care.ts): `lead` sends it somewhere else than beside him
- * (after a ball, to its charging dock), `mood` shows in its tail, its ears and the
- * light in its eye, and `charge` lights the four cells of the battery on its back.
+ * (after a ball, ahead of him on a walk, to its cushion by his bed), `mood` shows in
+ * its tail, its ears and the light in its eye, and `charge` lights the four cells of
+ * the battery on its back.
+ *
+ * It's his dog before anything else. Sitting or lying, it watches him: its head
+ * turns to wherever he is. When he settles to something (his work, his journal, the
+ * fire) it lies down by him, forelegs out, and stays; it gets up for a sniff about
+ * far less often than it did, and comes back. Greeted, it bounces on its forelegs.
+ * Asleep, its head is down on its paws and its eye is a glimmer.
  */
 
 const PANEL = 0xf0e8d6;
@@ -60,6 +67,12 @@ const HIPS: [number, number][] = [
 const eul = new Euler(0, 0, 0, "YXZ");
 /** Footsteps of his it remembers. */
 const TRAIL = 48;
+/** How long he's still before it wanders off for a sniff: at leisure, and while he's busy (it mostly stays then). */
+const WANDER_IDLE = 16;
+const WANDER_BUSY = 75;
+/** How long he's settled to something before it lies down by him, and how far its body comes down. */
+const LIE_AFTER = 10;
+const LIE_DROP = 0.2;
 /** Where it keeps by him, best first: [to his right, behind him] (negative: to his left). */
 const SPOTS: readonly [number, number][] = [
   [1.05, 0.55],
@@ -79,10 +92,10 @@ export class RobotDog {
   readonly indoors = uniform(0);
 
   /* ---------- care's say (care.ts) ---------- */
-  /** Somewhere to go instead of beside him: a ball, its dock. `sit` there once arrived; `run` to get there; it faces `face` (NaN: him). */
-  readonly lead = { on: false, x: 0, y: 0, sit: false, run: false, faceX: Number.NaN, faceY: Number.NaN };
-  /** How it feels: its tail's wag, its ears (1 pricked, 0 drooped), the light in its eye (1 as ever, less when tired). */
-  readonly mood = { wag: 0.5, ears: 0.6, eye: 1 };
+  /** Somewhere to go instead of beside him: a ball, its cushion, ahead on a walk. `sit` (or `lie` down) there once arrived; `run` to get there; it faces `face` (NaN: him). */
+  readonly lead = { on: false, x: 0, y: 0, sit: false, lie: false, run: false, faceX: Number.NaN, faceY: Number.NaN };
+  /** How it feels: its tail's wag, its ears (1 pricked, 0 drooped), the light in its eye (1 as ever, less when tired), its joy (1: bouncing to greet him) and how asleep it is. */
+  readonly mood = { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0 };
   /** Its battery, 0..1: the four cells on its back light by it. */
   readonly charge = uniform(1);
   private nightLevel = 0;
@@ -118,7 +131,17 @@ export class RobotDog {
   private goal = { x: 0, y: 0 };
   private gait = 0;
   private sitAmount = 1;
+  private lieAmount = 0;
   private sniffAmount = 0;
+  /** Its head's turn towards him (radians, eased), and where he is. */
+  private gaze = 0;
+  private masterX = 0;
+  private masterY = 0;
+
+  /** Lying down (by him, or on its cushion). */
+  get lying(): boolean {
+    return this.lieAmount > 0.5;
+  }
   private bodyY = BODY_Y;
   private readonly dim = new Color(0xc9782c);
   private readonly bright = new Color(0xffd27a);
@@ -301,10 +324,14 @@ export class RobotDog {
    */
   step(dt: number, t: number, m: Master, ground: Ground, motion: boolean, height: (x: number, y: number) => number): boolean {
     this.ground = height;
+    this.masterX = m.x;
+    this.masterY = m.y;
     if (!motion) {
       this.place(m, height);
       this.mode = "sit";
       this.sitAmount = 1;
+      this.lieAmount = 0;
+      this.gaze = 0;
       this.gait = 0;
       this.pose(t, 0, 0, 0);
       return false;
@@ -318,19 +345,23 @@ export class RobotDog {
       // Care sends it: after a ball, to its dock. It sits there once arrived, if it's told to.
       tx = this.lead.x;
       ty = this.lead.y;
-      this.mode = this.lead.sit && Math.hypot(tx - this.x, ty - this.y) < 0.3 ? "sit" : "lead";
+      this.mode = (this.lead.sit || this.lead.lie) && Math.hypot(tx - this.x, ty - this.y) < 0.3 ? "sit" : "lead";
     } else if (this.mode === "lead") this.mode = "follow";
     else if (m.moving) this.mode = "follow";
     else if (this.mode === "follow" && Math.hypot(tx - this.x, ty - this.y) < 0.35) this.mode = "sit";
-    else if (this.mode === "sit" && this.stillFor > (m.working ? 24 : 9)) this.pickGoal(m);
+    // Now and then it has a sniff about; while he's busy it mostly stays by him.
+    else if (this.mode === "sit" && this.stillFor > (m.working ? WANDER_BUSY : WANDER_IDLE)) this.pickGoal(m);
     if (this.mode === "wander" || this.mode === "sniff") {
       this.timer -= dt;
       if (this.mode === "wander" && Math.hypot(this.goal.x - this.x, this.goal.y - this.y) < 0.4) {
         this.mode = "sniff";
         this.timer = 2 + this.random() * 2.5;
       } else if (this.mode === "sniff" && this.timer <= 0) {
-        if (this.random() < 0.35) this.mode = "follow";
-        else this.pickGoal(m);
+        // Back to him, more often than not (and he's still for that much longer before it's off again).
+        if (this.random() < 0.65) {
+          this.mode = "follow";
+          this.stillFor = 0;
+        } else this.pickGoal(m);
       }
       if (this.mode !== "follow") {
         tx = this.goal.x;
@@ -371,7 +402,15 @@ export class RobotDog {
       this.heading = turnTowards(this.heading, Math.atan2((face ? this.lead.faceY : m.y) - this.y, (face ? this.lead.faceX : m.x) - this.x), 3 * dt);
     }
     const ease = 1 - Math.exp(-dt * 6);
-    this.sitAmount += ((this.mode === "sit" && speed < 0.3 ? 1 : 0) - this.sitAmount) * ease;
+    const settled = this.mode === "sit" && speed < 0.3;
+    this.sitAmount += ((settled ? 1 : 0) - this.sitAmount) * ease;
+    // Down by him once he's settled to something (or where care says); up again the moment he moves.
+    const down = settled && (this.lead.on ? this.lead.lie : m.working && this.stillFor > LIE_AFTER);
+    this.lieAmount += ((down ? 1 : 0) - this.lieAmount) * (1 - Math.exp(-dt * 3));
+    // Its head turns to him while it's settled (not while it sleeps, or has its nose to the ground).
+    const toHim = Math.max(-1.25, Math.min(1.25, angleDiff(this.heading, Math.atan2(m.y - this.y, m.x - this.x))));
+    const watch = settled && this.mood.asleep < 0.5 ? toHim : 0;
+    this.gaze += (watch - this.gaze) * (1 - Math.exp(-dt * 4));
     this.sniffAmount += ((this.mode === "sniff" ? 1 : 0) - this.sniffAmount) * ease;
     this.gait += (Math.min(1, speed / 2.5) - this.gait) * ease;
     // A trot: the stride grows with the pace; the feet stay where they land.
@@ -396,20 +435,27 @@ export class RobotDog {
 
   /** The body over the feet (bobbing with the trot, nose up when it sits), then each leg reaching its planted foot. */
   private pose(t: number, speed: number, dt: number, phase: number): void {
-    const sit = this.sitAmount;
+    const lie = this.lieAmount;
+    // Lying, it's flat on its belly (no sitting up on its haunches).
+    const sit = this.sitAmount * (1 - lie);
+    const asleep = this.mood.asleep * lie;
+    // Greeting him: a bounce on its forelegs.
+    const bounce = this.mood.joy * (1 - lie) * Math.abs(Math.sin(t * 9.5));
     const gz = this.ground(this.x, this.y);
     const ch = Math.cos(this.heading);
     const sh = Math.sin(this.heading);
     let lowest = 0;
     for (let i = 0; i < 4; i++) lowest = Math.min(lowest, this.feet.z[i]! - this.feet.lift[i]! - gz);
-    const want = BODY_Y - sit * 0.1 - 0.02 * this.gait + Math.abs(Math.sin(phase * Math.PI * 2)) * 0.02 * this.gait + Math.max(-0.3, lowest);
+    const want = BODY_Y - sit * 0.1 - lie * LIE_DROP - 0.02 * this.gait + Math.abs(Math.sin(phase * Math.PI * 2)) * 0.02 * this.gait + bounce * 0.05 + Math.max(-0.3, lowest);
     this.bodyY += (want - this.bodyY) * (dt > 0 ? 1 - Math.exp(-dt * 16) : 1);
-    this.pBody.set(0, this.bodyY, -sit * 0.04);
-    this.qBody.setFromEuler(eul.set(-sit * 0.42 + this.sniffAmount * 0.12, 0, Math.sin(phase * Math.PI * 2) * 0.03 * this.gait));
+    // (Asleep, its sides rise and fall.)
+    this.pBody.set(0, this.bodyY + asleep * 0.008 * Math.sin(t * 1.3), -sit * 0.04);
+    this.qBody.setFromEuler(eul.set(-sit * 0.42 - bounce * 0.2 + this.sniffAmount * 0.12, 0, Math.sin(phase * Math.PI * 2) * 0.03 * this.gait));
     this.rig.set(this.bones.body, this.pBody, this.qBody);
-    // Head: up when it sits, down to the ground when it sniffs, looking about otherwise.
-    pointIn(this.t1, this.pBody, this.qBody, 0, 0.14, 0.33);
-    this.qa.setFromEuler(eul.set(sit * 0.35 + this.sniffAmount * (0.55 + 0.12 * Math.sin(t * 14)), (1 - this.gait) * 0.25 * Math.sin(t * 0.7), 0)).premultiply(this.qBody);
+    // Head: up when it sits, down to the ground when it sniffs, on its paws asleep; watching him when it's settled, looking about otherwise.
+    pointIn(this.t1, this.pBody, this.qBody, 0, 0.14 - asleep * 0.11, 0.33);
+    const about = (1 - this.gait) * 0.25 * Math.sin(t * 0.7) * (1 - asleep) * (1 - Math.min(1, Math.abs(this.gaze) * 2));
+    this.qa.setFromEuler(eul.set(sit * 0.35 - lie * (1 - asleep) * 0.22 + asleep * 0.3 + this.sniffAmount * (0.55 + 0.12 * Math.sin(t * 14)), about + this.gaze * (1 - this.sniffAmount), this.mood.joy * 0.12 * Math.sin(t * 6))).premultiply(this.qBody);
     this.rig.set(this.bones.head, this.t1, this.qa);
     // Its ears, over the head: pricked when it's keen, drooped and back when it's tired.
     const ears = this.mood.ears;
@@ -436,6 +482,10 @@ export class RobotDog {
       const fx = this.feet.x[i]! - this.x;
       const fy = this.feet.y[i]! - this.y;
       this.pFoot.set(-fx * sh + fy * ch, this.feet.z[i]! - gz + FOOT, fx * ch + fy * sh);
+      // Lying: its forelegs out before it, its hind legs tucked in beside it.
+      if (lie > 0.001) this.pFoot.lerp(this.t1.set(hx * (i < 2 ? 0.75 : 1.35), FOOT, hz + (i < 2 ? 0.2 : 0.09)), lie);
+      // Greeting: its forefeet come off the ground with each bounce.
+      if (i < 2) this.pFoot.y += bounce * 0.07;
       // Knees bend backwards (as a robot dog's do), a touch outward.
       this.pole.copy(this.pHip).add(this.t1.set(hx * 0.6, -0.1, -0.5));
       limb(this.pHip, this.pFoot, this.pole, UPPER, LOWER, this.front, this.pKnee, this.pEnd, this.qUpper, this.qLower);

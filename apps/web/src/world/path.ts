@@ -2,6 +2,7 @@ import type { ExperimentView, GalahadState, Station } from "@galahad/core/world"
 import { padAt, STATIONS } from "@galahad/core/world";
 import { BUILDS, type Mover } from "./collide.ts";
 import { aisleAt, HALL, HALL_DOOR_IN, HALL_DOOR_OUT, inHall } from "./hall-plan.ts";
+import { BENCH_AREA, CAMP, CAMP_GATE, LAKE_GATE } from "./hearth-plan.ts";
 import { DECK_REST, DECK_TOP, inStairs, STAIR_WAY } from "./keep-deck.ts";
 import { MARGIN as PLAN_MARGIN, type Planner, type Wet } from "./nav.ts";
 import { type Ground, moveOnGround } from "./physics.ts";
@@ -238,6 +239,8 @@ function paths(): Point[][] {
   const from = standAt("keep");
   const obs = obstacles();
   keepPaths = PLACES.filter((p) => p !== "keep").map((p) => [{ x: from.x, y: from.y }, ...planPath(from, standAt(p), obs)]);
+  // Down to his hearth, and on from it to the bench by the lake.
+  keepPaths.push([{ x: from.x, y: from.y }, { ...CAMP_GATE }], [{ ...LAKE_GATE }, { x: BENCH_AREA.x + 0.6, y: BENCH_AREA.y + 1.2 }]);
   return keepPaths;
 }
 
@@ -251,6 +254,7 @@ function circles(): Float64Array {
     const stand = standAt(p);
     out.push(s.x, s.y, LAYOUT[p].r + 1.5, stand.x, stand.y, p === "keep" ? 3.6 : 2.2);
   }
+  out.push(CAMP.x, CAMP.y, CAMP.r, BENCH_AREA.x, BENCH_AREA.y, BENCH_AREA.r);
   builtCircles = Float64Array.from(out);
   return builtCircles;
 }

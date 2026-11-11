@@ -79,15 +79,25 @@ export interface KnightState {
 
 /**
  * Care's gestures: crouching (to the dog, a duck, a quadcopter's pad), reaching with his right hand to what
- * he attends to (a pat, a battery, a print), a throw (its phase 0..1; 0 when none) and a tilt of the head
- * (talking with Reachy). Weights 0..1, eased in animate.
+ * he attends to (a pat, a battery, a print), a throw (its phase 0..1; 0 when none), a tilt of the head
+ * (talking with Reachy), sitting down where he stands (a chair, a log, a bench: the seat is just behind him),
+ * lying back on his bed (his feet out before him, his back on its wedge), and asleep (his head back, his eyes
+ * and seams dimmed to a glimmer, breathing slowly). Weights 0..1, eased in animate.
  */
 export interface CarePose {
   crouch: number;
   reach: number;
   throw: number;
   tilt: number;
+  sit: number;
+  lie: number;
+  asleep: number;
 }
+
+/** Seated: how far his hips come down and back onto the seat, and where his feet go (out before him, apart). */
+const SIT = { drop: 0.5, back: 0.15, feet: 0.3 };
+/** Lying back: his hips down onto the mat and back, how far back his trunk leans, and where his heels rest. */
+const LIE = { drop: 0.8, back: 0.3, lean: 0.85, heels: 0.54, heelY: 0.07 };
 
 /** What he's attending to, in the world (z up), or nothing. */
 export interface Attention {
@@ -144,11 +154,26 @@ export class Knight {
   readonly indoors = uniform(0);
   /** His heartbeat in the lodestar on his chest: how much brighter it is now (care.ts' lodestarPulse). */
   readonly pulse = uniform(0);
+  /** How awake he is: 1, or a glimmer when he's asleep (his eyes, visor and seams; never the lodestar). */
+  private readonly awake = uniform(1);
   // Care's gestures, eased (see CarePose).
   private crouch = 0;
   private reach = 0;
   private tilt = 0;
   private throwW = 0;
+  private sit = 0;
+  private lie = 0;
+  private asleep = 0;
+
+  /** Lying on his bed (his sword is off him then: on its stand, hearth.ts). */
+  get lying(): boolean {
+    return this.lie > 0.5;
+  }
+
+  /** How high his head is above his feet now (the bubble floats over it): lower when he sits or lies. */
+  get headHeight(): number {
+    return HEAD_HEIGHT - 0.5 * this.sit - 1.25 * this.lie - 0.3 * this.crouch;
+  }
 
   /**
    * Lights him, while `indoors`, as the hall lights its own interior (`irradiance`: hall.ts' light()), not by the
@@ -440,7 +465,11 @@ export class Knight {
     const glow = attribute("glow", "float");
     // The star (glow 2) beats with his heart: brighter by `pulse`.
     const star = clamp(glow.sub(1), 0, 1);
-    this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), star).mul(min(glow, 1)).mul(1.5).mul(star.mul(this.pulse).add(1)) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
+    this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), star)
+      .mul(min(glow, 1))
+      .mul(1.5)
+      .mul(star.mul(this.pulse).add(1))
+      .mul(mix(this.awake, float(1), star)) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
     this.material.emissiveNode = this.glowNode;
     this.mesh.castShadow = shadows;
     this.root.add(this.mesh);
@@ -544,6 +573,12 @@ export class Knight {
     this.reach += ((still && care ? care.reach : 0) - this.reach) * ce;
     this.tilt += ((still && care ? care.tilt : 0) - this.tilt) * ce;
     this.throwW += ((care && care.throw > 0 ? 1 : 0) - this.throwW) * (motion ? 1 - Math.exp(-dt * 10) : 1);
+    // Sitting down and lying back take a moment longer; falling asleep, longer still.
+    this.sit += ((still && care ? care.sit : 0) - this.sit) * (motion ? 1 - Math.exp(-dt * 3) : 1);
+    this.lie += ((still && care ? care.lie : 0) - this.lie) * (motion ? 1 - Math.exp(-dt * 2.2) : 1);
+    this.asleep += ((still && care ? care.asleep : 0) - this.asleep) * (motion ? 1 - Math.exp(-dt * 1.2) : 1);
+    this.awake.value = 1 - 0.88 * this.asleep;
+    const down = Math.max(this.sit, this.lie);
     if (this.bow > 0) this.bow = Math.max(0, this.bow - dt);
     const bowing = this.bow > 0 ? Math.sin((1 - this.bow / 1.3) * Math.PI) : 0;
     this.swordHeat += ((this.bench > 0.5 && this.draw > 0.9 ? 1 : 0) - this.swordHeat) * (1 - Math.exp(-dt * 2));
@@ -567,17 +602,21 @@ export class Knight {
       P.ankle[i]!.y += ANKLE;
     }
     const bob = -Math.cos(phase * 2) * (0.022 * this.walk + 0.045 * this.run);
-    const wantY = HIP_Y - 0.035 * this.walk - 0.09 * this.run - 0.05 * this.bench - 0.02 * this.guard - 0.4 * this.crouch + bob + Math.max(-0.45, lowest);
+    const wantY = HIP_Y - 0.035 * this.walk - 0.09 * this.run - 0.05 * this.bench - 0.02 * this.guard - 0.4 * this.crouch * (1 - down) - SIT.drop * this.sit * (1 - this.lie) - LIE.drop * this.lie + bob + Math.max(-0.45, lowest);
     this.pelvisY += (wantY - this.pelvisY) * (motion ? 1 - Math.exp(-dt * 18) : 1);
     const sway = Math.sin(phase) * 0.018 * this.walk;
-    P.pelvis.set(sway, this.pelvisY, 0.02 * this.run);
+    P.pelvis.set(sway, this.pelvisY, 0.02 * this.run - SIT.back * this.sit * (1 - this.lie) - LIE.back * this.lie);
     const twist = Math.sin(phase) * (0.12 * this.walk + 0.18 * this.run);
-    const breathe = Math.sin(t * 2.1) * 0.012 * (1 - gait);
-    R.pelvis.setFromEuler(eul.set(0.04 * this.run, twist, -sway * 1.5));
+    // Asleep he breathes slowly and deep.
+    const breathe = Math.sin(t * (2.1 - 1.2 * this.asleep)) * (0.012 + 0.014 * this.asleep) * (1 - gait);
+    // Lying back, his whole trunk leans onto the wedge; seated at his writing, he leans in to the page.
+    const lean = -LIE.lean * this.lie;
+    const over = 0.26 * this.write * this.sit;
+    R.pelvis.setFromEuler(eul.set(0.04 * this.run + lean + 0.1 * over, twist, -sway * 1.5));
     pointIn(P.spine, P.pelvis, R.pelvis, 0, 0.14, 0);
-    R.spine.setFromEuler(eul.set(0.06 * this.run + 0.08 * bowing + 0.14 * this.bench + 0.04 * this.work + 0.32 * this.crouch, -twist * 0.5, 0));
+    R.spine.setFromEuler(eul.set(0.06 * this.run + 0.08 * bowing + 0.14 * this.bench + 0.04 * this.work + 0.32 * this.crouch * (1 - this.lie) + lean * 0.94 + over, -twist * 0.5, 0));
     pointIn(P.chest, P.spine, R.spine, 0, 0.2, 0);
-    R.chest.setFromEuler(eul.set(0.1 * this.run + 0.1 * bowing + 0.08 * this.bench + breathe, -twist * 1.1, this.think * 0.05 * Math.sin(t * 0.8)));
+    R.chest.setFromEuler(eul.set(0.1 * this.run + 0.1 * bowing + 0.08 * this.bench + breathe + lean * 0.86 + over * 1.2, -twist * 1.1, this.think * 0.05 * Math.sin(t * 0.8)));
     pointIn(P.neck, P.chest, R.chest, 0, 0.3, -0.01);
 
     // ---- the head: looking at what he attends to, or ahead, glancing about when idle ----
@@ -588,10 +627,13 @@ export class Knight {
     let pitch = -Math.atan2(this.t1.y, Math.hypot(this.t1.x, this.t1.z));
     yaw = Math.max(-1.1, Math.min(1.1, yaw));
     pitch = Math.max(-0.5, Math.min(0.75, pitch)) + bowing * 0.4 + this.think * 0.18;
+    // Asleep: his head back on the wedge and a little to one side, looking at nothing.
+    yaw += (0.22 - yaw) * this.asleep;
+    pitch += (-0.42 * this.lie + 0.5 * (1 - this.lie) - pitch) * this.asleep;
     const le = motion ? 1 - Math.exp(-dt * 5) : 1;
     this.lookYaw += (yaw - this.lookYaw) * le;
     this.lookPitch += (pitch - this.lookPitch) * le;
-    R.head.setFromEuler(eul.set(this.lookPitch, this.lookYaw, this.think * 0.18 + this.tilt * 0.28 * Math.sin(t * 1.7)));
+    R.head.setFromEuler(eul.set(this.lookPitch, this.lookYaw, this.think * 0.18 + this.tilt * 0.28 * Math.sin(t * 1.7) + 0.16 * this.asleep));
     this.qa.setFromEuler(eul.set(this.lookPitch * 0.4, this.lookYaw * 0.4, 0));
     this.rig.set(this.B.neck!, P.neck, this.qa);
     pointIn(P.head, P.neck, this.qa, 0, 0.1, 0.01);
@@ -615,6 +657,9 @@ export class Knight {
       const side = i === 0 ? 1 : -1;
       const n = i === 0 ? "L" : "R";
       pointIn(P.hip[i]!, P.pelvis, R.pelvis, side * 0.13, -0.05, 0);
+      // Seated, his feet are out before him, a little apart; lying back, his heels rest on the mat (one knee a little up).
+      if (this.sit > 0.001) P.ankle[i]!.lerp(this.t1.set(side * 0.16, ANKLE, SIT.feet + side * 0.03), this.sit * (1 - this.lie));
+      if (this.lie > 0.001) P.ankle[i]!.lerp(this.t1.set(side * 0.14, ANKLE + LIE.heelY, LIE.heels - (i === 0 ? 0.13 : 0)), this.lie);
       // Knees forward, a touch outward.
       this.pole.copy(P.hip[i]!).addScaledVector(this.front, 1).add(this.t2.set(side * 0.15, -0.4, 0));
       limb(P.hip[i]!, P.ankle[i]!, this.pole, THIGH, SHIN, this.front, P.knee[i]!, this.t3, R.thigh[i]!, R.shin[i]!);
@@ -625,7 +670,8 @@ export class Knight {
       const lifted = this.feet.lift[i]! / Math.max(0.05, this.feet.liftHeight);
       const u = (this.feet.phase + (i === 0 ? 0 : 0.5)) % 1;
       const roll = this.feet.planted[i] ? 0 : (u < 0.8 ? -0.35 : 0.3) * lifted * gait;
-      R.foot[i]!.setFromEuler(eul.set(roll, twist * 0.3 + side * 0.06, 0));
+      // (Lying back, his toes point up.)
+      R.foot[i]!.setFromEuler(eul.set(roll - 1.15 * this.lie, twist * 0.3 + side * (0.06 + 0.12 * this.lie), 0));
       this.rig.set(this.B[`foot${n}`]!, P.ankle[i]!, R.foot[i]!);
       // The knee's piston: from the thigh's front to just below the knee.
       pointIn(this.t1, P.hip[i]!, R.thigh[i]!, 0, -0.08, 0.1);
@@ -676,6 +722,9 @@ export class Knight {
     aim(this.qa, this.swordDir, this.t1, 1);
     this.sword.position.copy(this.swordPos);
     this.sword.quaternion.copy(this.qa);
+    // Lying down he's taken it off: it stands by his bed (hearth.ts shows it there).
+    const worn = this.lie < 0.5;
+    if (this.sword.visible !== worn) this.sword.visible = worn;
   }
 
   /** Where each wrist goes, which way its grip axis points, and how far its fingers curl, for the blended poses. */
@@ -686,7 +735,8 @@ export class Knight {
     const mouth = SCABBARD_MOUTH;
     const axis = SCABBARD_AXIS;
     pointIn(this.hilt, P.pelvis, R.pelvis, mouth[0] + axis[0] * 0.1, mouth[1] + axis[1] * 0.1, mouth[2] + axis[2] * 0.1);
-    this.hiltDir.set(-axis[0], -axis[1], -axis[2]).applyQuaternion(R.pelvis);
+    // (Seated, the scabbard swings forward beside his thigh, its tip to the ground before the seat: never through it.)
+    this.hiltDir.set(-axis[0], -axis[1], -axis[2]).lerp(this.t1.set(0.3, -0.74, 0.6), this.sit).normalize().applyQuaternion(R.pelvis);
     // The armed pose: guard (point down before him, both hands on the hilt) or the bench (the tip on the work).
     if (this.bench > 0.01 && look) {
       // The tip at the work, the grip back along the line from his right shoulder.
@@ -715,6 +765,18 @@ export class Knight {
       this.t1.set(shoulderX + side * 0.02, P.chest.y + 0.02, 0.2 + Math.sin(a) * 0.3);
       blend(target, this.t1, this.run);
       curl += 0.5 * this.run;
+      // Seated: his hands on his thighs. Lying back: folded on his middle.
+      if (this.sit > 0.001) {
+        this.t1.set(side * 0.17, P.pelvis.y + 0.12, P.pelvis.z + 0.3);
+        blend(target, this.t1, this.sit * (1 - this.lie));
+      }
+      if (this.lie > 0.001) {
+        pointIn(this.t1, P.spine, R.spine, side * 0.07, 0.1 + (i === 0 ? 0.03 : 0), 0.17);
+        blend(target, this.t1, this.lie);
+        this.t2.set(-side, 0.2, 0.2).normalize();
+        blendDir(grip, this.t2, this.lie);
+        curl += (0.5 - curl) * this.lie;
+      }
       // At work (most stations): both hands before his chest, busy.
       this.t1.set(side * 0.16 + Math.sin(t * 2.3 + i * 2) * 0.03, P.chest.y - 0.05 + Math.sin(t * 3.1 + i) * 0.025, 0.42);
       blend(target, this.t1, this.work);
