@@ -220,6 +220,6 @@ describe("convergence with misbehaving signers", () => {
         }
         expect(snapshot(replica)).toEqual(want);
       }
-    });
+    }, 30_000); // seven replicas of a few hundred events, most of them replaying: 2-3 s alone, more beside the whole suite
   }
 });

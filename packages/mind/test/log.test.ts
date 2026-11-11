@@ -471,7 +471,7 @@ describe("repairing a hole is paged", () => {
     expect(other.rejection(after.id)).toBe(full.rejection(after.id));
     expect(other.digest()).toBe(full.digest());
     expect(full.eventsSince(other.frontier(), 500, other.deviceDigests()).repair).toBeUndefined();
-  });
+  }, 20_000); // 500 signed events, then pulls that walk them: about a second alone
 
   test("`after` moves a device's answer on by event; without it (an older node) the answer is by hlc, as before", () => {
     const { a, b, full, tick } = twoNodes();
