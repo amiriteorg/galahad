@@ -12,6 +12,7 @@ import { Fauna } from "./fauna.ts";
 import { ProvingGround } from "./field.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
+import { HALL } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { type Attention, HEAD_HEIGHT, Knight, type KnightState } from "./knight.ts";
 import { Land, waterUniforms } from "./land.ts";
@@ -534,6 +535,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // ---------- Galahad ----------
   const groundAt = (x: number, y: number): number => Math.max(land.heightAt(x, y), WATER_LEVEL - 0.6);
+  // No rain falls under the workshop hall's roof.
+  rain.setHallFloor(groundAt(HALL.x, HALL.y));
   let walkKey = "";
   function retarget(m: WorldModel): void {
     const target = targetFor(m.galahad, m.experiments);

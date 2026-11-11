@@ -1,6 +1,8 @@
 import { abs, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, cameraWorldMatrix, cross, float, hash, instanceIndex, length, mix, mod, normalize, sin, smoothstep, step, uniform, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { Color, InstancedMesh, MeshBasicNodeMaterial, type Node, PlaneGeometry, type Scene, Vector2 } from "three/webgpu";
 import { WIND_X, WIND_Z } from "./air.ts";
+import { HALL, HALL_EAVES } from "./hall-plan.ts";
+import { originUniform } from "./plots.ts";
 import { weatherUniforms } from "./wet.ts";
 
 /*
@@ -14,7 +16,9 @@ import { weatherUniforms } from "./wet.ts";
  * wrap), so nothing swims as the view turns. The wind leans the rain and carries
  * the snow; flakes flutter as they fall. The count drawn follows the weather
  * (the instance count, set on the CPU), and the tier caps it. Lightning lights
- * the rain. Under reduced motion drops and flakes hang still and faint.
+ * the rain. Under reduced motion drops and flakes hang still and faint. None
+ * falls inside the workshop hall: a drop over its floor and under its roof is
+ * folded to nothing in the vertex shader (four compares a vertex).
  */
 
 type F = Node<"float">;
@@ -23,6 +27,10 @@ type V3 = Node<"vec3">;
 /** Rain is pale whatever the light: the streaks lean this way. */
 const PALE = new Color(0.85, 0.88, 0.95);
 const WHITE = new Color(0.96, 0.97, 1);
+
+/** The workshop hall's footprint (world x, y and half-sizes, metres) and how high its roof stands above its floor. */
+const HALL_BOX = vec4(HALL.x, HALL.y, HALL.hx, HALL.hy);
+const HALL_ROOF = HALL_EAVES + 4;
 
 /** The three boxes (metres): near, middle, far. A drop's box is drawn from its instance number: five in eight near, a quarter in the middle, an eighth far. */
 const NEAR = vec3(14, 12, 14);
@@ -37,11 +45,13 @@ interface Layered {
   far: F;
   /** Fades at the box's faces (where it wraps) and right at the camera. */
   fade: F;
+  /** 0 under the hall's roof (nothing falls there), else 1: a size multiplies by it. */
+  open: F;
   seed: Node<"vec4">;
 }
 
 /** Places instance `id` in its box ahead of the camera, moved by `travel` (metres, world) since the clock began. */
-function layered(travel: (seed: Node<"vec4">) => V3): Layered {
+function layered(travel: (seed: Node<"vec4">) => V3, hallFloor: F): Layered {
   const id = instanceIndex;
   const seed = vec4(hash(id), hash(id.add(7919)), hash(id.add(15485)), hash(id.add(32452)));
   const pick = hash(id.add(49157));
@@ -61,7 +71,11 @@ function layered(travel: (seed: Node<"vec4">) => V3): Layered {
   const inBox = float(1).sub(smoothstep(0.72, 1, edge.x)).mul(float(1).sub(smoothstep(0.72, 1, edge.y))).mul(float(1).sub(smoothstep(0.72, 1, edge.z)));
   // Faded right at the camera (no smears across the lens).
   const fade = inBox.mul(smoothstep(0.8, 2.4, length(centre.sub(cameraPosition)))) as unknown as F;
-  return { centre, mid, far, fade, seed };
+  // Under the hall's roof: world (x, y) is scene (x, −z) plus the floating origin.
+  const inside = step(abs(centre.x.add(originUniform.x).sub(HALL_BOX.x)), HALL_BOX.z)
+    .mul(step(abs(centre.z.negate().add(originUniform.y).sub(HALL_BOX.y)), HALL_BOX.w))
+    .mul(step(centre.y, hallFloor.add(HALL_ROOF)));
+  return { centre, mid, far, fade, open: float(1).sub(inside) as unknown as F, seed };
 }
 
 export class Rain {
@@ -76,6 +90,8 @@ export class Rain {
   private readonly blown = uniform(new Vector2(0, 0));
   private readonly color = uniform(new Color(0.8, 0.84, 0.92));
   private readonly snowColor = uniform(new Color(0.95, 0.96, 1));
+  /** The hall's floor (scene y, metres). */
+  private readonly hallFloor = uniform(0);
   private drops = 0;
   private flakeCount = 0;
 
@@ -94,11 +110,11 @@ export class Rain {
       const at = layered((seed) => {
         speed = float(8.5).add(seed.w.mul(3)) as unknown as F;
         return vec3(this.carried.x, speed.mul(t).negate(), this.carried.y) as unknown as V3;
-      });
+      }, this.hallFloor as unknown as F);
       const along = normalize(vec3(this.lean.x, speed.negate(), this.lean.y));
       const side = normalize(cross(along, normalize(cameraPosition.sub(at.centre))));
       // A streak about as long as a drop falls in a 25th of a second; thicker and longer the farther its box, so it still shows.
-      const width = float(0.013).add(at.mid.mul(0.017)).add(at.far.mul(0.065));
+      const width = float(0.013).add(at.mid.mul(0.017)).add(at.far.mul(0.065)).mul(at.open);
       const reach = speed.mul(float(0.03).add(at.mid.mul(0.03)).add(at.far.mul(0.09)));
       const corner = side.mul(uv().x.sub(0.5).mul(width)).add(along.mul(uv().y.sub(0.5).mul(reach)));
       m.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(at.centre.add(corner), 1)));
@@ -121,8 +137,8 @@ export class Rain {
         const sway = sin(t.mul(seed.x.mul(0.9).add(0.7)).add(seed.y.mul(40))).mul(0.22);
         const turn = seed.z.mul(6.283);
         return vec3(this.blown.x.add(sin(turn).mul(sway)), fall.mul(t).negate(), this.blown.y.add(sin(turn.add(1.571)).mul(sway))) as unknown as V3;
-      });
-      const size = float(0.032).add(at.seed.x.mul(0.02)).add(at.mid.mul(0.045)).add(at.far.mul(0.13));
+      }, this.hallFloor as unknown as F);
+      const size = float(0.032).add(at.seed.x.mul(0.02)).add(at.mid.mul(0.045)).add(at.far.mul(0.13)).mul(at.open);
       const eye = cameraViewMatrix.mul(vec4(at.centre, 1));
       m.vertexNode = cameraProjectionMatrix.mul(vec4(eye.xy.add(uv().sub(0.5).mul(size)), eye.z, 1));
       const fade = varying(at.fade.mul(float(1).sub(at.mid.mul(0.35)).sub(at.far.mul(0.62))));
@@ -168,6 +184,11 @@ export class Rain {
     // The rain leans with the wind (a gale lays it nearly flat, so not all the way).
     const lean = Math.min(wind, 16) * 0.75;
     this.lean.value.set(WIND_X * lean, WIND_Z * lean);
+  }
+
+  /** The workshop hall's floor height (metres): no rain or snow falls under its roof. */
+  setHallFloor(height: number): void {
+    this.hallFloor.value = height;
   }
 
   /** Carries the drops and the flakes with the wind (metres a second) for `dt` seconds. Call only while something falls and may move. */
