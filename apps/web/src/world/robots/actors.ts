@@ -200,6 +200,9 @@ export class RealReachy {
     this.labelHeight = this.v.y + 0.42 * ROBOT_SCALE;
   }
 
+  /** Talking with Galahad while he's at the table (care.ts): 0 .. 1. */
+  talk = 0;
+
   step(dt: number, t: number, galahad: Leader, groundAt: (x: number, y: number) => number, origin: [number, number], motion: boolean): void {
     if (!motion && this.posed) return;
     this.posed = true;
@@ -210,6 +213,7 @@ export class RealReachy {
       this.target[1] = this.v.y;
       this.target[2] = this.v.z;
     }
+    this.reachy.talk = near ? this.talk : 0;
     this.reachy.step(motion ? dt : 0, t, near ? this.target : null);
     this.shift.makeTranslation(-origin[0], 0, origin[1]);
     this.place.multiplyMatrices(this.shift, this.at).multiply(URDF_TO_SCENE);

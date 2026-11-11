@@ -71,6 +71,20 @@ export interface KnightState {
   armed: boolean;
   /** At the lab's bench (he works there with the sword's tip). */
   bench: boolean;
+  /** Looking after someone or something (care.ts): his gestures, each a weight he eases to. */
+  care?: CarePose;
+}
+
+/**
+ * Care's gestures: crouching (to the dog, a duck, a quadcopter's pad), reaching with his right hand to what
+ * he attends to (a pat, a battery, a print), a throw (its phase 0..1; 0 when none) and a tilt of the head
+ * (talking with Reachy). Weights 0..1, eased in animate.
+ */
+export interface CarePose {
+  crouch: number;
+  reach: number;
+  throw: number;
+  tilt: number;
 }
 
 /** What he's attending to, in the world (z up), or nothing. */
@@ -126,6 +140,13 @@ export class Knight {
   private glowNode: NonNullable<MeshLambertNodeMaterial["emissiveNode"]> | null = null;
   /** 0 outdoors, 1 in the workshop hall (eased as he goes in): then he's lit as the hall lights itself (lightIndoors). */
   readonly indoors = uniform(0);
+  /** His heartbeat in the lodestar on his chest: how much brighter it is now (care.ts' lodestarPulse). */
+  readonly pulse = uniform(0);
+  // Care's gestures, eased (see CarePose).
+  private crouch = 0;
+  private reach = 0;
+  private tilt = 0;
+  private throwW = 0;
 
   /**
    * Lights him, while `indoors`, as the hall lights its own interior (`irradiance`: hall.ts' light()), not by the
@@ -414,7 +435,9 @@ export class Knight {
     this.mesh = this.rig.mesh(m.build(), this.material);
     // The glow mask: up to 1 glows amber (eyes, seams, vents); 2 glows white-hot (the star).
     const glow = attribute("glow", "float");
-    this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), clamp(glow.sub(1), 0, 1)).mul(min(glow, 1)).mul(1.5) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
+    // The star (glow 2) beats with his heart: brighter by `pulse`.
+    const star = clamp(glow.sub(1), 0, 1);
+    this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), star).mul(min(glow, 1)).mul(1.5).mul(star.mul(this.pulse).add(1)) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
     this.material.emissiveNode = this.glowNode;
     this.mesh.castShadow = shadows;
     this.root.add(this.mesh);
@@ -509,6 +532,13 @@ export class Knight {
       const stride = Math.min(3, Math.max(1.1, speed * 0.62 + 0.25));
       this.feet.step(dt, x, y, heading, this.vx, this.vy, stride, ground);
     }
+    // ---- care's gestures, eased (at once under reduced motion) ----
+    const care = s.care;
+    const ce = motion ? 1 - Math.exp(-dt * 4) : 1;
+    this.crouch += ((still && care ? care.crouch : 0) - this.crouch) * ce;
+    this.reach += ((still && care ? care.reach : 0) - this.reach) * ce;
+    this.tilt += ((still && care ? care.tilt : 0) - this.tilt) * ce;
+    this.throwW += ((care && care.throw > 0 ? 1 : 0) - this.throwW) * (motion ? 1 - Math.exp(-dt * 10) : 1);
     if (this.bow > 0) this.bow = Math.max(0, this.bow - dt);
     const bowing = this.bow > 0 ? Math.sin((1 - this.bow / 1.3) * Math.PI) : 0;
     this.swordHeat += ((this.bench > 0.5 && this.draw > 0.9 ? 1 : 0) - this.swordHeat) * (1 - Math.exp(-dt * 2));
@@ -532,7 +562,7 @@ export class Knight {
       P.ankle[i]!.y += ANKLE;
     }
     const bob = -Math.cos(phase * 2) * (0.022 * this.walk + 0.045 * this.run);
-    const wantY = HIP_Y - 0.035 * this.walk - 0.09 * this.run - 0.05 * this.bench - 0.02 * this.guard + bob + Math.max(-0.45, lowest);
+    const wantY = HIP_Y - 0.035 * this.walk - 0.09 * this.run - 0.05 * this.bench - 0.02 * this.guard - 0.4 * this.crouch + bob + Math.max(-0.45, lowest);
     this.pelvisY += (wantY - this.pelvisY) * (motion ? 1 - Math.exp(-dt * 18) : 1);
     const sway = Math.sin(phase) * 0.018 * this.walk;
     P.pelvis.set(sway, this.pelvisY, 0.02 * this.run);
@@ -540,7 +570,7 @@ export class Knight {
     const breathe = Math.sin(t * 2.1) * 0.012 * (1 - gait);
     R.pelvis.setFromEuler(eul.set(0.04 * this.run, twist, -sway * 1.5));
     pointIn(P.spine, P.pelvis, R.pelvis, 0, 0.14, 0);
-    R.spine.setFromEuler(eul.set(0.06 * this.run + 0.08 * bowing + 0.14 * this.bench + 0.04 * this.work, -twist * 0.5, 0));
+    R.spine.setFromEuler(eul.set(0.06 * this.run + 0.08 * bowing + 0.14 * this.bench + 0.04 * this.work + 0.32 * this.crouch, -twist * 0.5, 0));
     pointIn(P.chest, P.spine, R.spine, 0, 0.2, 0);
     R.chest.setFromEuler(eul.set(0.1 * this.run + 0.1 * bowing + 0.08 * this.bench + breathe, -twist * 1.1, this.think * 0.05 * Math.sin(t * 0.8)));
     pointIn(P.neck, P.chest, R.chest, 0, 0.3, -0.01);
@@ -556,7 +586,7 @@ export class Knight {
     const le = motion ? 1 - Math.exp(-dt * 5) : 1;
     this.lookYaw += (yaw - this.lookYaw) * le;
     this.lookPitch += (pitch - this.lookPitch) * le;
-    R.head.setFromEuler(eul.set(this.lookPitch, this.lookYaw, this.think * 0.18));
+    R.head.setFromEuler(eul.set(this.lookPitch, this.lookYaw, this.think * 0.18 + this.tilt * 0.28 * Math.sin(t * 1.7)));
     this.qa.setFromEuler(eul.set(this.lookPitch * 0.4, this.lookYaw * 0.4, 0));
     this.rig.set(this.B.neck!, P.neck, this.qa);
     pointIn(P.head, P.neck, this.qa, 0, 0.1, 0.01);
@@ -600,6 +630,7 @@ export class Knight {
 
     // ---- the arms: hand targets from the blended poses, then two-bone IK from the shoulders ----
     this.poseHands(t, phase, gait, attend.on ? this.look : null);
+    this.careHands(t, attend.on ? this.look : null, care?.throw ?? 0);
     const swordInHand = this.draw > 0.5;
     if (swordInHand && this.sheathed) this.sheathed = false;
     if (!swordInHand && !this.sheathed) this.sheathed = true;
@@ -728,6 +759,40 @@ export class Knight {
         }
       }
       this.curl[i] = curl;
+    }
+  }
+
+  /**
+   * Care's hands, over the blended poses: the right hand reaches to what he attends to (patting it, a little
+   * up and down), and a throw takes it back over his shoulder and forward (its phase: 0..1).
+   */
+  private careHands(t: number, look: Vector3 | null, phase: number): void {
+    const target = this.target[1]!;
+    const grip = this.grip[1]!;
+    if (this.reach > 0.01 && look) {
+      this.t1.copy(look);
+      this.t1.y += 0.05 + Math.max(0, Math.sin(t * 6)) * 0.06;
+      this.t1.x += 0.04;
+      blend(target, this.t1, this.reach);
+      this.t2.set(0, -1, 0.35).normalize();
+      blendDir(grip, this.t2, this.reach);
+      this.curl[1] = this.curl[1]! + (0.3 - this.curl[1]!) * this.reach;
+    }
+    if (this.throwW > 0.01) {
+      // Back over the shoulder, then forward and up as he lets go, then down in the follow-through.
+      const p = Math.max(0, Math.min(1, phase));
+      const back = smooth(Math.min(1, p / 0.45));
+      const fwd = smooth(Math.max(0, Math.min(1, (p - 0.45) / 0.25)));
+      const down = smooth(Math.max(0, (p - 0.7) / 0.3));
+      this.t1.set(-0.3, SHOULDER_Y + 0.05, -0.05);
+      this.t2.set(-0.32, SHOULDER_Y + 0.28, -0.32);
+      this.t1.lerp(this.t2, back);
+      this.t2.set(-0.2, SHOULDER_Y + 0.22, 0.55);
+      this.t1.lerp(this.t2, fwd);
+      this.t2.set(-0.15, SHOULDER_Y - 0.35, 0.42);
+      this.t1.lerp(this.t2, down);
+      blend(target, this.t1, this.throwW);
+      this.curl[1] = this.curl[1]! + ((p < 0.55 ? 1.1 : 0.2) - this.curl[1]!) * this.throwW;
     }
   }
 

@@ -1,20 +1,24 @@
 import { padAt, type SiteName, SITE_NAMES, SITES, type Station, STATIONS } from "@galahad/core/world";
-import { ENGINE_LABEL, experimentEnded, experimentPlace, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
+import { ENGINE_LABEL, experimentEnded, experimentPlace, heartbeatLine, isIdle, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
 
 /*
  * The SANDBOX's one selector: what the view is looking at, in a few words, and
- * everything it can look at instead (Galahad, the experiments, the two test
- * sites, the keep's stations), ranked and searchable. Pure, so unit-tested; the
- * view draws it (views/world-look.ts).
+ * everything it can look at instead (Galahad, the experiments, his partners: the
+ * agents working with him and the fleet's nodes, the two test sites, the keep's
+ * stations), ranked and searchable. Pure, so unit-tested; the view draws it
+ * (views/world-look.ts).
  */
 
 export type LookTarget =
   | { kind: "galahad" }
   | { kind: "experiment"; id: string }
   | { kind: "site"; site: SiteName }
-  | { kind: "station"; station: Exclude<Station, "field"> };
+  | { kind: "station"; station: Exclude<Station, "field"> }
+  /** An agent working with him (its figure in the world), or one of the fleet's nodes (its spot at the keep). */
+  | { kind: "partner"; name: string }
+  | { kind: "node"; id: string };
 
-export type LookGroup = "Galahad" | "Experiments" | "Test sites" | "The keep";
+export type LookGroup = "Galahad" | "Experiments" | "Partners" | "Test sites" | "The keep";
 
 export interface LookOption {
   key: string;
@@ -22,7 +26,7 @@ export interface LookOption {
   group: LookGroup;
   label: string;
   meta: string;
-  icon: "user" | "flask" | "compass" | "landscape";
+  icon: "user" | "flask" | "compass" | "landscape" | "code" | "server";
   /** A status dot (experiments). */
   tone?: "ok" | "warn" | "neutral" | "danger";
   live?: boolean;
@@ -47,13 +51,25 @@ export function matches(text: string, query: string): boolean {
 }
 
 /**
- * Everything the view can look at, in the order it's offered: Galahad; the
- * experiments (running ones first, then those that ended, newest first); the
- * test sites; the keep's stations, the one he's at marked. Filtered by `query`.
+ * His line: what he's doing (his work, or with nothing to do the part of his day the world shows, `life`), and
+ * his heartbeat ("Walking the dog · Heartbeat ✓ 12:30", "Needs you: rack is offline").
  */
-export function lookOptions(model: WorldModel, query = ""): LookOption[] {
+export function galahadLine(model: WorldModel, life = ""): string {
   const g = model.galahad;
-  const out: LookOption[] = [{ key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: g.doing || `At ${stationLabel(g.station).toLowerCase()}`, icon: "user" }];
+  const doing = isIdle(g) ? life || g.doing || "At the keep" : g.doing || `At ${stationLabel(g.station).toLowerCase()}`;
+  const heart = heartbeatLine(model.heartbeat);
+  return heart ? `${doing} · ${heart}` : doing;
+}
+
+/**
+ * Everything the view can look at, in the order it's offered: Galahad; the
+ * experiments (running ones first, then those that ended, newest first); his
+ * partners (the agents with him, then the fleet's nodes); the test sites; the
+ * keep's stations, the one he's at marked. Filtered by `query`.
+ */
+export function lookOptions(model: WorldModel, query = "", life = ""): LookOption[] {
+  const g = model.galahad;
+  const out: LookOption[] = [{ key: "galahad", target: { kind: "galahad" }, group: "Galahad", label: "Galahad", meta: galahadLine(model, life), icon: "user" }];
   const time = (e: (typeof model.experiments)[number]) => e.endedAt ?? e.startedAt;
   const experiments = [...model.experiments].sort((a, b) => Number(experimentEnded(a)) - Number(experimentEnded(b)) || time(b) - time(a));
   for (const e of experiments) {
@@ -67,6 +83,21 @@ export function lookOptions(model: WorldModel, query = ""): LookOption[] {
       tone: STATUS_TONE[e.status],
       live: e.status === "running",
       here: g.station === "field" && g.experiment === e.id,
+    });
+  }
+  for (const p of model.partners) {
+    out.push({ key: `partner:${p.name}`, target: { kind: "partner", name: p.name }, group: "Partners", label: p.name, meta: p.doing || `At ${stationLabel(p.station).toLowerCase()}`, icon: "code", tone: "ok", live: true, here: g.station === p.station });
+  }
+  for (const n of model.nodes) {
+    if (n.kind !== "node") continue;
+    out.push({
+      key: `node:${n.id}`,
+      target: { kind: "node", id: n.id },
+      group: "Partners",
+      label: n.name,
+      meta: `${n.online ? "Online" : "Silent"}${n.sandboxHost ? " · sandboxes" : ""}${n.self ? " · this node" : ""}`,
+      icon: "server",
+      tone: n.online ? "ok" : "danger",
     });
   }
   const at = g.station === "field" ? model.experiments.find((e) => e.id === g.experiment) : undefined;
@@ -88,10 +119,10 @@ const NEAR_STATION = 14;
  * when following him; otherwise whatever the camera's focus is over (an experiment's plot,
  * a test site, a station of the keep), or "Exploring".
  */
-export function lookingAt(model: WorldModel, focus: { x: number; y: number }, following: boolean, selected: string | null): { label: string; meta: string; target: LookTarget | null } {
+export function lookingAt(model: WorldModel, focus: { x: number; y: number }, following: boolean, selected: string | null, life = ""): { label: string; meta: string; target: LookTarget | null } {
   const open = selected ? model.experiments.find((e) => e.id === selected) : undefined;
   if (open) return { label: open.title, meta: STATUS_LABEL[open.status], target: { kind: "experiment", id: open.id } };
-  if (following) return { label: "Galahad", meta: model.galahad.doing || `At ${stationLabel(model.galahad.station).toLowerCase()}`, target: { kind: "galahad" } };
+  if (following) return { label: "Galahad", meta: galahadLine(model, life), target: { kind: "galahad" } };
   for (const e of model.experiments) {
     if (Math.abs(focus.x - e.plot.x) <= e.plot.size / 2 + 2 && Math.abs(focus.y - e.plot.y) <= e.plot.size / 2 + 2) {
       return { label: e.title, meta: STATUS_LABEL[e.status], target: { kind: "experiment", id: e.id } };

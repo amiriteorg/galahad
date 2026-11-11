@@ -1,4 +1,4 @@
-import { attribute, float, uniform, vertexColor } from "three/tsl";
+import { attribute, clamp, float, mix, step, uniform, vec3, vertexColor } from "three/tsl";
 import { BoxGeometry, type BufferGeometry, CircleGeometry, Color, CylinderGeometry, Euler, Group, IcosahedronGeometry, type Matrix4, Mesh, MeshBasicMaterial, MeshLambertNodeMaterial, Quaternion, type SkinnedMesh, TorusGeometry, Vector3 } from "three/webgpu";
 import { BUILDS, type Mover, type Solids } from "./collide.ts";
 import { headingToSceneYaw } from "./coords.ts";
@@ -21,6 +21,10 @@ import { limb, pointIn, Rig } from "./rig.ts";
  * skinned mesh, its shell in bevelled plates with seams and bolts, its lens a
  * ringed camera eye. Its lens glows brighter at night. Scene coordinates (y up),
  * facing +z; about 0.6 m tall.
+ *
+ * Galahad looks after it (care.ts): `lead` sends it somewhere else than beside him
+ * (after a ball, to its charging dock), `mood` shows in its tail, its ears and the
+ * light in its eye, and `charge` lights the four cells of the battery on its back.
  */
 
 const PANEL = 0xf0e8d6;
@@ -39,7 +43,7 @@ export interface Master {
   working: boolean;
 }
 
-type Mode = "follow" | "sit" | "wander" | "sniff";
+type Mode = "follow" | "sit" | "wander" | "sniff" | "lead";
 
 const BODY_Y = 0.38;
 const UPPER = 0.17;
@@ -74,10 +78,28 @@ export class RobotDog {
   /** 0 outdoors, 1 in the workshop hall: then it's lit as the hall lights itself (lightIndoors; as knight.ts' is). */
   readonly indoors = uniform(0);
 
+  /* ---------- care's say (care.ts) ---------- */
+  /** Somewhere to go instead of beside him: a ball, its dock. `sit` there once arrived; `run` to get there; it faces `face` (NaN: him). */
+  readonly lead = { on: false, x: 0, y: 0, sit: false, run: false, faceX: Number.NaN, faceY: Number.NaN };
+  /** How it feels: its tail's wag, its ears (1 pricked, 0 drooped), the light in its eye (1 as ever, less when tired). */
+  readonly mood = { wag: 0.5, ears: 0.6, eye: 1 };
+  /** Its battery, 0..1: the four cells on its back light by it. */
+  readonly charge = uniform(1);
+  private nightLevel = 0;
+
+  /** The eye and lights glow amber (glow ≤ 1); the battery's cells (glow 3..6) green, amber or red, lit by the charge. */
+  private emissive() {
+    const g = attribute("glow", "float");
+    const cell = step(2.5, g);
+    const lit = step(g.sub(3).add(0.5), this.charge.mul(4));
+    const tone = mix(vec3(0.95, 0.18, 0.1), vec3(0.25, 0.95, 0.4), clamp(this.charge.mul(1.6).sub(0.25), 0, 1));
+    return this.eyeColor.mul(g.mul(float(1).sub(cell))).mul(2.2).add(tone.mul(lit.mul(0.85).add(0.06)).mul(cell).mul(1.4));
+  }
+
   /** Lit, while `indoors`, as the hall lights its own interior (`irradiance`: hall.ts' light()), not by the scene's lights. Before the first frame. */
   lightIndoors(irradiance: ReturnType<typeof indoorLight>): void {
     this.material.colorNode = vertexColor().mul(float(1).sub(this.indoors));
-    this.material.emissiveNode = this.eyeColor.mul(attribute("glow", "float")).mul(2.2).add(vertexColor().mul(irradiance.mul(this.indoors).mul(1 / Math.PI)));
+    this.material.emissiveNode = this.emissive().add(vertexColor().mul(irradiance.mul(this.indoors).mul(1 / Math.PI)));
   }
   private readonly shadow: Mesh;
   /** Where it is (its place among the solids too: x, y and its radius). */
@@ -105,7 +127,7 @@ export class RobotDog {
     0.55,
     0.07,
   );
-  private readonly bones = { body: 0, head: 0, tail: 0, upper: [] as number[], lower: [] as number[], foot: [] as number[] };
+  private readonly bones = { body: 0, head: 0, tail: 0, ears: [0, 0], upper: [] as number[], lower: [] as number[], foot: [] as number[] };
   private readonly target = { x: 0, y: 0 };
   // Scratch.
   private readonly pBody = new Vector3();
@@ -119,6 +141,7 @@ export class RobotDog {
   private readonly qUpper = new Quaternion();
   private readonly qLower = new Quaternion();
   private readonly qa = new Quaternion();
+  private readonly qb = new Quaternion();
   private readonly t1 = new Vector3();
   private ground: (x: number, y: number) => number = () => 0;
 
@@ -128,6 +151,7 @@ export class RobotDog {
     B.body = r.add(0, BODY_Y, 0);
     B.head = r.add(0, BODY_Y + 0.14, 0.33);
     B.tail = r.add(0, BODY_Y + 0.08, -0.3);
+    B.ears = [r.add(0.1, BODY_Y + 0.27, 0.29), r.add(-0.1, BODY_Y + 0.27, 0.29)];
     for (const [x, z] of HIPS) {
       B.upper.push(r.add(x, BODY_Y - 0.05, z));
       B.lower.push(r.add(x, BODY_Y - 0.05 - UPPER, z));
@@ -170,6 +194,13 @@ export class RobotDog {
     part(B.head, new CylinderGeometry(0.008, 0.01, 0.16, 6), JOINT, at(0.09, 0.2, -0.06), 0);
     part(B.head, new CylinderGeometry(0.016, 0.016, 0.02, 8), STRIPE, at(0.09, 0.13, -0.06), 0);
     part(B.head, new IcosahedronGeometry(0.018, 1), 0xffb547, at(0.09, 0.285, -0.06), 0, 1);
+    // Its ears: two small cream flaps over the head, an orange edge (they prick up and droop with its mood).
+    for (const ear of B.ears) {
+      part(ear, bv(0.05, 0.11, 0.035), PANEL, at(0, 0.05, 0), 0.02);
+      part(ear, new BoxGeometry(0.052, 0.02, 0.037), STRIPE, at(0, 0.1, 0), 0);
+    }
+    // Its battery: four cells in a row along its back, before the vent.
+    for (let k = 0; k < 4; k++) part(B.body, new BoxGeometry(0.05, 0.012, 0.035), 0x2a2d33, at(0, 0.158, 0.03 + k * 0.045), 0, 3 + k);
     // The tail: a little stalk with an orange tip.
     part(B.tail, new CylinderGeometry(0.015, 0.02, 0.16, 6), JOINT, at(0, 0.08, 0), 0);
     part(B.tail, bv(0.05, 0.05, 0.05), STRIPE, at(0, 0.17, 0), 0);
@@ -183,7 +214,7 @@ export class RobotDog {
       part(B.foot[i]!, bv(0.085, FOOT, 0.11), JOINT_LIGHT, at(0, -FOOT / 2, 0.015), 0);
     }
     this.mesh = this.rig.mesh(m.build(), this.material);
-    this.material.emissiveNode = this.eyeColor.mul(attribute("glow", "float")).mul(2.2);
+    this.material.emissiveNode = this.emissive();
     this.mesh.castShadow = shadows;
     this.root.add(this.mesh);
     this.shadow = new Mesh(new CircleGeometry(0.36, 14), new MeshBasicMaterial({ color: 0x1a1408, transparent: true, opacity: 0.22, depthWrite: false }));
@@ -283,7 +314,13 @@ export class RobotDog {
     this.besideOf(m);
     let tx = this.target.x;
     let ty = this.target.y;
-    if (m.moving) this.mode = "follow";
+    if (this.lead.on) {
+      // Care sends it: after a ball, to its dock. It sits there once arrived, if it's told to.
+      tx = this.lead.x;
+      ty = this.lead.y;
+      this.mode = this.lead.sit && Math.hypot(tx - this.x, ty - this.y) < 0.3 ? "sit" : "lead";
+    } else if (this.mode === "lead") this.mode = "follow";
+    else if (m.moving) this.mode = "follow";
     else if (this.mode === "follow" && Math.hypot(tx - this.x, ty - this.y) < 0.35) this.mode = "sit";
     else if (this.mode === "sit" && this.stillFor > (m.working ? 24 : 9)) this.pickGoal(m);
     if (this.mode === "wander" || this.mode === "sniff") {
@@ -301,12 +338,12 @@ export class RobotDog {
       }
     }
     // Round what stands in the way: in his footsteps.
-    if (this.mover && this.mode !== "sit" && this.followFootsteps(tx, ty)) {
+    if (this.mover && this.mode !== "sit" && !this.lead.on && this.followFootsteps(tx, ty)) {
       tx = this.target.x;
       ty = this.target.y;
     }
-    const k = this.mode === "follow" ? 14 : 6;
-    const maxSpeed = m.running ? 7 : this.mode === "follow" ? 3.2 : 1.4;
+    const k = this.mode === "follow" || this.mode === "lead" ? 14 : 6;
+    const maxSpeed = this.mode === "lead" ? (this.lead.run ? 6.2 : 2.6) : m.running ? 7 : this.mode === "follow" ? 3.2 : 1.4;
     const sx = this.spring.x;
     const sy = this.spring.y;
     springStep(this.spring, tx, ty, k, criticalDamping(k) * 1.1, dt, maxSpeed);
@@ -329,7 +366,10 @@ export class RobotDog {
     const vy = dt > 0 ? (this.spring.y - sy) / dt : 0;
     const speed = Math.hypot(vx, vy);
     if (speed > 0.25) this.heading = turnTowards(this.heading, Math.atan2(vy, vx), 8 * dt);
-    else if (this.mode === "sit") this.heading = turnTowards(this.heading, Math.atan2(m.y - this.y, m.x - this.x), 3 * dt);
+    else if (this.mode === "sit") {
+      const face = this.lead.on && !Number.isNaN(this.lead.faceX);
+      this.heading = turnTowards(this.heading, Math.atan2((face ? this.lead.faceY : m.y) - this.y, (face ? this.lead.faceX : m.x) - this.x), 3 * dt);
+    }
     const ease = 1 - Math.exp(-dt * 6);
     this.sitAmount += ((this.mode === "sit" && speed < 0.3 ? 1 : 0) - this.sitAmount) * ease;
     this.sniffAmount += ((this.mode === "sniff" ? 1 : 0) - this.sniffAmount) * ease;
@@ -371,9 +411,23 @@ export class RobotDog {
     pointIn(this.t1, this.pBody, this.qBody, 0, 0.14, 0.33);
     this.qa.setFromEuler(eul.set(sit * 0.35 + this.sniffAmount * (0.55 + 0.12 * Math.sin(t * 14)), (1 - this.gait) * 0.25 * Math.sin(t * 0.7), 0)).premultiply(this.qBody);
     this.rig.set(this.bones.head, this.t1, this.qa);
+    // Its ears, over the head: pricked when it's keen, drooped and back when it's tired.
+    const ears = this.mood.ears;
+    // (t1 and qa hold the head's place and turn, just set.)
+    const head = this.qa;
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? 1 : -1;
+      pointIn(this.pEnd, this.t1, head, side * 0.1, 0.13, -0.04);
+      this.qb.setFromEuler(eul.set(-(1 - ears) * 0.8 + 0.08 * Math.sin(t * 3.1 + i) * ears, 0, side * (0.12 + (1 - ears) * 0.7))).premultiply(head);
+      this.rig.set(this.bones.ears[i]!, this.pEnd, this.qb);
+    }
+    // The tail: up and wagging when it's happy, low and slow when it's tired.
+    const wag = this.mood.wag;
     pointIn(this.t1, this.pBody, this.qBody, 0, 0.08, -0.3);
-    this.qa.setFromEuler(eul.set(-0.6, 0, Math.sin(t * (speed > 0.3 ? 14 : 7)) * (0.35 + 0.3 * sit))).premultiply(this.qBody);
+    this.qa.setFromEuler(eul.set(-0.25 - 0.6 * wag, 0, Math.sin(t * (speed > 0.3 ? 14 : 5 + 10 * wag)) * (0.35 + 0.3 * sit) * (0.25 + 0.95 * wag))).premultiply(this.qBody);
     this.rig.set(this.bones.tail, this.t1, this.qa);
+    // The light in its eye: the night's, dimmed when it's tired (a uniform's value: nothing is uploaded but a colour).
+    this.eyeColor.value.copy(this.dim).lerp(this.bright, Math.min(1, 0.35 + this.nightLevel)).multiplyScalar(0.35 + 0.65 * this.mood.eye);
     this.front.set(0, 0, 1).applyQuaternion(this.qBody);
     for (let i = 0; i < 4; i++) {
       const [hx, hz] = HIPS[i]!;
@@ -400,7 +454,16 @@ export class RobotDog {
   }
 
   setNight(night: number): void {
-    this.eyeColor.value.copy(this.dim).lerp(this.bright, Math.min(1, 0.35 + night));
+    this.nightLevel = night;
+    this.eyeColor.value.copy(this.dim).lerp(this.bright, Math.min(1, 0.35 + night)).multiplyScalar(0.35 + 0.65 * this.mood.eye);
+  }
+
+  /** Where its mouth is (world, z up), for the ball it carries. */
+  mouth(out: [number, number, number]): [number, number, number] {
+    out[0] = this.x + Math.cos(this.heading) * 0.52;
+    out[1] = this.y + Math.sin(this.heading) * 0.52;
+    out[2] = this.ground(this.x, this.y) + this.bodyY + 0.02;
+    return out;
   }
 
   setBlobShadow(on: boolean): void {

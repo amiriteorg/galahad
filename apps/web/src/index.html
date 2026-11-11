@@ -1003,6 +1003,8 @@
       .world-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; border-right: inherit; border-bottom: inherit; transform: translateX(-50%) rotate(45deg); }
       .world-bubble .doing { font-weight: 650; }
       .world-bubble .thought { color: #5d5568; font-style: italic; margin-top: 3px; }
+      .world-bubble .heart { margin-top: 4px; font-size: 10.5px; color: #6b5c4c; font-variant-numeric: tabular-nums; }
+      .world-bubble .heart[data-needs="true"] { color: #b4462e; font-weight: 650; }
       .world-bubble .thinking { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.5px; color: #8a5a2a; font-weight: 600; }
       .world-bubble .dots { width: 18px; height: 6px; background: radial-gradient(circle, #e8853a 2.5px, transparent 3px) 0 50% / 6px 6px repeat-x; animation: world-dots 1.1s steps(3) infinite; }
       @keyframes world-dots { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }

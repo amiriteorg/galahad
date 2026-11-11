@@ -1,7 +1,10 @@
 import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
-import { ENGINE_LABEL, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { Care, type CareFrame, CareLook, DOCK_COLLIDERS, lodestarPulse } from "./care.ts";
+import { ACTIVITIES, type Activity } from "./life.ts";
+import { Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";
 import { attachInput, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Point3, SpringArm, STATION_DISTANCE } from "./camera.ts";
@@ -77,7 +80,10 @@ export type GoTo =
   | { kind: "site"; site: SiteName }
   | { kind: "experiment"; id: string }
   /** A point on the ground (the map): the view moves there, as it is. */
-  | { kind: "point"; x: number; y: number };
+  | { kind: "point"; x: number; y: number }
+  /** One of his partners: an agent's figure, or a node's spot at the keep (the selector's "Partners"). */
+  | { kind: "partner"; name: string }
+  | { kind: "node"; id: string };
 
 /** Where Galahad is and where the camera looks (world metres; headings in the atan2 convention): what the map draws. */
 export interface WorldWhere {
@@ -89,6 +95,8 @@ export interface WorldWhere {
   /** The way the camera looks, and how far it is from its focus. */
   yaw: number;
   distance: number;
+  /** With no work, what he's doing in his day ("Walking the dog", "Needs you: …"); "" at work. */
+  life: string;
 }
 
 export interface WorldOptions {
@@ -298,7 +306,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // The built places beyond the keep: the proving ground and the workshop hall.
   const placeContext: PlaceContext = { tier, shadows, ground: (x, y) => land.heightAt(x, y) };
   const workshop = new Workshop(placeContext);
-  const places: Place[] = [new ProvingGround(placeContext), workshop];
+  const provingGround = new ProvingGround(placeContext);
+  const places: Place[] = [provingGround, workshop];
   // In the hall, Galahad and his dog are lit as it lights itself (every tier: no sun under its roof where there are no shadows).
   knight.lightIndoors(workshop.insideLight());
   dog.lightIndoors(workshop.insideLight());
@@ -349,6 +358,54 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const critters = new Critters(worldRoot, tier.microducks, duckGround, shadows);
   fauna.join(solids);
   critters.flock.join(solids);
+
+  // ---------- his life when there's no work, and those he looks after (care.ts, life.ts, partners.ts) ----------
+  const care = new Care(dog, critters.flock, provingGround, (on) => (critters.reachyTalk = on));
+  const careLook = new CareLook(worldRoot, shadows);
+  solids.add(DOCK_COLLIDERS);
+  const partners = new Partners(worldRoot, shadows);
+  partners.figures.join(solids, dogGround);
+  {
+    // Tours and debugging: ?life=<activity> fixes his day to one part of it, ?charge=0.15 sets the dog's battery.
+    const q = new URLSearchParams(location.search);
+    const forced = q.get("life");
+    if (forced && (ACTIVITIES as readonly string[]).includes(forced)) care.forced = forced as Activity;
+    const charge = Number(q.get("charge"));
+    if (q.has("charge") && Number.isFinite(charge)) care.charge = Math.max(0, Math.min(1, charge));
+  }
+  const spotOf = (id: string, out: { x: number; y: number }): boolean => {
+    for (let i = 0; i < keep.spots.length; i++) {
+      const spot = keep.spots[i]!;
+      if (spot.node.id !== id) continue;
+      out.x = spot.label[0];
+      out.y = spot.label[1];
+      return true;
+    }
+    return false;
+  };
+  const careFrame: CareFrame = {
+    now: 0,
+    dt: 0,
+    t: 0,
+    motion: true,
+    working: false,
+    concern: null,
+    galahad: { x: 0, y: 0, heading: 0, moving: false },
+    dog: { x: 0, y: 0, speed: 0 },
+    nodeSpot: spotOf,
+    height: (x, y) => land.heightAt(x, y),
+    wet: (x, y) => land.heightAt(x, y) < land.waterAt(x, y) + 0.05,
+  };
+  /** The last target of his day he was sent to, and whether he was working then; the dog's last place (for its speed). */
+  let careKey = -1;
+  let careIntent = "";
+  let firstLife = true;
+  const dogLast = { x: Number.NaN, y: Number.NaN };
+  /** When the page saw his heartbeat run (performance clock), for the lodestar's strong beat; and the run it saw. */
+  let beatSeen = -1e9;
+  let lastRan: number | null = null;
+  /** ?trace=1: where his day is, for a tour to read. */
+  const lifeTrace = { activity: "", intent: "", charge: 0, docked: false, ball: "", beat: 0, force: (a: string | null) => void (care.forced = a && (ACTIVITIES as readonly string[]).includes(a) ? (a as Activity) : null), setCharge: (c: number) => void (care.charge = Math.max(0, Math.min(1, c))) };
   /** The fleet's banners, the beacon and the plots' fences: solids that come and go with the model. */
   let fleetSolids = 0;
   let beaconSolids = 0;
@@ -390,6 +447,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // (globalThis.__sandboxTrace: the buffer and how many frames went in). Nothing is kept without it.
   const trace = /[?&]trace=1(&|$)/.test(location.search) ? { frames: new Float64Array(TRACE * 7), n: 0 } : null;
   if (trace) (globalThis as { __sandboxTrace?: unknown }).__sandboxTrace = trace;
+  if (trace) (globalThis as { __sandboxLife?: unknown }).__sandboxLife = lifeTrace;
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
@@ -550,7 +608,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const bubbleDoing = div("doing");
   const bubbleThought = div("thought");
   const bubbleThinking = div("thinking");
-  bubble.append(bubbleDoing, bubbleThought, bubbleThinking);
+  const bubbleHeart = div("heart");
+  bubble.append(bubbleDoing, bubbleThought, bubbleThinking, bubbleHeart);
+  /** What the bubble says he's doing with no work (care's label), as last written. */
+  let bubbleLife = "";
   bubble.hidden = true;
   addLabel(
     "bubble",
@@ -628,7 +689,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   function syncBubble(m: WorldModel): void {
     const g = m.galahad;
-    bubbleDoing.textContent = g.doing;
+    bubbleDoing.textContent = isIdle(g) ? bubbleLife || g.doing : g.doing;
+    // His heartbeat: "Heartbeat ✓ 12:30", what needs you, or what he fixed himself on its last run.
+    const heart = heartbeatLine(m.heartbeat);
+    const fixed = m.heartbeat?.fixed.length ? ` · fixed ${m.heartbeat.fixed.length === 1 ? "one thing" : `${m.heartbeat.fixed.length} things`} himself` : "";
+    bubbleHeart.textContent = heart ? `${heart}${fixed}` : "";
+    bubbleHeart.hidden = !heart;
+    bubbleHeart.dataset.needs = String(Boolean(heartbeatConcern(m.heartbeat)));
     const thought = m.thoughts.at(-1) ?? "";
     bubbleThought.textContent = thought;
     bubbleThought.hidden = !thought;
@@ -644,6 +711,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   rain.setHallFloor(groundAt(HALL.x, HALL.y));
   let walkKey = "";
   function retarget(m: WorldModel): void {
+    // With no work he lives his day (care.ts sends him); under reduced motion he rests at the keep.
+    if (isIdle(m.galahad) && !reduced()) {
+      walkKey = "";
+      return;
+    }
     const target = targetFor(m.galahad, m.experiments);
     const key = `${m.galahad.station}|${m.galahad.experiment}|${target.x.toFixed(2)},${target.y.toFixed(2)}`;
     if (key === walkKey) return;
@@ -762,7 +834,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (!groundUnder(clientX, clientY)) return null;
     const x = hit.x + origin[0];
     const y = -hit.z + origin[1];
-    const text = critters.hover(x, y, hoverPoint);
+    const text = critters.hover(x, y, hoverPoint) ?? partners.hover(x, y, hoverPoint);
     if (text) return text;
     for (const place of places) {
       const name = place.hover?.(x, y, hoverPoint);
@@ -1090,6 +1162,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       vegetation.place(origin[0], origin[1]);
       fauna.place(originScene);
       critters.place(originScene);
+      partners.place(originScene);
       originUniform.value.set(origin[0], origin[1]);
     }
     // Land and what grows on it: nearest first, within this frame's budget.
@@ -1102,14 +1175,65 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
     // Galahad and his dog.
     const g = model?.galahad;
-    const atWork = !walker.moving && Boolean(g?.doing);
+    // ---- his day (care.ts): with no work he lives it; work always comes first ----
+    const idle = !g || isIdle(g);
+    careFrame.now = Date.now();
+    careFrame.dt = renderDt;
+    careFrame.t = t;
+    careFrame.motion = motion;
+    careFrame.working = !idle;
+    careFrame.galahad.x = walker.x;
+    careFrame.galahad.y = walker.y;
+    careFrame.galahad.heading = walker.heading;
+    careFrame.galahad.moving = walker.moving;
+    careFrame.dog.x = dog.x;
+    careFrame.dog.y = dog.y;
+    careFrame.dog.speed = Number.isNaN(dogLast.x) || renderDt <= 0 ? 0 : Math.hypot(dog.x - dogLast.x, dog.y - dogLast.y) / renderDt;
+    dogLast.x = dog.x;
+    dogLast.y = dog.y;
+    const life = care.step(careFrame);
+    if (life.intent !== "work" && (life.key !== careKey || life.intent !== careIntent)) {
+      // First sight with no work: he's where his day has him, at once.
+      walker.go(life.target, stationObstacles, reduced() || firstLife);
+      if (firstLife) {
+        standZ = walker.z;
+        knight.place(walker.x, walker.y, walker.heading, feetGround);
+        dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
+      }
+      dirty = true;
+    }
+    if (life.intent === "work" && careIntent !== "work" && careIntent !== "" && model) {
+      // Back to work: to where the stream says.
+      walkKey = "";
+      retarget(model);
+    }
+    if (model) firstLife = false;
+    careKey = life.key;
+    careIntent = life.intent;
+    if (idle && life.label !== bubbleLife) {
+      bubbleLife = life.label;
+      bubbleDoing.textContent = life.label || g?.doing || "";
+      bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden;
+      remeasure("bubble");
+    }
+    if (trace) care.trace(lifeTrace);
+    // His heartbeat in the lodestar: softly at rest, harder for a few seconds after a heartbeat ran.
+    knight.pulse.value = motion ? lodestarPulse(t, (performance.now() - beatSeen) / 1000) : 0.15;
+    const atWork = idle ? life.busy && !walker.moving : !walker.moving && Boolean(g?.doing);
     knightState.moving = walker.moving;
     knightState.running = walker.running;
     knightState.working = atWork;
-    knightState.thinking = !walker.moving && Boolean(g?.model);
-    knightState.armed = !walker.moving && (g?.station === "field" || g?.station === "forge");
-    knightState.bench = g?.station === "forge";
+    knightState.thinking = !walker.moving && (Boolean(g?.model) || (idle && life.thinking));
+    knightState.armed = !idle && !walker.moving && (g?.station === "field" || g?.station === "forge");
+    knightState.bench = !idle && g?.station === "forge";
+    knightState.care = idle ? life.pose : undefined;
     attend();
+    if (idle && life.attention.on && !walker.moving) {
+      attention.x = life.attention.x;
+      attention.y = life.attention.y;
+      attention.z = life.attention.z;
+      attention.on = true;
+    }
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
     if (Number.isNaN(standZ) || !motion || Math.abs(walker.z - standZ) > 2) standZ = walker.z;
     else standZ += (walker.z - standZ) * (1 - Math.exp(-renderDt * 12));
@@ -1169,6 +1293,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     dogLead.y = dog.y;
     dogLead.heading = dog.heading;
     critters.step(renderDt, t, galahadLead, dogLead, groundAt, atWork && g?.station === "forge", origin, motion);
+    // His partners beside him, and the ball in the air.
+    partners.figures.step(renderDt, master, motion);
+    partners.pose(groundAt, origin, t);
+    careLook.update(care, groundAt, renderDt, motion);
 
     // The camera, over a smoothed ground; then everything that depends on where it is.
     const focusGround = rig.settle(Math.max(0, rig.follow ? standZ : groundAt(rig.x, rig.y)), renderDt, motion);
@@ -1263,10 +1391,18 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         if (selected && !next.experiments.some((e) => e.id === selected)) options.onSelect(null);
       }
       if (!prev || prev.galahad !== next.galahad || prev.experiments !== next.experiments) retarget(next);
-      if (!prev || prev.galahad !== next.galahad || prev.thoughts !== next.thoughts) {
+      if (!prev || prev.galahad !== next.galahad || prev.thoughts !== next.thoughts || prev.heartbeat !== next.heartbeat) {
         syncBubble(next);
         dirty = true;
       }
+      // His heartbeat: what needs you (care sends him there), and a strong beat in the lodestar when it runs.
+      if (!prev || prev.heartbeat !== next.heartbeat) {
+        careFrame.concern = heartbeatConcern(next.heartbeat);
+        const ran = next.heartbeat?.ran ?? null;
+        if (prev && ran !== null && ran !== lastRan) beatSeen = performance.now();
+        lastRan = ran;
+      }
+      if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
       if (!prev || prev.nodes !== next.nodes) {
         keep.setNodes(next.nodes);
         solids.remove(fleetSolids);
@@ -1275,8 +1411,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         dirty = true;
       }
       if (!prev) {
-        // First sight: put him (and the dog) where he is at once, and the camera on him.
+        // First sight: put him (and the dog) where he is at once, and the camera on him (with no work, care puts him in his day).
         walker.go(targetFor(next.galahad, next.experiments), stationObstacles, true);
+        firstLife = isIdle(next.galahad);
         standZ = walker.z;
         knight.place(walker.x, walker.y, walker.heading, feetGround);
         dog.place({ x: walker.x, y: walker.y, heading: walker.heading, moving: false, running: false, working: true }, groundAt);
@@ -1308,6 +1445,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
           rig.target.yaw = v.yaw;
         } else if (target.kind === "point") {
           if (Number.isFinite(target.x) && Number.isFinite(target.y)) rig.lookAt(target.x, target.y);
+        } else if (target.kind === "partner") {
+          const at = { x: 0, y: 0 };
+          if (partners.find(target.name, at)) rig.lookAt(at.x, at.y, 12);
+        } else if (target.kind === "node") {
+          const spot = { x: 0, y: 0 };
+          if (spotOf(target.id, spot)) rig.lookAt(spot.x, spot.y, 16);
         } else {
           const e = plots.get(target.id)?.exp;
           if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(28, e.plot.size * 1.6));
@@ -1365,6 +1508,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       out.focusY = rig.y;
       out.yaw = rig.yaw;
       out.distance = rig.distance;
+      out.life = care.out.intent === "work" ? "" : care.out.label;
       return out;
     },
     stats() {
@@ -1401,6 +1545,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       dog.dispose();
       fauna.dispose();
       critters.dispose();
+      careLook.dispose();
+      partners.dispose();
       plots.dispose();
       landmarks.dispose();
       glows.dispose();

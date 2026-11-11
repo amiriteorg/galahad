@@ -81,6 +81,8 @@ function instanced(geometry: BufferGeometry, material: MeshLambertMaterial, coun
 
 export class Critters {
   readonly flock: MicroduckFlock;
+  /** Reachy Mini and Galahad talking at the council table (care.ts): 0 .. 1. */
+  reachyTalk = 0;
   private readonly material = new MeshLambertMaterial({ vertexColors: true });
   private readonly duckParts: { body: InstancedMesh; head: InstancedMesh; beak: InstancedMesh; legL: InstancedMesh; legR: InstancedMesh };
   // A duck's scratch skeleton.
@@ -221,6 +223,7 @@ export class Critters {
       this.poseArm(1, this.followerJoints, origin);
       this.poseCubes(origin);
     }
+    if (this.reachy) this.reachy.talk = this.reachyTalk;
     this.reachy?.step(dt, t, galahad, height, origin, motion);
   }
 

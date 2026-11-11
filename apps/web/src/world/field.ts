@@ -128,6 +128,16 @@ export class ProvingGround implements Place {
   private readonly plane = aircraft();
   private readonly rover = roverState();
   private readonly drone = quad();
+
+  /* ---------- Galahad's care (care.ts): the residents to read, and his holds on them ---------- */
+  /** The aircraft, the rover and the quadcopter as they are now (read them; their simulations own them). */
+  readonly residents = { plane: this.plane as Readonly<typeof this.plane>, rover: this.rover as Readonly<typeof this.rover>, drone: this.drone as Readonly<typeof this.drone> };
+  /** He's walking round the aircraft before it flies: at its tie-down it stays (engine off) until he's done. */
+  preflight = false;
+  /** He's swapped the quadcopter's battery on its pad: it's ready to fly in a moment. */
+  swapBattery(): void {
+    if (this.drone.mode === "charging") this.drone.timer = Math.min(this.drone.timer, 1.5);
+  }
   private readonly launcher = launcher();
   private readonly sock = sockPose();
   private cups = 0;
@@ -315,7 +325,9 @@ export class ProvingGround implements Place {
     const flightTaken = this.occupied.has("flight");
     const launchTaken = this.occupied.has("launch");
     const courseTaken = this.occupied.has("course");
-    stepAircraft(this.plane, dt, flightTaken, f.windHeading, f.galahadX, f.galahadY);
+    // (A pre-flight check holds it only at its tie-down: never in the air or on its way.)
+    const checking = this.preflight && (this.plane.phase === "idle" || this.plane.phase === "parked");
+    stepAircraft(this.plane, dt, flightTaken || checking, f.windHeading, f.galahadX, f.galahadY);
     stepRover(this.rover, dt, courseTaken, f.galahadX, f.galahadY, f.t);
     stepQuad(this.drone, dt, launchTaken);
     stepLauncher(this.launcher, dt, !launchTaken);
