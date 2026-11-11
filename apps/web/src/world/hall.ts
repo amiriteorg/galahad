@@ -203,12 +203,17 @@ export class Workshop implements Place {
     const cart = this.flow.cart.pose;
     this.movers[0]!.x = cart.x;
     this.movers[0]!.y = cart.y;
-    // The lamps' light on Galahad (his own material takes the scene's lights, not the hall's).
+    // The lamps' light on Galahad (his own material takes the scene's lights, not the hall's): from above
+    // him on the camera's side, so the side of him you see is lit as the hall around him is.
     if (this.lamp) {
       const inside = inHall(frame.galahadX, frame.galahadY) ? 1 : 0;
       this.near += frame.motion ? Math.max(-1, Math.min(1, (inside - this.near) * 3 * frame.dt)) : inside - this.near;
-      this.lamp.position.set(frame.galahadX, 6.2, -frame.galahadY);
-      this.lamp.intensity = 9 * this.lamps * this.near;
+      const dx = cx - frame.galahadX;
+      const dy = cy - frame.galahadY;
+      const d = Math.max(1e-3, Math.hypot(dx, dy));
+      const k = Math.min(2.5, d) / d;
+      this.lamp.position.set(frame.galahadX + dx * k, 4.6, -(frame.galahadY + dy * k));
+      this.lamp.intensity = 14 * this.lamps * this.near;
     }
   }
 
