@@ -8,7 +8,7 @@ import { type ShaftAir, SunShafts } from "./shafts.ts";
  * The light's finish on the high tier (WebGPU): what browsers have instead of
  * ray tracing (WebGPU exposes none), through three's render pipeline. Ground-truth
  * ambient occlusion (GTAO, at 0.4 resolution) darkens creases and contacts; the
- * sun's (or the moon's) light is marched through its shadow map at half
+ * sun's (or the moon's) light is marched through its shadow map at 0.4
  * resolution, so shafts of lit air stand between the trees and under the keep,
  * in mist and rain (shafts.ts); a soft bloom lifts lamps, glows, the sun and
  * lightning. The scene pass keeps the canvas's multisampling, so edges stay as

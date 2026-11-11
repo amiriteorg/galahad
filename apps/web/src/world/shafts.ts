@@ -14,7 +14,7 @@ import { WATER_LEVEL } from "./terrain.ts";
  * otherwise; mist and the sheet of it on the ground scatter far more than clear
  * air.
  *
- * At half resolution, 20 steps a pixel, each started at a different depth by a
+ * At 0.4 resolution, 16 steps a pixel, each started at a different depth by a
  * fixed screen pattern (interleaved gradient noise: no flicker), then blurred
  * across neighbours of like depth, which turns the pattern into smooth light;
  * brought back to full resolution by the depth of each pixel (a joint bilateral
@@ -22,8 +22,8 @@ import { WATER_LEVEL } from "./terrain.ts";
  * map's box (faded at its sides), so it ends softly.
  */
 
-const STEPS = 20;
-const SCALE = 0.5;
+const STEPS = 16;
+const SCALE = 0.4;
 
 export interface ShaftAir {
   /** Mist: its density at the water, the sheet's on the ground, and the level the sheet lies on (the atmosphere's own uniforms). */
@@ -43,12 +43,12 @@ export class SunShafts {
   /** Where the light comes from (scene axes, unit). */
   readonly lightDir = uniform(new Vector3(0, 1, 0));
   private readonly eye = uniform(new Vector3());
-  /** One texel of the half-resolution targets, in uv. */
+  /** One texel of the low-resolution targets, in uv. */
   private readonly texel = uniform(new Vector2(1 / 640, 1 / 400));
   private readonly projectionInverse: Node;
   private readonly cameraWorld: Node;
   /**
-   * The blurred shafts at half resolution: red, the light scattered towards the eye; green, how far the pixel
+   * The blurred shafts at low resolution: red, the light scattered towards the eye; green, how far the pixel
    * is (0..1 of the range); blue, the share of the near mist that lies in shadow.
    */
   private readonly blurred: Node;
@@ -142,7 +142,7 @@ export class SunShafts {
   }
 
   /**
-   * The shafts at full resolution (x: the light they add; y: the share of the near mist in shadow): of the four half-resolution texels round
+   * The shafts at full resolution (x: the light they add; y: the share of the near mist in shadow): of the four low-resolution texels round
    * each pixel, those at its own depth count (a joint bilateral upsample), so
    * a branch against the sky doesn't take the sky's light, nor the sky the
    * branch's shadow.
