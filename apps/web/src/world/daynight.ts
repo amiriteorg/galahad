@@ -9,8 +9,11 @@ import type { WeatherState } from "./weather.ts";
  * lavender light; below the horizon come civil and nautical twilight, then deep
  * blue night under the stars and the moon (in its real phase). Weather lies on
  * top: clouds grey the sky, soften the light and the shadows, and lower the
- * exposure. Everything is written into a reusable object (the render loop
- * allocates nothing). Pure, so unit-tested.
+ * exposure; broken cloud throws drifting shadows and breaks the sun into rays;
+ * mist lies as a sheet on the ground when the sun is low. The air itself has a
+ * light in it: it warms and glows towards the sun (the moon, deep in the night)
+ * and cools away from it. Everything is written into a reusable object (the
+ * render loop allocates nothing). Pure, so unit-tested.
  */
 
 type Vec3 = [number, number, number];
@@ -55,7 +58,40 @@ export interface Sky {
   mist: number;
   /** How dark the sun's shadows are, 0..1 (soft under cloud). */
   shadow: number;
+  /** The moon as it's drawn: at its real bearing, its height squeezed into the strip of sky a low camera sees (seenElevation). */
+  moonSeen: Vec3;
+  /** The sun's direction turned as the moon was moved, so the drawn moon keeps its real phase. */
+  moonSun: Vec3;
+  /** Where the light in the air comes from: the sun; deep in the night, the moon as drawn. */
+  airDir: Vec3;
+  /** The air towards that light (sRGB), and how far it warms broadly, glows right round the light, and cools away from it (each 0..1). */
+  airLight: number;
+  airWarm: number;
+  airGlow: number;
+  airCool: number;
+  /** Clouds lit from below by a sun at the horizon, 0..1. */
+  underlight: number;
+  /** Shadows of clouds drifting over the land, 0..1 (broken cloud under a sun that's up; from applyWeather). */
+  cloudShadow: number;
+  /** Rays fanning from the sun, 0..1 (broken cloud or mist under a low sun; from applyWeather). */
+  rays: number;
+  /** A sheet of mist lying on the ground, 0..1 (mist under a low sun or at night; from applyWeather). */
+  groundMist: number;
+  /** Snow in the air, 0..1 (from applyWeather): a paler, closer sky. */
+  snow: number;
+  /**
+   * The grade on everything lit (the fog node applies it, before the air): a
+   * saturation, and tints in linear light for the shadows and the highlights
+   * (cool and warm at golden hour, lavender and peach at dawn, blue at night),
+   * each channel near 1. The weather quietens it.
+   */
+  gradeSat: number;
+  gradeShadow: Vec3;
+  gradeLight: Vec3;
 }
+
+/** The weather as the sky needs it: cloud, rain and mist, and snow if there is any (the world's weather state has all of this). */
+export type SkyWeather = Pick<WeatherState, "cloud" | "rain" | "mist"> & Partial<WeatherState>;
 
 /** The sun and moon as the sky needs them: heights and bearings (radians), which side of noon, the moon's phase. */
 export interface Heavens {
@@ -168,6 +204,21 @@ export const emptySky = (): Sky => ({
   cloud: 0,
   mist: 0,
   shadow: 1,
+  moonSeen: [0, 0, 1],
+  moonSun: [0, 0, 1],
+  airDir: [0, 0, 1],
+  airLight: 0,
+  airWarm: 0,
+  airGlow: 0,
+  airCool: 0,
+  underlight: 0,
+  cloudShadow: 0,
+  rays: 0,
+  groundMist: 0,
+  snow: 0,
+  gradeSat: 1,
+  gradeShadow: [1, 1, 1],
+  gradeLight: [1, 1, 1],
 });
 
 export const emptyHeavens = (): Heavens => ({ sunElevation: 0, sunAzimuth: Math.PI, evening: 0.5, moonElevation: 0, moonAzimuth: 0, moonLit: 0 });
@@ -222,8 +273,90 @@ function look(e: number, evening: number, field: Exclude<keyof Key, "e">, color:
   return color ? mixColor(m, v, evening) : m + (v - m) * evening;
 }
 
+/** The top of the strip of sky the camera sees over the far hills, and how fast a rising body climbs into it (radians). */
+const SEEN_TOP = 8.6 * RAD;
+const SEEN_RISE = 6 * RAD;
+
+/**
+ * The height the moon is drawn at for its real height (radians). The camera
+ * looks at the horizon, over Galahad's shoulder, and sees only the lowest ten
+ * degrees of the sky: a moon standing high in the south would never show. So its
+ * height is squeezed into that strip: it rises as it really does, clears the
+ * far hills quickly, and then climbs ever more slowly towards the strip's top.
+ * Its bearing and its phase stay real. Below the horizon nothing changes.
+ */
+export function seenElevation(elevation: number): number {
+  return elevation <= 0 ? elevation : SEEN_TOP * (1 - Math.exp(-elevation / SEEN_RISE));
+}
+
+/** Turns `v` by the rotation that takes unit vector `from` to unit vector `to` (Rodrigues), into `out`. */
+function turned(v: Vec3, from: Vec3, to: Vec3, out: Vec3): void {
+  let kx = from[1] * to[2] - from[2] * to[1];
+  let ky = from[2] * to[0] - from[0] * to[2];
+  let kz = from[0] * to[1] - from[1] * to[0];
+  const sin = Math.hypot(kx, ky, kz);
+  if (sin < 1e-9) {
+    out[0] = v[0];
+    out[1] = v[1];
+    out[2] = v[2];
+    return;
+  }
+  kx /= sin;
+  ky /= sin;
+  kz /= sin;
+  const cos = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+  const kv = kx * v[0] + ky * v[1] + kz * v[2];
+  out[0] = v[0] * cos + (ky * v[2] - kz * v[1]) * sin + kx * kv * (1 - cos);
+  out[1] = v[1] * cos + (kz * v[0] - kx * v[2]) * sin + ky * kv * (1 - cos);
+  out[2] = v[2] * cos + (kx * v[1] - ky * v[0]) * sin + kz * kv * (1 - cos);
+}
+
+/** A thundery sky: slate overhead, a paler bruise at the horizon. */
+const STORM_ZENITH = 0x1c2233;
+const STORM_HORIZON = 0x4a5468;
+
+/** The moon's light in the air: a silver blue. */
+const MOON_AIR = 0xb4c2ff;
+/** The sun's height (degrees) at which the light in the air passes from the sun's afterglow to the moon. */
+const AIR_SWITCH = -10.5;
+
 /** A fallback for the night light when the moon is down: the sky's glow, from high in the south. */
 const SKYGLOW: Vec3 = [0.18, -0.42, 0.89];
+
+/** A grade: saturation, shadow tint, highlight tint (linear light). */
+interface Grade {
+  sat: number;
+  shadow: Vec3;
+  light: Vec3;
+}
+/** Plain day: a touch more colour, the faintest warm-and-cool. */
+const GRADE_DAY: Grade = { sat: 1.08, shadow: [0.97, 0.99, 1.04], light: [1.02, 1, 0.97] };
+/** An evening's golden hour: amber light, lavender shade, richer colour. */
+const GRADE_GOLDEN: Grade = { sat: 1.16, shadow: [0.9, 0.93, 1.1], light: [1.12, 1, 0.85] };
+/** A morning's: cooler pastels, peach light and lilac shade. */
+const GRADE_DAWN: Grade = { sat: 1.1, shadow: [0.95, 0.94, 1.08], light: [1.07, 0.99, 0.94] };
+/** The blue hour after sunset and before sunrise. */
+const GRADE_TWILIGHT: Grade = { sat: 1.06, shadow: [0.9, 0.95, 1.12], light: [1.04, 0.98, 0.98] };
+/** Night: quieter colour, blue shade, the moonlight a little silver. */
+const GRADE_NIGHT: Grade = { sat: 0.92, shadow: [0.88, 0.95, 1.15], light: [0.98, 1, 1.04] };
+
+function blendGrade(out: Sky, g: Grade, t: number): void {
+  if (t <= 0) return;
+  out.gradeSat += (g.sat - out.gradeSat) * t;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = out.gradeShadow[i]! + (g.shadow[i]! - out.gradeShadow[i]!) * t;
+    out.gradeLight[i] = out.gradeLight[i]! + (g.light[i]! - out.gradeLight[i]!) * t;
+  }
+}
+
+/** The grade towards neutral (1, no tint) by `t`. */
+function quieten(out: Sky, t: number, sat = t): void {
+  out.gradeSat += (1 - out.gradeSat) * sat;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = out.gradeShadow[i]! + (1 - out.gradeShadow[i]!) * t;
+    out.gradeLight[i] = out.gradeLight[i]! + (1 - out.gradeLight[i]!) * t;
+  }
+}
 
 /** The sky for a sun and moon (the real ones, or a preset), written into `out`. */
 export function skyFor(h: Heavens, out: Sky): Sky {
@@ -233,7 +366,10 @@ export function skyFor(h: Heavens, out: Sky): Sky {
   out.sunElevation = h.sunElevation;
   out.evening = h.evening;
   out.moonLit = h.moonLit;
-  out.moonUp = smooth(-1.5, 5, h.moonElevation * DEG);
+  out.moonUp = smooth(-1.5, 4, h.moonElevation * DEG);
+  // The moon as drawn: squeezed into the visible strip of sky, its phase kept by turning the sun with it.
+  direction(seenElevation(h.moonElevation), h.moonAzimuth, out.moonSeen);
+  turned(out.sun, out.moon, out.moonSeen, out.moonSun);
 
   out.zenith = look(e, h.evening, "zenith", true);
   out.horizon = look(e, h.evening, "horizon", true);
@@ -273,9 +409,50 @@ export function skyFor(h: Heavens, out: Sky): Sky {
   out.lightIntensity = intensity;
   // Lamps: on as the sun goes down, and glowing a little through golden hour (not at a low winter noon).
   out.lamps = Math.min(1, smooth(4, -4, e) + 0.35 * out.golden * Math.min(1, Math.abs(h.evening - 0.5) * 2.5));
+  // The light in the air: the sun's (its afterglow, until it is well down), then the moon's.
+  if (e > AIR_SWITCH) {
+    const k = smooth(AIR_SWITCH, -7, e);
+    const flat = Math.hypot(out.sun[0], out.sun[1]) || 1;
+    // Never from below the horizon: a sun that has set glows from the horizon where it went down.
+    const z = Math.max(0, out.sun[2]);
+    const r = Math.sqrt(1 - z * z) / flat;
+    out.airDir[0] = out.sun[0] * r;
+    out.airDir[1] = out.sun[1] * r;
+    out.airDir[2] = z;
+    out.airLight = out.sunGlow;
+    out.airWarm = (0.25 + 0.6 * out.golden) * k;
+    out.airGlow = (0.1 + 0.55 * out.golden) * k;
+    out.airCool = (0.1 + 0.45 * out.golden) * k;
+  } else {
+    const k = (1 - smooth(-13.5, AIR_SWITCH, e)) * out.moonUp;
+    out.airDir[0] = out.moonSeen[0];
+    out.airDir[1] = out.moonSeen[1];
+    out.airDir[2] = out.moonSeen[2];
+    out.airLight = mixColor(out.horizon, MOON_AIR, 0.5);
+    out.airWarm = 0.4 * h.moonLit * k;
+    out.airGlow = 0.55 * h.moonLit * k;
+    out.airCool = 0.1 * k;
+  }
+  // Clouds catch the sun from below while it stands at the horizon.
+  out.underlight = smooth(-7, -1.5, e) * (1 - smooth(4, 12, e));
   out.cloud = 0;
   out.mist = 0;
   out.shadow = 1;
+  out.cloudShadow = 0;
+  out.rays = 0;
+  out.groundMist = 0;
+  out.snow = 0;
+  // The grade: day, then golden hour (a morning's cooler than an evening's), the blue hour, night.
+  out.gradeSat = GRADE_DAY.sat;
+  for (let i = 0; i < 3; i++) {
+    out.gradeShadow[i] = GRADE_DAY.shadow[i]!;
+    out.gradeLight[i] = GRADE_DAY.light[i]!;
+  }
+  const lowSun = smooth(-6, 2, e) * (1 - smooth(10, 24, e));
+  blendGrade(out, GRADE_DAWN, lowSun * (1 - h.evening));
+  blendGrade(out, GRADE_GOLDEN, lowSun * h.evening);
+  blendGrade(out, GRADE_TWILIGHT, smooth(1, -5, e) * (1 - smooth(-9, -14, e)));
+  blendGrade(out, GRADE_NIGHT, smooth(-9, -16, e));
   return out;
 }
 
@@ -285,11 +462,22 @@ export function skyFor(h: Heavens, out: Sky): Sky {
  * sky's fill grows, lowers the exposure, and hides the stars; lamps come on
  * sooner under a dark sky.
  */
-export function applyWeather(out: Sky, w: WeatherState): Sky {
+export function applyWeather(out: Sky, w: SkyWeather): Sky {
   const c = w.cloud;
+  const e = out.sunElevation * DEG;
+  const snow = w.snow ?? 0;
   out.cloud = c;
   out.mist = w.mist;
-  if (c <= 0.001 && w.rain <= 0.001) return out;
+  out.snow = snow;
+  // Mist lies as a sheet on the ground while the sun is low, and at night; by day it lifts into the air.
+  out.groundMist = w.mist * (0.3 + 0.7 * (1 - smooth(3, 14, e)));
+  // Rays: the sun broken by cloud with gaps in it, or by mist, and strongest when it's low.
+  const broken = smooth(0.12, 0.32, c) * (1 - smooth(0.62, 0.88, c));
+  out.rays = out.lightFromSun ? Math.max(broken, w.mist * 0.7 * (1 - c)) * (1 - 0.6 * smooth(12, 45, e)) * smooth(0, 3, e) : 0;
+  out.cloudShadow = out.lightFromSun ? broken * smooth(2, 12, e) : 0;
+  // Mist and cloud quieten the grade (no warm-and-cool without a sun to make it); rain dulls the colour a little.
+  quieten(out, Math.min(1, 0.85 * c + 0.4 * w.mist + 0.3 * snow), Math.min(1, 0.6 * c + 0.25 * w.mist + 0.3 * w.rain));
+  if (c <= 0.001 && w.rain <= 0.001 && snow <= 0.001) return out;
   const grey = c * 0.82;
   out.zenith = mixColor(out.zenith, overcastOf(out.zenith, 0.85 + 0.3 * out.night), grey);
   out.horizon = mixColor(out.horizon, overcastOf(out.horizon, 0.95), grey);
@@ -298,9 +486,27 @@ export function applyWeather(out: Sky, w: WeatherState): Sky {
   out.hemiSky = mixColor(out.hemiSky, overcastOf(out.hemiSky, 1.05), grey * 0.7);
   out.water = mixColor(out.water, overcastOf(out.water, 0.85), grey * 0.6);
   out.golden *= 1 - 0.75 * c;
+  out.airLight = mixColor(out.airLight, overcastOf(out.horizon, 1), grey);
+  out.airWarm *= 1 - 0.7 * c;
+  out.airGlow *= 1 - 0.85 * c;
+  out.airCool *= 1 - 0.6 * c;
+  out.underlight *= 1 - smooth(0.6, 0.95, c);
   out.lightIntensity *= 1 - 0.72 * c;
   out.hemiIntensity *= 1 + 0.22 * c;
-  out.exposure *= 1 - 0.12 * c - 0.05 * w.rain;
+  // Falling snow is bright air: it lifts the exposure a little where rain lowers it.
+  out.exposure *= 1 - 0.12 * c - 0.05 * w.rain + 0.06 * snow;
+  // Thunder: the sky goes to slate, the light under it dim and cold (lightning is seen against it).
+  const storm = w.storm ?? 0;
+  if (storm > 0.001) {
+    out.zenith = mixColor(out.zenith, STORM_ZENITH, 0.72 * storm);
+    out.horizon = mixColor(out.horizon, STORM_HORIZON, 0.6 * storm);
+    out.airLight = mixColor(out.airLight, STORM_HORIZON, 0.6 * storm);
+    out.hemiSky = mixColor(out.hemiSky, STORM_HORIZON, 0.4 * storm);
+    out.lightIntensity *= 1 - 0.35 * storm;
+    out.hemiIntensity *= 1 - 0.3 * storm;
+    out.exposure *= 1 - 0.1 * storm;
+    out.lamps = Math.min(1, out.lamps + 0.5 * storm * (1 - out.lamps));
+  }
   out.stars *= 1 - c;
   out.shadow = 1 - 0.75 * c;
   out.lamps = Math.min(1, out.lamps + 0.45 * c * smooth(30, 5, out.sunElevation * DEG) * (1 - out.lamps));

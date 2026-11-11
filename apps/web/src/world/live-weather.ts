@@ -2,10 +2,10 @@ import type { WorldWeather } from "@galahad/core/world";
 
 /*
  * Denmark's weather, as the node reports it (DMI's model at Copenhagen), turned
- * into what the world eases towards: how clouded the sky is, how hard it rains,
- * how thick the mist lies. Continuous, so a grey drizzly afternoon looks like one
- * rather than like a preset. Snow isn't drawn yet: it shows as a grey, misty sky.
- * Pure, so unit-tested.
+ * into what the world eases towards: how clouded the sky is, how hard it rains
+ * or snows, how thick the mist lies, how hard the wind blows, and whether there
+ * is thunder. Continuous, so a grey drizzly afternoon looks like one rather than
+ * like a preset. Pure, so unit-tested.
  */
 
 export interface WeatherTarget {
@@ -13,6 +13,11 @@ export interface WeatherTarget {
   cloud: number;
   rain: number;
   mist: number;
+  snow: number;
+  /** Thunder, 0 or 1. */
+  storm: number;
+  /** The wind at 10 m, metres a second. */
+  wind: number;
 }
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -21,6 +26,12 @@ const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 export function rainFor(mmPerHour: number): number {
   if (!(mmPerHour > 0.05)) return 0;
   return clamp01(0.25 + (0.75 * Math.log1p(mmPerHour)) / Math.log1p(8));
+}
+
+/** Snow for mm an hour (of water): flurries (0.1–0.5) light, steady snow (1) about two thirds, heavy (4+) full. */
+export function snowFor(mmPerHour: number): number {
+  if (!(mmPerHour > 0.02)) return 0;
+  return clamp01(0.3 + (0.7 * Math.log1p(mmPerHour)) / Math.log1p(4));
 }
 
 /** Mist for visibility (metres): fog under 1 km, haze to 10 km, none beyond. */
@@ -33,17 +44,26 @@ export function mistFor(visibility: number | null): number {
   return 0;
 }
 
+/** The wind as the world uses it: metres a second, never negative, a hurricane at most. */
+export function windFor(metresPerSecond: number): number {
+  return metresPerSecond > 0 ? Math.min(33, metresPerSecond) : 0;
+}
+
 export function liveTarget(w: WorldWeather): WeatherTarget {
-  let rain = w.kind === "snow" ? 0 : rainFor(w.precipitation);
+  const snowing = w.kind === "snow";
+  let rain = snowing ? 0 : rainFor(w.precipitation);
   if (w.kind === "drizzle") rain = Math.max(rain, 0.3);
   if (w.kind === "rain") rain = Math.max(rain, 0.5);
   if (w.kind === "storm") rain = Math.max(rain, 0.9);
+  // Snow with nothing measured still snows, lightly.
+  const snow = snowing ? Math.max(snowFor(w.precipitation), 0.35) : 0;
   let mist = Math.max(mistFor(w.visibility), w.humidity >= 0.97 ? 0.3 : 0);
   if (w.kind === "mist") mist = Math.max(mist, 0.85);
-  if (w.kind === "snow") mist = Math.max(mist, 0.55);
-  // Rain only falls from a sky that has clouded over (the world won't start it under less).
+  // Falling snow hides the distance by itself: a little mist under it, not a fog.
+  if (snowing) mist = Math.max(mist, 0.25);
+  // Rain and snow only fall from a sky that has clouded over (the world won't start them under less).
   let cloud = clamp01(w.cloud);
-  if (rain > 0 || w.kind === "snow") cloud = Math.max(cloud, 0.85);
+  if (rain > 0 || snowing) cloud = Math.max(cloud, 0.85);
   if (w.kind === "storm") cloud = 1;
-  return { cloud, rain, mist };
+  return { cloud, rain, mist, snow, storm: w.kind === "storm" ? 1 : 0, wind: windFor(w.wind) };
 }
