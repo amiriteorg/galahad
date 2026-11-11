@@ -983,6 +983,11 @@ export class Mover {
     this.height = build.height;
   }
 
+  /** Its radius (its place's: 0 while it's away). */
+  get r(): number {
+    return this.at.r;
+  }
+
   /** From (x, y), a step of (dx, dy), slid along whatever is in the way (solids, and movers no lighter than itself): into `out`. */
   slide(x: number, y: number, dx: number, dy: number, out: { x: number; y: number }): boolean {
     this.touched = this.solids.slide(x, y, dx, dy, this.at.r, this.step, this.height, out, this);
