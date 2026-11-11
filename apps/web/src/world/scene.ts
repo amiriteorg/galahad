@@ -354,7 +354,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const s = skyState;
     const w = weather.state;
     sky.set(s, w.rain, !reduced());
-    horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud, s.underlight);
+    horizon.set(s.light, s.horizon, s.night, s.sun, s.sunGlow, s.golden, s.cloud, s.underlight, Math.min(1, w.rain * 0.8 + w.snow));
     atmosphere.set(s, w.rain, w.snow);
     hemi.color.setHex(s.hemiSky);
     hemi.groundColor.setHex(s.hemiGround);
@@ -844,7 +844,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     if (lightning.strike !== lastStrike) {
       lastStrike = lightning.strike;
-      sky.strike(lightning.bearing);
+      sky.strike(lightning.bearing, lightning.bolt, lightning.strike);
     }
     const moved =
       Math.abs(w.cloud - lastWeather.cloud) + Math.abs(w.rain - lastWeather.rain) + Math.abs(w.mist - lastWeather.mist) + Math.abs(w.wetness - lastWeather.wetness) + Math.abs(w.snow - lastWeather.snow) + Math.abs(w.snowCover - lastWeather.snowCover) + Math.abs(w.wind - lastWeather.wind) * 0.01 > 2e-4;

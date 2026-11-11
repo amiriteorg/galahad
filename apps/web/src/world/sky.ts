@@ -1,4 +1,4 @@
-import { abs, atan, dot, float, floor, fract, max, mix, mx_noise_float, normalize, positionLocal, screenCoordinate, sin, smoothstep, sqrt, step, time, uniform, vec2, vec3 } from "three/tsl";
+import { abs, atan, dot, exp, float, floor, fract, max, mix, mx_noise_float, normalize, positionLocal, screenCoordinate, sin, smoothstep, sqrt, step, time, uniform, vec2, vec3 } from "three/tsl";
 import { BackSide, Color, Group, Mesh, MeshBasicNodeMaterial, type Node, SphereGeometry, Vector3 } from "three/webgpu";
 import { airColor, lobes, WIND_X, WIND_Z } from "./air.ts";
 import type { Sky } from "./daynight.ts";
@@ -11,7 +11,9 @@ import { only, weatherUniforms } from "./wet.ts";
  * corona; at night, stars that twinkle and the moon in its real phase (a sphere
  * lit by the true direction of the sun, drawn where daynight.ts says it shows).
  * Weather lies on it: clouds that gather into a deck, lit by the day, lit from
- * below by a sun at the horizon, lit from inside by lightning; curtains of rain
+ * below by a sun at the horizon, lit from inside by lightning (and, for a
+ * strike that shows one, a jagged bolt from the cloud's base to the ground at
+ * the strike's bearing, behind the far hills); curtains of rain
  * hanging under them far off; a pale band of mist along the horizon. Stars,
  * moon, clouds and curtains each sit behind a branch on their uniform, so a
  * clear day pays for none of them.
@@ -24,6 +26,8 @@ import { only, weatherUniforms } from "./wet.ts";
 
 /** Out near the far plane (2000), beyond the far hills, which are drawn before it. */
 const RADIUS = 1900;
+/** The cloud's base, where a bolt leaves it (sine of its height on the sky: about 10°, just above what a low camera sees). */
+const BOLT_TOP = 0.17;
 /** The moon's radius on the sky (a little larger than life: 1.15°), as a sine. */
 const MOON_SIN = Math.sin((1.15 * Math.PI) / 180);
 
@@ -65,6 +69,9 @@ export class SkyDome {
   private readonly curtainColor = uniform(new Color(0x808898));
   /** Where lightning strikes (a unit vector along the ground, scene axes). */
   private readonly flashDir = uniform(new Vector3(1, 0, 0));
+  /** Whether the latest strike shows a bolt (1) or only lights the cloud (0), and its shape's seed. */
+  private readonly boltOn = uniform(0);
+  private readonly boltSeed = uniform(0);
   /** The clouds' drift across the sky (noise units), advanced by the renderer (still under reduced motion). */
   readonly drift = uniform(new Vector3(0, 0, 0));
   private readonly material: MeshBasicNodeMaterial;
@@ -158,8 +165,35 @@ export class SkyDome {
     });
     const curtained = mix(clouded, this.curtainColor, rainy.mul(0.62));
 
+    // The bolt: a jagged stroke (a zigzag between hashed offsets, leaning one way, with one fork) at the strike's
+    // bearing, from the cloud's base down behind the far hills; a white core in a blue glow, only while it flashes.
+    const bolt = only(weatherUniforms.flash.mul(this.boltOn).greaterThan(0.02), vec3(0) as unknown as V3, () => {
+      const flat = normalize(vec2(dir.x, dir.z).add(vec2(1e-5, 0)));
+      const f = this.flashDir;
+      const across = atan(flat.x.mul(f.z).sub(flat.y.mul(f.x)), flat.x.mul(f.x).add(flat.y.mul(f.z)));
+      const h = up.div(BOLT_TOP);
+      const seed = this.boltSeed;
+      const jag = (k: Node<"float">, salt: number) => hash(vec2(k.add(salt), seed)).sub(0.5);
+      const path = (steps: number, size: number, salt: number) => {
+        const at = h.mul(steps);
+        const i = floor(at);
+        return mix(jag(i, salt), jag(i.add(1), salt), fract(at)).mul(size);
+      };
+      const lean = hash(vec2(seed, 7.1)).sub(0.5).mul(0.06).mul(h);
+      const main = path(9, 0.014, 0).add(path(31, 0.004, 3.3)).add(lean);
+      const stroke = (d: Node<"float">, width: number) => float(1).sub(smoothstep(width * 0.35, width, d)).mul(3).add(exp(d.mul(-75)).mul(0.5));
+      const trunk = stroke(abs(across.sub(main)), 0.003);
+      // The fork leaves the trunk halfway down and splays away from it.
+      const forkAt = hash(vec2(seed, 2.9)).mul(0.25).add(0.4);
+      const side = step(0.5, hash(vec2(seed, 5.3))).mul(2).sub(1);
+      const below = forkAt.sub(h).max(0);
+      const fork = stroke(abs(across.sub(main.add(below.mul(side).mul(0.09)).add(path(23, 0.005, 9.7)))), 0.002).mul(0.55).mul(step(h, forkAt)).mul(smoothstep(0, 0.35, h));
+      const span = smoothstep(-0.01, 0.015, up).mul(float(1).sub(smoothstep(0.88, 1, h)));
+      return vec3(0.82, 0.88, 1).mul(trunk.add(fork)).mul(span).mul(weatherUniforms.flash) as unknown as V3;
+    });
+
     // Mist along the horizon: pale, low, soft.
-    const misty = mix(curtained, this.mistColor, this.mist.mul(float(1).sub(smoothstep(-0.02, 0.18, up))).mul(0.6));
+    const misty = mix(curtained, this.mistColor, this.mist.mul(float(1).sub(smoothstep(-0.02, 0.18, up))).mul(0.6)).add(bolt);
 
     // The sun: a crisp disc in a tight corona, hidden where the cloud is thick.
     const disc = smoothstep(0.99962, 0.99974, facing);
@@ -210,9 +244,11 @@ export class SkyDome {
     this.curtainColor.value.copy(this.cloudShade.value).multiplyScalar(0.82);
   }
 
-  /** Where the latest lightning struck: a compass bearing, radians. */
-  strike(bearing: number): void {
+  /** Where the latest lightning struck (a compass bearing, radians), whether it shows a bolt, and which strike it is (its bolt's shape). */
+  strike(bearing: number, bolt = false, n = 0): void {
     this.flashDir.value.set(Math.sin(bearing), 0, -Math.cos(bearing));
+    this.boltOn.value = bolt ? 1 : 0;
+    this.boltSeed.value = (n % 997) + 0.5;
   }
 
   /** Moves the clouds on with the wind (metres a second). */

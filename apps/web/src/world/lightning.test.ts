@@ -71,7 +71,7 @@ describe("lightning", () => {
     expect(l.strike).toBe(strikes);
   });
 
-  test("most strikes fall ahead of the viewer; some show a bolt, some only light the cloud", () => {
+  test("most strikes fall within the view (40° either side of where it looks); some show a bolt, some only light the cloud", () => {
     const l = new Lightning(13);
     let ahead = 0;
     let bolts = 0;
@@ -81,7 +81,7 @@ describe("lightning", () => {
       if (l.strike !== last) {
         last = l.strike;
         const off = Math.atan2(Math.sin(l.bearing - 2), Math.cos(l.bearing - 2));
-        if (Math.abs(off) < 1.3) ahead++;
+        if (Math.abs(off) < 0.7) ahead++;
         if (l.bolt) bolts++;
       }
     }

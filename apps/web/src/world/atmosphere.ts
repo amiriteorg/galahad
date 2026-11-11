@@ -41,8 +41,8 @@ const SHEET_HEIGHT = 0.6;
 const SHEET_DENSITY = 0.045;
 /** What a cloud's shadow leaves of the light (linear): the sun is gone, the sky's blue stays. */
 const SHADOW_TINT = vec3(0.56, 0.62, 0.78);
-/** How brightly lightning lights the land. */
-const FLASH_LAND = 1.6;
+/** How brightly lightning lights the land, and in what colour (a cold blue-white). */
+const FLASH_LAND = vec3(1.35, 1.5, 1.85);
 
 type F = Node<"float">;
 
@@ -116,7 +116,7 @@ export class Atmosphere {
     const total = float(1).sub(float(1).sub(haze).mul(float(1).sub(mist)));
     const airTint = mix(hazeColor, mistTint, mist.div(haze.add(mist).max(1e-4)));
     this.node = Fn(() => {
-      const lit = output.rgb.mul(mix(vec3(1), SHADOW_TINT, shadow)).mul(float(1).add(weatherUniforms.flash.mul(FLASH_LAND)));
+      const lit = output.rgb.mul(mix(vec3(1), SHADOW_TINT, shadow)).mul(vec3(1).add(FLASH_LAND.mul(weatherUniforms.flash)));
       // The grade: saturation about the pixel's own brightness, then the shadows' tint giving way to the highlights'.
       const lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));
       const rich = max(mix(vec3(lum), lit, this.gradeSat), vec3(0));

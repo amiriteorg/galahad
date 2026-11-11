@@ -252,8 +252,11 @@ export class Horizon {
     this.group.add(ring, this.cloudGroup, settlements, rotors);
   }
 
-  /** Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze; `overcast` greys and darkens the clouds. */
-  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0, underlight = 0): void {
+  /**
+   * Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze; `overcast` greys
+   * and darkens the clouds; `veil` (falling rain or snow, 0..1) hides the far ranges in it.
+   */
+  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0, underlight = 0, veil = 0): void {
     this.underlight.value = underlight;
     const l = this.scratch.setHex(light);
     this.tint.value.setRGB(1, 1, 1).lerp(l, 0.3).multiplyScalar(1 - night * 0.72);
@@ -269,6 +272,7 @@ export class Horizon {
       this.cloudShade.value.lerp(this.haze.value, overcast * 0.4).multiplyScalar(1 - overcast * 0.35);
       this.hazeBoost.value += overcast * 0.2;
     }
+    this.hazeBoost.value += veil * 0.45;
   }
 
   /** Rides with the camera; clouds drift; rotors turn (not under reduced motion). */

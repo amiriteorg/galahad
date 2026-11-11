@@ -73,8 +73,8 @@ export class Lightning {
         const second = this.random() < 0.55;
         this.again = second ? 0.11 + this.random() * 0.1 : 0;
         this.againStrength = 0.45 + 0.3 * this.random();
-        // Mostly ahead of the viewer (within about 70° either side), sometimes anywhere.
-        const spread = this.random() < 0.8 ? (this.random() - 0.5) * 2.4 : (this.random() - 0.5) * 2 * Math.PI;
+        // Mostly in view (within about 35° either side of where the viewer looks), sometimes anywhere.
+        const spread = this.random() < 0.85 ? (this.random() - 0.5) * 1.2 : (this.random() - 0.5) * 2 * Math.PI;
         this.bearing = towards + spread;
         this.bolt = this.random() < 0.6;
       }
