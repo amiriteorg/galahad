@@ -483,7 +483,8 @@ export function createApp(ctx: AppContext) {
         thinking();
       } else if (event.type === "tool") {
         const tool = TOOLS.find((t) => t.name === event.name);
-        const detail = tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
+        // Once the bank is in the answer, a tool's input may carry it: the world gets only its name.
+        const detail = answer.bank || tool?.flow === "private" || !event.input ? "" : `: ${event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
         ctx.world.doing(stationForTool(event.name), `${event.title}${detail}`, { model });
       } else if (event.type === "tool_result") {
         thinking();

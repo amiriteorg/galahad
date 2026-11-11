@@ -89,7 +89,7 @@ Seven days before the consent ends, the heartbeat leaves a notice in your inbox.
 Galahad's own chat (the app's Chat, `galahad ask`) has the bank tools whenever the device you ask from holds `bank:read`: ask "what did I spend on groceries last month?" and he reads the transactions himself, shown as steps in the answer. Two things to know:
 
 - What he reads goes to the model that answers, like everything in a chat: your planner's roster (`galahad roster`).
-- Once bank data is in an answer, he can't use the web, your services, sandboxes or another model for the rest of it. Ask for those in a new message.
+- Once bank data is in an answer, he can't use the web, your services, sandboxes or another model for the rest of it, and he can't write into the shared mind (remember, request a secret, keep a sandbox's work), which every node and every agent that reads the mind would see. Ask for those in a new message.
 
 ## Let an agent read it
 

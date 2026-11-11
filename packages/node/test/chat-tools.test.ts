@@ -330,6 +330,18 @@ describe("the SANDBOX, live", () => {
     expect(events.find((e) => e.type === "galahad" && e.galahad.station === "library")!.galahad.doing).toBe("Recall from the shared mind: the round table");
   });
 
+  test("once he read the bank, what he tries next reaches the world by name only", async () => {
+    script = [callTool("bank_status", {}), callTool("remember", { text: "balance 55555.55 DKK" }), say("I won't keep that.")];
+    const events = await watchWorld(
+      home.adminToken(),
+      () => ask(home.adminToken(), "What's my balance? Remember it."),
+      (seen) => seen.some((e) => e.type === "galahad" && e.galahad.doing?.startsWith("Remember")),
+    );
+    const doing = events.filter((e) => e.type === "galahad").map((e) => e.galahad.doing as string);
+    expect(doing).toContain("Remember in the shared mind");
+    expect(JSON.stringify(events)).not.toContain("55555");
+  });
+
   test("how it ran on a device comes back to the node, for galahad world --logs", async () => {
     const report = {
       session: "a1b2c3d4e5f6a7b8c9d0e1f2",
@@ -380,12 +392,12 @@ describe("one answer's tools", () => {
   });
 
   test("once bank data is in the answer, nothing that writes into the shared mind runs either", async () => {
-    // The real tools, against an API that only records which routes were reached.
+    // The real tools, against an API that only records which routes were reached (and answers with empty lists).
     const reached: string[] = [];
     const recording: ToolApi = {
       call: async <T,>(name: string) => {
         reached.push(name);
-        return {} as T;
+        return { memories: [], devices: [], peers: [], entries: [], notices: [], loops: [], artifacts: [] } as T;
       },
       bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
     };
@@ -409,6 +421,7 @@ describe("one answer's tools", () => {
     // What only reads stays available, and so does cleaning up his own sandbox.
     for (const name of ["recall", "fleet", "ledger", "notices", "loops", "artifacts"]) expect((await tools.run({ id: name, name, input: {} })).isError).toBeUndefined();
     expect((await tools.run({ id: "d", name: "sandbox_destroy", input: { id: "0123456789" } })).isError).toBeUndefined();
+    expect(reached.slice(2)).toEqual(["recall", "fleet", "ledger", "notices", "loops", "artifacts", "destroySandbox"]);
   });
 
   test("every tool is classified: it only reads the mind, or it names what it does with data", () => {
