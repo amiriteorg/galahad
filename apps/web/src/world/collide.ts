@@ -254,6 +254,17 @@ export class Solids {
   /** Everything that walks. */
   readonly movers: Mover[] = [];
   private readonly spot = { x: 0, y: 0 };
+  /**
+   * separate()'s own look-up, made again each round (nothing is allocated once it has grown to the movers): the
+   * movers that are there (a radius), in the order they joined; the cells of a 4 m grid they lie in, as chains in
+   * a hash table; the few too wide for a cell; and whoever a mover might touch, gathered and put in order.
+   */
+  private sepThere = new Int32Array(0);
+  private sepChain = new Int32Array(0);
+  private sepHeads = new Int32Array(0);
+  private sepWide = new Int32Array(0);
+  private sepNear = new Int32Array(32);
+  private readonly sepCells = new Int32Array(9);
 
   // ---------- adding and removing ----------
 
@@ -1410,45 +1421,132 @@ export class Solids {
   /**
    * After everyone has moved: movers that overlap are parted. The lighter gives way (two of a weight share
    * it), sliding along whatever solid it's pushed against, and squeezing out sideways if it's pinned.
+   *
+   * Each mover is tried against those after it, in the order they joined. Among a handful that's every pair.
+   * Among many (a whole ecosystem's walkers: every pair of a thousand is half a million looks a frame, which
+   * measured 6 ms; of three thousand, 65 ms) each is tried only against those in the cells of a 4 m grid round
+   * it, still in that order, so the outcome is the same: `everyPair` asks for the plain way, and a test holds the
+   * two to the same places. (A mover shoved more than two metres in one round could be missed until the next:
+   * nothing here is ever that deep in another.)
    */
-  separate(): void {
+  separate(everyPair = false): void {
     const list = this.movers;
     const n = list.length;
+    if (this.sepThere.length < n) {
+      this.sepThere = new Int32Array(n * 2);
+      this.sepChain = new Int32Array(n * 2);
+      this.sepWide = new Int32Array(n * 2);
+    }
+    const there = this.sepThere;
     for (let round = 0; round < 2; round++) {
       let any = false;
+      // Who's there (away, a mover has no radius), and how many of them are too wide for a cell.
+      let m = 0;
+      let wides = 0;
       for (let a = 0; a < n; a++) {
-        const A = list[a]!;
-        const ar = A.at.r;
-        if (!(ar > 0)) continue;
-        for (let b = a + 1; b < n; b++) {
-          const B = list[b]!;
-          const br = B.at.r;
-          if (!(br > 0)) continue;
-          const dx = B.at.x - A.at.x;
-          const dy = B.at.y - A.at.y;
-          const R = ar + br;
-          if (dx > R || dx < -R || dy > R || dy < -R) continue;
-          const d2 = dx * dx + dy * dy;
-          if (d2 >= (R - 1e-6) * (R - 1e-6)) continue;
-          any = true;
-          const d = Math.sqrt(d2);
-          const ux = d > 1e-9 ? dx / d : Math.cos(a * 2.4 + b);
-          const uy = d > 1e-9 ? dy / d : Math.sin(a * 2.4 + b);
-          const over = R - d + SKIN;
-          if (A.mass > B.mass) {
-            this.shove(B, ux, uy, over, A);
-            this.yieldTo(A, B);
-          } else if (B.mass > A.mass) {
-            this.shove(A, -ux, -uy, over, B);
-            this.yieldTo(B, A);
+        const r = list[a]!.at.r;
+        if (!(r > 0)) continue;
+        there[m++] = a;
+        if (r > WIDE) this.sepWide[wides++] = a;
+      }
+      if (everyPair || m <= FEW) {
+        for (let i = 0; i < m; i++) {
+          const a = there[i]!;
+          for (let j = i + 1; j < m; j++) if (this.part(a, there[j]!)) any = true;
+        }
+      } else {
+        // The grid: each narrow mover in its cell's chain (the last to join at its head).
+        let size = 64;
+        while (size < m * 2) size *= 2;
+        if (this.sepHeads.length < size) this.sepHeads = new Int32Array(size);
+        const heads = this.sepHeads;
+        heads.fill(-1, 0, size);
+        const mask = size - 1;
+        const chain = this.sepChain;
+        for (let i = 0; i < m; i++) {
+          const a = there[i]!;
+          const at = list[a]!.at;
+          if (at.r > WIDE) continue;
+          const h = (Math.imul(Math.floor(at.x / CELL_M), 73856093) ^ Math.imul(Math.floor(at.y / CELL_M), 19349663)) & mask;
+          chain[a] = heads[h]!;
+          heads[h] = a;
+        }
+        const cells = this.sepCells;
+        for (let i = 0; i < m; i++) {
+          const a = there[i]!;
+          const at = list[a]!.at;
+          let found = 0;
+          if (at.r > WIDE) {
+            // Too wide for a cell: everyone after it.
+            for (let j = i + 1; j < m; j++) found = this.nearby(found, there[j]!);
           } else {
-            this.shove(B, ux, uy, over / 2, A);
-            this.shove(A, -ux, -uy, over / 2, B);
+            // The nine cells round where it is now (each once, should two share a place in the table), and the wide ones.
+            const cx = Math.floor(at.x / CELL_M);
+            const cy = Math.floor(at.y / CELL_M);
+            let looked = 0;
+            for (let oy = -1; oy <= 1; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                const h = (Math.imul(cx + ox, 73856093) ^ Math.imul(cy + oy, 19349663)) & mask;
+                let seen = false;
+                for (let k = 0; k < looked; k++) if (cells[k] === h) seen = true;
+                if (seen) continue;
+                cells[looked++] = h;
+                for (let b = heads[h]!; b >= 0; b = chain[b]!) if (b > a) found = this.nearby(found, b);
+              }
+            }
+            for (let k = 0; k < wides; k++) if (this.sepWide[k]! > a) found = this.nearby(found, this.sepWide[k]!);
           }
+          // In the order they joined, as every pair would have it.
+          const near = this.sepNear;
+          for (let k = 1; k < found; k++) {
+            const b = near[k]!;
+            let j = k - 1;
+            for (; j >= 0 && near[j]! > b; j--) near[j + 1] = near[j]!;
+            near[j + 1] = b;
+          }
+          for (let k = 0; k < found; k++) if (this.part(a, near[k]!)) any = true;
         }
       }
       if (!any) break;
     }
+  }
+
+  /** One more for separate() to try (its list grows as it must). */
+  private nearby(found: number, b: number): number {
+    if (found === this.sepNear.length) {
+      const grown = new Int32Array(found * 2);
+      grown.set(this.sepNear);
+      this.sepNear = grown;
+    }
+    this.sepNear[found] = b;
+    return found + 1;
+  }
+
+  /** Parts movers `a` and `b` (a joined first) if they overlap; whether they did. */
+  private part(a: number, b: number): boolean {
+    const A = this.movers[a]!;
+    const B = this.movers[b]!;
+    const dx = B.at.x - A.at.x;
+    const dy = B.at.y - A.at.y;
+    const R = A.at.r + B.at.r;
+    if (dx > R || dx < -R || dy > R || dy < -R) return false;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= (R - 1e-6) * (R - 1e-6)) return false;
+    const d = Math.sqrt(d2);
+    const ux = d > 1e-9 ? dx / d : Math.cos(a * 2.4 + b);
+    const uy = d > 1e-9 ? dy / d : Math.sin(a * 2.4 + b);
+    const over = R - d + SKIN;
+    if (A.mass > B.mass) {
+      this.shove(B, ux, uy, over, A);
+      this.yieldTo(A, B);
+    } else if (B.mass > A.mass) {
+      this.shove(A, -ux, -uy, over, B);
+      this.yieldTo(B, A);
+    } else {
+      this.shove(B, ux, uy, over / 2, A);
+      this.shove(A, -ux, -uy, over / 2, B);
+    }
+    return true;
   }
 
   /** The lighter couldn't get out of the way (pinned, or the only way out is water): the heavier stops short instead. */
@@ -1502,6 +1600,11 @@ export class Solids {
 const FIXED = 1e8;
 
 /** A walker in the world of solids: its place (`at`), its build, and how it moves. */
+/** separate(): up to this many movers there, every pair is tried; a cell of its grid, metres; a mover wider than this (its radius) isn't put in a cell. */
+const FEW = 24;
+const CELL_M = 4;
+const WIDE = 1;
+
 export class Mover {
   /** True when its last slide met something. */
   touched = false;

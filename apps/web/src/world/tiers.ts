@@ -94,6 +94,11 @@ export interface Tier {
 /**
  * The wild animals a tier has beyond its birds (songbirds), deer (roe), rabbits (hares), ducks (mallards) and
  * fireflies: grown ones of each at most (0: that kind isn't there on this tier, nor its mesh).
+ *
+ * The range and its numbers go together: the same animals to the hectare on every tier, over more ground on the
+ * tiers that carry more (110, 130 and 160 m round the view: they were 100, 115 and 130 until the world was
+ * measured at scale, and four times the animals turned out to cost a frame a tenth of a millisecond. See
+ * docs/WORLD.md, "How far it scales").
  */
 export interface Wild {
   fox: number;
@@ -129,13 +134,13 @@ export const TIERS: Record<TierName, Tier> = {
     detail: 600,
     reeds: 500,
     leaves: 48,
-    birds: 10,
-    deer: 2,
-    rabbits: 3,
-    ducks: 3,
+    birds: 12,
+    deer: 3,
+    rabbits: 4,
+    ducks: 4,
     microducks: 6,
-    fireflies: 16,
-    wild: { fox: 1, hedgehog: 0, squirrel: 1, swan: 0, heron: 1, fish: 4, swallow: 0, starling: 24, goose: 5, kestrel: 1, owl: 0, bat: 2, insects: 20, reach: 100 },
+    fireflies: 20,
+    wild: { fox: 1, hedgehog: 0, squirrel: 1, swan: 0, heron: 1, fish: 5, swallow: 0, starling: 30, goose: 6, kestrel: 1, owl: 0, bat: 2, insects: 24, reach: 110 },
     particles: 96,
     lights: 1,
     radius: 200,
@@ -168,13 +173,13 @@ export const TIERS: Record<TierName, Tier> = {
     detail: 2500,
     reeds: 1400,
     leaves: 160,
-    birds: 24,
-    deer: 4,
-    rabbits: 6,
-    ducks: 5,
+    birds: 30,
+    deer: 5,
+    rabbits: 8,
+    ducks: 6,
     microducks: 9,
-    fireflies: 40,
-    wild: { fox: 1, hedgehog: 1, squirrel: 2, swan: 2, heron: 1, fish: 8, swallow: 5, starling: 70, goose: 9, kestrel: 1, owl: 1, bat: 4, insects: 60, reach: 115 },
+    fireflies: 50,
+    wild: { fox: 1, hedgehog: 1, squirrel: 3, swan: 2, heron: 1, fish: 10, swallow: 6, starling: 90, goose: 11, kestrel: 1, owl: 1, bat: 5, insects: 76, reach: 130 },
     particles: 192,
     lights: 2,
     radius: 280,
@@ -207,13 +212,13 @@ export const TIERS: Record<TierName, Tier> = {
     detail: 6000,
     reeds: 3200,
     leaves: 420,
-    birds: 48,
-    deer: 8,
-    rabbits: 12,
-    ducks: 8,
+    birds: 72,
+    deer: 12,
+    rabbits: 18,
+    ducks: 12,
     microducks: 14,
-    fireflies: 80,
-    wild: { fox: 2, hedgehog: 2, squirrel: 4, swan: 2, heron: 1, fish: 16, swallow: 10, starling: 160, goose: 13, kestrel: 1, owl: 1, bat: 8, insects: 140, reach: 130 },
+    fireflies: 120,
+    wild: { fox: 3, hedgehog: 3, squirrel: 6, swan: 2, heron: 2, fish: 24, swallow: 15, starling: 240, goose: 19, kestrel: 1, owl: 1, bat: 12, insects: 210, reach: 160 },
     particles: 384,
     lights: 3,
     radius: 380,

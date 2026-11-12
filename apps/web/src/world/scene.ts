@@ -49,6 +49,7 @@ import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } 
 import { plotColliders } from "./plot-plan.ts";
 import { originUniform, Plots } from "./plots.ts";
 import { Assembly, benchFor, buildingAt } from "./assembly.ts";
+import { benchAsk, EYES as EYES_DRAWN, FILLING, FrameLog, GROWING, PART, scaleTier } from "./bench.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
@@ -321,11 +322,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const forceWebGL = (options.forceWebGL ?? false) || asked?.get("webgl") === "1";
   if (forceWebGL) device.webgpu = false;
   const tierName = options.tier ?? (askedTier === "low" || askedTier === "medium" || askedTier === "high" ? askedTier : chooseTier(device));
-  const tier: Tier = TIERS[tierName];
+  // (And what a benchmark asks for beside them: bench.ts.)
+  const ask = benchAsk(location.search);
+  const mountedAt = performance.now();
+  const tier: Tier = ask ? scaleTier(TIERS[tierName], ask) : TIERS[tierName];
   const small = Math.min(innerWidth, innerHeight) < 600;
   // Multisampling: by tier, and on phones and tablets (tile-based GPUs resolve it on chip, nearly free).
   const antialias = tier.antialias || (device.coarse && !device.fallbackAdapter);
-  const renderer = new WebGPURenderer({ antialias, alpha: false, forceWebGL, reversedDepthBuffer: device.webgpu });
+  const renderer = new WebGPURenderer({ antialias, alpha: false, forceWebGL, reversedDepthBuffer: device.webgpu, trackTimestamp: ask?.gpu === true });
   const startDpr = Math.min(devicePixelRatio || 1, tier.maxDpr, small ? 1.5 : 2);
   const governor = new ResolutionGovernor(tier, startDpr);
   renderer.setPixelRatio(governor.dpr);
@@ -334,6 +338,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   renderer.toneMapping = AgXToneMapping;
   renderer.toneMappingExposure = EXPOSURE;
   await renderer.init();
+  const initAt = performance.now();
   const backend: WorldStats["backend"] = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "webgpu" : "webgl2";
 
   const canvas = renderer.domElement;
@@ -348,6 +353,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const camera = new PerspectiveCamera(45, 1, 0.25, 2000);
   const worldRoot = new Group();
   scene.add(worldRoot);
+  // (A benchmark hides what grows, the wildlife or the smaller folk to see what each costs: then each has a group of its own.)
+  const under = (): Group => {
+    if (!ask) return worldRoot;
+    const group = new Group();
+    worldRoot.add(group);
+    return group;
+  };
+  const plantRoot = under();
+  const wildRoot = under();
+  const folkRoot = under();
   const hemi = new HemisphereLight(0xffffff, 0x888888, 1);
   const sun = new DirectionalLight(0xffffff, 2);
   const sunTarget = new Object3D();
@@ -373,7 +388,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const horizon = new Horizon();
   scene.add(sky.group, horizon.group);
   const land = new Land(worldRoot, SEED, shadows, tier.waterGrid, tier.terrainFine);
-  const vegetation = new Vegetation(worldRoot, tier, (x, y) => land.heightAt(x, y), (chunk, layer) => land.smallLayer(chunk, layer));
+  const vegetation = new Vegetation(plantRoot, tier, (x, y) => land.heightAt(x, y), (chunk, layer) => land.smallLayer(chunk, layer));
   // What's solid (collide.ts): the keep and its stations, the sites, and each chunk's trees and rocks as the
   // land grows and drops it (inside the land's own time budget: a chunk's solids take a few hundredths of a ms).
   const solids = new Solids();
@@ -451,7 +466,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return false;
     },
   };
-  const fauna = new Fauna(worldRoot, tier, wildGround, land);
+  const fauna = new Fauna(wildRoot, tier, wildGround, land);
   const plots = new Plots(colors, shadows, fauna);
   const duckGround: Ground = {
     height,
@@ -461,17 +476,17 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return false;
     },
   };
-  const critters = new Critters(worldRoot, tier.microducks, duckGround, shadows);
+  const critters = new Critters(folkRoot, tier.microducks, duckGround, shadows);
   fauna.join(solids);
   critters.flock.join(solids);
 
   // ---------- his life when there's no work, and those he looks after (care.ts, life.ts, partners.ts) ----------
   const care = new Care(dog, critters.flock, provingGround, (on) => (critters.reachyTalk = on));
   const careLook = new CareLook(worldRoot, shadows);
-  const partners = new Partners(worldRoot, shadows);
+  const partners = new Partners(folkRoot, shadows);
   partners.figures.join(solids, dogGround);
   // His helpers: one figure for each attempt a quest runs in parallel, at the station its work is at (helpers.ts).
-  const helperLook = new Partners(worldRoot, shadows);
+  const helperLook = new Partners(folkRoot, shadows);
   const helpers = new HelperFigures(helperLook.figures.squires);
   {
     // Tours and debugging: ?life=<activity> fixes his day to one part of it, ?charge=0.15 sets the dog's battery.
@@ -662,7 +677,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => {
       const work = { ms: frameWork.ms, frames: frameWork.frames };
       frameWork.ms = frameWork.frames = 0;
-      return { fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts(), work };
+      return { fps, frameMs, drawCalls, triangles, instances: vegetation.counts(), work };
     };
   }
   // (`__sandboxFace()`: how he is and what shows of it, and the dog's mood; `__sandboxFeel("surprise" | "pleased" | "nod")` sets one off, for a tour.)
@@ -1381,6 +1396,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     for (const o of hidden) o.visible = false;
   }
+  const compiledAt = performance.now();
 
   /**
    * What's heard, while the sound is on: his steps and the dog's as they land, what just happened (a throw, a pat, his
@@ -1714,7 +1730,107 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let frameMs = 0;
   let frameMsSum = 0;
   let drawCalls = 0;
+  /** Whose turn it is to grow past the frame's budget if it must: the land's, or the plants'. */
+  let growTurn = false;
+  /** (Triangles in the last frame, all its passes: read as the frame ends, because three resets its count on its own clock.) */
+  let triangles = 0;
   const idleInterval = tier.name === "low" ? 50 : 33;
+  // ---------- a benchmark's side (bench.ts; `?trace=1` only): the last frames' times, part by part, and what it may set ----------
+  const log = ask ? new FrameLog() : null;
+  const bench = ask
+    ? {
+        ask,
+        tier,
+        backend,
+        log,
+        /** Every frame is drawn, whether or not anything moved (so every scene is measured at the same rate). */
+        always: false,
+        /** When (ms since the page was asked for): the world was asked for, the GPU was ready, its shaders were compiled, its first frame was drawn, and nothing was left to grow. */
+        timing: { mount: mountedAt, init: initAt, compiled: compiledAt, first: 0, settled: 0 },
+        /** The frames in a row with nothing left to grow, and when the first of them was drawn. */
+        calm: 0,
+        calmAt: 0,
+        /** The objects the renderer was handed in the last frame, all passes. */
+        objects: 0,
+        stats: () => log!.stats(),
+        reset: () => log!.reset(),
+        /** What's drawn now: draw calls and triangles (all passes of the last frame), the canvas in device pixels, the pixel ratio, who's alive in the ecosystem, the chunks of land. */
+        drawn: () => {
+          let alive = 0;
+          for (let i = 0; i < fauna.eco.n; i++) if (fauna.eco.alive[i]) alive++;
+          return { calls: drawCalls, objects: bench!.objects, triangles, width: canvas.width, height: canvas.height, dpr: renderer.getPixelRatio(), shadows, effects: post?.active ? Object.entries(governor.post).filter(([, on]) => on).map(([name]) => name) : [], animals: alive, slots: fauna.eco.n, insects: fauna.insects.n, chunks: land.list.length, fine: land.fineChunks, plants: vegetation.counts(), plantTriangles: vegetation.triangles(), geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures };
+        },
+        /** The bytes of vertex data the scene holds for the GPU (every buffer once), and how many buffers. */
+        memory: () => {
+          const seen = new Set<unknown>();
+          let bytes = 0;
+          scene.traverse((o) => {
+            const g = (o as { geometry?: { attributes: Record<string, { array?: ArrayBufferView; data?: { array: ArrayBufferView } }>; index: { array: ArrayBufferView } | null } }).geometry;
+            if (!g) return;
+            const instanced = o as { instanceMatrix?: { array: ArrayBufferView }; instanceColor?: { array: ArrayBufferView } | null };
+            for (const a of [...Object.values(g.attributes), g.index, instanced.instanceMatrix, instanced.instanceColor]) {
+              const array = a ? ((a as { data?: { array: ArrayBufferView } }).data?.array ?? (a as { array?: ArrayBufferView }).array) : null;
+              if (!array || seen.has(array.buffer)) continue;
+              seen.add(array.buffer);
+              bytes += array.byteLength;
+            }
+          });
+          return { bytes, buffers: seen.size };
+        },
+        weather: (kind: WeatherKind) => {
+          weather.set(kind);
+          weather.snap(heavens.sunElevation * DEG, heavens.evening);
+          applySky();
+        },
+        time: (preset: TimePreset | null) => {
+          override = preset;
+          placeHeavens();
+          weather.settleMist(heavens.sunElevation * DEG, heavens.evening);
+          applySky();
+        },
+        shadows: (on: boolean) => setShadows(on && tier.shadows),
+        post: (effects: { ao: boolean; shafts: boolean; bloom: boolean }) => {
+          post?.set(effects);
+          shafted = post?.shafting ?? false;
+          applySky();
+        },
+        dpr: (ratio: number) => {
+          renderer.setPixelRatio(ratio);
+          resize();
+        },
+        /** Hides a part of the world (and shows it again), to see what it costs to draw. */
+        hide: (what: string, hidden: boolean) => {
+          const show = !hidden;
+          if (what === "plants") plantRoot.visible = show;
+          else if (what === "wildlife") wildRoot.visible = show;
+          else if (what === "folk") folkRoot.visible = show;
+          else if (what === "people") knight.root.visible = dog.root.visible = show;
+          else if (what === "keep") keep.group.visible = landmarks.group.visible = show;
+          else if (what === "places") for (const place of places) place.group.visible = show;
+          else if (what === "sky") sky.group.visible = horizon.group.visible = show;
+          else if (what === "land") {
+            // (The land shows and hides its own meshes as it swaps grids: a layer the cameras don't see, instead.)
+            for (const chunk of land.list) for (const mesh of [chunk.mesh, chunk.fine, chunk.stream]) mesh?.layers.set(show ? 0 : 1);
+            land.water.layers.set(show ? 0 : 1);
+          }
+          dirty = true;
+        },
+      }
+    : null;
+  if (bench) (globalThis as { __sandboxBench?: unknown }).__sandboxBench = bench;
+  // (And an exact count of what the renderer is handed a frame: every object drawn, in every pass. three's own "draw
+  // calls" count the draws inside an object too, and its time goes by the object.)
+  let handed = 0;
+  if (bench) {
+    const backend = renderer.backend as unknown as { draw: (...args: unknown[]) => unknown };
+    const draw = backend.draw.bind(backend);
+    backend.draw = (...args) => {
+      handed++;
+      return draw(...args);
+    };
+  }
+  /** (A benchmark's clock at the frame's marks: 0 without one.) */
+  const tick = log ? () => performance.now() : () => 0;
 
   function frame(now: number): void {
     raf = requestAnimationFrame(frame);
@@ -1723,6 +1839,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       renderedLast = false;
       return;
     }
+    const entered = tick();
     const motion = !reduced();
     // What grows bends with the weather's wind: as it always did in a light breeze, hard in a storm.
     // (A whole step at a time, so the uniform, and every plant material with it, isn't uploaded as the wind eases.)
@@ -1740,15 +1857,24 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       rig.trail(walker.heading, walker.moving, dt, cameraClear);
     }
     active = rig.update(dt, motion) || active;
+    const walked = tick();
     active = plots.animate(now, skyState.horizon) || active;
     active = assembly.animate(now, motion) || active;
     const ambient = motion && now - lastRender >= idleInterval;
+    if (bench?.always) dirty = true;
     if (!dirty && !active && !ambient) {
       renderedLast = false;
       return;
     }
-    if (now - lastRender < FRAME_MIN_MS) return;
+    // (A benchmark lifts the cap: with the browser's own limit off too, a frame's interval is what the pipeline takes.)
+    if (now - lastRender < FRAME_MIN_MS && !ask?.uncap) return;
     const started = performance.now();
+    if (log) {
+      handed = 0;
+      log.begin(now, now - lastRender, entered);
+      log.mark(PART.walk, walked);
+      log.mark(PART.plots, started);
+    }
     const renderDt = Math.min(0.1, (now - lastRender) / 1000);
     frames++;
     frameMsSum += now - lastRender;
@@ -1785,10 +1911,20 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // Land and what grows on it: nearest first, within this frame's budget.
     const deadline = started + tier.chunkMs;
     const loadRadius = Math.min(tier.radius, Math.max(tier.radius * 0.75, rig.distance * 1.7 + 70));
-    const growing = land.update(rig.x, rig.y, loadRadius, deadline, tier.chunkBudget);
-    const filling = vegetation.update(rig.x, rig.y, deadline);
+    // (One of the two may take a step past the budget each frame, turn about: a frame that grows is one step over at
+    // most. Each used to take its own, and a frame that grew a chunk, a fine grid and a chunk's plants was three over.)
+    let growing: boolean;
+    let filling: boolean;
+    if ((growTurn = !growTurn)) {
+      growing = land.update(rig.x, rig.y, loadRadius, deadline, tier.chunkBudget, true);
+      filling = vegetation.update(rig.x, rig.y, deadline, !land.worked);
+    } else {
+      filling = vegetation.update(rig.x, rig.y, deadline, true);
+      growing = land.update(rig.x, rig.y, loadRadius, deadline, tier.chunkBudget, !vegetation.worked);
+    }
     if (growing || filling) dirty = true;
     atmosphere.reach(loadRadius, rig.distance);
+    log?.mark(PART.land, tick());
 
     // Galahad and his dog.
     const g = model?.galahad;
@@ -1960,6 +2096,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const inside = inHall(x, y) ? 1 : 0;
       who.indoors.value += motion ? Math.max(-1, Math.min(1, (inside - who.indoors.value) * 3 * renderDt)) : inside - who.indoors.value;
     }
+    log?.mark(PART.life, tick());
     keep.animate(t, motion);
     landmarks.animate(t, motion);
     placeFrame.dt = renderDt;
@@ -1978,6 +2115,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     placeFrame.wind = weather.state.wind;
     placeFrame.windHeading = weather.state.windHeading;
     for (let i = 0; i < places.length; i++) places[i]!.animate(placeFrame);
+    log?.mark(PART.places, tick());
 
     // Embers rise from the fire at his hearth.
     if (motion && hearth.lit) {
@@ -1998,6 +2136,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       }
     }
     fauna.step(renderDt, rig.x, rig.y, origin, skyState, weather.state, walker, dog, motion);
+    log?.mark(PART.eco, tick());
     galahadLead.x = walker.x;
     galahadLead.y = walker.y;
     galahadLead.heading = walker.heading;
@@ -2011,6 +2150,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     helpers.step(renderDt, motion);
     helperLook.pose(groundAt, origin, t);
     careLook.update(care, groundAt, renderDt, motion);
+    log?.mark(PART.folk, tick());
 
     // The camera, over a smoothed ground; then everything that depends on where it is.
     const focusGround = rig.settle(Math.max(0, rig.follow ? standZ : groundAt(rig.x, rig.y)), renderDt, motion);
@@ -2055,6 +2195,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     horizon.follow(camera.position, t, motion);
     // The light: from the sun by day, the moon by night, kept over the focus.
     placeSun(rig.x - origin[0], focusGround, -(rig.y - origin[1]), skyState.lightDir);
+    log?.mark(PART.camera, tick());
     if (post?.active) {
       // The shafts reach from the camera to the far side of the shadow map's box; the air is thicker under a low sun.
       const w = weather.state;
@@ -2062,17 +2203,38 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       post.render();
     } else renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
+    triangles = renderer.info.render.triangles;
+    log?.mark(PART.render, tick());
     // His eyes' panel, a few times a second while it's open; and a frame for the node when one is asked for.
-    if (eyes.due(now, motion)) eyes.draw(now);
+    const eyed = eyes.due(now, motion);
+    if (eyed) eyes.draw(now);
     if (shots.length) stepShots(now, growing || filling);
+    log?.mark(PART.eyes, tick());
     placeLabels(renderDt);
     placeHover();
     if (trace) {
       frameWork.ms += performance.now() - started;
       frameWork.frames += 1;
     }
+    if (bench && log) {
+      const ended = tick();
+      log.mark(PART.labels, ended);
+      log.end((growing ? GROWING : 0) | (filling ? FILLING : 0) | (eyed ? EYES_DRAWN : 0), ended);
+      bench.objects = handed;
+      // (The GPU's own time in this frame's passes, once its queries resolve.)
+      if (ask?.gpu) void renderer.resolveTimestampsAsync("render").then((ms) => log.gpu(ms ?? 0), () => {});
+      const timing = bench.timing;
+      if (!timing.first) timing.first = ended;
+      // Settled: his place is known and nothing has been left to grow for twenty frames.
+      if (!timing.settled && model) {
+        if (growing || filling) bench.calm = 0;
+        else if (bench.calm++ === 0) bench.calmAt = ended;
+        if (bench.calm >= 20) timing.settled = bench.calmAt;
+      }
+    }
     // Only frames rendered back to back, at full rate, and not growing land, say how long a frame takes.
-    if (judged && !growing && !filling) {
+    // (A benchmark that asks for a fixed picture holds the governor off.)
+    if (judged && !growing && !filling && !ask?.hold) {
       const action = governor.frame(now, interval);
       if (action === "dpr") {
         renderer.setPixelRatio(governor.dpr);

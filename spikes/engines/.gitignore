@@ -1,0 +1,3 @@
+node_modules/
+# The best this machine has done (measure.ts keeps it to know a busy machine from a quiet one).
+machine.json

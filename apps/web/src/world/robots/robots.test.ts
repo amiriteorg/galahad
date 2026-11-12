@@ -6,6 +6,8 @@ import { ArmTask } from "../arms.ts";
 import { ROBOT_MANIFESTS } from "../assets/robots/index.ts";
 import { footContacts, OpenDuck, strideFor } from "./duck.ts";
 import { Skeleton, type Vec3 } from "./kinematics.ts";
+import { Group, Matrix4, MeshLambertMaterial } from "three/webgpu";
+import { linkGeometry, type RobotAsset, RobotInstances } from "./load.ts";
 import { decodeMeshes, parseManifest, type RobotManifest, treeOf } from "./manifest.ts";
 import { ReachyMini } from "./reachy.ts";
 import { So101 } from "./so101.ts";
@@ -227,5 +229,61 @@ describe("Reachy Mini on the council table", () => {
       yaws.push(reachy.facing([0, 0, 0])[1]);
     }
     expect(Math.max(...yaws) - Math.min(...yaws)).toBeGreaterThan(0.3);
+  });
+});
+
+describe("many of a robot, drawn", () => {
+  const asset = (name: string): RobotAsset => {
+    const { manifest, bin } = load(name);
+    return { manifest, geometries: new Map(decodeMeshes(manifest, bin).map((m) => [m.link, linkGeometry(m, manifest.materials)])) };
+  };
+
+  test("every link of every robot of a kind is one mesh: one object for the renderer, whatever the flock", () => {
+    for (const name of ["open-duck-mini-v2", "so-101", "reachy-mini"]) {
+      const a = asset(name);
+      const root = new Group();
+      const instances = new RobotInstances(a, new Skeleton(treeOf(a.manifest)), 5, root, new MeshLambertMaterial({ vertexColors: true }), true);
+      expect(root.children).toEqual([instances.mesh]);
+      expect(instances.mesh.castShadow).toBe(true);
+      // All its links' triangles, once (the robots share them), and an instance for each link of each robot.
+      expect(instances.mesh.geometry.getAttribute("position").count).toBe(a.manifest.triangles * 3);
+      expect(instances.mesh.instanceCount).toBe(5 * a.geometries.size);
+      instances.dispose();
+      expect(root.children).toEqual([]);
+    }
+  });
+
+  test("a robot's links are written where its posed skeleton has them, placed in the scene; the rest are hidden", () => {
+    const a = asset("so-101");
+    const sk = new Skeleton(treeOf(a.manifest));
+    const instances = new RobotInstances(a, sk, 3, new Group(), new MeshLambertMaterial(), false);
+    sk.q[0] = 0.4;
+    sk.q[1] = -0.3;
+    sk.fk();
+    const place = new Matrix4().makeRotationY(0.7).setPosition(3, 1, -2).scale({ x: 2.5, y: 2.5, z: 2.5 } as never);
+    instances.write(1, sk, place);
+    const links = [...a.geometries.keys()];
+    const got = new Matrix4();
+    const want = new Matrix4();
+    links.forEach((link, k) => {
+      const l = sk.linkIndex(link) * 16;
+      // (The skeleton's frames are rigid: its last row is 0 0 0 1.)
+      const w = sk.world;
+      want.set(w[l]!, w[l + 4]!, w[l + 8]!, w[l + 12]!, w[l + 1]!, w[l + 5]!, w[l + 9]!, w[l + 13]!, w[l + 2]!, w[l + 6]!, w[l + 10]!, w[l + 14]!, 0, 0, 0, 1).premultiply(place);
+      instances.frame(1, k, got);
+      for (let e = 0; e < 16; e++) expect(got.elements[e]!).toBeCloseTo(want.elements[e]!, 5);
+    });
+    // Fewer robots than there's room for: the others aren't drawn, and come back when asked for.
+    const visible = (): number => {
+      let n = 0;
+      for (let i = 0; i < 3; i++) for (let k = 0; k < links.length; k++) if (instances.mesh.getVisibleAt(i * links.length + k)) n++;
+      return n;
+    };
+    expect(visible()).toBe(3 * links.length);
+    instances.count = 1;
+    expect(visible()).toBe(links.length);
+    instances.count = 3;
+    expect(visible()).toBe(3 * links.length);
+    instances.dispose();
   });
 });

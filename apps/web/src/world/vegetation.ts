@@ -289,9 +289,10 @@ export class Vegetation {
    * Brings the instances up to date for the focus: fills new chunks, grows the
    * small things near the focus (and lets them go farther off), swaps trees
    * between their levels of detail. Works until `deadline` (performance.now()),
-   * nearest chunks first, at least one step a call. Returns true while work is left.
+   * nearest chunks first; and one step past it when `first` (the frame's one
+   * grower that may: see Land.update). Returns true while work is left.
    */
-  update(focusX: number, focusY: number, deadline: number): boolean {
+  update(focusX: number, focusY: number, deadline: number, first = true): boolean {
     const moved = !(Math.abs(focusX - this.focusX) < 4 && Math.abs(focusY - this.focusY) < 4);
     if (moved) {
       this.focusX = focusX;
@@ -303,7 +304,8 @@ export class Vegetation {
     const grassR = this.grassOn ? this.tier.grassRadius : -1e9;
     this.seasons();
     let pending = false;
-    let worked = false;
+    let worked = !first;
+    this.worked = false;
     for (let i = 0; i < this.order.length; i++) {
       const g = this.order[i]!;
       // Hysteresis, so a chunk on an edge doesn't flip back and forth.
@@ -315,6 +317,7 @@ export class Vegetation {
         break;
       }
       worked = true;
+      this.worked = true;
       if (!g.big || g.band !== wantBand) {
         const was = g.band;
         g.band = wantBand;
@@ -329,6 +332,9 @@ export class Vegetation {
     if (this.leaves.stale && !pending) this.leaves.gather(this.order, focusX, focusY, this.anchorX, this.anchorY);
     return pending;
   }
+
+  /** Whether the last update filled or swapped anything. */
+  worked = false;
 
   /** What's out of season isn't drawn: a kind all of whose parts the season has at nothing (anemones in summer, flowers in winter). */
   private seasons(): void {

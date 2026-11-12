@@ -211,11 +211,15 @@ export class Land {
 
   /**
    * Loads the chunks within `radius` of the world point (x, y), nearest first,
-   * until `deadline` (performance.now(); at least one a call, at most
-   * `maxNew`), and drops those well beyond it. Returns true while chunks within
-   * reach are still to grow.
+   * until `deadline` (performance.now(); at most `maxNew`), and drops those well
+   * beyond it. Returns true while chunks within reach are still to grow.
+   *
+   * `first`: this call may take one step past the deadline, so the land always
+   * grows however slow the device. A frame gives that to one of its growers
+   * only (the land, or the plants: scene.ts takes turns), so a frame that grows
+   * is one step over its budget at most, not one step for each of them.
    */
-  update(x: number, y: number, radius: number, deadline: number, maxNew: number): boolean {
+  update(x: number, y: number, radius: number, deadline: number, maxNew: number, first = true): boolean {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const chunk = this.list[i]!;
       const dx = (chunk.cx + 0.5) * CHUNK - x;
@@ -233,19 +237,23 @@ export class Land {
     }
     let grown = 0;
     while (this.next < this.wanted.length) {
-      if (grown >= maxNew || (grown > 0 && performance.now() > deadline)) break;
+      if (grown >= maxNew || ((grown > 0 || !first) && performance.now() > deadline)) break;
       const [cx, cy] = this.wanted[this.next++]!;
       if (this.chunks.has(chunkKey(cx, cy))) continue;
       this.grow(cx, cy);
       grown++;
     }
-    const refining = this.refine(x, y, deadline);
+    this.worked = grown > 0;
+    const refining = this.refine(x, y, deadline, first && grown === 0);
     // Keep the water's grid on whole cells, so its waves don't swim as it follows.
     const [sx, , sz] = toScene(Math.round(x / this.waterCell) * this.waterCell, Math.round(y / this.waterCell) * this.waterCell);
     this.water.position.x = sx;
     this.water.position.z = sz;
     return this.next < this.wanted.length || refining;
   }
+
+  /** Whether the last update did any growing (a chunk, or a step of a fine grid). */
+  worked = false;
 
   /** How many chunks are drawn on the fine grid now (for tests and the stats). */
   get fineChunks(): number {
@@ -258,9 +266,10 @@ export class Land {
    * The fine ring: chunks near the focus swap to the fine grid (nearest first,
    * while the frame's budget lasts, and one step past it when a chunk close to
    * the focus still lacks it), and those that have left the ring swap back at
-   * once. Returns true while chunks are still to refine.
+   * once. Returns true while chunks are still to refine. `first`: it may take
+   * its one step past the budget (nothing else has, this frame).
    */
-  private refine(x: number, y: number, deadline: number): boolean {
+  private refine(x: number, y: number, deadline: number, first: boolean): boolean {
     const r = this.fineRadius;
     if (r <= 0) return false;
     // The morph, in the scene's world frame (the root is moved by the floating origin); only when the focus has
@@ -295,12 +304,13 @@ export class Land {
       }
     }
     // The nearest first; then, while there's time, the next nearest (one scan each: there are only a few).
-    let done = 0;
+    let done = first ? 0 : 1;
     while (best) {
       // Within the frame's budget; past it, one step only for a chunk close to the focus (where the base grid
       // would show at once), so moving fast never piles the work into one frame.
       if ((done > 0 || fast || bestD >= r * 0.5) && performance.now() > deadline) break;
       this.refineChunk(best);
+      this.worked = true;
       done++;
       if (best.fine) pending--;
       best = null;

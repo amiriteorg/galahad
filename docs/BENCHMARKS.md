@@ -206,6 +206,14 @@ Words alone find half (they can't tell a topic from its sibling), meaning alone 
 
 The chat loop and the quest runner driven by stand-in models that answer at once and tools that return at once, in the provider's own wire format: 0.145 ms a tool round, 0.351 ms an answer without tools, 0.123 ms a quest step. Next to a model's seconds it is nothing, which is the point of holding it: a change that makes the loop slow shows here, where no model's latency hides it.
 
+### world-scale: the SANDBOX drawn in a real browser, at scale
+
+`bench/browser/world-scale.ts` measures the SANDBOX where it runs. It starts a throwaway node on a temp home, opens the world in headless Edge over CDP paired as a client, loads it once per configuration (tier, backend, screen, and how much world is asked for: `?trace=1&tier=…&webgl=1&animals=N&reach=N&plants=N`) and measures each scene in windows of a few seconds. `bun bench/browser/world-scale.ts` is the quick matrix (each tier, the ends of each curve, a part's cost, his walk; about ten minutes). `--full` is every tier, backend and screen, the animals, reach and plants curves until they can't hold 15 fps, weather, his eyes, sound, helpers and experiments, and his day (62 loads, 125 scenes, an hour and a half on a shared machine). It writes `bench/out/world-scale.json` in the scorecard's shape with ids like `base.high.webgpu.desktop.wide-day.cpu.p95`, `headroom.medium.animals.frame60`, `parts.high.desktop.cost-plants.cpu` and `bundle.world.brotli`, and everything measured to `world-scale.raw.json` beside it. `bun run bench` shows it when that file is there.
+
+What it can be trusted for: counts (objects handed to the renderer, triangles, animals alive, chunks) are exact. Main-thread times are the page's own clock inside its frame function. GPU time is WebGPU timestamp queries round every pass. The frame interval is taken with the browser's frame-rate limit off, so it is the whole pipeline. A small fixed loop runs on the page's own thread round every window, and CPU-clock times are scaled to the best that loop has done on the machine; each result carries `quiet` and the unscaled p95. Scaled times are good to about a fifth, so compare runs by counts and by the paired part costs, not by frame times a tenth apart. It needs Windows, Microsoft Edge and a real GPU, so it is not for CI runners without one. No phone is measured: "phone" is a phone's size and pixel ratio in a desktop browser.
+
+What the first runs said (2026-11-12, an i7-11700 with an RTX A4000): the world was limited by its main thread handing three.js objects to draw (about three quarters of a frame on the high tier, at 11 to 16 µs an object a pass), with the GPU nearly idle; and the animals' curve broke in one function that compared every walker with every other. With the robots drawn as one object a kind and walkers parted by a grid, the high tier holds 60 fps to about 5,000 animals where it held about 750, and medium to about 2,800 where it held about 900. The same slice built in Babylon.js and PlayCanvas (`spikes/engines/`) gave no headroom at the phone tier's object count, so the world stays on three.js: the reasoning and the numbers are in [WORLD](WORLD.md).
+
 ## Adding a metric, or a suite
 
 - A metric: in its suite, `ctx.quality(id, value, unit, "higher" | "lower", { note, resolution? })` for something exact, `ctx.time(id, fn, { n, warm, batch, per, note })` for something timed (or `ctx.speed(id, samples, unit, better, [from, to], note)` for samples timed elsewhere, with when they were taken). Names are lower case with dots and dashes; one only `--full` measures starts `full.`. Say in the note what the number is. Then record the baseline on purpose and commit it with the change.
@@ -216,7 +224,7 @@ The chat loop and the quest runner driven by stand-in models that answer at once
 ## What isn't measured here
 
 - Model quality and the agent harness's effect on it: the [Trials](TRIALS.md).
-- The SANDBOX drawn at scale in a real browser: `bench/browser/world-scale.ts`, shown here when its result is there.
+- The SANDBOX on a real phone: the world-scale suite emulates a phone's screen in a desktop browser, and no iPhone has been measured.
 - Real networks, real Docker, real disks under load: the simulations use the real decision code and stand-in work.
 - The sun and moon against a tabulated almanac (no network): an independent series stands in.
 - The same quality values on another platform. They're expected to be the same (the only platform-dependent arithmetic is the last bit of a sine, a cosine or a hypotenuse, inside the stated resolutions), and the baselines were recorded on Windows.

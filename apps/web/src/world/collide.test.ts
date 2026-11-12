@@ -415,6 +415,74 @@ describe("movers", () => {
   });
 });
 
+describe("many movers", () => {
+  /** A crowd among some solids: walkers of every build, a few machines too wide for a cell, and some that are away. */
+  const crowd = (seed: number, n: number, span: number) => {
+    const s = new Solids();
+    s.add(scatter(200, 7, span * 1.5));
+    const rand = rng(seed);
+    const at = Array.from({ length: n }, (_, i) => ({ x: (rand() - 0.5) * span, y: (rand() - 0.5) * span, r: i % 97 === 0 ? 1.6 : i % 5 === 0 ? 0 : 0.2 + rand() * 0.4 }));
+    at.forEach((c, i) => s.join(c, i % 97 === 0 ? BUILDS.machine : i % 3 === 0 ? BUILDS.deer : i % 3 === 1 ? BUILDS.rabbit : BUILDS.microduck));
+    return { s, at };
+  };
+
+  test("each is tried only against those near it, and they end exactly where trying every pair puts them", () => {
+    for (const seed of [1, 2, 3]) {
+      const near = crowd(seed, 600, 70);
+      const every = crowd(seed, 600, 70);
+      let parted = 0;
+      for (let frame = 0; frame < 25; frame++) {
+        // Everyone drifts a little, the same in both worlds; now and then someone goes away or comes back.
+        const rand = rng(seed * 1000 + frame);
+        for (let i = 0; i < near.at.length; i++) {
+          const dx = (rand() - 0.5) * 0.3;
+          const dy = (rand() - 0.5) * 0.3;
+          const flip = rand() < 0.01 && i % 97 !== 0;
+          for (const world of [near, every]) {
+            const c = world.at[i]!;
+            c.x += dx;
+            c.y += dy;
+            if (flip) c.r = c.r > 0 ? 0 : 0.35;
+          }
+        }
+        const before = near.at.map((c) => c.x + c.y);
+        near.s.separate();
+        every.s.separate(true);
+        for (let i = 0; i < near.at.length; i++) {
+          expect(near.at[i]).toEqual(every.at[i]!);
+          if (near.at[i]!.x + near.at[i]!.y !== before[i]) parted++;
+        }
+      }
+      // (And it's a crowd: plenty of them were in each other's way.)
+      expect(parted).toBeGreaterThan(300);
+    }
+  });
+
+  test("an ecosystem's worth of walkers costs what's near each, not every pair of them", () => {
+    // Three thousand spread over half a kilometre, as animals are: compared in the same run, the fastest of several
+    // batches each way, so a busy machine slows both alike.
+    const fastest = (everyPair: boolean): number => {
+      const { s, at } = crowd(11, 3000, 500);
+      const rand = rng(12);
+      let best = Infinity;
+      for (let batch = 0; batch < 5; batch++) {
+        for (const c of at) {
+          c.x += (rand() - 0.5) * 0.2;
+          c.y += (rand() - 0.5) * 0.2;
+        }
+        const started = performance.now();
+        for (let i = 0; i < 4; i++) s.separate(everyPair);
+        best = Math.min(best, (performance.now() - started) / 4);
+      }
+      return best;
+    };
+    const every = fastest(true);
+    const near = fastest(false);
+    console.log(`separating 3000 movers: every pair ${every.toFixed(2)} ms, those near ${near.toFixed(3)} ms`);
+    expect(near).toBeLessThan(every / 8);
+  });
+});
+
 describe("the cost", () => {
   test("a frame's questions cost the same in a dense forest as in a sparse one, and little", () => {
     // 60 movers among 12 000 solids over 800 m, and among 1 200: a spatial hash asks only what's near,

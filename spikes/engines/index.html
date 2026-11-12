@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Engine spike</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #cfdcf2; }
+  canvas { width: 100%; height: 100%; display: block; }
+</style>
+<canvas id="c"></canvas>
+<script type="module">
+  // ?engine=three|babylon|playcanvas (&x=1..3 &mode=… &webgl=1): the slice in that engine, measured by harness.js.
+  const engine = new URLSearchParams(location.search).get("engine") || "three";
+  import(`/dist/${engine}.js`).catch((error) => {
+    globalThis.__spikeError = String(error && error.stack ? error.stack : error);
+    console.error(error);
+  });
+</script>
