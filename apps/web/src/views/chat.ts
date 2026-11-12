@@ -7,7 +7,7 @@ import { filterConversations, groupConversations } from "../lib/chats.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
-import { chatEnter, lastRole, openChatId, orphanedTurn, rememberOpenChat, rememberRole, rememberTempTurn } from "../prefs.ts";
+import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -165,7 +165,6 @@ function leave(): void {
   if (!was) return;
   live = null;
   if (!current && was.id) void was.api.post("/api/turns/stop", { turn: was.id }).catch(() => {});
-  rememberTempTurn(null);
   was.watch.abort();
   if (thread.target) endTurn(thread, Date.now());
   steering = [];
@@ -189,8 +188,6 @@ function handle(w: Watching, event: ChatStreamEvent): void {
   if (event.type === "turn") {
     w.id = event.id;
     w.deadline = event.deadline;
-    // A temporary chat's turn is known only to this page: if the page reloads, the next one stops it.
-    if (event.conversation === null) rememberTempTurn(event.id);
     if (w.stopAsked) {
       w.stopAsked = false;
       stopChat();
@@ -279,7 +276,6 @@ const RECONNECTING = "Reconnecting to the node";
 function finish(w: Watching, failure?: string): void {
   const turn = failure ? failTurn(thread, failure, Date.now()) : endTurn(thread, Date.now());
   live = null;
-  rememberTempTurn(null);
   steering = [];
   chatActivity.set({ streaming: false, model: null });
   emit(turn);
@@ -375,19 +371,14 @@ export function newConversation(project: string | null = current?.project ?? sta
 }
 
 /**
- * After a reload (the page's memory is gone, the node's isn't): back to the kept chat that was open in this
- * tab, attached to the turn he's working on in it. A temporary chat is gone with the page; the turn it had
- * running has nobody left to watch it, so it's stopped. Once per page load.
+ * After a reload (the page's memory is gone, the node's isn't): back to the kept chat you had open, attached
+ * to the turn he's working on in it. Once per page load. A temporary chat is gone with the page; the node
+ * stops its turn once nobody has watched it for a while (it's kept nowhere, so nobody could read it).
  */
 let restored = false;
 export function restoreOpenChat(api: Api): void {
   if (restored) return;
   restored = true;
-  const orphan = orphanedTurn();
-  if (orphan) {
-    rememberTempTurn(null);
-    void api.post("/api/turns/stop", { turn: orphan }).catch(() => {});
-  }
   const id = openChatId();
   if (!id || current || thread.turns.length || live) return;
   void openConversation(api, id).catch(() => rememberOpenChat(null));

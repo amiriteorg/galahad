@@ -1,8 +1,9 @@
 /*
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
- * last page, sidebar state, the last chat role and what Enter does while Galahad
- * is working. Never secrets, never chat, never anything from the server. boot.ts
- * reads the same keys before paint.
+ * last page, sidebar state, the last chat role, what Enter does while Galahad is
+ * working, and which kept chat you had open (its id only). Never secrets, never a
+ * word of a chat, never anything else from the server. boot.ts reads the same keys
+ * before paint.
  */
 
 export type ThemePref = "system" | "light" | "dark";
@@ -15,6 +16,7 @@ const KEYS = {
   sidebar: "galahad:sidebar",
   role: "galahad:chat-role",
   enter: "galahad:chat-enter",
+  chat: "galahad:open-chat",
 } as const;
 
 type PrefKey = keyof typeof KEYS;
@@ -93,30 +95,12 @@ export type ChatEnterPref = "steer" | "queue";
 export const chatEnter = (): ChatEnterPref => (read("enter") === "queue" ? "queue" : "steer");
 export const setChatEnter = (pref: ChatEnterPref): void => write("enter", pref === "steer" ? null : pref);
 
-/*
- * For this tab only (sessionStorage: gone when the tab closes), so a reload comes back to where you
- * were: which kept chat was open (its id, never a word of it), and the turn a temporary chat had
- * running (so the reloaded page, which no longer has that chat, can stop it).
+/**
+ * The kept chat you had open (its id, never a word of it), so the app comes back to it, and to the turn he's
+ * working on in it, after a reload: where you were, like the last page.
  */
-const OPEN_CHAT = "galahad:open-chat";
-const TEMP_TURN = "galahad:temp-turn";
-function session(key: string, value?: string | null): string | null {
-  try {
-    if (value === undefined) return sessionStorage.getItem(key);
-    if (value === null) sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
-  } catch {
-    /* storage unavailable: a reload starts at a new chat */
-  }
-  return null;
-}
 export const openChatId = (): string | null => {
-  const id = session(OPEN_CHAT);
+  const id = read("chat");
   return id && /^cv_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
 };
-export const rememberOpenChat = (id: string | null): void => void session(OPEN_CHAT, id);
-export const orphanedTurn = (): string | null => {
-  const id = session(TEMP_TURN);
-  return id && /^tn_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
-};
-export const rememberTempTurn = (id: string | null): void => void session(TEMP_TURN, id);
+export const rememberOpenChat = (id: string | null): void => write("chat", id);

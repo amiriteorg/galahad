@@ -28,7 +28,7 @@ const oneLine = (text: string, max = 100): string => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 
-const STOPPED: Record<string, string> = { you: "stopped by you", limit: "stopped at the node's limit for one turn", node: "stopped: the node itself was stopping" };
+const STOPPED: Record<string, string> = { you: "stopped by you", limit: "stopped at the node's limit for one turn", node: "stopped: the node itself was stopping", unwatched: "stopped: a temporary chat's turn, and nobody was watching it any more" };
 
 /** One running turn in a line: which chat, what he's doing, what it has cost so far, who's watching, when it stops by itself. */
 export function turnLine(t: TurnView, now: number): string {
@@ -140,6 +140,8 @@ export async function askCommand(node: NodeClient, text: string, o: AskOptions, 
   if (modes > 1) throw new Error("give one of --steer, --queue or --aside");
   if (modes && !o.chat) throw new Error("--steer, --queue and --aside go with --chat <id>: the chat he's working in (galahad turns lists them)");
   if (o.bring && !o.aside) throw new Error("--bring goes with --aside");
+  // A temporary chat is kept nowhere: a turn of it that nobody watches is stopped by the node, so there's nothing to come back to.
+  if (o.detach && o.temp && !o.chat) throw new Error("--detach needs a kept chat (drop --temp): a temporary chat's turn is stopped once nobody is watching it");
 
   if (o.aside) {
     let aside = "";

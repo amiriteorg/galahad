@@ -147,7 +147,7 @@ export function beginTurn(thread: Thread, question: string, as: string, now: num
   return answer;
 }
 
-const STOPPED: Record<string, string> = { you: "Stopped by you", limit: "Stopped at the node's limit for one turn", node: "Stopped: the node itself was stopping" };
+const STOPPED: Record<string, string> = { you: "Stopped by you", limit: "Stopped at the node's limit for one turn", node: "Stopped: the node itself was stopping", unwatched: "Stopped: nobody was watching this temporary chat any more" };
 
 /**
  * One event of a turn's stream, applied to the thread. Returns the one turn that changed,

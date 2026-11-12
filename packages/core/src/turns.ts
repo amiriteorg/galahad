@@ -16,8 +16,11 @@ export const TURN_ID = /^tn_[A-Za-z0-9_-]{22}$/;
 
 export type TurnState = "running" | "done" | "error" | "stopped";
 
-/** Why a turn was stopped: you said so; it ran into the node's limit for one turn; the node itself stopped. */
-export type StopReason = "you" | "limit" | "node";
+/**
+ * Why a turn was stopped: you said so; it ran into the node's limit for one turn; the node itself stopped; or
+ * it was a temporary chat's turn that nobody was watching any more (kept nowhere, so nobody could ever read it).
+ */
+export type StopReason = "you" | "limit" | "node" | "unwatched";
 
 /** A turn the node is running, as each of your devices sees it. */
 export interface TurnView {

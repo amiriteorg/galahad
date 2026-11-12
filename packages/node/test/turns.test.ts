@@ -213,6 +213,45 @@ describe("a turn the node owns", () => {
   });
 });
 
+describe("a temporary chat's turn nobody watches", () => {
+  test("is stopped after a while (it's kept nowhere, so nobody could read it); a kept chat's turn never is", async () => {
+    const t = setup({ unwatchedMs: 40 });
+    const temp = t.hub.start(t.spec(null, "A passing thought"));
+    const kept = t.hub.start(t.spec(t.chat(), "Write the report."));
+    t.answers[0]!.say("Thinking");
+    await temp.ended;
+    expect(temp.state).toBe("stopped");
+    expect(t.answers[0]!.aborted).toBe(true);
+    // The kept chat's turn goes on with nobody watching: its answer will be in the chat.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(kept.state).toBe("running");
+    t.answers[1]!.end();
+    await kept.ended;
+    expect(kept.state).toBe("done");
+  });
+
+  test("watching keeps it; a page that drops and comes back in time loses nothing; one that never does, stops it", async () => {
+    const t = setup({ unwatchedMs: 60 });
+    const turn = t.hub.start(t.spec(null, "A passing thought"));
+    const first = watch(t.hub, turn.id);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(turn.state).toBe("running");
+    // The connection drops, and the page finds the turn again before the time is up.
+    first.leave();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const again = watch(t.hub, turn.id);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(turn.state).toBe("running");
+    // Then it's gone for good.
+    again.leave();
+    await turn.ended;
+    expect(turn.state).toBe("stopped");
+    expect(again.events.at(-1)).not.toEqual({ type: "stopped", reason: "unwatched" });
+    const late = watch(t.hub, turn.id);
+    expect(late.events.at(-1)).toEqual({ type: "stopped", reason: "unwatched" });
+  });
+});
+
 describe("limits, said plainly", () => {
   test("so many turns at once; one per chat; refused before anything is written", () => {
     const t = setup({ maxTurns: 2 });

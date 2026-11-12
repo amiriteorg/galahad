@@ -116,9 +116,15 @@ export interface HubLimits extends TurnLimits {
   maxSteers: number;
   /** How long a turn that ended can still be attached to (a page coming back sees how it went), in ms. */
   keepMs: number;
+  /**
+   * How long a temporary chat's turn may go on with nobody watching, in ms. It's kept nowhere, so once its page
+   * is gone nobody can read it: past this it is stopped rather than left spending. (A kept chat's turn has no
+   * such bound: its answer is in the chat whoever watches.)
+   */
+  unwatchedMs: number;
 }
 
-export const HUB_LIMITS: HubLimits = { ...DEFAULT_TURN_LIMITS, maxSteers: 20, keepMs: 10 * 60_000 };
+export const HUB_LIMITS: HubLimits = { ...DEFAULT_TURN_LIMITS, maxSteers: 20, keepMs: 10 * 60_000, unwatchedMs: 2 * 60_000 };
 
 /** A turn the hub is running, or one that just ended. */
 export interface LiveTurn {
@@ -152,6 +158,8 @@ interface Live extends LiveTurn {
   step: string | null;
   tools: number;
   timer: ReturnType<typeof setTimeout> | null;
+  /** A temporary chat's turn, while nobody watches it: when it's stopped unless someone attaches. */
+  unwatched: ReturnType<typeof setTimeout> | null;
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -302,12 +310,14 @@ export class TurnHub {
       step: null,
       tools: 0,
       timer: null,
+      unwatched: null,
     };
     this.turns.set(turn.id, turn);
     if (c) this.emit(turn, { type: "conversation", id: c.id, title: c.title, project: c.project });
     // The node's limit for one turn: past it, the turn is stopped and says so. Nothing is retried.
     turn.timer = setTimeout(() => this.halt(turn, "limit"), Math.max(0, turn.deadline - startedAt));
     (turn.timer as { unref?: () => void }).unref?.();
+    this.watched(turn);
     void this.run(turn).finally(finished);
     return turn;
   }
@@ -326,7 +336,11 @@ export class TurnHub {
       return () => {};
     }
     turn.listeners.add(listener);
-    return () => void turn.listeners.delete(listener);
+    this.watched(turn);
+    return () => {
+      turn.listeners.delete(listener);
+      this.watched(turn);
+    };
   }
 
   /**
@@ -465,6 +479,18 @@ export class TurnHub {
 
   /* ---------- inside ---------- */
 
+  /** Someone began or stopped watching: a temporary chat's turn with nobody watching is on borrowed time. */
+  private watched(turn: Live): void {
+    if (turn.spec.conversation || turn.state !== "running") return;
+    if (turn.listeners.size) {
+      if (turn.unwatched) clearTimeout(turn.unwatched);
+      turn.unwatched = null;
+    } else if (!turn.unwatched) {
+      turn.unwatched = setTimeout(() => this.halt(turn, "unwatched"), this.limit.unwatchedMs);
+      (turn.unwatched as { unref?: () => void }).unref?.();
+    }
+  }
+
   private halt(turn: Live, reason: StopReason): void {
     if (turn.state !== "running" || turn.stop || turn.completed) return;
     turn.stop = reason;
@@ -537,6 +563,8 @@ export class TurnHub {
   private finish(turn: Live): void {
     if (turn.timer) clearTimeout(turn.timer);
     turn.timer = null;
+    if (turn.unwatched) clearTimeout(turn.unwatched);
+    turn.unwatched = null;
     const { chats } = this.opts;
     const c = turn.spec.conversation;
     const stopped = turn.completed ? null : turn.stop;
