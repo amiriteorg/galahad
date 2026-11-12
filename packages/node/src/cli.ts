@@ -17,6 +17,7 @@ import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeC
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { dogCommand, journalCommand } from "./journal-cli.ts";
+import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
@@ -91,6 +92,14 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   his journal: every evening (21:30, Denmark) he recollects his day in his own
                                   words; the latest entry, one day's, or the days he wrote
   dog | dog name <name> | dog unname   his dog's name, in the world and in his journal on every device
+  skills [--all] | skills show <id> | skills approve <id> [-y]
+                                  his skills: how he did work that passed review, kept as notes he's given again
+                                  (data, never run). One that read the outside world waits for your approval
+  skills lock|unlock|retire|restore <id> | skills rollback <id> [-y]
+                                  locked: he uses it, never changes it; retired: kept, never offered; one version back
+  skills write [<id>] --title "…" --when "…" --step "…" [--proof "cmd => expect"] [--pitfall "…"] | --file skill.json
+                                  write one yourself, or a new version of one (yours: he never edits them)
+  skills budget [<tokens a day>]  what he may spend a day distilling skills from passed quests (0: off)
   board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
   board history [--limit 20] | board restore <version> | board history forget [-y]
                                   every version is kept (clearing destroys nothing): list them, put one back, forget them
@@ -445,6 +454,12 @@ async function main(): Promise<void> {
       places: { type: "string" },
       status: { type: "boolean" },
       review: { type: "boolean" },
+      // His skills: `skills write --title … --when … --step … --proof "cmd => expect" --pitfall … | --file skill.json`.
+      when: { type: "string" },
+      step: { type: "string", multiple: true },
+      proof: { type: "string", multiple: true },
+      pitfall: { type: "string", multiple: true },
+      file: { type: "string" },
     },
   });
   const [command, sub, ...rest] = positionals;
@@ -1715,6 +1730,10 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "dog":
       await dogCommand(new Admin(home), sub, rest);
+      return;
+    case "skill":
+    case "skills":
+      await skillsCommand(new Admin(home), sub, rest, flags, { confirm });
       return;
     case "compute":
       await computeCommand(new Admin(home), sub, rest, flags);

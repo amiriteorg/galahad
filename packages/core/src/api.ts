@@ -16,6 +16,7 @@ import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, 
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 import { cleanCompanionName, companionNameProblem } from "./companion.ts";
 import { JOURNAL_DAY } from "./journal.ts";
+import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
 import { EyesFrameInput, LookInput, ReviewBudgetInput, WorldReviewInput } from "./eyes-input.ts";
 
 /*
@@ -271,6 +272,12 @@ export const routes = {
       rotate: z.number().int().min(0).max(15).optional(),
       /** This call is one attempt's (effort): the world shows it as a helper's, not his own. */
       attempt: AttemptTag.optional(),
+      /**
+       * This call is a quest of his own (its planner's or its engineer's): the skills that bear on its goal go
+       * with it, fenced as data, chosen once and the same for every call of that quest (skills.ts), and their
+       * use is counted against it. Only his own quests (yours from a terminal, a loop's): never an agent's.
+       */
+      quest: z.strictObject({ id: z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/), goal: z.string().min(1).max(4000) }).optional(),
     }),
   },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */
@@ -770,6 +777,32 @@ export const routes = {
   verifyArchive: { method: "POST", path: "/api/archive/verify", scope: "fleet:admin", input: z.strictObject({}) },
   /** How many entries the swift role may summarise per day. */
   setArchiveBudget: { method: "POST", path: "/api/archive/budget", scope: "brain:write", input: ArchiveBudgetInput },
+
+  // ---- His skills (skills.ts): how he did a kind of work, as words he reads --------
+  /** Every skill with its state, uses and track record, and the day's budget for distilling. Read like any memory. */
+  skills: { method: "GET", path: "/api/skills", scope: "mind:read", input: null },
+  /** One skill in full: every version kept, where each came from, and the quests it was given to. */
+  skill: { method: "POST", path: "/api/skills/get", scope: "mind:read", input: z.strictObject({ id: SkillId }) },
+  /**
+   * Write a skill, or a new version of one. Who asks decides its trust, never the caller's say: yours are
+   * owner; what he writes when asked in a chat, and what another agent proposes, is untrusted and waits for you.
+   */
+  writeSkill: { method: "POST", path: "/api/skills", scope: "mind:write", input: SkillWriteInput },
+  /**
+   * A quest of his has ended: its outcome is recorded against the skills it was given, and if its review
+   * passed, one bounded call distils at most one skill from its evidence. His own quests only.
+   */
+  learnSkill: { method: "POST", path: "/api/skills/learn", scope: "mind:write", input: QuestEvidenceInput },
+  /** Yours alone: approve exactly the version you read (an untrusted skill is given to no model before that). */
+  approveSkill: { method: "POST", path: "/api/skills/approve", scope: "fleet:admin", input: SkillApproveInput },
+  /** Yours alone: locked, he may use it but not change it. */
+  lockSkill: { method: "POST", path: "/api/skills/lock", scope: "fleet:admin", input: SkillLockInput },
+  /** Yours alone: retired, it's kept and never offered (nothing is deleted); put back with `retired: false`. */
+  retireSkill: { method: "POST", path: "/api/skills/retire", scope: "fleet:admin", input: SkillRetireInput },
+  /** Yours alone: one step back, to the version before the latest. */
+  rollbackSkill: { method: "POST", path: "/api/skills/rollback", scope: "fleet:admin", input: z.strictObject({ id: SkillId }) },
+  /** The day's budget for distilling skills, in tokens (0: he distils none). */
+  setSkillsBudget: { method: "POST", path: "/api/skills/budget", scope: "brain:write", input: SkillsBudgetInput },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;

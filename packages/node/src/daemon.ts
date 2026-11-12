@@ -15,7 +15,7 @@ import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "./archive/adapters.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { boardSource, experimentSource } from "./archive/external.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
@@ -26,6 +26,7 @@ import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
 import { QuestBoard } from "./quests.ts";
+import { skillAsker, SkillsService } from "./skills.ts";
 import { WorldHub } from "./world-hub.ts";
 import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
@@ -34,7 +35,7 @@ import { ConnectorService } from "./connectors.ts";
 import { assess, loopNotice } from "./heartbeat.ts";
 import { heartbeatView } from "./heartbeat-world.ts";
 import { companionOf } from "./journal.ts";
-import { computeUpkeep, heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
+import { cheapestRole, computeUpkeep, heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
@@ -373,6 +374,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // strokes as one; each as trusted as the least trusted hand on it): archive/external.ts.
       experimentsAdapter(experimentSource(experiments)),
       boardsAdapter(boardSource(board)),
+      // His skills (skills.ts): each version, once it's his to use.
+      skillsAdapter(store),
     ],
   });
   if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();
@@ -454,6 +457,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const quests = new QuestBoard();
   world.setQuests(() => quests.world());
   quests.onChange(() => world.questsChanged());
+  // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat;
+  // the world hears of each one learned or used (the books on his library's shelves).
+  const skills = new SkillsService({ store, identity, log, ledger, role: () => cheapestRole(taskDeps), ask: skillAsker({ store, vault, governor, fetch: opts.fetch }), onChange: () => world.skillsChanged() });
+  world.setSkills(() => skills.world());
+  taskDeps.skills = skills;
 
   const shutdown = new AbortController();
   const app = createApp({
@@ -490,6 +498,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     eyes,
     review: { run: reviewWorld, state: reviewState },
     archive,
+    skills,
     ledger,
     shutdown: shutdown.signal,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),

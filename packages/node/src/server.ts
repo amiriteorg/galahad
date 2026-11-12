@@ -103,6 +103,7 @@ import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts
 import { fenceMemories } from "./archive/retrieval.ts";
 import type { ArchiveService } from "./archive/service.ts";
 import { ArchiveError } from "./archive/store.ts";
+import { type GivenSkills, SkillError, type SkillsService, type SkillWriter } from "./skills.ts";
 import { type Eyes, EyesError } from "./eyes.ts";
 import type { ReviewResult, ReviewState } from "./world-review.ts";
 import type { Assets } from "./assets.ts";
@@ -176,6 +177,8 @@ export interface AppContext {
   review: { run(places?: readonly EyesPlace[], signal?: AbortSignal): Promise<ReviewResult>; state: ReviewState };
   /** The archive: what this node keeps for good, and searches by words and meaning. */
   archive: ArchiveService;
+  /** His skills: learned from quests that passed review, offered as data, kept in order by you. */
+  skills: SkillsService;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
@@ -208,7 +211,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
-const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "experiment", "experimentRecording", "archiveSearch", "archiveEntry"]);
+const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "experiment", "experimentRecording", "archiveSearch", "archiveEntry", "skill"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -735,6 +738,8 @@ export function createApp(ctx: AppContext) {
    * answering you, never to an outside agent or another node.
    */
   const archiveHidden = (p: Principal): string[] => (isOwner(p) || (p.kind === "arm" && p.label === GALAHAD_ARM) ? [] : ["chat"]);
+  /** What the archive's own context leaves out: his skills too (he is given those through their own fence, by where each stands now). */
+  const contextHidden = (p: Principal): string[] => [...archiveHidden(p), "skill"];
   const archiveErrors = async <T,>(work: () => Promise<T> | T): Promise<T> => {
     try {
       return await work();
@@ -743,6 +748,69 @@ export function createApp(ctx: AppContext) {
       throw error;
     }
   };
+  /*
+   * His skills (skills.ts). A quest is his own when you run it (a terminal, a paired device) or one of his loops
+   * does (an arm the node minted for that run, `loop.<name>`: no agent can be given such a name). Only those are
+   * given his skills and may teach one; any other agent proposes a skill in words, and that waits for you.
+   */
+  const hisOwnQuest = (p: Principal): boolean => isOwner(p) || (p.kind === "arm" && !!p.label?.startsWith("loop."));
+  /** The quest as his skills' record names it: yours by its id, a loop's under its arm's name. */
+  const questRef = (p: Principal, id: string): string => (p.kind === "arm" ? `${armQuest(p.label!)}.${id}` : id).slice(0, 100);
+  function skillWriter(p: Principal): SkillWriter {
+    if (isOwner(p)) return { kind: "owner", ...(p.kind === "client" ? { via: p.device } : {}) };
+    // What he writes when asked in a chat is shaped by everything that chat held: it waits for you, like an agent's.
+    if (p.kind === "arm" && p.label === GALAHAD_ARM) return { kind: "galahad", trust: "untrusted", source: "written in a chat" };
+    if (p.kind === "arm" && p.label) return { kind: "agent", label: p.label };
+    throw new HttpError(403, "only you, Galahad and your agents write skills");
+  }
+  const skillErrors = async <T,>(work: () => Promise<T> | T): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof SkillError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
+  function ownerOfSkills(p: Principal): string | undefined {
+    if (!isOwner(p)) throw new HttpError(403, "only you approve, lock, retire and roll back his skills");
+    return p.kind === "client" ? p.device : undefined;
+  }
+  /** The skills a quest's call is given (never its reviewer's: it judges the evidence alone). */
+  function questSkills(quest: { id: string; goal: string } | undefined, role: string | undefined, p: Principal): GivenSkills | null {
+    if (!quest) return null;
+    if (!hisOwnQuest(p)) throw new HttpError(403, "only his own quests are given his skills");
+    if (role === "reviewer") return null;
+    try {
+      return ctx.skills.forQuest(questRef(p, quest.id), quest.goal);
+    } catch (error) {
+      ctx.log(`skills: ${(error as Error).message}`);
+      return null;
+    }
+  }
+  /** The skills that bear on a question of yours in chat (none, and a line in the log, if they can't be read). */
+  function answerSkills(question: string): GivenSkills | null {
+    try {
+      return ctx.skills.forAnswer(question);
+    } catch (error) {
+      ctx.log(`skills: ${(error as Error).message}`);
+      return null;
+    }
+  }
+  /** His tools for an answer. In a chat where he read the bank he's offered no way to write a skill: none is ever drawn from one. */
+  const toolsIn = (scopes: readonly string[], kept: ConversationSummary | null) => (kept?.bank ? toolsFor(scopes).filter((t) => t.name !== "skill_write") : toolsFor(scopes));
+  /**
+   * Why a call was given others' words by this node itself: untrusted memories recalled for it (the same recall
+   * memoryContext makes), untrusted archived entries among its steps. None: nothing untrusted went with it.
+   */
+  function othersWords(asked: ChatMessage, steps: StoredStep[]): string[] {
+    const why: string[] = [];
+    if (asked.role === "user" && ctx.store.recall(asked.content, 8).some((m) => m.trust === "untrusted")) why.push("its planner or engineer was given untrusted memories");
+    if (steps.some((s) => s.kind === "archive" && s.entries.some((e) => e.trust === "untrusted"))) why.push("its planner or engineer was given untrusted archived entries");
+    return why;
+  }
+  /** The skills as an answer's step: shown wherever the archive's entries are (kind "skill"). */
+  const skillsStep = (given: GivenSkills): ChatStreamEvent => ({ type: "archive", entries: given.skills.map((s) => ({ id: s.id, title: s.title, kind: "skill", trust: s.trust })) });
+
   function ownerOfArchive(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "only you change the archive this way");
   }
@@ -944,7 +1012,8 @@ export function createApp(ctx: AppContext) {
   function prepareAnswer(input: ChatInput, p: Principal) {
     // Every message goes to a provider, whoever "said" it, so all of them are scanned.
     guardAgainstSecrets(...input.messages.map((m) => m.content));
-    const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, ...request } = input;
+    const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, quest, ...request } = input;
+    if (quest && !hisOwnQuest(p)) throw new HttpError(403, "only his own quests are given his skills");
     const asked = request.messages.at(-1)!;
     // Kept chats are yours alone: an agent (or a quest) never writes into your history.
     if ((save || continued) && !isOwner(p)) throw new HttpError(403, "only you keep chats");
@@ -972,7 +1041,7 @@ export function createApp(ctx: AppContext) {
     const known = [project ? projectContext(project) : null, asked.role === "user" ? memoryContext(asked.content) : null].filter(Boolean).join("\n\n") || undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
-    return { request, wantTools, kept, messages, asked, project, known, fromArchive, attempt };
+    return { request, wantTools, kept, messages, asked, project, known, fromArchive, attempt, quest };
   }
 
   /** His tools' way into the node, noting what a turn leaves waiting on you: approvals it filed, keys it asked for. */
@@ -1011,7 +1080,7 @@ export function createApp(ctx: AppContext) {
       waits,
       run: async function* (steering, signal) {
         // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
-        const tools = chatTools(toolsFor(agent.scopes), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
+        const tools = chatTools(toolsIn(agent.scopes, kept), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
         const shown: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
         const seen = worldWatcher(role, false, shown);
         let leave: (() => void) | null = null;
@@ -1022,13 +1091,21 @@ export function createApp(ctx: AppContext) {
           answered = ctx.archive.answering();
           let context = known;
           if (fromArchive) {
-            const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+            const found = await ctx.archive.context(asked.content, { hideKinds: contextHidden(p) }).catch((error) => {
               ctx.log(`archive context: ${(error as Error).message}`);
               return null;
             });
             if (found) {
               context = [known, found.text].filter(Boolean).join("\n\n");
               const event: ChatStreamEvent = { type: "archive", entries: found.entries };
+              keepStep(shown, event);
+              yield event;
+            }
+            // His skills that bear on your question, fenced as data like the rest (skills.ts).
+            const skills = answerSkills(asked.content);
+            if (skills) {
+              context = [context, skills.text].filter(Boolean).join("\n\n");
+              const event = skillsStep(skills);
               keepStep(shown, event);
               yield event;
             }
@@ -1357,12 +1434,12 @@ export function createApp(ctx: AppContext) {
       const ready = prepareAnswer(asked, p);
       if (owned) return watchTurn(turnErrors(() => ctx.turns.start(turnSpec(ready, p))), req, true);
 
-      const { request, wantTools, kept, messages, project, known, fromArchive, attempt } = ready;
+      const { request, wantTools, kept, messages, project, known, fromArchive, attempt, quest } = ready;
       // One of several attempts at a quest: a helper's call, shown as the helper's (he stays where he leads them from).
       const helper = attempt && ctx.compute.isHelper(attempt) ? attempt : null;
       // The same Galahad on every surface: his tools, within what the caller may do.
       const agent = galahadFor(p);
-      const tools = wantTools === false ? undefined : chatTools(toolsFor(agent.scopes), inProcess(agent, req.signal), explain, project ? { tag: `project:${project.id}` } : {});
+      const tools = wantTools === false ? undefined : chatTools(toolsIn(agent.scopes, kept), inProcess(agent, req.signal), explain, project ? { tag: `project:${project.id}` } : {});
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
@@ -1398,7 +1475,7 @@ export function createApp(ctx: AppContext) {
             answered = ctx.archive.answering();
             if (attempt) attemptEnded = ctx.compute.attemptBegin(attempt, { station: attemptStation(request.role ?? "planner"), doing: `The ${request.role ?? "planner"} is thinking` });
             if (fromArchive) {
-              const found = await ctx.archive.context(ready.asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+              const found = await ctx.archive.context(ready.asked.content, { hideKinds: contextHidden(p) }).catch((error) => {
                 ctx.log(`archive context: ${(error as Error).message}`);
                 return null;
               });
@@ -1409,6 +1486,15 @@ export function createApp(ctx: AppContext) {
                 send(event);
               }
             }
+            // A quest of his own: the skills that bear on its goal, the same block for every call of it (skills.ts).
+            const given = questSkills(quest, request.role, p);
+            if (given) {
+              context = [context, given.text].filter(Boolean).join("\n\n");
+              send(skillsStep(given));
+            }
+            // And what else this node gave the call that others wrote: a skill learned from a quest whose planner or
+            // engineer read others' words waits for you, whatever its sandbox could reach (skills.ts).
+            if (quest && request.role !== "reviewer") ctx.skills.gave(questRef(p, quest.id), othersWords(ready.asked, answer.steps));
             for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal: req.signal })) {
               keepStep(answer, event);
               seen(event);
@@ -2191,6 +2277,8 @@ export function createApp(ctx: AppContext) {
     revokeOrder: (input) => connectorErrors(() => ({ order: ctx.connectors.revoke(input.id) })),
     arms: () => ({ arms: ctx.arms.list() }),
     mintArm: (input) => {
+      // `loop.<name>` is the name the node gives its own loops' quests (his own work: skills.ts): never an agent's.
+      if (input.label.startsWith("loop.")) throw new HttpError(400, "names beginning loop. are his own loops'; choose another");
       try {
         return ctx.arms.mint(input.label, input.scopes);
       } catch (error) {
@@ -2268,6 +2356,27 @@ export function createApp(ctx: AppContext) {
       ownerOfArchive(p);
       ctx.archive.setBudget(input.summariesPerDay);
       return { understanding: ctx.archive.status().understanding };
+    },
+
+    // ---- His skills (skills.ts) ----------------------------------------------------
+    // Read like any memory; but only you read words that wait for your approval (no agent, and none of his own tools).
+    skills: (_input, p) => ctx.skills.view(isOwner(p)),
+    skill: (input, p) => skillErrors(() => ({ skill: ctx.skills.detail(input.id, isOwner(p)) })),
+    writeSkill: (input, p) => skillErrors(() => ctx.skills.write(input, skillWriter(p))),
+    learnSkill: (input, p, req) => {
+      // His own work only. Another agent's quest teaches him nothing by itself, and never spends his budget.
+      if (!hisOwnQuest(p)) throw new HttpError(403, "only his own quests teach him a skill; an agent proposes one in words (writeSkill)");
+      // What the node itself recorded of the quest's sandboxes: a loop's are its arm's, yours carry the quest's id.
+      const sandboxes = p.kind === "arm" ? armQuest(p.label!) : (input.sandbox ?? input.quest);
+      return longRunning(skillErrors(() => ctx.skills.learn(input, { ref: questRef(p, input.quest), sandboxes, signal: req.signal })));
+    },
+    approveSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.approve(input.id, input.version, ownerOfSkills(p)) })),
+    lockSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.mark(input.id, "locked", input.locked, ownerOfSkills(p)) })),
+    retireSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.mark(input.id, "retired", input.retired, ownerOfSkills(p)) })),
+    rollbackSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.rollback(input.id, ownerOfSkills(p)) })),
+    setSkillsBudget: (input, p) => {
+      ownerOfSkills(p);
+      return { budget: ctx.skills.setBudget(input.tokensPerDay) };
     },
   };
 

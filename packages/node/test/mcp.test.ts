@@ -196,6 +196,9 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "sandbox_exec",
         "sandbox_run",
         "sandbox_save",
+        "skill_read",
+        "skill_write",
+        "skills",
         "web_search",
       ].sort(),
     );

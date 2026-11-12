@@ -3,6 +3,8 @@ import type { MindStore } from "@galahad/mind";
 import type { ArtifactStore } from "../artifacts.ts";
 import { asText, extOf, mightBeModel, modelFacts, transcript } from "./chunk.ts";
 import type { IncomingEntry, IncomingFile } from "./store.ts";
+import { skillAuthor, skillInWords, versionUsable } from "@galahad/core";
+import { skillVersions } from "../skills.ts";
 
 /*
  * What goes into the archive, each source through an adapter that pulls by a cursor:
@@ -388,3 +390,47 @@ export const experimentsAdapter = (source: ExternalSource | null | undefined): A
 
 /** The whiteboard: each version of a board, by its description. */
 export const boardsAdapter = (source: ExternalSource | null | undefined): ArchiveAdapter => externalAdapter("boards", "board", source, { trust: "agent", tags: ["board"] });
+
+// ---- Skills: how he did a kind of work, as the mind keeps them ---------------------------
+
+/**
+ * His skills (skills.ts), a version at a time, once a version is his to use: trusted as written (yours, or
+ * his own from an isolated quest that passed review), or untrusted and approved by you. A version that waits
+ * for you isn't archived: the archive is searched by models. Each as its words in plain text, with who wrote
+ * it and from which quest; a later version is an entry of its own. The archive's own context never offers
+ * them (he is given skills through their own fence, by where each stands now); a search finds them as records.
+ */
+export function skillsAdapter(mind: Pick<MindStore, "skills">): ArchiveAdapter {
+  return {
+    name: "skills",
+    sweepEveryMs: DAY,
+    async pull(cursor, limit) {
+      const usable = mind.skills().flatMap((record) =>
+        skillVersions(record).flatMap((v) => {
+          if (!v.doc || !versionUsable(v)) return [];
+          // Ordered by when it became his to use: your approval, for an untrusted one.
+          return [{ key: `${pad(v.approvedAt ?? v.at)}:${v.id}`, item: { record, v, doc: v.doc } }];
+        }),
+      );
+      const { batch, more } = after(usable, cursor, limit);
+      return {
+        entries: batch.map(({ item: { record, v, doc } }) => ({
+          kind: "skill",
+          source: "skills",
+          sourceId: v.id,
+          title: doc.title,
+          description: [
+            skillInWords(doc),
+            `Written by ${skillAuthor(v.by)}${v.quest ? ` from quest ${v.quest}` : ""} (version ${v.n} of ${record.id})${v.trust === "untrusted" ? "; shaped by what was read from outside, and approved by you" : ""}.`,
+          ].join("\n\n"),
+          trust: v.trust,
+          createdAt: v.at,
+          tags: ["skill", ...(v.quest ? [v.quest] : [])],
+          meta: { skill: record.id, version: v.n, by: v.by },
+        })),
+        cursor: batch.at(-1)?.key ?? cursor,
+        more,
+      };
+    },
+  };
+}

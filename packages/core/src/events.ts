@@ -8,6 +8,7 @@ import { ProjectId } from "./chats.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
 import { Scope } from "./scopes.ts";
+import { SkillId, SkillVersionId } from "./skills-input.ts";
 import { TrialId, TrialRecord, TrialRunId } from "./trials.ts";
 
 /*
@@ -259,6 +260,26 @@ export const Bodies = {
     plan: Open,
     changes: z.array(z.string().max(400)).max(24),
   }),
+  /*
+   * Skills (skills.ts): how he did a kind of work, as words he reads. Every replica applies the same rules
+   * on replay (who may revise what, what a lock holds), so no node can record a change they don't allow.
+   */
+  /**
+   * A version of a skill: the first makes the skill, a later one revises it. Its words are open in the log
+   * (a field a newer node adds never makes an older one refuse it); its trust is the event's `prov`.
+   * `by`: owner, galahad, or arm:<label>. `quest`: the quest it was distilled from.
+   */
+  "skill.written": z.strictObject({ skill: SkillId, doc: Open, by: z.string().min(1).max(100), quest: z.string().max(64).optional() }),
+  /** You approved exactly this version: an untrusted one is given to a model only after that. The first approval stands. */
+  "skill.approved": z.strictObject({ skill: SkillId, version: SkillVersionId }),
+  /** A mark on a skill, the latest standing (locked, retired: yours; stale: the tidy-up's). A mark this node doesn't know is kept and ignored. */
+  "skill.marked": z.strictObject({ skill: SkillId, mark: z.string().regex(/^[a-z][a-z-]{0,31}$/), on: z.boolean() }),
+  /** One step back: the version before `from` is the skill's head again (`from` must be the head, so a rollback never undoes what you didn't see). */
+  "skill.reverted": z.strictObject({ skill: SkillId, from: SkillVersionId }),
+  /** A skill was given to a quest's planner (or, `chat:…`, to an answer): counted once per quest. */
+  "skill.used": z.strictObject({ skill: SkillId, version: SkillVersionId, quest: z.string().min(1).max(100) }),
+  /** How the quest that used it ended (done: its review passed). The first word stands. */
+  "skill.outcome": z.strictObject({ skill: SkillId, quest: z.string().min(1).max(100), status: z.string().regex(/^[a-z][a-z-]{0,31}$/) }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

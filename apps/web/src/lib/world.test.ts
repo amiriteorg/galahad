@@ -355,3 +355,32 @@ describe("the node asks for a frame from his eyes", () => {
     expect(applyWorldEvent(world, { type: "eyes", at: 9, request: { id: "ey_AbCdEfGhIjKlMnOp", width: 768 } })).toBe(world);
   });
 });
+
+describe("his skills, for the books on his library's shelves", () => {
+  const skills = { inUse: 3, proposed: 1, retired: 2, recent: [{ title: "Fix a failing test", at: 9, what: "used" as const }, { title: "Deploy the site", at: 5, what: "learned" as const }] };
+
+  test("hello carries them, and a skills event replaces them; an older node says nothing and the model holds none", () => {
+    expect(emptyWorld().skills).toBeNull();
+    const world = applyWorldEvent(emptyWorld(), readWorldEvent({ ...hello(), skills })!);
+    expect(world.skills).toEqual(skills);
+    const next = applyWorldEvent(world, readWorldEvent({ type: "skills", at: 12, skills: { ...skills, inUse: 4, recent: [{ title: "Write release notes", at: 12, what: "learned" }] } })!);
+    expect(next.skills).toEqual({ inUse: 4, proposed: 1, retired: 2, recent: [{ title: "Write release notes", at: 12, what: "learned" }] });
+    expect(next.at).toBe(12);
+    // A reconnect to an older node: its hello has no skills, and none are kept from before.
+    expect(applyWorldEvent(next, readWorldEvent(hello())!).skills).toBeNull();
+  });
+
+  test("they're read at the boundary: counts and titles only, bounded, and what isn't a skills view is dropped", () => {
+    const read = readWorldEvent({ type: "skills", at: 3, skills: { ...skills, steps: ["never sent"], recent: [...skills.recent, { title: "x", at: 1, what: "stolen" }, ...Array.from({ length: 20 }, (_, i) => ({ title: `t${i}`, at: i, what: "used", doc: "no" }))] } });
+    expect(read).toMatchObject({ type: "skills", at: 3 });
+    const got = (read as Extract<WorldEvent, { type: "skills" }>).skills;
+    expect(Object.keys(got).sort()).toEqual(["inUse", "proposed", "recent", "retired"]);
+    expect(got.recent.length).toBeLessThanOrEqual(6);
+    expect(got.recent.every((r) => Object.keys(r).join() === "title,at,what")).toBe(true);
+    for (const bad of [undefined, null, 7, [], { inUse: -1, proposed: 0, retired: 0, recent: [] }, { inUse: 1, proposed: 0, retired: 0 }]) expect(readWorldEvent({ type: "skills", at: 3, skills: bad })).toBeNull();
+    // In a hello, a skills view it can't read is left out; the rest of the hello stands.
+    const bare = readWorldEvent({ ...hello(), skills: { inUse: "many" } });
+    expect(bare).not.toBeNull();
+    expect((bare as Extract<WorldEvent, { type: "hello" }>).skills).toBeUndefined();
+  });
+});

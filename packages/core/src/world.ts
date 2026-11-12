@@ -15,6 +15,7 @@ import type { BoardChange } from "./board.ts";
 import type { SavedSummary } from "./experiments.ts";
 import type { WorldCompute } from "./world-compute.ts";
 import type { WorldQuest } from "./world-quest.ts";
+import type { WorldSkills } from "./skills.ts";
 
 /** A shape a simulated body is drawn as (metres; local frame, z up). */
 export type BodyShape =
@@ -200,7 +201,11 @@ export type WorldEvent =
       companion?: WorldCompanion;
       /** The quests in hand and just ended, as the world draws them on his slate (world-quest.ts). Absent from older nodes. */
       quests?: WorldQuest[];
+      /** His skills, for the books on his library's shelves: how many stand where, the last few learned or used (skills.ts). Absent from older nodes. */
+      skills?: WorldSkills;
     }
+  /** A skill was learned, used, approved or retired (skills.ts): the counts and the latest titles again. Older pages ignore it. */
+  | { type: "skills"; at: number; skills: WorldSkills }
   /** A quest's plan, stage, command or gates changed, one ended, or an ended one was wiped (world-quest.ts). Older pages ignore it. */
   | { type: "quests"; at: number; quests: WorldQuest[] }
   /** The owner named his dog, or took the name back (null). Older pages ignore it. */

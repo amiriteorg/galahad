@@ -16,8 +16,10 @@ import {
   type SandboxNetwork,
   type SandboxView,
   SECRET_REDIRECT,
+  type SkillLearned,
 } from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
+import { learnedLines, learnFromQuest, type QuestTrail, questTrail } from "./skills-quest.ts";
 import {
   AGENTS,
   attemptInstructions,
@@ -384,6 +386,8 @@ interface Workshop {
   host: string;
   exec: Exec;
   gitToken: string | null;
+  /** What its quest ran, for his skills (skills-quest.ts): commands and exit codes, never what they printed. */
+  trail: QuestTrail;
 }
 
 type Agent = NonNullable<QuestOptions["agent"]>;
@@ -406,7 +410,7 @@ async function openWorkshop(node: NodeClient, options: DoOptions, quest: string,
   const fleet = await node.call<FleetView>("fleet").catch(() => null);
   const host = fleet?.devices.find((d) => d.id === sandbox.node)?.name ?? sandbox.node;
   const exec: Exec = (command, timeoutSec) => node.call<ExecResult>("execSandbox", { id: sandbox.id, cmd: ["bash", "-c", command], timeoutSec, on: sandbox.node });
-  return { quest, sandbox, host, exec, gitToken: null };
+  return { quest, sandbox, host, exec, gitToken: null, trail: questTrail() };
 }
 
 /** The quest itself, in its workshop: the repository cloned if there is one, plan, work, review, and its changes kept as a patch. */
@@ -415,7 +419,7 @@ async function workIn(
   options: DoOptions,
   shop: Workshop,
   agent: Agent | undefined,
-  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number },
+  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string },
 ): Promise<QuestOutcome> {
   const { exec } = shop;
   if (options.agent?.repo) {
@@ -454,6 +458,8 @@ async function workIn(
           tools: false,
           // The archive's relevant entries go with the plan (the start), not with every step.
           ...(role === "planner" && messages.length === 1 ? { archive: true } : {}),
+          // His skills that bear on the goal go with the plan and the work (never the review): the node chooses them once a quest.
+          ...(role !== "reviewer" && options.remember !== false ? { quest: { id: run.quest ?? shop.quest, goal: options.goal.slice(0, 4000) } } : {}),
           // One of several attempts: its planner and engineer start at another of the role's models (the
           // reviewer is the same independent reviewer for all), and the node shows the call as a helper's.
           ...(run.tag ? { attempt: run.tag, ...(role !== "reviewer" && run.tag.index > 1 ? { rotate: run.tag.index - 1 } : {}) } : {}),
@@ -466,7 +472,7 @@ async function workIn(
         return { text, model };
       },
       exec,
-      emit: run.emit,
+      emit: (event) => (shop.trail.on(event), run.emit?.(event)),
       signal: run.signal,
     },
   );
@@ -516,7 +522,7 @@ export async function runNodeQuest(
   node: NodeClient,
   given: DoOptions,
   hooks: NodeQuestHooks = {},
-): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone }> {
+): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone; learned?: SkillLearned | null }> {
   // Before anything is created: the gates are checked as any input is.
   const options: DoOptions = { ...given, gates: checkGates(given.gates) };
   const quest = questId();
@@ -531,6 +537,8 @@ export async function runNodeQuest(
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
   let effort: EffortDone | undefined;
+  /** The workshop whose work the outcome is (with effort: the attempt taken). */
+  let worked: Workshop | null = null;
   if (attempts === 1) {
     // The node shows a quest whose effort it granted (as his own work: there's one attempt).
     const tag = grant ? { quest: grant.quest, index: 1, of: 1 } : undefined;
@@ -539,6 +547,7 @@ export async function runNodeQuest(
     try {
       const shop = await openWorkshop(node, options, quest, agent, tag);
       hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+      worked = shop;
       try {
         outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}) });
         await hooks.finished?.(shop.exec);
@@ -579,6 +588,8 @@ export async function runNodeQuest(
                 instructions: attemptInstructions(index, of),
                 // Parallel sub-steps too: independent commands may run at once inside each sandbox.
                 parallelCommands: of,
+                // His skills are chosen once for the quest: every attempt reads the same ones.
+                quest,
               });
               return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
             } catch (error) {
@@ -610,6 +621,7 @@ export async function runNodeQuest(
     }
     outcome = result.outcome;
     const taken = result.taken?.handle ?? null;
+    worked = taken;
     try {
       if (taken) await hooks.finished?.(taken.exec);
     } finally {
@@ -622,6 +634,11 @@ export async function runNodeQuest(
 
   const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
   if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}) };
+  // His skills (skills-quest.ts), in one call now that the review is over: the outcome is recorded against the skills this
+  // quest was given and, if it passed, the node may distil one. What it answers is only what the mind now holds.
+  const learned = worked
+    ? await learnFromQuest(node, { quest, sandbox: worked.quest, goal: options.goal, network: options.network, repo: Boolean(options.agent?.repo), agent: options.agent?.name, outcome, trail: worked.trail })
+    : null;
   // The mind remembers what was done. Marked untrusted: the summary is model
   // output shaped by whatever the sandbox read, so it stays data, never instructions.
   const memory = redact(
@@ -634,12 +651,13 @@ export async function runNodeQuest(
         ? `Effort ${effort.attempts.length + effort.failed.length}: ${[...effort.attempts.map((a) => `attempt ${a.index} ${a.status}`), ...effort.failed.map((f) => `attempt ${f.index} didn't run`)].join(", ")}. Taken: attempt ${effort.pick.index} (${effort.pick.reason.trim().split("\n")[0]})`
         : "",
       artifact ? `Kept: artifact ${artifact.id} (${artifact.count} file(s): ${artifact.files.slice(0, 8).map((f) => f.path).join(", ")})` : "",
+      ...learnedLines(learned),
     ]
       .filter(Boolean)
       .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}) };
+  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), learned };
 }
 
 /** Passed work on a GitHub clone: file github.ship for your approval (a standing order may answer it at once). */
@@ -719,8 +737,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   let artifact: ArtifactView | null = null;
   let shipped: Shipped | undefined;
   let effort: EffortDone | undefined;
+  let learned: SkillLearned | null | undefined;
   try {
-    ({ outcome, artifact, shipped, effort } = await runNodeQuest(node, options, {
+    ({ outcome, artifact, shipped, effort, learned } = await runNodeQuest(node, options, {
       // One attempt reads as ever; several are told apart, a line each.
       emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : print(event)),
       signal: controller.signal,
@@ -755,6 +774,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   if (shipped?.action) console.log(`\n${bold("◇ Pull request filed for your approval")} ${dim(`· galahad action approve ${shipped.action} · or the Inbox`)}`);
   if (shipped?.receipt) console.log(`\n${bold("◇ Shipped under your standing order:")} ${shipped.receipt}`);
   if (shipped?.problem) console.log(dim(`\n${shipped.problem}`));
+  // His skills: said only as the node said it (what's in the mind), and why nothing was learned from a passed quest.
+  for (const line of learnedLines(learned ?? null, true)) console.log(dim(`\n${line}`));
+  if (learned && !learned.skill && learned.why && outcome.status === "done") console.log(dim(`\nNo skill learned: ${learned.why}.`));
   return outcome;
 }
 

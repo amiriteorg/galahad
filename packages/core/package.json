@@ -18,6 +18,7 @@
     "./qr": "./src/qr.ts",
     "./request-auth": "./src/request-auth.ts",
     "./secret-scan": "./src/secret-scan.ts",
+    "./skills": "./src/skills.ts",
     "./turns": "./src/turns.ts",
     "./world": "./src/world.ts",
     "./world-compute": "./src/world-compute.ts",
