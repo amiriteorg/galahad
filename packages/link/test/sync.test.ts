@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { b64u, type GEvent, newNodeIdentity, type NodeIdentity, SyncRequest } from "@galahad/core";
 import { type Device, enrollDevice, foundFleet, MindStore } from "@galahad/mind";
-import { answerSync, SyncEngine } from "../src/index.ts";
+import { answerPush, answerSync, SyncEngine } from "../src/index.ts";
 
 /*
  * The sync engine against a peer that answers like today's nodes, and like the nodes from
@@ -93,6 +93,64 @@ describe("the sync engine", () => {
     expect(storeB.digest()).toBe(storeA.digest());
     expect(seen.bodies.length).toBeGreaterThan(0);
     for (const body of seen.bodies) expect(Object.keys(body)).toEqual(["have"]);
+  });
+
+  test("a push that overtook its predecessor, or whose predecessor was lost, waits for the pull: nothing is refused and the log is never replayed", async () => {
+    const { a, b, storeA, storeB } = fleet();
+    const engine = new SyncEngine(storeB, b, { fetch: today(storeA, { bodies: [], largest: 0 }) });
+    await engine.pullFrom(peer(a));
+    expect(storeB.digest()).toBe(storeA.digest());
+    // Every replay b makes from here on is seen.
+    let replays = 0;
+    const ingest = storeB.ingest.bind(storeB);
+    storeB.ingest = (raws) => {
+      const result = ingest(raws);
+      if (result.rebuilt) replays++;
+      return result;
+    };
+    const entry = (n: number) => storeA.emit(a, "ledger.recorded", { class: "create", resource: "sandbox.exec", target: `late${n}`, verdict: "allow" });
+    const [e1, e2, e3] = [entry(1), entry(2), entry(3)];
+    const e4 = storeA.remember(a, "what the step learned");
+
+    // e2 arrives first (each fresh event is its own request, and requests race).
+    expect(answerPush(storeB, [e2])).toEqual({ added: 0, deferred: 1 });
+    expect(storeB.event(e2.id)).toBeNull();
+    expect(storeB.rejection(e2.id)).toBeNull();
+    // Then its predecessor: taken. e3 was lost on the way; e4 can't be taken without it.
+    expect(answerPush(storeB, [e1])).toEqual({ added: 1, deferred: 0 });
+    expect(answerPush(storeB, [e4])).toEqual({ added: 0, deferred: 1 });
+    // A copy of what's held is neither new nor waiting.
+    expect(answerPush(storeB, [e1])).toEqual({ added: 0, deferred: 0 });
+    expect(replays).toBe(0);
+
+    // The pull brings the rest in order.
+    await engine.pullFrom(peer(a));
+    for (const event of [e1, e2, e3, e4]) expect(storeB.rejection(event.id)).toBeNull();
+    expect(storeB.digest()).toBe(storeA.digest());
+    expect(storeB.deviceDigests()).toEqual(storeA.deviceDigests());
+    expect(replays).toBe(0);
+  });
+
+  test("a push takes a whole run in any order, a first event from a device not known yet, and leaves what isn't an event to the log's own checks", () => {
+    const { a, storeA, storeB } = fleet();
+    storeB.ingest(storeA.eventsSince({}, 10_000).events);
+    const run = [1, 2, 3].map((n) => storeA.emit(a, "ledger.recorded", { class: "create", resource: "sandbox.exec", target: `run${n}`, verdict: "allow" }));
+    expect(answerPush(storeB, [run[2], run[0], run[1]])).toEqual({ added: 3, deferred: 0 });
+    expect(storeB.digest()).toBe(storeA.digest());
+
+    // A node enrolled on a replica this one hasn't heard from yet: its first event is parked, as ever.
+    const c = newNodeIdentity();
+    const storeC = new MindStore(":memory:");
+    storeC.expectFleet(storeA.fleet!);
+    storeC.ingest(storeA.eventsSince({}, 10_000).events);
+    enrollDevice(storeC, a, { device: c.id, name: "c", kind: "node", box: b64u(c.boxPublic) });
+    const first = storeC.emit(c, "ledger.recorded", { class: "read", resource: "fleet", target: "hello", verdict: "allow" });
+    expect(first.prev).toBeNull();
+    expect(answerPush(storeB, [first])).toEqual({ added: 0, deferred: 0 });
+    expect(storeB.pendingCount()).toBe(1);
+
+    expect(answerPush(storeB, [null, 7, "x", { id: "nope" }, { ...run[0], sig: "AAAA" }])).toEqual({ added: 0, deferred: 0 });
+    expect(storeB.digest()).toBe(storeA.digest());
   });
 
   test("today's nodes accept an older node's digests and ignore them: no repair, no whole log", () => {

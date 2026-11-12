@@ -84,7 +84,7 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
+import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
 import type { GovernedSandboxHost } from "./compute/governed-host.ts";
@@ -2347,7 +2347,7 @@ export function createApp(ctx: AppContext) {
         return json({ ...answerSync(ctx.store, SyncRequest.parse(payload)), presence: await ctx.presence() });
       }
       const { events } = PushRequest.parse(payload);
-      return json({ added: ctx.store.ingest(events).added });
+      return json(answerPush(ctx.store, events));
     }
 
     if (path.startsWith("/api/")) {
