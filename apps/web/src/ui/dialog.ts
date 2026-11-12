@@ -33,6 +33,12 @@ export interface Sheet {
 
 const phone = () => matchMedia("(max-width: 639px)").matches;
 
+/** The page an address is on: its first part (`#/chat/cv_…` is the chat page). */
+export const pageOf = (hash: string): string => hash.match(/^#\/([a-z][a-z-]*)/)?.[1] ?? "";
+
+/** Whether going from one address to another leaves the page (and so whatever sheet is open on it). */
+export const leavesPage = (from: string, to: string): boolean => pageOf(from) !== pageOf(to);
+
 export function openSheet(options: SheetOptions): Sheet {
   const scope = new Scope();
   const titleId = nextId("sheet-title");
@@ -134,6 +140,11 @@ export function openSheet(options: SheetOptions): Sheet {
     target.addEventListener("pointerup", onUp);
     target.addEventListener("pointercancel", onUp);
   }
+
+  // A sheet belongs to the page it was opened on: going to another (the phone's back gesture, a link in the
+  // sheet) closes it, instead of leaving it open over a page it has nothing to do with.
+  const openedOn = location.hash;
+  window.addEventListener("hashchange", () => leavesPage(openedOn, location.hash) && close(), { signal: scope.signal });
 
   document.body.appendChild(el);
   el.showModal();
