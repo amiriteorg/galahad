@@ -3,7 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, type NodeIdentity } from "@galahad/core";
-import { GatewayTokens, pinLegacyKeys } from "@galahad/brain";
+import { type BrainContext, GatewayTokens, pinLegacyKeys } from "@galahad/brain";
+import { UsageStore } from "./usage.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
@@ -219,6 +220,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   local.exec("PRAGMA journal_mode = WAL");
   const tokens = new GatewayTokens(local);
   const arms = new ArmTokens(local);
+  // This node's own count of its model calls (usage.ts): node-local, counts only, never the mind's log.
+  const usage = new UsageStore(local);
+  /** His own upkeep's calls (the journal, the heartbeat's words, his skills, the archive), counted as his. */
+  const upkeepSpent: NonNullable<BrainContext["spent"]> = (call) => usage.note("galahad", call.role, call.ref, call.usage);
 
   const port = env.GALAHAD_PORT ?? config.port;
   let caps = opts.capabilities ?? (await probeCapabilities());
@@ -383,7 +388,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
   const archive = new ArchiveService({
     store: archiveStore,
-    brain: { store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}) },
+    brain: { store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}), spent: upkeepSpent },
     mind: store,
     identity,
     nodeName: config.name,
@@ -425,6 +430,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     log,
     fetch: opts.fetch,
     compute,
+    spent: upkeepSpent,
   };
   // This node's own upkeep of its compute, one look at a time: it measures itself when that's due.
   let upkeeping: Promise<unknown> | null = null;
@@ -484,7 +490,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   quests.onChange(() => world.questsChanged());
   // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat;
   // the world hears of each one learned or used (the books on his library's shelves).
-  const skills = new SkillsService({ store, identity, log, ledger, role: () => cheapestRole(taskDeps), ask: skillAsker({ store, vault, governor, fetch: opts.fetch }), onChange: () => world.skillsChanged() });
+  const skills = new SkillsService({ store, identity, log, ledger, role: () => cheapestRole(taskDeps), ask: skillAsker({ store, vault, governor, fetch: opts.fetch, spent: upkeepSpent }), onChange: () => world.skillsChanged() });
   world.setSkills(() => skills.world());
   taskDeps.skills = skills;
 
@@ -592,6 +598,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     review: { run: reviewWorld, state: reviewState },
     archive,
     skills,
+    usage,
     ledger,
     shutdown: shutdown.signal,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),

@@ -59,6 +59,9 @@ import {
   type TrialRunsView,
   TrialRunSettings,
   type TrialView,
+  TrialSpent,
+  type Usage,
+  type UsageView,
   ComputeLimit,
   COMPUTE_RESOURCE,
   type Station,
@@ -96,6 +99,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore, KeptSummary, QueuedBy, Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
+import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ExperimentError } from "./experiment-store.ts";
@@ -186,6 +190,8 @@ export interface AppContext {
   archive: ArchiveService;
   /** His skills: learned from quests that passed review, offered as data, kept in order by you. */
   skills: SkillsService;
+  /** This node's own count of its model calls (usage.ts): tokens as the providers report them, never a prompt or an answer. */
+  usage: UsageStore;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches the world (tests pass a stand-in). */
@@ -668,6 +674,13 @@ export function createApp(ctx: AppContext) {
 
   /** You, at a terminal or on a paired device: never an agent, never another node. */
   const isOwner = (p: Principal) => p.kind === "admin" || p.kind === "client";
+  /** Whose model calls these are, in this node's count of them: yours, an agent's (a loop's quest is arm:loop.<name>), a node's. */
+  const whoOf = (p: Principal): string => (isOwner(p) ? "you" : p.kind === "arm" ? `arm:${p.label ?? "unnamed"}` : `node:${ctx.store.device(p.device)?.name ?? p.device.slice(0, 12)}`);
+  /** The brain, counting what each call cost on this node (counts only). */
+  const brainFor = (p: Principal) => {
+    const who = whoOf(p);
+    return { store: ctx.store, vault: ctx.vault, spent: (call: { role: string; ref: string; usage: Usage | null }) => ctx.usage.note(who, call.role, call.ref, call.usage) };
+  };
   function ownerOnly(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "chats are yours alone");
   }
@@ -954,9 +967,20 @@ export function createApp(ctx: AppContext) {
   const attemptStation = (role: string): Station => (role === "planner" ? "council" : role === "reviewer" ? "observatory" : "forge");
 
   function trialViews(): TrialView[] {
+    // What each trial's model calls came to, where it was recorded (read leniently: a shape this node can't read is left out).
+    const spent = new Map<string, TrialSpent>();
+    for (const entry of ctx.store.lwwPrefix<unknown>("trial-spent:")) {
+      const read = TrialSpent.safeParse(entry.value);
+      if (read.success) spent.set(entry.key.slice("trial-spent:".length), read.data);
+    }
     return ctx.store
       .lwwPrefix<TrialRecord & { id: string }>("trial:")
-      .map((entry) => ({ ...entry.value!, recordedAt: Number(entry.hlc.split(".")[0]), nodeName: ctx.store.device(entry.device)?.name ?? entry.device.slice(0, 12) }))
+      .map((entry) => ({
+        ...entry.value!,
+        recordedAt: Number(entry.hlc.split(".")[0]),
+        nodeName: ctx.store.device(entry.device)?.name ?? entry.device.slice(0, 12),
+        ...(spent.has(entry.value!.id) ? { spent: spent.get(entry.value!.id)! } : {}),
+      }))
       .sort((a, b) => b.recordedAt - a.recordedAt);
   }
 
@@ -1120,7 +1144,7 @@ export function createApp(ctx: AppContext) {
               yield event;
             }
           }
-          for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal, steering })) {
+          for await (const event of chat(brainFor(p), { ...request, messages, tools, context, signal, steering })) {
             keepStep(shown, event);
             seen(event);
             yield event;
@@ -1263,7 +1287,7 @@ export function createApp(ctx: AppContext) {
         try {
           leave = await ctx.governor.enterModel({ wait: false }, req.signal);
           // No tools: answering a side question can do nothing, whatever it's asked.
-          for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { role, messages, signal: req.signal })) {
+          for await (const event of chat(brainFor(p), { role, messages, signal: req.signal })) {
             if (event.type === "text") answer += event.text;
             else if (event.type === "model" || event.type === "done") model = event.ref;
             else if (event.type === "error") failed = true;
@@ -1505,7 +1529,7 @@ export function createApp(ctx: AppContext) {
             // And what else this node gave the call that others wrote: a skill learned from a quest whose planner or
             // engineer read others' words waits for you, whatever its sandbox could reach (skills.ts).
             if (quest && request.role !== "reviewer") ctx.skills.gave(questRef(p, quest.id), othersWords(ready.asked, answer.steps));
-            for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal: req.signal })) {
+            for await (const event of chat(brainFor(p), { ...request, messages, tools, context, signal: req.signal })) {
               keepStep(answer, event);
               seen(event);
               send(event);
@@ -1953,9 +1977,26 @@ export function createApp(ctx: AppContext) {
     },
     trials: () => ({ trials: trialViews(), runs: trialRuns() }),
     startTrialRun: (input) => {
-      ctx.store.emit(ctx.identity, "trial.run", { run: input.run, suite: input.suite, settings: { effort: input.effort, ...(input.parallel ? { parallel: input.parallel } : {}) } });
-      return { run: input.run, settings: trialRuns()[input.run] };
+      const { run, suite, ...settings } = input;
+      ctx.store.emit(ctx.identity, "trial.run", { run, suite, settings: JSON.parse(JSON.stringify(settings)) });
+      return { run, settings: trialRuns()[run] };
     },
+    // ---------- what model calls cost: your prices, and this node's own count ----------
+    prices: () => ({ prices: pricesOf(ctx.store) }),
+    setPrice: (input, p) => {
+      // What "cheaper" means is yours to say: never an agent's (they can't hold brain:write), never a node's on its own.
+      if (!isOwner(p)) throw new HttpError(403, "only you state prices");
+      const { model, ...price } = input;
+      ctx.store.emit(ctx.identity, "price.set", { model, price: JSON.parse(JSON.stringify(price)) }, p.kind === "client" ? { via: p.device, trust: "owner" } : undefined);
+      return { prices: pricesOf(ctx.store) };
+    },
+    removePrice: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you state prices");
+      if (!pricesOf(ctx.store)[input.model]) throw new HttpError(404, `no price for ${input.model}`);
+      ctx.store.emit(ctx.identity, "price.removed", { model: input.model }, p.kind === "client" ? { via: p.device, trust: "owner" } : undefined);
+      return { prices: pricesOf(ctx.store) };
+    },
+    usage: (input): UsageView => ({ node: ctx.nodeName, ...ctx.usage.rows(input.days ?? 30), prices: pricesOf(ctx.store) }),
 
     // ---------- compute: what the fleet can carry, and how he spends it ----------
     compute: () => ctx.compute.view(),
@@ -2013,7 +2054,10 @@ export function createApp(ctx: AppContext) {
       if (problem) throw new HttpError(400, problem);
       if (input.note) guardAgainstSecrets(input.note);
       const id = `tr_${randomId(16)}`;
-      ctx.store.emit(ctx.identity, "trial.scored", { id, ...input, ...(input.note ? { note: redact(input.note).slice(0, 1000) } : {}) });
+      const { spent, ...record } = input;
+      ctx.store.emit(ctx.identity, "trial.scored", { id, ...record, ...(record.note ? { note: redact(record.note).slice(0, 1000) } : {}) });
+      // What it spent goes beside it (a kind of its own, so a node that predates it still takes the trial): counts only.
+      if (spent?.length) ctx.store.emit(ctx.identity, "trial.spent", { trial: id, spent: { lines: spent } });
       return { trial: trialViews().find((t) => t.id === id) };
     },
     bankStatus: () => bankErrors(async () => ctx.bank.status()),

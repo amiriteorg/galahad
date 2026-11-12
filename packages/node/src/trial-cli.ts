@@ -1,9 +1,33 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ComputeView, type EffortLevel, effortReport, galahadIndex, type SandboxNetwork, type TrialRecord, type TrialRunsView, type TrialView } from "@galahad/core";
+import {
+  addUsage,
+  type ComputeView,
+  costed,
+  costIndex,
+  costOf,
+  describeVariant,
+  type EffortLevel,
+  effortReport,
+  galahadIndex,
+  type HarnessOptions,
+  type Prices,
+  type SandboxNetwork,
+  spendLabel,
+  spendTotal,
+  tokensLabel,
+  type TrialPins,
+  type TrialRecord,
+  type TrialRunsView,
+  type TrialVariant,
+  type TrialView,
+  type Usage,
+  type UsageLine,
+  usdLabel,
+} from "@galahad/core";
 import { grade, pose, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
-import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
+import { type DoOptions, type NodeClient, runNodeQuest } from "./quest-cli.ts";
 
 /*
  * `galahad trial run`: each problem is posed with fresh random parameters, solved as
@@ -16,11 +40,58 @@ import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
  * that one's answers are graded (the grader never tells the reviewer which was right).
  * A run records its effort, so the Index per effort level says, with its interval,
  * whether more compute made him more capable.
+ *
+ * A run also records what else was held fixed or switched (a role pinned to one model, a
+ * named variant of the harness), counts what every model call cost as the providers
+ * reported it, and keeps to a budget: it says before it starts roughly what it will
+ * cost from past runs of the same problems, and stops cleanly when the budget is spent.
  */
+
+/** What one trial of something needs from the run it belongs to. */
+export interface TrialJob {
+  seed: number;
+  run: string;
+  suite: string;
+  version: string;
+  network: SandboxNetwork;
+  isolation?: "container" | "vm";
+  on?: string;
+  signal?: AbortSignal;
+  effort?: EffortLevel;
+  /** The harness switches of the run's variant (absent: as trials have always run). */
+  harness?: HarnessOptions;
+  /** Roles held to one model. */
+  pins?: TrialPins;
+  /** Every model call as it ends (the run's budget counts them as they come). */
+  spent?(call: { role: string; model: string; usage: Usage | null }): void;
+}
+
+/**
+ * Something a run can try: a problem of a suite that isn't the engineering one (an agentic task with hidden
+ * tests, a case put to the reviewer). It poses itself from the seed, does the work through the node, grades
+ * it by program, and hands back the record; the run adds what it spent and records it. Null: you stopped it.
+ */
+export interface TrialUnit {
+  id: string;
+  title: string;
+  domain: string;
+  /** Tokens one trial of it may be expected to cost when nothing is known from past runs (null: say unknown). */
+  attempt(node: NodeClient, job: TrialJob): Promise<TrialRecord | null>;
+}
+
+export type Tryable = TrialProblem | TrialUnit;
+const isUnit = (p: Tryable): p is TrialUnit => typeof (p as TrialUnit).attempt === "function";
+
+export interface TrialBudget {
+  /** Tokens in and out together, as the providers report them. */
+  tokens?: number;
+  /** US dollars, at your prices (needs a price for every model that answers). */
+  usd?: number;
+}
 
 export interface TrialRunOptions {
   suite: string;
-  problems: readonly TrialProblem[];
+  problems: readonly Tryable[];
   /** The same seed poses the same problem (default: a fresh one per trial). */
   seed?: number;
   repeat: number;
@@ -28,6 +99,18 @@ export interface TrialRunOptions {
   parallel: number | "auto";
   /** Attempts per trial (the run records it). Left out: one, and nothing about effort is recorded or asked. */
   effort?: EffortLevel;
+  /** The harness as this run switches it (its effort is the run's). */
+  variant?: TrialVariant;
+  /** Roles held to one model for the whole run. */
+  pins?: TrialPins;
+  /** Runs made to be compared (an A/B's two, a sweep's candidates) share this. */
+  group?: string;
+  /** What the run may spend. Left out: DEFAULT_TOKENS_PER_ATTEMPT for every attempt it would make. */
+  budget?: TrialBudget;
+  /** Your prices: what a money budget counts with. */
+  prices?: Prices;
+  /** The run's id (default: a fresh one). */
+  run?: string;
   network: SandboxNetwork;
   isolation?: "container" | "vm";
   on?: string;
@@ -35,13 +118,20 @@ export interface TrialRunOptions {
   /** As each trial starts and ends. */
   progress?(
     event:
-      | { type: "start"; problem: TrialProblem; seed: number }
+      | { type: "start"; problem: Tryable; seed: number }
       | { type: "done"; trial: TrialView }
-      | { type: "skipped"; problem: TrialProblem; why: string }
+      | { type: "skipped"; problem: Tryable; why: string }
       /** How the run will go: trials at once, and why (the slots there are). */
-      | { type: "plan"; parallel: number; effort: EffortLevel | null; why: string },
+      | { type: "plan"; parallel: number; effort: EffortLevel | null; why: string }
+      /** Before the first trial: the budget, and roughly what the run will cost going by past runs of the same problems. */
+      | { type: "budget"; budget: TrialBudget; byDefault: boolean; estimate: RunEstimate }
+      /** The budget is spent: what was finished, and what wasn't started or was stopped. */
+      | { type: "spent"; finished: number; stopped: number; notStarted: number; why: string },
   ): void;
 }
+
+/** Tokens one attempt at a trial is allowed for when you name no budget: a guard against a runaway, not a forecast. */
+export const DEFAULT_TOKENS_PER_ATTEMPT = 600_000;
 
 /**
  * How many trials run at once: no more than the fleet's sandbox slots carry at this effort (what's asked for
@@ -86,17 +176,35 @@ export function galahadRevision(): string {
 
 const freshSeed = (): number => crypto.getRandomValues(new Uint32Array(1))[0]!;
 
-/** One trial: pose, solve as a quest, grade, record. Null when you stopped it. */
-export async function runTrial(
-  node: NodeClient,
-  job: { problem: TrialProblem; seed: number; run: string; suite: string; version: string; network: SandboxNetwork; isolation?: "container" | "vm"; on?: string; signal?: AbortSignal; effort?: EffortLevel },
-): Promise<TrialView | null> {
-  const { problem, seed } = job;
+/** A run's id: when it started (the Index is computed per run). */
+export const freshRunId = (): string => `r-${Date.now().toString(36)}`;
+
+/** The harness switches as a quest's options (a task's own gates are the caller's to add). */
+export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort">): Partial<DoOptions> {
+  const h = job.harness;
+  return {
+    ...(job.effort !== undefined ? { effort: job.effort } : {}),
+    ...(job.pins && Object.keys(job.pins).length ? { pins: job.pins } : {}),
+    ...(h ? { proposeGates: h.plannerGates, offerSkills: h.skills, archive: h.archive, maxRevisions: h.revisions } : {}),
+  };
+}
+
+/** A run is measured at one effort: a trial the node couldn't give it to says nothing about that level. */
+export const heldToEffort =
+  (effort: EffortLevel | undefined) =>
+  (event: { type: string; grant?: { attempts: number; reasons: string[] } }): void => {
+    if (event.type === "granted" && effort !== undefined && event.grant && event.grant.attempts !== effort) {
+      throw new Error(`the node granted ${event.grant.attempts} attempt(s), not the run's ${effort}: ${event.grant.reasons.join(" ")}`);
+    }
+  };
+
+/** One engineering trial: pose, solve as a quest, grade. The record, or null when you stopped it. */
+async function solveProblem(node: NodeClient, problem: TrialProblem, job: TrialJob): Promise<TrialRecord | null> {
+  const { seed } = job;
   const posed = pose(problem, seed);
   const models = new Set<string>();
   const started = Date.now();
   const base = { run: job.run, suite: job.suite, problem: problem.id, title: problem.title, domain: problem.domain, seed, version: job.version };
-  let record: TrialRecord;
   try {
     let answer: string | null = null;
     const { outcome, artifact } = await runNodeQuest(
@@ -113,16 +221,12 @@ export async function runTrial(
         evidence: TRIAL_EVIDENCE,
         label: `Trial ${problem.id} (seed ${seed})`,
         remember: false,
-        ...(job.effort !== undefined ? { effort: job.effort } : {}),
+        ...harnessOptions(job),
       },
       {
         signal: job.signal,
-        // A run is measured at one effort: a trial the node couldn't give it to says nothing about that level.
-        effort: (event) => {
-          if (event.type === "granted" && job.effort !== undefined && event.grant.attempts !== job.effort) {
-            throw new Error(`the node granted ${event.grant.attempts} attempt(s), not the run's ${job.effort}: ${event.grant.reasons.join(" ")}`);
-          }
-        },
+        effort: heldToEffort(job.effort),
+        ...(job.spent ? { spent: job.spent } : {}),
         emit: (event) => {
           if ((event.type === "plan" || event.type === "thought" || event.type === "review") && event.model) models.add(event.model);
         },
@@ -135,7 +239,7 @@ export async function runTrial(
     // Your Ctrl-C says nothing about ability; running out of commands does, and is scored.
     if (job.signal?.aborted) return null;
     const graded = grade(posed.expected, answer);
-    record = {
+    return {
       ...base,
       status: "scored",
       score: graded.score,
@@ -148,7 +252,7 @@ export async function runTrial(
     };
   } catch (error) {
     if (job.signal?.aborted) return null;
-    record = {
+    return {
       ...base,
       status: "crashed",
       score: 0,
@@ -158,38 +262,195 @@ export async function runTrial(
       note: (error instanceof Error ? error.message : String(error)).slice(0, 1000),
     };
   }
-  return (await node.call<{ trial: TrialView }>("recordTrial", record)).trial;
 }
 
-/** A run: every problem (repeated), a few at a time. */
-export async function runTrials(node: NodeClient, options: TrialRunOptions): Promise<{ run: string; trials: TrialView[] }> {
-  const run = `r-${Date.now().toString(36)}`;
+/** What a trial spent, as a record carries it: the heaviest lines first, within what a record holds. */
+const MAX_LINES = 24;
+function spentLines(lines: readonly UsageLine[]): UsageLine[] {
+  return [...lines].sort((a, b) => b.input + b.output - (a.input + a.output) || b.calls - a.calls).slice(0, MAX_LINES);
+}
+
+/** One trial of anything a run can try: done through the node, graded by program, recorded with what it spent. Null when you stopped it. */
+export async function tryOne(node: NodeClient, problem: Tryable, job: TrialJob): Promise<TrialView | null> {
+  const lines: UsageLine[] = [];
+  const counted: TrialJob = {
+    ...job,
+    spent: (call) => {
+      addUsage(lines, call.role, call.model, call.usage);
+      job.spent?.(call);
+    },
+  };
+  const record = isUnit(problem) ? await problem.attempt(node, counted) : await solveProblem(node, problem, counted);
+  if (!record) return null;
+  return (await node.call<{ trial: TrialView }>("recordTrial", { ...record, ...(lines.length ? { spent: spentLines(lines) } : {}) })).trial;
+}
+
+/** One engineering trial: pose, solve as a quest, grade, record. Null when you stopped it. */
+export function runTrial(node: NodeClient, job: Omit<TrialJob, "spent" | "harness" | "pins"> & { problem: TrialProblem } & Pick<Partial<TrialJob>, "spent" | "harness" | "pins">): Promise<TrialView | null> {
+  const { problem, ...rest } = job;
+  return tryOne(node, problem, rest);
+}
+
+/* ---------- what a run will cost, going by the past ---------- */
+
+export interface RunEstimate {
+  /** Tokens for the whole run, going by past trials of the same problems (null: none of them has been tried with counting). */
+  tokens: number | null;
+  /** The same in money, when those past trials were all priced. */
+  usd: number | null;
+  /** How many of the run's trials the estimate rests on past trials of the same problem for. */
+  known: number;
+  of: number;
+}
+
+/** A trial's tokens when all of its calls were counted, else null. */
+const tokensOf = (t: Pick<TrialView, "spent">): number | null => {
+  if (!t.spent?.lines.length) return null;
+  const total = spendTotal(t.spent.lines);
+  return total.complete ? total.tokens : null;
+};
+
+/**
+ * Roughly what a run would cost: for each problem, the mean of its past scored trials at the same effort
+ * (their tokens as the providers reported them); a problem never tried with counting goes by the mean of the
+ * others. Nothing known at all: it says so rather than guess.
+ */
+export function estimateRun(past: readonly TrialView[], problems: readonly { id: string }[], repeat: number, effort: number, efforts: Readonly<Record<string, number>>, prices: Prices = {}): RunEstimate {
+  const perProblem = (id: string): { tokens: number; usd: number | null } | null => {
+    const same = past.filter((t) => t.problem === id && t.status === "scored" && tokensOf(t) !== null);
+    const atEffort = same.filter((t) => (efforts[t.run] ?? 1) === effort);
+    // Past trials at another effort still say something: an attempt's worth, times this run's attempts.
+    const pool = atEffort.length ? atEffort.map((t) => ({ t, scale: 1 })) : same.map((t) => ({ t, scale: effort / (efforts[t.run] ?? 1) }));
+    if (!pool.length) return null;
+    const tokens = pool.reduce((s, p) => s + tokensOf(p.t)! * p.scale, 0) / pool.length;
+    const costs = pool.map((p) => {
+      const c = costOf(p.t.spent!.lines, prices);
+      return c.complete ? c.usd * p.scale : null;
+    });
+    return { tokens, usd: costs.every((c) => c !== null) ? costs.reduce<number>((s, c) => s + c!, 0) / costs.length : null };
+  };
+  const each = problems.map((p) => perProblem(p.id));
+  const known = each.filter((e): e is { tokens: number; usd: number | null } => e !== null);
+  if (!known.length) return { tokens: null, usd: null, known: 0, of: problems.length * repeat };
+  const meanTokens = known.reduce((s, e) => s + e.tokens, 0) / known.length;
+  const priced = known.every((e) => e.usd !== null);
+  const meanUsd = priced ? known.reduce((s, e) => s + e.usd!, 0) / known.length : null;
+  return {
+    tokens: Math.round(each.reduce((s, e) => s + (e?.tokens ?? meanTokens), 0) * repeat),
+    usd: meanUsd === null ? null : each.reduce((s, e) => s + (e?.usd ?? meanUsd), 0) * repeat,
+    known: known.length * repeat,
+    of: problems.length * repeat,
+  };
+}
+
+export interface RunResult {
+  run: string;
+  trials: TrialView[];
+  /** Everything the run's model calls came to, stopped trials included. */
+  spent: UsageLine[];
+  /** Set when the budget ended the run: what wasn't started, and what was stopped mid-way (and so not recorded). */
+  budgetEnded?: { notStarted: number; stopped: number; why: string };
+}
+
+/** A run: every problem (repeated), a few at a time, within its budget. */
+export async function runTrials(node: NodeClient, options: TrialRunOptions): Promise<RunResult> {
+  const run = options.run ?? freshRunId();
   const version = galahadRevision();
   const jobs = options.problems.flatMap((problem) =>
     Array.from({ length: options.repeat }, (_, i) => ({ problem, seed: options.seed === undefined ? freshSeed() : (options.seed + i) >>> 0 })),
   );
   const trials: TrialView[] = [];
+  // A variant's effort is the run's (a run is measured at one level).
+  const effort = options.variant ? options.variant.options.effort : options.effort;
   // Across the slots there are: with effort (or "auto"), the node says what it carries; otherwise as asked.
-  const effort = options.effort;
   const census = effort !== undefined || options.parallel === "auto" ? await node.call<ComputeView>("compute").catch(() => null) : null;
   const plan = effort !== undefined || options.parallel === "auto" ? planParallel(census, options.parallel, effort ?? 1, jobs.length, options.on) : { parallel: options.parallel as number, why: "as asked" };
   options.progress?.({ type: "plan", parallel: Math.max(1, Math.min(plan.parallel, jobs.length)), effort: effort ?? null, why: plan.why });
-  // The run's effort is on record before its first trial, so the Index per effort can be told apart.
-  if (effort !== undefined) await node.call("startTrialRun", { run, suite: options.suite, effort, parallel: plan.parallel });
+
+  // The budget: yours, or an allowance for every attempt the run would make. And roughly what it will cost.
+  const prices = options.prices ?? {};
+  const byDefault = options.budget?.tokens === undefined && options.budget?.usd === undefined;
+  const budget: TrialBudget = byDefault ? { tokens: jobs.length * (effort ?? 1) * DEFAULT_TOKENS_PER_ATTEMPT } : options.budget!;
+  const past = await node.call<{ trials: TrialView[]; runs?: TrialRunsView }>("trials").catch(() => null);
+  const pastEfforts = Object.fromEntries(Object.entries(past?.runs ?? {}).map(([r, s]) => [r, s.effort]));
+  const estimate = estimateRun(past?.trials ?? [], options.problems, options.repeat, effort ?? 1, pastEfforts, prices);
+  options.progress?.({ type: "budget", budget, byDefault, estimate });
+
+  // The run's settings are on record before its first trial, so its trials can be told apart by them.
+  const recorded = effort !== undefined || options.variant || options.pins || options.group || !byDefault;
+  if (recorded) {
+    await node.call("startTrialRun", {
+      run,
+      suite: options.suite,
+      effort: effort ?? 1,
+      parallel: plan.parallel,
+      ...(options.pins && Object.keys(options.pins).length ? { pins: options.pins } : {}),
+      ...(options.variant ? { variant: options.variant } : {}),
+      ...(options.seed !== undefined ? { seed: options.seed } : {}),
+      ...(options.group ? { group: options.group } : {}),
+      ...(!byDefault ? { budget } : {}),
+    });
+  }
+
+  // What the run has spent so far, counted call by call as the providers report it.
+  const spent: UsageLine[] = [];
+  const over = (): string | null => {
+    const total = spendTotal(spent);
+    if (budget.tokens !== undefined && total.tokens >= budget.tokens) return `the budget of ${tokensLabel(budget.tokens)} tokens is spent (${tokensLabel(total.tokens)} counted)`;
+    if (budget.usd !== undefined) {
+      const cost = costOf(spent, prices);
+      // A money budget can't be kept blind: a call nobody priced ends the run rather than run on uncounted.
+      if (cost.unpriced.length) return `a money budget needs a price for every model that answers, and there's none for ${cost.unpriced.join(", ")} (galahad price set …)`;
+      if (cost.usd >= budget.usd) return `the budget of ${usdLabel(budget.usd)} is spent (${usdLabel(cost.usd)} counted)`;
+    }
+    return null;
+  };
+  // The budget's own stop: running trials end after their current step (unrecorded), and none starts.
+  const stop = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, stop.signal]) : stop.signal;
+  let ended: string | null = null;
+  let stopped = 0;
   let next = 0;
   const worker = async (): Promise<void> => {
-    while (next < jobs.length && !options.signal?.aborted) {
+    while (next < jobs.length && !signal.aborted) {
+      ended ??= over();
+      if (ended) break;
       const { problem, seed } = jobs[next++]!;
       options.progress?.({ type: "start", problem, seed });
-      const trial = await runTrial(node, { problem, seed, run, suite: options.suite, version, network: options.network, isolation: options.isolation, on: options.on, signal: options.signal, ...(effort !== undefined ? { effort } : {}) });
+      const trial = await tryOne(node, problem, {
+        seed,
+        run,
+        suite: options.suite,
+        version,
+        network: options.network,
+        isolation: options.isolation,
+        on: options.on,
+        signal,
+        ...(effort !== undefined ? { effort } : {}),
+        ...(options.variant ? { harness: options.variant.options } : {}),
+        ...(options.pins ? { pins: options.pins } : {}),
+        spent: (call) => {
+          addUsage(spent, call.role, call.model, call.usage);
+          // Spent with trials still running: they stop after their current step, so the overrun is a step's worth each.
+          if (!ended && (ended = over())) stop.abort();
+        },
+      });
       if (trial) {
         trials.push(trial);
         options.progress?.({ type: "done", trial });
-      } else options.progress?.({ type: "skipped", problem, why: "stopped" });
+      } else {
+        if (stop.signal.aborted && !options.signal?.aborted) stopped += 1;
+        options.progress?.({ type: "skipped", problem, why: stop.signal.aborted && !options.signal?.aborted ? "the budget was spent" : "stopped" });
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(plan.parallel, jobs.length)) }, worker));
-  return { run, trials };
+  if (ended && !options.signal?.aborted) {
+    const notStarted = jobs.length - next;
+    options.progress?.({ type: "spent", finished: trials.length, stopped, notStarted, why: ended });
+    return { run, trials, spent, budgetEnded: { notStarted, stopped, why: ended } };
+  }
+  return { run, trials, spent };
 }
 
 /* ---------- the terminal ---------- */
@@ -201,16 +462,25 @@ const pct = (x: number) => `${(100 * x).toFixed(0)}%`;
 const minutes = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s` : `${s}s`);
 const num = (x: number | null) => (x === null ? "—" : Number(x.toPrecision(6)).toString());
 
-export function describeTrial(t: TrialView, detail = false): string {
+/** A hidden test or a reviewer's verdict is a check that passed or didn't; an engineering answer is a number. */
+const isCheck = (a: TrialView["answers"][number]): boolean => a.units === "pass";
+
+export function describeTrial(t: TrialView, detail = false, prices?: Prices): string {
   const passed = t.answers.filter((a) => a.ok).length;
   const mark = t.status === "crashed" ? "!" : t.score === 1 ? "✓" : t.score > 0 ? "△" : "✗";
-  const head = `${mark} ${t.problem.padEnd(26)} ${t.status === "crashed" ? "crashed".padEnd(9) : `${passed}/${t.answers.length}`.padEnd(9)} ${dim(`${minutes(t.seconds)} · seed ${t.seed}`)}`;
+  const cost = t.spent?.lines.length ? ` · ${tokensLabel(spendTotal(t.spent.lines).tokens)} tokens${spendTotal(t.spent.lines).complete ? "" : "+"}` : "";
+  const head = `${mark} ${t.problem.padEnd(26)} ${t.status === "crashed" ? "crashed".padEnd(9) : `${passed}/${t.answers.length}`.padEnd(9)} ${dim(`${minutes(t.seconds)} · seed ${t.seed}${cost}`)}`;
   const lines = [head];
   for (const a of t.answers) {
     if (!detail && a.ok) continue;
-    lines.push(dim(`      ${a.ok ? "ok " : "off"} ${a.key.padEnd(22)} got ${num(a.got).padEnd(12)} expected ${num(a.expected)} ± ${num(a.tolerance)} ${a.units}`));
+    if (isCheck(a)) lines.push(dim(`      ${a.ok ? "ok    " : a.got === null ? "no run" : "failed"} ${a.key}`));
+    else lines.push(dim(`      ${a.ok ? "ok " : "off"} ${a.key.padEnd(22)} got ${num(a.got).padEnd(12)} expected ${num(a.expected)} ± ${num(a.tolerance)} ${a.units}`));
   }
   if (t.note && (detail || t.status === "crashed")) lines.push(dim(`      ${t.note}`));
+  if (detail && t.spent?.lines.length) {
+    lines.push(dim(`      spent: ${spendLabel(t.spent.lines, prices)}`));
+    for (const l of t.spent.lines) lines.push(dim(`        ${l.role.padEnd(9)} ${l.model}  ${l.calls} call${l.calls === 1 ? "" : "s"}${l.unknown ? ` (${l.unknown} unreported)` : ""} · ${tokensLabel(l.input)} in, ${tokensLabel(l.output)} out`));
+  }
   return lines.join("\n");
 }
 
@@ -223,6 +493,25 @@ export function describeIndex(trials: readonly TrialView[]): string {
     `${bold(`Galahad Index ${pct(index.mean)}`)} ${dim(`(90% interval ${pct(index.low)}–${pct(index.high)})`)} · ` +
     `${solved} of ${scored.length} solved outright${crashed ? ` · ${crashed} crashed (not counted)` : ""}`
   );
+}
+
+const sig = (x: number): string => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toPrecision(2));
+
+/**
+ * What the Index cost: its tokens, time and money, and the quality each bought (points per million tokens,
+ * per hour, per dollar; a point is one trial solved outright), each with its 90 % interval. Empty when no
+ * trial here counted its calls.
+ */
+export function describeCost(trials: readonly TrialView[], prices: Prices = {}): string {
+  const scored = trials.filter((t) => t.status === "scored");
+  const index = costIndex(scored.map((t) => costed(t, prices)));
+  const ratio = (label: string, i: { mean: number; low: number; high: number; n: number } | null): string | null =>
+    i ? `${sig(i.mean)} ${label} ${dim(`(${sig(i.low)}–${sig(i.high)}${i.n < scored.length ? `, ${i.n} of ${scored.length} trials` : ""})`)}` : null;
+  const counted = scored.filter((t) => t.spent?.lines.length).length;
+  if (!counted) return "";
+  const totals = [index.tokens !== null ? `${tokensLabel(index.tokens)} tokens` : "tokens unknown", minutes(index.seconds), index.usd !== null ? usdLabel(index.usd) : "money unknown (no price, or a call unreported)"];
+  const ratios = [ratio("points per million tokens", index.perMTok), ratio("per hour", index.perHour), ratio("per dollar", index.perUsd)].filter(Boolean);
+  return `  ${dim("cost")} ${totals.join(" · ")}${ratios.length ? `\n  ${dim("buys")} ${ratios.join(" · ")}` : ""}`;
 }
 
 /**
@@ -240,7 +529,16 @@ export function describeEffort(trials: readonly TrialView[], runs: TrialRunsView
   ].join("\n");
 }
 
-export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOptions, "signal" | "progress">): Promise<TrialView[]> {
+/** A budget in words. */
+export const budgetLabel = (b: TrialBudget): string => [b.tokens !== undefined ? `${tokensLabel(b.tokens)} tokens` : "", b.usd !== undefined ? usdLabel(b.usd) : ""].filter(Boolean).join(" and ") || "none";
+
+/** An estimate in words: what it rests on, or that nothing is known. */
+export function estimateLabel(e: RunEstimate): string {
+  if (e.tokens === null) return "what it will cost is unknown: none of these problems has been tried with its calls counted";
+  return `going by past runs it will cost about ${tokensLabel(e.tokens)} tokens${e.usd !== null ? ` (${usdLabel(e.usd)})` : ""}${e.known < e.of ? `, known for ${e.known} of its ${e.of} trials and assumed alike for the rest` : ""}`;
+}
+
+export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOptions, "signal" | "progress">, where = "in the Lab"): Promise<RunResult> {
   const controller = new AbortController();
   const onInterrupt = (): void => {
     controller.abort();
@@ -250,22 +548,37 @@ export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOp
   process.once("SIGINT", onInterrupt);
   const total = options.problems.length * options.repeat;
   try {
-    const { run, trials } = await runTrials(node, {
+    const result = await runTrials(node, {
       ...options,
       signal: controller.signal,
       progress: (event) => {
         if (event.type === "plan") {
+          const held = [
+            options.variant ? `variant ${options.variant.name} (${describeVariant(options.variant.options)})` : "",
+            ...Object.entries(options.pins ?? {}).map(([role, model]) => `${role} held to ${model}`),
+          ].filter(Boolean);
           console.log(
             dim(
-              `[${total} trial(s) from the ${options.suite} suite, ${event.parallel} at a time (${event.why})${event.effort ? `, effort ${event.effort}${event.effort > 1 ? `: ${event.effort} attempts each, ${total * (event.effort - 1)} extra attempts in all` : ""}` : ""}, in the Lab · network ${options.network} · revision ${galahadRevision()}]\n`,
+              `[${total} trial(s) from the ${options.suite} suite, ${event.parallel} at a time (${event.why})${event.effort ? `, effort ${event.effort}${event.effort > 1 ? `: ${event.effort} attempts each, ${total * (event.effort - 1)} extra attempts in all` : ""}` : ""}, ${where} · network ${options.network} · revision ${galahadRevision()}]` +
+                (held.length ? `\n[${held.join(" · ")}]` : ""),
             ),
           );
+        } else if (event.type === "budget") {
+          console.log(dim(`[budget ${budgetLabel(event.budget)}${event.byDefault ? " (the default: --budget to set your own)" : ""} · ${estimateLabel(event.estimate)}]\n`));
         } else if (event.type === "start") console.log(dim(`… ${event.problem.id} (seed ${event.seed})`));
         else if (event.type === "done") console.log(describeTrial(event.trial));
+        else if (event.type === "spent") {
+          console.log(`\n${bold("■ Stopped at the budget:")} ${event.why}. ${event.finished} trial(s) finished and recorded${event.stopped ? `, ${event.stopped} stopped mid-way (not recorded)` : ""}${event.notStarted ? `, ${event.notStarted} not started` : ""}.`);
+        }
       },
     });
-    if (trials.length) console.log(`\n${describeIndex(trials)}\n${dim(`run ${run} · galahad trials · galahad trial ${run}`)}`);
-    return trials;
+    const { run, trials, spent } = result;
+    if (trials.length) {
+      const cost = describeCost(trials, options.prices);
+      console.log(`\n${describeIndex(trials)}${cost ? `\n${cost}` : ""}\n${dim(`run ${run} · galahad trials · galahad trial ${run}`)}`);
+    }
+    if (spent.length) console.log(dim(`spent in all: ${spendLabel(spent, options.prices)}`));
+    return result;
   } finally {
     process.off("SIGINT", onInterrupt);
   }

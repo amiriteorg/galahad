@@ -45,3 +45,5 @@ export * from "./doctor.ts";
 export * from "./webpush.ts";
 export * from "./notify.ts";
 export * from "./notify-input.ts";
+export * from "./spend.ts";
+export * from "./usage.ts";

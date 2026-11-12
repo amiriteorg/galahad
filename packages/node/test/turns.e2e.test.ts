@@ -166,7 +166,12 @@ function watch(response: Response) {
         while ((cut = buffer.indexOf("\n\n")) >= 0) {
           const block = buffer.slice(0, cut);
           buffer = buffer.slice(cut + 2);
-          for (const line of block.split("\n")) if (line.startsWith("data: ")) events.push(JSON.parse(line.slice(6)) as ChatStreamEvent);
+          // What each call cost is usage.test.ts's to check: these read the answer's own flow.
+          for (const line of block.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const event = JSON.parse(line.slice(6)) as ChatStreamEvent;
+            if (event.type !== "usage") events.push(event);
+          }
         }
       }
     } catch {

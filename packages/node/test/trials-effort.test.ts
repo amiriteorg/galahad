@@ -61,7 +61,7 @@ describe("how many trials at once", () => {
 function fakeNode(options: { pick: string; slots?: number }) {
   const calls: { name: RouteName; input: any }[] = [];
   const recorded: TrialView[] = [];
-  const runs: { run: string; suite: string; effort: number; parallel?: number }[] = [];
+  const runs: { run: string; suite: string; effort: number; parallel?: number; seed?: number }[] = [];
   const turns = new Map<string, number>();
   let created = 0;
   let live = 0;
@@ -142,7 +142,8 @@ describe("a run with effort", () => {
     const right = fakeNode({ pick: "A" });
     const a = await runTrials(right.node, { suite: "engineering", problems: [cantilever], repeat: 2, parallel: "auto", network: "gateway", seed: 11, effort: 2 });
     expect(a.trials.map((t) => t.score)).toEqual([1, 1]);
-    expect(right.runs).toEqual([{ run: a.run, suite: "engineering", effort: 2, parallel: 2 }]);
+    // (And the seed it was given: a second run with the same seed poses the same problems.)
+    expect(right.runs).toEqual([{ run: a.run, suite: "engineering", effort: 2, parallel: 2, seed: 11 }]);
     // On record before any sandbox exists.
     const order = right.calls.map((c) => c.name);
     expect(order.indexOf("startTrialRun")).toBeLessThan(order.indexOf("createSandbox"));

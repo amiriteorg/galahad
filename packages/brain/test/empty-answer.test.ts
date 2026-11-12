@@ -56,7 +56,8 @@ const tools = (): ChatTools & { ran: number } => {
 const ask = (content: string) => [{ role: "user" as const, content }];
 const all = async (events: AsyncGenerator<ChatStreamEvent>) => {
   const out: ChatStreamEvent[] = [];
-  for await (const e of events) out.push(e);
+  // What each call cost is usage.test.ts's to check: these read the answer's own flow.
+  for await (const e of events) if (e.type !== "usage") out.push(e);
   return out;
 };
 const types = (events: ChatStreamEvent[]) => events.map((e) => e.type);

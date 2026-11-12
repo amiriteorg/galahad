@@ -1,4 +1,4 @@
-import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
+import { type ChatMessage, type ChatStreamEvent, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
@@ -11,6 +11,11 @@ export interface BrainContext {
   store: MindStore;
   vault: Vault;
   fetch?: typeof fetch;
+  /**
+   * Told of every model call as it ends: the role, the model, and its tokens as the provider reported them
+   * (null: it reported nothing). Counts only. Whoever holds the context keeps its own tally with it.
+   */
+  spent?(call: { role: string; ref: string; usage: Usage | null }): void;
 }
 
 export interface ChatRequest {
@@ -216,6 +221,13 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         spoke = resumed = false;
         continued = 0;
       };
+      // What the model call that just ended cost, as its provider said (a call that never reached a model: nothing).
+      const tally = function* (): Generator<ChatStreamEvent> {
+        const usage = conversation.spent?.();
+        if (usage === undefined) return;
+        ctx.spent?.({ role: req.role ?? "planner", ref, usage });
+        yield { type: "usage", ref, usage };
+      };
       for (let round = 0; ; round++) {
         // A message that came while a tool ran (or before he began): he's told before the next model call.
         const waiting = steering?.take() ?? [];
@@ -241,6 +253,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           }
           end = next.value;
         } catch (error) {
+          // A call that failed after it reached the model still cost something: it's counted (as unknown, if nothing said).
+          yield* tally();
           // Cut short for the owner's message (not a stop): what he'd said stays said, and the turn goes on with it.
           const arrived = cut.signal.aborted && !req.signal?.aborted ? (steering?.take() ?? []) : [];
           if (arrived.length) {
@@ -265,6 +279,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         } finally {
           deaf?.();
         }
+        yield* tally();
         refused = 0;
         if (!end.calls.length) {
           // Cut off by the model's output limit: it goes on where it stopped, in the same answer.

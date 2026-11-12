@@ -17,6 +17,11 @@ import {
   type SandboxView,
   SECRET_REDIRECT,
   type SkillLearned,
+  addUsage,
+  type Price,
+  spendLabel,
+  type Usage,
+  type UsageLine,
 } from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { learnedLines, learnFromQuest, type QuestTrail, questTrail } from "./skills-quest.ts";
@@ -95,6 +100,14 @@ export interface DoOptions {
   gates?: string[];
   /** The planner may add gates of its own from its "Done when:" line, marked as its proposal (yours stay as given). */
   proposeGates?: boolean;
+  /** Roles held to one model (a trial run's pins): that role asks exactly this model, with no fallback; the rest ask the roster. */
+  pins?: Partial<Record<"planner" | "engineer" | "reviewer", string>>;
+  /** Offer his skills to the planner and the engineer (default: as `remember`; a trial that measures them offers them and still teaches none). */
+  offerSkills?: boolean;
+  /** The archive's relevant entries go with the plan (default yes). */
+  archive?: boolean;
+  /** How many times the gates or the reviewer may send the work back (default 2). */
+  maxRevisions?: number;
 }
 
 /** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
@@ -366,6 +379,10 @@ export interface NodeQuestHooks {
   finished?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>): Promise<void>;
   /** With effort: how many attempts the node granted and why, each attempt's start and end, and the pick. */
   effort?(event: { type: "granted"; grant: EffortGrant } | EffortEvent): void;
+  /** Before the plan, in each attempt's fresh sandbox: put there what the work starts from (a trial's repository). */
+  prepare?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>, info: { attempt?: number }): Promise<void>;
+  /** Every model call as it ends: the role, the model, its tokens as the provider reported them (null: it reported nothing). */
+  spent?(call: { role: string; model: string; usage: Usage | null }): void;
 }
 
 /** What a quest that ran several attempts did: each one's outcome, and which was taken and why. */
@@ -419,9 +436,10 @@ async function workIn(
   options: DoOptions,
   shop: Workshop,
   agent: Agent | undefined,
-  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string },
+  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; prepare?: NodeQuestHooks["prepare"] },
 ): Promise<QuestOutcome> {
   const { exec } = shop;
+  await run.prepare?.(exec, run.tag && run.tag.of > 1 ? { attempt: run.tag.index } : {});
   if (options.agent?.repo) {
     const github = githubRepo(options.agent.repo);
     const through = github ? await cloneThroughGateway(node, exec, github, shop.quest, options.agent.minutes) : null;
@@ -440,6 +458,7 @@ async function workIn(
       environment: environment(shop.sandbox, shop.host),
       maxSteps: options.maxSteps,
       commandTimeoutSec: options.commandTimeoutSec,
+      ...(options.maxRevisions !== undefined ? { maxRevisions: options.maxRevisions } : {}),
       ...(instructions ? { instructions } : {}),
       ...(evidence ? { evidence } : {}),
       ...(agent ? { agent } : {}),
@@ -456,10 +475,12 @@ async function workIn(
           role,
           messages,
           tools: false,
+          // A role held to one model asks exactly that one (no fallback: what's measured is that model).
+          ...(options.pins?.[role] ? { model: options.pins[role] } : {}),
           // The archive's relevant entries go with the plan (the start), not with every step.
-          ...(role === "planner" && messages.length === 1 ? { archive: true } : {}),
+          ...(role === "planner" && messages.length === 1 && options.archive !== false ? { archive: true } : {}),
           // His skills that bear on the goal go with the plan and the work (never the review): the node chooses them once a quest.
-          ...(role !== "reviewer" && options.remember !== false ? { quest: { id: run.quest ?? shop.quest, goal: options.goal.slice(0, 4000) } } : {}),
+          ...(role !== "reviewer" && (options.offerSkills ?? options.remember !== false) ? { quest: { id: run.quest ?? shop.quest, goal: options.goal.slice(0, 4000) } } : {}),
           // One of several attempts: its planner and engineer start at another of the role's models (the
           // reviewer is the same independent reviewer for all), and the node shows the call as a helper's.
           ...(run.tag ? { attempt: run.tag, ...(role !== "reviewer" && run.tag.index > 1 ? { rotate: run.tag.index - 1 } : {}) } : {}),
@@ -467,6 +488,7 @@ async function workIn(
         for await (const event of node.stream("chat", input)) {
           if (event.type === "text") text += event.text;
           else if (event.type === "model") model = event.ref;
+          else if (event.type === "usage") run.spent?.({ role, model: event.ref, usage: event.usage });
           else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
         }
         return { text, model };
@@ -522,7 +544,7 @@ export async function runNodeQuest(
   node: NodeClient,
   given: DoOptions,
   hooks: NodeQuestHooks = {},
-): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone; learned?: SkillLearned | null }> {
+): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone; learned?: SkillLearned | null; usage: UsageLine[] }> {
   // Before anything is created: the gates are checked as any input is.
   const options: DoOptions = { ...given, gates: checkGates(given.gates) };
   const quest = questId();
@@ -533,6 +555,13 @@ export async function runNodeQuest(
     hooks.effort?.({ type: "granted", grant });
   }
   const attempts = grant?.attempts ?? 1;
+  // What the quest's model calls came to, by role and model: every attempt's and the pick's, as the providers reported them.
+  const usage: UsageLine[] = [];
+  const spent: NonNullable<NodeQuestHooks["spent"]> = (call) => {
+    addUsage(usage, call.role, call.model, call.usage);
+    hooks.spent?.(call);
+  };
+  const prepare = hooks.prepare;
 
   let outcome: QuestOutcome;
   let artifact: ArtifactView | null = null;
@@ -549,7 +578,7 @@ export async function runNodeQuest(
       hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
       worked = shop;
       try {
-        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}) });
+        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}), spent, ...(prepare ? { prepare } : {}) });
         await hooks.finished?.(shop.exec);
       } finally {
         artifact = await closeWorkshop(node, options, shop, true);
@@ -590,6 +619,8 @@ export async function runNodeQuest(
                 parallelCommands: of,
                 // His skills are chosen once for the quest: every attempt reads the same ones.
                 quest,
+                spent,
+                ...(prepare ? { prepare } : {}),
               });
               return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
             } catch (error) {
@@ -603,9 +634,10 @@ export async function runNodeQuest(
           ask: async (messages) => {
             let text = "";
             let model = "";
-            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false })) {
+            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false, ...(options.pins?.reviewer ? { model: options.pins.reviewer } : {}) })) {
               if (event.type === "text") text += event.text;
               else if (event.type === "model") model = event.ref;
+              else if (event.type === "usage") spent({ role: "reviewer", model: event.ref, usage: event.usage });
               else if (event.type === "error") throw new Error(`the reviewer could not answer: ${event.error}`);
             }
             return { text, model };
@@ -633,7 +665,7 @@ export async function runNodeQuest(
   }
 
   const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
-  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}) };
+  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), usage };
   // His skills (skills-quest.ts), in one call now that the review is over: the outcome is recorded against the skills this
   // quest was given and, if it passed, the node may distil one. What it answers is only what the mind now holds.
   const learned = worked
@@ -657,7 +689,7 @@ export async function runNodeQuest(
       .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), learned };
+  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), learned, usage };
 }
 
 /** Passed work on a GitHub clone: file github.ship for your approval (a standing order may answer it at once). */
@@ -738,8 +770,9 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   let shipped: Shipped | undefined;
   let effort: EffortDone | undefined;
   let learned: SkillLearned | null | undefined;
+  let usage: UsageLine[] = [];
   try {
-    ({ outcome, artifact, shipped, effort, learned } = await runNodeQuest(node, options, {
+    ({ outcome, artifact, shipped, effort, learned, usage } = await runNodeQuest(node, options, {
       // One attempt reads as ever; several are told apart, a line each.
       emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : print(event)),
       signal: controller.signal,
@@ -777,6 +810,11 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   // His skills: said only as the node said it (what's in the mind), and why nothing was learned from a passed quest.
   for (const line of learnedLines(learned ?? null, true)) console.log(dim(`\n${line}`));
   if (learned && !learned.skill && learned.why && outcome.status === "done") console.log(dim(`\nNo skill learned: ${learned.why}.`));
+  // What its model calls came to, as the providers reported them (every attempt's and the pick's); money where you've stated prices.
+  if (usage.length) {
+    const prices = await node.call<{ prices: Record<string, Price> }>("prices").then((r) => r.prices, () => ({}));
+    console.log(dim(`\nSpent: ${spendLabel(usage, prices)}`));
+  }
   return outcome;
 }
 

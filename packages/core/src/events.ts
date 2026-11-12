@@ -280,6 +280,19 @@ export const Bodies = {
   "skill.used": z.strictObject({ skill: SkillId, version: SkillVersionId, quest: z.string().min(1).max(100) }),
   /** How the quest that used it ended (done: its review passed). The first word stands. */
   "skill.outcome": z.strictObject({ skill: SkillId, quest: z.string().min(1).max(100), status: z.string().regex(/^[a-z][a-z-]{0,31}$/) }),
+  /*
+   * What model calls cost (usage.ts, spend.ts). Per-call counts stay on the node that made the call (its own
+   * usage table, never the log); only what every replica must agree on is here: your prices, and what a trial
+   * spent, because the Index per token and per dollar is computed from it everywhere.
+   */
+  /** Your price for a model, US dollars per million tokens (usage.ts PriceSchema; LWW by model). Open in the log, read leniently. */
+  "price.set": z.strictObject({ model: z.string().min(3).max(256), price: Open }),
+  "price.removed": z.strictObject({ model: z.string().min(3).max(256) }),
+  /**
+   * What a trial's model calls came to, by role and model (usage.ts TrialSpent): counts as the providers reported
+   * them, never a prompt or an answer. Recorded once, by the node that recorded the trial; the first stands.
+   */
+  "trial.spent": z.strictObject({ trial: TrialId, spent: Open }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

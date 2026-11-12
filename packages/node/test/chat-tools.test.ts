@@ -88,7 +88,9 @@ async function ask(token: string, content: string, extra: object = {}): Promise<
   return (await response.text())
     .split("\n")
     .filter((l) => l.startsWith("data: "))
-    .map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
+    .map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent)
+    // What each call cost is usage.test.ts's to check: these read the answer's own flow.
+    .filter((e) => e.type !== "usage");
 }
 const offered = () => ((bodies[0]?.tools ?? []) as { function: { name: string } }[]).map((t) => t.function.name);
 
