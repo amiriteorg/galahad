@@ -45,6 +45,7 @@ const version = (over: Partial<SkillVersionView> = {}): SkillVersionView => ({
   by: "galahad",
   quest: "q-1",
   via: null,
+  source: null,
   at: 1000,
   approvedAt: null,
   doc: doc(),

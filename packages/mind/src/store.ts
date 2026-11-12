@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS v_skills (
 );
 CREATE TABLE IF NOT EXISTS v_skill_versions (
   id TEXT PRIMARY KEY, skill TEXT NOT NULL, n INTEGER NOT NULL, prev TEXT, doc TEXT NOT NULL, trust TEXT NOT NULL,
-  author TEXT NOT NULL, quest TEXT, via TEXT, hlc TEXT NOT NULL, approved_hlc TEXT
+  author TEXT NOT NULL, quest TEXT, via TEXT, source TEXT, hlc TEXT NOT NULL, approved_hlc TEXT
 );
 CREATE INDEX IF NOT EXISTS v_skill_versions_skill ON v_skill_versions (skill, n);
 CREATE TABLE IF NOT EXISTS v_skill_uses (
@@ -1051,9 +1051,9 @@ export class MindStore {
         if ((trust === "owner") !== (body.by === SKILL_OWNER)) return "only your own words are yours";
         if (trust === "agent" && body.by !== SKILL_GALAHAD) return "only his own reviewed work is trusted as his";
         const skill = this.db.query<{ head: string }, [string]>("SELECT head FROM v_skills WHERE id = ?").get(body.skill);
-        const insert = this.db.query("INSERT INTO v_skill_versions (id, skill, n, prev, doc, trust, author, quest, via, hlc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        const insert = this.db.query("INSERT INTO v_skill_versions (id, skill, n, prev, doc, trust, author, quest, via, source, hlc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if (!skill) {
-          insert.run(event.id, body.skill, 1, null, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.hlc);
+          insert.run(event.id, body.skill, 1, null, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.prov?.source ?? null, event.hlc);
           this.db.query("INSERT INTO v_skills (id, head, created_hlc, touched_hlc) VALUES (?, ?, ?, ?)").run(body.skill, event.id, event.hlc, event.hlc);
           return null;
         }
@@ -1065,7 +1065,7 @@ export class MindStore {
           if (head?.author !== SKILL_GALAHAD) return "he revises only skills he wrote";
         }
         const n = this.db.query<{ n: number }, [string]>("SELECT MAX(n) AS n FROM v_skill_versions WHERE skill = ?").get(body.skill)!.n + 1;
-        insert.run(event.id, body.skill, n, skill.head, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.hlc);
+        insert.run(event.id, body.skill, n, skill.head, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.prov?.source ?? null, event.hlc);
         this.db.query("UPDATE v_skills SET head = ?, touched_hlc = ? WHERE id = ?").run(event.id, event.hlc, body.skill);
         return null;
       }
@@ -1482,6 +1482,8 @@ export interface SkillVersionRecord {
   by: string;
   quest: string | null;
   via: string | null;
+  /** Where it came from, as its event says (the quest and why it's untrusted, the agent that proposed it). */
+  source: string | null;
   hlc: string;
   approvedHlc: string | null;
 }
@@ -1535,6 +1537,7 @@ interface SkillVersionRow {
   author: string;
   quest: string | null;
   via: string | null;
+  source: string | null;
   hlc: string;
   approved_hlc: string | null;
 }
@@ -1549,6 +1552,7 @@ const toSkillVersion = (row: SkillVersionRow): SkillVersionRecord => ({
   by: row.author,
   quest: row.quest,
   via: row.via,
+  source: row.source,
   hlc: row.hlc,
   approvedHlc: row.approved_hlc,
 });

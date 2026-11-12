@@ -119,6 +119,8 @@ export interface SkillVersionView {
   quest: string | null;
   /** Your device, when you wrote it from one. */
   via: string | null;
+  /** Where it came from, in the node's words: the quest and why it's untrusted, the agent that proposed it. */
+  source: string | null;
   at: number;
   /** When you approved this exact version (an untrusted one is used only after that). */
   approvedAt: number | null;

@@ -48,6 +48,7 @@ import {
 } from "@galahad/core";
 import type { z } from "zod";
 import type { EyesRequest } from "@galahad/core";
+import type { WorldSkills } from "@galahad/core";
 import { ExperimentError, type ExperimentStore } from "./experiment-store.ts";
 
 /*
@@ -168,6 +169,8 @@ export class WorldHub {
       this.computeChanged();
       // (An ended quest is wiped off his slate a while after: nobody reports that.)
       this.questsChanged();
+      // (A skill learned or used on another node arrives by sync: nobody reports that here.)
+      this.skillsChanged();
     }, 15_000);
     this.sweep.unref?.();
     // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
@@ -232,6 +235,7 @@ export class WorldHub {
       partners: this.partnerViews(),
       ...(companion ? { companion } : {}),
       ...(this.quests ? { quests: this.questsNow() } : {}),
+      ...(this.skillsNow() ? { skills: this.skillsNow()! } : {}),
     };
   }
 
@@ -418,6 +422,36 @@ export class WorldHub {
     if (key === this.questsKey) return;
     this.questsKey = key;
     this.emit({ type: "quests", at: this.now(), quests });
+  }
+
+  /* ---------- his skills, as books on his library's shelves (skills.ts) ---------- */
+
+  private skills: (() => WorldSkills) | null = null;
+  private skillsKey = "";
+
+  /** Where his skills' counts and latest titles are read from (the daemon sets it: skills.ts' SkillsService.world). */
+  setSkills(source: () => WorldSkills): void {
+    this.skills = source;
+    this.skillsKey = JSON.stringify(this.skillsNow());
+  }
+
+  private skillsNow(): WorldSkills | null {
+    try {
+      return this.skills?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A skill was learned, used, approved or retired: watchers hear of it if what the world may draw changed. */
+  skillsChanged(): void {
+    if (!this.skills || !this.watchers.size) return;
+    const skills = this.skillsNow();
+    if (!skills) return;
+    const key = JSON.stringify(skills);
+    if (key === this.skillsKey) return;
+    this.skillsKey = key;
+    this.emit({ type: "skills", at: this.now(), skills });
   }
 
   /* ---------- partners: the agents working with him (their MCP calls) ---------- */

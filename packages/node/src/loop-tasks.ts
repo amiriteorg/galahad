@@ -15,6 +15,7 @@ import { companionOf, journalEntries } from "./journal.ts";
 import { type JournalInputs, ledgerAgent, REFLECT_ROLES, reflectOnce } from "./reflect.ts";
 import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
+import { learnedLines } from "./skills-quest.ts";
 import { streamedError } from "./server.ts";
 
 /*
@@ -58,6 +59,8 @@ export interface LoopTaskDeps {
   compute?: ComputeService;
   /** His review of his own world through his eyes (world-review.ts; set by the daemon). */
   review?: (places?: undefined, signal?: AbortSignal) => Promise<{ status: "ok" | "attention"; summary: string }>;
+  /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat, and what his journal reads of them. */
+  skills?: { tidy(mark?: boolean): { stale: number; merges: number }; journal(since: number): { at: number; line: string }[] };
 }
 
 /** A node that joined this long ago and still hasn't measured itself is worth a line. */
@@ -111,6 +114,12 @@ function roleUsable(deps: LoopTaskDeps, models: string[]): boolean {
     if (provider.local) return (caps?.localModels ?? []).some((r) => r.runtime === parsed.provider && r.models.length > 0);
     return !!provider.apiKey;
   });
+}
+
+/** The cheapest role with a usable model (his journal's order), or null: what his background writing runs on. */
+export function cheapestRole(deps: LoopTaskDeps): string | null {
+  const models = roster(deps.store);
+  return REFLECT_ROLES.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null;
 }
 
 /** The bank connection, as the heartbeat sees it: only once it's set up on this node. */
@@ -320,7 +329,7 @@ const JOURNAL_EXPERIMENTS = 20;
 const openingSentence = (words: string | undefined): string | null => words?.match(/^.*?[.!?](?=\s|$)/s)?.[0]?.trim() || words?.trim() || null;
 
 /** What his journal reads (reflect.ts cuts it to the last day and the budget, and keeps the bank and secrets out). */
-export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "experiments" | "board" | "log">, now: number): JournalInputs {
+export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "experiments" | "board" | "log" | "skills">, now: number): JournalInputs {
   const store = deps.store;
   const since = now - 24 * 60 * 60_000;
   /** A source that can't be read today is left out, and the log says so: the journal is still written. */
@@ -350,6 +359,7 @@ export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "expe
       (deps.board?.history.before(null, 200).versions ?? []).filter((v) => v.at >= since && v.change !== "start").map((v) => ({ at: v.at, by: v.by, summary: v.summary })),
     ),
     dog: companionOf(store)?.name ?? null,
+    skills: read("his skills", () => (deps.skills?.journal(since) ?? []).filter((s) => s.at <= now)),
   };
 }
 
@@ -410,8 +420,13 @@ export function loopExecutor(deps: LoopTaskDeps) {
   return async (loop: RunnableLoop, ctx: RunContext): Promise<RunResult> => {
     const task = loop.task;
     switch (task.kind) {
-      case "heartbeat":
-        return beat(deps, task.checklist, ctx.signal, task.selfAction !== false);
+      case "heartbeat": {
+        const result = await beat(deps, task.checklist, ctx.signal, task.selfAction !== false);
+        // His skills' tidy-up goes with the heartbeat (skills.ts): the long-unused are marked stale (never with
+        // self-action off), near-duplicates are suggested to you. It merges, retires and deletes nothing.
+        const tidied = quietly(deps, "skills (tidy-up)", () => deps.skills?.tidy(task.selfAction !== false) ?? null);
+        return tidied?.stale ? { ...result, summary: `${result.summary} Marked ${tidied.stale} skill${tidied.stale === 1 ? "" : "s"} stale.`.slice(0, 2000) } : result;
+      }
       case "reflect":
         return reflect(deps, task.budget ?? REFLECT_BUDGET, ctx.signal);
       case "review": {
@@ -437,12 +452,13 @@ export function loopExecutor(deps: LoopTaskDeps) {
         try {
           const client = new LocalClient(`http://127.0.0.1:${deps.port}`, token);
           // Your gates go with it as you gave them; on his own, the planner proposes none of its own.
-          const { outcome } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
+          const { outcome, learned } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
           const gated = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
           const review = outcome.status !== "done" && outcome.review ? ` ${gated ? "Never reviewed:" : "Reviewer:"} ${outcome.review.trim()}` : "";
           return {
             status: outcome.status === "done" ? "ok" : "attention",
-            summary: `${outcome.status} after ${outcome.steps} commands: ${outcome.summary.trim()}${review}`,
+            // The skills it used, and one it learned, by title (skills.ts): only what the node said is in the mind.
+            summary: `${outcome.status} after ${outcome.steps} commands: ${outcome.summary.trim()}${review}${learnedLines(learned ?? null).map((line) => ` ${line}.`).join("")}`,
           };
         } finally {
           deps.arms.revoke(label);

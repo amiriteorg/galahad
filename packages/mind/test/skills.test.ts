@@ -90,7 +90,7 @@ describe("a skill's versions", () => {
     syncInto(storeA, storeB);
     const skill = storeB.skill(SK)!;
     expect(skill.head).toBe(v1);
-    expect(skill.versions).toEqual([{ id: v1, skill: SK, n: 1, prev: null, doc: doc(), trust: "agent", by: "galahad", quest: "q-1", via: null, hlc: skill.createdHlc, approvedHlc: null }]);
+    expect(skill.versions).toEqual([{ id: v1, skill: SK, n: 1, prev: null, doc: doc(), trust: "agent", by: "galahad", quest: "q-1", via: null, source: null, hlc: skill.createdHlc, approvedHlc: null }]);
     expect(standing(skill)).toEqual({ state: "in-use", offered: v1, pending: null });
     expect(storeA.digest()).toBe(storeB.digest());
     expect(storeB.skill("sk_zzzzzzzzzzzzzzzz")).toBeNull();

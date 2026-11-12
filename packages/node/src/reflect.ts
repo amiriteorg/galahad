@@ -55,6 +55,8 @@ export interface JournalInputs {
   board: { at: number; by: string; summary: string }[];
   /** His dog's name, once the owner has given it one. */
   dog: string | null;
+  /** His skills (skills.ts): each one learned, revised, proposed or used in the day, by title, a line each. */
+  skills?: { at: number; line: string }[];
 }
 
 /** The day in Denmark, as YYYY-MM-DD: one entry each. */
@@ -150,6 +152,11 @@ export function journalLines(inputs: JournalInputs, budget = REFLECT_BUDGET): { 
       name: "The chalkboard",
       timed: true,
       lines: newestFirst(inputs.board.filter((v) => v.at >= since && v.at <= inputs.now), (v) => v.at).map((v) => `${clock(v.at)} ${whose(v.by)}: ${oneLine(v.summary, 160)}`),
+    },
+    {
+      name: "Your skills, learned and used",
+      timed: true,
+      lines: newestFirst((inputs.skills ?? []).filter((s) => s.at >= since && s.at <= inputs.now), (s) => s.at).map((s) => `${clock(s.at)} ${oneLine(s.line, 200)}`),
     },
     { name: "Agents who worked with you", timed: false, lines: agentsOf(inputs) },
     {
