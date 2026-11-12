@@ -738,6 +738,8 @@ export function createApp(ctx: AppContext) {
    * answering you, never to an outside agent or another node.
    */
   const archiveHidden = (p: Principal): string[] => (isOwner(p) || (p.kind === "arm" && p.label === GALAHAD_ARM) ? [] : ["chat"]);
+  /** What the archive's own context leaves out: his skills too (he is given those through their own fence, by where each stands now). */
+  const contextHidden = (p: Principal): string[] => [...archiveHidden(p), "skill"];
   const archiveErrors = async <T,>(work: () => Promise<T> | T): Promise<T> => {
     try {
       return await work();
@@ -1079,7 +1081,7 @@ export function createApp(ctx: AppContext) {
           answered = ctx.archive.answering();
           let context = known;
           if (fromArchive) {
-            const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+            const found = await ctx.archive.context(asked.content, { hideKinds: contextHidden(p) }).catch((error) => {
               ctx.log(`archive context: ${(error as Error).message}`);
               return null;
             });
@@ -1463,7 +1465,7 @@ export function createApp(ctx: AppContext) {
             answered = ctx.archive.answering();
             if (attempt) attemptEnded = ctx.compute.attemptBegin(attempt, { station: attemptStation(request.role ?? "planner"), doing: `The ${request.role ?? "planner"} is thinking` });
             if (fromArchive) {
-              const found = await ctx.archive.context(ready.asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+              const found = await ctx.archive.context(ready.asked.content, { hideKinds: contextHidden(p) }).catch((error) => {
                 ctx.log(`archive context: ${(error as Error).message}`);
                 return null;
               });

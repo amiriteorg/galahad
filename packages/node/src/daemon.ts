@@ -15,7 +15,7 @@ import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "./archive/adapters.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { boardSource, experimentSource } from "./archive/external.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
@@ -374,6 +374,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // strokes as one; each as trusted as the least trusted hand on it): archive/external.ts.
       experimentsAdapter(experimentSource(experiments)),
       boardsAdapter(boardSource(board)),
+      // His skills (skills.ts): each version, once it's his to use.
+      skillsAdapter(store),
     ],
   });
   if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();

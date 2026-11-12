@@ -122,7 +122,7 @@ describe("the routes", () => {
     expect(status).toMatchObject({ node: "archive-node", entries: 2, backlog: 0, embedder: { model: "embed/concept-embed", state: "ready", local: true }, understanding: { perDay: 0, localOnly: false } });
     expect(status.embedded).toBe(status.chunks);
     expect(status.integrity.ok).toBe(true);
-    expect(status.sources.map((s) => s.name)).toEqual(["memories", "investigations", "trials", "artifacts", "chats", "experiments", "boards"]);
+    expect(status.sources.map((s) => s.name)).toEqual(["memories", "investigations", "trials", "artifacts", "chats", "experiments", "boards", "skills"]);
   });
 
   test("an outside agent searches and notes ideas (as untrusted), but can't delete, reindex, verify or set the budget", async () => {
