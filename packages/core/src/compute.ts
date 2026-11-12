@@ -483,7 +483,10 @@ export function planChanges(before: ComputePlan | null, after: ComputePlan): str
 
 /* ---------- what more would buy, and what he suggests ---------- */
 
-/** What more compute would buy, in a line each: a raised ceiling, another machine, a GPU. Pure, from the census. */
+/**
+ * What more compute would buy, in a line each: a raised ceiling, another machine, a GPU. Pure, from the census
+ * (the node that's asked first: its model calls are the ones a quest's calls take).
+ */
 export function whatMoreBuys(nodes: readonly { name: string; body: ComputeBody; capacity: NodeCapacity; limit: ComputeLimit | null }[], plan: Pick<ComputePlan, "effort">): string[] {
   const lines: string[] = [];
   const hosts = nodes.filter((n) => n.body.sandboxHost);
@@ -514,6 +517,13 @@ export function whatMoreBuys(nodes: readonly { name: string; body: ComputeBody; 
           ? `, and ${plural(together, "quest")} could run at effort ${MAX_EFFORT} together instead of ${Math.floor(slots / MAX_EFFORT)}`
           : "";
     lines.push(`Another machine like ${strongest.name} would carry ${plural(after, "slot")} instead of ${slots}: the Trials would run ${fixed1(after / Math.max(1, slots))}× as many problems at once${also}. Enroll it with galahad invite; he calibrates it and adapts.`);
+    // More slots only help while the model calls keep up: a quest's calls each take one on the node that's asked, and wait
+    // their turn beyond its ceiling (measured: bun run bench compute, where a ninth machine bought 1 % at eight calls).
+    const asked = nodes[0]!;
+    const calls = asked.capacity.modelCalls;
+    if (after > calls) {
+      lines.push(`A quest's model calls go through the node that's asked, ${calls} at once on ${asked.name}: with ${plural(after, "slot")}, model calls ${slots > calls ? "are already" : "would be"} what limits him, not sandboxes. galahad compute limit ${asked.name} --model-calls n raises it.`);
+    }
   } else lines.push("A machine with Docker would give him sandboxes: quests, trials and experiments need one. Enroll it with galahad invite.");
   if (!nodes.some((n) => n.body.gpu.length)) lines.push("A node with a GPU would let a local model answer for the swift role (and the Lab's GPU work run), with nothing leaving the fleet.");
   return lines;
