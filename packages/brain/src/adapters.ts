@@ -76,6 +76,8 @@ export function seesImages(provider: Pick<ResolvedProvider, "id" | "kind">, mode
 export interface TurnEnd {
   calls: ToolCall[];
   truncated: boolean;
+  /** How the provider ended this turn and what else its reply carried, in a few words: said when a turn has no words in it. */
+  detail?: string;
 }
 
 /** What a model is told when its answer was cut off by its output limit. */
@@ -151,7 +153,8 @@ export function anthropicConversation(input: CompletionInput): Conversation {
         if (!calls.length) {
           last = final.content as Anthropic.Beta.BetaContentBlockParam[];
           finalPending = true;
-          return { calls: [], truncated: final.stop_reason === "max_tokens" };
+          const blocks = [...new Set(final.content.map((b) => b.type))];
+          return { calls: [], truncated: final.stop_reason === "max_tokens", detail: `finish reason: ${final.stop_reason ?? "none"}${blocks.length ? `; the reply carried: ${blocks.join(", ")}` : ""}` };
         }
         if (final.stop_reason === "max_tokens") throw new Error(`${input.model} ran out of room in the middle of a tool call`);
         // The whole turn goes back as it came, thinking blocks and signatures included.
@@ -209,6 +212,9 @@ interface OpenAIChunk {
   error?: { message?: string };
 }
 
+/** The fields of a streamed delta this adapter reads. */
+const READ_DELTA = new Set(["role", "content", "reasoning_content", "tool_calls"]);
+
 /** Any OpenAI-compatible endpoint (DeepSeek, Mistral, Cloudflare AI Gateway, Ollama, llama.cpp …), with function calling. */
 export function openAIConversation(input: CompletionInput): Conversation {
   const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
@@ -241,9 +247,17 @@ export function openAIConversation(input: CompletionInput): Conversation {
       let text = "";
       let reasoning = "";
       let finish: string | null = null;
+      /** The stream said it was over, and how many events it carried. */
+      let ended = false;
+      let events = 0;
+      /** What its deltas carried besides what is read here (a provider's own field for reasoning, a refusal). */
+      const carried = new Set<string>();
       const calls = new Map<number, { id: string; name: string; args: string }>();
       for await (const data of sseData(response.body)) {
-        if (data === "[DONE]") break;
+        if (data === "[DONE]") {
+          ended = true;
+          break;
+        }
         let chunk: OpenAIChunk;
         try {
           chunk = JSON.parse(data);
@@ -251,8 +265,10 @@ export function openAIConversation(input: CompletionInput): Conversation {
           continue;
         }
         if (chunk.error) throw new Error(`${input.provider.id}: ${chunk.error.message ?? "stream error"}`);
+        events++;
         const delta = chunk.choices?.[0]?.delta;
         finish = chunk.choices?.[0]?.finish_reason ?? finish;
+        for (const [key, value] of Object.entries(delta ?? {})) if (!READ_DELTA.has(key) && value != null && value !== "") carried.add(key);
         if (delta?.reasoning_content) reasoning += delta.reasoning_content;
         for (const part of delta?.tool_calls ?? []) {
           const index = part.index ?? calls.size;
@@ -268,10 +284,12 @@ export function openAIConversation(input: CompletionInput): Conversation {
           yield delta.content;
         }
       }
+      // Nothing said how it ended: the stream just stopped (a dropped connection, a proxy's timeout). Never an answer.
+      if (finish === null && !ended) throw new Error(`${input.provider.id}/${input.model}: its reply stopped arriving before it was finished (${events} event${events === 1 ? "" : "s"}, no finish reason)`);
       if (!calls.size) {
         last = text;
         finalPending = true;
-        return { calls: [], truncated: finish === "length" };
+        return { calls: [], truncated: finish === "length", detail: `finish reason: ${finish ?? "none"}${carried.size ? `; the reply carried: ${[...carried].sort().join(", ")}` : ""}` };
       }
       if (finish === "length") throw new Error(`${input.provider.id}/${input.model} ran out of room in the middle of a tool call`);
       const list = [...calls.entries()].sort(([a], [b]) => a - b).map(([index, c]) => ({ ...c, id: c.id || `call_${index}`, args: c.args || "{}" }));

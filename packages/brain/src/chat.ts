@@ -252,6 +252,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             round = -1;
             continue;
           }
+          // An answer with no words in it is not an answer: it failed, and says how the provider ended it.
+          if (!spoke) throw new Error(`${ref} ended its answer without saying anything${end.detail ? ` (${end.detail})` : ""}`);
           break;
         }
         const calls: ToolCall[] = end.calls;
