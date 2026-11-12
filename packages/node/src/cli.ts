@@ -18,7 +18,7 @@ import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { dogCommand, journalCommand } from "./journal-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
-import { githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
+import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
@@ -98,6 +98,12 @@ Work
                                   --effort spends more compute for a better answer: that many attempts at once,
                                   each in its own sandbox and reviewed, the best taken by the independent
                                   reviewer on the evidence alone (auto: what the free slots and the budget allow)
+     … --gate "<command>" [--gate …] [--no-planner-gates]
+                                  done means this passes: each gate runs in the quest's sandbox when the
+                                  engineer says DONE, and every one must exit 0 before the reviewer is asked
+                                  (a failing gate sends the work back; one that never passes: never done).
+                                  The planner may add gates of its own, marked as its proposal; yours stay
+                                  exactly as given (--no-planner-gates: yours only)
   do --agent opencode "<goal>" [--minutes 60] [--repo https://…] [--net gateway|online]
                                   the same, with a full coding agent doing the work for up to --minutes
                                   (models through the gateway; --repo clones first and keeps a patch:
@@ -139,7 +145,7 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
   loop ls | loop runs [name] | loop run <name> | loop pause|resume|rm <name>
   loop add <name> (--every 30m | --cron "0 7 * * 1-5") [--tz Europe/Copenhagen] [--on ultra] [--label text]
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
-     | --quest "<goal>" [--net isolated|gateway|online] [--steps 20]
+     | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
      | --reflect [--budget 4000]                       his journal: the day recollected, as his own memory; tokens a day
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
@@ -387,6 +393,9 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
+      // Quests: gates ("done means this command passes").
+      gate: { type: "string", multiple: true },
+      "no-planner-gates": { type: "boolean" },
       // Compute: effort and ceilings.
       effort: { type: "string" },
       cores: { type: "string" },
@@ -1065,13 +1074,19 @@ Next:
       if (repo && !/^https:\/\/[A-Za-z0-9._~:/?#!$&()*+,;=%-]+$/.test(repo)) fail("--repo must be an https:// URL (no user or password in it)");
       if (flags.ship && !(repo && githubRepo(repo))) fail("--ship needs --repo https://github.com/<owner>/<repo>");
       let effort: ReturnType<typeof parseEffort>;
+      let gates: string[];
       try {
         effort = parseEffort(str("effort"));
+        // Gates are checked before anything is created: commands only, a few, nothing key-shaped.
+        gates = checkGates((flags.gate as string[] | undefined) ?? []);
       } catch (error) {
         fail((error as Error).message);
       }
       const outcome = await questFromCli(new Admin(home), {
         goal,
+        ...(gates.length ? { gates } : {}),
+        // The planner may propose gates of its own (marked as its proposal) unless you say yours only.
+        proposeGates: !flags["no-planner-gates"],
         network: network as "isolated" | "gateway" | "online",
         ...(isolation() ? { isolation: isolation() } : {}),
         ...(flags.lab ? { lab: true } : {}),

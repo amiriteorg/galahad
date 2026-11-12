@@ -1,4 +1,22 @@
-import { type ArtifactView, type AttemptTag, type ChatStreamEvent, type EffortAsk, type EffortGrant, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import {
+  type ArtifactView,
+  type AttemptTag,
+  type ChatStreamEvent,
+  type EffortAsk,
+  type EffortGrant,
+  type ExecResult,
+  findSecrets,
+  type FleetView,
+  MAX_QUEST_GATES,
+  type ProviderView,
+  QuestGates,
+  redact,
+  type Results,
+  type RouteName,
+  type SandboxNetwork,
+  type SandboxView,
+  SECRET_REDIRECT,
+} from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import {
   AGENTS,
@@ -8,6 +26,8 @@ import {
   type EffortPick,
   type EffortResult,
   evidenceCollector,
+  gateBy,
+  type GateResult,
   investigate,
   type InvestigationOutcome,
   observation,
@@ -63,6 +83,32 @@ export interface DoOptions {
    * the day's budget. Left out: one attempt, and the node isn't asked.
    */
   effort?: EffortAsk;
+  /**
+   * Gates: "done means this command passes". Each is run in the quest's own sandbox after the engineer says
+   * DONE, and every one must exit 0 before the reviewer is asked (with effort: in each attempt's sandbox).
+   */
+  gates?: string[];
+  /** The planner may add gates of its own from its "Done when:" line, marked as its proposal (yours stay as given). */
+  proposeGates?: boolean;
+}
+
+/** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
+export function gatesLine(gates: readonly GateResult[]): string {
+  const failed = gates.filter((g) => g.exitCode !== 0);
+  const head = `Gates: ${gates.length - failed.length} of ${gates.length} passed`;
+  return failed.length ? `${head}; failed: ${failed.map((g) => `$ ${g.command} (exit ${g.exitCode})`).join(", ")}` : `${head} (${gates.map((g) => `$ ${g.command}`).join(", ")})`;
+}
+
+/** Your gates, checked at the door: commands only, a few of them, and nothing that looks like a key (they reach models and the ledger). */
+export function checkGates(gates: readonly string[] | undefined): string[] {
+  const parsed = QuestGates.safeParse(gates ?? []);
+  if (!parsed.success) throw new Error(`gates: ${parsed.error.issues.map((i) => i.message).join("; ")} (at most ${MAX_QUEST_GATES} gates, each a shell command of at most 1000 characters)`);
+  const checked = parsed.data;
+  for (const gate of checked) {
+    const finding = findSecrets(gate)[0];
+    if (finding) throw new Error(`That gate looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
+  }
+  return checked;
 }
 
 /** What became of shipping a quest's work. */
@@ -194,6 +240,17 @@ function print(event: QuestEvent): void {
     case "submitted":
       console.log(`\n${bold("◇ Submitted")}\n${indent(firstLines(event.summary, 6))}`);
       return;
+    case "gates":
+      console.log(`${bold("◇ Gates")} ${dim("· each must exit 0 before the reviewer is asked")}\n${event.gates.map((g, i) => `  ${i + 1}. $ ${firstLines(g.command, 2)} ${dim(`(${gateBy(g.by)})`)}`).join("\n")}\n`);
+      return;
+    case "gate": {
+      const [, ...output] = event.output.split("\n");
+      console.log(`${bold(`◇ Gate ${event.index}/${event.of}: ${event.exitCode === 0 ? "passed" : `failed (exit ${event.exitCode})`}`)} ${dim(`· $ ${firstLines(event.command, 1)}`)}${event.exitCode !== 0 && output.length ? `\n${dim(indent(firstLines(output.join("\n"), 6), "    "))}` : ""}`);
+      return;
+    }
+    case "gated":
+      if (!event.passed) console.log(dim(`  (not reviewed: ${event.results.filter((g) => g.exitCode !== 0).length} of ${event.results.length} gate(s) failed; the work goes back to the engineer)`));
+      return;
     case "review":
       console.log(`${bold(`◇ Review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}${event.notes ? `\n${indent(firstLines(event.notes, 6))}` : ""}\n`);
       return;
@@ -220,6 +277,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "review":
       console.log(`${tag} ${bold(`review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}`);
+      return;
+    case "gated":
+      console.log(`${tag} ${bold(`gates: ${event.passed ? "passed" : `${event.results.filter((g) => g.exitCode !== 0).length} of ${event.results.length} failed`}`)}`);
       return;
     case "retry":
       console.log(`${tag} ${dim(`the ${event.role} couldn't answer; asking again in ${Math.round(event.waitMs / 1000)} s`)}`);
@@ -325,6 +385,9 @@ async function workIn(
       ...(evidence ? { evidence } : {}),
       ...(agent ? { agent } : {}),
       ...(run.parallelCommands && run.parallelCommands > 1 ? { parallelCommands: run.parallelCommands } : {}),
+      // The gates run in this workshop's own sandbox (with effort: each attempt's own).
+      ...(options.gates?.length ? { gates: options.gates } : {}),
+      ...(options.proposeGates ? { proposeGates: true } : {}),
     },
     {
       ask: async (role, messages) => {
@@ -396,9 +459,11 @@ async function sandboxEvidence(exec: Exec, commands: readonly string[]): Promise
  */
 export async function runNodeQuest(
   node: NodeClient,
-  options: DoOptions,
+  given: DoOptions,
   hooks: NodeQuestHooks = {},
 ): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone }> {
+  // Before anything is created: the gates are checked as any input is.
+  const options: DoOptions = { ...given, gates: checkGates(given.gates) };
   const quest = questId();
   const agent = options.agent ? await agentFor(node, options) : undefined;
   let grant: EffortGrant | null = null;
@@ -490,6 +555,7 @@ export async function runNodeQuest(
       `Quest (${outcome.status}): ${options.goal}`,
       outcome.summary.trim(),
       outcome.review ? `Reviewer: ${outcome.review.trim()}` : "",
+      outcome.gates?.length ? gatesLine(outcome.gates) : "",
       effort
         ? `Effort ${effort.attempts.length + effort.failed.length}: ${[...effort.attempts.map((a) => `attempt ${a.index} ${a.status}`), ...effort.failed.map((f) => `attempt ${f.index} didn't run`)].join(", ")}. Taken: attempt ${effort.pick.index} (${effort.pick.reason.trim().split("\n")[0]})`
         : "",
@@ -604,7 +670,10 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
 
   console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
   console.log(indent(outcome.summary.trim()));
-  if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
+  // A gate that never passed is why, not a reviewer: the reviewer was never asked.
+  const gatesFailed = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
+  if (outcome.status !== "done" && outcome.review) console.log(`\n${gatesFailed ? "Never reviewed:" : "Reviewer:"}\n${indent(outcome.review.trim())}`);
+  if (outcome.gates?.length) console.log(dim(`\n${gatesLine(outcome.gates)}`));
   if (artifact) {
     const kb = Math.max(1, Math.round(artifact.bytes / 1024));
     console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));

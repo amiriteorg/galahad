@@ -9,6 +9,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
+import { QuestGates } from "./quests.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -148,6 +149,8 @@ export const LoopTask = z.discriminatedUnion("kind", [
     goal: z.string().min(1).max(4000),
     network: SandboxNetwork,
     maxSteps: z.number().int().min(1).max(100).optional(),
+    /** Gates (quests.ts): each must exit 0 in the quest's sandbox before the reviewer is asked. */
+    gates: QuestGates.optional(),
   }),
   /** One connector tool; outward and delete tools file an approval request instead. */
   z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),

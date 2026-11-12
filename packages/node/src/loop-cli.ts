@@ -28,7 +28,7 @@ export function describeTask(task: LoopTask | null): string {
   if (!task) return "(a task this version can't read)";
   if (task.kind === "heartbeat") return `${task.checklist ? "heartbeat + your checklist" : "heartbeat"}${task.selfAction === false ? " (self-action off)" : ""}`;
   if (task.kind === "reflect") return `his journal (budget ${task.budget ?? REFLECT_BUDGET} tokens a day)`;
-  if (task.kind === "quest") return `quest (${task.network}): ${task.goal.length > 70 ? `${task.goal.slice(0, 70)}…` : task.goal}`;
+  if (task.kind === "quest") return `quest (${task.network}${task.gates?.length ? `, ${task.gates.length} gate${task.gates.length === 1 ? "" : "s"}` : ""}): ${task.goal.length > 70 ? `${task.goal.slice(0, 70)}…` : task.goal}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${v}`).join(" ");
   return `call ${task.connector}.${task.tool}${args ? ` ${args}` : ""}`;
 }
@@ -112,6 +112,7 @@ async function taskFrom(api: Api, flags: Flags): Promise<LoopTask | undefined> {
       goal: str(flags, "quest")!,
       network: (str(flags, "net") ?? "isolated") as "isolated" | "gateway" | "online",
       ...(steps ? { maxSteps: Number(steps) } : {}),
+      ...(list(flags, "gate").length ? { gates: list(flags, "gate") } : {}),
     };
   }
   if (str(flags, "call")) {
