@@ -10,7 +10,11 @@ bun run check                          # tsc + full test suite; must be green be
 GALAHAD_KEYSTORE=file bun test         # tests never touch the OS keychain
 bun test packages/mind                 # one package
 bun galahad help                       # the CLI
+bun run bench                          # the scorecard: every benchmark suite against its baseline (a few minutes)
+bun run bench fleet compute            # some suites; --full the long sizes; --all every metric; --ci what CI gates on
 ```
+
+A change that should make something better (or might make something worse) is shown with the scorecard: run it before and after. A quality metric that got worse fails the run; record a new baseline only on purpose (`--update-baseline`), in its own reviewed change, and say why. How to read it and how to add a metric: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Layout
 
@@ -22,6 +26,7 @@ bun galahad help                       # the CLI
 | `packages/brain` | Providers, roster, adapters, chat with fallback, the model gateway |
 | `packages/node` | Daemon, HTTP server, CLI, capabilities, placement, the archive (`src/archive/`) |
 | `apps/web` | The PWA (bundled by the daemon at start) |
+| `bench/` | The scorecard: the runner, the suites, their simulations, the recorded baselines (`bench/baseline/`) |
 | `docs/` | Architecture, oath, trials, doctrine |
 
 ## Rules

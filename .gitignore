@@ -12,3 +12,6 @@ REVISION
 # Agent worktrees (local only)
 .claude/worktrees/
 __pycache__/
+
+# The last benchmark run (bun run bench); the recorded baselines are in bench/baseline/.
+bench/out/

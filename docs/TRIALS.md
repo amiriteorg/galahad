@@ -2,13 +2,13 @@
 
 Two claims need evidence, always. First, **quality holds**: nothing regresses. Second, **intelligence grows**: Galahad can do more, better or cheaper over time. Both are measured, not assumed.
 
-> **Status:** L0 exists today (typecheck and 380+ tests, including property and two-node end-to-end tests). The first L1 suite exists too: **engineering** ✅, fourteen problems with exact answers, run with `galahad trial run`, scored into the Galahad Index. Everything else here is planned for M4 🔜.
+> **Status:** L0 exists today (typecheck and 1,900+ tests, including property and two-node end-to-end tests, the deterministic multi-node simulation, and the scorecard of [BENCHMARKS](BENCHMARKS.md)). The first L1 suite exists too: **engineering** ✅, fourteen problems with exact answers, run with `galahad trial run`, scored into the Galahad Index. Everything else here is planned for M4 🔜.
 
 ## Layers
 
 | Layer | What it checks | Graders | State |
 |---|---|---|---|
-| **L0: code gates** | Typecheck, unit tests, **property tests** (shuffled and duplicated delivery converge to one digest; rebuild = same state), two-node e2e over HTTP. 🔜 Deterministic multi-node simulation with partitions and clock skew. | Programmatic | ✅ |
+| **L0: code gates** | Typecheck, unit tests, **property tests** (shuffled and duplicated delivery converge to one digest; rebuild = same state), two-node e2e over HTTP. ✅ **Deterministic multi-node simulation** (`bench/fleet/sim.ts`): real replicas, the real sync engine and door, a network that delays, reorders, duplicates, drops and partitions, a node away for a long while, clocks ahead inside and beyond the five minutes, a revoked device that keeps talking; a test at 2 to 5 nodes, `bun run bench fleet` at 2 to 32. ✅ **The scorecard** (`bun run bench`, [BENCHMARKS](BENCHMARKS.md)): what needs no model tokens, measured against recorded baselines (the fleet, compute, the world's algorithms and models, the mind, the archive, the harness's own overhead); its quality metrics gate CI. | Programmatic | ✅ |
 | **L1: capabilities** | Per role and per modality (planning, coding, review, summarization, vision, speech…). ✅ The engineering suite: mathematics, physics and engineering problems with exact answers, solved end to end in the Lab. | Programmatic first (exact match, schema, tests pass, executes). LLM judges second: a *different model family* from the candidate, pairwise comparison with positions swapped, calibrated against your labels. | ✅ engineering · 🔜 the rest |
 | **L2: agentic** | End-to-end tasks in sandboxes on the server: a repo plus a task plus **hidden tests** (SWE-style) | Hidden tests, diff review | 🔜 |
 | **L3: in the wild** | Real quests: success, your corrections, rejected approvals, cost, wall time | Ledger analytics | 🔜 |

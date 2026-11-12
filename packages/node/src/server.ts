@@ -85,7 +85,7 @@ import {
   resolveProvider,
   roster,
 } from "@galahad/brain";
-import { answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
+import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
 import type { GovernedSandboxHost } from "./compute/governed-host.ts";
@@ -119,7 +119,7 @@ import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
 import { selfActionOn } from "./heartbeat-world.ts";
 import { companionOf, companionView, journalEntries } from "./journal.ts";
-import { type Candidate, place } from "./placement.ts";
+import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 
@@ -348,16 +348,17 @@ export function createApp(ctx: AppContext) {
   };
 
   /**
+   * What this node did on other hosts since each last reported: sandboxes sent there, and ones of its own ended
+   * there. Another host's slots are only as fresh as its last sync, so placement counts these on top (see Dispatched).
+   */
+  const dispatched = new Dispatched();
+
+  /**
    * Pick the best sandbox host in the fleet for work nobody pinned to a node: the one with room (this node
    * among them), by what each measured; when every host is full, the one with the shortest queue.
    */
   function placeSandbox(): Device {
-    const { ranked } = place({ docker: true, untrusted: true }, candidates());
-    const best = ranked.find((p) => {
-      const device = ctx.store.device(p.device);
-      const caps = (p.device === ctx.identity.id ? ctx.caps() : device?.profile?.caps) as Capabilities | null | undefined;
-      return !!caps?.sandbox;
-    });
+    const best = sandboxHost(candidates());
     if (!best) throw new HttpError(424, "no sandbox host is online in this fleet");
     return resolveNode(best.device);
   }
@@ -454,31 +455,19 @@ export function createApp(ctx: AppContext) {
       if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
       return local();
     }
-    return forward<T>(target, path, body);
+    if (!where.create) return forward<T>(target, path, body);
+    // A sandbox on its way to another host takes a slot there before that host's next report says so.
+    const never = dispatched.note(target.id, 1, Date.now());
+    try {
+      return await forward<T>(target, path, body);
+    } catch (error) {
+      never();
+      throw error;
+    }
   }
 
   function candidates(): Candidate[] {
-    const statuses = new Map(ctx.sync.status().map((s) => [s.device, s]));
-    const compute = new Map(ctx.compute.nodes().map((n) => [n.id, n]));
-    return ctx.store
-      .devices()
-      .filter((d) => d.kind === "node")
-      .map((d) => {
-        const self = d.id === ctx.identity.id;
-        const status = statuses.get(d.id);
-        const known = compute.get(d.id);
-        const localTps = Math.max(0, ...(known?.calibration?.models ?? []).map((m) => m.tps));
-        return {
-          device: d.id,
-          name: d.name,
-          caps: self ? ctx.caps() : ((d.profile?.caps as unknown as Capabilities) ?? null),
-          online: self || !!status?.online,
-          self,
-          presence: status?.presence ?? null,
-          // What it measured and what's free there now: placement's reasons name both.
-          compute: known?.capacity ? { capacity: known.capacity, free: known.free, queued: known.use?.queued ?? 0, ...(localTps ? { localTps } : {}) } : null,
-        };
-      });
+    return fleetCandidates({ devices: ctx.store.devices(), self: ctx.identity.id, selfCaps: ctx.caps(), statuses: ctx.sync.status(), compute: ctx.compute.nodes(), dispatched });
   }
 
   function deviceViews(): DeviceView[] {
@@ -2128,6 +2117,9 @@ export function createApp(ctx: AppContext) {
       ).then((done) => {
         // Its attempt (if it was one) has finished, and it's nowhere any more.
         ctx.compute.sandboxGone(input.id);
+        // Its slot on the host this node sent it to is free again, before that host's next report says so.
+        const host = placed.get(input.id);
+        if (host) dispatched.note(host, -1, Date.now());
         placed.delete(input.id);
         return done;
       });
@@ -2533,7 +2525,7 @@ export function createApp(ctx: AppContext) {
         return json({ ...answerSync(ctx.store, SyncRequest.parse(payload)), presence: await ctx.presence() });
       }
       const { events } = PushRequest.parse(payload);
-      return json({ added: ctx.store.ingest(events).added });
+      return json(answerPush(ctx.store, events));
     }
 
     if (path.startsWith("/api/")) {

@@ -1,4 +1,4 @@
-import type { GEvent, NodeIdentity, PeerStatus, SyncPage, SyncRequest } from "@galahad/core";
+import { compareEvents, type GEvent, type NodeIdentity, type PeerStatus, type SyncPage, type SyncRequest } from "@galahad/core";
 import { type Device, type MindStore, PullState } from "@galahad/mind";
 import { type FetchLike, signedPost } from "./client.ts";
 
@@ -19,6 +19,57 @@ const MAX_PAGES = 1000;
 /** The answering side of /link/sync: one page, and what to repair. */
 export function answerSync(store: MindStore, request: SyncRequest, limit = 500): Omit<SyncPage, "presence"> {
   return { ...store.eventsSince(request.have, limit, request.sets, request.after), sets: true };
+}
+
+/** A chained event as far as a push needs to read it (the log checks everything else). */
+interface Link {
+  id: string;
+  hlc: string;
+  device: string;
+  prev: string | null;
+}
+
+const asLink = (raw: unknown): Link | null => {
+  const e = raw as { v?: unknown; id?: unknown; hlc?: unknown; device?: unknown; prev?: unknown } | null;
+  if (!e || typeof e !== "object" || e.v !== 2 || typeof e.id !== "string" || typeof e.hlc !== "string" || typeof e.device !== "string") return null;
+  if (e.prev !== null && typeof e.prev !== "string") return null;
+  return { id: e.id, hlc: e.hlc, device: e.device, prev: e.prev };
+};
+
+/**
+ * The answering side of /link/push: fresh events a peer wrote, sent as it wrote them.
+ *
+ * Each event is pushed as its own request, and requests race and get lost: an event can arrive before its
+ * predecessor, or without it. Taken as it came, the log would hold it as a gap, replay itself to say so,
+ * replay again for each event that follows, and once more when the gap is filled: every replay is the whole
+ * log (seconds on a long one, on the node's one thread). So a push takes only what extends a device's chain
+ * as this replica holds it, and leaves the rest (`deferred`) for the next pull, a few seconds on, which
+ * brings a device's events in order. Nothing is lost by waiting: a push was never the only way an event comes.
+ *
+ * What isn't a chained event (an unchained one from before chains, or not an event at all) goes to the log's
+ * own checks as it came.
+ */
+export function answerPush(store: MindStore, events: unknown[]): { added: number; deferred: number } {
+  const links = events.map(asLink);
+  const order = links.map((_, i) => i).filter((i) => links[i] !== null);
+  order.sort((x, y) => compareEvents(links[x]!, links[y]!));
+  const heads = new Map<string, string | null>();
+  const take = new Set<number>();
+  let deferred = 0;
+  for (const i of order) {
+    const link = links[i]!;
+    // A copy of one already held is neither new nor waiting: the log skips it.
+    if (store.event(link.id)) continue;
+    const head = heads.has(link.device) ? heads.get(link.device)! : store.head(link.device);
+    if (link.prev !== head) {
+      deferred++;
+      continue;
+    }
+    heads.set(link.device, link.id);
+    take.add(i);
+  }
+  const taken = events.filter((_, i) => links[i] === null || take.has(i));
+  return { added: taken.length ? store.ingest(taken).added : 0, deferred };
 }
 
 export interface SyncOptions {

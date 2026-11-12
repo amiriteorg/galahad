@@ -287,6 +287,25 @@ describe("what more compute would buy, and what he suggests (never does)", () =>
     expect(lines.some((l) => /another machine/i.test(l))).toBe(true);
   });
 
+  test("it doesn't promise what model calls won't carry: past the asked node's ceiling, more slots wait on model calls", () => {
+    // Two machines of four slots each, eight model calls at once on the node asked (the default): a third would make twelve slots.
+    const fleet = [
+      { name: "keep", body: ultra, capacity, limit: null },
+      { name: "rack", body: ultra, capacity, limit: null },
+    ];
+    expect(capacity.sandboxes * 2).toBe(8);
+    const lines = whatMoreBuys(fleet, { effort: 3 } as ComputePlan);
+    const warning = lines.find((l) => /model calls/.test(l));
+    expect(warning).toMatch(/8 at once on keep/);
+    expect(warning).toMatch(/12 slots/);
+    expect(warning).toMatch(/galahad compute limit keep --model-calls/);
+    // One machine: another would make eight slots for eight model calls. Nothing to warn of.
+    expect(whatMoreBuys([fleet[0]!], { effort: 3 } as ComputePlan).some((l) => /model calls/.test(l))).toBe(false);
+    // A ceiling you raised is yours: with room for them, nothing to warn of either.
+    const raised = [{ ...fleet[0]!, capacity: { ...capacity, modelCalls: 32 }, limit: { modelCalls: 32 } }, fleet[1]!];
+    expect(whatMoreBuys(raised, { effort: 3 } as ComputePlan).some((l) => /model calls/.test(l))).toBe(false);
+  });
+
   test("a GPU with no local runtime: he suggests one, and says the installing is yours", () => {
     const gpu: ComputeBody = { cores: 16, memoryGb: 64, gpu: [{ name: "RTX A4000", memoryGb: 16 }], sandboxHost: true, microVMs: false, localModels: [] };
     const suggestions = computeSuggestions([{ id: "n_gpu", name: "forge", body: gpu, calibration: null }], { swift: ["anthropic/claude-haiku-5-5"] });

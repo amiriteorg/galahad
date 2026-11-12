@@ -1,4 +1,4 @@
-import type { NodeCapacity, PlacementNeeds, Presence } from "@galahad/core";
+import type { ComputeNodeView, NodeCapacity, PeerStatus, PlacementNeeds, Presence } from "@galahad/core";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 
 /*
@@ -26,6 +26,106 @@ export interface Candidate {
    * fit now (null: not known) and how many wait. Absent: scored from the core count, as before compute.
    */
   compute?: { capacity: NodeCapacity; free: number | null; queued: number; /** Tokens a second its best local model measured. */ localTps?: number } | null;
+}
+
+/** A device of the fleet, as far as placement reads it (the mind's Device). */
+export interface PlacementDevice {
+  id: string;
+  name: string;
+  kind: string;
+  profile: { caps: Record<string, unknown> } | null;
+}
+
+/**
+ * What this node itself did on other hosts since each last reported its slots: sandboxes it sent there (+1) and
+ * sandboxes of its own it ended there (-1). Another host's slots are known only as of its last sync, a few
+ * seconds old: without this, every sandbox asked for in those seconds is placed by the same picture, all go to
+ * the best-ranked host, and they queue there while the others stand idle.
+ */
+export class Dispatched {
+  private entries: { node: string; at: number; delta: 1 | -1 }[] = [];
+
+  /** A sandbox sent to `node` (+1), or one ended there (-1), at `at` (ms). Returns how to take it back (a sandbox that was never made). */
+  note(node: string, delta: 1 | -1, at: number): () => void {
+    const entry = { node, at, delta };
+    this.entries.push(entry);
+    if (this.entries.length > 4096) this.entries.splice(0, this.entries.length - 4096);
+    return () => {
+      const i = this.entries.indexOf(entry);
+      if (i >= 0) this.entries.splice(i, 1);
+    };
+  }
+
+  /**
+   * The net of what `node` hasn't reported yet: everything noted since its last report was asked for
+   * (`reportedAt`, ms). What's older is in that report, and is forgotten here.
+   */
+  since(node: string, reportedAt: number): number {
+    this.entries = this.entries.filter((e) => e.node !== node || e.at >= reportedAt);
+    let net = 0;
+    for (const e of this.entries) if (e.node === node) net += e.delta;
+    return net;
+  }
+}
+
+/**
+ * A host's room as it last reported it, corrected by what this node did there since: `net` more sandboxes than
+ * the report knows (fewer, when negative). More sandboxes take the free slots, then queue; fewer serve its
+ * queue first, then free slots.
+ */
+export function withDispatched<C extends { capacity: NodeCapacity; free: number | null; queued: number }>(room: C, net: number): C {
+  if (room.free === null || net === 0) return room;
+  if (net > 0) return { ...room, free: Math.max(0, room.free - net), queued: room.queued + Math.max(0, net - room.free) };
+  const served = Math.min(-net, room.queued);
+  return { ...room, queued: room.queued - served, free: Math.min(room.capacity.sandboxes, room.free - net - served) };
+}
+
+/**
+ * Every node of the fleet as a candidate: its body, whether it answers, its live load, and what it measured
+ * and has free now (the census). This node's own numbers are live; another's are as its last sync said,
+ * corrected by what this node itself did there since (`dispatched`).
+ */
+export function fleetCandidates(fleet: {
+  devices: readonly PlacementDevice[];
+  self: string;
+  selfCaps: Capabilities | null;
+  statuses: readonly PeerStatus[];
+  compute: readonly ComputeNodeView[];
+  dispatched?: Dispatched;
+}): Candidate[] {
+  const statuses = new Map(fleet.statuses.map((s) => [s.device, s]));
+  const compute = new Map(fleet.compute.map((n) => [n.id, n]));
+  return fleet.devices
+    .filter((d) => d.kind === "node")
+    .map((d) => {
+      const self = d.id === fleet.self;
+      const status = statuses.get(d.id);
+      const known = compute.get(d.id);
+      const localTps = Math.max(0, ...(known?.calibration?.models ?? []).map((m) => m.tps));
+      const room = known?.capacity ? { capacity: known.capacity, free: known.free, queued: known.use?.queued ?? 0, ...(localTps ? { localTps } : {}) } : null;
+      // Another host's report is as old as its last sync: when that sync was asked for is the moment it speaks for.
+      const reportedAt = status?.lastSeen ? status.lastSeen - (status.rttMs ?? 0) : null;
+      return {
+        device: d.id,
+        name: d.name,
+        caps: self ? fleet.selfCaps : ((d.profile?.caps as unknown as Capabilities) ?? null),
+        online: self || !!status?.online,
+        self,
+        presence: status?.presence ?? null,
+        // What it measured and what's free there now: placement's reasons name both.
+        compute: room && !self && fleet.dispatched && reportedAt !== null ? withDispatched(room, fleet.dispatched.since(d.id, reportedAt)) : room,
+      };
+    });
+}
+
+/**
+ * The host for a sandbox nobody pinned to a node: the best-ranked candidate that hosts sandboxes at all (the one
+ * with room, by what each measured; when every host is full, the one with the shortest queue). Null: none is online.
+ */
+export function sandboxHost(candidates: readonly Candidate[]): Placement | null {
+  const { ranked } = place({ docker: true, untrusted: true }, [...candidates]);
+  const hosts = new Set(candidates.filter((c) => !!c.caps?.sandbox).map((c) => c.device));
+  return ranked.find((p) => hosts.has(p.device)) ?? null;
 }
 
 export interface Placement {
