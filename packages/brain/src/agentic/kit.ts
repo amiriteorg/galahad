@@ -14,7 +14,11 @@ import { seededRandom } from "@galahad/core";
 
 export type Rng = () => number;
 
-/** Embedded JavaScript, kept byte for byte (backslashes included). No backticks and no `${` inside it but our own. */
+/**
+ * Embedded JavaScript, kept byte for byte (backslashes included). No backticks and no `${` inside it but our
+ * own, and ASCII only: bun writes any other character in a raw template as a \u escape, which is right inside a
+ * string of the embedded code and wrong anywhere else (a test holds every generated file to having none).
+ */
 export const js = String.raw;
 
 export const pickOne = <T>(rng: Rng, items: readonly T[]): T => items[Math.floor(rng() * items.length)]!;

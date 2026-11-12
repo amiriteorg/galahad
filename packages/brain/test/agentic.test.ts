@@ -82,6 +82,8 @@ describe("posing a task", () => {
       // Where a reference solution changes files, it changes them: the solution isn't lying in the repository already.
       const changed = Object.entries(posed.reference.files).filter(([path, text]) => posed.files[path] !== text);
       if (Object.keys(posed.reference.files).length) expect(changed.length).toBeGreaterThanOrEqual(1);
+      // No character was turned into an escape on its way out of a raw template (only the byte-order mark is named that way, on purpose).
+      for (const text of [posed.goal, posed.script, ...Object.values(posed.files), ...Object.values(posed.reference.files).filter((t): t is string => t !== null)]) expect(text).not.toMatch(/\\u(?!FEFF)[0-9a-fA-F]{4}/);
       // Small enough to put in a sandbox and take out again.
       expect(JSON.stringify(posed.files).length).toBeLessThan(60_000);
       expect(posed.script.length).toBeLessThan(90_000);
