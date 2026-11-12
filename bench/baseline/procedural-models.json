@@ -1,11 +1,11 @@
 {
   "suite": "procedural-models",
-  "commit": "7d62a07aa294+dirty",
-  "at": 1794493314807,
+  "commit": "15ee0f3e19cf+dirty",
+  "at": 1794494966543,
   "seed": 20261112,
   "machine": {
     "name": "11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz",
-    "calibration": 35454,
+    "calibration": 35912,
     "cores": 16
   },
   "metrics": [
@@ -117,9 +117,9 @@
     {"id":"models.flora.litter.budget-used","value":0.233333333,"unit":"","kind":"quality","better":"lower","spread":0.15,"note":"28 triangles of 120, 84 vertices, 1 mesh"},
     {"id":"models.flora.driftwood.budget-used","value":0.433333333,"unit":"","kind":"quality","better":"lower","spread":0.15,"note":"52 triangles of 120, 156 vertices, 1 mesh"},
     {"id":"models.flora.lily.budget-used","value":0.383333333,"unit":"","kind":"quality","better":"lower","spread":0.15,"note":"46 triangles of 120, 138 vertices, 1 mesh"},
-    {"id":"models.build.knight","value":42.28,"unit":"ms","kind":"speed","better":"lower","spread":4.57,"n":5,"note":"building the knight, as the page does when it opens"},
-    {"id":"models.build.keep","value":206.5,"unit":"ms","kind":"speed","better":"lower","spread":18.4,"n":5,"note":"building the keep, as the page does when it opens"},
-    {"id":"models.build.proving-ground","value":158.3,"unit":"ms","kind":"speed","better":"lower","spread":11.4,"n":5,"note":"building the proving-ground, high tier, as the page does when it opens"},
-    {"id":"models.build.workshop","value":342.8,"unit":"ms","kind":"speed","better":"lower","spread":10.5,"n":5,"note":"building the workshop, high tier, as the page does when it opens"}
+    {"id":"models.build.knight","value":37.09,"unit":"ms","kind":"speed","better":"lower","spread":6.6,"n":5,"note":"building the knight, as the page does when it opens"},
+    {"id":"models.build.keep","value":180.4,"unit":"ms","kind":"speed","better":"lower","spread":11.5,"n":5,"note":"building the keep, as the page does when it opens"},
+    {"id":"models.build.proving-ground","value":154.8,"unit":"ms","kind":"speed","better":"lower","spread":17.3,"n":5,"note":"building the proving-ground, high tier, as the page does when it opens"},
+    {"id":"models.build.workshop","value":306.7,"unit":"ms","kind":"speed","better":"lower","spread":3.99,"n":5,"note":"building the workshop, high tier, as the page does when it opens"}
   ]
 }

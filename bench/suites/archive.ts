@@ -29,7 +29,16 @@ const WORDS = 12;
 const PER_ENTRY = 2;
 const COMMON = "the a of and to in is for on with that by this from at as it be are was".split(" ");
 
-const gauss = (r: () => number): number => Math.sqrt(-2 * Math.log(r() || 1e-12)) * Math.cos(2 * Math.PI * r());
+/**
+ * Near enough a normal deviate (twelve uniforms added: mean 0, variance 1), by additions alone: a logarithm or a
+ * cosine differs in its last bit from one platform's maths library to the next, and these vectors must be the
+ * same bytes everywhere for the answers to be.
+ */
+const gauss = (r: () => number): number => {
+  let sum = -6;
+  for (let i = 0; i < 12; i++) sum += r();
+  return sum;
+};
 function unit(v: Float32Array): Float32Array {
   let s = 0;
   for (let i = 0; i < v.length; i++) s += v[i]! * v[i]!;

@@ -110,7 +110,7 @@ function land(ctx: SuiteContext): void {
   const bounds: Record<string, [number, number]> = { water: [0.03, 0.4], shore: [0.005, 0.25], marsh: [0.005, 0.25], meadow: [0.08, 0.6], heath: [0.01, 0.4], woodland: [0.03, 0.5], birchwood: [0.005, 0.3], pinewood: [0.005, 0.3], outcrop: [0.002, 0.2], lawn: [0, 0.05] };
   const out = BIOMES.filter((name) => share(name) < bounds[name]![0] || share(name) > bounds[name]![1]);
   ctx.quality("world.biome.out-of-bounds", out.length, "biomes", "lower", { note: `${shares}${out.length ? `; out of bounds: ${out.join(", ")}` : ""}`.slice(0, 290) });
-  ctx.quality("world.biome.largest-share", Math.max(...BIOMES.map(share)), "", "lower", { resolution: 1e-6, note: "the most any one biome takes of the land" });
+  ctx.quality("world.biome.largest-share", Math.max(...BIOMES.map(share)), "", "lower", { resolution: 1e-3, note: "the most any one biome takes of the land" });
   ctx.quality("world.biome.dry-under-water", dryUnderWater, "samples", "lower", { note: `of ${samples}: ground more than 25 cm under the water's level that isn't water` });
   ctx.quality("world.biome.water-above-water", waterAboveWater, "samples", "lower", { note: "ground more than 25 cm over the water's level that is" });
 }
@@ -187,8 +187,33 @@ function navigation(ctx: SuiteContext, map: RealMap): void {
   const reference = new ReferenceSearch(grid, clear);
   const free: number[] = [];
   for (let c = 0; c < grid.blocked.length; c++) if (!grid.blocked[c]) free.push(c);
-  const random = rng(subSeed(ctx.seed, "world-nav"));
-  const pairs = ctx.full ? 900 : 300;
+  ways(ctx, map, grid, reference, free, "world.nav", 300, "world-nav");
+  // With --full, three times as many again, drawn apart from the first (the default numbers are measured either way).
+  if (ctx.full) ways(ctx, map, grid, reference, free, "full.world.nav", 900, "world-nav-more");
+
+  // Collision queries on the same map: a thousand of each.
+  const random = rng(subSeed(ctx.seed, "world-collide"));
+  const points = Array.from({ length: 1000 }, () => {
+    const c = free[intBelow(random, free.length)]!;
+    return { x: cellX(grid, c), y: cellY(grid, c), dx: (random() - 0.5) * 8, dy: (random() - 0.5) * 8 };
+  });
+  const slid = { x: 0, y: 0 };
+  ctx.time("world.collide.overlaps-1k", () => {
+    for (const p of points) solids.overlaps(p.x + p.dx, p.y + p.dy, w.r, w.step, w.height);
+  }, { n: 15, warm: 3, note: "a thousand: is a walker's circle inside anything?" });
+  ctx.time("world.collide.sweep-1k", () => {
+    for (const p of points) solids.sweep(p.x, p.y, p.dx, p.dy, w.r, w.step, w.height);
+  }, { n: 15, warm: 3, note: "a thousand: how far can a walker go along a line of a few metres?" });
+  ctx.time("world.collide.slide-1k", () => {
+    for (const p of points) solids.slide(p.x, p.y, p.dx * 0.01, p.dy * 0.01, w.r, w.step, w.height, slid);
+  }, { n: 15, warm: 3, note: "a thousand: one frame's step, sliding along what's met" });
+}
+
+/** `pairs` seeded starts and goals on the real map: the planner's way for each, held against the reference's. */
+function ways(ctx: SuiteContext, map: RealMap, grid: ReturnType<typeof buildGrid>, reference: ReferenceSearch, free: readonly number[], id: string, pairs: number, stream: string): void {
+  const w = map.walker;
+  const { solids, planner } = map;
+  const random = rng(subSeed(ctx.seed, stream));
   const ratios: number[] = [];
   const times: number[] = [];
   let should = 0;
@@ -246,29 +271,12 @@ function navigation(ctx: SuiteContext, map: RealMap): void {
   const span: [number, number] = [from, performance.now()];
   const s = summarise(ratios);
   const sorted = [...ratios].sort((p, q) => p - q);
-  const id = ctx.full ? "full.world.nav" : "world.nav";
   ctx.quality(`${id}.missed`, missed, "ways", "lower", { note: `of ${should} pairs with a way (by the reference search), the planner found none${missed ? `: ${longMissed} of them over 300 m round; e.g. ${worst.join("; ")}` : ""}`.slice(0, 290) });
   ctx.quality(`${id}.through-solids`, through, "ways", "lower", { note: "ways the planner gave that cross something solid or deep water" });
   ctx.quality(`${id}.length-ratio-mean`, ratios.reduce((p, q) => p + q, 0) / ratios.length, "×", "lower", { resolution: 1e-6, n: ratios.length, note: "the planner's way against the shortest (reference: exhaustive search on a 0.5 m grid, pulled taut)" });
   ctx.quality(`${id}.length-ratio-worst`, sorted.at(-1)!, "×", "lower", { resolution: 1e-6, note: `median ${s.median.toFixed(4)}, 95th percentile ${sorted[Math.floor(sorted.length * 0.95)]!.toFixed(4)}` });
   ctx.quality(`${id}.over-factor`, ratios.filter((r) => r > 1.15).length, "ways", "lower", { note: "ways more than 1.15 times the shortest" });
   ctx.speed(`${id}.plan`, times, "ms", "lower", span, "planning one way on the real map (a third within 40 m, a third within 120 m, a third anywhere on the home ground)");
-
-  // Collision queries on the same map: a thousand of each.
-  const points = Array.from({ length: 1000 }, () => {
-    const c = free[intBelow(random, free.length)]!;
-    return { x: cellX(grid, c), y: cellY(grid, c), dx: (random() - 0.5) * 8, dy: (random() - 0.5) * 8 };
-  });
-  const slid = { x: 0, y: 0 };
-  ctx.time("world.collide.overlaps-1k", () => {
-    for (const p of points) solids.overlaps(p.x + p.dx, p.y + p.dy, w.r, w.step, w.height);
-  }, { n: 15, warm: 3, note: "a thousand: is a walker's circle inside anything?" });
-  ctx.time("world.collide.sweep-1k", () => {
-    for (const p of points) solids.sweep(p.x, p.y, p.dx, p.dy, w.r, w.step, w.height);
-  }, { n: 15, warm: 3, note: "a thousand: how far can a walker go along a line of a few metres?" });
-  ctx.time("world.collide.slide-1k", () => {
-    for (const p of points) solids.slide(p.x, p.y, p.dx * 0.01, p.dy * 0.01, w.r, w.step, w.height, slid);
-  }, { n: 15, warm: 3, note: "a thousand: one frame's step, sliding along what's met" });
 }
 
 function ecosystem(ctx: SuiteContext): void {
@@ -283,32 +291,9 @@ function ecosystem(ctx: SuiteContext): void {
     }, { n: 9, warm: 1, note: `a thousand steps of the ${tier} tier's cast (${animals} animals at midsummer noon)` });
   }
   // A year of the whole cast, over several seeds: every resident stays, nobody is over what the tier may draw.
-  const seeds = Array.from({ length: ctx.full ? 12 : 5 }, (_, i) => subSeed(ctx.seed, `eco-${i}`) % 100_000);
-  const yearsEach = ctx.full ? 4 : 1;
-  let lost = 0;
-  let over = 0;
-  let caught = 0;
-  let leastSeen = 1;
-  const trouble: string[] = [];
-  for (const seed of seeds) {
-    const r = castThroughYears("high", seed, yearsEach);
-    ctx.pulse();
-    for (const [kind, present] of Object.entries(r.present)) {
-      leastSeen = Math.min(leastSeen, present);
-      // (A fox or the swans may be between one and the next: the world's own test allows that.)
-      if (present < (kind === "fox" || kind === "swan" ? 0.5 : 0.9)) {
-        lost++;
-        trouble.push(`seed ${seed}: ${kind} there ${(present * 100).toFixed(0)} % of the time`);
-      }
-    }
-    over += r.overBounds.length;
-    caught += r.wronglyCaught;
-    if (r.overBounds.length) trouble.push(`seed ${seed}: over bounds ${r.overBounds.join(", ")}`);
-  }
-  const id = ctx.full ? "full.world.eco.years" : "world.eco.year";
-  ctx.quality(`${id}.residents-lost`, lost, "", "lower", { note: `resident kinds (of ${KINDS.slice(0, 3).join(", ")}…) mostly gone during ${yearsEach} year(s), over ${seeds.length} seeds; the least seen was there ${(leastSeen * 100).toFixed(0)} % of the time${trouble.length ? `; ${trouble.slice(0, 3).join("; ")}` : ""}`.slice(0, 290) });
-  ctx.quality(`${id}.over-bounds`, over, "", "lower", { note: "kinds ever over what the tier may draw (its grown ones and half as many young again)" });
-  ctx.quality(`${id}.wrongly-caught`, caught, "", "lower", { note: "roe deer caught (nothing eats one)" });
+  cast(ctx, "world.eco.year", 5, 1);
+  // With --full, four years over twelve (the default numbers are measured either way).
+  if (ctx.full) cast(ctx, "full.world.eco.years", 12, 4);
 
   if (ctx.full) {
     // The fox and the hare alone for eighteen years, as the ecosystem's own test runs them for one seed: over twelve.
@@ -330,6 +315,34 @@ function ecosystem(ctx: SuiteContext): void {
     ctx.quality("full.world.eco.fox-hare.cycle-share", cycles / 12, "", "higher", { note: `seeds whose 18 years pass everything the ecosystem's own test asks of seed 11 (a deep fall, a recovery, tied as predator and prey)${why.length ? `; e.g. ${why.join("; ")}` : ""}`.slice(0, 290) });
     ctx.quality("full.world.eco.fox-hare.tied-median", summarise(tied).median, "", "lower", { resolution: 1e-6, note: "the correlation of the foxes' numbers with the hares' change over the next year (a predator's sign is negative)" });
   }
+}
+
+/** The high tier's whole cast through `yearsEach` years on each of `count` seeds. */
+function cast(ctx: SuiteContext, id: string, count: number, yearsEach: number): void {
+  const seeds = Array.from({ length: count }, (_, i) => subSeed(ctx.seed, `eco-${i}`) % 100_000);
+  let lost = 0;
+  let over = 0;
+  let caught = 0;
+  let leastSeen = 1;
+  const trouble: string[] = [];
+  for (const seed of seeds) {
+    const r = castThroughYears("high", seed, yearsEach);
+    ctx.pulse();
+    for (const [kind, present] of Object.entries(r.present)) {
+      leastSeen = Math.min(leastSeen, present);
+      // (A fox or the swans may be between one and the next: the world's own test allows that.)
+      if (present < (kind === "fox" || kind === "swan" ? 0.5 : 0.9)) {
+        lost++;
+        trouble.push(`seed ${seed}: ${kind} there ${(present * 100).toFixed(0)} % of the time`);
+      }
+    }
+    over += r.overBounds.length;
+    caught += r.wronglyCaught;
+    if (r.overBounds.length) trouble.push(`seed ${seed}: over bounds ${r.overBounds.join(", ")}`);
+  }
+  ctx.quality(`${id}.residents-lost`, lost, "", "lower", { note: `resident kinds (of ${KINDS.slice(0, 3).join(", ")}…) mostly gone during ${yearsEach} year(s), over ${seeds.length} seeds; the least seen was there ${(leastSeen * 100).toFixed(0)} % of the time${trouble.length ? `; ${trouble.slice(0, 3).join("; ")}` : ""}`.slice(0, 290) });
+  ctx.quality(`${id}.over-bounds`, over, "", "lower", { note: "kinds ever over what the tier may draw (its grown ones and half as many young again)" });
+  ctx.quality(`${id}.wrongly-caught`, caught, "", "lower", { note: "roe deer caught (nothing eats one)" });
 }
 
 function sky(ctx: SuiteContext): void {

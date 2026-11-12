@@ -2,7 +2,8 @@
 # parallel across whichever runners are free.
 #
 #  typecheck  ┐
-#  test       ├ every push and PR
+#  test       │ every push and PR
+#  bench      │ the scorecard's quality gates (bun run bench --ci, docs/BENCHMARKS.md)
 #  site-gate  ┘
 #  sandbox    real-Docker sandbox tests; opt-in via repo variables SANDBOX_TESTS=true
 #             and (optionally) SANDBOX_RUNNER='["self-hosted","linux","docker"]'
@@ -56,6 +57,25 @@ jobs:
         env:
           GALAHAD_KEYSTORE: file
 
+  # The scorecard: every suite's deterministic quality metrics against the recorded baselines (bench/baseline/).
+  # A metric that got worse, one the baseline had that's gone, a suite that broke or has no baseline: red.
+  # Timings are printed and never fail here: a runner isn't the machine the baseline was taken on.
+  bench:
+    name: Scorecard (quality gates)
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run bench --ci
+        env:
+          GALAHAD_KEYSTORE: file
+
   site-gate:
     name: Site gate
     runs-on: [self-hosted, linux]
@@ -90,7 +110,7 @@ jobs:
 
   site:
     name: Deploy galahad.bot
-    needs: [typecheck, test, site-gate]
+    needs: [typecheck, test, bench, site-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux]
     timeout-minutes: 10

@@ -41,6 +41,7 @@ bun galahad ask "Good morning, Galahad."
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | The mind, the Link, pairing, vault, brain, placement, R2, growth, roadmap |
 | [OATH](docs/OATH.md) | Character, duties, limits, autonomy classes |
 | [TRIALS](docs/TRIALS.md) | How we prove quality holds and intelligence grows |
+| [BENCHMARKS](docs/BENCHMARKS.md) | The scorecard (`bun run bench`): what's measured without model tokens, its baselines, and what they say |
 | [WORLD](docs/WORLD.md) | The SANDBOX: Galahad's world, and experiments shown live in it |
 | [BANK](docs/BANK.md) | Your bank accounts, read-only, for the agents you choose: setup, threat model, checklist |
 | [DOCTRINE](docs/DOCTRINE.md) | The ideas Galahad is built on, and whose they are |

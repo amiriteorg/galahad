@@ -1,11 +1,11 @@
 {
   "suite": "compute",
-  "commit": "1e389a973cbf+dirty",
-  "at": 1794491796439,
+  "commit": "15ee0f3e19cf+dirty",
+  "at": 1794494596152,
   "seed": 20261112,
   "machine": {
     "name": "11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz",
-    "calibration": 30324,
+    "calibration": 29343,
     "cores": 16
   },
   "metrics": [
@@ -74,6 +74,6 @@
     {"id":"compute.on-closed-node","value":0,"unit":"instants","kind":"quality","better":"lower","note":"a sandbox on the node whose ceiling takes none"},
     {"id":"compute.lost","value":0,"unit":"","kind":"quality","better":"lower","note":"attempts lost waiting past the limit for a slot, and quests that never finished"},
     {"id":"compute.queue-jumps","value":0,"unit":"","kind":"quality","better":"lower","note":"a sandbox given a slot before one that asked that host earlier"},
-    {"id":"compute.place-decision","value":0.7693,"unit":"ms","kind":"speed","better":"lower","spread":0.785,"n":12,"note":"where should this sandbox go? once, on nine machines"}
+    {"id":"compute.place-decision","value":0.4757,"unit":"ms","kind":"speed","better":"lower","spread":0.158,"n":12,"note":"where should this sandbox go? once, on nine machines"}
   ]
 }

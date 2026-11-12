@@ -187,7 +187,8 @@ async function main(): Promise<number> {
   const unbaselined = results.filter((r) => r.comparison?.note && !r.baselineWritten);
   const regressed = of("regressed");
   const gone = of("gone").filter(({ row }) => row.metric.kind === "quality" || !values.ci);
-  const failed = broke.length > 0 || results.some((r) => r.comparison?.failed) || (values.ci && unbaselined.length > 0);
+  // A suite whose baseline was just recorded isn't failed by what differs from the old one: that was the point.
+  const failed = broke.length > 0 || results.some((r) => r.comparison?.failed && !r.baselineWritten) || (values.ci && unbaselined.length > 0);
   const name = ({ suite, row }: (typeof rows)[number]) => `${suite}/${row.metric.id}`;
   const list = (items: typeof rows): string => `${items.slice(0, 8).map(name).join(", ")}${items.length > 8 ? `, and ${items.length - 8} more` : ""}`;
   say(`In all: ${rows.length} metrics in ${results.filter((r) => r.scorecard).length} suites, ${((performance.now() - started) / 1000).toFixed(0)} s.`);
@@ -195,8 +196,9 @@ async function main(): Promise<number> {
   const slower = of("slower");
   if (better.length) say(`  Better: ${list(better)}.`);
   if (slower.length) say(`  Slower beyond noise (reported, not failed; noise is ±${Math.round(SPEED_NOISE_FLOOR * 100)} % or the samples' own spread, a fail is over ${SPEED_FAIL_FACTOR}×): ${list(slower)}.`);
-  if (regressed.length) say(`  REGRESSED: ${list(regressed)}.`);
-  if (gone.length) say(`  GONE: ${list(gone)}.`);
+  const over = values["update-baseline"] ? " (against the baseline this run replaces)" : "";
+  if (regressed.length) say(`  REGRESSED${over}: ${list(regressed)}.`);
+  if (gone.length) say(`  GONE${over}: ${list(gone)}.`);
   if (broke.length) say(`  BROKE: ${broke.map((r) => r.suite).join(", ")}.`);
   if (unbaselined.length) say(`  Not judged (${values.ci ? "fails under --ci" : "no baseline, or another seed"}): ${unbaselined.map((r) => r.suite).join(", ")}.`);
   const recorded = results.filter((r) => r.baselineWritten);

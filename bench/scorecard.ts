@@ -247,7 +247,8 @@ export function renderSuite(run: Scorecard, comparison: Comparison, options: Ren
   lines.push(`  ${tally}${options.tookMs !== null ? ` · ${(options.tookMs / 1000).toFixed(1)} s` : ""} · calibration ${run.machine.calibration.toLocaleString("en-US")} (${(run.machine.calibration / REFERENCE_SINGLE).toFixed(2)}× the reference)`);
   if (comparison.note) lines.push(`  ${comparison.note}`);
   const headline = new Set(options.headline);
-  const shown = comparison.rows.filter((r) => options.all || headline.has(r.metric.id) || !["same", "unjudged"].includes(r.verdict));
+  // (A suite that names no headline, one measured elsewhere, is shown whole.)
+  const shown = comparison.rows.filter((r) => options.all || !options.headline.length || headline.has(r.metric.id) || !["same", "unjudged"].includes(r.verdict));
   // Headline first, in the suite's own order; then the rest as measured.
   const order = new Map(options.headline.map((id, i) => [id, i]));
   shown.sort((a, b) => (order.get(a.metric.id) ?? 1e9) - (order.get(b.metric.id) ?? 1e9));
@@ -264,6 +265,6 @@ export function renderSuite(run: Scorecard, comparison: Comparison, options: Ren
     lines.push(...table([["metric", "kind", "value", "", "baseline", "change", "verdict"], ...body]));
   }
   const hidden = comparison.rows.length - shown.length;
-  if (hidden > 0) lines.push(`  (${hidden} more unchanged; --all shows every metric)`);
+  if (hidden > 0) lines.push(`  (${hidden} more${judged ? " unchanged" : ""}; --all shows every metric)`);
   return lines.join("\n");
 }

@@ -149,7 +149,12 @@ describe("baselines and files", () => {
     expect(text).toMatch(/moved\s+quality\s+4\s+3\s+\+33 %\s+REGRESSED/);
     expect(text).not.toContain("quiet");
     expect(text).toContain("(2 more unchanged; --all shows every metric)");
-    expect(renderSuite(run, compare(run, baseline, DEFAULT), { all: true, headline: [], about: "", tookMs: null })).toContain("quiet");
+    expect(renderSuite(run, compare(run, baseline, DEFAULT), { all: true, headline: ["head"], about: "", tookMs: null })).toContain("quiet");
+    // A suite measured elsewhere names no headline: it's shown whole, and with nothing to judge it against it says so.
+    const elsewhere = renderSuite(run, compare(run, null, DEFAULT), { all: false, headline: [], about: "in a browser", tookMs: null, origin: "measured earlier, not run now" });
+    expect(elsewhere).toContain("demo (measured earlier, not run now): in a browser");
+    expect(elsewhere).toContain("quiet");
+    expect(elsewhere).toContain("no baseline recorded");
   });
 });
 
