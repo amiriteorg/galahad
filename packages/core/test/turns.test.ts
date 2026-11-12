@@ -31,7 +31,7 @@ describe("a chat's state at a glance", () => {
     expect(chatStateWords({ state: "done", queued: 0, held: null, needs: null })).toBe("");
     expect(needsWords({ approvals: 1, keys: 0, question: false })).toBe("an approval");
     expect(holdWords("restart")).toBe("the node restarted");
-    expect(holdWords("device")).toMatch(/no longer paired/);
+    expect(holdWords("device")).toBe("the device that queued the next one is no longer paired, or may not see this chat");
   });
 });
 

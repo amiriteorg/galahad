@@ -575,6 +575,45 @@ describe("a steered or queued message is your message, and checked like one", ()
     expect(JSON.stringify(bodies)).not.toContain(FAKE_KEY);
   });
 
+  test("the bank's rule holds across a steer: once he has read the bank in a turn, no message of yours in that turn lets it out or into the mind", async () => {
+    // He reads the bank; while he's answering you steer him to write it down; the tool is still refused.
+    const pace = paced("Your bank connection: ", "(never said)");
+    script = [callTools({ id: "call_bank", name: "bank_status", args: {} }), pace.reply, callTools({ id: "call_keep", name: "remember", args: { text: "The liege's bank is connected" } }), say("I can't keep that: your bank data is in this answer.")];
+    const first = await ask(admin, "How is my bank connection?", { save: true });
+    await first.seen("text");
+    await json(admin("steerTurn", { turn: first.turn().id, text: "Remember that for me." }));
+    await first.done;
+    pace.go();
+    const results = first.events.filter((e) => e.type === "tool_result") as Extract<ChatStreamEvent, { type: "tool_result" }>[];
+    expect(results.map((r) => [r.name, r.ok, r.summary])).toEqual([
+      ["bank_status", true, expect.any(String)],
+      ["remember", false, "refused: bank data is in this answer"],
+    ]);
+    expect(first.types()).toEqual(["turn", "conversation", "model", "tool", "tool_result", "text", "steer", "tool", "tool_result", "text", "done"]);
+    expect(daemon.store.recall("bank is connected")).toEqual([]);
+    // And the chat is marked as one where he read the bank, from the answer the steer cut: the phone no longer sees it.
+    const id = first.turn().conversation!;
+    expect((await chatOf(id)).bank).toBe(true);
+    expect((await phone.call("conversation", { id })).status).toBe(404);
+    // A message the phone had queued behind it would never run on it.
+    expect((await phone.call("queueMessage", { conversation: id, text: "And the balance?" })).status).toBe(404);
+  });
+
+  test("a queued message rewritten from another device becomes that device's", async () => {
+    const pace = paced("One", ".");
+    script = [pace.reply];
+    const first = await ask(admin, "Do one.", { save: true });
+    await first.seen("text");
+    const id = first.turn().conversation!;
+    const { queue } = await json<{ queue: QueuedMessage[] }>(admin("queueMessage", { conversation: id, text: "Do two." }));
+    expect(queue[0]!.by).toBe("a terminal on keep");
+    const edited = await json<{ queue: QueuedMessage[] }>(phone.call("editQueued", { conversation: id, id: queue[0]!.id, text: "Do two, the phone's way." }));
+    expect(edited.queue.map((q) => [q.text, q.by])).toEqual([["Do two, the phone's way.", "phone"]]);
+    await json(admin("removeQueued", { conversation: id }));
+    pace.go();
+    await first.done;
+  });
+
   test("an agent has no part in your turns; a device that may not read the bank may stop, but not watch or steer, a turn that may", async () => {
     const { token } = await json<{ token: string }>(admin("mintArm", { label: "helper" }));
     const agent = withToken(token);

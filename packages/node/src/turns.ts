@@ -122,9 +122,15 @@ export interface HubLimits extends TurnLimits {
    * such bound: its answer is in the chat whoever watches.)
    */
   unwatchedMs: number;
+  /**
+   * How long a turn that was told to stop may take to wind down (a tool that's running finishes first), in ms.
+   * Past it the turn is recorded as it stands and its place given up, whatever is still hanging: a tool that
+   * never returns can't keep a stopped turn, or a stopping node, waiting forever.
+   */
+  windDownMs: number;
 }
 
-export const HUB_LIMITS: HubLimits = { ...DEFAULT_TURN_LIMITS, maxSteers: 20, keepMs: 10 * 60_000, unwatchedMs: 2 * 60_000 };
+export const HUB_LIMITS: HubLimits = { ...DEFAULT_TURN_LIMITS, maxSteers: 20, keepMs: 10 * 60_000, unwatchedMs: 2 * 60_000, windDownMs: 30_000 };
 
 /** A turn the hub is running, or one that just ended. */
 export interface LiveTurn {
@@ -160,6 +166,10 @@ interface Live extends LiveTurn {
   timer: ReturnType<typeof setTimeout> | null;
   /** A temporary chat's turn, while nobody watches it: when it's stopped unless someone attaches. */
   unwatched: ReturnType<typeof setTimeout> | null;
+  /** After a stop: when it's given up on if it still hasn't wound down. */
+  windDown: ReturnType<typeof setTimeout> | null;
+  /** Says the turn has ended and everything about it is written. */
+  settle: () => void;
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -311,6 +321,8 @@ export class TurnHub {
       tools: 0,
       timer: null,
       unwatched: null,
+      windDown: null,
+      settle: () => finished(),
     };
     this.turns.set(turn.id, turn);
     if (c) this.emit(turn, { type: "conversation", id: c.id, title: c.title, project: c.project });
@@ -318,7 +330,7 @@ export class TurnHub {
     turn.timer = setTimeout(() => this.halt(turn, "limit"), Math.max(0, turn.deadline - startedAt));
     (turn.timer as { unref?: () => void }).unref?.();
     this.watched(turn);
-    void this.run(turn).finally(finished);
+    void this.run(turn);
     return turn;
   }
 
@@ -473,7 +485,10 @@ export class TurnHub {
     const running = [...this.turns.values()].filter((t) => t.state === "running");
     for (const turn of running) this.halt(turn, "node");
     await Promise.all(running.map((t) => t.ended));
-    for (const turn of this.turns.values()) if (turn.timer) clearTimeout(turn.timer);
+    for (const turn of this.turns.values()) {
+      if (turn.timer) clearTimeout(turn.timer);
+      if (turn.windDown) clearTimeout(turn.windDown);
+    }
     this.turns.clear();
   }
 
@@ -495,28 +510,41 @@ export class TurnHub {
     if (turn.state !== "running" || turn.stop || turn.completed) return;
     turn.stop = reason;
     turn.controller.abort();
+    // It winds down by itself (the model call ends, a running tool finishes and reports). If something never
+    // returns, it's recorded as stopped anyway, with what's known: nothing is left running in its name.
+    turn.windDown = setTimeout(() => this.end(turn), this.limit.windDownMs);
+    (turn.windDown as { unref?: () => void }).unref?.();
+  }
+
+  /** The turn is over: written down once, whoever gets here first (its own end, or a stop that ran out of patience). */
+  private end(turn: Live): void {
+    if (turn.state !== "running") return;
+    try {
+      this.finish(turn);
+    } catch (error) {
+      // Whatever went wrong writing it down, the turn is over and nobody waits on it forever.
+      turn.state = "error";
+      turn.endedAt = this.now();
+      this.log(`a turn's end wasn't recorded: ${(error as Error).message}`);
+      for (const listener of [...turn.listeners]) listener(null);
+      turn.listeners.clear();
+    }
+    turn.settle();
   }
 
   private async run(turn: Live): Promise<void> {
     try {
       for await (const event of turn.spec.run(turn.steering, turn.controller.signal)) {
+        // Already written down as stopped (it took too long to wind down): what trickles in after isn't recorded.
+        if (turn.state !== "running") continue;
         // Stopped: the abort's own error isn't what happened to it.
         if (turn.stop && event.type === "error") continue;
         this.apply(turn, event);
       }
     } catch (error) {
-      if (!turn.stop) this.apply(turn, { type: "error", error: redact(String((error as Error)?.message ?? error)).slice(0, 500) });
+      if (!turn.stop && turn.state === "running") this.apply(turn, { type: "error", error: redact(String((error as Error)?.message ?? error)).slice(0, 500) });
     } finally {
-      try {
-        this.finish(turn);
-      } catch (error) {
-        // Whatever went wrong writing it down, the turn is over and nobody waits on it forever.
-        turn.state = "error";
-        turn.endedAt = this.now();
-        this.log(`a turn's end wasn't recorded: ${(error as Error).message}`);
-        for (const listener of [...turn.listeners]) listener(null);
-        turn.listeners.clear();
-      }
+      this.end(turn);
     }
   }
 
@@ -565,8 +593,11 @@ export class TurnHub {
     turn.timer = null;
     if (turn.unwatched) clearTimeout(turn.unwatched);
     turn.unwatched = null;
+    if (turn.windDown) clearTimeout(turn.windDown);
+    turn.windDown = null;
     const { chats } = this.opts;
-    const c = turn.spec.conversation;
+    // A chat deleted while he worked in it has nowhere to keep the answer (deleting it is what stopped him).
+    const c = turn.spec.conversation && chats.summary(turn.spec.conversation.id) ? turn.spec.conversation : null;
     const stopped = turn.completed ? null : turn.stop;
     if (stopped === "limit") {
       this.apply(turn, {

@@ -271,8 +271,9 @@ export class ChatStore {
     return queuedOf(row);
   }
 
-  queueEdit(conversation: string, id: number, text: string): boolean {
-    return this.db.query("UPDATE queue SET content = ? WHERE id = ? AND conversation = ?").run(text, id, conversation).changes > 0;
+  /** Change a queued message's words. It becomes its editor's: when its turn comes it runs as them, with what they may do then. */
+  queueEdit(conversation: string, id: number, text: string, by: QueuedBy): boolean {
+    return this.db.query("UPDATE queue SET content = ?, by_kind = ?, by_device = ? WHERE id = ? AND conversation = ?").run(text, by.kind, by.device, id, conversation).changes > 0;
   }
 
   /** Take a queued message out (the first, or the one named): its turn has come, or you removed it. An emptied queue holds nothing. */

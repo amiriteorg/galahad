@@ -73,7 +73,7 @@ export interface QueuedMessage {
 /**
  * Why a chat's queue is held (nothing is sent until you resume or discard): you stopped him;
  * the turn before it failed; the node restarted; the device that queued the next message is
- * no longer paired (or may no longer chat).
+ * no longer paired, may no longer chat, or may not see this chat (it read the bank since).
  */
 export type QueueHold = "stopped" | "error" | "restart" | "device";
 
@@ -84,7 +84,7 @@ export const holdWords = (held: QueueHold): string =>
       ? "the turn before them failed"
       : held === "restart"
         ? "the node restarted"
-        : "the device that queued the next one is no longer paired";
+        : "the device that queued the next one is no longer paired, or may not see this chat";
 
 /** What a chat is waiting on you for. */
 export interface ChatNeeds {

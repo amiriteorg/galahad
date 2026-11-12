@@ -252,6 +252,61 @@ describe("a temporary chat's turn nobody watches", () => {
   });
 });
 
+describe("a stop always ends", () => {
+  /** An answer stuck in something that never returns and ignores the stop (a tool that hangs). */
+  const hung = (): TurnSpec["run"] =>
+    async function* () {
+      yield { type: "model", ref: "test/m" };
+      yield { type: "tool", id: "c1", name: "connector_call", title: "Call a connector tool", input: "" };
+      await new Promise(() => {});
+    };
+
+  test("a tool that never returns can't hold a stopped turn: it's recorded as it stands, and its place is given up", async () => {
+    const t = setup({ windDownMs: 40, maxTurns: 1 });
+    const id = t.chat();
+    const turn = t.hub.start(t.spec(id, "Fetch the report.", { run: hung() }));
+    const seen = watch(t.hub, turn.id);
+    await settle();
+    t.hub.stop(turn.id);
+    await turn.ended;
+    expect(turn.state).toBe("stopped");
+    expect(seen.events.at(-1)).toEqual({ type: "stopped", reason: "you" });
+    expect(seen.ended).toBe(true);
+    // The tool's outcome was never known, and the kept answer says exactly that: called, no result.
+    const kept = t.chats.get(id)!.messages[1]!;
+    expect(kept.status).toBe("stopped");
+    expect(kept.steps.at(-1)).toMatchObject({ kind: "tool", id: "c1", ok: null, summary: null });
+    // Its place on the node is free again.
+    expect(t.hub.running()).toEqual([]);
+    expect(() => t.hub.start(t.spec(t.chat("next"), "Something else."))).not.toThrow();
+  });
+
+  test("a stopping node doesn't wait on it either", async () => {
+    const t = setup({ windDownMs: 40 });
+    const turn = t.hub.start(t.spec(t.chat(), "Fetch the report.", { run: hung() }));
+    await settle();
+    const started = Date.now();
+    await t.hub.close();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(turn.state).toBe("stopped");
+  });
+
+  test("a chat deleted while he works in it: the turn stops, and nothing is written for a chat that's gone", async () => {
+    const t = setup();
+    const id = t.chat();
+    const turn = t.hub.start(t.spec(id, "A long one."));
+    t.answers[0]!.say("Half");
+    await settle();
+    t.hub.steer(turn.id, "never delivered", admin);
+    t.chats.delete(id);
+    t.hub.stop(turn.id);
+    await turn.ended;
+    expect(turn.state).toBe("stopped");
+    expect(t.logs).toEqual([]);
+    expect(t.chats.summary(id)).toBeNull();
+  });
+});
+
 describe("limits, said plainly", () => {
   test("so many turns at once; one per chat; refused before anything is written", () => {
     const t = setup({ maxTurns: 2 });
@@ -483,6 +538,18 @@ describe("the queue", () => {
     expect(t.chats.summary(id)).toMatchObject({ queued: 1, held: "device" });
     expect(t.answers).toHaveLength(1);
     expect(t.logs.join("\n")).toContain("no longer paired");
+  });
+
+  test("a queued message someone else rewrites is theirs: it runs as the device that last wrote it", async () => {
+    const t = setup();
+    const id = t.chat();
+    const first = t.hub.start(t.spec(id, "One."));
+    const { queued } = t.hub.enqueue(id, { text: "Two.", role: null, by: admin });
+    expect(t.chats.queueEdit(id, queued.id, "Two, but as the phone would ask it.", phone)).toBe(true);
+    expect(t.chats.queueEdit(id, 999_999, "nothing", phone)).toBe(false);
+    t.answers[0]!.end();
+    await first.ended;
+    expect(t.prepared[0]!.queued).toMatchObject({ text: "Two, but as the phone would ask it.", by: phone });
   });
 
   test("so many messages queued behind one chat", () => {

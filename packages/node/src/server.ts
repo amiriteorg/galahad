@@ -1488,7 +1488,8 @@ export function createApp(ctx: AppContext) {
     editQueued: (input, p) => {
       const kept = keptChat(input.conversation, p);
       guardAgainstSecrets(input.text);
-      if (!ctx.chats.queueEdit(kept.id, input.id, input.text)) throw new HttpError(404, "that message is no longer queued (it may have been sent)");
+      // Rewritten, it is the rewriter's message: it will run with what this device may do, not what the first one could.
+      if (!ctx.chats.queueEdit(kept.id, input.id, input.text, byOf(p))) throw new HttpError(404, "that message is no longer queued (it may have been sent)");
       return queueView(kept.id);
     },
     removeQueued: (input, p) => {
