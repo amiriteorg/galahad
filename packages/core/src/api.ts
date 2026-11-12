@@ -5,6 +5,9 @@ import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Pr
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
+import { HarnessOptions, TrialPins, VariantName } from "./trials.ts";
+import type { Usage } from "./spend.ts";
+import { PricedModel, PriceSchema, SpendLines, type TrialSpent } from "./usage.ts";
 import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
@@ -619,14 +622,38 @@ export const routes = {
    * Record a graded trial, once. brain:write (never an arm's): the Index decides what
    * Galahad keeps, so the thing being measured can't write its own marks.
    */
-  recordTrial: { method: "POST", path: "/api/trials", scope: "brain:write", input: TrialRecord },
-  /** A run's settings (its effort), recorded once when it starts: the Index per effort level reads them. */
+  recordTrial: {
+    method: "POST",
+    path: "/api/trials",
+    scope: "brain:write",
+    /** `spent`: what its model calls came to, by role and model (counts only), recorded beside it (`trial.spent`). */
+    input: TrialRecord.extend({ spent: SpendLines.optional() }),
+  },
+  /** A run's settings (its effort, what it pinned, its variant, its budget), recorded once when it starts: the reports read them. */
   startTrialRun: {
     method: "POST",
     path: "/api/trials/runs",
     scope: "brain:write",
-    input: z.strictObject({ run: TrialRunId, suite: z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/), effort: EffortLevel, parallel: z.number().int().min(1).max(64).optional() }),
+    input: z.strictObject({
+      run: TrialRunId,
+      suite: z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/),
+      effort: EffortLevel,
+      parallel: z.number().int().min(1).max(64).optional(),
+      pins: TrialPins.optional(),
+      variant: z.strictObject({ name: VariantName, options: z.strictObject(HarnessOptions.shape) }).optional(),
+      seed: z.number().int().min(0).max(0xffffffff).optional(),
+      group: z.string().regex(/^g-[a-z0-9]{1,16}$/).optional(),
+      budget: z.strictObject({ tokens: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(), usd: z.number().min(0).max(1_000_000).optional() }).optional(),
+    }),
   },
+  // ---- What model calls cost (usage.ts): tokens as the providers report them, money at your prices ----
+  /** Your prices, per model, in US dollars per million tokens. */
+  prices: { method: "GET", path: "/api/prices", scope: "mind:read", input: null },
+  /** State a model's price (yours to state, never an agent's: it decides what "cheaper" means). `<provider>/*` prices all of a provider's models. */
+  setPrice: { method: "POST", path: "/api/prices", scope: "brain:write", input: z.strictObject({ model: PricedModel, ...z.strictObject(PriceSchema.shape).shape }) },
+  removePrice: { method: "POST", path: "/api/prices/remove", scope: "brain:write", input: z.strictObject({ model: PricedModel }) },
+  /** This node's own count of its model calls, by day, who asked, role and model (never a prompt or an answer), and your prices. */
+  usage: { method: "POST", path: "/api/usage", scope: "mind:read", input: z.strictObject({ days: z.number().int().min(1).max(366).optional() }) },
 
   // ---- Compute: what the fleet can carry, and how he spends it (compute.ts) ----------
   /** The census: every node's body, what it measured, its ceiling, slots in use and waiting; his plan; the day's budget. */
@@ -1126,6 +1153,8 @@ export interface TrialView extends TrialRecord {
   recordedAt: number;
   /** The node that ran it. */
   nodeName: string;
+  /** What its model calls came to, by role and model (absent: recorded before calls were counted). */
+  spent?: TrialSpent;
 }
 
 /** The runs that recorded their settings (their effort), by run id. A run not here ran at effort 1. */
@@ -1178,6 +1207,11 @@ export type ChatStreamEvent =
   /** Archived entries offered to the model as context for this answer (data, never instructions). */
   | { type: "archive"; entries: ArchiveContextEntry[] }
   | { type: "fallback"; from: string; error: string }
+  /**
+   * One model call's tokens, as its provider reported them when the call ended (null: it reported nothing,
+   * which is said as unknown, never estimated). Counts only: nothing of the prompt or the answer.
+   */
+  | { type: "usage"; ref: string; usage: Usage | null }
   /** A message of yours reached him while he worked (a steer): what follows answers it, in the same turn. */
   | { type: "steer"; text: string }
   /**

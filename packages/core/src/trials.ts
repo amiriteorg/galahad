@@ -52,12 +52,125 @@ export const TrialRecord = z.strictObject({
 });
 export type TrialRecord = z.infer<typeof TrialRecord>;
 
+/** The roles a trial's quest asks (a pin is for one of them). */
+export const TRIAL_ROLES = ["planner", "engineer", "reviewer"] as const;
+export type TrialRole = (typeof TRIAL_ROLES)[number];
+const PinnedModel = z.string().min(3).max(256).regex(/^[A-Za-z0-9._:-]+\/\S+$/, "a pin is <role>=<provider>/<model>");
+export const TrialPins = z.strictObject({ planner: PinnedModel.optional(), engineer: PinnedModel.optional(), reviewer: PinnedModel.optional() });
+export type TrialPins = z.infer<typeof TrialPins>;
+
+/**
+ * The harness, as switches: what a variant turns on or off around the same models and the same tasks.
+ * `gates`: a task's own gates run before the review · `plannerGates`: the planner may add its own ·
+ * `effort`: attempts per trial · `skills`: his skills are offered to the planner and the engineer ·
+ * `archive`: the archive's context goes with the plan · `revisions`: how many times work may be sent back.
+ */
+export const HarnessOptions = z.object({
+  gates: z.boolean(),
+  plannerGates: z.boolean(),
+  effort: EffortLevel,
+  skills: z.boolean(),
+  archive: z.boolean(),
+  revisions: z.number().int().min(0).max(4),
+});
+export type HarnessOptions = z.infer<typeof HarnessOptions>;
+
+/** How trials are run when nothing says otherwise: what `galahad trial run` has always done, with a task's gates on. */
+export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2 };
+
+export const VariantName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "a variant's name is lowercase letters, digits and - (max 40)");
+export const TrialVariant = z.object({ name: VariantName, options: HarnessOptions });
+export type TrialVariant = z.infer<typeof TrialVariant>;
+
 /**
  * How a run was run: its effort (attempts per trial, the best taken by the reviewer on the evidence before
- * anything is graded) and how many trials ran at once. Read leniently from the log (trial.run).
+ * anything is graded), how many trials ran at once, and what was held fixed or switched. Read leniently from
+ * the log (trial.run): what a newer node adds is left out here, never refused.
  */
-export const TrialRunSettings = z.object({ effort: EffortLevel, parallel: z.number().int().min(1).max(64).optional() });
+export const TrialRunSettings = z.object({
+  effort: EffortLevel,
+  parallel: z.number().int().min(1).max(64).optional(),
+  /** Roles held to one model for this run (`--pin engineer=provider/model`); every other role is the roster's. */
+  pins: TrialPins.optional(),
+  /** The harness options the run was made under, by name (variants A/B compare two of them on the same tasks). */
+  variant: TrialVariant.optional(),
+  /** The seed its first trial of each problem was posed with (a second run with the same seed poses the same tasks). */
+  seed: z.number().int().min(0).max(0xffffffff).optional(),
+  /** Runs made to be compared with each other (an A/B's two, a sweep's candidates) share this. */
+  group: z.string().regex(/^g-[a-z0-9]{1,16}$/).optional(),
+  /** What the run was allowed to spend, as it was told. */
+  budget: z.object({ tokens: z.number().int().min(1).optional(), usd: z.number().min(0).optional() }).optional(),
+});
 export type TrialRunSettings = z.infer<typeof TrialRunSettings>;
+
+/** The variants that come named: each differs from the baseline by one switch (bare: by all of them). */
+export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
+  baseline: BASELINE,
+  "no-gates": { ...BASELINE, gates: false },
+  "planner-gates": { ...BASELINE, plannerGates: true },
+  "effort-2": { ...BASELINE, effort: 2 },
+  "effort-3": { ...BASELINE, effort: 3 },
+  skills: { ...BASELINE, skills: true },
+  "no-archive": { ...BASELINE, archive: false },
+  "no-revisions": { ...BASELINE, revisions: 0 },
+  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0 },
+};
+
+const ON = new Set(["on", "yes", "true", "1"]);
+const OFF = new Set(["off", "no", "false", "0"]);
+
+/**
+ * A variant from its spelling: a name that comes built in (`no-gates`), or `name:switch=value,…` over the
+ * baseline (`mine:gates=off,skills=on,effort=2`). Throws with what's wrong.
+ */
+export function parseVariant(spelling: string): TrialVariant {
+  const [rawName, ...restParts] = spelling.split(":");
+  const name = VariantName.parse(rawName);
+  const rest = restParts.join(":").trim();
+  if (!rest) {
+    const options = VARIANTS[name];
+    if (!options) throw new Error(`no variant "${name}" (there is: ${Object.keys(VARIANTS).join(", ")}; or define one: ${name}:gates=off,skills=on)`);
+    return { name, options };
+  }
+  if (VARIANTS[name]) throw new Error(`"${name}" is a variant that comes built in: give yours another name`);
+  const options: Record<string, unknown> = { ...BASELINE };
+  for (const pair of rest.split(",")) {
+    const [key, value = ""] = pair.split("=").map((s) => s.trim());
+    const flag = (): boolean => {
+      if (ON.has(value)) return true;
+      if (OFF.has(value)) return false;
+      throw new Error(`${key} is on or off, not "${value}"`);
+    };
+    if (key === "gates" || key === "skills" || key === "archive") options[key] = flag();
+    else if (key === "planner-gates" || key === "plannerGates") options.plannerGates = flag();
+    else if (key === "effort" || key === "revisions") options[key] = Number(value);
+    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions)`);
+  }
+  return { name, options: z.strictObject(HarnessOptions.shape).parse(options) };
+}
+
+/** A variant's switches in a line, as far as they differ from the baseline ("as the baseline" when they don't). */
+export function describeVariant(options: HarnessOptions): string {
+  const said: string[] = [];
+  if (options.gates !== BASELINE.gates) said.push(options.gates ? "gates on" : "gates off");
+  if (options.plannerGates !== BASELINE.plannerGates) said.push(options.plannerGates ? "the planner's own gates" : "no planner gates");
+  if (options.effort !== BASELINE.effort) said.push(`effort ${options.effort}`);
+  if (options.skills !== BASELINE.skills) said.push(options.skills ? "skills offered" : "no skills");
+  if (options.archive !== BASELINE.archive) said.push(options.archive ? "the archive's context" : "no archive context");
+  if (options.revisions !== BASELINE.revisions) said.push(options.revisions ? `${options.revisions} revision${options.revisions === 1 ? "" : "s"}` : "no revisions");
+  return said.join(", ") || "as the baseline";
+}
+
+/**
+ * A trial's quest has an id of its own kind (t-…, where any other quest's is q-…), so what it kept can be told
+ * from other work wherever it goes. The archive keeps a trial's record and its kept work as kind `trial`, and
+ * that kind is never offered to a model as context: a later trial of the same problem (the same seed, in an A/B
+ * or a sweep; the same kind of task, any time) must not be handed an earlier one's answers, or its marks.
+ */
+export const TRIAL_QUEST_PREFIX = "t";
+export const isTrialQuest = (quest: string | null | undefined): boolean => typeof quest === "string" && quest.startsWith(`${TRIAL_QUEST_PREFIX}-`);
+/** The archive's kind for a trial's record and what a trial kept. */
+export const TRIAL_ARCHIVE_KIND = "trial";
 
 /** An answer passes when it is within its tolerance of the exact one. */
 export const answerOk = (got: number | null, expected: number, tolerance: number): boolean =>

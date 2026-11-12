@@ -55,7 +55,8 @@ function fakeTools(outcome = "3 memories about the bank") {
 
 async function collect(stream: AsyncGenerator<ChatStreamEvent>): Promise<ChatStreamEvent[]> {
   const out: ChatStreamEvent[] = [];
-  for await (const event of stream) out.push(event);
+  // What each call cost is usage.test.ts's to check: these read the answer's own flow.
+  for await (const event of stream) if (event.type !== "usage") out.push(event);
   return out;
 }
 const textOf = (events: ChatStreamEvent[]) => events.flatMap((e) => (e.type === "text" ? [e.text] : [])).join("");

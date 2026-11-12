@@ -1,4 +1,4 @@
-import { archiveId, type ConversationSummary, Preregistration, type StoredMessage, type StoredStep, type TrialRecord, type Trust } from "@galahad/core";
+import { archiveId, type ConversationSummary, isTrialQuest, Preregistration, type StoredMessage, type StoredStep, TRIAL_ARCHIVE_KIND, type TrialRecord, type Trust } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 import type { ArtifactStore } from "../artifacts.ts";
 import { asText, extOf, mightBeModel, modelFacts, transcript } from "./chunk.ts";
@@ -157,7 +157,11 @@ export function investigationsAdapter(mind: Pick<MindStore, "lwwPrefix" | "lww">
   };
 }
 
-/** Trials: graded by a program against the exact answer, so the record itself is Galahad's (agent). */
+/**
+ * Trials: graded by a program against the exact answer, so the record itself is Galahad's (agent). Kept as kind
+ * `trial`, which is never offered to a model as context: a record holds the answers of its seed and the names of
+ * its hidden checks.
+ */
 export function trialsAdapter(mind: Pick<MindStore, "lwwPrefix">): ArchiveAdapter {
   return {
     name: "trials",
@@ -167,7 +171,7 @@ export function trialsAdapter(mind: Pick<MindStore, "lwwPrefix">): ArchiveAdapte
       const { batch, more } = after(trials, cursor, limit);
       return {
         entries: batch.map(({ item: { t, at } }) => ({
-          kind: "teaching",
+          kind: TRIAL_ARCHIVE_KIND,
           source: "trials",
           sourceId: t.id,
           title: `Trial: ${t.title} (${Math.round(t.score * 100)} %)`,
@@ -218,7 +222,9 @@ export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesO
       const entries: IncomingEntry[] = [];
       for (const { item: a } of batch) {
         const files = artifacts.filesOf(a.id) ?? a.files;
-        const trust: Trust = /^(q-|inv-)/.test(a.quest ?? "") ? "agent" : "untrusted";
+        const trust: Trust = /^(q-|inv-|t-)/.test(a.quest ?? "") ? "agent" : "untrusted";
+        // What a trial kept (its answers, its scripts, its report) is a trial's, whatever it is made of: never context for a model.
+        const ofTrial = isTrialQuest(a.quest);
         const id = archiveId("artifacts", a.id);
         const incoming: IncomingFile[] = [];
         for (const f of files) {
@@ -229,7 +235,7 @@ export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesO
           }
         }
         entries.push({
-          kind: "artifact",
+          kind: ofTrial ? TRIAL_ARCHIVE_KIND : "artifact",
           source: "artifacts",
           sourceId: a.id,
           title: a.label,
@@ -256,7 +262,7 @@ export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesO
           if (!facts) continue;
           const name = f.path.split("/").at(-1)!;
           entries.push({
-            kind: "model",
+            kind: ofTrial ? TRIAL_ARCHIVE_KIND : "model",
             source: "artifacts",
             sourceId: `${a.id}/${f.path}`,
             title: `${name} (${facts.format})`,

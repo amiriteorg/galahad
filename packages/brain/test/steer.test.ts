@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, chat, type ChatTools, INTERJECTED, openAIConversation, Steering, type ToolCall } from "../src/index.ts";
+import { anthropicConversation, chat as chatWithUsage, type ChatTools, INTERJECTED, openAIConversation, Steering, type ToolCall } from "../src/index.ts";
+
+// What each call cost is usage.test.ts's to check: these read the answer's own flow, event by event.
+async function* chat(...args: Parameters<typeof chatWithUsage>): AsyncGenerator<ChatStreamEvent> {
+  for await (const event of chatWithUsage(...args)) if (event.type !== "usage") yield event;
+}
 
 /*
  * Steering: a message from the owner reaches an answer that's under way, at the next

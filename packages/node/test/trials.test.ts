@@ -80,6 +80,8 @@ describe("running a trial", () => {
     expect(trial).toMatchObject({ problem: "cantilever-beam", seed: 11, status: "scored", score: 1, artifact: "art_AAAAAAAAAAAAAAAAAAAAAA", quest: { status: "done" } });
     expect(trial!.models).toEqual(["fake/planner", "fake/engineer", "fake/reviewer"]);
     expect(calls.find((c) => c.name === "createSandbox")!.input).toMatchObject({ lab: true, network: "gateway" });
+    // Its quest is of a trial's kind (t-…): what it keeps is archived as a trial's, and never offered to a model as context.
+    expect(calls.find((c) => c.name === "createSandbox")!.input.quest).toMatch(/^t-[a-z0-9]+$/);
     expect(briefing).toContain(TRIAL_INSTRUCTIONS);
     expect(briefing).toContain('"tip_deflection_mm"');
     // The answer file is read before the work is kept and the sandbox goes.

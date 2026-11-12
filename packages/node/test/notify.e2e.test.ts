@@ -41,7 +41,12 @@ const logs: string[] = [];
 const pauses: number[] = [];
 
 /** His clock: real time to begin with, moved on by the test (a minute between messages, a night). The push service keeps the same time. */
-let clock = Date.now();
+// The node stamps its own notices with the real time, so this clock starts near it; but always at the same time
+// of day: the next 01:00 or 13:00 UTC (at most twelve hours ahead). The tests below move it eight hours and several
+// days on, and a day's count is kept by the calendar day: started at any other hour, the later ones straddled
+// midnight on some afternoons (a run begun between 16:00 and 16:35 UTC failed), and yesterday's messages counted as today's.
+const HALF_DAY = 12 * 3600_000;
+let clock = Math.ceil((Date.now() - 3600_000) / HALF_DAY) * HALF_DAY + 3600_000;
 const advance = (ms: number) => (clock += ms);
 const push = standInPushService(() => clock);
 

@@ -1,4 +1,4 @@
-import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, type Examination, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, type SavedSummary, SELF_ACTION_RESOURCE } from "@galahad/core";
+import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, type Examination, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, type SavedSummary, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
@@ -63,6 +63,8 @@ export interface LoopTaskDeps {
   skills?: { tidy(mark?: boolean): { stale: number; merges: number }; journal(since: number): { at: number; line: string }[] };
   /** What a quick look by the doctor finds that the heartbeat doesn't check itself (doctor.ts; set by the daemon). */
   doctor?: () => Promise<{ key: string; severity: Finding["severity"]; title: string; body: string }[]>;
+  /** Told of each model call his upkeep makes here, for this node's count of them (usage.ts; set by the daemon). */
+  spent?: (call: { role: string; ref: string; usage: Usage | null }) => void;
 }
 
 /** A node that joined this long ago and still hasn't measured itself is worth a line. */
@@ -232,7 +234,7 @@ function recentActivity(store: MindStore): string {
 
 async function askSwift(deps: LoopTaskDeps, prompt: string, signal: AbortSignal): Promise<string> {
   let text = "";
-  for await (const event of chat({ store: deps.store, vault: deps.vault, fetch: deps.fetch }, { role: "swift", messages: [{ role: "user", content: prompt }], signal })) {
+  for await (const event of chat({ store: deps.store, vault: deps.vault, fetch: deps.fetch, ...(deps.spent ? { spent: deps.spent } : {}) }, { role: "swift", messages: [{ role: "user", content: prompt }], signal })) {
     if (event.type === "text") text += event.text;
     else if (event.type === "error") throw new Error(event.error);
   }
@@ -400,7 +402,7 @@ async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal):
         outer.addEventListener("abort", abort, { once: true });
         let text = "";
         try {
-          for await (const event of chat({ store, vault: deps.vault, fetch: deps.fetch }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
+          for await (const event of chat({ store, vault: deps.vault, fetch: deps.fetch, ...(deps.spent ? { spent: deps.spent } : {}) }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
             if (event.type === "text") text += event.text;
             else if (event.type === "error") throw new Error(event.error);
             if (text.length >= maxChars) {
@@ -470,13 +472,14 @@ export function loopExecutor(deps: LoopTaskDeps) {
         try {
           const client = new LocalClient(`http://127.0.0.1:${deps.port}`, token);
           // Your gates go with it as you gave them; on his own, the planner proposes none of its own.
-          const { outcome, learned } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
+          const { outcome, learned, usage } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
           const gated = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
           const review = outcome.status !== "done" && outcome.review ? ` ${gated ? "Never reviewed:" : "Reviewer:"} ${outcome.review.trim()}` : "";
           return {
             status: outcome.status === "done" ? "ok" : "attention",
             // The skills it used, and one it learned, by title (skills.ts): only what the node said is in the mind.
-            summary: `${outcome.status} after ${outcome.steps} commands: ${outcome.summary.trim()}${review}${learnedLines(learned ?? null).map((line) => ` ${line}.`).join("")}`,
+            // What its model calls came to goes first, so it survives the summary's cut: tokens as the providers reported them.
+            summary: `${outcome.status} after ${outcome.steps} commands${usage.length ? ` (${spendLabel(usage)})` : ""}: ${outcome.summary.trim()}${review}${learnedLines(learned ?? null).map((line) => ` ${line}.`).join("")}`,
           };
         } finally {
           deps.arms.revoke(label);

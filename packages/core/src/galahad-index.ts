@@ -3,6 +3,7 @@
  * No dependencies (no zod): the PWA imports this directly (@galahad/core/galahad-index),
  * so the CLI, the PWA and every node compute the same number from the same scores.
  */
+import { costOf, type Prices, spendTotal, type UsageLine } from "./spend.ts";
 
 /** mulberry32: small, fast, and the same everywhere. */
 export function seededRandom(seed: number): () => number {
@@ -35,6 +36,111 @@ export function galahadIndex(scores: readonly number[], resamples = 2000): { mea
   }
   means.sort((a, b) => a - b);
   return { mean, low: means[Math.floor(0.05 * (resamples - 1))]!, high: means[Math.ceil(0.95 * (resamples - 1))]!, n };
+}
+
+/** An interval, as the Index gives it. */
+export interface Interval {
+  mean: number;
+  low: number;
+  high: number;
+  n: number;
+}
+
+/**
+ * A ratio of sums over trials (Σ score ÷ Σ cost) with a 90 % percentile bootstrap interval: the trials are
+ * resampled whole, each with its score and its cost together, by the same seeded generator as the Index.
+ * A trial whose cost isn't known (null) is left out; `n` says how many were counted. No cost at all: null.
+ */
+export function ratioIndex(pairs: readonly { score: number; cost: number | null }[], resamples = 2000): Interval | null {
+  const known = pairs.filter((p): p is { score: number; cost: number } => p.cost !== null && Number.isFinite(p.cost) && p.cost >= 0);
+  const n = known.length;
+  const total = known.reduce((s, p) => s + p.cost, 0);
+  if (!n || total <= 0) return null;
+  const mean = known.reduce((s, p) => s + p.score, 0) / total;
+  if (n === 1) return { mean, low: mean, high: mean, n };
+  const rng = seededRandom(0x9e3779b9);
+  const ratios: number[] = [];
+  for (let r = 0; r < resamples; r++) {
+    let score = 0;
+    let cost = 0;
+    for (let i = 0; i < n; i++) {
+      const p = known[Math.floor(rng() * n)]!;
+      score += p.score;
+      cost += p.cost;
+    }
+    // A resample that cost nothing (every trial drawn was free) says nothing about the ratio.
+    if (cost > 0) ratios.push(score / cost);
+  }
+  if (!ratios.length) return { mean, low: mean, high: mean, n };
+  ratios.sort((a, b) => a - b);
+  return { mean, low: ratios[Math.floor(0.05 * (ratios.length - 1))]!, high: ratios[Math.ceil(0.95 * (ratios.length - 1))]!, n };
+}
+
+/** What the Index needs of a trial to weigh its quality against what it cost. */
+export interface CostedTrial {
+  status: string;
+  score: number;
+  seconds: number;
+  /** Its tokens in and out together, when every one of its model calls was counted (null: unknown, or partly). */
+  tokens: number | null;
+  /** What those calls cost at the owner's prices, when every one is counted and priced (null otherwise). */
+  usd: number | null;
+}
+
+/**
+ * The Galahad Index beside what it cost: raw quality, and quality per million tokens, per hour of trial time
+ * and per dollar, each with its interval. A "point" is one trial solved outright (a score of 1). The cost
+ * figures are null where nothing is known (no call reported its tokens, no price stated): never an estimate.
+ */
+export function costIndex(trials: readonly CostedTrial[]): {
+  quality: Interval;
+  /** Points per million tokens. */
+  perMTok: Interval | null;
+  /** Points per hour of trial time (the trials' own durations, summed; not the wall time of a parallel run). */
+  perHour: Interval | null;
+  /** Points per US dollar. */
+  perUsd: Interval | null;
+  /** Totals over the trials whose cost is known, for the columns beside the Index. */
+  tokens: number | null;
+  usd: number | null;
+  seconds: number;
+} {
+  const scored = trials.filter((t) => t.status === "scored");
+  const sum = (xs: (number | null)[]): number | null => (xs.some((x) => x !== null) ? xs.reduce<number>((s, x) => s + (x ?? 0), 0) : null);
+  return {
+    quality: galahadIndex(scored.map((t) => t.score)),
+    perMTok: ratioIndex(scored.map((t) => ({ score: t.score, cost: t.tokens === null ? null : t.tokens / 1e6 }))),
+    perHour: ratioIndex(scored.map((t) => ({ score: t.score, cost: t.seconds / 3600 }))),
+    perUsd: ratioIndex(scored.map((t) => ({ score: t.score, cost: t.usd }))),
+    tokens: sum(scored.map((t) => t.tokens)),
+    usd: sum(scored.map((t) => t.usd)),
+    seconds: scored.reduce((s, t) => s + t.seconds, 0),
+  };
+}
+
+/**
+ * A trial as the cost-normalised Index weighs it: its tokens only when every model call reported them, its
+ * money only when every one is also priced. A trial recorded before calls were counted has neither.
+ */
+export function costed(trial: { status: string; score: number; seconds: number; spent?: { lines: readonly UsageLine[] } }, prices: Prices): CostedTrial {
+  const lines = trial.spent?.lines;
+  const total = lines ? spendTotal(lines) : null;
+  const cost = lines ? costOf(lines, prices) : null;
+  return {
+    status: trial.status,
+    score: trial.score,
+    seconds: trial.seconds,
+    tokens: total && total.calls > 0 && total.complete ? total.tokens : null,
+    usd: cost && total && total.calls > 0 && cost.complete ? cost.usd : null,
+  };
+}
+
+/** The rule every comparison here goes by: one "wins" only if its interval clears the other's. */
+export function compareIntervals(base: Pick<Interval, "low" | "high" | "n">, other: Pick<Interval, "low" | "high" | "n">): "helps" | "hurts" | "none" | "unmeasured" {
+  if (base.n < 2 || other.n < 2) return "unmeasured";
+  if (other.low > base.high) return "helps";
+  if (other.high < base.low) return "hurts";
+  return "none";
 }
 
 /** The Index of the trials run at one effort level. */

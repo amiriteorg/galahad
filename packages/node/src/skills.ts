@@ -47,7 +47,7 @@ import {
   WORLD_SKILLS_RECENT,
   type WorldSkills,
 } from "@galahad/core";
-import { chat } from "@galahad/brain";
+import { type BrainContext, chat } from "@galahad/brain";
 import type { MindStore, SkillRecord, Vault } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import { fenceLines } from "./archive/retrieval.ts";
@@ -672,7 +672,14 @@ const ASK_TIMEOUT_MS = 90_000;
  * How the node asks a role for one bounded answer: no tools, a model slot taken first (it waits its turn, like
  * any background call), stopped once it has written its share or after ASK_TIMEOUT_MS.
  */
-export function skillAsker(ctx: { store: MindStore; vault: Vault; fetch?: typeof fetch | undefined; governor?: { enterModel(opts: { wait: boolean }, signal?: AbortSignal): Promise<() => void> } }): SkillsDeps["ask"] {
+export function skillAsker(ctx: {
+  store: MindStore;
+  vault: Vault;
+  fetch?: typeof fetch | undefined;
+  governor?: { enterModel(opts: { wait: boolean }, signal?: AbortSignal): Promise<() => void> };
+  /** Told of each model call, for the node's count of them (usage.ts). */
+  spent?: BrainContext["spent"];
+}): SkillsDeps["ask"] {
   return async (role, prompt, maxChars, outer) => {
     const stop = new AbortController();
     const timer = setTimeout(() => stop.abort(), ASK_TIMEOUT_MS);
@@ -683,7 +690,7 @@ export function skillAsker(ctx: { store: MindStore; vault: Vault; fetch?: typeof
     let model = "";
     try {
       leave = (await ctx.governor?.enterModel({ wait: true }, stop.signal)) ?? null;
-      for await (const event of chat({ store: ctx.store, vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
+      for await (const event of chat({ store: ctx.store, vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}), ...(ctx.spent ? { spent: ctx.spent } : {}) }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
         if (event.type === "text") text += event.text;
         else if (event.type === "model" || event.type === "done") model = event.ref;
         else if (event.type === "error") throw new Error(event.error);

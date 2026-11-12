@@ -11,6 +11,8 @@ export * from "./mcp-connectors.ts";
 export * from "./investigation.ts";
 export * from "./trials.ts";
 export * from "./trial-suite.ts";
+export * from "./agentic/index.ts";
+export * from "./reviewer-cases.ts";
 export * from "./agents.ts";
 export * from "./decisions.ts";
 export * from "./embeddings.ts";

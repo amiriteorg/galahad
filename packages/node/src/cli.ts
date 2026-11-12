@@ -29,8 +29,7 @@ import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, 
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
-import { chooseProblems, describeEffort, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
-import type { EffortLevel, TrialRunsView } from "@galahad/core";
+import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
 import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
@@ -119,13 +118,31 @@ Work
                                   the scientific method: hypothesis and predictions registered before anything
                                   runs, a verified experiment in the Lab, an independent method review
   findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
-  trial run [problem|domain …] [--repeat 1] [--parallel auto|n] [--effort 1|2|3] [--seed n] [--net gateway|online] [--vm|--container]
-                                  problems with exact answers, posed with fresh random parameters, solved in the Lab,
-                                  graded by a program: the Galahad Index. Trials run across the free slots;
-                                  --effort makes that many attempts a trial (the reviewer takes one before
-                                  anything is graded) and records it, so the Index per effort can be compared
-  trials [--all] | trial <id|run> | trial problems   the Index per run and per effort level (did more compute
-                                  help?), and each answer against the exact one
+  trial run [problem|domain …] [--suite engineering|agentic|reviewer] [--level 1..4] [--repeat 1] [--parallel auto|n]
+            [--effort 1|2|3] [--seed n] [--net …] [--vm|--container]
+                                  the Trials: problems posed from a seed, worked as quests, graded by a program: the
+                                  Galahad Index. engineering: exact answers, in the Lab. agentic: real work in a small
+                                  repository, graded by hidden tests in a fresh sandbox (--level turns the difficulty).
+                                  reviewer: a quest's evidence with a known answer, put to the reviewer. --effort makes
+                                  that many attempts a trial (the reviewer takes one before anything is graded)
+     … --pin <role>=<provider/model> [--pin …] --variant <name[:switch=value,…]> --budget 2M --budget-usd 5
+                                  hold a role to one model; run under a named set of harness switches; stop cleanly
+                                  when the budget is spent (it says first what past runs of these problems cost)
+  trial sweep <planner|engineer|reviewer> <provider/model> [<provider/model> …] [--suite s] [--only problem,…]
+                                  the same seeded tasks once per candidate, that role held to it: which model is best
+                                  in the role, which is best for its cost, and how sure that is
+  trial ab <variant> <variant> [problem …] [--suite s]
+                                  the same seeded tasks under two variants of the harness: measurably helps, measurably
+                                  hurts, or no measurable difference, with what each cost (trial variants lists them)
+  trial compare <run> <run>       two recorded runs, the second against the first, by the same rule
+  trial estimate [problem …] [--suite s] [--repeat n] [--effort n]   what such a run would cost, going by past runs
+  trials [--suite s] [--all] | trial <id|run> | trial problems [--suite s] [--level n] | trial variants
+                                  the Index per run with what it cost (tokens, time, money, and the quality each
+                                  bought), per effort, per model in each role, per variant; each answer or hidden check
+  price | price set <provider/model | provider/*> <$/M in> <$/M out> [--cached x] | price rm <provider/model>
+                                  your prices, per million tokens: tokens are always counted, money only where
+                                  you've stated a price
+  usage [--days 30]               this node's model calls: tokens by model, role, who asked and day
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep] [--effort auto|1|2|3]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered.
                                   --effort spends more compute for a better answer: that many attempts at once,
@@ -419,6 +436,14 @@ async function main(): Promise<void> {
       repeat: { type: "string" },
       parallel: { type: "string" },
       seed: { type: "string" },
+      // The Trials: `trial run --suite agentic --level 3 --pin engineer=p/m --variant no-gates --budget 2M --budget-usd 5`; `price set … --cached 0.3`.
+      suite: { type: "string" },
+      level: { type: "string" },
+      pin: { type: "string", multiple: true },
+      variant: { type: "string" },
+      "budget-usd": { type: "string" },
+      cached: { type: "string" },
+      cases: { type: "string" },
       page: { type: "string" },
       question: { type: "string" },
       "app-id": { type: "string" },
@@ -1348,98 +1373,25 @@ Evidence: galahad artifact ${i!.artifact}`));
 
     case "trials":
     case "trial": {
-      const suite = "engineering";
-      // The suite is part of Galahad, not of a node: listing it needs no node.
-      if (command === "trial" && sub === "problems") {
-        for (const p of chooseProblems(suite, [])) console.log(`  ${p.id.padEnd(26)} ${p.domain.padEnd(11)} ${p.title}`);
-        return;
+      // The Trials' commands (trial-commands.ts): suites, pins, variants, budgets and the reports.
+      try {
+        process.exit(await trialCommand({ command, sub, rest, flags, node: () => new Admin(home), ...(isolation() ? { isolation: isolation()! } : {}) }));
+      } catch (error) {
+        if (error instanceof UsageError) fail(error.message);
+        throw error;
       }
-      const admin = new Admin(home);
-      if (command === "trial" && sub === "run") {
-        const network = str("net") ?? "gateway";
-        if (network !== "gateway" && network !== "online") fail("--net must be gateway (models only, the default) or online: a trial needs models");
-        const whole = (key: string, fallback: number, max: number): number => {
-          const raw = str(key);
-          if (raw === undefined) return fallback;
-          const n = Number(raw);
-          if (!Number.isInteger(n) || n < 1 || n > max) fail(`--${key} must be a whole number from 1 to ${max}`);
-          return n;
-        };
-        const seedRaw = str("seed");
-        const seed = seedRaw === undefined ? undefined : Number(seedRaw);
-        if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)) fail("--seed must be a whole number from 0 to 4294967295");
-        let problems: ReturnType<typeof chooseProblems> = [];
-        try {
-          problems = chooseProblems(suite, [...(sub === "run" ? rest : [])]);
-        } catch (error) {
-          fail((error as Error).message);
-        }
-        // A run is measured at one level: auto would mix them.
-        const effortRaw = str("effort");
-        if (effortRaw !== undefined && !["1", "2", "3"].includes(effortRaw)) fail("--effort must be 1, 2 or 3 for a trial run (a run is measured at one level; auto would mix them)");
-        // Across the free slots by default (auto); a number is kept within what the slots carry.
-        const parallelRaw = str("parallel");
-        const trials = await trialRunFromCli(admin, {
-          suite,
-          problems,
-          repeat: whole("repeat", 1, 20),
-          parallel: parallelRaw === undefined || parallelRaw === "auto" ? "auto" : whole("parallel", 3, 8),
-          ...(effortRaw !== undefined ? { effort: Number(effortRaw) as EffortLevel } : {}),
-          network: network as "gateway" | "online",
-          ...(isolation() ? { isolation: isolation() } : {}),
-          ...(str("on") ? { on: str("on") } : {}),
-          ...(seed !== undefined ? { seed } : {}),
-        });
-        process.exit(trials.length ? 0 : 1);
+    }
+
+    // What model calls cost: your prices, and this node's own count of its calls (usage.ts).
+    case "price":
+    case "prices":
+    case "usage": {
+      try {
+        process.exit(command === "usage" ? await usageCommand(new Admin(home), flags) : await priceCommand(new Admin(home), sub, rest, flags));
+      } catch (error) {
+        if (error instanceof UsageError) fail(error.message);
+        throw error;
       }
-      const { trials, runs: settings = {} } = (await admin.call("trials")) as { trials: TrialView[]; runs?: TrialRunsView };
-      if (command === "trials" || !sub) {
-        if (!trials.length) {
-          console.log("No trials yet: galahad trial run (or galahad trial run cantilever-beam for one)");
-          return;
-        }
-        const runs = new Map<string, TrialView[]>();
-        for (const t of trials) runs.set(t.run, [...(runs.get(t.run) ?? []), t]);
-        for (const [run, ts] of [...runs].slice(0, flags.all ? undefined : 10)) {
-          const models = [...new Set(ts.flatMap((t) => t.models))];
-          console.log(`${bold(run)} ${dim(`${new Date(Math.min(...ts.map((t) => t.recordedAt))).toLocaleString()} · ${ts[0]!.suite}${settings[run] ? ` · effort ${settings[run]!.effort}` : ""} · revision ${ts[0]!.version}${models.length ? ` · ${models.join(", ")}` : ""}`)}`);
-          console.log(`  ${describeIndex(ts)}`);
-        }
-        if (runs.size > 10 && !flags.all) console.log(dim(`  … ${runs.size - 10} older run(s): --all`));
-        // Did more compute make him more capable? The Index per effort level, with its interval, says.
-        const byEffort = describeEffort(trials, settings);
-        if (byEffort) console.log(`\n${byEffort}`);
-        console.log(`\n${bold("By problem")} ${dim("(every run)")}`);
-        for (const p of chooseProblems(suite, [])) {
-          const ts = trials.filter((t) => t.problem === p.id && t.status === "scored");
-          if (!ts.length) {
-            console.log(dim(`  ${p.id.padEnd(26)} not tried yet`));
-            continue;
-          }
-          const mean = ts.reduce((sum, t) => sum + t.score, 0) / ts.length;
-          console.log(`  ${p.id.padEnd(26)} ${`${ts.filter((t) => t.score === 1).length}/${ts.length}`.padEnd(6)} solved · mean score ${(100 * mean).toFixed(0)}%`);
-        }
-        return;
-      }
-      const one = trials.find((t) => t.id === sub);
-      if (one) {
-        console.log(`${bold(one.title)} ${dim(`· ${one.domain} · ${one.id}`)}`);
-        console.log(describeTrial(one, true));
-        console.log(
-          dim(
-            `run ${one.run} on ${one.nodeName} · revision ${one.version} · ${new Date(one.recordedAt).toLocaleString()}` +
-              (one.quest ? ` · quest ${one.quest.status}, ${one.quest.steps} commands, ${one.quest.revisions} revisions` : "") +
-              (one.models.length ? `\nmodels: ${one.models.join(", ")}` : "") +
-              (one.artifact ? `\nthe work: galahad artifact ${one.artifact}` : ""),
-          ),
-        );
-        return;
-      }
-      const run = trials.filter((t) => t.run === sub);
-      if (!run.length) fail(`no trial or run ${sub}`);
-      for (const t of [...run].reverse()) console.log(describeTrial(t));
-      console.log(`\n${describeIndex(run)}${settings[sub!] ? dim(` · effort ${settings[sub!]!.effort}`) : ""}`);
-      return;
     }
 
     case "place": {

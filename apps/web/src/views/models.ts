@@ -7,6 +7,7 @@ import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
+import { modelCost } from "./models-cost.ts";
 import { openAddKey } from "./vault.ts";
 
 /*
@@ -27,6 +28,8 @@ export const modelsView: View = (root, ctx, { scope }) => {
   const knownModels = h("datalist", { id: nextId("models") });
   let roster: Record<string, RoleSpec> = {};
   let presets: PresetView[] = [];
+  // What each model costs: your prices, and what this node's calls came to (models-cost.ts).
+  const cost = modelCost(ctx, scope.signal);
 
   function addKnown(refs: string[]): void {
     const have = new Set([...knownModels.options].map((o) => o.value));
@@ -224,6 +227,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       roster = rosterResponse.roster;
       addKnown(Object.values(roster).flatMap((r) => r.models));
       renderRoster();
+      void cost.refresh(roster);
       replace(
         providersBox,
         providers.providers.length
@@ -249,6 +253,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       write ? null : callout("quiet", "This device can see the roster but not change it (no brain:write scope)."),
       section("Roster", {}, rosterBox),
       section("Providers", {}, providersBox),
+      cost.el,
       knownModels,
     ),
   );

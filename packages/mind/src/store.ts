@@ -959,6 +959,27 @@ export class MindStore {
         this.putLww(`trial-run:${body.run}`, event, body as Json);
         return null;
       }
+      case "trial.spent": {
+        // What a trial's model calls came to: once, by the node that recorded the trial (which is in the log before this).
+        const body = bodyOf(event, "trial.spent");
+        const trial = this.lww(`trial:${body.trial}`);
+        if (!trial?.value) return "no such trial";
+        if (trial.device !== event.device) return "only the node that ran a trial records what it spent";
+        if (this.lww(`trial-spent:${body.trial}`)) return "already recorded";
+        this.putLww(`trial-spent:${body.trial}`, event, body.spent as Json);
+        return null;
+      }
+      case "price.set": {
+        if (!isFullNode(signer)) return "only full nodes may state prices";
+        const body = bodyOf(event, "price.set");
+        this.putLww(`price:${body.model}`, event, body.price as Json);
+        return null;
+      }
+      case "price.removed": {
+        if (!isFullNode(signer)) return "only full nodes may state prices";
+        this.putLww(`price:${bodyOf(event, "price.removed").model}`, event, null);
+        return null;
+      }
       case "compute.calibrated": {
         // A node measures itself: whose calibration it is, is who signed it. Its latest stands.
         if (signer.kind !== "node") return "only nodes calibrate";

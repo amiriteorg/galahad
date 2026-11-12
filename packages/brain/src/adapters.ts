@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatMessage } from "@galahad/core";
+import type { ChatMessage, Usage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
 import { keyHeaders, type ResolvedProvider, withoutRedirects } from "./providers.ts";
 
@@ -106,6 +106,12 @@ export interface Conversation {
    * a pause in his own words), then your message.
    */
   interject(texts: string[], partial: string | null): void;
+  /**
+   * What the last call to `turn` cost, as the provider reported it: its tokens; null when the call reached the
+   * model and its provider said nothing (unknown, never estimated); undefined when it never reached a model
+   * (no key, a refused request), so there is nothing to count.
+   */
+  spent?(): Usage | null | undefined;
 }
 
 /** What stands for his side of the conversation when a message arrives and he hadn't said anything yet. */
@@ -127,9 +133,13 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   let last: Anthropic.Beta.BetaContentBlockParam[] = [];
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
   let finalPending = false;
+  /** The last call's usage (see Conversation.spent). */
+  let spent: Usage | null | undefined;
   return {
+    spent: () => spent,
     async *turn(tools, signal) {
       finalPending = false;
+      spent = undefined;
       if (!input.provider.apiKey) throw new Error(`${input.provider.id} has no API key`);
       // pause_turn only comes from server-side tools; resume it a few times, never forever.
       for (let pauses = 0; ; pauses++) {
@@ -147,9 +157,12 @@ export function anthropicConversation(input: CompletionInput): Conversation {
           { signal: signal ?? input.signal },
         );
         for await (const event of stream) {
+          // The model has begun to answer: from here the call is one that cost something, whatever becomes of it.
+          if (spent === undefined) spent = null;
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield event.delta.text;
         }
         const final = await stream.finalMessage();
+        spent = addedUsage(spent ?? null, anthropicUsage(final.usage));
         // A refusal can cut a tool call off mid-input: never run that turn's tools.
         if (final.stop_reason === "refusal") throw new RefusalError(`${input.model} declined this request`);
         if (final.stop_reason === "pause_turn" && pauses < 3) {
@@ -217,6 +230,8 @@ interface OpenAIChunk {
     finish_reason?: string | null;
   }[];
   error?: { message?: string };
+  /** The call's tokens, on the last chunk when the stream was asked for them (stream_options.include_usage). */
+  usage?: unknown;
 }
 
 /** The fields of a streamed delta this adapter reads. */
@@ -236,21 +251,37 @@ export function openAIConversation(input: CompletionInput): Conversation {
   let last = "";
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
   let finalPending = false;
+  /** The last call's usage (see Conversation.spent). */
+  let spent: Usage | null | undefined;
   return {
+    spent: () => spent,
     async *turn(tools, signal) {
       finalPending = false;
-      const response = await (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...keyHeaders(input.provider) },
-        body: JSON.stringify({
-          model: input.model,
-          stream: true,
-          messages,
-          ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) } : {}),
-        }),
-        redirect: "manual",
-        signal: signal ?? input.signal,
-      });
+      spent = undefined;
+      const post = (askUsage: boolean): Promise<Response> =>
+        (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...keyHeaders(input.provider) },
+          body: JSON.stringify({
+            model: input.model,
+            stream: true,
+            // The stream's last chunk then carries the call's tokens, as the provider counts them.
+            ...(askUsage ? { stream_options: { include_usage: true } } : {}),
+            messages,
+            ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) } : {}),
+          }),
+          redirect: "manual",
+          signal: signal ?? input.signal,
+        });
+      let response = await post(!NO_USAGE_OPTION.has(input.provider.baseUrl));
+      // An endpoint that refuses the option (an older runtime) is asked without it from then on: its usage is unknown.
+      if (!response.ok && response.status >= 400 && response.status < 500 && !NO_USAGE_OPTION.has(input.provider.baseUrl)) {
+        const refusal = (await response.clone().text().catch(() => "")).slice(0, 600);
+        if (/stream_options|include_usage/i.test(refusal)) {
+          NO_USAGE_OPTION.add(input.provider.baseUrl);
+          response = await post(false);
+        }
+      }
       if (!response.ok || !response.body) {
         const body = (await response.text().catch(() => "")).slice(0, 300);
         if (tools.length && response.status >= 400 && response.status < 500 && /\btools?\b|function/i.test(body)) {
@@ -267,6 +298,8 @@ export function openAIConversation(input: CompletionInput): Conversation {
       /** What its deltas carried besides what is read here (a provider's own field for reasoning, a refusal). */
       const carried = new Set<string>();
       const calls = new Map<number, { id: string; name: string; args: string }>();
+      // The provider took the request: the call cost something, and what it cost is unknown until the stream says.
+      spent = null;
       for await (const data of sseData(response.body)) {
         if (data === "[DONE]") {
           ended = true;
@@ -280,6 +313,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
         }
         if (chunk.error) throw new Error(`${input.provider.id}: ${chunk.error.message ?? "stream error"}`);
         events++;
+        spent = openAIUsage(chunk.usage) ?? spent;
         const delta = chunk.choices?.[0]?.delta;
         finish = chunk.choices?.[0]?.finish_reason ?? finish;
         for (const [key, value] of Object.entries(delta ?? {})) if (!READ_DELTA.has(key) && value != null && value !== "") carried.add(key);
@@ -352,6 +386,52 @@ export function openAIConversation(input: CompletionInput): Conversation {
       messages.push({ role: "user", content: texts.join("\n\n") });
     },
   };
+}
+
+/** Endpoints that refused `stream_options` (by base URL): asked without it for the rest of this process. */
+const NO_USAGE_OPTION = new Set<string>();
+
+const tokenCount = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : null);
+
+/**
+ * An OpenAI-compatible usage object as a Usage, or null when it isn't one. `prompt_tokens` already includes
+ * cached tokens; the cached part is `prompt_tokens_details.cached_tokens` (OpenAI, routers) or
+ * `prompt_cache_hit_tokens` (DeepSeek); reasoning is `completion_tokens_details.reasoning_tokens`.
+ */
+export function openAIUsage(raw: unknown): Usage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const input = tokenCount(u.prompt_tokens);
+  const output = tokenCount(u.completion_tokens);
+  if (input === null || output === null) return null;
+  const cached = tokenCount((u.prompt_tokens_details as Record<string, unknown> | null | undefined)?.cached_tokens) ?? tokenCount(u.prompt_cache_hit_tokens);
+  const reasoning = tokenCount((u.completion_tokens_details as Record<string, unknown> | null | undefined)?.reasoning_tokens);
+  return { input, output, ...(cached !== null ? { cached: Math.min(cached, input) } : {}), ...(reasoning !== null ? { reasoning: Math.min(reasoning, output) } : {}) };
+}
+
+/**
+ * Anthropic's usage as a Usage: `input_tokens` leaves out what was read from or written to the cache, so the
+ * input is all three; the cached part is what was read; reasoning is `output_tokens_details.thinking_tokens`.
+ */
+export function anthropicUsage(raw: unknown): Usage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const fresh = tokenCount(u.input_tokens);
+  const output = tokenCount(u.output_tokens);
+  if (fresh === null || output === null) return null;
+  const read = tokenCount(u.cache_read_input_tokens) ?? 0;
+  const written = tokenCount(u.cache_creation_input_tokens) ?? 0;
+  const reasoning = tokenCount((u.output_tokens_details as Record<string, unknown> | null | undefined)?.thinking_tokens);
+  return { input: fresh + read + written, output, cached: read, ...(reasoning !== null ? { reasoning: Math.min(reasoning, output) } : {}) };
+}
+
+/** Two parts of one call (a turn the provider paused and resumed) as one; unknown only when both are. */
+function addedUsage(a: Usage | null, b: Usage | null): Usage | null {
+  if (!a || !b) return a ?? b;
+  const sum = (x: number | undefined, y: number | undefined): number | undefined => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
+  const cached = sum(a.cached, b.cached);
+  const reasoning = sum(a.reasoning, b.reasoning);
+  return { input: a.input + b.input, output: a.output + b.output, ...(cached !== undefined ? { cached } : {}), ...(reasoning !== undefined ? { reasoning } : {}) };
 }
 
 /** The model's arguments; anything that isn't JSON comes back as the raw text, which validation then refuses. */
