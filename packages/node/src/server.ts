@@ -12,6 +12,12 @@ import {
   type WorldEvent,
   type WorldNode,
   type ConversationSummary,
+  type ConversationView,
+  type ChatNeeds,
+  chatState,
+  type QueuedMessage,
+  type QueueHold,
+  type TurnView,
   type ProjectView,
   type StoredStep,
   SyncRequest,
@@ -84,7 +90,8 @@ import type { ComputeService } from "./compute/service.ts";
 import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
-import type { ChatStore } from "./chats.ts";
+import type { ChatStore, KeptSummary, QueuedBy, Waits } from "./chats.ts";
+import { type AnswerRecord, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ExperimentError } from "./experiment-store.ts";
 import { RunError, runExperiment } from "./experiment-run.ts";
@@ -149,6 +156,8 @@ export interface AppContext {
   bank: BankService;
   /** Your chat history, on this node. */
   chats: ChatStore;
+  /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
+  turns: TurnHub;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
   /** The chalkboard you and Galahad share. */
@@ -169,41 +178,6 @@ interface Principal {
   kind: "admin" | "node" | "client" | "arm";
   scopes: Scope[];
   label?: string;
-}
-
-/** What an answer did, as it's kept with it: its words, the model, fallbacks, each tool and how it went. */
-function keepStep(answer: { content: string; model: string | null; steps: StoredStep[]; error: string | null; bank: boolean }, event: ChatStreamEvent): void {
-  switch (event.type) {
-    case "text":
-      answer.content += event.text;
-      return;
-    case "model":
-      answer.model = event.ref;
-      answer.steps.push({ kind: "model", ref: event.ref });
-      return;
-    case "fallback":
-      answer.steps.push({ kind: "fallback", from: event.from, error: event.error });
-      return;
-    case "tool":
-      answer.steps.push({ kind: "tool", id: event.id, name: event.name, title: event.title, input: event.input, ok: null, summary: null });
-      return;
-    case "tool_result": {
-      const step = answer.steps.find((s) => s.kind === "tool" && s.id === event.id);
-      if (step?.kind === "tool") Object.assign(step, { ok: event.ok, summary: event.summary });
-      // Galahad read the bank in it: from now on the conversation is for devices that may.
-      if (event.ok && TOOLS.find((t) => t.name === event.name)?.flow === "private") answer.bank = true;
-      return;
-    }
-    case "archive":
-      answer.steps.push({ kind: "archive", entries: event.entries });
-      return;
-    case "done":
-      answer.model = event.ref;
-      return;
-    case "error":
-      answer.error = event.error;
-      return;
-  }
 }
 
 class HttpError extends Error {
@@ -674,6 +648,73 @@ export function createApp(ctx: AppContext) {
   /** A chat where Galahad read the bank is for devices that may read the bank. */
   const visibleTo = (c: ConversationSummary, p: Principal) => !c.bank || p.scopes.includes("bank:read");
 
+  /* ---------- turns the node owns: who may see, steer and stop them; a chat's state at a glance ---------- */
+
+  const turnErrors = <T,>(work: () => T): T => {
+    try {
+      return work();
+    } catch (error) {
+      if (error instanceof TurnError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
+  /** Who asked, as the hub keeps it: enough to act as them again when a queued message's turn comes. */
+  const byOf = (p: Principal): QueuedBy => ({ kind: p.kind === "admin" ? "admin" : "client", device: p.device });
+  const sameAsker = (by: QueuedBy, p: Principal): boolean => by.device === p.device && (by.kind === "admin") === (p.kind === "admin");
+  /**
+   * Whether a turn is this device's to know of: you, and for a kept chat a device that may see that chat;
+   * a temporary chat's turn is known only to the device that started it (it's kept nowhere).
+   */
+  function knowsTurn(turn: LiveTurn, p: Principal): boolean {
+    if (!isOwner(p)) return false;
+    const c = turn.spec.conversation;
+    if (!c) return sameAsker(turn.spec.by, p);
+    const kept = ctx.chats.summary(c.id);
+    return !!kept && visibleTo(kept, p);
+  }
+  /** Whether it may watch and steer it too: a turn that may read the bank is only for a device that may read the bank. */
+  const watchesTurn = (turn: LiveTurn, p: Principal): boolean => knowsTurn(turn, p) && (!turn.spec.bank || p.scopes.includes("bank:read"));
+  function watchedTurn(id: string, p: Principal): LiveTurn {
+    ownerOnly(p);
+    const turn = ctx.turns.get(id);
+    if (!turn || !knowsTurn(turn, p)) throw new HttpError(404, "no such turn here (one that ended a while ago is in its chat)");
+    if (!watchesTurn(turn, p)) throw new HttpError(403, "that turn may read the bank, and this device may not: it can be stopped from here, not watched or steered");
+    return turn;
+  }
+  const turnView = (turn: LiveTurn, p: Principal): TurnView => ctx.turns.view(turn, watchesTurn(turn, p));
+  /** A kept chat of yours that this device may see, or 404. */
+  function keptChat(id: string, p: Principal): KeptSummary {
+    ownerOnly(p);
+    const kept = ctx.chats.summary(id);
+    if (!kept || !visibleTo(kept, p)) throw new HttpError(404, "no such conversation");
+    return kept;
+  }
+  /** What a turn left waiting on you, as it stands now: approvals still unanswered, keys still not given. */
+  function needsResolver(): (waits: Waits | null) => ChatNeeds | null {
+    let waiting: Set<string> | null = null;
+    let asked: Set<string> | null = null;
+    return (waits) => {
+      if (!waits) return null;
+      const now = Date.now();
+      waiting ??= new Set(ctx.connectors.actions().filter((a) => a.state === "waiting" && a.expires > now).map((a) => a.id));
+      asked ??= new Set(ctx.vault.requests().map((r) => r.name));
+      const needs = { approvals: waits.actions.filter((id) => waiting!.has(id)).length, keys: waits.secrets.filter((name) => asked!.has(name)).length, question: waits.question };
+      return needs.approvals || needs.keys || needs.question ? needs : null;
+    };
+  }
+  /** A kept chat as your devices see it: with its state at a glance (working, waiting on you, queued, stopped, failed, done). */
+  function chatSummary(c: KeptSummary, needsOf = needsResolver()): ConversationSummary {
+    const { last, waits, ...summary } = c;
+    const needs = needsOf(waits);
+    return { ...summary, needs, state: chatState({ running: ctx.turns.runningIn(c.id) !== null, needs, queued: c.queued, last }) };
+  }
+  const deviceLabel = (by: QueuedBy): string | null => (by.kind === "admin" ? `a terminal on ${ctx.nodeName}` : (ctx.store.device(by.device)?.name ?? null));
+  /** A chat's queue as your devices see it: your messages in order, and why they're held if they are. */
+  function queueView(conversation: string): { queue: QueuedMessage[]; held: QueueHold | null } {
+    const queue = ctx.chats.queue(conversation).map((q): QueuedMessage => ({ id: q.id, text: q.text, role: q.role, at: q.at, by: deviceLabel(q.by) }));
+    return { queue, held: queue.length ? ctx.chats.held(conversation) : null };
+  }
+
   /**
    * Archived chats are yours, like the chats themselves: shown to you and to Galahad
    * answering you, never to an outside agent or another node.
@@ -878,6 +919,183 @@ export function createApp(ctx: AppContext) {
     }
   };
 
+  type ChatInput = z.infer<NonNullable<(typeof routes)["chat"]["input"]>>;
+
+  /**
+   * Everything an answer needs before it starts, for whoever asks (the chat route, and a queued message when
+   * its turn comes): the secret check on every message, whose chat it is and whether they may keep one, the
+   * kept history that leads, the project, the memories. Nothing here depends on who's listening.
+   */
+  function prepareAnswer(input: ChatInput, p: Principal) {
+    // Every message goes to a provider, whoever "said" it, so all of them are scanned.
+    guardAgainstSecrets(...input.messages.map((m) => m.content));
+    const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, ...request } = input;
+    const asked = request.messages.at(-1)!;
+    // Kept chats are yours alone: an agent (or a quest) never writes into your history.
+    if ((save || continued) && !isOwner(p)) throw new HttpError(403, "only you keep chats");
+    let kept: ConversationSummary | null = null;
+    let messages = request.messages;
+    if (continued) {
+      kept = ctx.chats.summary(continued);
+      if (!kept || !visibleTo(kept, p)) throw new HttpError(404, "no such conversation");
+      if (asked.role !== "user") throw new HttpError(400, "the last message must be yours");
+      if (retry) ctx.chats.dropLastExchange(kept.id);
+      // The kept conversation leads: what the model sees is what's stored, then your new question.
+      messages = [...ctx.chats.history(kept.id), asked];
+    }
+    const projectOf = kept?.project ?? projectId ?? null;
+    const project = projectOf ? projectsView().find((x) => x.id === projectOf) : undefined;
+    if (projectId && !project) throw new HttpError(404, `no project ${projectId}`);
+    if (save && !kept) {
+      kept = ctx.chats.create({ title: titleFrom(request.messages.find((m) => m.role === "user")?.content ?? ""), project: projectOf, role: request.role ?? "planner" });
+      // A conversation started elsewhere (a temporary chat you now keep) brings what was said before.
+      for (const m of request.messages.slice(0, -1)) {
+        if (m.role === "user") ctx.chats.addUser(kept.id, m.content);
+        else ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: m.content, model: null, steps: [], status: "done", error: null, bank: false });
+      }
+    }
+    const known = [project ? projectContext(project) : null, asked.role === "user" ? memoryContext(asked.content) : null].filter(Boolean).join("\n\n") || undefined;
+    // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
+    const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
+    return { request, wantTools, kept, messages, asked, project, known, fromArchive, attempt };
+  }
+
+  /** His tools' way into the node, noting what a turn leaves waiting on you: approvals it filed, keys it asked for. */
+  function noting(api: ToolApi, waits: TurnSpec["waits"]): ToolApi {
+    return {
+      ...api,
+      async call<T>(name: RouteName, input?: unknown): Promise<T> {
+        const result = await api.call<T>(name, input);
+        const filed = result as { status?: unknown; action?: unknown } | null;
+        if (name === "callConnector" && filed?.status === "asked" && typeof filed.action === "string") waits.actions.push(filed.action);
+        const wanted = input as { name?: unknown } | null;
+        if (name === "requestSecret" && typeof wanted?.name === "string") waits.secrets.push(wanted.name);
+        return result;
+      },
+    };
+  }
+
+  /**
+   * A turn of yours, ready for the hub to run: the same answer as ever (his tools within what you may do, as
+   * the agent he is, the bank's rules in them, his slot, the archive, the world), on the turn's own signal
+   * instead of a request's, so nothing about it depends on a connection.
+   */
+  function turnSpec(ready: ReturnType<typeof prepareAnswer>, p: Principal): TurnSpec {
+    const { request, messages, asked, project, known, fromArchive, kept } = ready;
+    const agent = galahadFor(p);
+    const role = request.role ?? "planner";
+    const waits: TurnSpec["waits"] = { actions: [], secrets: [] };
+    return {
+      by: byOf(p),
+      // Offered the bank's tools, so the answer may come to hold bank data.
+      bank: agent.scopes.includes("bank:read"),
+      role,
+      conversation: kept ? { id: kept.id, title: kept.title, project: kept.project } : null,
+      question: asked.content,
+      waits,
+      run: async function* (steering, signal) {
+        // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
+        const tools = chatTools(toolsFor(agent.scopes), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
+        const shown: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
+        const seen = worldWatcher(role, false, shown);
+        let leave: (() => void) | null = null;
+        let answered: (() => void) | null = null;
+        try {
+          // Yours, with his tools: it never waits for a slot.
+          leave = await ctx.governor.enterModel({ wait: false }, signal);
+          answered = ctx.archive.answering();
+          let context = known;
+          if (fromArchive) {
+            const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+              ctx.log(`archive context: ${(error as Error).message}`);
+              return null;
+            });
+            if (found) {
+              context = [known, found.text].filter(Boolean).join("\n\n");
+              const event: ChatStreamEvent = { type: "archive", entries: found.entries };
+              keepStep(shown, event);
+              yield event;
+            }
+          }
+          for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal, steering })) {
+            keepStep(shown, event);
+            seen(event);
+            yield event;
+          }
+        } finally {
+          leave?.();
+          answered?.();
+          ctx.world.rest();
+        }
+      },
+    };
+  }
+
+  /** Whoever queued a message, as they stand now: revoked since, or no longer allowed to chat, and it isn't sent. */
+  function askerNow(by: QueuedBy): Principal {
+    if (by.kind === "admin") return { device: ctx.identity.id, kind: "admin", scopes: OWNER_SCOPES };
+    const device = ctx.store.activeDevice(by.device);
+    if (!device || device.kind !== "client") throw new TurnError(403, "the device that queued it is no longer paired", "device");
+    if (!device.scopes.includes("chat")) throw new TurnError(403, "the device that queued it may no longer chat", "device");
+    return { device: device.id, kind: "client", scopes: device.scopes };
+  }
+
+  // A queued message becomes a turn exactly as a message sent now would: checked as input, scanned for
+  // secrets, with the scopes its device holds now, in a chat that device may still see.
+  ctx.turns.setPrepare((conversation, queued) => {
+    const p = askerNow(queued.by);
+    const kept = ctx.chats.summary(conversation);
+    if (!kept || !visibleTo(kept, p)) throw new TurnError(404, "the chat is gone, or the device that queued it may no longer see it", "device");
+    const input = routes.chat.input.parse({ role: queued.role ?? kept.role, conversation, messages: [{ role: "user", content: queued.text }] });
+    return turnSpec(prepareAnswer(input, p), p);
+  });
+
+  /**
+   * A turn as server-sent events: what it is, everything so far, then live, to its end. Whoever was watching
+   * going away ends the watching and nothing else.
+   */
+  function watchTurn(turn: LiveTurn, req: Request): Response {
+    const encoder = new TextEncoder();
+    let leave: () => void = () => {};
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let open = true;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const close = (): void => {
+          if (!open) return;
+          open = false;
+          clearInterval(heartbeat);
+          leave();
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        };
+        const write = (text: string): void => {
+          if (!open) return;
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            close();
+          }
+        };
+        // Long thinking produces no text for a while; comments keep proxies and idle timers awake.
+        heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
+        req.signal.addEventListener("abort", close);
+        const unsubscribe = ctx.turns.subscribe(turn, (event) => (event ? write(`data: ${JSON.stringify(event)}\n\n`) : close()));
+        if (open) leave = unsubscribe;
+        else unsubscribe();
+      },
+      cancel() {
+        open = false;
+        clearInterval(heartbeat);
+        leave();
+      },
+    });
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+  }
+
   type Handler = (input: any, principal: Principal, req: Request) => unknown;
   const handlers: Record<RouteName, Handler> = {
     whoami: (_input, p) => ({
@@ -995,41 +1213,22 @@ export function createApp(ctx: AppContext) {
       return { roster: roster(ctx.store) };
     },
     chat: (input, p, req) => {
-      // Every message goes to a provider, whoever "said" it, so all of them are scanned.
-      guardAgainstSecrets(...input.messages.map((m: { content: string }) => m.content));
-      const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, ...request } = input as z.infer<NonNullable<(typeof routes)["chat"]["input"]>>;
+      const asked = input as ChatInput;
+      // Your own chat, with his tools, is a turn the node owns: it runs to its end whoever is listening. A quest's
+      // or an agent's call (and yours without tools: a quest you run) lives and ends with its request, as ever.
+      const owned = isOwner(p) && asked.tools !== false && !asked.attempt;
+      // Asked before anything is written: one turn a chat, so many on the node.
+      if (owned) turnErrors(() => ctx.turns.admit(asked.conversation ?? null));
+      else if (asked.conversation && ctx.turns.runningIn(asked.conversation)) throw new HttpError(409, "he's still working in that chat");
+      const ready = prepareAnswer(asked, p);
+      if (owned) return watchTurn(turnErrors(() => ctx.turns.start(turnSpec(ready, p))), req);
+
+      const { request, wantTools, kept, messages, project, known, fromArchive, attempt } = ready;
       // One of several attempts at a quest: a helper's call, shown as the helper's (he stays where he leads them from).
       const helper = attempt && ctx.compute.isHelper(attempt) ? attempt : null;
-      const asked = request.messages.at(-1)!;
-      // Kept chats are yours alone: an agent (or a quest) never writes into your history.
-      if ((save || continued) && !isOwner(p)) throw new HttpError(403, "only you keep chats");
-      let kept: ConversationSummary | null = null;
-      let messages = request.messages;
-      if (continued) {
-        kept = ctx.chats.summary(continued);
-        if (!kept || !visibleTo(kept, p)) throw new HttpError(404, "no such conversation");
-        if (asked.role !== "user") throw new HttpError(400, "the last message must be yours");
-        if (retry) ctx.chats.dropLastExchange(kept.id);
-        // The kept conversation leads: what the model sees is what's stored, then your new question.
-        messages = [...ctx.chats.history(kept.id), asked];
-      }
-      const projectOf = kept?.project ?? projectId ?? null;
-      const project = projectOf ? projectsView().find((x) => x.id === projectOf) : undefined;
-      if (projectId && !project) throw new HttpError(404, `no project ${projectId}`);
-      if (save && !kept) {
-        kept = ctx.chats.create({ title: titleFrom(request.messages.find((m) => m.role === "user")?.content ?? ""), project: projectOf, role: request.role ?? "planner" });
-        // A conversation started elsewhere (a temporary chat you now keep) brings what was said before.
-        for (const m of request.messages.slice(0, -1)) {
-          if (m.role === "user") ctx.chats.addUser(kept.id, m.content);
-          else ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: m.content, model: null, steps: [], status: "done", error: null, bank: false });
-        }
-      }
       // The same Galahad on every surface: his tools, within what the caller may do.
       const agent = galahadFor(p);
       const tools = wantTools === false ? undefined : chatTools(toolsFor(agent.scopes), inProcess(agent, req.signal), explain, project ? { tag: `project:${project.id}` } : {});
-      const known = [project ? projectContext(project) : null, asked.role === "user" ? memoryContext(asked.content) : null].filter(Boolean).join("\n\n") || undefined;
-      // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
-      const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
@@ -1046,10 +1245,10 @@ export function createApp(ctx: AppContext) {
           // Long thinking produces no text for a while; comments keep proxies and idle timers awake.
           const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
           req.signal.addEventListener("abort", () => clearInterval(heartbeat));
-          const answer = { content: "", model: null as string | null, steps: [] as StoredStep[], error: null as string | null, bank: false };
+          const answer: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
           let answerId: number | null = null;
           if (kept) {
-            ctx.chats.addUser(kept.id, asked.content);
+            ctx.chats.addUser(kept.id, ready.asked.content);
             answerId = ctx.chats.startAnswer(kept.id);
             send({ type: "conversation", id: kept.id, title: kept.title, project: kept.project });
           }
@@ -1065,7 +1264,7 @@ export function createApp(ctx: AppContext) {
             answered = ctx.archive.answering();
             if (attempt) attemptEnded = ctx.compute.attemptBegin(attempt, { station: attemptStation(request.role ?? "planner"), doing: `The ${request.role ?? "planner"} is thinking` });
             if (fromArchive) {
-              const found = await ctx.archive.context(asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
+              const found = await ctx.archive.context(ready.asked.content, { hideKinds: archiveHidden(p) }).catch((error) => {
                 ctx.log(`archive context: ${(error as Error).message}`);
                 return null;
               });
@@ -1104,27 +1303,90 @@ export function createApp(ctx: AppContext) {
     },
     conversations: (_input, p) => {
       ownerOnly(p);
-      return { conversations: ctx.chats.list().filter((c) => visibleTo(c, p)) };
+      const needsOf = needsResolver();
+      return { conversations: ctx.chats.list().filter((c) => visibleTo(c, p)).map((c) => chatSummary(c, needsOf)) };
     },
     conversation: (input, p) => {
       ownerOnly(p);
       const conversation = ctx.chats.get(input.id);
       if (!conversation || !visibleTo(conversation, p)) throw new HttpError(404, "no such conversation");
-      return { conversation };
+      const { messages, ...kept } = conversation;
+      const running = ctx.turns.runningIn(kept.id);
+      const view: ConversationView = { ...chatSummary(kept), messages, turn: running ? turnView(running, p) : null, queue: queueView(kept.id).queue };
+      return { conversation: view };
     },
     updateConversation: (input, p) => {
-      ownerOnly(p);
-      const existing = ctx.chats.summary(input.id);
-      if (!existing || !visibleTo(existing, p)) throw new HttpError(404, "no such conversation");
+      keptChat(input.id, p);
       if (input.project && !projectsView().some((x) => x.id === input.project)) throw new HttpError(404, `no project ${input.project}`);
       if (input.title) guardAgainstSecrets(input.title);
-      return { conversation: ctx.chats.update(input.id, input) };
+      const updated = ctx.chats.update(input.id, input);
+      return { conversation: updated ? chatSummary(updated) : null };
     },
     deleteConversation: (input, p) => {
-      ownerOnly(p);
-      const existing = ctx.chats.summary(input.id);
-      if (!existing || !visibleTo(existing, p)) throw new HttpError(404, "no such conversation");
+      keptChat(input.id, p);
+      // What he's doing in it stops with it; what was queued behind it goes with it.
+      const running = ctx.turns.runningIn(input.id);
+      if (running) ctx.turns.stop(running.id);
       return { deleted: ctx.chats.delete(input.id) };
+    },
+    // ---------- turns the node owns: watch, stop, steer; your queue behind a chat ----------
+    turns: (_input, p) => {
+      ownerOnly(p);
+      return {
+        turns: ctx.turns
+          .running()
+          .filter((turn) => knowsTurn(turn, p))
+          .map((turn) => turnView(turn, p)),
+        limits: ctx.turns.limits(),
+      };
+    },
+    attachTurn: (input, p, req) => watchTurn(watchedTurn(input.turn, p), req),
+    stopTurn: (input, p) => {
+      ownerOnly(p);
+      // Stopping is yours from any device that knows of the turn, even one that may not watch it.
+      const turn = ctx.turns.get(input.turn);
+      if (!turn || !knowsTurn(turn, p)) throw new HttpError(404, "no such turn here (one that ended a while ago is in its chat)");
+      return { stopped: ctx.turns.stop(turn.id, "you"), state: turn.state };
+    },
+    steerTurn: (input, p) => {
+      const turn = watchedTurn(input.turn, p);
+      // Your message, like any other: nothing credential-shaped goes to a model.
+      guardAgainstSecrets(input.text);
+      turnErrors(() => ctx.turns.steer(turn.id, input.text, byOf(p)));
+      return { steered: true, waiting: turnView(turn, p).steering };
+    },
+    queueMessage: (input, p) => {
+      const kept = keptChat(input.conversation, p);
+      // Kept on the node until its turn, and then sent to a model: nothing credential-shaped.
+      guardAgainstSecrets(input.text);
+      const { started } = turnErrors(() => ctx.turns.enqueue(kept.id, { text: input.text, role: input.role ?? null, by: byOf(p) }));
+      return { ...queueView(kept.id), started: started ? turnView(started, p) : null };
+    },
+    editQueued: (input, p) => {
+      const kept = keptChat(input.conversation, p);
+      guardAgainstSecrets(input.text);
+      if (!ctx.chats.queueEdit(kept.id, input.id, input.text)) throw new HttpError(404, "that message is no longer queued (it may have been sent)");
+      return queueView(kept.id);
+    },
+    removeQueued: (input, p) => {
+      const kept = keptChat(input.conversation, p);
+      if (input.id === undefined) ctx.chats.queueClear(kept.id);
+      else if (!ctx.chats.queueTake(kept.id, input.id)) throw new HttpError(404, "that message is no longer queued (it may have been sent)");
+      return queueView(kept.id);
+    },
+    sendQueued: (input, p) => {
+      const kept = keptChat(input.conversation, p);
+      const running = ctx.turns.runningIn(kept.id);
+      // Steering needs what watching needs: a turn that may read the bank isn't steered from a device that may not.
+      if (running) watchedTurn(running.id, p);
+      const sent = turnErrors(() => ctx.turns.sendNow(kept.id, input.id, byOf(p)));
+      return { how: sent.how, turn: turnView(sent.turn, p), ...queueView(kept.id) };
+    },
+    resumeQueue: (input, p) => {
+      const kept = keptChat(input.conversation, p);
+      ctx.turns.resume(kept.id);
+      const running = ctx.turns.runningIn(kept.id);
+      return { ...queueView(kept.id), turn: running ? turnView(running, p) : null };
     },
     projects: () => ({ projects: projectsView() }),
     worldReport: (input, p) => {

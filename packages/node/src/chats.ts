@@ -1,12 +1,15 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, openSync } from "node:fs";
-import { type ChatMessage, type ConversationSummary, type ConversationView, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
+import { type AnswerStatus, type ChatMessage, chatState, type ConversationSummary, type QueueHold, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
 
 /*
  * Your chat history, on the node that served it: a private database (mode 600, in the
  * node's 700 home), never replicated. Deleting a conversation deletes it: SQLite's
  * secure_delete overwrites what it held. Only you read it; the server decides who
  * "you" is (see the conversation routes).
+ *
+ * It also keeps what you queued behind a chat while Galahad worked (your messages,
+ * in order, until their turn comes), so a queue survives a reload and a restart.
  */
 
 interface ConversationRow {
@@ -19,6 +22,10 @@ interface ConversationRow {
   created_at: number;
   updated_at: number;
   count: number;
+  queued: number;
+  queue_held: QueueHold | null;
+  waiting: string | null;
+  last: AnswerStatus | null;
 }
 
 interface MessageRow {
@@ -33,7 +40,56 @@ interface MessageRow {
   ended_at: number | null;
 }
 
-const summaryOf = (r: ConversationRow): ConversationSummary => ({
+interface QueueRow {
+  id: number;
+  content: string;
+  role: string | null;
+  by_kind: "admin" | "client";
+  by_device: string;
+  created_at: number;
+}
+
+/** What a turn left waiting on you: the approvals it filed, the keys it asked for, and whether its answer ended by asking. */
+export interface Waits {
+  actions: string[];
+  secrets: string[];
+  question: boolean;
+}
+
+/** Who queued a message: enough to act as them again when its turn comes, and never more than they may do then. */
+export interface QueuedBy {
+  kind: "admin" | "client";
+  device: string;
+}
+
+/** A queued message as the node keeps it. */
+export interface Queued {
+  id: number;
+  text: string;
+  role: string | null;
+  at: number;
+  by: QueuedBy;
+}
+
+/** A conversation as the store knows it: the summary, plus what the server resolves into its state (a running turn, what still waits on you). */
+export interface KeptSummary extends ConversationSummary {
+  /** How its last answer ended. */
+  last: AnswerStatus | null;
+  /** What its last turn left waiting on you, as recorded then. */
+  waits: Waits | null;
+}
+
+function waitsOf(raw: string | null): Waits | null {
+  if (!raw) return null;
+  try {
+    const w = JSON.parse(raw) as Partial<Waits>;
+    return { actions: Array.isArray(w.actions) ? w.actions.filter((a) => typeof a === "string") : [], secrets: Array.isArray(w.secrets) ? w.secrets.filter((s) => typeof s === "string") : [], question: w.question === true };
+  } catch {
+    return null;
+  }
+}
+
+const summaryOf = (r: ConversationRow): KeptSummary => ({
   id: r.id,
   title: r.title,
   project: r.project,
@@ -43,9 +99,22 @@ const summaryOf = (r: ConversationRow): ConversationSummary => ({
   updatedAt: r.updated_at,
   count: r.count,
   bank: r.bank === 1,
+  // What the store alone knows: no running turn, nothing resolved as waiting on you (the server adds both).
+  state: chatState({ running: false, needs: null, queued: r.queued, last: r.last }),
+  queued: r.queued,
+  held: r.queued > 0 ? r.queue_held : null,
+  needs: null,
+  last: r.last,
+  waits: waitsOf(r.waiting),
 });
 
-const SUMMARY = "SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation = c.id) AS count FROM conversations c";
+const queuedOf = (r: QueueRow): Queued => ({ id: r.id, text: r.content, role: r.role, at: r.created_at, by: { kind: r.by_kind, device: r.by_device } });
+
+const SUMMARY = `SELECT c.*,
+    (SELECT COUNT(*) FROM messages m WHERE m.conversation = c.id) AS count,
+    (SELECT COUNT(*) FROM queue q WHERE q.conversation = c.id) AS queued,
+    (SELECT m.status FROM messages m WHERE m.conversation = c.id AND m.role = 'assistant' ORDER BY m.id DESC LIMIT 1) AS last
+  FROM conversations c`;
 
 export class ChatStore {
   private readonly db: Database;
@@ -66,29 +135,41 @@ export class ChatStore {
         conversation TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
         role TEXT NOT NULL, content TEXT NOT NULL, model TEXT, steps TEXT NOT NULL DEFAULT '[]',
         status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, ended_at INTEGER);
-      CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation, id);`);
+      CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation, id);
+      CREATE TABLE IF NOT EXISTS queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        ord INTEGER NOT NULL, content TEXT NOT NULL, role TEXT,
+        by_kind TEXT NOT NULL, by_device TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS queue_by_conversation ON queue (conversation, ord, id);`);
+    // A database from before queues: two more columns on a conversation (why its queue is held; what waits on you).
+    const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().map((c) => c.name));
+    if (!columns.has("queue_held")) this.db.exec("ALTER TABLE conversations ADD COLUMN queue_held TEXT");
+    if (!columns.has("waiting")) this.db.exec("ALTER TABLE conversations ADD COLUMN waiting TEXT");
     // An answer the node was writing when it stopped can't finish any more.
     this.db.exec("UPDATE messages SET status = 'stopped' WHERE status = 'streaming'");
+    // Nothing is sent just because the node came back: what was queued then is held until you resume it.
+    this.db.exec("UPDATE conversations SET queue_held = COALESCE(queue_held, 'restart') WHERE id IN (SELECT conversation FROM queue)");
   }
 
-  create(input: { title: string; project: string | null; role: string }): ConversationSummary {
+  create(input: { title: string; project: string | null; role: string }): KeptSummary {
     const id = `cv_${randomId(16)}`;
     const at = this.now();
     this.db.query("INSERT INTO conversations (id, title, project, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, input.title, input.project, input.role, at, at);
     return this.summary(id)!;
   }
 
-  summary(id: string): ConversationSummary | null {
+  summary(id: string): KeptSummary | null {
     const row = this.db.query<ConversationRow, [string]>(`${SUMMARY} WHERE c.id = ?`).get(id);
     return row ? summaryOf(row) : null;
   }
 
   /** Pinned first, then the most recently active. */
-  list(): ConversationSummary[] {
+  list(): KeptSummary[] {
     return this.db.query<ConversationRow, []>(`${SUMMARY} ORDER BY c.pinned DESC, c.updated_at DESC LIMIT 2000`).all().map(summaryOf);
   }
 
-  get(id: string): ConversationView | null {
+  get(id: string): (KeptSummary & { messages: StoredMessage[] }) | null {
     const summary = this.summary(id);
     if (!summary) return null;
     const messages = this.db
@@ -117,9 +198,11 @@ export class ChatStore {
       .all(id);
   }
 
+  /** A message of yours. Whatever the turn before it left waiting on you is no longer where the chat stands. */
   addUser(id: string, content: string): number {
     const at = this.now();
     const row = this.db.query<{ id: number }, [string, string, number, number]>("INSERT INTO messages (conversation, role, content, status, created_at, ended_at) VALUES (?, 'user', ?, 'done', ?, ?) RETURNING id").get(id, content, at, at)!;
+    this.db.query("UPDATE conversations SET waiting = NULL WHERE id = ?").run(id);
     this.touch(id);
     return row.id;
   }
@@ -129,7 +212,7 @@ export class ChatStore {
     return this.db.query<{ id: number }, [string, number]>("INSERT INTO messages (conversation, role, content, status, created_at) VALUES (?, 'assistant', '', 'streaming', ?) RETURNING id").get(id, this.now())!.id;
   }
 
-  finishAnswer(conversation: string, message: number, answer: { content: string; model: string | null; steps: StoredStep[]; status: "done" | "error" | "stopped"; error: string | null; bank: boolean }): void {
+  finishAnswer(conversation: string, message: number, answer: { content: string; model: string | null; steps: StoredStep[]; status: "done" | "error" | "stopped" | "steered"; error: string | null; bank: boolean }): void {
     this.db
       .query("UPDATE messages SET content = ?, model = ?, steps = ?, status = ?, error = ?, ended_at = ? WHERE id = ? AND conversation = ?")
       .run(answer.content, answer.model, JSON.stringify(answer.steps), answer.status, answer.error, this.now(), message, conversation);
@@ -137,7 +220,18 @@ export class ChatStore {
     this.touch(conversation);
   }
 
-  update(id: string, change: { title?: string; project?: string | null; pinned?: boolean }): ConversationSummary | null {
+  /** An answer that never came to anything (you steered before he'd said or done a thing): it isn't kept. */
+  dropAnswer(conversation: string, message: number): void {
+    this.db.query("DELETE FROM messages WHERE id = ? AND conversation = ? AND role = 'assistant'").run(message, conversation);
+  }
+
+  /** What a turn left waiting on you (null: nothing). */
+  setWaits(conversation: string, waits: Waits | null): void {
+    const empty = !waits || (!waits.actions.length && !waits.secrets.length && !waits.question);
+    this.db.query("UPDATE conversations SET waiting = ? WHERE id = ?").run(empty ? null : JSON.stringify(waits), conversation);
+  }
+
+  update(id: string, change: { title?: string; project?: string | null; pinned?: boolean }): KeptSummary | null {
     if (change.title !== undefined) this.db.query("UPDATE conversations SET title = ? WHERE id = ?").run(change.title, id);
     if (change.project !== undefined) this.db.query("UPDATE conversations SET project = ? WHERE id = ?").run(change.project, id);
     if (change.pinned !== undefined) this.db.query("UPDATE conversations SET pinned = ? WHERE id = ?").run(change.pinned ? 1 : 0, id);
@@ -150,7 +244,7 @@ export class ChatStore {
     if (last) this.db.query("DELETE FROM messages WHERE conversation = ? AND id >= ?").run(id, last.id);
   }
 
-  /** Gone for good: secure_delete overwrites its pages in the file. */
+  /** Gone for good: secure_delete overwrites its pages in the file (what was queued behind it goes with it). */
   delete(id: string): boolean {
     return this.db.query("DELETE FROM conversations WHERE id = ?").run(id).changes > 0;
   }
@@ -160,8 +254,71 @@ export class ChatStore {
     this.db.query("UPDATE conversations SET project = NULL WHERE project = ?").run(project);
   }
 
+  /* ---------- the queue: your messages waiting for their turn ---------- */
+
+  /** A chat's queued messages, in the order they'll be sent. */
+  queue(conversation: string): Queued[] {
+    return this.db.query<QueueRow, [string]>("SELECT * FROM queue WHERE conversation = ? ORDER BY ord, id").all(conversation).map(queuedOf);
+  }
+
+  /** Queue a message behind a chat (`front`: ahead of the others, for one that was already on its way to him). */
+  queueAdd(conversation: string, message: { text: string; role: string | null; by: QueuedBy }, front = false): Queued {
+    const edge = this.db.query<{ lo: number | null; hi: number | null }, [string]>("SELECT MIN(ord) AS lo, MAX(ord) AS hi FROM queue WHERE conversation = ?").get(conversation)!;
+    const ord = front ? (edge.lo ?? 0) - 1 : (edge.hi ?? 0) + 1;
+    const row = this.db
+      .query<QueueRow, [string, number, string, string | null, string, string, number]>("INSERT INTO queue (conversation, ord, content, role, by_kind, by_device, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *")
+      .get(conversation, ord, message.text, message.role, message.by.kind, message.by.device, this.now())!;
+    return queuedOf(row);
+  }
+
+  queueEdit(conversation: string, id: number, text: string): boolean {
+    return this.db.query("UPDATE queue SET content = ? WHERE id = ? AND conversation = ?").run(text, id, conversation).changes > 0;
+  }
+
+  /** Take a queued message out (the first, or the one named): its turn has come, or you removed it. An emptied queue holds nothing. */
+  queueTake(conversation: string, id?: number): Queued | null {
+    const row =
+      id === undefined
+        ? this.db.query<QueueRow, [string]>("SELECT * FROM queue WHERE conversation = ? ORDER BY ord, id LIMIT 1").get(conversation)
+        : this.db.query<QueueRow, [string, number]>("SELECT * FROM queue WHERE conversation = ? AND id = ?").get(conversation, id);
+    if (!row) return null;
+    this.db.query("DELETE FROM queue WHERE id = ?").run(row.id);
+    this.releaseIfEmpty(conversation);
+    return queuedOf(row);
+  }
+
+  /** Discard everything queued behind a chat. */
+  queueClear(conversation: string): number {
+    const removed = this.db.query("DELETE FROM queue WHERE conversation = ?").run(conversation).changes;
+    this.releaseIfEmpty(conversation);
+    return removed;
+  }
+
+  /** Why a chat's queue is held (null: it isn't). */
+  held(conversation: string): QueueHold | null {
+    return this.db.query<{ queue_held: QueueHold | null }, [string]>("SELECT queue_held FROM conversations WHERE id = ?").get(conversation)?.queue_held ?? null;
+  }
+
+  /** Hold a chat's queue (nothing is sent until you resume), or let it go on. */
+  hold(conversation: string, why: QueueHold | null): void {
+    this.db.query("UPDATE conversations SET queue_held = ? WHERE id = ?").run(why, conversation);
+    if (why) this.releaseIfEmpty(conversation);
+  }
+
+  /** The chats with messages queued, the one whose next message has waited longest first. */
+  queuedConversations(): string[] {
+    return this.db
+      .query<{ conversation: string }, []>("SELECT conversation, MIN(created_at) AS oldest FROM queue GROUP BY conversation ORDER BY oldest, conversation")
+      .all()
+      .map((r) => r.conversation);
+  }
+
   close(): void {
     this.db.close();
+  }
+
+  private releaseIfEmpty(conversation: string): void {
+    this.db.query("UPDATE conversations SET queue_held = NULL WHERE id = ? AND NOT EXISTS (SELECT 1 FROM queue WHERE conversation = ?)").run(conversation, conversation);
   }
 
   private touch(id: string): void {

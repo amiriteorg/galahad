@@ -1,4 +1,4 @@
-import { archiveId, type ConversationSummary, type ConversationView, Preregistration, type StoredStep, type TrialRecord, type Trust } from "@galahad/core";
+import { archiveId, type ConversationSummary, Preregistration, type StoredMessage, type StoredStep, type TrialRecord, type Trust } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 import type { ArtifactStore } from "../artifacts.ts";
 import { asText, extOf, mightBeModel, modelFacts, transcript } from "./chunk.ts";
@@ -282,7 +282,7 @@ const BANK_TOOL = /^bank_/;
 
 export interface ChatSource {
   list(): ConversationSummary[];
-  get(id: string): ConversationView | null;
+  get(id: string): (ConversationSummary & { messages: StoredMessage[] }) | null;
 }
 
 /**

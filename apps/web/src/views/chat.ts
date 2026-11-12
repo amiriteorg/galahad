@@ -55,7 +55,8 @@ interface Turn {
   as?: string;
   model?: string;
   steps: Step[];
-  status: "streaming" | "done" | "error" | "stopped";
+  /** "steered": you sent a message while he was answering; the turn went on in the next answer. */
+  status: "streaming" | "done" | "error" | "stopped" | "steered";
   error?: string;
   fallbacks: number;
   startedAt: number;

@@ -116,8 +116,10 @@ describe("Galahad's chat has his tools", () => {
     script = [callTool("recall", { query: "round table" }), say("Nothing about it yet.")];
     const events = await ask(home.adminToken(), "What do you remember about the round table?");
     expect(offered().sort()).toEqual(TOOLS.map((t) => t.name).sort());
-    expect(events.map((e) => e.type)).toEqual(["model", "tool", "tool_result", "text", "done"]);
-    expect(events[1]).toMatchObject({ type: "tool", name: "recall", title: "Recall from the shared mind", input: '{"query":"round table"}' });
+    // Yours is a turn the node owns: the stream says which first (to attach to, steer or stop).
+    expect(events.map((e) => e.type)).toEqual(["turn", "model", "tool", "tool_result", "text", "done"]);
+    expect(events[0]).toMatchObject({ type: "turn", conversation: null, answer: null, replay: false });
+    expect(events[2]).toMatchObject({ type: "tool", name: "recall", title: "Recall from the shared mind", input: '{"query":"round table"}' });
     expect(bodies[1].messages.at(-1)).toEqual({ role: "tool", tool_call_id: "call_recall", content: 'Nothing remembered about "round table".' });
   });
 
@@ -228,7 +230,8 @@ describe("your chat history", () => {
     script = [say("Paris.")];
     const first = await ask(home.adminToken(), "What's the capital of France?", { save: true });
     const { id, title } = conversationOf(first);
-    expect(first[0]).toMatchObject({ type: "conversation", title: "What's the capital of France?", project: null });
+    expect(first[0]).toMatchObject({ type: "turn", conversation: id });
+    expect(first[1]).toMatchObject({ type: "conversation", title: "What's the capital of France?", project: null });
     expect(title).toBe("What's the capital of France?");
 
     script = [say("Berlin.")];

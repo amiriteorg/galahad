@@ -14,6 +14,10 @@ const chat = (over: Partial<ConversationSummary> = {}): ConversationSummary => (
   updatedAt: now,
   count: 2,
   bank: false,
+  state: "done",
+  queued: 0,
+  held: null,
+  needs: null,
   ...over,
 });
 
