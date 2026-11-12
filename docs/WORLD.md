@@ -123,7 +123,7 @@ Galahad sees his world from his own visor, and so can you. The SANDBOX has a sec
 | Drawn, times a second | 2 | 5 | 12 |
 | Under reduced motion | 1 | 1 | 1 |
 | Open at first | no | where there's room | where there's room |
-| Measured: the main view, panel closed → open | 60 → 60 frames a second | 60 → 60 | 60 → 60 (WebGL2: 60 → 60) |
+| Measured: the main view, panel closed → open | 60 → 60 frames a second (WebGL2: 60 → 60) | 60 → 60 | 60 → 60 |
 | Measured: the main thread's time a frame, closed → open | 2.9 → 2.9 ms | 3.5 → 3.4 ms | 6.7 → 6.7 ms |
 | Measured: one draw of the panel, on the main thread | 1.1 to 1.5 ms (WebGL2: 2.9 to 3.4 ms) | 1.4 to 1.6 ms | 2.3 to 3.3 ms |
 | So the panel adds, averaged over a second | 0.05 ms a frame (WebGL2: 0.1) | 0.12 ms a frame | 0.5 ms a frame |
