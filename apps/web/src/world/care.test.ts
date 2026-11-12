@@ -436,7 +436,7 @@ describe("his hearth, and his dog through the day", () => {
     let led = 0;
     let patted = false;
     let looked = false;
-    for (let i = 0; i < 2400 && visited.length < TRAIL.length + 1; i++) {
+    for (let i = 0; i < 6000 && visited.length < TRAIL.length + 1; i++) {
       const out = w.run(0.1);
       const k = TRAIL.findIndex((p) => p.x === out.target.x && p.y === out.target.y);
       if (k >= 0 && visited.at(-1) !== k) visited.push(k);

@@ -1,6 +1,6 @@
 import type { WorldNode } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { float, mix, uniform, vertexColor } from "three/tsl";
+import { dot, float, fract, mix, smoothstep, uniform, vec3, vertexColor } from "three/tsl";
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -31,6 +31,7 @@ import { DECK_POTS, DECK_TOP, LANDING, onStairs, STAIRS, tread } from "./keep-de
 import { fleetSlot } from "./keep-plan.ts";
 import { at, between, bevelBox, chip, groundAO, lumpy, Mesher, type Paint, within } from "./mesher.ts";
 import { occlusionMask } from "./occlusion.ts";
+import { seasonState } from "./season.ts";
 import { pathSheen, puddleDarken } from "./wet.ts";
 import { obstacles, PLACES, planPath, standAt, stationFacing } from "./path.ts";
 import { swaying } from "./vegetation.ts";
@@ -728,6 +729,9 @@ export class Keep {
   readonly group = new Group();
   private readonly solidMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
   private readonly canopyMaterial = new MeshLambertNodeMaterial({ vertexColors: true });
+  /** The great tree's crown by the season: how far its leaves have turned (0 green to 1 gold and rust), and the share of them it still holds. */
+  private readonly crownTurn = uniform(0);
+  private readonly crownKeep = uniform(1);
   private readonly nightUniform = uniform(0);
   private readonly dayGlass = uniform(new Color(0xb9d4e6));
   private readonly nightGlass = uniform(new Color(0xffc46e));
@@ -754,7 +758,18 @@ export class Keep {
     // In rain: wet roofs, decks and walls, and puddles that ring with drops on the paths and plazas.
     this.solidMaterial.colorNode = puddleDarken();
     this.solidMaterial.emissiveNode = pathSheen(0.8);
-    this.canopyMaterial.maskNode = occlusionMask();
+    // The great tree's crown keeps the season with the rest of the land: its leaves turn gold and rust one by one
+    // in autumn, most come down, and what it holds through the winter is brown (an oak keeps some of its leaves);
+    // in spring it's thin and fresh until it fills. Each facet is its own leaf-mass: its own shade (the mesher
+    // varies every face a little) is what orders it.
+    const leaf = vertexColor().rgb;
+    const each = fract(leaf.r.mul(91.7).add(leaf.g.mul(37.3)).add(leaf.b.mul(57.1)).mul(13.7));
+    const turned = smoothstep(each.mul(0.6), each.mul(0.6).add(0.4), this.crownTurn);
+    // (The baked shade under the crown stays: the autumn colour takes the facet's own lightness.)
+    const light = dot(leaf, vec3(0.3, 0.6, 0.1)).div(0.45).clamp(0.4, 1.3);
+    const autumn = mix(vec3(0.76, 0.36, 0.05), vec3(0.5, 0.13, 0.035), each).mul(light);
+    this.canopyMaterial.colorNode = mix(vec3(1), autumn.div(leaf.max(0.01)), turned);
+    this.canopyMaterial.maskNode = occlusionMask().and(fract(each.mul(7.31).add(0.37)).lessThan(this.crownKeep));
     // Glass: the sky's pale blue by day, a warm lit room at night (bright enough to bloom past white).
     this.glassMaterial.colorNode = mix(this.dayGlass, this.nightGlass.mul(1.8), this.nightUniform).mul(vertexColor());
     // Lamps and screens: lit a little by day, bright at night.
@@ -858,6 +873,13 @@ export class Keep {
 
   /** Flicker and float. */
   animate(t: number, motion: boolean): void {
+    // The crown by the season (eased; at once under reduced motion).
+    const s = seasonState;
+    const turn = Math.max(s.turn, s.winter) * (1 - s.spring);
+    const hold = 0.36 + 0.64 * s.leaf;
+    const k = motion ? 0.05 : 1;
+    this.crownTurn.value += (turn - this.crownTurn.value) * k;
+    this.crownKeep.value += (hold - this.crownKeep.value) * k;
     if (!motion) {
       this.orb.position.y = 1.7;
       return;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Group, Mesh, Raycaster, Vector3 } from "three/webgpu";
+import { showSeason } from "./flora-shade.ts";
 import { COUNCIL_TABLE_TOP, Keep, LAB_BENCH_TOP, stationMatrix } from "./keep.ts";
 import { chunkDistance, fineBand, Land, SKIRT, surfaceArrays, wantsFine } from "./land.ts";
 import { built } from "./path.ts";
@@ -13,7 +14,7 @@ import { FAR, MID, NEAR, TREE_KINDS, treeBand, treeTriangles, Vegetation } from 
  * what's drawn), the trees' levels of detail, and the tiers' triangle budgets.
  */
 
-const BIG = ["trees", "bushes", "rocks"] as const;
+const BIG = ["trees", "bushes", "rocks", "reeds"] as const;
 const n = FINE_CELLS + 1;
 
 describe("the land's fine grid", () => {
@@ -219,7 +220,7 @@ describe("levels of detail and budgets", () => {
     }
   });
 
-  test("the land and what grows on it stay within each tier's triangle budget, at the keep and out in the woods", () => {
+  test("the land and what grows on it stay within each tier's triangle budget, at the keep and out in the woods, in every season", () => {
     // Room left for the keep, the characters and the sky.
     const room = 80_000;
     for (const name of ["low", "medium", "high"] as const) {
@@ -236,7 +237,19 @@ describe("levels of detail and budgets", () => {
         }
         let ground = 0;
         for (const c of land.list) ground += (c.fine ?? c.mesh).geometry.getAttribute("position").count / 3;
-        expect(ground + veg.triangles()).toBeLessThan(tier.triangles - room);
+        // (What's out of season isn't drawn: anemones in summer, flowers in winter. The most is drawn in summer.)
+        const drawn: number[] = [];
+        for (const season of ["summer", "autumn", "winter", "spring"] as const) {
+          showSeason(season);
+          veg.update(x, y, performance.now() + 60_000);
+          expect(ground + veg.triangles()).toBeLessThan(tier.triangles - room);
+          drawn.push(veg.triangles());
+        }
+        expect(drawn[2]!).toBeLessThan(drawn[0]!);
+        showSeason(null);
+        // And each layer keeps to the tier's cap, however its kinds share it.
+        const counts = veg.counts();
+        for (const layer of ["trees", "bushes", "rocks", "reeds", "flowers", "grass", "detail"] as const) expect(counts[layer]).toBeLessThanOrEqual(tier[layer]);
         veg.dispose();
         land.dispose();
       }

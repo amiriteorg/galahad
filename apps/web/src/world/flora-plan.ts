@@ -5,12 +5,14 @@ import { STRIDE } from "./terrain.ts";
  * What's solid about what grows: each tree's trunk (walkers go round it, the
  * camera keeps out of it and looks past it through the dither), its crown (the
  * camera keeps out of it, and sees through it), and where a crown hangs low
- * (a pine's skirt, a round tree's or a blossom's crown at chest height) a
- * smaller circle that tall walkers go round and small ones walk under; each
- * rock's footprint (a boulder with the stone beside it, a layered slab). Bushes,
- * flowers, grass and pebbles aren't solid. Sizes are the models' own
- * (vegetation.ts; flora-plan.test.ts holds them to it), times each plant's
- * scale. Pure.
+ * (a pine's or a spruce's skirt, a round tree's or a blossom's crown at chest
+ * height) a smaller circle that tall walkers go round and small ones walk
+ * under; each rock's footprint (a boulder with the stone beside it, a layered
+ * slab); and the deadwood, low enough to see over: a fallen log and the stump it broke from.
+ * Bushes, reeds, flowers, grass and pebbles aren't solid. Sizes are the models'
+ * own (flora-models.ts; flora-plan.test.ts holds them to it), times each
+ * plant's scale. They're the same in every season: a bare crown is still where
+ * the camera doesn't go. Pure.
  */
 
 interface TreeSolid {
@@ -24,14 +26,17 @@ interface TreeSolid {
   skirt: number;
 }
 
-/** By TREE_KINDS: oak, pine, round, parasol, birch, blossom (model metres, at scale 1). */
+/** By TREE_KINDS: oak, pine, round, parasol, birch, blossom, spruce, alder, willow (model metres, at scale 1). */
 export const TREE_SOLIDS: readonly TreeSolid[] = [
   { trunk: 0.52, bottom: 2.55, top: 6.1, crown: 2.45, skirt: 0 },
   { trunk: 0.2, bottom: 0.95, top: 5.35, crown: 1.58, skirt: 1.05 },
   { trunk: 0.62, bottom: 1.82, top: 4.2, crown: 1.58, skirt: 1.2 },
-  { trunk: 0.7, bottom: 3.08, top: 5.2, crown: 3.12, skirt: 0 },
+  { trunk: 0.7, bottom: 2.75, top: 5.4, crown: 3.15, skirt: 0 },
   { trunk: 0.3, bottom: 2.55, top: 5.85, crown: 1.27, skirt: 0 },
-  { trunk: 0.36, bottom: 2.1, top: 4.4, crown: 1.84, skirt: 1.4 },
+  { trunk: 0.36, bottom: 1.92, top: 4.5, crown: 1.84, skirt: 1.4 },
+  { trunk: 0.2, bottom: 0.4, top: 7.1, crown: 1.4, skirt: 0.95 },
+  { trunk: 0.36, bottom: 1.95, top: 6.5, crown: 1.5, skirt: 0 },
+  { trunk: 0.62, bottom: 0.95, top: 5.0, crown: 2.62, skirt: 0 },
 ];
 
 /** A rock's parts in its model's frame: [x, z, radius, top] (the top before its height is scaled and it's sunk). */
@@ -54,6 +59,13 @@ export const ROCK_PARTS: readonly (readonly RockPart[])[] = [
 export const rockHeight = (kind: number): number => 0.75 + 0.12 * kind;
 const ROCK_SINK = 0.14;
 const TREE_SINK = 0.04;
+
+/** Deadwood (rock kind 3: a fallen log with its stump) is drawn at its own size, whatever a rock's scale: a log is a log. */
+export const deadwoodScale = (scale: number): number => 0.85 + (scale - 0.6) * 0.22;
+export const DEADWOOD_SINK = 0.05;
+/** A log along its model's x: half its length, half its width, and its top (model metres, at scale 1); its stump's place by its butt end, radius and top. */
+export const LOG = { half: 1.62, wide: 0.3, top: 0.47 };
+export const STUMP = { x: -2.3, z: 0.14, r: 0.3, top: 0.45 };
 
 /**
  * Adds a chunk's trees and rocks (its packed placements: x, y, z, scale, turn, kind) to the world of solids,
@@ -78,10 +90,21 @@ export function addPlants(solids: Solids, trees: Float64Array | undefined, rocks
   if (rocks) {
     for (let i = 0; i < rocks.length; i += STRIDE) {
       const kind = rocks[i + 5]!;
-      const parts = ROCK_PARTS[kind === 2 ? 1 : 0]!;
       const x = rocks[i]!;
       const y = rocks[i + 1]!;
       const s = rocks[i + 3]!;
+      if (kind >= 3) {
+        // Deadwood: low, stepped over or onto by whoever's step is high enough; the camera keeps out of it.
+        const d = deadwoodScale(s);
+        const z = rocks[i + 2]! - DEADWOOD_SINK * d;
+        const turn = rocks[i + 4]!;
+        const cos = Math.cos(turn);
+        const sin = Math.sin(turn);
+        solids.box(x, y, LOG.half * d, LOG.wide * d, turn, z, LOG.top * d, 0, WALK | VIEW);
+        solids.circle(x + (STUMP.x * cos + STUMP.z * sin) * d, y + (STUMP.x * sin - STUMP.z * cos) * d, STUMP.r * d, z, STUMP.top * d, 0, WALK | VIEW);
+        continue;
+      }
+      const parts = ROCK_PARTS[kind === 2 ? 1 : 0]!;
       const z = rocks[i + 2]! - ROCK_SINK * s;
       const cos = Math.cos(rocks[i + 4]!);
       const sin = Math.sin(rocks[i + 4]!);

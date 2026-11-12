@@ -20,6 +20,7 @@ import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
 import { addPlants } from "./flora-plan.ts";
+import { chooseSeason, keepSeason, seasonHook, stepGrowth } from "./flora-shade.ts";
 import { ProvingGround } from "./field.ts";
 import { Chalkboard } from "./board.ts";
 import { Glows } from "./glows.ts";
@@ -27,7 +28,7 @@ import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
 import { HelperFigures } from "./helpers.ts";
 import { FIRE } from "./hearth-plan.ts";
-import { emptySeason, type SeasonChoice, seasonFor, seasonState } from "./season.ts";
+import type { SeasonChoice } from "./season.ts";
 import { HALL, inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
@@ -520,6 +521,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const trace = /[?&]trace=1(&|$)/.test(location.search) ? { frames: new Float64Array(TRACE * 7), n: 0 } : null;
   if (trace) (globalThis as { __sandboxTrace?: unknown }).__sandboxTrace = trace;
   if (trace) (globalThis as { __sandboxLife?: unknown }).__sandboxLife = lifeTrace;
+  // (And for a tour of the seasons: `__sandboxSeason(name | 0..1 | "live")` looks at one; `__sandboxStats()` says what's drawn.)
+  if (trace) seasonHook();
+  if (trace) (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => ({ fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts() });
+  if (trace) (globalThis as { __sandboxLook?: unknown }).__sandboxLook = (x: number, y: number, distance?: number, yaw?: number) => (stopFollowing(), rig.lookAt(x, y, distance), yaw === undefined || (rig.target.yaw = yaw), (dirty = true));
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
   let model: WorldModel | null = null;
@@ -529,38 +534,6 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let disposed = false;
   let lost = false;
   let override: TimePreset | null = null;
-  // ---- the season: Denmark's by the date, or the one chosen to look at (season.ts: everything that grows and lives reads seasonState) ----
-  let seasonChoice: SeasonChoice = "live";
-  const seasonTarget = emptySeason();
-  let seasonRead = Number.NEGATIVE_INFINITY;
-  let seasonSettled = false;
-  const SEASON_FIELDS = ["year", "winter", "spring", "summer", "autumn", "leaf", "bloom", "turn", "litter", "vigour"] as const;
-  /** Keeps seasonState to the date (read again once a minute) or the choice, eased over a few seconds; true while it's changing. */
-  function stepSeason(dt: number, motion: boolean, now: number): boolean {
-    if (now - seasonRead > 60_000) {
-      seasonRead = now;
-      seasonFor(seasonChoice, Date.now(), seasonTarget);
-    }
-    const k = !seasonSettled || !motion ? 1 : 1 - Math.exp(-dt * 0.9);
-    let moved = false;
-    for (const key of SEASON_FIELDS) {
-      const d = seasonTarget[key] - seasonState[key];
-      if (Math.abs(d) > 1e-4) {
-        seasonState[key] += d * k;
-        moved = true;
-      } else seasonState[key] = seasonTarget[key];
-    }
-    seasonState.name = seasonTarget.name;
-    seasonSettled = true;
-    if (moved) dirty = true;
-    return moved;
-  }
-  // ?trace=1: a tour sets the season to look at (as the HUD's control does).
-  if (trace) (globalThis as { __sandboxSeason?: unknown }).__sandboxSeason = (choice: SeasonChoice) => {
-    seasonChoice = choice;
-    seasonRead = Number.NEGATIVE_INFINITY;
-    dirty = true;
-  };
   const skyState = emptySky();
   const heavens = emptyHeavens();
   const weather = new Weather(options.weather ?? "clear");
@@ -1259,7 +1232,6 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     let active = walker.step(dt);
     // The weather moves on (re-lighting marks the frame dirty); while it rains, every frame is drawn.
     if (stepWeather(dt, motion, now)) active = true;
-    if (stepSeason(dt, motion, now)) active = true;
     if (rig.follow) {
       rig.lookAt(walker.x, walker.y);
       rig.trail(walker.heading, walker.moving, dt, cameraClear);
@@ -1290,6 +1262,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     renderedLast = true;
     dirty = false;
     const t = now / 1000;
+    // The season (Denmark's date) on the land and what grows, the gusts crossing them, and the leaves in the air in autumn.
+    keepSeason(Date.now());
+    if (stepGrowth(renderDt, weather.state.wind, motion)) dirty = true;
+    vegetation.animate(renderDt, weather.state.wind, motion);
 
     // Floating origin: far from it, move it (and so the whole world) under the camera.
     if (Math.hypot(rig.x - origin[0], rig.y - origin[1]) > REBASE_M) {
@@ -1708,8 +1684,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return skyWords(skyNow(), heavens, { cloud: w.cloud, rain: w.rain, mist: w.mist, snow: w.snow, storm: w.storm, wind: w.wind, windHeading: w.windHeading, rainPast: sky.showerPast });
     },
     setSeason(choice) {
-      seasonChoice = choice;
-      seasonRead = Number.NEGATIVE_INFINITY;
+      // (flora-shade.ts keeps seasonState to the date or to this choice, and eases what grows to it.)
+      chooseSeason(choice);
       dirty = true;
     },
     setWeather(kind) {

@@ -6,7 +6,7 @@ import { Hearth } from "./hearth.ts";
 import { BED, BENCH_AREA, BENCH_DOG, BENCH_SEAT, CAMP, DESK, DESK_DOG, DESK_SEAT, FIRE, HEARTH_COLLIDERS, JOURNAL, LOG_DOG, LOG_SEAT, MAT, TRAIL } from "./hearth-plan.ts";
 import { fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
 import { Planner } from "./nav.ts";
-import { built, obstacles, standAt, type Target, Walker } from "./path.ts";
+import { built, obstacles, RUN_BEYOND, standAt, type Target, Walker } from "./path.ts";
 import { SITE_COLLIDERS } from "./sites.ts";
 import { BASE_FLATS, BIG, CHUNK, chunkSamples, heightAt, SEED, waterAt } from "./terrain.ts";
 import { TIERS } from "./tiers.ts";
@@ -31,9 +31,9 @@ solids.add(SITE_COLLIDERS, ground);
 // A full fleet: every banner and tower there could be.
 solids.add(fleetColliders(Array.from({ length: 16 }, (_, i) => i % 3 === 0)));
 solids.add(HEARTH_COLLIDERS, ground);
-// What grows from the keep down to the lake (nothing does where something's built).
+// What grows from the lake up to the woods north of the keep (nothing does where something's built).
 for (let cx = Math.floor(-90 / CHUNK); cx <= Math.floor(90 / CHUNK); cx++) {
-  for (let cy = Math.floor(-90 / CHUNK); cy <= Math.floor(60 / CHUNK); cy++) {
+  for (let cy = Math.floor(-90 / CHUNK); cy <= Math.floor(120 / CHUNK); cy++) {
     const s = chunkSamples(SEED, cx, cy, BASE_FLATS, built, BIG);
     addPlants(solids, s.layers.trees, s.layers.rocks);
   }
@@ -144,9 +144,13 @@ describe("his hearth, on the real land", () => {
       if (w.wrong) failures.push(`leg ${i}: ${w.wrong}`);
     }
     expect(failures).toEqual([]);
-    // A real walk: a minute or two on his feet, before the pauses.
-    expect(total).toBeGreaterThan(50);
-    expect(total).toBeLessThan(200);
+    // A real walk: a few minutes on his feet, before the pauses; and no leg long enough to make him run.
+    expect(total).toBeGreaterThan(180);
+    expect(total).toBeLessThan(420);
+    const round = [...TRAIL, TRAIL[0]!];
+    for (let i = 1; i < round.length; i++) expect(Math.hypot(round[i]!.x - round[i - 1]!.x, round[i]!.y - round[i - 1]!.y)).toBeLessThan(RUN_BEYOND);
+    // It goes out beyond the keep's lawn, into the meadow where the wildlife is.
+    expect(Math.max(...TRAIL.map((p) => Math.hypot(p.x, p.y)))).toBeGreaterThan(60);
   });
 
   test("drawn in a handful of meshes, with its lamps' glows; nothing left behind when it goes", () => {

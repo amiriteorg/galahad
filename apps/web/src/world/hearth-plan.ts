@@ -83,16 +83,32 @@ export const BENCH_AREA = { x: -2, y: -47.1, r: 1.9 };
 export const SEAT_BACK = 0.15;
 
 /**
- * The trail, walked in turn and round again: down to the shore, along it, back over the meadow. `pause` is how long
- * he stays (seconds; 0: he walks on), looking towards `look`.
+ * The trail, walked in turn and round again: down to the lake's shore and along it, up the keep's west side and
+ * out into the meadow to the north (beyond the lawn, where the wildlife is: the dog's best chance of a hare),
+ * back down the east side past the forge, and home. `pause` is how long he stays (seconds; 0: he walks on),
+ * looking towards `look`. No leg is long enough to make him run.
  */
 export const TRAIL: readonly { x: number; y: number; pause: number; look: readonly [number, number] }[] = [
   { x: 5, y: -27, pause: 0, look: [14, -43] },
   { x: 15, y: -43.5, pause: 45, look: [34, -70] },
   { x: 4, y: -45, pause: 0, look: [-17, -43] },
   { x: -17, y: -43, pause: 45, look: [-34, -70] },
-  { x: -24, y: -29, pause: 0, look: [-13, -21] },
-  { x: -13, y: -21.5, pause: 18, look: [0, 0] },
+  { x: -24, y: -29, pause: 0, look: [-40, -12] },
+  // Up the west side, between the oracle's stones and the proving ground.
+  { x: -40, y: -12, pause: 0, look: [-42, 10] },
+  { x: -42, y: 10, pause: 0, look: [-40, 32] },
+  { x: -40, y: 32, pause: 0, look: [-34, 52] },
+  { x: -34, y: 52, pause: 0, look: [-26, 63] },
+  // The meadow under the woods' edge: he stops and looks into the trees.
+  { x: -26, y: 63, pause: 40, look: [-30, 100] },
+  { x: -4, y: 65, pause: 30, look: [0, 100] },
+  { x: 16, y: 56, pause: 0, look: [36, 40] },
+  // Down the east side, by the birches and round behind the forge's hill.
+  { x: 36, y: 40, pause: 0, look: [44, 20] },
+  { x: 44, y: 20, pause: 0, look: [44, -4] },
+  { x: 44, y: -4, pause: 0, look: [30, -18] },
+  { x: 30, y: -18, pause: 0, look: [10, -24] },
+  { x: 10, y: -24, pause: 15, look: [0, 0] },
   { x: 0.4, y: -22.2, pause: 0, look: [5, -27] },
 ];
 
