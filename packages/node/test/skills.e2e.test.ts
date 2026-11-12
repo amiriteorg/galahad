@@ -418,7 +418,8 @@ describe("his learning loop, on a real node", () => {
     await call("setLoop", { name: "greet", schedule: "every 30m", task: { kind: "quest", goal: "write hi into the nightly greeting file", network: "isolated" } });
     await call("runLoop", { name: "greet" });
     let run: LoopRunView | undefined;
-    for (let i = 0; i < 400 && !run; i++) {
+    // Asked until the run is recorded: on a busy machine a quest and its distillation can take a while.
+    for (const deadline = Date.now() + 50_000; !run && Date.now() < deadline; ) {
       await Bun.sleep(25);
       run = (await call<{ runs: LoopRunView[] }>("loopRuns", { name: "greet" })).runs[0];
     }
@@ -576,18 +577,14 @@ describe("his skills in chat, and as tools", () => {
 
 describe("his journal's inputs", () => {
   test("the skills learned and used that day are lines of their own", async () => {
-    const store = new MindStore(home.mindPath);
-    try {
-      const { SkillsService } = await import("../src/skills.ts");
-      const service = new SkillsService({ store, identity: null as never, log: () => {}, ledger: () => {}, role: () => null, ask: async () => ({ text: "", model: "" }) });
-      const inputs = journalInputs({ store, log: () => {}, skills: service }, Date.now());
-      const lines = (inputs.skills ?? []).map((s) => s.line);
-      expect(lines.some((l) => l.startsWith('you learned the skill "Write a greeting into a file" from quest q-'))).toBe(true);
-      expect(lines.some((l) => /^you used the skill "Write a greeting into a file" in quest q-\S+ \(done\)$/.test(l))).toBe(true);
-      // Nothing that waited for you is there in words.
-      expect(lines.join("\n")).not.toContain("An agent's way");
-    } finally {
-      store.close();
-    }
+    // The node's own mind (no second connection to its database: the daemon is writing to it).
+    const { SkillsService } = await import("../src/skills.ts");
+    const service = new SkillsService({ store: daemon.store, identity: daemon.identity, log: () => {}, ledger: () => {}, role: () => null, ask: async () => ({ text: "", model: "" }) });
+    const inputs = journalInputs({ store: daemon.store, log: () => {}, skills: service }, Date.now());
+    const lines = (inputs.skills ?? []).map((s) => s.line);
+    expect(lines.some((l) => l.startsWith('you learned the skill "Write a greeting into a file" from quest q-'))).toBe(true);
+    expect(lines.some((l) => /^you used the skill "Write a greeting into a file" in quest q-\S+ \(done\)$/.test(l))).toBe(true);
+    // Nothing that waited for you is there in words.
+    expect(lines.join("\n")).not.toContain("An agent's way");
   });
 });

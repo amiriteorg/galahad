@@ -147,3 +147,17 @@ describe("the editor", () => {
     expect(docFromForm({ title: "Deploy", when: "deploying", steps: "s", proof: `curl -H 'x-api-key: ${key}' https://example.test => 200`, pitfalls: "" })).toMatchObject({ field: "proof" });
   });
 });
+
+describe("an answer's steps", () => {
+  test("the skills he had at hand are said as that, not as archived entries he read", async () => {
+    const { archiveStep } = await import("./chats.ts");
+    const skill = { id: "sk_aaaaaaaaaaaaaaaa", title: "Fix a failing test", kind: "skill", trust: "agent" };
+    expect(archiveStep([skill])).toEqual({ text: "Had 1 skill at hand", detail: "[sk_aaaaaaaaaaaaaaaa] Fix a failing test" });
+    const both = archiveStep([skill, { ...skill, id: "sk_bbbbbbbbbbbbbbbb", title: "From the web", trust: "untrusted" }]);
+    expect(both.text).toBe("Had 2 skills at hand");
+    expect(both.detail).toContain("[sk_bbbbbbbbbbbbbbbb] From the web (untrusted)");
+    // Archived entries read as ever.
+    expect(archiveStep([{ id: "arc_AAAAAAAAAAAAAAAAAAAAAA", title: "A drawbridge", kind: "idea", trust: "owner" }]).text).toBe("Read 1 archived entry");
+    expect(archiveStep([]).text).toBe("Read 0 archived entries");
+  });
+});

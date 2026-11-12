@@ -45,7 +45,9 @@ export interface KeptStep {
 
 /** The archived entries an answer was given, as one step: how many, and each by its id and title. */
 export function archiveStep(entries: { id: string; title: string; kind: string; trust: string }[]): { text: string; detail?: string } {
-  const text = `Read ${entries.length} archived ${entries.length === 1 ? "entry" : "entries"}`;
+  // His skills go with an answer as their own step (kind "skill"): notes he had at hand, not archived entries he read.
+  const skills = entries.length > 0 && entries.every((e) => e.kind === "skill");
+  const text = skills ? `Had ${entries.length} skill${entries.length === 1 ? "" : "s"} at hand` : `Read ${entries.length} archived ${entries.length === 1 ? "entry" : "entries"}`;
   if (!entries.length) return { text };
   return { text, detail: entries.map((e) => `[${e.id}] ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ") };
 }

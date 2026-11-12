@@ -710,15 +710,3 @@ function refused(error: unknown): SkillError {
   const why = /^emit (?:not authorized|rejected): (.*)$/s.exec(message)?.[1];
   return new SkillError(why ? 409 : 500, why ? `The mind refused it: ${why}.` : "The skill couldn't be kept.");
 }
-
-/** How the node says what a quest's end taught, in a line or two (the quest's memory, a loop's summary, the terminal). */
-export function learnedLines(learned: SkillLearned | null): string[] {
-  if (!learned) return [];
-  const lines: string[] = [];
-  if (learned.used.length) lines.push(`Skills used: ${learned.used.map((u) => `"${u.title}"`).join(", ")}`);
-  if (learned.skill) {
-    const waits = learned.skill.pending ? " (waits for your approval: it isn't used until then)" : "";
-    lines.push(`Skill ${learned.revised ? "revised" : "learned"}: "${learned.skill.title}" (${learned.skill.id})${waits}`);
-  }
-  return lines;
-}

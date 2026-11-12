@@ -97,7 +97,7 @@ export async function printTurn(events: AsyncGenerator<ChatStreamEvent>, io: Io 
     } else if (event.type === "conversation") io.err(dim(`[chat ${event.id}${event.project ? ` · project ${event.project}` : ""}]\n`));
     else if (event.type === "text") io.out(event.text);
     else if (event.type === "model") io.err(dim(`[${event.ref}]\n`));
-    else if (event.type === "archive") io.err(dim(`[from the archive: ${event.entries.map((e) => `${e.id} ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
+    else if (event.type === "archive") io.err(dim(`[${event.entries.length && event.entries.every((e) => e.kind === "skill") ? "skills at hand" : "from the archive"}: ${event.entries.map((e) => `${e.id} ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
     else if (event.type === "tool") io.err(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
     else if (event.type === "tool_result") io.err(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
     else if (event.type === "fallback") io.err(dim(`[skipped ${event.from}: ${event.error}]\n`));
