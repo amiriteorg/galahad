@@ -393,6 +393,27 @@ bun galahad loop pause morning             # resume / rm
 
 A loop that fails or needs a look leaves a notice in your inbox, and its next good run clears it. So a loop that calls a connector is a monitor: install a one-tool connector for your site (`{"id":"site","label":"galahad.bot","origin":"https://galahad.bot","tools":{"home":{"description":"The home page","method":"GET","path":"/","class":"read"}}}`) and `loop add site --every 5m --call site.home`.
 
+## 11½. Skills: what he learned, and you curate
+
+When a quest passes its independent review, Galahad may write one short note on how that kind of work went: when to use it, the steps, what proves it worked, pitfalls. That's a skill. He's given the few that bear on a later quest or question, as notes to weigh. A skill is words: nothing in one runs.
+
+```sh
+galahad do "make the parser's tests pass"      # passes review → "Skill learned: …" (or why none was)
+galahad skills                                # each skill: state, trust, uses and how those quests ended
+galahad skills show sk_…                      # its words, where it came from, every version, the quests that used it
+galahad skills approve sk_…                   # prints the whole version that waits, then asks
+galahad skills lock sk_… | unlock sk_…        # locked: he uses it, never changes it
+galahad skills retire sk_… | restore sk_…     # retired: kept, never offered (nothing is ever deleted)
+galahad skills rollback sk_…                  # one version back
+galahad skills write --title "How we write release notes" --when "before showing merged work" \
+  --step "Read what merged" --step "Say what changed for the reader" --proof "git log --oneline => the commits"
+galahad skills budget 6000                    # tokens a day for distilling (0: off)
+```
+
+- **His own, in use at once**, only from a quest in an `isolated` sandbox whose planner was given nothing untrusted. Anything that could have read the outside world (`--net gateway` or `online`, a repository, a coding agent, an untrusted memory in its plan), anything he writes when you ask in a chat ("write up how you did that"), and anything another agent proposes **waits for you**: it's given to no model until you approve that exact version. Once your mind holds untrusted memories (every quest's outcome is one), expect most to wait.
+- **Yours are yours.** A skill you write or edit is `owner`; he uses it and never changes it. He revises only skills he wrote that you haven't locked.
+- **In the app:** Skills, under Mind. What waits comes first, in full, with Approve and Retire.
+
 ## 12. Connectors: your services, through the oath
 
 ```sh

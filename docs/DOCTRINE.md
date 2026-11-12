@@ -83,6 +83,11 @@ Sources: [hermes-agent](https://github.com/NousResearch/hermes-agent), [docs](ht
 
 Hermes provides `SKILL.md` skills (compatible with agentskills.io), memory providers, a 20+ platform messaging gateway, ACP (`hermes acp`), an OpenAI-compatible API server and terminal backends (docker, ssh, modal, daytona). Hermes is an arm. Galahad becomes **its memory provider**, so what Hermes learns lands in the one mind (M1).
 
+| Idea | How Galahad uses it |
+|---|---|
+| A learning loop: after work, write a skill; track its use; let unused ones go stale; archive, never delete; a ledger of every change with one-step rollback; the owner can lock a skill | **Skills** ([ARCHITECTURE §9½](ARCHITECTURE.md)): one note distilled from a quest that passed independent review, from the reviewer's evidence; each use and its quest's outcome recorded; stale after 14 unused days; retired, never deleted; every version a signed event with one-step rollback; locked means he uses it and never changes it. *Built.* |
+| What went wrong there and on community hubs: skills as a prompt-injection persistence channel, a pattern scanner taken for a sandbox, self-improvement that rewrote the owner's skills | A skill is words, never something that runs or installs; the boundary is the mind's trust level and your approval of an exact version, not a scanner; he never edits yours. *Built* ([SECURITY](SECURITY.md)). |
+
 ## OpenCode
 
 Source: [opencode.ai](https://opencode.ai)
