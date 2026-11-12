@@ -7,8 +7,9 @@ import { BED, BENCH_DOG, BENCH_SEAT, DESK_DOG, DESK_SEAT, DOG_BED, FIRE, JOURNAL
 import { DECK_REST } from "./keep-deck.ts";
 import type { Attention, CarePose } from "./knight.ts";
 import { type Activity, ACTIVITY_LABEL, type Block, blockPhase, type Intent, intentFor, lifeAt, roundsStop, STILL_LABEL } from "@galahad/core/life";
+import { type DogFace, type DogFeeling, dogFace } from "./expression.ts";
 import type { MicroduckFlock } from "./microducks.ts";
-import { standAt, type Target } from "./path.ts";
+import { angleDiff, standAt, type Target } from "./path.ts";
 
 /*
  * Galahad's life when he isn't working, and how he looks after those in it.
@@ -132,7 +133,9 @@ export interface CareFrame {
   /** The most serious open heartbeat finding that needs you (lib/world.ts' heartbeatConcern), or null. */
   concern: HeartbeatFinding | null;
   galahad: { x: number; y: number; heading: number; moving: boolean; /** Up on something (the deck, the stairs): the dog can't come to him there. */ raised?: boolean };
-  dog: { x: number; y: number; speed: number };
+  dog: { x: number; y: number; speed: number; /** The way it faces (for its ears). */ heading?: number };
+  /** Something just made a noise there (a strike, the hammer, an animal off through the grass), `age` seconds ago: the dog's ears turn to it. */
+  noise?: { x: number; y: number; age: number };
   /** A node's spot at the keep (its label's place), into `out`; false if it isn't shown. */
   nodeSpot(id: string, out: { x: number; y: number }): boolean;
   /** The ground's height. */
@@ -158,6 +161,8 @@ export interface CareWild {
 
 /** A chase: how far off the dog notices something, how far from him it will go after it, how long it lasts, and how long before the next. */
 export const CHASE = { sight: 14, leash: 20, seconds: 4.5, every: 55 };
+/** How long the dog minds a noise (seconds). */
+const NOISE_S = 3.5;
 /** What it's after, as his line says it. */
 const QUARRY_NAME: Record<string, string> = { hare: "a hare", squirrel: "a squirrel", mallard: "the ducks", songbird: "the birds" };
 
@@ -181,7 +186,7 @@ export interface CareOut {
 /** The dog, as care moves it (dog.ts' lead, mood, charge, mouth). */
 export interface CareDog {
   readonly lead: { on: boolean; x: number; y: number; sit: boolean; lie: boolean; run: boolean; faceX: number; faceY: number };
-  readonly mood: { wag: number; ears: number; eye: number; joy: number; asleep: number };
+  readonly mood: { wag: number; ears: number; eye: number; joy: number; asleep: number; bow: number; earTurn: number };
   readonly charge: { value: number };
   mouth(out: [number, number, number]): [number, number, number];
 }
@@ -239,6 +244,10 @@ export class Care {
   /** What the dog feels this frame, beyond its battery and the ball: greeted (0..1), asleep (0..1). */
   private joy = 0;
   private dogSleep = 0;
+  /** A play bow, this frame (he's winding up to throw); how the dog is, and what shows of it (expression.ts). */
+  private bow = false;
+  private readonly feel: DogFeeling = { asleep: false, low: false, playing: false, keen: false, alert: 0, bow: false, noise: Number.NaN };
+  private readonly face: DogFace = { wag: 0.5, ears: 0.6, eye: 1, bow: 0, earTurn: 0 };
   /** The dog's chase on a walk: what's left of it (seconds), how long until it may be off again, and what it's after. */
   private chaseLeft = 0;
   private chaseRest = 2.5;
@@ -323,6 +332,7 @@ export class Care {
     out.writing = false;
     this.joy = 0;
     this.dogSleep = 0;
+    this.bow = false;
     this.talk(0);
     this.flock.gather.on = false;
 
@@ -376,15 +386,26 @@ export class Care {
     else if (intent === "charge") this.toDock(f);
     else this.live(f);
 
-    // The dog's mood: keen when it's playing, greeted or patted; tired when it's low; at peace asleep.
+    // The dog's mood (expression.ts says what shows of it): keen when it's playing, greeted or patted; alert at a noise
+    // or on a chase, its ears turned to it; tired when it's low; at peace asleep; a play bow as he winds up to throw.
     const mood = this.dog.mood;
-    const playing = this.ball === "flying" || this.ball === "resting" || this.ball === "carried" || pose.reach > 0 || this.joy > 0;
-    const low = this.charge < LOW;
-    const asleep = this.dogSleep > 0;
+    const feel = this.feel;
+    feel.asleep = this.dogSleep > 0;
+    feel.low = this.charge < LOW;
+    feel.playing = this.ball === "flying" || this.ball === "resting" || this.ball === "carried" || pose.reach > 0 || this.joy > 0;
+    feel.keen = this.ball === "flying" || this.ball === "resting" || this.joy > 0;
+    feel.bow = this.bow;
+    const noise = f.noise;
+    const heard = noise && noise.age >= 0 && noise.age < NOISE_S ? 1 - noise.age / NOISE_S : 0;
+    feel.alert = Math.max(this.chaseLeft > 0 ? 1 : 0, heard);
+    feel.noise = heard > 0 && f.dog.heading !== undefined ? angleDiff(f.dog.heading, Math.atan2(noise!.y - f.dog.y, noise!.x - f.dog.x)) : Number.NaN;
+    const face = dogFace(feel, this.face);
     const e = f.motion ? 1 - Math.exp(-f.dt * 3) : 1;
-    mood.wag += ((asleep ? 0 : low ? 0.12 : playing ? 1 : 0.5) - mood.wag) * e;
-    mood.ears += ((asleep ? 0.2 : low ? 0.1 : this.ball === "flying" || this.ball === "resting" || this.joy > 0 ? 1 : 0.6) - mood.ears) * e;
-    mood.eye += ((asleep ? 0.07 : low ? 0.35 : 1) - mood.eye) * e;
+    mood.wag += (face.wag - mood.wag) * e;
+    mood.ears += (face.ears - mood.ears) * e;
+    mood.eye += (face.eye - mood.eye) * e;
+    mood.bow += (face.bow - mood.bow) * (f.motion ? 1 - Math.exp(-f.dt * 7) : 1);
+    mood.earTurn += (face.earTurn - mood.earTurn) * (f.motion ? 1 - Math.exp(-f.dt * 6) : 1);
     mood.joy += (this.joy - mood.joy) * (f.motion ? 1 - Math.exp(-f.dt * 5) : 1);
     mood.asleep += (this.dogSleep - mood.asleep) * (f.motion ? 1 - Math.exp(-f.dt * 1.5) : 1);
     if (this.ball === "carried") this.dog.mouth(this.ballAt);
@@ -794,6 +815,8 @@ export class Care {
         }
         const p = (f.now - this.subAt) / 900;
         pose.throw = Math.max(0.001, Math.min(1, p));
+        // The dog knows what's coming: a play bow.
+        this.bow = true;
         this.look(this.to[0], this.to[1], 1);
         if (p >= 0.55) {
           this.ball = "flying";

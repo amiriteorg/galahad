@@ -4,9 +4,10 @@ import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, slateQuest, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
-import { Care, type CareFrame, CareLook, lodestarPulse } from "./care.ts";
+import { Care, type CareFrame, CareLook, type CareWild, lodestarPulse } from "./care.ts";
+import { type KnightFace, type KnightFeeling, knightFace, nod, tiredness } from "./expression.ts";
 import type { EcoSummary } from "./eco/summary.ts";
-import { ACTIVITIES, type Activity, withDog } from "@galahad/core/life";
+import { ACTIVITIES, type Activity, danishDate, withDog } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";
@@ -462,6 +463,20 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const charge = Number(q.get("charge"));
     if (q.has("charge") && Number.isFinite(charge)) care.charge = Math.max(0, Math.min(1, charge));
   }
+  // ---------- how he is, shown in his visor (expression.ts): what's so for him, and what shows of it ----------
+  const feeling: KnightFeeling = { t: 0, motion: true, asleep: 0, concentrating: false, thinking: false, listening: false, tired: 0, surprise: 0, pleased: 0 };
+  const face: KnightFace = { open: 1, bright: 1, line: 1, tilt: 0, blink: 0 };
+  /** When his tiredness was last worked out (the clock's own time, ms), when he last nodded (seconds), and whether the dog had the ball at his feet. */
+  let tiredAt = -1e12;
+  let nodAt = -1e9;
+  let ballBack = false;
+  /** The last noise in the world, for the dog's ears: where, and how long ago (seconds). */
+  const noise = { x: 0, y: 0, age: 1e9 };
+  const heard = (x: number, y: number): void => {
+    noise.x = x;
+    noise.y = y;
+    noise.age = 0;
+  };
   const spotOf = (id: string, out: { x: number; y: number }): boolean => {
     for (let i = 0; i < keep.spots.length; i++) {
       const spot = keep.spots[i]!;
@@ -484,8 +499,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     nodeSpot: spotOf,
     height: (x, y) => land.heightAt(x, y),
     wet: (x, y) => land.heightAt(x, y) < land.waterAt(x, y) + 0.05,
-    // The wildlife, as the dog meets it on a walk (a short chase; they bolt).
-    wild: fauna,
+    // The wildlife, as the dog meets it on a walk (a short chase; they bolt: that startles him too, and is heard).
+    wild: {
+      nearestSmall: (x, y, r, out) => fauna.nearestSmall(x, y, r, out),
+      startle: (x, y, r) => {
+        fauna.startle(x, y, r);
+        feeling.surprise = Math.max(feeling.surprise, 0.9);
+        heard(x, y);
+      },
+    } satisfies CareWild,
+    noise,
   };
   /** The last target of his day he was sent to, and whether he was working then; the dog's last place (for its speed). */
   let careKey = -1;
@@ -577,6 +600,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const work = { ms: frameWork.ms, frames: frameWork.frames };
       frameWork.ms = frameWork.frames = 0;
       return { fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts(), work };
+    };
+  }
+  // (`__sandboxFace()`: how he is and what shows of it, and the dog's mood; `__sandboxFeel("surprise" | "pleased" | "nod")` sets one off, for a tour.)
+  if (trace) {
+    (globalThis as { __sandboxFace?: unknown }).__sandboxFace = () => ({ feeling: { ...feeling }, face: { ...face }, dog: { ...dog.mood } });
+    (globalThis as { __sandboxFeel?: unknown }).__sandboxFeel = (kind: string) => {
+      if (kind === "surprise") feeling.surprise = 1;
+      else if (kind === "pleased") feeling.pleased = 1;
+      else if (kind === "nod") nodAt = performance.now() / 1000;
+      dirty = true;
     };
   }
   if (trace) (globalThis as { __sandboxLook?: unknown }).__sandboxLook = (x: number, y: number, distance?: number, yaw?: number) => (stopFollowing(), rig.lookAt(x, y, distance), yaw === undefined || (rig.target.yaw = yaw), (dirty = true));
@@ -1389,6 +1422,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     if (lightning.strike !== lastStrike) {
       lastStrike = lightning.strike;
+      feeling.surprise = Math.max(feeling.surprise, 0.6);
       sky.strike(lightning.bearing, lightning.bolt, lightning.strike);
     }
     const moved =
@@ -1529,6 +1563,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     careFrame.dog.x = dog.x;
     careFrame.dog.y = dog.y;
     careFrame.dog.speed = Number.isNaN(dogLast.x) || renderDt <= 0 ? 0 : Math.hypot(dog.x - dogLast.x, dog.y - dogLast.y) / renderDt;
+    careFrame.dog.heading = dog.heading;
+    noise.age += renderDt;
     dogLast.x = dog.x;
     dogLast.y = dog.y;
     const life = care.step(careFrame);
@@ -1615,6 +1651,27 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       // At his desk, his journal: his hand on the page.
       if (life.writing) knightState.writing = true;
     }
+    // ---- how he is, in his visor: narrowed at his work, wide at a surprise, dimmer when tired, brighter when pleased ----
+    if (careFrame.now - tiredAt > 60_000 || careFrame.now < tiredAt) {
+      tiredAt = careFrame.now;
+      feeling.tired = tiredness((careFrame.now - danishDate(careFrame.now).midnight) / 3_600_000);
+    }
+    const dogGap = Math.hypot(dog.x - walker.x, dog.y - walker.y);
+    // Patting the dog pleases him; the dog back at his feet with the ball is a (small) surprise every time.
+    if (idle && life.pose.reach > 0 && !walker.moving && dogGap < 1.8 && Math.hypot(life.attention.x - dog.x, life.attention.y - dog.y) < 0.6) feeling.pleased = Math.max(feeling.pleased, 0.8);
+    const back = care.ball === "carried" && dogGap < 1.3;
+    if (back && !ballBack) feeling.surprise = Math.max(feeling.surprise, 0.8);
+    ballBack = back;
+    feeling.surprise *= Math.exp(-renderDt * 1.4);
+    feeling.pleased *= Math.exp(-renderDt * 0.45);
+    feeling.t = t;
+    feeling.motion = motion;
+    feeling.asleep = knight.eyesShut;
+    feeling.concentrating = !walker.moving && (knightState.bench || knightState.working || Boolean(knightState.writing));
+    feeling.thinking = knightState.thinking;
+    feeling.listening = idle && !walker.moving && life.pose.tilt > 0;
+    knightState.face = knightFace(feeling, face);
+    knightState.nod = motion ? nod(t - nodAt) : 0;
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
     if (Number.isNaN(standZ) || !motion || Math.abs(walker.z - standZ) > 2) standZ = walker.z;
     else standZ += (walker.z - standZ) * (1 - Math.exp(-renderDt * 12));
@@ -1821,6 +1878,17 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
       // The quest in hand, on his slate (the first in hand, else the one that ended last; the rest are counted).
       if (!prev || prev.quests !== next.quests) {
+        // One that just ended well pleases him: a brightening, and a nod.
+        if (prev) {
+          for (const q of next.quests) {
+            if (q.state !== "done") continue;
+            const was = prev.quests.find((p) => p.id === q.id && p.by === q.by);
+            if (was && worldQuestInHand(was.state)) {
+              feeling.pleased = 1;
+              nodAt = performance.now() / 1000;
+            }
+          }
+        }
         const quest = slateQuest(next.quests);
         planSlate.setQuest(quest, Math.max(0, next.quests.filter((q) => worldQuestInHand(q.state)).length - (quest && worldQuestInHand(quest.state) ? 1 : 0)), !reduced() && Boolean(prev));
         dirty = true;

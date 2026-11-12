@@ -94,7 +94,7 @@ function world(opts: { motion?: boolean } = {}) {
     x: 0,
     y: -9,
     lead: { on: false, x: 0, y: 0, sit: false, lie: false, run: false, faceX: Number.NaN, faceY: Number.NaN },
-    mood: { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0 },
+    mood: { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0, bow: 0, earTurn: 0 },
     charge: { value: 1 },
     mouth: (out) => {
       out[0] = dog.x;
@@ -559,5 +559,45 @@ describe("his hearth, and his dog through the day", () => {
       for (let i = 0; i < 300; i++) expect(v.run(0.1).label).toBe("Out for a walk with the dog");
       expect(went).toBe(false);
     }
+  });
+});
+
+describe("the dog shows how it is", () => {
+  test("a play bow as he winds up to throw, gone once the ball's away", () => {
+    const w = world();
+    w.care.forced = "walk-dog";
+    let bowed = 0;
+    let flying = 1;
+    for (let i = 0; i < 1200; i++) {
+      const out = w.run(1 / 30);
+      if (w.care.ball === "held" && out.pose.throw > 0) bowed = Math.max(bowed, w.dog.mood.bow);
+      if (w.care.ball === "carried") flying = Math.min(flying, w.dog.mood.bow);
+    }
+    expect(bowed).toBeGreaterThan(0.8);
+    expect(flying).toBeLessThan(0.05);
+  });
+
+  test("its ears turn to a noise for a few seconds, and it's alert (tail stiller); then it forgets", () => {
+    const w = world();
+    w.care.forced = "hearth";
+    w.run(20);
+    const rest = w.dog.mood.wag;
+    // Something off to its left, as it faces east.
+    w.frame.dog.heading = 0;
+    w.frame.noise = { x: w.dog.x, y: w.dog.y + 8, age: 0 };
+    w.run(0.6);
+    expect(w.dog.mood.earTurn).toBeGreaterThan(0.4);
+    expect(w.dog.mood.ears).toBeGreaterThan(0.75);
+    expect(w.dog.mood.wag).toBeLessThan(rest);
+    // (The scene ages the noise; here it's said to be old.)
+    w.frame.noise.age = 10;
+    w.run(2);
+    expect(Math.abs(w.dog.mood.earTurn)).toBeLessThan(0.02);
+    // Asleep, it hears nothing.
+    w.care.forced = "sleep";
+    w.run(30);
+    w.frame.noise.age = 0;
+    w.run(1);
+    expect(Math.abs(w.dog.mood.earTurn)).toBeLessThan(1e-6);
   });
 });

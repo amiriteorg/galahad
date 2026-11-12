@@ -94,8 +94,8 @@ export class RobotDog {
   /* ---------- care's say (care.ts) ---------- */
   /** Somewhere to go instead of beside him: a ball, its cushion, ahead on a walk. `sit` (or `lie` down) there once arrived; `run` to get there; it faces `face` (NaN: him). */
   readonly lead = { on: false, x: 0, y: 0, sit: false, lie: false, run: false, faceX: Number.NaN, faceY: Number.NaN };
-  /** How it feels: its tail's wag, its ears (1 pricked, 0 drooped), the light in its eye (1 as ever, less when tired), its joy (1: bouncing to greet him) and how asleep it is. */
-  readonly mood = { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0 };
+  /** How it feels: its tail's wag, its ears (1 pricked, 0 drooped), the light in its eye (1 as ever, less when tired), its joy (1: bouncing to greet him), how asleep it is, a play bow (forelegs down, tail up) and how far its ears turn to something it heard (radians). */
+  readonly mood = { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0, bow: 0, earTurn: 0 };
   /** Its battery, 0..1: the four cells on its back light by it. */
   readonly charge = uniform(1);
   private nightLevel = 0;
@@ -436,8 +436,10 @@ export class RobotDog {
   /** The body over the feet (bobbing with the trot, nose up when it sits), then each leg reaching its planted foot. */
   private pose(t: number, speed: number, dt: number, phase: number): void {
     const lie = this.lieAmount;
-    // Lying, it's flat on its belly (no sitting up on its haunches).
-    const sit = this.sitAmount * (1 - lie);
+    // A play bow: its chest down between its forelegs, its rump and tail up, looking up at him.
+    const bow = this.mood.bow * (1 - lie);
+    // Lying, it's flat on its belly (no sitting up on its haunches); bowing, it's off them.
+    const sit = this.sitAmount * (1 - lie) * (1 - bow);
     const asleep = this.mood.asleep * lie;
     // Greeting him: a bounce on its forelegs.
     const bounce = this.mood.joy * (1 - lie) * Math.abs(Math.sin(t * 9.5));
@@ -446,16 +448,16 @@ export class RobotDog {
     const sh = Math.sin(this.heading);
     let lowest = 0;
     for (let i = 0; i < 4; i++) lowest = Math.min(lowest, this.feet.z[i]! - this.feet.lift[i]! - gz);
-    const want = BODY_Y - sit * 0.1 - lie * LIE_DROP - 0.02 * this.gait + Math.abs(Math.sin(phase * Math.PI * 2)) * 0.02 * this.gait + bounce * 0.05 + Math.max(-0.3, lowest);
+    const want = BODY_Y - sit * 0.1 - lie * LIE_DROP - bow * 0.07 - 0.02 * this.gait + Math.abs(Math.sin(phase * Math.PI * 2)) * 0.02 * this.gait + bounce * 0.05 + Math.max(-0.3, lowest);
     this.bodyY += (want - this.bodyY) * (dt > 0 ? 1 - Math.exp(-dt * 16) : 1);
     // (Asleep, its sides rise and fall.)
     this.pBody.set(0, this.bodyY + asleep * 0.008 * Math.sin(t * 1.3), -sit * 0.04);
-    this.qBody.setFromEuler(eul.set(-sit * 0.42 - bounce * 0.2 + this.sniffAmount * 0.12, 0, Math.sin(phase * Math.PI * 2) * 0.03 * this.gait));
+    this.qBody.setFromEuler(eul.set(-sit * 0.42 - bounce * 0.2 + this.sniffAmount * 0.12 + bow * 0.4, 0, Math.sin(phase * Math.PI * 2) * 0.03 * this.gait));
     this.rig.set(this.bones.body, this.pBody, this.qBody);
     // Head: up when it sits, down to the ground when it sniffs, on its paws asleep; watching him when it's settled, looking about otherwise.
     pointIn(this.t1, this.pBody, this.qBody, 0, 0.14 - asleep * 0.11, 0.33);
     const about = (1 - this.gait) * 0.25 * Math.sin(t * 0.7) * (1 - asleep) * (1 - Math.min(1, Math.abs(this.gaze) * 2));
-    this.qa.setFromEuler(eul.set(sit * 0.35 - lie * (1 - asleep) * 0.22 + asleep * 0.3 + this.sniffAmount * (0.55 + 0.12 * Math.sin(t * 14)), about + this.gaze * (1 - this.sniffAmount), this.mood.joy * 0.12 * Math.sin(t * 6))).premultiply(this.qBody);
+    this.qa.setFromEuler(eul.set(sit * 0.35 - bow * 0.55 - lie * (1 - asleep) * 0.22 + asleep * 0.3 + this.sniffAmount * (0.55 + 0.12 * Math.sin(t * 14)), about + this.gaze * (1 - this.sniffAmount), this.mood.joy * 0.12 * Math.sin(t * 6))).premultiply(this.qBody);
     this.rig.set(this.bones.head, this.t1, this.qa);
     // Its ears, over the head: pricked when it's keen, drooped and back when it's tired.
     const ears = this.mood.ears;
@@ -464,13 +466,15 @@ export class RobotDog {
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? 1 : -1;
       pointIn(this.pEnd, this.t1, head, side * 0.1, 0.13, -0.04);
-      this.qb.setFromEuler(eul.set(-(1 - ears) * 0.8 + 0.08 * Math.sin(t * 3.1 + i) * ears, 0, side * (0.12 + (1 - ears) * 0.7))).premultiply(head);
+      // (Each turns to what it heard; the one on that side a little more.)
+      const turn = this.mood.earTurn * (1 + 0.25 * side * Math.sign(this.mood.earTurn));
+      this.qb.setFromEuler(eul.set(-(1 - ears) * 0.8 + 0.08 * Math.sin(t * 3.1 + i) * ears, turn, side * (0.12 + (1 - ears) * 0.7))).premultiply(head);
       this.rig.set(this.bones.ears[i]!, this.pEnd, this.qb);
     }
     // The tail: up and wagging when it's happy, low and slow when it's tired.
     const wag = this.mood.wag;
     pointIn(this.t1, this.pBody, this.qBody, 0, 0.08, -0.3);
-    this.qa.setFromEuler(eul.set(-0.25 - 0.6 * wag, 0, Math.sin(t * (speed > 0.3 ? 14 : 5 + 10 * wag)) * (0.35 + 0.3 * sit) * (0.25 + 0.95 * wag))).premultiply(this.qBody);
+    this.qa.setFromEuler(eul.set(-0.25 - 0.6 * wag - 0.45 * bow, 0, Math.sin(t * (speed > 0.3 ? 14 : 5 + 10 * wag)) * (0.35 + 0.3 * sit) * (0.25 + 0.95 * wag))).premultiply(this.qBody);
     this.rig.set(this.bones.tail, this.t1, this.qa);
     // The light in its eye: the night's, dimmed when it's tired (a uniform's value: nothing is uploaded but a colour).
     this.eyeColor.value.copy(this.dim).lerp(this.bright, Math.min(1, 0.35 + this.nightLevel)).multiplyScalar(0.35 + 0.65 * this.mood.eye);

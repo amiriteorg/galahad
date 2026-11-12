@@ -86,6 +86,19 @@ He sits down where he stands (the seat is just behind him: his hips come down an
 
 `?life=walk-dog` (or sleep, wake, rounds, walk, friends, library, workshop, field, council, observatory, ponder, hearth, journal) on the page fixes his day to one part of it, and `?charge=0.15` sets the dog's battery, for tours; with `?trace=1`, `globalThis.__sandboxLife` says what he's doing, how he is (sitting, lying, asleep, writing), whether the dog's lying down and how far it is from him, and whether the fire's lit (and its `force(activity)` and `setCharge(c)` change it).
 
+## How they are, shown
+
+His visor and the dog show how they are. One pure function (`express` in `apps/web/src/world/expression.ts`, unit-tested) goes from what's so to what shows; the knight and the dog ease to it, so nothing snaps, and nothing is allocated for it.
+
+| | |
+|---|---|
+| His eyes and the visor's line | Open as ever. Narrower, the line thinner, when he concentrates (the blade's tip at a bench, a pen, chalk); a little narrowed when he thinks. Wide for a moment at a surprise: the dog back at his feet with the ball, an animal bolting from the dog, a lightning strike. Softer and dimmer as the evening goes on (by the hour in Denmark: from half past seven, quite by ten; a little, just woken). Brighter when he's pleased: he pats the dog, a quest ends reviewed. Shut asleep (his visor dims as it always did) |
+| Blinking | At an irregular pace, about fifteen a minute, one in five doubled: a function of the time alone, so it needs no state. A blink is 170 ms and is never eased |
+| His head | A tilt while he listens (Reachy at the table; you, when he greets you). A nod when a quest ends well, and when he greets you |
+| The dog | Joy: tail up and going, ears pricked (at play, greeted, patted). Alert: tail stiller, ears up and turned to what it heard (a chase; a noise: an animal off through the grass, the hammer, thunder), for a few seconds. Tired: tail low and slow, ears drooped, its eye dim (its battery's low). Asleep: still. A play bow as he winds up to throw: chest down between its forelegs, rump and tail up, looking up at him |
+
+His eyes and the visor's line each ride on a bone of their own on his head and open, narrow and shut by its scale (the same one skinned mesh: no draw call more); their light is one uniform. Under reduced motion nothing blinks, nods, tilts or bows: his eyes are shut when he's asleep and as ever otherwise, which is all that's needed to read how he is. `?trace=1`: `__sandboxFace()` says what's so and what shows; `__sandboxFeel("surprise" | "pleased" | "nod")` sets one off.
+
 ## His partners
 
 The coding agents that work with him over MCP (Claude Code, OpenCode…) are in the world as small squires: robots in the knights' style, cream plates, an orange tabard, a dark visor with a glowing line; hover one for its name. One appears at the keep's door (small, growing as it comes) when its first call arrives, walks beside him to the station its calls send them to and stands by while they work; when it's made no call for 45 seconds it walks back to the keep and fades away. At most six at once. The hub knows them from the agents' calls (an arm's label is its name; Galahad's own chat and his loops are him, not partners) and streams them as a `partners` event (and in `hello`). All of them are three instanced meshes (body and head, legs, arms), each a small circle among the solids.
