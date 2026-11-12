@@ -549,7 +549,8 @@ function buildStations(p: Parts): void {
     // A desk under the screens.
     add(new BoxGeometry(2.4, 0.08, 0.5), C.wood, at(-0.35, 0.95, 1.5));
     for (const x of [-1.45, 0.75]) add(new BoxGeometry(0.07, 0.9, 0.45), C.grey, at(x, 0.47, 1.5), 0);
-    p.cool.push([...scenePoint(m, -0.9, 1.95, 1.5), 0.9], [...scenePoint(m, 0.25, 1.95, 1.5), 0.9]);
+    // (Each screen's glow on its own face: a hand's breadth before it, so it's on the screen from a metre off too.)
+    p.cool.push([...scenePoint(m, -0.9, 1.95, 1.34), 0.9], [...scenePoint(m, 0.25, 1.95, 1.34), 0.9]);
     // The 3D printer: a cream frame with its glowing build window.
     // (On a shelf above the workbench's back edge, so the arms have the bench to themselves.)
     add(new BoxGeometry(0.9, 0.06, 0.55), C.grey, at(1.35, 1.1, 1.5), 0);

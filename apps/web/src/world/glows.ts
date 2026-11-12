@@ -11,7 +11,7 @@ import { linear } from "./mesher.ts";
  */
 
 /** Beyond this a glow is as it was put (metres from the eye); within `GLOW_NEAR.from` it's at its smallest and softest. */
-export const GLOW_NEAR = { from: 0.6, to: 6, size: 0.3, light: 0.35 } as const;
+export const GLOW_NEAR = { from: 0.6, to: 6, size: 0.3, light: 0.35, before: 0.12 } as const;
 
 /** How near the eye a glow is, 0 (at `from` or nearer) to 1 (at `to` or beyond), eased. */
 export function glowCloseness(distance: number): number {
@@ -22,7 +22,7 @@ export function glowCloseness(distance: number): number {
 /** A glow's size and light for its distance from the eye, as shares of what it was given (the shader's own sums: `glowCloseness`). */
 function glowNear(distance: ReturnType<typeof length>) {
   const closeness = smoothstep(GLOW_NEAR.from, GLOW_NEAR.to, distance);
-  return { size: mix(float(GLOW_NEAR.size), float(1), closeness), light: mix(float(GLOW_NEAR.light), float(1), closeness) };
+  return { size: mix(float(GLOW_NEAR.size), float(1), closeness), light: mix(float(GLOW_NEAR.light), float(1), closeness), before: mix(float(GLOW_NEAR.before), float(0.35), closeness) };
 }
 
 export class Glows {
@@ -51,7 +51,9 @@ export class Glows {
     // world's, right from across the lawn, but from beside it (through his own eyes at his fire, his desk's
     // lantern, the library's lamp) a disc that size is the whole view, and everything in it washed out.
     const near = glowNear(length(centre.xyz));
-    const corner = vec3(positionGeometry.xy.mul(at.w).mul(near.size), 0.35);
+    // (And it stands less far before its lamp: a third of a metre towards the eye is nothing from across the
+    // lawn, and from a metre off puts the glow well to one side of what glows.)
+    const corner = vec3(positionGeometry.xy.mul(at.w).mul(near.size), near.before);
     m.vertexNode = cameraProjectionMatrix.mul(vec4(centre.xyz.add(corner), 1));
     const r = length(uv().sub(0.5)).mul(2);
     const falloff = float(1).sub(smoothstep(0, 1, r)).pow(2.2);
