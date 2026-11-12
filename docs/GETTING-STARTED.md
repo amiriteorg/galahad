@@ -391,6 +391,17 @@ bun galahad loop runs morning              # its history
 bun galahad loop pause morning             # resume / rm
 ```
 
+**Is everything well?** One command looks at the whole installation on the node you run it on and answers in plain lines, each ok, needs you or broken, with what to do:
+
+```sh
+bun galahad doctor                         # everything: asks each role's model one word, starts a sandbox and removes it
+bun galahad doctor --offline               # the same, asking no model and probing no connector's service
+bun galahad doctor --quick                 # only what costs nothing to look at (what the app's Overview shows)
+bun galahad doctor --json                  # the report for a script; the exit code is 0 well, 1 needs you, 2 broken
+```
+
+It changes nothing. It checks the node's keys, the mind (integrity, its hash chain, the clock, sync, your last backup's age: it looks in `backups` in or beside the node's home, or where `GALAHAD_BACKUP_DIR` says), the vault, each role's models (the first one skipped on every answer is said), the embedder and the archive, sandboxes, compute, loops, connectors, the app (built, and published by Tailscale), notifications, the disk and the service. The app's Overview has the same on a **Doctor** card, and the heartbeat takes from it what it didn't already check.
+
 A loop that fails or needs a look leaves a notice in your inbox, and its next good run clears it. So a loop that calls a connector is a monitor: install a one-tool connector for your site (`{"id":"site","label":"galahad.bot","origin":"https://galahad.bot","tools":{"home":{"description":"The home page","method":"GET","path":"/","class":"read"}}}`) and `loop add site --every 5m --call site.home`.
 
 ## 12. Connectors: your services, through the oath
@@ -545,6 +556,7 @@ The `swift` role writes each entry's summary, facts, tags and named things, and 
 
 | Symptom | Try |
 |---|---|
+| Something is off and you don't know what | `bun galahad doctor` on the node: every line says what it found and what to do (it also runs with no node up, and says so) |
 | `no daemon on http://127.0.0.1:7777` | Start `bun galahad serve` (or check `GALAHAD_PORT`) |
 | A peer shows `offline` | `tailscale status`; check the firewall rule; `bun galahad status` shows the last error |
 | `expose` fails | Enable MagicDNS + HTTPS certificates in the Tailscale admin console |

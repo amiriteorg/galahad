@@ -32,6 +32,7 @@ import { chooseProblems, describeEffort, describeIndex, describeTrial, trialRunF
 import type { EffortLevel, TrialRunsView } from "@galahad/core";
 import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
+import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
 
 const VERSION = "0.1.0";
 
@@ -208,6 +209,14 @@ Agents (MCP)
   arms | arms revoke <label>      list or revoke agent credentials
 
 Maintenance
+  doctor [--offline] [--quick] [--json]
+                                  is everything well? One look at this node's whole installation, in plain lines
+                                  (ok, needs you, broken) with what to do: its keys, the mind, its clock, sync and
+                                  backups, the vault, each role's model (asked one word), the embedder and the
+                                  archive, sandboxes (one is started and removed), compute, loops, connectors, the
+                                  app, notifications, disk, the service. It changes nothing. --offline asks no
+                                  model and probes no service; --quick looks only at what costs nothing.
+                                  Exit code 0: all is well; 1: something needs you; 2: something is broken
   rebuild                         re-materialize the mind from its log and verify the digest
 
 Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|file and --advertise <tailnet ip>
@@ -445,6 +454,10 @@ async function main(): Promise<void> {
       places: { type: "string" },
       status: { type: "boolean" },
       review: { type: "boolean" },
+      // The doctor: `doctor [--offline] [--quick] [--json]`.
+      offline: { type: "boolean" },
+      quick: { type: "boolean" },
+      json: { type: "boolean" },
     },
   });
   const [command, sub, ...rest] = positionals;
@@ -1719,6 +1732,14 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "compute":
       await computeCommand(new Admin(home), sub, rest, flags);
       return;
+
+    case "doctor": {
+      const admin = home.exists() ? new Admin(home) : null;
+      const base = admin?.base ?? "this machine";
+      // Its exit code is the answer for a script: 0 well, 1 needs you, 2 broken.
+      process.exitCode = await doctorCommand(admin ?? { call: () => Promise.reject(new CliError("no daemon on this machine")) }, flags, () => stoppedReport(home, base));
+      return;
+    }
 
     case "rebuild": {
       const config = home.readConfig();

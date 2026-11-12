@@ -876,6 +876,30 @@
       .in-hand-plan > summary { cursor: pointer; color: var(--text-3); width: fit-content; }
       .in-hand-plan-text { font: inherit; font-size: var(--fs-13); color: var(--text-2); }
       @media (max-width: 520px) { .in-hand-gate { flex-wrap: wrap; } .in-hand-gate code { flex-basis: 100%; order: 3; } }
+
+      /* The doctor's card on the Overview: the verdict, what needs you with what to do, every other line one click away. */
+      .doctor { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+      .doctor-head { display: flex; align-items: flex-start; gap: var(--sp-3); }
+      .doctor-head > .dot, .doctor-row > .dot { margin-top: 6px; }
+      .doctor-list, .doctor-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+      .doctor-list { gap: var(--sp-2); }
+      .doctor-item { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }
+      .doctor-item-head { display: flex; align-items: flex-start; gap: var(--sp-2); }
+      .doctor-item-head .badge { flex: none; margin-top: 1px; }
+      .doctor-line { font-size: var(--fs-13); overflow-wrap: anywhere; min-width: 0; }
+      .doctor-fix { display: flex; gap: 6px; align-items: flex-start; color: var(--text-2); font-size: var(--fs-13); overflow-wrap: anywhere; }
+      .doctor-fix > svg { flex: none; margin-top: 3px; color: var(--text-3); }
+      .doctor-all > summary { cursor: pointer; color: var(--text-3); width: fit-content; min-height: 24px; }
+      .doctor-group { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: 6px; }
+      .doctor-rows { gap: 6px; }
+      .doctor-row { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: var(--fs-13); color: var(--text-2); }
+      .doctor-row[data-state="skipped"] { color: var(--text-3); }
+      .doctor-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+      .doctor-row-fix { color: var(--text-3); font-size: var(--fs-12); }
+      .doctor-foot { display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+      .doctor-foot p { margin: 0; min-width: 200px; }
+      .doctor-note.error { color: var(--danger); font-size: var(--fs-13); }
+      @media (pointer: coarse) { .doctor-all > summary { min-height: 44px; display: flex; align-items: center; } }
       .aside-answer { min-height: 48px; }
       .aside-answer:empty { display: none; }
       .aside-answer > .md > :first-child { margin-top: 0; }

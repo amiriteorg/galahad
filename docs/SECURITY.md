@@ -87,6 +87,14 @@ Since then, a device whose chain holds a refused event, and a revoked device, ha
 - **His dog's name is yours.** Setting it is `brain:write`, which agents never hold (an agent's attempt is refused with 403, tested); it's checked at the boundary (1 to 24 letters, digits, spaces, hyphens and apostrophes: no markup, no control characters), scanned for secrets, and read strictly again by the world's page and by his journal.
 - **Residual risk:** the journal's words are a model's, shaped by the day's records (which agents can influence by what they do, by what they title an experiment and by what they write on the chalkboard); they're kept as `agent` memory, never `owner`, and act on nothing. The ledger's targets, chat titles, experiment titles and chalkboard summaries go to the cheapest usable model on your roster, as any chat would.
 
+## The doctor (tested)
+
+- **Read-only by construction.** `galahad doctor` writes to no file and no database, and installs, builds and mends nothing. It never opens a key file (it reads its mode), and never prints a secret: a provider's error is redacted before it becomes a line (tested with a key echoed in a 401). When the sandbox image is missing it says so and starts nothing, since creating a sandbox would rebuild it (`packages/node/test/doctor.e2e.test.ts`).
+- **What it starts, it removes, through the one door.** A full check starts one sandbox per kind the host has, through the node's governed host: it takes a slot, never queues behind real work, is ledgered under `galahad.doctor` like every sandbox, and is destroyed before the report is written. A quick look writes no event at all (tested by counting the mind's events).
+- **What leaves the node is yours to skip.** A full check asks each role's first usable model one word (each distinct model once, six at most, 20 s each) and sends each connector's origin one request that carries no key, cookie or argument, with redirects refused. `--offline` sends neither. A local embedder is asked to embed one word; that stays on the machine.
+- **Yours alone.** The route needs `fleet:admin` and refuses agents and nodes whatever their scopes (403s tested): it reveals how the installation is set up and spends a word of each model.
+- **Residual risk:** its lines name providers, models, connector hosts, loop names and paths under the node's home, to whoever may ask for it (you). The word asked of each model goes out with the standing persona, as any answer of his does.
+
 ## Compute (tested)
 
 - **He never acquires compute.** A node is a machine you enrolled through pairing; nothing in Galahad provisions, rents, buys or signs up for any, and the self-action allowlist refuses everything of the kind (`rent-gpu`, `provision-node`, `pull-model`, `install-runtime`, `set-compute-limit` are refused before anything runs: `packages/node/test/self-action.test.ts`). What more compute could do is a suggestion in your Inbox with the command; he runs none of them.

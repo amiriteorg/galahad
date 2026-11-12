@@ -20,6 +20,11 @@ const Env = z.object({
     .string()
     .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
     .optional(),
+  /** Where you keep backups of the mind, for the doctor to look at their age (default: `backups` in or beside the node's home). */
+  GALAHAD_BACKUP_DIR: z
+    .string()
+    .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
+    .optional(),
   /** off: the archive keeps what it has and serves it, but pulls, embeds and summarises nothing new. */
   GALAHAD_ARCHIVE: z.enum(["on", "off"]).optional(),
   /** Chat turns this node runs at once (default 4), and how long one may run, in minutes (default 30). */

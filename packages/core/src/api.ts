@@ -506,6 +506,13 @@ export const routes = {
   dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "fleet:admin", input: z.strictObject({ key: NoticeKey }) },
   /** Run the heartbeat's checks here, now, and return what they find (writes nothing). */
   heartbeat: { method: "POST", path: "/api/heartbeat", scope: "mind:read", input: z.strictObject({}) },
+  /**
+   * The doctor (doctor.ts): one look at this node's whole installation, answered in plain lines (ok, needs you,
+   * broken) with what to do for anything that isn't ok. It changes nothing. `quick`: only what costs nothing to
+   * look at; `offline`: no model is asked and no connector's service probed. Yours alone (fleet:admin, from a
+   * terminal or a paired device; never an agent, never another node): a full check asks each role's model a word.
+   */
+  doctor: { method: "POST", path: "/api/doctor", scope: "fleet:admin", input: z.strictObject({ quick: z.boolean().optional(), offline: z.boolean().optional() }) },
   /** Whether Galahad fixes what's on the self-action allowlist himself after each heartbeat, and what he fixed lately. */
   selfAction: { method: "GET", path: "/api/self-action", scope: "mind:read", input: null },
   /** The owner's switch for self-action (on by default). It steers Galahad, so it's brain:write: never an agent's. */

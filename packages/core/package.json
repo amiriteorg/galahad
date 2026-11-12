@@ -8,6 +8,7 @@
     "./board": "./src/board.ts",
     "./bytes": "./src/bytes.ts",
     "./companion": "./src/companion.ts",
+    "./doctor": "./src/doctor.ts",
     "./experiments": "./src/experiments.ts",
     "./eyes": "./src/eyes.ts",
     "./galahad-index": "./src/galahad-index.ts",

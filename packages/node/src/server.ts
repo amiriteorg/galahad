@@ -9,6 +9,7 @@ import {
   type SelfActionView,
   type ChatStreamEvent,
   type ChatMessage,
+  type DoctorReport,
   stationForTool,
   staysPut,
   type EyesPlace,
@@ -118,6 +119,7 @@ import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from 
 import { selfActionOn } from "./heartbeat-world.ts";
 import { companionOf, companionView, journalEntries } from "./journal.ts";
 import { type Candidate, place } from "./placement.ts";
+import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -158,6 +160,8 @@ export interface AppContext {
   loops: LoopRunner;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
+  /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
+  doctor: (opts: DoctorOptions) => Promise<DoctorRun>;
   /** Read-only bank access (Enable Banking), on the node that holds the key. */
   bank: BankService;
   /** Your chat history, on this node. */
@@ -652,6 +656,9 @@ export function createApp(ctx: AppContext) {
     ctx.log(`chat tool error: ${message}`);
     return "internal error";
   }
+
+  /** A full look by the doctor that's under way, by its kind: whoever asks meanwhile gets that one's answer. */
+  const doctoring = new Map<string, Promise<DoctorReport>>();
 
   /** You, at a terminal or on a paired device: never an agent, never another node. */
   const isOwner = (p: Principal) => p.kind === "admin" || p.kind === "client";
@@ -2090,6 +2097,21 @@ export function createApp(ctx: AppContext) {
       return { ok: true };
     },
     heartbeat: async () => ({ node: ctx.nodeName, findings: await ctx.heartbeatCheck() }),
+    // The doctor: yours alone (a full check asks each role's model a word and starts a sandbox), and one full check at a time.
+    doctor: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you ask for the doctor");
+      if (input.quick) return ctx.doctor({ quick: true, offline: true }).then((run) => run.report);
+      const key = input.offline ? "offline" : "full";
+      let run = doctoring.get(key);
+      if (!run) {
+        run = ctx
+          .doctor({ offline: !!input.offline, ...(ctx.shutdown ? { signal: ctx.shutdown } : {}) })
+          .then((done) => done.report)
+          .finally(() => doctoring.delete(key));
+        doctoring.set(key, run);
+      }
+      return longRunning(run);
+    },
     selfAction: () => selfActionView(),
     setSelfAction: (input) => {
       const beats = loopRecords(ctx.store).filter((l) => l.task?.kind === "heartbeat");

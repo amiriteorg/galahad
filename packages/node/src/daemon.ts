@@ -31,10 +31,10 @@ import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
-import { assess, loopNotice } from "./heartbeat.ts";
+import { loopNotice } from "./heartbeat.ts";
 import { heartbeatView } from "./heartbeat-world.ts";
 import { companionOf } from "./journal.ts";
-import { computeUpkeep, heartbeatSnapshot, type LoopTaskDeps, loopExecutor } from "./loop-tasks.ts";
+import { computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
@@ -42,6 +42,7 @@ import { createApp } from "./server.ts";
 import { shipNative } from "./ship.ts";
 import { WeatherService } from "./weather.ts";
 import { Eyes, EyesStore } from "./eyes.ts";
+import { type DoctorDeps, type DoctorOptions, type DoctorRun, type DoctorSystem, heartbeatFromDoctor, noSystem, realSystem, runDoctor, TroubleLog } from "./doctor-facts.ts";
 import { ReviewState, worldReviewer } from "./world-review.ts";
 
 export interface Daemon {
@@ -64,6 +65,8 @@ export interface Daemon {
   compute: ComputeService;
   /** The chat turns this node runs for you, and what you queued behind your chats. */
   turns: TurnHub;
+  /** The doctor: one look at this node's whole installation (doctor.ts). */
+  doctor(opts?: DoctorOptions): Promise<DoctorRun>;
   stop(): Promise<void>;
 }
 
@@ -99,6 +102,11 @@ export interface DaemonOptions {
   turnLimits?: Partial<HubLimits>;
   /** How long requests and turns under way get to finish when the node stops (default 10 s; tests pass less). */
   shutdownGraceMs?: number;
+  /**
+   * What the doctor asks of the machine itself (file modes, systemd, Tailscale, the disk, peers' clocks). Default: the
+   * real machine; with test capabilities, nothing is asked unless a stand-in is given here.
+   */
+  system?: DoctorSystem;
 }
 
 /**
@@ -180,7 +188,13 @@ export async function refreshCapabilities(
 }
 
 export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise<Daemon> {
-  const log = opts.log ?? ((message: string) => console.log(`[galahad] ${message}`));
+  // The doctor reads the lines of this log that read like trouble (in memory, redacted when kept).
+  const trouble = new TroubleLog();
+  const say = opts.log ?? ((message: string) => console.log(`[galahad] ${message}`));
+  const log = (message: string): void => {
+    trouble.note(message);
+    say(message);
+  };
   const env = loadEnv();
   const config = home.readConfig();
   if (!config.fleet) throw new Error("this node has not joined a fleet");
@@ -455,6 +469,35 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   world.setQuests(() => quests.world());
   quests.onChange(() => world.questsChanged());
 
+  // Bundled once: the app this node serves, and what the doctor checks is there.
+  const assets = await buildAssets();
+  const proxyPort = opts.proxyPort ?? env.GALAHAD_PROXY_PORT ?? port + 1;
+  const doctorDeps: DoctorDeps = {
+    store,
+    vault,
+    identity,
+    nodeName: config.name,
+    home,
+    keystore: config.keystore,
+    sync,
+    caps: () => caps,
+    sandbox,
+    governor,
+    compute,
+    archive,
+    archiveOff: env.GALAHAD_ARCHIVE === "off",
+    assets,
+    port,
+    proxyPort,
+    startedAt,
+    trouble,
+    system: opts.system ?? (opts.capabilities ? noSystem : realSystem),
+    ...(env.GALAHAD_BACKUP_DIR ? { backupDir: env.GALAHAD_BACKUP_DIR } : {}),
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+  };
+  // The heartbeat takes from a quick look what it doesn't check itself (a clock out of step, the app not published, …).
+  taskDeps.doctor = () => heartbeatFromDoctor(doctorDeps);
+
   const shutdown = new AbortController();
   const app = createApp({
     identity,
@@ -467,7 +510,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     tokens,
     arms,
     adminToken: home.adminToken(),
-    assets: await buildAssets(),
+    assets,
+    doctor: (options) => runDoctor(doctorDeps, options),
     caps: () => caps,
     // What this node's own work holds goes with its presence, so every node's census and placement know it.
     presence: async () => ({ ...(await presence()), compute: compute.usage() }),
@@ -480,7 +524,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectors,
     artifacts,
     loops,
-    heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
+    heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,
     turns,
@@ -499,7 +543,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // Proxied: what `tailscale serve` forwards to (the HTTPS PWA) — remote traffic, so no
   //   admin token and no gateway, even though it arrives from 127.0.0.1.
   // Tailnet: node-to-node link traffic. Never 0.0.0.0.
-  const proxyPort = opts.proxyPort ?? env.GALAHAD_PROXY_PORT ?? port + 1;
   const servers = [
     Bun.serve({ hostname: "127.0.0.1", port, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "loopback") }),
     Bun.serve({ hostname: "127.0.0.1", port: proxyPort, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "proxied") }),
@@ -577,6 +620,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     archive,
     compute,
     turns,
+    doctor: (options) => runDoctor(doctorDeps, options),
     /**
      * In order: take nothing new (stop listening; requests under way go on), start nothing
      * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
