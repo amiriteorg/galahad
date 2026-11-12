@@ -512,6 +512,15 @@ describe("one answer's tools", () => {
     expect((await tools.run({ id: "2", name: "web_search", input: {} })).isError).toBeUndefined();
   });
 
+  test("he says which of his tools only look: those may be run again by a model that takes an answer over, the rest never", () => {
+    const tools = chatTools(TOOLS, api, explain);
+    const only = (name: string) => tools.readOnly?.({ id: "x", name, input: {} });
+    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search", "board_read", "look"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
+    for (const name of ["remember", "sandbox_run", "connector_call", "board_write", "note_idea", "request_secret", "experiment_run"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
+    // A tool that isn't his is nothing he may run twice.
+    expect(only("vault_read")).toBe(false);
+  });
+
   test("the model's input is checked before anything runs; unknown tools are refused", async () => {
     let ran = 0;
     const tools = chatTools([fake("recall", undefined, async () => `${++ran}`)], api, explain);

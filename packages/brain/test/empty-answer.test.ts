@@ -138,6 +138,54 @@ describe("an answer with no words in it", () => {
     expect(model.bodies.map((b) => b.model)).toEqual(["a", "a", "a", "b"]);
   });
 
+  test("declined for good after he has only looked: the next model takes the answer over, and may look again", async () => {
+    const t = { ...tools(), readOnly: () => true };
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([
+      whole(words("Looking it up."), ...calls("c1", { text: "one" })),
+      filtered,
+      filtered,
+      filtered,
+      whole(...calls("c2", { text: "one" })),
+      whole(words("Here it is."), stop),
+    ]);
+    const ran: string[] = [];
+    t.run = async () => {
+      ran.push("post");
+      return { content: "posted", summary: "posted" };
+    };
+    const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Look it up and tell me"), tools: t }));
+    expect(model.bodies.map((b) => b.model)).toEqual(["a", "a", "a", "a", "b", "b"]);
+    // The second model starts the answer again from your message: it isn't handed the first one's half-told turn.
+    expect(model.bodies[4].messages.map((m: { role: string }) => m.role)).toEqual(["system", "user"]);
+    expect(ran).toHaveLength(2);
+    expect(types(events)).toEqual(["model", "text", "tool", "tool_result", "fallback", "model", "tool", "tool_result", "text", "text", "done"]);
+    expect(textOf(events)).toBe("Looking it up.\n\nHere it is.");
+    expect(events.find((e) => e.type === "fallback")).toMatchObject({ from: "local/a", error: expect.stringMatching(/declined to go on/) });
+  });
+
+  test("declined after a tool that changes something ran: the answer ends there, and no other model runs it again", async () => {
+    const t = tools();
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([whole(...calls("c1", { text: "one" })), filtered, filtered, filtered, whole(words("Never asked."), stop)]);
+    const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Post it, then tell me"), tools: t }));
+    expect(model.bodies.map((b) => b.model)).toEqual(["a", "a", "a", "a"]);
+    expect(t.ran).toBe(1);
+    expect(types(events)).not.toContain("done");
+    expect(types(events)).not.toContain("fallback");
+    expect(errorOf(events)).toMatch(/declined to go on/);
+  });
+
+  test("every model that could take over declines too: the answer ends saying so", async () => {
+    const t = { ...tools(), readOnly: () => true };
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([whole(...calls("c1", { text: "one" })), filtered, filtered, filtered, filtered, filtered, filtered]);
+    const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Look it up and tell me"), tools: t }));
+    expect(types(events)).not.toContain("done");
+    expect(errorOf(events)).toMatch(/declined to go on/);
+    expect(errorOf(events)).toMatch(/no other model/i);
+  });
+
   test("a first reply with nothing in it: the next model takes over", async () => {
     const model = scripted([whole(stop), whole(words("Here I am."), stop)]);
     const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Anyone?") }));

@@ -99,6 +99,11 @@ export interface ChatTools {
   describe(call: ToolCall): { title: string; input: string };
   /** A result may carry pictures (the chalkboard): models that see get them, the rest their descriptions. */
   run(call: ToolCall, signal?: AbortSignal): Promise<{ content: string; isError?: boolean; summary: string; images?: ToolImage[] }>;
+  /**
+   * Whether running this call only looks (it changes nothing, so a model that takes an answer over may run
+   * it again). Absent, or false: it may change something, and is never run twice for one answer.
+   */
+  readOnly?(call: ToolCall): boolean;
 }
 
 /** Tool rounds per answer; past it every call is refused, and then the answer ends. */
@@ -141,7 +146,9 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  * anything (no key, outage, rate limit, refusal) the next one takes over. With
  * tools, the model may call them in rounds before it answers; once text has
  * streamed or a tool has run, a failure ends the answer instead (another model
- * would start over and might repeat what was done).
+ * would start over and might repeat what was done). One exception: a model that
+ * declines for good after it has only looked (no tool that changes anything has
+ * run) hands the answer to the next one, which starts it again from your message.
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
   const listed = req.model ? [req.model] : await expand(ctx, roleModels(ctx.store, req.role ?? "planner"));
@@ -151,6 +158,14 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   const steering = req.steering;
   // Every message handed over so far: a model that takes over (or starts again without tools) is handed them too.
   const handed: string[][] = [];
+  /** A tool that may change something has run for this answer: from then on no other model takes it over. */
+  let changed = false;
+  /** He has said something in this answer (whichever model said it). */
+  let wrote = false;
+  /** Why the model that had begun this answer declined, when another was asked to take it over. */
+  let declined: string | null = null;
+  /** Another model has taken the answer over after words were said: its first words are a paragraph of their own. */
+  let apart = false;
   for (const ref of candidates) {
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.
     const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
@@ -218,9 +233,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           let next = await turn.next();
           for (; !next.done; next = await turn.next()) {
             // Text after a round of tools starts a new paragraph.
-            if (resumed) yield { type: "text", text: "\n\n" };
-            resumed = false;
-            emitted = spoke = true;
+            if (resumed || apart) yield { type: "text", text: "\n\n" };
+            resumed = apart = false;
+            emitted = spoke = wrote = true;
             said += next.value;
             yield { type: "text", text: next.value };
           }
@@ -280,6 +295,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           yield { type: "tool", id: call.id, name: call.name, title, input };
           // A tool that is running always finishes and reports. One that hasn't started when a message
           // arrives isn't run: every call still gets its outcome, and this one's says why.
+          const runs = !steering?.waiting && round < MAX_TOOL_ROUNDS;
+          if (runs && !tools!.readOnly?.(call)) changed = true;
           const outcome = steering?.waiting
             ? NOT_RUN
             : round >= MAX_TOOL_ROUNDS
@@ -296,12 +313,18 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     } catch (error) {
       // Some providers echo the credential in error text; never let it reach a client.
       const message = redact(String((error as Error).message ?? error), [provider.apiKey]).slice(0, 500);
-      if (emitted || req.signal?.aborted) {
+      // Declined for good, and all he had done was look: the next model takes the answer over from your message.
+      const handsOver = error instanceof RefusalError && emitted && !changed && !req.signal?.aborted;
+      if ((emitted && !handsOver) || req.signal?.aborted) {
         yield { type: "error", error: message };
         return;
+      }
+      if (handsOver) {
+        declined = message;
+        apart = wrote;
       }
       yield { type: "fallback", from: ref, error: message };
     }
   }
-  yield { type: "error", error: "no model in the roster could answer; add a key or adjust the roster" };
+  yield { type: "error", error: declined ? `${declined}. No other model in the roster could take the answer over.` : "no model in the roster could answer; add a key or adjust the roster" };
 }

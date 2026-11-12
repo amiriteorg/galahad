@@ -1118,6 +1118,8 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
       const input = call.input && typeof call.input === "object" ? JSON.stringify(call.input) : String(call.input ?? "");
       return { title: t?.title ?? call.name, input: input === "{}" ? "" : input.length > 160 ? `${input.slice(0, 159)}…` : input };
     },
+    // What he may run again if another model takes the answer over: only what's declared to change nothing.
+    readOnly: (call: ToolCall) => byName.get(call.name)?.annotations?.readOnlyHint === true,
     async run(call) {
       const t = byName.get(call.name);
       if (!t) return { content: `There's no tool named ${call.name} here.`, isError: true, summary: "no such tool" };
