@@ -17,6 +17,7 @@ import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, Archi
 import { cleanCompanionName, companionNameProblem } from "./companion.ts";
 import { JOURNAL_DAY } from "./journal.ts";
 import { EyesFrameInput, LookInput, ReviewBudgetInput, WorldReviewInput } from "./eyes-input.ts";
+import { NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -777,6 +778,22 @@ export const routes = {
   verifyArchive: { method: "POST", path: "/api/archive/verify", scope: "fleet:admin", input: z.strictObject({}) },
   /** How many entries the swift role may summarise per day. */
   setArchiveBudget: { method: "POST", path: "/api/archive/budget", scope: "brain:write", input: ArchiveBudgetInput },
+
+  // ---- Notifications: he comes to you, on your own paired devices (notify.ts; node-local) ----------
+  /*
+   * Yours alone, every one of them: the node refuses agents and other nodes whatever their scopes. No route takes a
+   * title or a line: what a notification says comes only from the node's own records, through its own rules.
+   */
+  /** Who is notified (devices by name, never an endpoint), what he sends and when he stays silent, what was sent today, and this node's public key to subscribe to. */
+  notify: { method: "GET", path: "/api/notify", scope: "mind:read", input: null },
+  /** What he sends and when he stays silent: the kinds, quiet hours, the day's limit. It steers him: brain:write, never an agent's. */
+  setNotify: { method: "POST", path: "/api/notify", scope: "brain:write", input: NotifyPrefsInput },
+  /** This device turns notifications on, for itself: its browser's push subscription, kept as that device's. Only a paired device may, and only its own. */
+  pushSubscribe: { method: "POST", path: "/api/notify/subscribe", scope: "mind:read", input: PushSubscriptionInput },
+  /** Off again: this device's own; another's by id only from a terminal or a device that may administer the fleet. */
+  pushUnsubscribe: { method: "POST", path: "/api/notify/unsubscribe", scope: "mind:read", input: z.strictObject({ device: NotifyDeviceRef.optional() }) },
+  /** One fixed test message: to the device that asks, or from a terminal to every subscribed device (or the one named). */
+  notifyTest: { method: "POST", path: "/api/notify/test", scope: "mind:read", input: z.strictObject({ device: NotifyDeviceRef.optional() }) },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;

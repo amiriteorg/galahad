@@ -120,6 +120,7 @@ import { selfActionOn } from "./heartbeat-world.ts";
 import { companionOf, companionView, journalEntries } from "./journal.ts";
 import { type Candidate, place } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
+import { NotifyError, type NotifyService } from "./notify.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -162,6 +163,8 @@ export interface AppContext {
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
   doctor: (opts: DoctorOptions) => Promise<DoctorRun>;
+  /** Notifications to the owner's paired devices: who is subscribed, what's sent and when (notify.ts). */
+  notify: NotifyService;
   /** Read-only bank access (Enable Banking), on the node that holds the key. */
   bank: BankService;
   /** Your chat history, on this node. */
@@ -1590,6 +1593,10 @@ export function createApp(ctx: AppContext) {
             if (error instanceof RunError) throw new HttpError(error.status, error.message);
             throw error;
           }
+        }).then((result) => {
+          // An experiment you started yourself has ended: worth telling you, if you've left (never its script's title).
+          if (isOwner(p) && result.experiment) ctx.notify.experimentEnded(result.experiment.id, result.exitCode === 0 && result.experiment.status !== "failed" ? "done" : "failed");
+          return result;
         }),
       );
     },
@@ -1742,7 +1749,12 @@ export function createApp(ctx: AppContext) {
       ctx.pairing.reject(input.invite, input.device);
       return { ok: true };
     },
-    revokeDevice: (input) => revokeDevice(ctx.store, ctx.identity, input.device, input.reason ?? "revoked by owner"),
+    revokeDevice: (input) => {
+      const revoked = revokeDevice(ctx.store, ctx.identity, input.device, input.reason ?? "revoked by owner");
+      // A revoked device is told nothing more: its subscription goes with it (and again at the next look, wherever it was revoked).
+      ctx.notify.unsubscribe(input.device);
+      return revoked;
+    },
     setDeviceScopes: (input, p) => {
       // Granting permissions is never done from a phone, so a phone can't raise its own.
       if (p.kind === "client" || p.kind === "arm") throw new HttpError(403, "change a device's permissions from a terminal on a node");
@@ -2291,6 +2303,50 @@ export function createApp(ctx: AppContext) {
       ctx.archive.setBudget(input.summariesPerDay);
       return { understanding: ctx.archive.status().understanding };
     },
+
+    // ---- Notifications (node-local): yours alone, and nothing here takes a title or a line ----
+    notify: (_input, p) => {
+      ownerOfNotify(p);
+      return notifyErrors(() => ctx.notify.view(p.kind === "client" ? p.device : null));
+    },
+    setNotify: (input, p) => {
+      ownerOfNotify(p);
+      return { prefs: ctx.notify.setPrefs(input) };
+    },
+    pushSubscribe: (input, p) => {
+      // A subscription is one browser's, handed over by that browser: never a terminal's, an agent's or a node's to give.
+      if (p.kind !== "client") throw new HttpError(403, "only a paired device turns notifications on, for itself");
+      return notifyErrors(async () => ({ device: await ctx.notify.subscribe(p.device, input) }));
+    },
+    pushUnsubscribe: (input, p) => {
+      ownerOfNotify(p);
+      const target = notifyTarget(input.device, p);
+      if (!target) throw new HttpError(400, "name the device: galahad notify off <device>");
+      return { removed: ctx.notify.unsubscribe(target) };
+    },
+    notifyTest: (input, p) => {
+      ownerOfNotify(p);
+      return notifyErrors(() => ctx.notify.test(notifyTarget(input.device, p) ?? undefined));
+    },
+  };
+
+  /** Notifications are the owner's: a terminal or a paired device, never an agent (his own tools included) or another node. */
+  function ownerOfNotify(p: Principal): void {
+    if (!isOwner(p)) throw new HttpError(403, "notifications are yours alone");
+  }
+  /** Which device a request is about: a paired device means itself; another's only with fleet:admin; a terminal names one, or none (all). */
+  function notifyTarget(named: string | undefined, p: Principal): string | null {
+    if (p.kind !== "client") return named ?? null;
+    if (named && named !== p.device && !p.scopes.includes("fleet:admin")) throw new HttpError(403, "this device may turn only its own notifications off, and test only itself");
+    return named ?? p.device;
+  }
+  const notifyErrors = async <T,>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof NotifyError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
   };
 
   /** The experiment store's refusals as plain HTTP errors. */

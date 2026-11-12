@@ -1,0 +1,42 @@
+import { z } from "zod";
+import { CLOCK, NOTIFY_PER_DAY } from "./notify.ts";
+import { isTimeZone } from "./schedule.ts";
+
+/*
+ * What a node takes for notifications, checked at its door (notify.ts is the contract
+ * and the rules, without zod, for the PWA).
+ */
+
+/**
+ * A browser's push subscription, as `PushSubscription.toJSON()` gives it: where its push service takes
+ * messages for it, its P-256 public key (65 bytes) and its authentication secret (16 bytes). Whether the
+ * endpoint is a push service the node may call is the node's own check (`pushService`): it knows what
+ * its owner allowed.
+ */
+export const PushSubscriptionInput = z.strictObject({
+  endpoint: z.string().url().max(2048),
+  /** Browsers include it (always null today); nothing here uses it. */
+  expirationTime: z.number().nullable().optional(),
+  keys: z.strictObject({
+    p256dh: z.string().regex(/^[A-Za-z0-9_-]{87}$/, "a P-256 public key, base64url (65 bytes)"),
+    auth: z.string().regex(/^[A-Za-z0-9_-]{22}$/, "an authentication secret, base64url (16 bytes)"),
+  }),
+});
+export type PushSubscriptionInput = z.infer<typeof PushSubscriptionInput>;
+
+const Clock = z.string().regex(CLOCK, "a time of day, HH:MM");
+
+/** What he sends and when he stays silent: any part of it; what's left out stays as it is. */
+export const NotifyPrefsInput = z.strictObject({
+  kinds: z
+    .strictObject({ "needs-you": z.boolean().optional(), approval: z.boolean().optional(), finished: z.boolean().optional(), question: z.boolean().optional(), journal: z.boolean().optional() })
+    .optional(),
+  quiet: z
+    .strictObject({ on: z.boolean().optional(), from: Clock.optional(), to: Clock.optional(), tz: z.string().max(64).refine(isTimeZone, "an IANA time zone, such as Europe/Copenhagen").optional() })
+    .optional(),
+  perDay: z.number().int().min(NOTIFY_PER_DAY.min).max(NOTIFY_PER_DAY.max).optional(),
+});
+export type NotifyPrefsInput = z.infer<typeof NotifyPrefsInput>;
+
+/** A paired device, by id (what `whoami` and the fleet call it). */
+export const NotifyDeviceRef = z.string().regex(/^c_[A-Za-z0-9_-]{43,87}$/, "a paired device's id");

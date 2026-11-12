@@ -25,6 +25,21 @@ const Env = z.object({
     .string()
     .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
     .optional(),
+  /**
+   * Notifications. Who operates this node, as push services are told (RFC 8292's contact: a mailto: or https: address;
+   * default: one that names nobody). And push services to allow beyond Apple, Google, Mozilla and Microsoft: host
+   * names, comma-separated ("push.example.org,*.push.example.org"); always https.
+   */
+  GALAHAD_PUSH_CONTACT: z
+    .string()
+    .max(200)
+    .regex(/^(mailto:[^\s@<>]+@[^\s@<>]+|https:\/\/[^\s<>]+)$/, "a mailto: or https: address")
+    .optional(),
+  GALAHAD_PUSH_HOSTS: z
+    .string()
+    .max(1000)
+    .regex(/^(\*\.)?[A-Za-z0-9.-]+(,(\*\.)?[A-Za-z0-9.-]+)*$/, "host names, comma-separated")
+    .optional(),
   /** off: the archive keeps what it has and serves it, but pulls, embeds and summarises nothing new. */
   GALAHAD_ARCHIVE: z.enum(["on", "off"]).optional(),
   /** Chat turns this node runs at once (default 4), and how long one may run, in minutes (default 30). */
