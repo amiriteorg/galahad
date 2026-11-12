@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Group, Object3D, Vector3 } from "three/webgpu";
-import { EYE, Eyes, type EyesHost } from "./eyes.ts";
+import { EYE, Eyes, type EyesHost, PACE_SLACK_MS } from "./eyes.ts";
 import { GLOW_NEAR, glowCloseness } from "./glows.ts";
 import { Knight } from "./knight.ts";
 import { EYE_HEIGHT } from "./sight.ts";
@@ -169,5 +169,44 @@ describe("glows seen from beside them", () => {
     expect(at(3.5)).toBeGreaterThan(0.6);
     expect(at(3.5)).toBeLessThan(0.8);
     for (let d = 0.2; d < 8; d += 0.1) expect(glowCloseness(d + 0.1)).toBeGreaterThanOrEqual(glowCloseness(d));
+  });
+});
+
+describe("the panel's pace", () => {
+  /** A panel open on a stand-in canvas (nothing is drawn: only when a frame would be due is asked). */
+  function opened(fps: number): Eyes {
+    const e = new Eyes({ width: 256, fps }, host);
+    (e as unknown as { panel: unknown }).panel = { canvas: { isConnected: true }, target: null, ctx: null, width: 256, height: 160 };
+    return e;
+  }
+  /** How many times a second it's drawn, on a display of `hz` frames a second, over ten seconds. */
+  function drawn(e: Eyes, hz: number, motion = true): number {
+    let n = 0;
+    for (let i = 0; i < hz * 10; i++) {
+      const now = 1000 + (i * 1000) / hz;
+      if (!e.due(now, motion)) continue;
+      e.drew(now);
+      n++;
+    }
+    return n / 10;
+  }
+
+  test("as often as its tier says, on a 60 Hz and a 120 Hz display alike (never a frame late for a whole number of them)", () => {
+    for (const fps of [2, 5, 12]) {
+      expect(drawn(opened(fps), 60)).toBeCloseTo(fps, 0);
+      expect(drawn(opened(fps), 120)).toBeCloseTo(fps, 0);
+      expect(drawn(opened(fps), 60)).toBeGreaterThanOrEqual(fps - 0.1);
+      expect(drawn(opened(fps), 60)).toBeLessThanOrEqual(fps + 0.1);
+    }
+    expect(PACE_SLACK_MS).toBeLessThan(1000 / 120 / 2);
+  });
+
+  test("once a second without motion; not at all while his eyes are shut, unless the panel shows the usual view", () => {
+    expect(drawn(opened(12), 60, false)).toBeCloseTo(1, 1);
+    const e = opened(12);
+    e.shut = 1;
+    expect(drawn(e, 60)).toBe(0);
+    e.swapped = true;
+    expect(drawn(e, 60)).toBeCloseTo(12, 0);
   });
 });

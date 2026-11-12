@@ -123,6 +123,13 @@ Galahad sees his world from his own visor, and so can you. The SANDBOX has a sec
 | Drawn, times a second | 2 | 5 | 12 |
 | Under reduced motion | 1 | 1 | 1 |
 | Open at first | no | where there's room | where there's room |
+| Measured: the main view, panel closed → open | 60 → 60 frames a second | 60 → 60 | 60 → 60 (WebGL2: 60 → 60) |
+| Measured: the main thread's time a frame, closed → open | 2.9 → 2.9 ms | 3.5 → 3.4 ms | 6.7 → 6.7 ms |
+| Measured: one draw of the panel, on the main thread | 1.1 to 1.5 ms (WebGL2: 2.9 to 3.4 ms) | 1.4 to 1.6 ms | 2.3 to 3.3 ms |
+| So the panel adds, averaged over a second | 0.05 ms a frame (WebGL2: 0.1) | 0.12 ms a frame | 0.5 ms a frame |
+
+Measured with `?trace=1&tier=…` in headless Edge at 1280 × 800 on a laptop, in rain (when every frame is drawn, whatever he's doing), three runs of twelve seconds each way: the main view's rate didn't move on any tier, and the main thread's time a frame moved less than it varies from run to run (±1 ms), so what the panel adds is worked out from its own draws (their time, times how often). That's the CPU's side. The GPU's side couldn't be told apart here (the display's 60 a second was held throughout): by its size the panel is 0.1 % (low), 0.3 % (medium) and 1.8 % (high) of the pixels the main view shades in a second, and it draws the scene's geometry 2, 5 or 12 times a second where the main view draws it 60 (twice with its shadow map). Not measured on a phone: the medium tier's numbers are that tier on this laptop.
+
 Swapped, his view is the main one and costs what the main view costs; the usual view in the panel then costs what his did.
 
 ### Looking through them: `look`

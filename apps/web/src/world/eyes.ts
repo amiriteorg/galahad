@@ -52,6 +52,9 @@ export interface EyesHost {
   redraw(): void;
 }
 
+/** How much sooner than its interval a panel's frame may come (milliseconds): under half a 120 Hz frame. */
+export const PACE_SLACK_MS = 4;
+
 const FLIP = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI);
 const scratch = new Vector3();
 const scale = new Vector3();
@@ -109,6 +112,11 @@ export class Eyes {
   private release(surface: Surface | null): void {
     surface?.target?.dispose();
     surface?.canvas.remove();
+  }
+
+  /** The panel was drawn at `now` (the draw itself does this: for tests of its pace). */
+  drew(now: number): void {
+    this.last = now;
   }
 
   /** Opens the panel in `container` (its canvas goes there), or closes it (null): closed, nothing more is drawn for it. */
@@ -201,17 +209,18 @@ export class Eyes {
   due(now: number, motion: boolean): boolean {
     const p = this.panel;
     if (!p) return false;
-    if (now - this.last < (motion ? 1000 / this.size.fps : 1000)) return false;
+    // (Less a few milliseconds: frames come on the display's beat, and an interval that is a whole number of them must not wait one more.)
+    if (now - this.last < (motion ? 1000 / this.size.fps : 1000) - PACE_SLACK_MS) return false;
     // His eyes shut: nothing to draw (the panel shows his lids). The usual view, when swapped, is always there.
     if (!this.swapped && this.shut > 0.97) return false;
-    return p.canvas.isConnected;
+    return p.canvas.isConnected !== false;
   }
 
   /** Draws the panel's view (his eyes; the usual view when swapped) into its canvas. */
   draw(now: number): void {
     const p = this.panel;
     if (!p) return;
-    this.last = now;
+    this.drew(now);
     const started = performance.now();
     this.render(this.swapped ? this.outside : this.camera, p);
     this.cost.frames += 1;
