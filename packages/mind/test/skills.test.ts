@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { b64u, type GEvent, newNodeIdentity, type NodeIdentity, type Prov, readSkillDoc, signEvent, skillStanding, type SkillTrust } from "@galahad/core";
+import { b64u, type GEvent, HlcClock, newNodeIdentity, type NodeIdentity, type Prov, readSkillDoc, signEvent, skillStanding, type SkillTrust } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, type SkillRecord } from "../src/index.ts";
 
 /*
@@ -43,13 +43,14 @@ function syncInto(from: MindStore, to: MindStore): void {
   }
 }
 
-function fleet(): { a: NodeIdentity; b: NodeIdentity; storeA: MindStore; storeB: MindStore } {
+/** Two nodes of one fleet. With `now`, both keep that time: a test that says which of two things came first sets it itself. */
+function fleet(now?: () => number): { a: NodeIdentity; b: NodeIdentity; storeA: MindStore; storeB: MindStore } {
   const a = newNodeIdentity();
   const b = newNodeIdentity();
-  const storeA = new MindStore(":memory:");
+  const storeA = new MindStore(":memory:", now ? new HlcClock(now) : undefined);
   foundFleet(storeA, a, { fleetName: "camelot", nodeName: "laptop" });
   enrollDevice(storeA, a, { device: b.id, name: "server", kind: "node", box: b64u(b.boxPublic) });
-  const storeB = new MindStore(":memory:");
+  const storeB = new MindStore(":memory:", now ? new HlcClock(now) : undefined);
   storeB.expectFleet(storeA.fleet!);
   syncInto(storeA, storeB);
   return { a, b, storeA, storeB };
@@ -309,11 +310,16 @@ describe("a skill's track record", () => {
 
 describe("skills converge", () => {
   test("two nodes apart, each right by what it knew: together they agree, and the rules decide the same on both", () => {
-    const { a, b, storeA, storeB } = fleet();
+    // The time is the test's own, so which came first is said here and never left to how fast the machine is:
+    // inside one millisecond two nodes' events are ordered by their ids, and either order is a history they agree on.
+    let now = Date.now();
+    const { a, b, storeA, storeB } = fleet(() => now);
     const v1 = write(storeA, a, "galahad", "agent");
     syncInto(storeA, storeB);
-    // Apart: you lock it on A; on B, he revises it (B hasn't heard of the lock).
+    // Apart: you lock it on A; a moment later on B, he revises it (B hasn't heard of the lock).
+    now += 5;
     storeA.emit(a, "skill.marked", { skill: SK, mark: "locked", on: true });
+    now += 5;
     const revised = write(storeB, b, "galahad", "agent", SK, "revised while locked elsewhere");
     syncInto(storeA, storeB);
     syncInto(storeB, storeA);
@@ -323,6 +329,29 @@ describe("skills converge", () => {
     expect(storeA.skill(SK)!.head).toBe(v1);
     expect(storeA.rejection(revised)).toBe("the skill is locked");
     expect(storeB.rejection(revised)).toBe("the skill is locked");
+  });
+
+  test("the other way round: his revision came first, so it stands on both, and the lock holds from then on", () => {
+    let now = Date.now();
+    const { a, b, storeA, storeB } = fleet(() => now);
+    write(storeA, a, "galahad", "agent");
+    syncInto(storeA, storeB);
+    // Apart: on B he revises it; a moment later on A, you lock it (A hasn't heard of the revision).
+    now += 5;
+    const revised = write(storeB, b, "galahad", "agent", SK, "revised before it was locked");
+    now += 5;
+    storeA.emit(a, "skill.marked", { skill: SK, mark: "locked", on: true });
+    syncInto(storeA, storeB);
+    syncInto(storeB, storeA);
+    expect(storeA.digest()).toBe(storeB.digest());
+    expect(seen(storeA)).toEqual(seen(storeB));
+    for (const store of [storeA, storeB]) {
+      expect(store.skill(SK)!.head).toBe(revised);
+      expect(store.skill(SK)!.locked).toBe(true);
+    }
+    // Locked now, on both: a further revision of his is refused wherever he tries it.
+    now += 5;
+    expect(() => write(storeB, b, "galahad", "agent", SK, "after the lock")).toThrow("the skill is locked");
   });
 
   test("PROPERTY: any delivery order, with duplicates, yields identical skills and the identical mind; a rebuild too", () => {
