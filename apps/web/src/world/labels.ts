@@ -47,6 +47,16 @@ function hit(n: number, l: number, t: number, r: number, b: number, margin: numb
 }
 
 /**
+ * Whether a point is before a view: at least `near` along the way it looks (the point, the view's place and its
+ * unit direction, each x, y, z). A label behind the view has no place on the screen, and its projection can't
+ * be asked: under a reversed depth buffer a point behind the camera projects to a depth below 0, not above 1,
+ * and to a mirrored place on the screen. The usual view never has a labelled thing behind it; his own eyes do.
+ */
+export function before(px: number, py: number, pz: number, vx: number, vy: number, vz: number, dx: number, dy: number, dz: number, near = 0.3): boolean {
+  return (px - vx) * dx + (py - vy) * dy + (pz - vz) * dz >= near;
+}
+
+/**
  * Lays out the first `count` of `boxes` (their x, y, w, h, rank and on: the rest are its answer), in the order
  * `order` (indices into boxes, kept by the caller and sorted here by rank, from the last frame's order: stable).
  */

@@ -113,7 +113,8 @@ export function createEyes(opts: {
     reviewStatus,
     opts.mayReview ? h("div", { class: "eyes-run" }, run) : h("p", { class: "tiny muted" }, "This device may not start a review."),
   );
-  const el = h("section", { class: "world-eyes", "aria-label": "Galahad's eyes", hidden: true }, view, h("div", { class: "world-eyes-bar" }, swapButton, reviewButton), words, card);
+  // (The picture and its buttons in a frame of their own, so on a phone the review's card can take the stage's width.)
+  const el = h("section", { class: "world-eyes", "aria-label": "Galahad's eyes", hidden: true }, h("div", { class: "world-eyes-frame" }, view, h("div", { class: "world-eyes-bar" }, swapButton, reviewButton)), words, card);
   const toggleButton = button("His eyes", { iconOnly: true, icon: "visor", size: "sm", onClick: () => toggle() });
   toggleButton.setAttribute("aria-pressed", "false");
   const lids = h("div", { class: "world-lids", "aria-hidden": "true" }, lid("top"), lid("bottom"), h("span", { class: "eyes-blink" }));

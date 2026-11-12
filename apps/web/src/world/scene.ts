@@ -15,7 +15,7 @@ import { BUILDS, Solids } from "./collide.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
 import { ColliderLines, wantsColliders } from "./debug-colliders.ts";
-import { type LabelBox, layoutLabels } from "./labels.ts";
+import { before, type LabelBox, layoutLabels } from "./labels.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
@@ -1220,6 +1220,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // ---------- the loop ----------
   const projected = new Vector3();
+  const lookWay = new Vector3();
   const point: Vec3 = [0, 0, 0];
   /**
    * Projects every label with the camera as it is this frame and lays them out so none sits on another (labels.ts:
@@ -1234,6 +1235,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const motion = !reduced();
     const ease = motion ? 1 - Math.exp(-dt * 28) : 1;
     const settle = motion ? 1 - Math.exp(-dt * 12) : 1;
+    camera.getWorldDirection(lookWay);
     // Where each would stand, and how far it fades with distance.
     for (let i = 0; i < labelList.length; i++) {
       const label = labelList[i]!;
@@ -1242,6 +1244,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (label.el.hidden) continue;
       if (!label.point(point)) continue;
       projected.set(point[0] - origin[0], point[2], -(point[1] - origin[1]));
+      // (Behind the view it has no place: through his own eyes there's always something labelled behind him.)
+      if (!before(projected.x, projected.y, projected.z, camera.position.x, camera.position.y, camera.position.z, lookWay.x, lookWay.y, lookWay.z)) continue;
       const dist = projected.distanceTo(camera.position);
       projected.project(camera);
       if (projected.z > 1 || projected.x < -1.2 || projected.x > 1.2 || projected.y < -1.2 || projected.y > 1.3) continue;

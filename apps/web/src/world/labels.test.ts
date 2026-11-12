@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { LABEL_GAP, type LabelBox, layoutLabels } from "./labels.ts";
+import { PerspectiveCamera, Vector3 } from "three/webgpu";
+import { before, LABEL_GAP, type LabelBox, layoutLabels } from "./labels.ts";
 
 /*
  * The SANDBOX's labels laid out on the screen: none ever sits on another; the
@@ -30,6 +31,29 @@ function overlaps(boxes: LabelBox[]): string[] {
   }
   return out;
 }
+
+describe("a label behind the view", () => {
+  test("isn't placed: what's behind his eyes projects onto the screen all the same, mirrored, so the projection is never asked", () => {
+    // His eyes at his hearth, looking south (scene +z); the library is behind him to the north-west.
+    const camera = new PerspectiveCamera(62, 1.6, 0.07, 2000);
+    camera.position.set(0, 1.9, 18);
+    camera.lookAt(0, 1.9, 60);
+    camera.updateMatrixWorld();
+    const d = camera.getWorldDirection(new Vector3());
+    const at = (x: number, y: number, z: number) => before(x, y, z, camera.position.x, camera.position.y, camera.position.z, d.x, d.y, d.z);
+    const library = new Vector3(-18, 5.6, -8);
+    // The projection alone would put it on the screen (within the frame, on the wrong side).
+    const projected = library.clone().project(camera);
+    expect(Math.abs(projected.x)).toBeLessThan(1.2);
+    expect(Math.abs(projected.y)).toBeLessThan(1.3);
+    expect(at(library.x, library.y, library.z)).toBe(false);
+    // What's before him is placed: the bench by the lake ahead; and his own bubble, over his head, is not.
+    expect(at(-2, 2, 47)).toBe(true);
+    expect(at(0, 2.6, 17.8)).toBe(false);
+    expect(at(0, 1.9, 18.2)).toBe(false);
+    expect(at(0, 1.9, 18.31)).toBe(true);
+  });
+});
 
 describe("the labels' layout", () => {
   test("his speech bubble keeps its place; the experiment's label under it moves up out of its way", () => {
