@@ -17,7 +17,7 @@ The stream is yours alone: agents can't watch it, because it carries a line of w
 
 | Station | When |
 |---|---|
-| Council table | Thinking an answer through (and a quest's planner and reviewer) |
+| Council table | Thinking an answer through (and a quest's planner and reviewer); his slate stands beside it, with the quest in hand chalked on it (see "His slate") |
 | Library | Recalling and remembering; reading kept work |
 | Watchtower | Searching the web |
 | Treasury | Reading the bank |
@@ -170,6 +170,26 @@ A chalkboard stands beside the observatory, on the keep's side: a slate in a woo
 - **How it's drawn.** Its face is a texture painted from the board's state with the same chalk as the page you draw on (`apps/web/src/ui/chalk.ts`): grain from a small noise tile, a drier second edge to every stroke, the duster rubbing chalk out. It's painted again only when the board changes, never per frame, at 512 pixels across on the low tier, 1024 on medium (phones) and 1600 on high. The frame, legs, tray, chalk and duster are one merged mesh (`apps/web/src/world/board.ts`, a place of its own like the hall and the proving ground); with the face, two draw calls.
 - **Nothing on it is lost.** Every version is kept (the app's History, `galahad board history`): clearing or erasing takes it off the face, not out of the record.
 - **Solid.** The frame and its legs are a solid walkers go round; the space before it, where he stands to write, stays clear (held by a test).
+
+## His slate
+
+While a quest is in hand you can see what he's working on, where he works on it. A quest is planned, led and reviewed at the council table, and his own slate stands there: on the lawn east of where he stands at the table, clear of its deck, turned to face him and the way up from the keep. On it, in chalk:
+
+| | |
+|---|---|
+| What it is | "QUEST" and its state in fixed words (planning, working, running its gates, under review; an attempt's number with effort; "sent back twice"), then the goal's first words |
+| The plan | The planner's own steps, a line each (seven at most), under the words "the planner's plan", and its "Done when:" line |
+| Where he is in it | The four stages in a row (plan, work, gates, review): the one he's at in yellow with a ring round it, the ones behind him ticked. Under them a tally of the commands he's run, in fives, and "7 of 30" |
+| The gates | Each with its command: a box until it's run, a green tick when it passes, a cross where it failed. Yours in white, the planner's proposals in blue; six places, the last saying how many more |
+| How it ended | Written large: "Done, reviewed" in green with a tick (only a reviewed quest is green), "Not accepted", "Gave up", "Stopped", "Couldn't run". Ten minutes later it's wiped |
+
+- **He writes it.** When there's something worth chalking (the plan when it's first there, a stage reached, a gate's result, the outcome) and he's at the table, he steps over, stands before that part and writes for a couple of seconds, then goes back; what he writes shows as he starts. Elsewhere, or under reduced motion, it's simply there. With a quest in hand he looks over at it now and then.
+- **His, not yours.** The chalkboard at the observatory is the board you share with him and draw on. Nothing drawn here ever lands on it: the slate is a second, smaller board of his own, painted with the same chalk (`ui/chalk.ts`) from marks laid out by a pure function (`lib/world-quest.ts`), painted again only when what's drawn changes. With several quests in hand it shows the one heard from last and says how many more.
+- **How the page learns of it.** The world's stream: `quests` in `hello`, and a `quests` event whenever what's drawn changes (and when an ended one is wiped). It's a slice of the node's own view of quests (`GET /api/quests`), cut down for the world by one pure function in the contract (`packages/core/src/world-quest.ts`): at most four quests, seven plan lines of 72 characters, six gates of 44. The page checks and bounds it again as it reads it.
+- **Text, and only text.** A plan is a model's words. They're drawn as chalk on a canvas, never as markup; the slate says they're the planner's; they're never handed to a model again (what he sees in words, for `look`, says only that a plan is chalked there, and hovering the slate gives its state in fixed words). Nothing a command printed is in the slice at all: no gate's output, no summary, not the command he's running.
+- **Never the bank.** The world never shows anything about the bank, and a quest's plan may say what it works on. So a quest whose words mention the bank (its goal, plan, gates, the command it's on or its summary; in English or Danish), and any quest reported by an agent you've granted `bank:read` (the only quests whose words could carry what the bank said: a quest's own models have no tools), is drawn as its shape alone: "A quest in hand", its stage, its tally and its gates' marks, without a word of its own ("its words are kept off this slate"). The node decides this before anything is sent.
+
+`galahad world` prints each quest on the slate in a line (`quest “Fix the flaky test” Working · command 7 of 30 · 1 of 2 gates passed · by you`), and `--follow` each change. The selector lists **His slate** under The keep.
 
 ## The test sites
 

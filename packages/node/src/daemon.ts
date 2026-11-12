@@ -450,6 +450,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // The world shows each node's slots and his helpers at work.
   world.setCompute(() => compute.worldView());
   compute.onChange(() => world.computeChanged());
+  // The quests in hand, on his slate at the council table (world-quest.ts): the world hears of every report.
+  const quests = new QuestBoard();
+  world.setQuests(() => quests.world());
+  quests.onChange(() => world.questsChanged());
 
   const shutdown = new AbortController();
   const app = createApp({
@@ -480,7 +484,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     turns,
-    quests: new QuestBoard(),
+    quests,
     world,
     board,
     eyes,

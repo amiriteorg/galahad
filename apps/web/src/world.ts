@@ -12,4 +12,4 @@ export { liveTarget } from "./world/live-weather.ts";
 export { MAP_VIEW, mapPoint, mapToWorld, sketchLand } from "./world/map.ts";
 
 /** Bumped when the page and this bundle must change together (a cached old bundle is then refused). */
-export const WORLD_API = 13;
+export const WORLD_API = 14;

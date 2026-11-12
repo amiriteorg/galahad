@@ -52,7 +52,7 @@ import type { WorldWhere } from "../world/scene.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 13;
+const WORLD_API = 14;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;

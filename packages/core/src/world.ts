@@ -14,6 +14,7 @@ import type { BoardChange } from "./board.ts";
 
 import type { SavedSummary } from "./experiments.ts";
 import type { WorldCompute } from "./world-compute.ts";
+import type { WorldQuest } from "./world-quest.ts";
 
 /** A shape a simulated body is drawn as (metres; local frame, z up). */
 export type BodyShape =
@@ -197,7 +198,11 @@ export type WorldEvent =
       partners?: WorldPartner[];
       /** His dog, once the owner has named it (companion.ts). Absent while it has no name, and from older nodes. */
       companion?: WorldCompanion;
+      /** The quests in hand and just ended, as the world draws them on his slate (world-quest.ts). Absent from older nodes. */
+      quests?: WorldQuest[];
     }
+  /** A quest's plan, stage, command or gates changed, one ended, or an ended one was wiped (world-quest.ts). Older pages ignore it. */
+  | { type: "quests"; at: number; quests: WorldQuest[] }
   /** The owner named his dog, or took the name back (null). Older pages ignore it. */
   | { type: "companion"; at: number; companion: WorldCompanion | null }
   /** The node's saved experiments changed (one ended, was pinned or deleted): the newest, as in hello. */

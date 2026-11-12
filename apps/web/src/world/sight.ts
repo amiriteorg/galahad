@@ -6,6 +6,7 @@ import { BED, BENCH, BENCH_AREA, CAMP, CAMP_GATE, DESK, DOG_BED, FIRE, JOURNAL, 
 import { CELLS, FARM, HALL_DOOR, inHall, LINE, MILL } from "./hall-plan.ts";
 import { BLOCKHOUSE, COURSE, DRONE_PAD, FIELD_LEVEL, HANGAR, LAUNCH_SLAB, RUNWAY, TOWER, WINDSOCK } from "./field-plan.ts";
 import { standAt } from "./path.ts";
+import { SLATE } from "./slate-plan.ts";
 import type { Season } from "./season.ts";
 
 /*
@@ -63,6 +64,8 @@ export interface SightInput {
   ground(x: number, y: number): number;
   /** A view rendered from a standing place he isn't at (a review): its label. */
   from?: string | null;
+  /** His slate by the council table: whether a quest is chalked on it (never what it says). */
+  slate?: "plan" | "clean";
 }
 
 /** Where his eyes are above his feet, standing (metres): his visor's line (a test holds it to the knight himself). */
@@ -181,6 +184,7 @@ export function buildSight(i: SightInput): Sight {
     add(name === "council" ? "the council table, Reachy Mini on it" : `the ${lower(s.label)}`, s.x, s.y, 4, { h: name === "watchtower" ? 9 : 3, reach: 160 });
   }
   add("the chalkboard", BOARD_SPOT.x, BOARD_SPOT.y, 6, { h: 2.4, reach: 90 });
+  add(i.slate === "plan" ? "his slate, a quest's plan chalked on it" : "his slate", SLATE.x, SLATE.y, i.slate === "plan" ? 6 : 3, { h: 2, reach: 60 });
   add("the workshop hall", SITES.hall.x, SITES.hall.y, 4, { h: 9, reach: 500 });
   // (Seen from below as a whole; up on it, it's its own things that are seen.)
   const onField = Math.abs(i.eye.x - SITES.field.x) < SITES.field.w / 2 && Math.abs(i.eye.y - SITES.field.y) < SITES.field.d / 2;

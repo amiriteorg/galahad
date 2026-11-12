@@ -20,11 +20,11 @@ import { dogCommand, journalCommand } from "./journal-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { chatStateWords } from "@galahad/core";
+import { chatStateWords, worldQuestLine } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
-import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, Examination, ExperimentRunResult, ExperimentView, ProjectView, SavedExperiment, SavedSummary, WorldEvent, WorldHeartbeat, WorldPartner, WorldReport, WorldWeather } from "@galahad/core";
+import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, Examination, ExperimentRunResult, ExperimentView, ProjectView, SavedExperiment, SavedSummary, WorldEvent, WorldHeartbeat, WorldPartner, WorldQuest, WorldReport, WorldWeather } from "@galahad/core";
 type WorldReportInput = import("zod").infer<typeof WorldReport>;
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
@@ -891,6 +891,8 @@ Next:
         const fixed = h.fixed.length ? `\n    fixed himself: ${h.fixed.join("; ")}` : "";
         return `♥ ${time} ${what}${h.selfAction ? "" : dim(" · self-action off")}${fixed}`;
       };
+      /** A quest on his slate, in fixed words and its goal's first words ("a quest" when its words are withheld). */
+      const questLine = (q: WorldQuest) => `${bold("quest")} ${q.veiled || !q.title ? dim("(its words are withheld)") : `“${q.title}”`} ${dim(`${worldQuestLine(q)} · by ${q.by}`)}`;
       const partnersLine = (ps: WorldPartner[] | undefined) => (ps?.length ? ps.map((p) => `${bold(p.name)} ${dim(`${p.doing} (${p.station})`)}`).join(", ") : dim("no agents with him"));
       const say = (e: WorldEvent) => {
         const at = dim(new Date(e.at).toLocaleTimeString());
@@ -904,6 +906,7 @@ Next:
           if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
           for (const x of e.experiments) console.log(`  ${phaseOf(x).padEnd(9)} ${x.title} ${dim(`${x.engine} · ${whereLine(x)} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
           if (e.saved?.length) console.log(dim(`  ${e.saved.length} saved to replay or examine: galahad experiments`));
+          for (const q of e.quests ?? []) console.log(`  ${questLine(q)}`);
         } else if (e.type === "galahad") console.log(`${at} ${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station})`)}`);
         else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
         else if (e.type === "experiment") console.log(`${at} ${phaseOf(e.experiment)} ${e.experiment.title} ${dim(`${phaseOf(e.experiment) === "building" ? "at the workshop's bench" : whereLine(e.experiment)}${e.experiment.summary ? ` · ${e.experiment.summary}` : ""}`)}`);
@@ -914,6 +917,7 @@ Next:
         else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : e.change === "restore" ? "restored from its history" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
         else if (e.type === "heartbeat") console.log(`${at} ${heartLine(e.heartbeat)}`);
         else if (e.type === "partners") console.log(`${at} partners: ${partnersLine(e.partners)}`);
+        else if (e.type === "quests") console.log(e.quests.length ? e.quests.map((q) => `${at} ${questLine(q)}`).join("\n") : `${at} ${dim("his slate is wiped: no quest in hand")}`);
         else if (e.type === "companion") console.log(`${at} ${e.companion ? `his dog is named ${bold(e.companion.name)}` : dim("his dog has no name now")}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {

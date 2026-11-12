@@ -2,7 +2,7 @@ import type { SiteName, Station, WorldEvent } from "@galahad/core/world";
 import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
-import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, slateQuest, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
 import { Care, type CareFrame, CareLook, lodestarPulse } from "./care.ts";
 import type { EcoSummary } from "./eco/summary.ts";
@@ -23,6 +23,7 @@ import { addPlants } from "./flora-plan.ts";
 import { chooseSeason, keepSeason, seasonHook, stepGrowth } from "./flora-shade.ts";
 import { ProvingGround } from "./field.ts";
 import { Chalkboard } from "./board.ts";
+import { PlanSlate } from "./plan-slate.ts";
 import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
@@ -58,6 +59,7 @@ import type { WeatherTarget } from "./live-weather.ts";
 import { Weather, type WeatherKind } from "./weather.ts";
 import { weatherUniforms } from "./wet.ts";
 import { EYES_PLACE_LABEL, type EyesPlace, type SightEye, sightInWords } from "@galahad/core/eyes";
+import { worldQuestInHand } from "@galahad/core/world-quest";
 import { AIR, SPECS } from "./eco/species.ts";
 import { EYE, Eyes } from "./eyes.ts";
 import { buildSight, EYE_HEIGHT, EYE_PLACES, type SightInput } from "./sight.ts";
@@ -384,8 +386,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   const provingGround = new ProvingGround(placeContext);
   // His hearth south of the keep and the bench by the lake (hearth.ts): where his day begins and ends.
   const hearth = new Hearth(placeContext);
-  const places: Place[] = [provingGround, workshop, chalkboard, hearth];
+  // His slate by the council table (plan-slate.ts): the quest in hand, in chalk.
+  const planSlate = new PlanSlate(placeContext);
+  const places: Place[] = [provingGround, workshop, chalkboard, hearth, planSlate];
   chalkboard.onStand = () => model && retarget(model);
+  planSlate.onStand = () => model && retarget(model);
   // In the hall, Galahad and his dog are lit as it lights itself (every tier: no sun under its roof where there are no shadows).
   knight.lightIndoors(workshop.insideLight());
   dog.lightIndoors(workshop.insideLight());
@@ -850,7 +855,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   function retarget(m: WorldModel): void {
     // Something to write on the chalkboard comes first. Then, with no work, he lives his day (care.ts sends him;
     // under reduced motion he rests at the keep); otherwise the bench, while he builds, or his station.
-    const board = chalkboard.stand();
+    const board = chalkboard.stand() ?? planSlate.stand();
     if (!board && isIdle(m.galahad) && !reduced()) {
       walkKey = "";
       return;
@@ -1086,7 +1091,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   /** What he sees, from the world's own knowledge, with the eye camera as it's posed now (sight.ts; asked a few times a second at most). */
   function sightWords(from: EyesPlace | null): string {
     const g = model?.galahad;
-    const idle = (!g || isIdle(g)) && !chalkboard.stand();
+    const idle = (!g || isIdle(g)) && !chalkboard.stand() && !planSlate.stand();
     const wild: SightInput["wild"][number][] = [];
     for (const line of fauna.summary().lines) {
       if (!fauna.locate(line.kind, walker.x, walker.y, wildSpot)) continue;
@@ -1125,6 +1130,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         ducks: critters.flock.ducks,
         ground: groundAt,
         from: from ? EYES_PLACE_LABEL[from] : null,
+        slate: planSlate.shown ? "plan" : "clean",
       }),
     );
   }
@@ -1509,7 +1515,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const g = model?.galahad;
     // ---- his day (care.ts): with no work he lives it; work always comes first ----
     // (Writing on the chalkboard is work too: the page, not the node, knows he has it to do.)
-    const idle = (!g || isIdle(g)) && !chalkboard.stand();
+    const idle = (!g || isIdle(g)) && !chalkboard.stand() && !planSlate.stand();
     careFrame.now = Date.now();
     careFrame.dt = renderDt;
     careFrame.t = t;
@@ -1594,8 +1600,13 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         }
       }
     }
-    // At the chalkboard, writing: his hand at the chalk, not busy at the station's work.
-    knightState.writing = !walker.moving && chalkboard.hand(attention);
+    // With a quest in hand at the council table, he looks over at its plan on his slate now and then.
+    if (!idle && !walker.moving && g?.station === "council" && planSlate.shown && worldQuestInHand(planSlate.shown.state) && t % 14 < 4.5) {
+      planSlate.middle(attention);
+      attention.on = true;
+    }
+    // At the chalkboard (or his slate), writing: his hand at the chalk, not busy at the station's work.
+    knightState.writing = !walker.moving && (chalkboard.hand(attention) || planSlate.hand(attention));
     if (idle && life.attention.on && !walker.moving) {
       attention.x = life.attention.x;
       attention.y = life.attention.y;
@@ -1808,6 +1819,12 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         lastRan = ran;
       }
       if (!prev || prev.partners !== next.partners) partners.figures.sync(next.partners);
+      // The quest in hand, on his slate (the first in hand, else the one that ended last; the rest are counted).
+      if (!prev || prev.quests !== next.quests) {
+        const quest = slateQuest(next.quests);
+        planSlate.setQuest(quest, Math.max(0, next.quests.filter((q) => worldQuestInHand(q.state)).length - (quest && worldQuestInHand(quest.state) ? 1 : 0)), !reduced() && Boolean(prev));
+        dirty = true;
+      }
       // His helpers at work, and each node's slots on its label.
       if (!prev || prev.compute !== next.compute) {
         helpers.sync(next.compute?.attempts ?? []);

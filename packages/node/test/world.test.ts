@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GatewayTokens } from "@galahad/brain";
-import { EXAMINE_MAX_MS, HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent } from "@galahad/core";
+import { EXAMINE_MAX_MS, HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent, type WorldQuest } from "@galahad/core";
 import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
 import { ExperimentStore } from "../src/experiment-store.ts";
 import { cellAt, cellOnSite, handleSandboxWorld, WorldHub } from "../src/world-hub.ts";
@@ -384,5 +384,36 @@ describe("galahad_world, in the images", () => {
 
   test("Gazebo is one of Galahad's own images: rebuilt when missing, kept from pruning", () => {
     expect(OWN_IMAGES[GAZEBO_IMAGE]).toEqual({ context: "gazebo", keeper: "galahad-gazebo-image" });
+  });
+});
+
+describe("the quests in hand, on his slate", () => {
+  const quest = (step: number, over: Partial<WorldQuest> = {}): WorldQuest => ({ id: "q-1", by: "you", attempt: null, state: "working", title: "Write hi", plan: ["Write it."], doneWhen: "", step, maxSteps: 30, revisions: 0, gates: [], gatesPassed: 0, gatesFailed: 0, gatesTotal: 0, startedAt: 1, endedAt: null, silent: false, veiled: false, ...over });
+
+  test("in hello; a quests event only when what's drawn changed", () => {
+    const { world, events } = hub();
+    expect(world.hello()).not.toHaveProperty("quests"); // a node with no quest board says nothing (as older ones do)
+    let now: WorldQuest[] = [quest(1)];
+    world.setQuests(() => now);
+    expect(world.hello()).toMatchObject({ quests: [{ id: "q-1", step: 1 }] });
+    world.questsChanged();
+    expect(events.filter((e) => e.type === "quests")).toHaveLength(0);
+    now = [quest(2)];
+    world.questsChanged();
+    world.questsChanged();
+    now = [];
+    world.questsChanged();
+    expect(events.filter((e) => e.type === "quests").map((e) => (e.type === "quests" ? e.quests.map((q) => q.step) : null))).toEqual([[2], []]);
+    world.close();
+  });
+
+  test("a source that throws is no quests, never a broken stream; with nobody watching nothing is sent", () => {
+    const world = new WorldHub();
+    world.setQuests(() => {
+      throw new Error("no");
+    });
+    expect(world.hello()).toMatchObject({ quests: [] });
+    world.questsChanged();
+    world.close();
   });
 });
