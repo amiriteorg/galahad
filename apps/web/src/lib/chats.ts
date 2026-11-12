@@ -35,7 +35,7 @@ export function filterConversations(list: ConversationSummary[], query: string, 
 }
 
 export interface KeptStep {
-  kind: "asked" | "model" | "fallback" | "archive" | "tool" | "answer" | "error" | "stopped";
+  kind: "asked" | "model" | "fallback" | "archive" | "tool" | "answer" | "error" | "stopped" | "steered";
   text: string;
   detail?: string;
   state: "done" | "warn" | "error";
@@ -65,6 +65,8 @@ export function stepsOf(answer: StoredMessage, role: string): KeptStep[] {
   if (answer.content) steps.push({ kind: "answer", text: "Answering", state: "done" });
   if (answer.status === "error") steps.push({ kind: "error", text: "Couldn't answer", ...(answer.error ? { detail: answer.error } : {}), state: "error" });
   if (answer.status === "stopped") steps.push({ kind: "stopped", text: "Stopped", state: "warn" });
+  // You sent a message while he was answering: this answer stands as far as it got, and the turn went on after it.
+  if (answer.status === "steered") steps.push({ kind: "steered", text: "Your message reached him here", state: "done" });
   return steps;
 }
 
