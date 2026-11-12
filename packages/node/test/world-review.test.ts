@@ -158,6 +158,14 @@ describe("one review", () => {
     expect(log.asked).toHaveLength(1);
     expect(result.spent).toBeLessThanOrEqual(2600);
     expect(result.summary).toContain("left out, the day's budget would be passed");
+    // What's left doesn't reach one more view: it says the budget stopped it (not that the SANDBOX is closed), and looks at nothing.
+    const short = deps({ state: s });
+    const stopped = await reviewOnce(short.d);
+    expect(stopped).toMatchObject({ status: "ok", views: 0, findings: [] });
+    expect(stopped.summary).toContain("doesn't reach another view");
+    expect(stopped.summary).not.toContain("Open the SANDBOX");
+    expect(short.log.asked).toEqual([]);
+    expect(short.log.suggested).toEqual([]);
     s.spend(5000);
     const again = deps({ state: s });
     const spent = await reviewOnce(again.d);

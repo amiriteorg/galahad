@@ -177,6 +177,7 @@ export async function reviewOnce(deps: ReviewDeps, places: readonly EyesPlace[] 
   const findings: ReviewFinding[] = [];
   const notes: string[] = [];
   let views = 0;
+  let outOfBudget = false;
   for (const place of [undefined, ...places]) {
     if (signal.aborted) break;
     const label = place ? EYES_PLACE_LABEL[place] : "where he is";
@@ -192,6 +193,7 @@ export async function reviewOnce(deps: ReviewDeps, places: readonly EyesPlace[] 
     const left = deps.state.status();
     if (left.spent + cost > left.budget) {
       notes.push(`${label}: left out, the day's budget would be passed`);
+      outOfBudget = true;
       break;
     }
     let reply: string;
@@ -209,6 +211,10 @@ export async function reviewOnce(deps: ReviewDeps, places: readonly EyesPlace[] 
     else findings.push(...read);
   }
   const kept = findings.slice(0, REVIEW_FINDINGS);
+  if (!views && outOfBudget) {
+    const left = deps.state.status();
+    return done("ok", `What's left of today's budget for reviewing his world doesn't reach another view (${left.spent} of ${left.budget} tokens used); the next is tomorrow, or raise it. Nothing was done.`);
+  }
   if (!views) return done("attention", `He couldn't look at his world: ${notes.join("; ") || "no picture could be had"}. Open the SANDBOX in the app and ask again. Nothing was done.`);
   for (const f of kept) await deps.keep(findingTitle(f), findingText(f, day));
   deps.suggest(kept, day);
