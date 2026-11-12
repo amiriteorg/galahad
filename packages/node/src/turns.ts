@@ -275,9 +275,10 @@ export class TurnHub {
    * Watch a turn: first what it is, then everything that happened so far, then what happens, and
    * `null` when it has ended. Returns how to stop watching (which stops nothing else).
    */
-  subscribe(live: LiveTurn, listener: (event: ChatStreamEvent | null) => void): () => void {
+  subscribe(live: LiveTurn, listener: (event: ChatStreamEvent | null) => void, opts: { starting?: boolean } = {}): () => void {
     const turn = live as Live;
-    listener({ type: "turn", id: turn.id, conversation: turn.spec.conversation?.id ?? null, answer: turn.firstAnswer, role: turn.spec.role, startedAt: turn.startedAt, deadline: turn.deadline, replay: turn.buffer.length > 0 });
+    // `replay`: this watcher came to a turn already under way (it rebuilds the turn from what follows).
+    listener({ type: "turn", id: turn.id, conversation: turn.spec.conversation?.id ?? null, answer: turn.firstAnswer, role: turn.spec.role, startedAt: turn.startedAt, deadline: turn.deadline, replay: !opts.starting });
     for (const event of [...turn.buffer]) listener(event);
     if (turn.state !== "running") {
       listener(null);

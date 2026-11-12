@@ -94,6 +94,8 @@ export interface DaemonOptions {
   slotWaitMs?: number;
   /** The node's limits on chat turns (default: 4 at once, 30 minutes each, 20 queued a chat; GALAHAD_TURNS_MAX and GALAHAD_TURN_MINUTES set the first two). */
   turnLimits?: Partial<HubLimits>;
+  /** How long requests and turns under way get to finish when the node stops (default 10 s; tests pass less). */
+  shutdownGraceMs?: number;
 }
 
 /**
@@ -583,7 +585,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       weather.close();
       await loops.stop();
       await connectors.drain();
-      await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(SHUTDOWN_GRACE_MS)]);
+      await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);
       // A turn still going after that is stopped: its answer kept as stopped, what's queued behind it held until you resume.
       await turns.close();
       await Promise.all(servers.map((s) => s.stop(true)));

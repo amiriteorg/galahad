@@ -1054,7 +1054,7 @@ export function createApp(ctx: AppContext) {
    * A turn as server-sent events: what it is, everything so far, then live, to its end. Whoever was watching
    * going away ends the watching and nothing else.
    */
-  function watchTurn(turn: LiveTurn, req: Request): Response {
+  function watchTurn(turn: LiveTurn, req: Request, starting = false): Response {
     const encoder = new TextEncoder();
     let leave: () => void = () => {};
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -1083,7 +1083,7 @@ export function createApp(ctx: AppContext) {
         // Long thinking produces no text for a while; comments keep proxies and idle timers awake.
         heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
         req.signal.addEventListener("abort", close);
-        const unsubscribe = ctx.turns.subscribe(turn, (event) => (event ? write(`data: ${JSON.stringify(event)}\n\n`) : close()));
+        const unsubscribe = ctx.turns.subscribe(turn, (event) => (event ? write(`data: ${JSON.stringify(event)}\n\n`) : close()), { starting });
         if (open) leave = unsubscribe;
         else unsubscribe();
       },
@@ -1221,7 +1221,7 @@ export function createApp(ctx: AppContext) {
       if (owned) turnErrors(() => ctx.turns.admit(asked.conversation ?? null));
       else if (asked.conversation && ctx.turns.runningIn(asked.conversation)) throw new HttpError(409, "he's still working in that chat");
       const ready = prepareAnswer(asked, p);
-      if (owned) return watchTurn(turnErrors(() => ctx.turns.start(turnSpec(ready, p))), req);
+      if (owned) return watchTurn(turnErrors(() => ctx.turns.start(turnSpec(ready, p))), req, true);
 
       const { request, wantTools, kept, messages, project, known, fromArchive, attempt } = ready;
       // One of several attempts at a quest: a helper's call, shown as the helper's (he stays where he leads them from).
