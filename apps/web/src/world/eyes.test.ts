@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Group, Object3D, Vector3 } from "three/webgpu";
 import { EYE, Eyes, type EyesHost } from "./eyes.ts";
+import { GLOW_NEAR, glowCloseness } from "./glows.ts";
 import { Knight } from "./knight.ts";
 import { EYE_HEIGHT } from "./sight.ts";
 
@@ -153,5 +154,20 @@ describe("when the panel is drawn", () => {
     e.swapped = true;
     expect(e.wanted).toBe(true);
     expect(e.due(1e9, true)).toBe(false);
+  });
+});
+
+describe("glows seen from beside them", () => {
+  test("a lamp's glow draws in and softens near the eye, and is as it was put from across the lawn", () => {
+    // (The shader's own smoothstep over the same numbers: glows.ts.)
+    expect(glowCloseness(0.3)).toBe(0);
+    expect(glowCloseness(GLOW_NEAR.to)).toBe(1);
+    expect(glowCloseness(40)).toBe(1);
+    // Seated by his fire (1.3 m from his eyes) it's about a third its size and light; from his bed (3.5 m), well over half.
+    const at = (d: number) => GLOW_NEAR.size + (1 - GLOW_NEAR.size) * glowCloseness(d);
+    expect(at(1.3)).toBeLessThan(0.36);
+    expect(at(3.5)).toBeGreaterThan(0.6);
+    expect(at(3.5)).toBeLessThan(0.8);
+    for (let d = 0.2; d < 8; d += 0.1) expect(glowCloseness(d + 0.1)).toBeGreaterThanOrEqual(glowCloseness(d));
   });
 });

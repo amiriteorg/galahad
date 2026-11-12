@@ -1,4 +1,4 @@
-import { cameraProjectionMatrix, float, instancedBufferAttribute, length, modelViewMatrix, positionGeometry, sin, smoothstep, time, uniform, uv, vec3, vec4 } from "three/tsl";
+import { cameraProjectionMatrix, float, instancedBufferAttribute, length, mix, modelViewMatrix, positionGeometry, sin, smoothstep, time, uniform, uv, varying, vec3, vec4 } from "three/tsl";
 import { AdditiveBlending, type Group, InstancedBufferAttribute, InstancedMesh, MeshBasicNodeMaterial, PlaneGeometry } from "three/webgpu";
 import { linear } from "./mesher.ts";
 
@@ -9,6 +9,21 @@ import { linear } from "./mesher.ts";
  * fade in with the evening. The lights stay where they were put (scene
  * coordinates under the world root): the keep's, the plots', the landmarks'.
  */
+
+/** Beyond this a glow is as it was put (metres from the eye); within `GLOW_NEAR.from` it's at its smallest and softest. */
+export const GLOW_NEAR = { from: 0.6, to: 6, size: 0.3, light: 0.35 } as const;
+
+/** How near the eye a glow is, 0 (at `from` or nearer) to 1 (at `to` or beyond), eased. */
+export function glowCloseness(distance: number): number {
+  const t = Math.max(0, Math.min(1, (distance - GLOW_NEAR.from) / (GLOW_NEAR.to - GLOW_NEAR.from)));
+  return t * t * (3 - 2 * t);
+}
+
+/** A glow's size and light for its distance from the eye, as shares of what it was given (the shader's own sums: `glowCloseness`). */
+function glowNear(distance: ReturnType<typeof length>) {
+  const closeness = smoothstep(GLOW_NEAR.from, GLOW_NEAR.to, distance);
+  return { size: mix(float(GLOW_NEAR.size), float(1), closeness), light: mix(float(GLOW_NEAR.light), float(1), closeness) };
+}
 
 export class Glows {
   private readonly mesh: InstancedMesh;
@@ -32,12 +47,16 @@ export class Glows {
     const tint = instancedBufferAttribute(this.tint, "vec3") as unknown as ReturnType<typeof vec3>;
     // Facing the camera: the corner offset is added in view space, a little towards the eye.
     const centre = modelViewMatrix.mul(vec4(at.xyz, 1));
-    const corner = vec3(positionGeometry.xy.mul(at.w), 0.35);
+    // Close to the eye a glow draws in round its lamp and softens (`glowNear` has the numbers): its size is a
+    // world's, right from across the lawn, but from beside it (through his own eyes at his fire, his desk's
+    // lantern, the library's lamp) a disc that size is the whole view, and everything in it washed out.
+    const near = glowNear(length(centre.xyz));
+    const corner = vec3(positionGeometry.xy.mul(at.w).mul(near.size), 0.35);
     m.vertexNode = cameraProjectionMatrix.mul(vec4(centre.xyz.add(corner), 1));
     const r = length(uv().sub(0.5)).mul(2);
     const falloff = float(1).sub(smoothstep(0, 1, r)).pow(2.2);
     const flicker = sin(time.mul(7.3).add(at.x.mul(3.1))).mul(0.06).add(0.94);
-    m.colorNode = tint.mul(falloff).mul(this.strength).mul(flicker);
+    m.colorNode = tint.mul(falloff).mul(this.strength).mul(flicker).mul(varying(near.light));
     this.material = m;
     this.mesh = new InstancedMesh(new PlaneGeometry(2, 2), m, Math.max(1, capacity));
     this.mesh.count = 0;
