@@ -262,6 +262,16 @@ bun galahad do --net online "Clone oven-sh/bun and tell me how many test files i
 bun galahad do --steps 60 --timeout 900 --keep "Build the repo in /work and get its tests green"
 ```
 
+**Say what done means.** A gate is a command that must pass before the reviewer is even asked; a quest whose gates never pass is never done.
+
+```sh
+bun galahad do "Fix the failing test in /work/repo" --gate "cd /work/repo && bun test"
+bun galahad do "Write the report" --gate "test -s /work/out/report.md" --gate "grep -q Summary /work/out/report.md"
+bun galahad quests                       # the quests in hand: plan, the command he's on, each gate's last result
+```
+
+The planner may add gates of its own from its "Done when:" line (they're marked as its proposal; `--no-planner-gates` runs yours only). The app's Overview shows the same under **In hand**.
+
 The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
 
 For bigger work, let a full coding agent do it. OpenCode works for up to `--minutes`, with models through the gateway (it never sees a key), and the independent review still decides:
@@ -371,6 +381,9 @@ Add your own. Each runs on one node and every run is recorded in the mind:
 # a quest every weekday morning, Copenhagen time (online: it clones the repo)
 bun galahad loop add morning --cron "0 7 * * 1-5" --tz Europe/Copenhagen \
   --quest "Check the galahad repo's tests in a fresh clone and report anything failing" --net online
+# the same with a gate: the run is only ok if the command passes in its sandbox
+bun galahad loop add nightly --cron "0 2 * * *" --tz Europe/Copenhagen \
+  --quest "Build the site in /work/site and write the size report" --gate "test -s /work/out/sizes.md"
 # a connector check every hour
 bun galahad loop add ci --every 1h --call github.runs --arg owner=amiriteorg --arg repo=galahad --arg per_page=5
 bun galahad loop run morning               # now, by hand
@@ -433,6 +446,20 @@ bun galahad chats                                # your chats, pinned first
 bun galahad ask --chat <id> "And on Friday?"     # go on with one
 bun galahad chat <id>                            # read it; galahad chat rm <id> deletes it for good
 ```
+
+A turn runs on the node, so it goes on if the terminal (or the app's page) goes away; the answer is in the chat. While he's working in a chat you can tell him something now, or leave it for after:
+
+```sh
+bun galahad ask --detach "Read the week's issues and summarise them"   # start it and leave him to it
+bun galahad turns                                # what he's working on: time so far, who's watching, when it stops by itself
+bun galahad turn watch <turn|chat>               # watch one from its start; galahad turn stop <turn|chat> stops it
+bun galahad ask --chat <id> --steer "Only the open ones"      # he's told at his next safe point
+bun galahad ask --chat <id> --queue "Then draft replies"      # kept on the node, sent when he's done
+bun galahad queue <id>                           # your queue behind a chat: rm <n|all>, send <n>, resume
+bun galahad ask --chat <id> --aside "How far along is he?"    # asked on the side; --bring hands the answer to him
+```
+
+Ctrl-C in `galahad ask` stops him (it's the terminal's Stop). After a stop, a failure or a node restart the queue is held until you `resume` it. Anything he needs you for meanwhile (an approval, a key) waits in your Inbox: nothing is approved because nobody was watching. In the app the same is in the composer: Enter steers or queues (your choice in Settings), and `/btw …` asks on the side.
 
 A project is a workspace: instructions Galahad follows in its chats, an optional repository, and its own chats and memories.
 
