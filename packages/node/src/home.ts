@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { exportIdentity, importIdentity, newNodeIdentity, type NodeIdentity, randomId } from "@galahad/core";
+import { b64u, exportIdentity, fromB64u, importIdentity, newNodeIdentity, newPushKeyPair, type NodeIdentity, type PushKeyPair, pushPublicKey, randomId } from "@galahad/core";
 import { z } from "zod";
 import { loadEnv } from "./env.ts";
 
@@ -14,6 +14,8 @@ import { loadEnv } from "./env.ts";
  *   admin.token   local CLI credential (0600)
  *   experiments/  the experiments this node's world showed, saved (node-local; see experiment-store.ts)
  *   keys.json     device private keys, only when the OS keychain is unavailable (0600)
+ *   push-key.json this node's notification key (VAPID), only when the OS keychain is unavailable (0600)
+ *   push.db       who gets notifications and what was sent (node-local, 0600; see notify-store.ts)
  */
 
 const Config = z.strictObject({
@@ -36,8 +38,10 @@ export class Home {
   readonly adminTokenPath: string;
   readonly keyFilePath: string;
   readonly experimentsDir: string;
+  readonly pushKeyPath: string;
 
   constructor(readonly dir: string) {
+    this.pushKeyPath = join(dir, "push-key.json");
     this.configPath = join(dir, "config.json");
     this.mindPath = join(dir, "mind.db");
     this.localPath = join(dir, "local.db");
@@ -95,6 +99,38 @@ export class Home {
           : null;
     if (!serialized) throw new Error(`device keys not found in the ${keystore} keystore for ${this.dir}`);
     return importIdentity(serialized);
+  }
+
+  // ---- this node's notification key (VAPID) --------------------------------
+
+  /**
+   * The key this node proves itself to push services with (RFC 8292), a P-256 pair. Made here, on the node, the first
+   * time a device asks to be notified, and kept where its device keys are: the OS keychain, or a 0600 file in its home.
+   * Never shown, logged or put in the mind; only its public half ever leaves (a browser subscribes to it).
+   */
+  async pushKey(keystore: "os" | "file"): Promise<PushKeyPair> {
+    const read = (text: string | null): PushKeyPair | null => {
+      if (!text) return null;
+      const stored = JSON.parse(text) as { v?: number; d?: unknown };
+      if (stored.v !== 1 || typeof stored.d !== "string") throw new Error("this node's notification key isn't in a form this version reads");
+      const privateKey = fromB64u(stored.d);
+      // Throws unless it is a P-256 private key.
+      return { privateKey, publicKey: pushPublicKey(privateKey) };
+    };
+    const account = `${this.dir}#push`;
+    if (keystore === "os") {
+      const kept = read(await Bun.secrets.get({ service: KEYCHAIN_SERVICE, name: account }));
+      if (kept) return kept;
+    } else if (existsSync(this.pushKeyPath)) {
+      const kept = read(readFileSync(this.pushKeyPath, "utf8"));
+      if (kept) return kept;
+    }
+    this.ensureDir();
+    const pair = newPushKeyPair();
+    const serialized = JSON.stringify({ v: 1, d: b64u(pair.privateKey) });
+    if (keystore === "os") await Bun.secrets.set({ service: KEYCHAIN_SERVICE, name: account, value: serialized });
+    else writeSecretFile(this.pushKeyPath, serialized);
+    return pair;
   }
 
   // ---- arm tokens (MCP) ----------------------------------------------------

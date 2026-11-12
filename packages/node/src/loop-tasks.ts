@@ -61,6 +61,8 @@ export interface LoopTaskDeps {
   review?: (places?: undefined, signal?: AbortSignal) => Promise<{ status: "ok" | "attention"; summary: string }>;
   /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat, and what his journal reads of them. */
   skills?: { tidy(mark?: boolean): { stale: number; merges: number }; journal(since: number): { at: number; line: string }[] };
+  /** What a quick look by the doctor finds that the heartbeat doesn't check itself (doctor.ts; set by the daemon). */
+  doctor?: () => Promise<{ key: string; severity: Finding["severity"]; title: string; body: string }[]>;
 }
 
 /** A node that joined this long ago and still hasn't measured itself is worth a line. */
@@ -178,6 +180,22 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
   };
 }
 
+/**
+ * One look around: the heartbeat's own checks, and what the doctor's quick look adds about this node's body
+ * (its clock, its app, its firewall: what the heartbeat doesn't check itself). The doctor never stops a beat.
+ */
+export async function lookAround(deps: LoopTaskDeps): Promise<Finding[]> {
+  const findings = assess(await heartbeatSnapshot(deps));
+  if (!deps.doctor) return findings;
+  try {
+    const seen = new Set(findings.map((f) => f.key));
+    for (const found of await deps.doctor()) if (!seen.has(found.key)) findings.push({ ...found, node: deps.identity.id });
+  } catch (error) {
+    deps.log(`doctor (heartbeat): ${redact(String((error as Error).message)).slice(0, 200)}`);
+  }
+  return findings;
+}
+
 /** Compute never stops a heartbeat: if it can't be read, the beat goes on without it and the log says why. */
 function quietly<T>(deps: LoopTaskDeps, what: string, read: () => T): T | null {
   try {
@@ -223,10 +241,10 @@ async function askSwift(deps: LoopTaskDeps, prompt: string, signal: AbortSignal)
 
 export async function beat(deps: LoopTaskDeps, checklist: string | undefined, signal: AbortSignal, selfAction = true): Promise<RunResult & { findings: Finding[]; fixed: SelfActionOutcome[] }> {
   const now = (deps.now ?? Date.now)();
-  let findings = assess(await heartbeatSnapshot(deps));
+  let findings = await lookAround(deps);
   // What's on the allowlist he fixes himself; then he looks again, so a fixed problem never becomes a notice.
   const fixed = selfAction ? await selfAct(await selfSnapshot(deps), () => selfSnapshot(deps), selfHands(deps), (entry) => void deps.store.emit(deps.identity, "ledger.recorded", entry)) : [];
-  if (fixed.some((f) => f.ok)) findings = assess(await heartbeatSnapshot(deps));
+  if (fixed.some((f) => f.ok)) findings = await lookAround(deps);
   let note = "";
   if (checklist?.trim()) {
     try {

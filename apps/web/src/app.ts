@@ -8,6 +8,7 @@ import type { WhoAmI } from "./types.ts";
 import { toast } from "./ui/toast.ts";
 import { readBankCallback } from "./lib/bank.ts";
 import { handBankCallback } from "./views/bank.ts";
+import { syncPush } from "./views/notifications.ts";
 
 /*
  * Boot: secure context → device key → (pairing | welcome | the app).
@@ -115,6 +116,8 @@ async function boot(): Promise<void> {
   }
   if (bankReturn) handBankCallback(bankReturn);
   const shell = renderShell(root, { api, identity, whoami });
+  // Notifications: the node's copy of this device's subscription is kept current (never asks, never turns anything on).
+  void syncPush(api);
 
   // One refused request isn't proof of revocation: ask once more before leaving the app.
   let state: "ok" | "checking" | "refused" = "ok";

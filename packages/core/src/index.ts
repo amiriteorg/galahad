@@ -41,3 +41,7 @@ export * from "./trials.ts";
 export * from "./compute.ts";
 export * from "./world-compute.ts";
 export * from "./world-quest.ts";
+export * from "./doctor.ts";
+export * from "./webpush.ts";
+export * from "./notify.ts";
+export * from "./notify-input.ts";

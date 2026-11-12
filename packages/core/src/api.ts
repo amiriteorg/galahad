@@ -18,6 +18,7 @@ import { cleanCompanionName, companionNameProblem } from "./companion.ts";
 import { JOURNAL_DAY } from "./journal.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
 import { EyesFrameInput, LookInput, ReviewBudgetInput, WorldReviewInput } from "./eyes-input.ts";
+import { NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -513,6 +514,13 @@ export const routes = {
   dismissNotice: { method: "POST", path: "/api/notices/dismiss", scope: "fleet:admin", input: z.strictObject({ key: NoticeKey }) },
   /** Run the heartbeat's checks here, now, and return what they find (writes nothing). */
   heartbeat: { method: "POST", path: "/api/heartbeat", scope: "mind:read", input: z.strictObject({}) },
+  /**
+   * The doctor (doctor.ts): one look at this node's whole installation, answered in plain lines (ok, needs you,
+   * broken) with what to do for anything that isn't ok. It changes nothing. `quick`: only what costs nothing to
+   * look at; `offline`: no model is asked and no connector's service probed. Yours alone (fleet:admin, from a
+   * terminal or a paired device; never an agent, never another node): a full check asks each role's model a word.
+   */
+  doctor: { method: "POST", path: "/api/doctor", scope: "fleet:admin", input: z.strictObject({ quick: z.boolean().optional(), offline: z.boolean().optional() }) },
   /** Whether Galahad fixes what's on the self-action allowlist himself after each heartbeat, and what he fixed lately. */
   selfAction: { method: "GET", path: "/api/self-action", scope: "mind:read", input: null },
   /** The owner's switch for self-action (on by default). It steers Galahad, so it's brain:write: never an agent's. */
@@ -803,6 +811,21 @@ export const routes = {
   rollbackSkill: { method: "POST", path: "/api/skills/rollback", scope: "fleet:admin", input: z.strictObject({ id: SkillId }) },
   /** The day's budget for distilling skills, in tokens (0: he distils none). */
   setSkillsBudget: { method: "POST", path: "/api/skills/budget", scope: "brain:write", input: SkillsBudgetInput },
+  // ---- Notifications: he comes to you, on your own paired devices (notify.ts; node-local) ----------
+  /*
+   * Yours alone, every one of them: the node refuses agents and other nodes whatever their scopes. No route takes a
+   * title or a line: what a notification says comes only from the node's own records, through its own rules.
+   */
+  /** Who is notified (devices by name, never an endpoint), what he sends and when he stays silent, what was sent today, and this node's public key to subscribe to. */
+  notify: { method: "GET", path: "/api/notify", scope: "mind:read", input: null },
+  /** What he sends and when he stays silent: the kinds, quiet hours, the day's limit. It steers him: brain:write, never an agent's. */
+  setNotify: { method: "POST", path: "/api/notify", scope: "brain:write", input: NotifyPrefsInput },
+  /** This device turns notifications on, for itself: its browser's push subscription, kept as that device's. Only a paired device may, and only its own. */
+  pushSubscribe: { method: "POST", path: "/api/notify/subscribe", scope: "mind:read", input: PushSubscriptionInput },
+  /** Off again: this device's own; another's by id only from a terminal or a device that may administer the fleet. */
+  pushUnsubscribe: { method: "POST", path: "/api/notify/unsubscribe", scope: "mind:read", input: z.strictObject({ device: NotifyDeviceRef.optional() }) },
+  /** One fixed test message: to the device that asks, or from a terminal to every subscribed device (or the one named). */
+  notifyTest: { method: "POST", path: "/api/notify/test", scope: "mind:read", input: z.strictObject({ device: NotifyDeviceRef.optional() }) },
 } as const satisfies Record<string, { method: "GET" | "POST"; path: string; scope: Scope | null; input: z.ZodType | null }>;
 
 export type RouteName = keyof typeof routes;

@@ -10,6 +10,7 @@ import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { autonomyCard, ledgerItem } from "./activity.ts";
 import { inHandSection } from "./in-hand.ts";
+import { doctorSection } from "./doctor-card.ts";
 import { startNewChat } from "./chat.ts";
 import { isOnline, openInvite, peerOf } from "./fleet.ts";
 import { openAddKey, vaultChanged } from "./vault.ts";
@@ -178,7 +179,8 @@ export const overviewView: View = (root, ctx, { scope }) => {
           ctx.can("mind:read") ? section("Fleet health", { actions: h("a", { href: "#/fleet", class: "btn ghost sm" }, "Open fleet", icon("chevron-right", { size: 14 })) }, health) : null,
           section("Recent activity", { actions: h("a", { href: "#/activity", class: "btn ghost sm" }, "View all", icon("chevron-right", { size: 14 })) }, recent),
         ),
-        h("div", { class: "stack loose" }, autonomyBox),
+        // Is everything well on the node you're talking to: a quick look by the doctor, and a full check when you ask.
+        h("div", { class: "stack loose" }, doctorSection(ctx, scope), autonomyBox),
       ),
     ),
   );

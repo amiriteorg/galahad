@@ -63,6 +63,32 @@ Run it on the node you'll talk to, wherever that is: on a server over SSH (`tail
 
 The device gets every scope except `gateway:mint`: it's your console, the bank, the vault and pairing included. For a device you trust less, pair it from the PWA (**Fleet → Pair a device**, then **Custom** or **Chat & read**) with fewer; an invite never carries a scope the inviting device lacks.
 
+### Let him reach you: notifications
+
+Until you turn this on, everything he has for you waits in the Inbox. With it, a paired device gets a short notification when something needs you (a warning or an alert from his heartbeat), an approval is waiting, he has finished work you left him with, or he has a question. He stays silent when there's nothing to say.
+
+**On an iPhone or iPad** (iOS 16.4 or later):
+
+1. Open the app's address in Safari, tap **Share**, then **Add to Home Screen**. iOS delivers notifications only to a web app on the Home Screen, never to a Safari tab.
+2. Open **Galahad** from the Home Screen. If it asks to be paired, pair it as above (paste the invite): the Home Screen app is its own device.
+3. **Settings → Notifications**, turn on **Notifications on this device**, and allow them when iOS asks. It asks only from that tap.
+4. Tap **Send a test**. It should arrive within a few seconds.
+
+**In a desktop browser** (Edge, Chrome, Firefox, Safari): step 3 and 4 are the same; nothing needs installing.
+
+Nothing is needed on the server: the node makes its own key the first time a device turns this on, and keeps it beside its device keys. From a terminal on the node:
+
+```sh
+bun galahad notify                         # the devices he can reach, what he tells you, quiet hours, what was sent today
+bun galahad notify test                    # one test notification to every device (notify test phone: to one)
+bun galahad notify kinds journal on        # also tell you when his journal is written (off by default)
+bun galahad notify quiet 22:00-07:00       # quiet hours, Denmark's time unless --tz says otherwise (notify quiet off)
+bun galahad notify limit 12                # at most this many a day, the last two kept for alerts; one message says when it's reached
+bun galahad notify off phone               # stop notifying a device (it's turned on again from that device)
+```
+
+What a notification holds is a short title, one line and where it opens, encrypted to that browser: the push service that carries it (Apple's for an iPhone) can't read it. Never a key, never anything about the bank, never a model's own words. Quiet hours (22:00 to 07:00 in Denmark by default) hold everything but an alert until morning, then one message says what waited. A turn you're watching on another device isn't pushed. If a test doesn't arrive, `bun galahad doctor` has a line for it, and the app's Settings says what the push service answered. A browser whose push service isn't Apple's, Google's, Mozilla's or Microsoft's is refused until you allow its host on the node (`GALAHAD_PUSH_HOSTS=push.example.org`).
+
 ## 4. Add the server
 
 ### The one-command way: `scripts/deploy.sh`
@@ -391,6 +417,17 @@ bun galahad loop runs morning              # its history
 bun galahad loop pause morning             # resume / rm
 ```
 
+**Is everything well?** One command looks at the whole installation on the node you run it on and answers in plain lines, each ok, needs you or broken, with what to do:
+
+```sh
+bun galahad doctor                         # everything: asks each role's model one word, starts a sandbox and removes it
+bun galahad doctor --offline               # the same, asking no model and probing no connector's service
+bun galahad doctor --quick                 # only what costs nothing to look at (what the app's Overview shows)
+bun galahad doctor --json                  # the report for a script; the exit code is 0 well, 1 needs you, 2 broken
+```
+
+It changes nothing. It checks the node's keys, the mind (integrity, its hash chain, the clock, sync, your last backup's age: it looks in `backups` in or beside the node's home, or where `GALAHAD_BACKUP_DIR` says), the vault, each role's models (the first one skipped on every answer is said), the embedder and the archive, sandboxes, compute, loops, connectors, the app (built, and published by Tailscale), notifications, the disk and the service. The app's Overview has the same on a **Doctor** card, and the heartbeat takes from it what it didn't already check.
+
 A loop that fails or needs a look leaves a notice in your inbox, and its next good run clears it. So a loop that calls a connector is a monitor: install a one-tool connector for your site (`{"id":"site","label":"galahad.bot","origin":"https://galahad.bot","tools":{"home":{"description":"The home page","method":"GET","path":"/","class":"read"}}}`) and `loop add site --every 5m --call site.home`.
 
 ## 11½. Skills: what he learned, and you curate
@@ -566,6 +603,7 @@ The `swift` role writes each entry's summary, facts, tags and named things, and 
 
 | Symptom | Try |
 |---|---|
+| Something is off and you don't know what | `bun galahad doctor` on the node: every line says what it found and what to do (it also runs with no node up, and says so) |
 | `no daemon on http://127.0.0.1:7777` | Start `bun galahad serve` (or check `GALAHAD_PORT`) |
 | A peer shows `offline` | `tailscale status`; check the firewall rule; `bun galahad status` shows the last error |
 | `expose` fails | Enable MagicDNS + HTTPS certificates in the Tailscale admin console |
