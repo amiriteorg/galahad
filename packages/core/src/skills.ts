@@ -142,8 +142,10 @@ export interface SkillStanding {
 /**
  * Where a skill stands, from its versions and marks. An untrusted version that isn't approved never
  * displaces the one in use: it waits as `pending`, and the last usable version goes on being offered.
+ * Stale is decided in the mind's own order (the HLCs of the stale mark and of the last use or change), not in
+ * milliseconds: a node fast enough to do both inside one would otherwise disagree with itself.
  */
-export function skillStanding(skill: { versions: readonly Pick<SkillVersionView, "id" | "prev" | "trust" | "approvedAt" | "doc">[]; head: string; retired: boolean; staleAt: number | null; touchedAt: number }): SkillStanding {
+export function skillStanding(skill: { versions: readonly Pick<SkillVersionView, "id" | "prev" | "trust" | "approvedAt" | "doc">[]; head: string; retired: boolean; staleHlc: string | null; touchedHlc: string }): SkillStanding {
   const byId = new Map(skill.versions.map((v) => [v.id, v]));
   const head = byId.get(skill.head) ?? null;
   let offered: (typeof skill.versions)[number] | null = null;
@@ -156,7 +158,7 @@ export function skillStanding(skill: { versions: readonly Pick<SkillVersionView,
     }
   }
   const pending = head && head.id !== offered?.id ? head.id : null;
-  const state: SkillState = skill.retired ? "retired" : !offered ? "proposed" : skill.staleAt !== null && skill.staleAt > skill.touchedAt ? "stale" : "in-use";
+  const state: SkillState = skill.retired ? "retired" : !offered ? "proposed" : skill.staleHlc !== null && skill.staleHlc > skill.touchedHlc ? "stale" : "in-use";
   return { state, offered: offered?.id ?? null, pending };
 }
 

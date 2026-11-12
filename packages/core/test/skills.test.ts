@@ -114,7 +114,9 @@ describe("a skill's words", () => {
 });
 
 describe("where a skill stands", () => {
-  const stand = (versions: SkillVersionView[], over: Partial<Parameters<typeof skillStanding>[0]> = {}) => skillStanding({ versions, head: versions.at(-1)!.id, retired: false, staleAt: null, touchedAt: 1000, ...over });
+  /** A moment in the mind's order: milliseconds, and a counter within one. */
+  const at = (ms: number, n = 0): string => `${String(ms).padStart(15, "0")}.${String(n).padStart(6, "0")}`;
+  const stand = (versions: SkillVersionView[], over: Partial<Parameters<typeof skillStanding>[0]> = {}) => skillStanding({ versions, head: versions.at(-1)!.id, retired: false, staleHlc: null, touchedHlc: at(1000), ...over });
 
   test("his own note from an isolated quest is in use at once; yours too", () => {
     expect(stand([version()])).toEqual({ state: "in-use", offered: "v".repeat(43), pending: null });
@@ -143,15 +145,18 @@ describe("where a skill stands", () => {
   });
 
   test("stale is a mark newer than its last use or change; used again, it's in use", () => {
-    expect(stand([version()], { staleAt: 2000, touchedAt: 1000 }).state).toBe("stale");
-    expect(stand([version()], { staleAt: 2000, touchedAt: 3000 }).state).toBe("in-use");
-    expect(stand([version()], { staleAt: 2000, touchedAt: 2000 }).state).toBe("in-use");
+    expect(stand([version()], { staleHlc: at(2000), touchedHlc: at(1000) }).state).toBe("stale");
+    expect(stand([version()], { staleHlc: at(2000), touchedHlc: at(3000) }).state).toBe("in-use");
+    // Within one millisecond the mind's own order decides, as it does everywhere else (a fast node writes,
+    // marks and uses a skill inside one): marked after it was last touched is stale; touched after, in use.
+    expect(stand([version()], { staleHlc: at(2000, 2), touchedHlc: at(2000, 1) }).state).toBe("stale");
+    expect(stand([version()], { staleHlc: at(2000, 1), touchedHlc: at(2000, 2) }).state).toBe("in-use");
   });
 
   test("retired wins over everything, and keeps what it was", () => {
     expect(stand([version()], { retired: true })).toEqual({ state: "retired", offered: "v".repeat(43), pending: null });
     expect(stand([version({ trust: "untrusted" })], { retired: true }).state).toBe("retired");
-    expect(stand([version()], { retired: true, staleAt: 9, touchedAt: 1 }).state).toBe("retired");
+    expect(stand([version()], { retired: true, staleHlc: at(9), touchedHlc: at(1) }).state).toBe("retired");
   });
 
   test("a chain that loops (a broken log) ends, and offers nothing it can't reach", () => {

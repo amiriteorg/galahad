@@ -70,8 +70,8 @@ function standing(record: SkillRecord) {
     versions: record.versions.map((v) => ({ id: v.id, prev: v.prev, trust: v.trust as SkillTrust, approvedAt: v.approvedHlc ? ms(v.approvedHlc) : null, doc: readSkillDoc(v.doc) })),
     head: record.head,
     retired: record.retired,
-    staleAt: record.staleHlc ? ms(record.staleHlc) : null,
-    touchedAt: ms(record.touchedHlc),
+    staleHlc: record.staleHlc,
+    touchedHlc: record.touchedHlc,
   });
 }
 

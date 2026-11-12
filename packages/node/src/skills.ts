@@ -122,7 +122,7 @@ export function skillVersions(record: SkillRecord): SkillVersionView[] {
 const UNREADABLE: SkillDoc = { title: "(a skill this node can't read: a newer node wrote it)", when: "", steps: [], proof: [], pitfalls: [] };
 
 function viewOf(record: SkillRecord, versions: SkillVersionView[]): { view: SkillView; shown: SkillVersionView | null } {
-  const standing = skillStanding({ versions, head: record.head, retired: record.retired, staleAt: record.staleHlc ? ms(record.staleHlc) : null, touchedAt: ms(record.touchedHlc) });
+  const standing = skillStanding({ versions, head: record.head, retired: record.retired, staleHlc: record.staleHlc, touchedHlc: record.touchedHlc });
   // Its words: the version in use; while there's none, the one that waits.
   const shown = versions.find((v) => v.id === (standing.offered ?? record.head)) ?? versions.at(-1) ?? null;
   const doc = shown?.doc ?? UNREADABLE;
