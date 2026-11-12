@@ -65,8 +65,8 @@ export interface SightInput {
   from?: string | null;
 }
 
-/** Where his eyes are above his feet, standing (metres): his visor's line. */
-export const EYE_HEIGHT = 2.32;
+/** Where his eyes are above his feet, standing (metres): his visor's line (a test holds it to the knight himself). */
+export const EYE_HEIGHT = 1.93;
 
 const meadow = TRAIL.find((t) => t.pause > 0 && t.y > 60 && Math.abs(t.x) < 10)!;
 

@@ -34,8 +34,11 @@ import { CanvasTarget, type Object3D, PerspectiveCamera, Quaternion, Vector3, ty
  * 768 wide, and encoded as a JPEG.
  */
 
-/** The eye camera: its field of view (degrees, top to bottom), its near plane, where it sits in his head's frame (y up, z forward; metres) and its shape. */
-export const EYE = { fov: 62, near: 0.07, up: 0.172, forward: 0.25, aspect: 1.6 } as const;
+/**
+ * The eye camera: its field of view (degrees, top to bottom), its near plane, where it sits in his head's frame
+ * (y up, z forward; metres), its shape, and how far his eyes turn in his head beyond where it points (radians).
+ */
+export const EYE = { fov: 62, near: 0.07, up: 0.172, forward: 0.25, aspect: 1.6, turn: 0.4 } as const;
 
 /** What the eyes need of the scene. */
 export interface EyesHost {
@@ -52,6 +55,9 @@ export interface EyesHost {
 const FLIP = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI);
 const scratch = new Vector3();
 const scale = new Vector3();
+const ahead = new Vector3();
+const turn = new Quaternion();
+const part = new Quaternion();
 
 interface Surface {
   canvas: HTMLCanvasElement;
@@ -139,6 +145,32 @@ export class Eyes {
     head.matrixWorld.decompose(scratch, this.camera.quaternion, scale);
     // A camera looks along its own −z; his head faces +z.
     this.camera.quaternion.multiply(FLIP);
+    this.camera.updateMatrixWorld();
+  }
+
+  private gazing = 0;
+  private readonly target = new Vector3();
+
+  /**
+   * After `pose`: his eyes turn in his head towards what he attends to (a point, scene coordinates), as far as
+   * eyes do (EYE.turn). His head turns most of the way and stops (knight.ts holds its pitch and yaw to what a
+   * neck does); his eyes go the rest, so the page under his pen and his hand on it are in view, and the dog at
+   * his feet. Eased in and out over a moment (at once without motion, or with no time passed).
+   */
+  gaze(on: boolean, x: number, y: number, z: number, dt: number, motion: boolean): void {
+    if (on) this.target.set(x, y, z);
+    this.gazing = motion && dt > 0 ? this.gazing + ((on ? 1 : 0) - this.gazing) * (1 - Math.exp(-dt * 6)) : on ? 1 : 0;
+    if (this.gazing < 0.005) return;
+    ahead.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    scratch.copy(this.target).sub(this.camera.position);
+    const far = scratch.length();
+    if (far < 0.12) return;
+    scratch.divideScalar(far);
+    const angle = ahead.angleTo(scratch);
+    if (angle < 1e-4) return;
+    turn.setFromUnitVectors(ahead, scratch);
+    part.identity().slerp(turn, Math.min(1, EYE.turn / angle) * this.gazing);
+    this.camera.quaternion.premultiply(part);
     this.camera.updateMatrixWorld();
   }
 

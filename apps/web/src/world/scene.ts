@@ -1055,6 +1055,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
   }
   const eyes = new Eyes(tier.eyes, { renderer, webgpu: backend === "webgpu", canvas, draw: drawFrom, redraw: () => renderer.render(scene, camera) });
+  /** His eyes at his visor, turned with his head, and on towards what he attends to as far as eyes turn. */
+  function poseEyes(dt: number, motion: boolean): void {
+    eyes.pose(knight.head);
+    eyes.gaze(attention.on && !walker.moving, attention.x - origin[0], attention.z, -(attention.y - origin[1]), dt, motion);
+  }
   const sightEye: SightEye = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, fov: 1, aspect: EYE.aspect };
   const wildSpot = { x: 0, y: 0 };
   /** The weather as it's drawn, in a word. */
@@ -1148,7 +1153,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (shot.settled < 8 && now - shot.since < 4000) return;
       eyes.poseAt(p.x - origin[0], groundAt(p.x, p.y) + EYE_HEIGHT, -(p.y - origin[1]), p.heading, p.pitch);
       from = shot.place;
-    } else eyes.pose(knight.head);
+    } else if (!eyes.wanted) poseEyes(0, false);
     shots.shift();
     const shut = !from && eyes.shut > 0.5;
     const words = sightWords(from);
@@ -1173,7 +1178,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   if (trace) {
     (globalThis as { __sandboxEyes?: unknown }).__sandboxEyes = {
       eyes,
-      words: () => (eyes.wanted || eyes.pose(knight.head), sightWords(null)),
+      words: () => (eyes.wanted || poseEyes(0, false), sightWords(null)),
       frame: async (place?: EyesPlace, width = 768) => {
         dirty = true;
         const shot = await new Promise<EyesShot | null>((resolve) => shots.push({ place: place ?? null, width, resolve, since: 0, settled: 0, back: null }));
@@ -1669,7 +1674,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // His eyes: at his visor, turned with his head, when something shows them. Swapped, his view is the main one
     // (through the post effects, at the main view's rate) and the usual view goes to the panel.
     eyes.shut = knight.eyesShut;
-    if (eyes.wanted) eyes.pose(knight.head);
+    if (eyes.wanted) poseEyes(renderDt, motion);
     if (eyes.swapped) {
       eyes.outside.position.copy(camera.position);
       eyes.outside.quaternion.copy(camera.quaternion);
@@ -1936,7 +1941,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         return { shut: eyes.shut, swapped: eyes.swapped, open: eyes.isOpen, frames: eyes.cost.frames, ms: eyes.cost.ms };
       },
       words() {
-        if (!eyes.wanted) eyes.pose(knight.head);
+        if (!eyes.wanted) poseEyes(0, false);
         return sightWords(null);
       },
       shot(request) {

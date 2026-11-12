@@ -1,6 +1,6 @@
 import type { WorldNode } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { dot, float, fract, mix, smoothstep, uniform, vec3, vertexColor } from "three/tsl";
+import { dot, float, fract, mix, smoothstep, uniform, varying, vec3, vertexColor } from "three/tsl";
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -765,7 +765,11 @@ export class Keep {
     // in spring it's thin and fresh until it fills. Each facet is its own leaf-mass: its own shade (the mesher
     // varies every face a little) is what orders it.
     const leaf = vertexColor().rgb;
-    const each = fract(leaf.r.mul(91.7).add(leaf.g.mul(37.3)).add(leaf.b.mul(57.1)).mul(13.7));
+    // (One number a facet: its shade taken flat, from one corner. A facet low to the ground, as a potted plant's
+    // is, has its baked shade deepening across it; read smoothly, every pixel of it was its own leaf-mass with
+    // its own season, and the plant was a speckle of holes and rust in autumn.)
+    const facet = (varying(vertexColor().rgb) as unknown as { setInterpolation(type: string): typeof leaf }).setInterpolation("flat");
+    const each = fract(facet.r.mul(91.7).add(facet.g.mul(37.3)).add(facet.b.mul(57.1)).mul(13.7));
     const turned = smoothstep(each.mul(0.6), each.mul(0.6).add(0.4), this.crownTurn);
     // (The baked shade under the crown stays: the autumn colour takes the facet's own lightness.)
     const light = dot(leaf, vec3(0.3, 0.6, 0.1)).div(0.45).clamp(0.4, 1.3);
