@@ -23,6 +23,9 @@ import { boardView } from "./views/board.ts";
 import { chatActivityPill, chatsForPalette, chatView, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
 import { keyboardOpen } from "./lib/viewport.ts";
+import { conversationFromHash } from "@galahad/core/notify-payload";
+import { readOpenMessage } from "./lib/push.ts";
+import { syncPush } from "./views/notifications.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
@@ -327,7 +330,26 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     }
   }
 
+  // A notification named a kept chat in the address ("#/chat?c=…"): that's the chat to show.
+  const chatFromAddress = (): void => {
+    const conversation = conversationFromHash(location.hash);
+    if (conversation) pending = { route: "chat", opts: { conversation } };
+  };
+  window.addEventListener("hashchange", chatFromAddress, { signal: lifetime.signal });
   window.addEventListener("hashchange", render, { signal: lifetime.signal });
+  // A notification tapped while the app is open: the service worker says where to go. And when the browser
+  // replaces this device's push subscription, the node is handed the new one.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener(
+      "message",
+      (event: MessageEvent) => {
+        const open = readOpenMessage(event.data);
+        if (open) ctx.navigate(open.route, open.conversation ? { conversation: open.conversation } : {});
+        else if ((event.data as { type?: string } | null)?.type === "galahad:push-changed") void syncPush(base.api);
+      },
+      { signal: lifetime.signal },
+    );
+  }
 
   // ---------- More sheet (phones) ----------
   function openMore(): void {
@@ -474,6 +496,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   }
 
   // ---------- go ----------
+  chatFromAddress();
   const initial = routeFromHash() ?? (visible.find((r) => r.id === lastRoute())?.id ?? "overview");
   if (location.hash !== `#/${initial}`) history.replaceState(null, "", `#/${initial}`);
   render();

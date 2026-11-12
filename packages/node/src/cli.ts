@@ -33,6 +33,7 @@ import type { EffortLevel, TrialRunsView } from "@galahad/core";
 import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
+import { notifyCommand } from "./notify-cli.ts";
 
 const VERSION = "0.1.0";
 
@@ -178,6 +179,18 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
                                   the allowlist, and what he fixed lately
   notices [--all] | notice dismiss <key>
 
+Notifications (he comes to you: Web Push to your own paired devices, encrypted to each browser)
+  notify                          the devices he can reach, what he tells you, quiet hours, the day's limit, and
+                                  what was sent today. A device is turned on from that device: the app's
+                                  Settings → Notifications (on an iPhone, from the Home Screen app)
+  notify test [device]            one test notification, to every device or the one named
+  notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question (on), journal (off)
+  notify quiet [on|off|HH:MM-HH:MM] [--tz Europe/Copenhagen]
+                                  quiet hours (22:00-07:00, Denmark's time): everything but an alert waits,
+                                  then one message says what waited
+  notify limit <n>                at most n a day (12); when it's reached, one last message says so
+  notify off <device>             remove a device's subscription
+
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
   connector ls | connector tools <id> | connector rm <id>
   connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json
@@ -220,7 +233,10 @@ Maintenance
   rebuild                         re-materialize the mind from its log and verify the digest
 
 Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|file and --advertise <tailnet ip>
-Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>, GALAHAD_ARCHIVE_DIR=<absolute path>, GALAHAD_ARCHIVE=off`;
+Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>, GALAHAD_ARCHIVE_DIR=<absolute path>, GALAHAD_ARCHIVE=off,
+  GALAHAD_BACKUP_DIR=<absolute path> (where the doctor looks for backups of the mind),
+  GALAHAD_PUSH_CONTACT=mailto:…|https://… (who operates this node, as push services are told; default names nobody),
+  GALAHAD_PUSH_HOSTS=host,*.host (push services to allow beyond Apple, Google, Mozilla and Microsoft)`;
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
@@ -1731,6 +1747,9 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "compute":
       await computeCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "notify":
+      await notifyCommand(new Admin(home), sub, rest, flags);
       return;
 
     case "doctor": {

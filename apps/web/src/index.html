@@ -900,6 +900,17 @@
       .doctor-foot p { margin: 0; min-width: 200px; }
       .doctor-note.error { color: var(--danger); font-size: var(--fs-13); }
       @media (pointer: coarse) { .doctor-all > summary { min-height: 44px; display: flex; align-items: center; } }
+
+      /* Settings → Notifications: this device's switch, what he tells you, when he stays silent. */
+      .notify-row { gap: var(--sp-3); }
+      .notify-row.wrap { flex-wrap: wrap; }
+      .notify-row > .switch { flex: 1 1 240px; min-width: 0; align-items: flex-start; }
+      .notify-row > .switch .track { margin-top: 2px; }
+      .notify-hours { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+      .notify-time { width: 112px; font-variant-numeric: tabular-nums; }
+      .notify-count { width: 84px; font-variant-numeric: tabular-nums; }
+      .notify-row .error, .notify-row + .item .error { font-size: var(--fs-12); color: var(--danger); }
+      @media (pointer: coarse) { .notify-row > .switch { min-height: 44px; } }
       .aside-answer { min-height: 48px; }
       .aside-answer:empty { display: none; }
       .aside-answer > .md > :first-child { margin-top: 0; }

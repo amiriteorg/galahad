@@ -15,6 +15,8 @@
     "./identity": "./src/identity.ts",
     "./journal": "./src/journal.ts",
     "./life": "./src/life.ts",
+    "./notify": "./src/notify.ts",
+    "./notify-payload": "./src/notify-payload.ts",
     "./pairing": "./src/pairing.ts",
     "./qr": "./src/qr.ts",
     "./request-auth": "./src/request-auth.ts",

@@ -1,5 +1,8 @@
+import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, type NotifyPayload, notifyUrl, readNotifyPayload } from "@galahad/core/notify-payload";
+
 /*
- * Service worker: keeps the app shell available offline.
+ * Service worker: keeps the app shell available offline, and shows what Galahad
+ * pushes to this device (below the caching: "He comes to you").
  * The page itself comes from the network first (it carries all the CSS), the
  * cached copy only when the network is slow or gone. Other shell assets are served
  * from cache and refreshed in the background (stale-while-revalidate).
@@ -13,7 +16,7 @@
  * caching a new version drops the old one.
  */
 
-const VERSION = "galahad-shell-v6";
+const VERSION = "galahad-shell-v7";
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 /** Cached on first use rather than on install. */
@@ -30,12 +33,32 @@ interface FetchEventLike extends ExtendableEventLike {
   respondWith(response: Response | Promise<Response>): void;
 }
 
+/** A push as it arrives: its data, if the push service carried any (decrypted by the browser). */
+interface PushEventLike extends ExtendableEventLike {
+  data: { json(): unknown } | null;
+}
+
+interface NotificationEventLike extends ExtendableEventLike {
+  notification: { close(): void; data: unknown };
+}
+
+/** A page of the app that's open, as the worker sees it. */
+interface WindowClientLike {
+  url?: string;
+  visibilityState?: string;
+  focus?(): Promise<unknown>;
+  postMessage(message: unknown): void;
+}
+
 interface ServiceWorkerScope {
   location: Location;
-  addEventListener(type: "install" | "activate", listener: (event: ExtendableEventLike) => void): void;
+  addEventListener(type: "install" | "activate" | "pushsubscriptionchange", listener: (event: ExtendableEventLike) => void): void;
   addEventListener(type: "fetch", listener: (event: FetchEventLike) => void): void;
+  addEventListener(type: "push", listener: (event: PushEventLike) => void): void;
+  addEventListener(type: "notificationclick", listener: (event: NotificationEventLike) => void): void;
   skipWaiting(): Promise<void>;
-  clients: { claim(): Promise<void>; matchAll(options: { type: "window" }): Promise<{ postMessage(message: unknown): void }[]> };
+  registration: { showNotification(title: string, options: Record<string, unknown>): Promise<void> };
+  clients: { claim(): Promise<void>; matchAll(options: { type: "window"; includeUncontrolled?: boolean }): Promise<WindowClientLike[]>; openWindow(url: string): Promise<unknown> };
 }
 
 const sw = self as unknown as ServiceWorkerScope;
@@ -146,3 +169,80 @@ async function versioned(event: FetchEventLike, url: URL): Promise<Response> {
 
 /** Two versions of one file: the same path once a content hash in the name ("so-101.1a2b3c4d.bin") is set aside. */
 const sameFile = (a: string, b: string): boolean => a.replace(/\.[0-9a-f]{8}(?=\.[a-z]+$)/, "") === b.replace(/\.[0-9a-f]{8}(?=\.[a-z]+$)/, "");
+
+/*
+ * He comes to you. The node pushes a small JSON payload, encrypted to this browser (the push
+ * service can't read it): a short title, one line, and where it opens. It's read strictly
+ * (notify-payload.ts): anything that isn't one of ours is shown as a plain "something needs
+ * you", never as whatever it says, and never as nothing (a browser requires a push to show).
+ * A tap opens the app at that place: in the window that's already open if there is one.
+ */
+
+/** What a notification remembers for its tap: one of the app's places, and a kept chat for the chat page. */
+interface OpenTarget {
+  open: NotifyOpen;
+  conversation?: string;
+}
+
+function readTarget(data: unknown): OpenTarget {
+  const d = (data && typeof data === "object" ? data : {}) as { open?: unknown; conversation?: unknown };
+  const open = typeof d.open === "string" && (NOTIFY_OPENS as readonly string[]).includes(d.open) ? (d.open as NotifyOpen) : "inbox";
+  const conversation = open === "chat" && typeof d.conversation === "string" && isConversationId(d.conversation) ? d.conversation : undefined;
+  return { open, ...(conversation ? { conversation } : {}) };
+}
+
+async function showPush(event: PushEventLike): Promise<void> {
+  let payload: NotifyPayload | null = null;
+  try {
+    payload = event.data ? readNotifyPayload(event.data.json()) : null;
+  } catch {
+    payload = null;
+  }
+  const shown = payload ?? GENERIC_NOTIFICATION;
+  await sw.registration.showNotification(shown.title, {
+    body: shown.body,
+    // The same thing told again replaces its notification, and still lets you know.
+    tag: shown.tag,
+    renotify: true,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    data: { open: shown.open, ...(shown.conversation ? { conversation: shown.conversation } : {}) },
+  });
+}
+
+async function openFromNotification(data: unknown): Promise<void> {
+  const target = readTarget(data);
+  const pages = (await sw.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((page) => {
+    try {
+      return !page.url || new URL(page.url).origin === sw.location.origin;
+    } catch {
+      return false;
+    }
+  });
+  // The page you're looking at, else any that's open.
+  const page = pages.find((p) => p.visibilityState === "visible") ?? pages[0];
+  if (page) {
+    page.postMessage({ type: "galahad:open", open: target.open, conversation: target.conversation ?? null });
+    try {
+      await page.focus?.();
+      return;
+    } catch {
+      /* it couldn't be brought forward: open the place in a window of its own */
+    }
+  }
+  await sw.clients.openWindow(notifyUrl(target));
+}
+
+sw.addEventListener("push", (event) => {
+  event.waitUntil(showPush(event));
+});
+
+sw.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(openFromNotification(event.notification.data));
+});
+
+/** The browser replaced this device's subscription: an open page hands the new one to the node (the worker holds no key to sign with). */
+sw.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(sw.clients.matchAll({ type: "window" }).then((pages) => pages.forEach((page) => page.postMessage({ type: "galahad:push-changed" }))));
+});

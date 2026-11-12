@@ -8,6 +8,7 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { deviceNamed, notifyCommand } from "../src/notify-cli.ts";
 import { DEFAULT_PUSH_CONTACT } from "../src/push-send.ts";
 import { type StandInBrowser, standInPushService } from "./push-standin.ts";
 
@@ -559,6 +560,50 @@ describe("a chat turn nobody is watching", () => {
     await Bun.sleep(50);
     await look();
     expect(phone.browser.received).toHaveLength(before);
+  });
+});
+
+describe("from a terminal: galahad notify", () => {
+  const api = { call: <T,>(name: RouteName, input?: unknown) => json<T>(admin(name, input)) };
+  const run = async (sub?: string, rest: string[] = [], flags: Record<string, string | boolean> = {}) => {
+    const lines: string[] = [];
+    await notifyCommand(api, sub, rest, flags, (line) => lines.push(line));
+    return lines.join("\n");
+  };
+
+  test("status: who he can reach, what he tells you, quiet hours, the limit, what was sent today: never an endpoint", async () => {
+    const text = await run();
+    expect(text).toContain("Notifications from ultra");
+    expect(text).toMatch(/phone\s+through a push service you allowed/);
+    expect(text).toMatch(/on\s+needs-you\s+Something needs you/);
+    expect(text).toMatch(/off\s+journal\s+His journal is written/);
+    expect(text).toContain("Quiet hours  off: he tells you whenever it happens");
+    expect(text).toMatch(/The day's limit {2}\d+ of 12 sent today/);
+    expect(text).toMatch(/needs-you\s+to phone, tablet/);
+    for (const b of [phone.browser, tablet.browser]) expect(text).not.toContain(new URL(b.subscription.endpoint).pathname);
+  });
+
+  test("kinds, quiet hours and the limit are set in words, and checked before anything is sent", async () => {
+    expect(await run("kinds", ["journal", "on", "finished", "off"])).toMatch(/on\s+journal/);
+    expect((await view()).prefs.kinds).toMatchObject({ journal: true, finished: false });
+    await run("kinds", ["journal", "off", "finished", "on"]);
+    expect(await run("quiet", ["21:30-06:45"], { tz: "Europe/Copenhagen" })).toBe("Quiet hours: 21:30 to 06:45, Europe/Copenhagen time: everything but an alert waits, then one message says what waited.");
+    expect(await run("quiet", ["off"])).toBe("Quiet hours: off: he tells you whenever it happens.");
+    expect(await run("limit", ["20"])).toContain("At most 20 a day");
+    await run("limit", ["12"]);
+    await expect(run("kinds", ["adverts", "on"])).rejects.toThrow("isn't a kind");
+    await expect(run("kinds", ["journal"])).rejects.toThrow("then on or off");
+    await expect(run("quiet", ["10pm-7am"])).rejects.toThrow("two times of day");
+    await expect(run("limit", ["0"])).rejects.toThrow("from 1 to 50");
+    await expect(run("dance")).rejects.toThrow("usage: galahad notify");
+  });
+
+  test("a device is named by its name or the start of its id, never guessed between two", async () => {
+    const devices = (await view()).devices;
+    expect(deviceNamed(devices, "phone").device).toBe(phone.id);
+    expect(deviceNamed(devices, phone.id.slice(0, 10)).name).toBe("phone");
+    expect(() => deviceNamed(devices, "laptop")).toThrow("no device named");
+    expect(() => deviceNamed([...devices, { ...devices[0]!, device: `${devices[0]!.device}x` }], "phone")).toThrow("matches 2 devices");
   });
 });
 

@@ -10,6 +10,7 @@ import { confirmAction } from "../ui/dialog.ts";
 import { h, replace, type Scope } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { SCOPE_INFO } from "./fleet.ts";
+import { dropBrowserSubscription, notificationsSection } from "./notifications.ts";
 
 /* Appearance, his dog's name, this device's identity and permissions, what's kept here, and the way out. */
 
@@ -25,6 +26,8 @@ export async function forgetThisBrowser(): Promise<void> {
     confirmLabel: "Forget this browser",
   });
   if (!ok) return;
+  // Its push subscription goes with it (the node drops its copy when the push service says it's gone).
+  await dropBrowserSubscription();
   await forgetIdentity();
   location.hash = "";
   location.reload();
@@ -198,6 +201,8 @@ export const settingsView: View = (root, ctx, { scope }) => {
             ),
           )
         : null,
+      // He comes to you: notifications on this device, what he tells you and when he stays silent.
+      notificationsSection(ctx, scope),
       dogSection(ctx, scope),
       section(
         "This device",
@@ -246,6 +251,7 @@ export const settingsView: View = (root, ctx, { scope }) => {
           { class: "card rows" },
           h("div", { class: "item" }, icon("key", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "A device key"), h("div", { class: "subtle tiny" }, "In IndexedDB, created non-extractable: it can sign, but nothing can read it out, not even this page."))),
           h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page, chat role, what Enter does while he works, which kept chat you had open (its id, never a word of it), and the SANDBOX's choices (its map, his eyes, the sky you preview, its sound and volume, and when you last looked in, so he knows to greet you), in localStorage. Nothing else."))),
+          h("div", { class: "item" }, icon("bell", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "A push subscription, once you turn notifications on"), h("div", { class: "subtle tiny" }, "Made by your browser, with keys only it can read with; the node is handed its address and public key, as this device's. Turning notifications off removes it in both places."))),
           h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chats: not on this device"), h("div", { class: "subtle tiny" }, "Kept privately on the node you talk to, with what you queued behind them, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept."))),
         ),
       ),
