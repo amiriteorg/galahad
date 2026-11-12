@@ -6,6 +6,7 @@ import { relativeTime } from "../lib/time.ts";
 import { badge, busy, button, callout, empty, errorState, field, pageHead, section, skeletonBlock, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
+import { icon } from "../ui/icons.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { trustBadge } from "./memory.ts";
@@ -44,7 +45,7 @@ function words(doc: SkillDoc | null): HTMLElement[] {
 
 /** Where a version came from: who wrote it, from what, and what its trust means. */
 function origin(v: SkillVersionView): HTMLElement {
-  return h("div", { class: "skill-origin" }, h("div", { class: "meta" }, trustBadge(v.trust), h("span", {}, originWords(v)), when(v.at)), h("p", { class: "tiny subtle" }, trustWords(v)));
+  return h("div", { class: "skill-origin" }, h("p", {}, originWords(v)), h("div", { class: "meta" }, trustBadge(v.trust), when(v.at)), h("p", { class: "tiny subtle" }, trustWords(v)));
 }
 
 async function act(ctx: Ctx, path: string, body: unknown, done: string): Promise<boolean> {
@@ -86,7 +87,13 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
   const inputs: Record<keyof SkillForm, HTMLInputElement | HTMLTextAreaElement> = { title, when: whenTo, steps, proof, pitfalls };
   for (const key of Object.keys(inputs) as (keyof SkillForm)[]) inputs[key].value = form[key];
   const status = h("div", { role: "status" });
-  const save = button(existing ? "Save a new version" : "Save skill", { variant: "primary", type: "submit", icon: "check" });
+  const save = button(existing ? "Save a new version" : "Save skill", { variant: "primary", icon: "check", onClick: () => body.requestSubmit() });
+  /** What's wrong, said where it's seen: beside the buttons, with the field marked. */
+  const say = (tone: "warn" | "danger", message: string, at?: keyof SkillForm): void => {
+    for (const key of Object.keys(inputs) as (keyof SkillForm)[]) inputs[key].toggleAttribute("aria-invalid", key === at);
+    replace(status, callout(tone, message));
+    status.scrollIntoView({ block: "nearest" });
+  };
   const body = h(
     "form",
     {
@@ -94,11 +101,7 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
       onsubmit: (event: Event) => {
         event.preventDefault();
         const read = docFromForm({ title: title.value, when: whenTo.value, steps: steps.value, proof: proof.value, pitfalls: pitfalls.value });
-        if ("problem" in read) {
-          replace(status, callout("warn", read.problem));
-          inputs[read.field].focus();
-          return;
-        }
+        if ("problem" in read) return say("warn", read.problem, read.field);
         void busy(save, async () => {
           try {
             await ctx.api.post("/api/skills", { ...(existing ? { id: existing.id } : {}), doc: read.doc });
@@ -106,7 +109,7 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
             changed();
             toast(existing ? "Saved as a new version, yours" : "Saved: it's in use on every node", { tone: "ok" });
           } catch (error) {
-            replace(status, callout(error instanceof ApiError && error.status === 422 ? "warn" : "danger", errorMessage(error)));
+            say(error instanceof ApiError && error.status === 422 ? "warn" : "danger", errorMessage(error));
           }
         });
       },
@@ -118,23 +121,25 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
     field("Pitfalls (optional)", pitfalls),
     existing && existing.by !== "owner" ? callout("quiet", `This version is by ${skillAuthor(existing.by)}. Saving makes the skill yours: he uses it, and never changes what you wrote. The earlier versions stay in its history.`) : null,
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
   );
   const sheet = openSheet({
     title: existing ? "Edit this skill" : "Write a skill",
     description: "Yours: he's given it as a note when it bears on his work. Plain words only; no keys or passwords, they belong in the vault.",
     size: "wide",
     body,
+    footer: [button("Cancel", { onClick: () => sheet.close() }), save],
     initialFocus: () => title,
   });
 }
 
 /* ---------- one skill, as a page ---------- */
 
-async function openSkill(ctx: Ctx, id: string): Promise<void> {
+async function openSkill(ctx: Ctx, id: string, title: string): Promise<void> {
   const own = ctx.can("fleet:admin");
   const body = h("div", { class: "skill-page", "aria-busy": "true" }, skeletonBlock(220));
-  const sheet = openSheet({ title: "Skill", size: "wide", body });
+  // The sheet's own footer starts with Close, so it's there (and in the tab order) before the skill has loaded.
+  const sheet = openSheet({ title, size: "wide", body, footer: button("Close", { onClick: () => sheet.close() }) });
+  const heading = sheet.el.querySelector(".sheet-head h2");
   let shown = "";
 
   async function load(): Promise<void> {
@@ -153,19 +158,15 @@ async function openSkill(ctx: Ctx, id: string): Promise<void> {
     const waiting = waitingVersion(skill);
     const head = skill.history.find((v) => v.id === skill.head);
     const state = stateBadge(skill);
-    const heading = nextId("skill");
+    // Its title is the sheet's (a rollback or an edit may have changed it).
+    if (heading) heading.textContent = skill.title;
     const again = async (work: Promise<boolean>): Promise<void> => {
       if (await work) void load();
     };
     keepPlace(body, () =>
       replace(
         body,
-        h(
-          "header",
-          { class: "skill-head" },
-          h("h3", { id: heading }, skill.title),
-          h("div", { class: "meta" }, badge(state.label, state.tone), skill.locked ? badge("locked", "neutral", "shield") : null, h("span", {}, skillRecordLine(skill))),
-        ),
+        h("header", { class: "skill-head" }, h("div", { class: "meta" }, badge(state.label, state.tone), version ? trustBadge(version.trust) : null, skill.locked ? badge("locked", "neutral", "shield") : null, h("span", {}, skillRecordLine(skill)))),
         ...words(version?.doc ?? null),
         version ? h("section", { class: "skill-part" }, h("h4", {}, "Where it came from"), origin(version)) : null,
         waiting && waiting.id !== version?.id
@@ -203,13 +204,9 @@ async function openSkill(ctx: Ctx, id: string): Promise<void> {
             ...[...skill.history].reverse().map((v) =>
               h(
                 "li",
-                {},
-                h("span", { class: "tnum" }, `v${v.n}`),
-                h("span", { class: "grow wrap-anywhere" }, v.doc?.title ?? "(unreadable here)"),
-                v.id === skill.offered ? badge("in use", "ok") : v.id === skill.pending ? badge("waits for you", "warn") : null,
-                trustBadge(v.trust),
-                h("span", {}, `by ${skillAuthor(v.by)}`),
-                when(v.at),
+                { class: "skill-version" },
+                h("span", { class: "grow wrap-anywhere" }, h("span", { class: "tnum subtle" }, `v${v.n} `), v.doc?.title ?? "(unreadable here)"),
+                h("span", { class: "meta" }, v.id === skill.offered ? badge("in use", "ok") : v.id === skill.pending ? badge("waits for you", "warn") : null, trustBadge(v.trust), h("span", {}, `by ${skillAuthor(v.by)}`), when(v.at)),
               ),
             ),
           ),
@@ -217,7 +214,6 @@ async function openSkill(ctx: Ctx, id: string): Promise<void> {
       ),
     );
     body.setAttribute("aria-busy", "false");
-    body.setAttribute("aria-labelledby", heading);
     replace(
       sheet.foot,
       ctx.can("mind:write") && skill.state !== "retired" ? button("Edit", { icon: "edit", onClick: () => (sheet.close(), openSkillEditor(ctx, { id, doc: version?.doc ?? null, by: version?.by ?? "" })) }) : null,
@@ -271,7 +267,14 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
         "header",
         { class: "skill-head" },
         h("h3", { id: heading }, waiting.doc?.title ?? "(unreadable here)"),
-        h("div", { class: "meta" }, badge(revision ? "a new version waits for you" : "waits for you", "warn"), revision ? h("span", {}, `of “${skill.title}”, which stays in use until you decide`) : null),
+        h(
+          "div",
+          { class: "meta" },
+          badge(revision ? "a new version waits for you" : "waits for you", "warn"),
+          trustBadge(waiting.trust),
+          h("span", {}, `by ${skillAuthor(waiting.by)}`),
+          revision ? h("span", {}, `· of “${skill.title}”, which stays in use until you decide`) : null,
+        ),
       ),
       ...words(waiting.doc),
       h("section", { class: "skill-part" }, h("h4", {}, "Where it came from"), origin(waiting)),
@@ -294,7 +297,7 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
     const state = stateBadge(skill);
     return h(
       "button",
-      { class: "item item-button", type: "button", "data-skill": skill.id, onclick: () => void openSkill(ctx, skill.id) },
+      { class: "item item-button", type: "button", "data-skill": skill.id, onclick: () => void openSkill(ctx, skill.id, skill.title) },
       h(
         "div",
         { class: "grow" },
@@ -392,7 +395,12 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
         replace(
           retiredSlot,
           groups.retired.length
-            ? h("details", { class: "disclosure skills-retired" }, h("summary", {}, `Retired (${groups.retired.length}): kept, never offered`), h("div", { class: "card" }, h("div", { class: "rows" }, ...groups.retired.map(row))))
+            ? h(
+                "details",
+                { class: "card disclosure skills-retired" },
+                h("summary", {}, icon("chevron-right", { size: 14, class: "chev" }), h("span", { class: "grow" }, `Retired (${groups.retired.length})`), h("span", { class: "tiny subtle" }, "kept with every version, offered to nobody")),
+                h("div", { class: "rows" }, ...groups.retired.map(row)),
+              )
             : null,
         );
       });
