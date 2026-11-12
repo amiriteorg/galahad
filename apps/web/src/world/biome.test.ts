@@ -4,7 +4,7 @@ import { TRAIL } from "./hearth-plan.ts";
 import { built } from "./path.ts";
 import { afield, isleAt, marshAt, ridgeAt, SCARP, scarpAt, STREAM_STEP, streamAt, streamLevel, uplandAt } from "./relief.ts";
 import { seasonFor, seasonState } from "./season.ts";
-import { BASE_FLATS, BIG, CHUNK, chunkSamples, DETAIL_KINDS, FLOWER_KINDS, heightAt, LAYERS, onTrail, REED_KINDS, SEED, STRIDE, TREE_KINDS, WATER_LEVEL, waterAt } from "./terrain.ts";
+import { BASE_FLATS, BIG, CHUNK, chunkSamples, DETAIL_KINDS, fineSurface, FLOWER_KINDS, heightAt, LAYERS, onTrail, REED_KINDS, SEED, STRIDE, TREE_KINDS, WATER_LEVEL, waterAt } from "./terrain.ts";
 
 /*
  * The land's climate and biomes, the bigger landforms beyond the home ground,
@@ -287,6 +287,48 @@ describe("what grows follows the biome, and never the date", () => {
     expect(lilies).toBeGreaterThan(10);
     expect(trees.reduce((s, v) => s + v, 0)).toBeGreaterThan(2);
     expect(share(trees, TREE_KINDS.indexOf("alder"), TREE_KINDS.indexOf("willow"))).toBeGreaterThan(0.5);
+  });
+
+  test("every triangle of a chunk knows its biomes, and what's small is of the ground it stands on", () => {
+    const N = BIOMES.length;
+    const [hx, hy] = inside("heath", 46);
+    for (const [x, y] of [[hx, hy], inside("marsh", 12), [0, -70]] as const) {
+      const s = chunkAt(x, y);
+      const fine = fineSurface(SEED, s, built);
+      for (const surface of [s, fine]) {
+        expect(surface.biomes.length).toBe(surface.cells * surface.cells * 2 * N);
+        const n = surface.cells + 1;
+        for (let q = 0; q < surface.cells * surface.cells * 2; q++) {
+          let sum = 0;
+          for (let k = 0; k < N; k++) sum += surface.biomes[q * N + k]!;
+          // (Shares as bytes: they sum to one, give or take their rounding.)
+          expect(Math.abs(sum - 255)).toBeLessThanOrEqual(N);
+          // A face well under the lake is the lake's floor and nothing else.
+          const i = (q >> 1) % surface.cells;
+          const j = Math.floor((q >> 1) / surface.cells);
+          const deepest = Math.max(surface.heights[j * n + i]!, surface.heights[j * n + i + 1]!, surface.heights[(j + 1) * n + i]!, surface.heights[(j + 1) * n + i + 1]!);
+          if (deepest < WATER_LEVEL - 1.2) expect(surface.biomes[q * N]).toBe(255);
+        }
+      }
+    }
+    // On a heath the heather stands on triangles that are heath, never on one with none of it.
+    const heath = chunkAt(hx, hy);
+    const fine = fineSurface(SEED, heath, built);
+    const flowers = heath.layers.flowers!;
+    let heather = 0;
+    for (let i = 0; i < flowers.length; i += STRIDE) {
+      if (flowers[i + 5] !== FLOWER_KINDS.indexOf("heather")) continue;
+      heather++;
+      const u = (flowers[i]! - heath.cx * CHUNK) / (CHUNK / fine.cells);
+      const v = (flowers[i + 1]! - heath.cy * CHUNK) / (CHUNK / fine.cells);
+      const ci = Math.min(fine.cells - 1, Math.floor(u));
+      const cj = Math.min(fine.cells - 1, Math.floor(v));
+      // (One of its cell's two triangles has a share of heath or of pinewood, where heather also grows.)
+      const at = (cj * fine.cells + ci) * 2 * N;
+      const share = (k: number) => fine.biomes[at + k]! + fine.biomes[at + N + k]!;
+      expect(share(BIOMES.indexOf("heath")) + share(BIOMES.indexOf("pinewood")) + share(BIOMES.indexOf("outcrop"))).toBeGreaterThan(0);
+    }
+    expect(heather).toBeGreaterThan(200);
   });
 
   test("nothing solid grows on the trail he walks, nor anything at all in a stream's pool", () => {

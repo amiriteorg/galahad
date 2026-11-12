@@ -1,4 +1,4 @@
-import { BIOMES, biomeWeights, BIRCHWOOD, type Climate, climateNoises, emptyClimate, HEATH, LAWN, MARSH, MEADOW, moistureOf, OUTCROP, PINEWOOD, SHORE, WATER, WOODLAND } from "./biome.ts";
+import { BIOMES, BIRCHWOOD, climateLocal, dunesOf, emptyClimate, HEATH, kindNoise, LAWN, marginNoise, MARSH, MEADOW, moistureBase, moistureFrom, OUTCROP, PINEWOOD, rainNoise, SHORE, WATER, weightsFrom, WOODLAND, woodsOf } from "./biome.ts";
 import { TRAIL } from "./hearth-plan.ts";
 import { hash2, hash3, simplex, smoothstep } from "./noise.ts";
 import { type Flat, flatDistance, flatMix, heightAt, outcrop, SITE_FLATS, streamAt, streamLevel, WATER_LEVEL } from "./relief.ts";
@@ -162,28 +162,38 @@ export interface Surface {
    * marsh. The season tints the ground by them.
    */
   cover: Uint8Array;
+  /**
+   * Each triangle's biomes, a byte a biome (as BIOMES, 0 to 255: their shares of it). What's small grows by them, so
+   * a flower is of the ground it stands on.
+   */
+  biomes: Uint8Array;
 }
 
-/** A chunk's climate, sampled at its base grid's corners (row by row from its south-west corner). */
+/**
+ * A chunk's climate, sampled at its base grid's corners (row by row from its south-west corner): the few numbers its
+ * faces and its growth need of it (biome.ts says what each is).
+ */
 export interface ChunkClimate {
+  /** The moisture's share that doesn't depend on a point's own height and slope (biome.ts' moistureBase). */
+  moist: Float32Array;
+  /** Where the woods are (woodsOf) and of which kind; where dunes lie (dunesOf). */
   woods: Float32Array;
   kind: Float32Array;
-  rain: Float32Array;
-  margin: Float32Array;
+  dunes: Float32Array;
   rockline: Float32Array;
   crag: Float32Array;
+  /** How far from a stream's bed. */
   stream: Float32Array;
-  basin: Float32Array;
   ridge: Float32Array;
   upland: Float32Array;
-  marsh: Float32Array;
   lift: Float32Array;
+  /** The slope, and the hollow. */
   gx: Float32Array;
   gy: Float32Array;
   hollow: Float32Array;
 }
 
-const CLIMATE_FIELDS = ["woods", "kind", "rain", "margin", "rockline", "crag", "stream", "basin", "ridge", "upland", "marsh", "lift", "gx", "gy", "hollow"] as const;
+const CLIMATE_FIELDS = ["moist", "woods", "kind", "dunes", "rockline", "crag", "stream", "ridge", "upland", "lift", "gx", "gy", "hollow"] as const;
 
 export interface ChunkSamples extends Surface {
   cx: number;
@@ -278,12 +288,34 @@ function chunkClimate(seed: number, cx: number, cy: number, heights: Float32Arra
   const out = {} as ChunkClimate;
   for (const f of CLIMATE_FIELDS) out[f] = new Float32Array(n * n);
   const c = scratch;
+  // The slowest noises (hundreds of metres to a wave) on every fourth corner, and between them in straight lines.
+  for (let j = 0; j <= SLOW; j++) {
+    for (let i = 0; i <= SLOW; i++) {
+      const x = x0 + i * (CHUNK / SLOW);
+      const y = y0 + j * (CHUNK / SLOW);
+      slow[(j * (SLOW + 1) + i) * 3] = kindNoise(seed, x, y);
+      slow[(j * (SLOW + 1) + i) * 3 + 1] = rainNoise(seed, x, y);
+      slow[(j * (SLOW + 1) + i) * 3 + 2] = marginNoise(seed, x, y);
+    }
+  }
+  const per = CELLS / SLOW;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const x = x0 + i * CELL;
       const y = y0 + j * CELL;
       const k = j * n + i;
-      climateNoises(seed, x, y, c);
+      const si = Math.min(SLOW - 1, Math.floor(i / per));
+      const sj = Math.min(SLOW - 1, Math.floor(j / per));
+      const fi = i / per - si;
+      const fj = j / per - sj;
+      const a = (sj * (SLOW + 1) + si) * 3;
+      const b = a + 3;
+      const d = a + (SLOW + 1) * 3;
+      const e = d + 3;
+      c.kind = (slow[a]! * (1 - fi) + slow[b]! * fi) * (1 - fj) + (slow[d]! * (1 - fi) + slow[e]! * fi) * fj;
+      c.rain = (slow[a + 1]! * (1 - fi) + slow[b + 1]! * fi) * (1 - fj) + (slow[d + 1]! * (1 - fi) + slow[e + 1]! * fi) * fj;
+      c.margin = (slow[a + 2]! * (1 - fi) + slow[b + 2]! * fi) * (1 - fj) + (slow[d + 2]! * (1 - fi) + slow[e + 2]! * fi) * fj;
+      climateLocal(seed, x, y, c);
       const east = i < CELLS ? heights[k + 1]! : heightAt(seed, x + CELL, y, near);
       const west = i > 0 ? heights[k - 1]! : heightAt(seed, x - CELL, y, near);
       const north = j < CELLS ? heights[k + n]! : heightAt(seed, x, y + CELL, near);
@@ -291,17 +323,15 @@ function chunkClimate(seed: number, cx: number, cy: number, heights: Float32Arra
       out.gx[k] = (east - west) / 8;
       out.gy[k] = (north - south) / 8;
       out.hollow[k] = (east + west + north + south) / 4 - heights[k]!;
-      out.woods[k] = c.woods;
+      out.moist[k] = moistureBase(c);
+      out.woods[k] = woodsOf(c);
       out.kind[k] = c.kind;
-      out.rain[k] = c.rain;
-      out.margin[k] = c.margin;
+      out.dunes[k] = dunesOf(c);
       out.rockline[k] = c.rockline;
       out.crag[k] = c.crag;
       out.stream[k] = c.stream;
-      out.basin[k] = c.basin;
       out.ridge[k] = c.ridge;
       out.upland[k] = c.upland;
-      out.marsh[k] = c.marsh;
       out.lift[k] = c.lift;
     }
   }
@@ -310,39 +340,40 @@ function chunkClimate(seed: number, cx: number, cy: number, heights: Float32Arra
 
 const scratch = emptyClimate();
 const weights = new Float32Array(BIOMES.length);
+/** A chunk's slowest noises are sampled this many cells a side (16 m apart): kind, rain, margin at each. */
+const SLOW = 4;
+const slow = new Float64Array((SLOW + 1) * (SLOW + 1) * 3);
+/** A face this far under the lakes' level is the lake's floor and nothing else; shallower, it still knows its shore's biomes (for what floats over it). */
+const SHALLOWS = 1.15;
 
-/** A chunk's climate at (u, v), in base cells from its south-west corner, into `c` (everything but its height, flat and moisture). */
-function climateIn(cl: ChunkClimate, u: number, v: number, c: Climate): Climate {
-  const i = Math.max(0, Math.min(CELLS - 1, Math.floor(u)));
-  const j = Math.max(0, Math.min(CELLS - 1, Math.floor(v)));
-  const fu = Math.max(0, Math.min(1, u - i));
-  const fv = Math.max(0, Math.min(1, v - j));
-  const k = j * (CELLS + 1) + i;
-  const w00 = (1 - fu) * (1 - fv);
-  const w10 = fu * (1 - fv);
-  const w01 = (1 - fu) * fv;
-  const w11 = fu * fv;
-  const k10 = k + 1;
-  const k01 = k + CELLS + 1;
-  const k11 = k01 + 1;
-  c.woods = cl.woods[k]! * w00 + cl.woods[k10]! * w10 + cl.woods[k01]! * w01 + cl.woods[k11]! * w11;
-  c.kind = cl.kind[k]! * w00 + cl.kind[k10]! * w10 + cl.kind[k01]! * w01 + cl.kind[k11]! * w11;
-  c.rain = cl.rain[k]! * w00 + cl.rain[k10]! * w10 + cl.rain[k01]! * w01 + cl.rain[k11]! * w11;
-  c.margin = cl.margin[k]! * w00 + cl.margin[k10]! * w10 + cl.margin[k01]! * w01 + cl.margin[k11]! * w11;
-  c.rockline = cl.rockline[k]! * w00 + cl.rockline[k10]! * w10 + cl.rockline[k01]! * w01 + cl.rockline[k11]! * w11;
-  c.crag = cl.crag[k]! * w00 + cl.crag[k10]! * w10 + cl.crag[k01]! * w01 + cl.crag[k11]! * w11;
-  c.stream = cl.stream[k]! * w00 + cl.stream[k10]! * w10 + cl.stream[k01]! * w01 + cl.stream[k11]! * w11;
-  c.basin = cl.basin[k]! * w00 + cl.basin[k10]! * w10 + cl.basin[k01]! * w01 + cl.basin[k11]! * w11;
-  c.ridge = cl.ridge[k]! * w00 + cl.ridge[k10]! * w10 + cl.ridge[k01]! * w01 + cl.ridge[k11]! * w11;
-  c.upland = cl.upland[k]! * w00 + cl.upland[k10]! * w10 + cl.upland[k01]! * w01 + cl.upland[k11]! * w11;
-  c.marsh = cl.marsh[k]! * w00 + cl.marsh[k10]! * w10 + cl.marsh[k01]! * w01 + cl.marsh[k11]! * w11;
-  c.lift = cl.lift[k]! * w00 + cl.lift[k10]! * w10 + cl.lift[k01]! * w01 + cl.lift[k11]! * w11;
-  c.gx = cl.gx[k]! * w00 + cl.gx[k10]! * w10 + cl.gx[k01]! * w01 + cl.gx[k11]! * w11;
-  c.gy = cl.gy[k]! * w00 + cl.gy[k10]! * w10 + cl.gy[k01]! * w01 + cl.gy[k11]! * w11;
-  c.hollow = cl.hollow[k]! * w00 + cl.hollow[k10]! * w10 + cl.hollow[k01]! * w01 + cl.hollow[k11]! * w11;
-  c.water = Number.NEGATIVE_INFINITY;
-  return c;
+/**
+ * Where (u, v), in base cells from a chunk's south-west corner, falls among its grid's corners: the four corners'
+ * places and their shares, kept here for `lerp` (set once a point, read for every field: nothing is allocated).
+ */
+let k00 = 0;
+let k10 = 0;
+let k01 = 0;
+let k11 = 0;
+let w00 = 0;
+let w10 = 0;
+let w01 = 0;
+let w11 = 0;
+function cornersOf(u: number, v: number): void {
+  const i = u <= 0 ? 0 : u >= CELLS ? CELLS - 1 : Math.floor(u);
+  const j = v <= 0 ? 0 : v >= CELLS ? CELLS - 1 : Math.floor(v);
+  const fu = u <= i ? 0 : u >= i + 1 ? 1 : u - i;
+  const fv = v <= j ? 0 : v >= j + 1 ? 1 : v - j;
+  k00 = j * (CELLS + 1) + i;
+  k10 = k00 + 1;
+  k01 = k00 + CELLS + 1;
+  k11 = k01 + 1;
+  w00 = (1 - fu) * (1 - fv);
+  w10 = fu * (1 - fv);
+  w01 = (1 - fu) * fv;
+  w11 = fu * fv;
 }
+/** A field of the chunk's climate at the point last given to `cornersOf`. */
+const lerp = (f: Float32Array): number => f[k00]! * w00 + f[k10]! * w10 + f[k01]! * w01 + f[k11]! * w11;
 
 /** The colour noises of a grid's corners (the patches of sunnier and lusher grass, and where feet have worn the turf). */
 interface Fields {
@@ -373,25 +404,35 @@ function fields(seed: number, x0: number, y0: number, cells: number, built: (x: 
 /** What faceColor found: the face's colour (sRGB) and what covers it. */
 const face = { color: 0, grass: 0, heath: 0, litter: 0, marsh: 0 };
 
+/** A colour's red, green and blue (0 to 255). */
+const rgb = (hex: number): readonly [number, number, number] => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+const BIOME_RGB = BIOME_COLOR.map(rgb);
+const SUNNY_RGB = rgb(SUNNY);
+const LUSH_RGB = rgb(LUSH);
+const MUD_RGB = rgb(MUD);
+const EARTH_RGB = rgb(EARTH);
+const ROCK_RGB = rgb(GROUND_COLOR.rock);
+const CLIFF_RGB = rgb(0xcdb39f);
+const WORN_RGB = rgb(WORN);
+const LAKEBED_RGB = rgb(GROUND_COLOR.lakebed);
+
 /**
  * A face's colour and cover, into `face`: its biomes' ground colours in their
  * shares (so one ground turns into the next softly), with the meadows' sunny
  * and lush patches, bare earth where it's steep, rock on crags and cliffs, mud
  * between a marsh's tussocks, worn where feet go, and a little per-face
- * variation for the low-poly look. `c` is the climate at its middle (its height
- * and its own slope set); `patch` and `worn` its corners' (averaged); `ny` its
- * normal's vertical part, `jitter` a hash in [0, 1).
+ * variation for the low-poly look. `w` is its biomes' shares, `crag` how much
+ * of a crag it is; `patch` and `worn` its corners' (averaged); `ny` its
+ * normal's vertical part, `jitter` a hash in [0, 1). (Thousands a chunk: plain
+ * numbers, nothing allocated.)
  */
-function faceColor(c: Climate, patch: number, worn: boolean, ny: number, jitter: number): void {
-  if (c.h < WATER_LEVEL - 0.2) {
-    face.color = shade(GROUND_COLOR.lakebed, 1 - FACE_JITTER + 2 * FACE_JITTER * jitter);
+function faceColor(w: Float32Array | null, crag: number, patch: number, worn: boolean, ny: number, jitter: number): void {
+  const k = 1 - FACE_JITTER + 2 * FACE_JITTER * jitter;
+  if (!w) {
+    face.color = (Math.round(LAKEBED_RGB[0] * k) << 16) | (Math.round(LAKEBED_RGB[1] * k) << 8) | Math.round(LAKEBED_RGB[2] * k);
     face.grass = face.heath = face.litter = face.marsh = 0;
     return;
   }
-  // (The shallows are their shore's: sand under clear water, a reed bed's mud.)
-  if (c.h < WATER_LEVEL + 0.02) c.h = WATER_LEVEL + 0.02;
-  moistureOf(c);
-  const w = biomeWeights(c, weights);
   let r = 0;
   let g = 0;
   let b = 0;
@@ -400,32 +441,60 @@ function faceColor(c: Climate, patch: number, worn: boolean, ny: number, jitter:
   for (let i = 1; i < BIOMES.length; i++) {
     const wi = w[i]!;
     if (wi <= 0) continue;
-    const col = BIOME_COLOR[i]!;
-    r += ((col >> 16) & 255) * wi;
-    g += ((col >> 8) & 255) * wi;
-    b += (col & 255) * wi;
+    const c = BIOME_RGB[i]!;
+    r += c[0] * wi;
+    g += c[1] * wi;
+    b += c[2] * wi;
     grass += GRASS_COVER[i]! * wi;
     litter += LITTER_COVER[i]! * wi;
   }
-  let color = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
   // Sunnier and lusher patches wherever grass grows.
   const turf = w[MEADOW]! + w[LAWN]! + w[WOODLAND]! + w[BIRCHWOOD]! + 0.6 * (w[PINEWOOD]! + w[HEATH]!) + 0.5 * w[MARSH]!;
-  if (turf > 0) color = patch > 0 ? mixHex(color, SUNNY, Math.min(1, patch) * 0.55 * turf) : mixHex(color, LUSH, Math.min(1, -patch) * 0.45 * turf);
+  if (turf > 0) {
+    const to = patch > 0 ? SUNNY_RGB : LUSH_RGB;
+    const t = (patch > 0 ? Math.min(1, patch) * 0.55 : Math.min(1, -patch) * 0.45) * turf;
+    r += (to[0] - r) * t;
+    g += (to[1] - g) * t;
+    b += (to[2] - b) * t;
+  }
   // A marsh's mud shows between its tussocks, more the wetter it is.
-  if (w[MARSH]! > 0.05 && patch > -0.2) color = mixHex(color, MUD, w[MARSH]! * smoothstep(-0.2, 0.7, patch) * 0.5);
+  if (w[MARSH]! > 0.05 && patch > -0.2) {
+    const t = w[MARSH]! * smoothstep(-0.2, 0.7, patch) * 0.5;
+    r += (MUD_RGB[0] - r) * t;
+    g += (MUD_RGB[1] - g) * t;
+    b += (MUD_RGB[2] - b) * t;
+  }
   let bare = 0;
   const soft = 1 - w[OUTCROP]! - w[LAWN]!;
-  if (soft > 0) {
-    const steep = smoothstep(0.95, 0.8, ny);
-    if (steep > 0) color = mixHex(color, EARTH, steep * 0.45 * soft);
-    const rocky = Math.max(c.crag > 0 ? smoothstep(0.45, 0.8, c.crag) : 0, smoothstep(0.8, 0.62, ny)) * soft;
-    if (rocky > 0) color = mixHex(color, GROUND_COLOR.rock, rocky);
+  if (soft > 0 && (ny < 0.95 || crag > 0.45)) {
+    const steep = ny < 0.95 ? smoothstep(0.95, 0.8, ny) : 0;
+    if (steep > 0) {
+      const t = steep * 0.45 * soft;
+      r += (EARTH_RGB[0] - r) * t;
+      g += (EARTH_RGB[1] - g) * t;
+      b += (EARTH_RGB[2] - b) * t;
+    }
+    const rocky = Math.max(crag > 0.45 ? smoothstep(0.45, 0.8, crag) : 0, ny < 0.8 ? smoothstep(0.8, 0.62, ny) : 0) * soft;
+    if (rocky > 0) {
+      r += (ROCK_RGB[0] - r) * rocky;
+      g += (ROCK_RGB[1] - g) * rocky;
+      b += (ROCK_RGB[2] - b) * rocky;
+    }
     bare = Math.max(steep * 0.45, rocky) * soft;
   }
   // A cliff's face a little warmer and darker than its top.
-  if (w[OUTCROP]! > 0) color = mixHex(color, 0xcdb39f, smoothstep(0.9, 0.6, ny) * w[OUTCROP]!);
-  if (worn && w[LAWN]! > 0.5) color = mixHex(color, WORN, 0.45);
-  face.color = shade(color, 1 - FACE_JITTER + 2 * FACE_JITTER * jitter);
+  if (w[OUTCROP]! > 0 && ny < 0.9) {
+    const t = smoothstep(0.9, 0.6, ny) * w[OUTCROP]!;
+    r += (CLIFF_RGB[0] - r) * t;
+    g += (CLIFF_RGB[1] - g) * t;
+    b += (CLIFF_RGB[2] - b) * t;
+  }
+  if (worn && w[LAWN]! > 0.5) {
+    r += (WORN_RGB[0] - r) * 0.45;
+    g += (WORN_RGB[1] - g) * 0.45;
+    b += (WORN_RGB[2] - b) * 0.45;
+  }
+  face.color = (Math.min(255, Math.round(r * k)) << 16) | (Math.min(255, Math.round(g * k)) << 8) | Math.min(255, Math.round(b * k));
   const open = 1 - bare;
   face.grass = grass * open * (worn ? 0.5 : 1);
   face.heath = w[HEATH]! * open;
@@ -473,11 +542,12 @@ function sampleSurface(seed: number, cx: number, cy: number, cells: number, near
   const split = new Uint8Array(cells * cells);
   const faces = new Uint32Array(cells * cells * 2);
   const cover = new Uint8Array(cells * cells * 8);
+  const N = BIOMES.length;
+  const biomes = new Uint8Array(cells * cells * 2 * N);
   const f = fields(seed, x0, y0, cells, built);
   const gi0 = cx * cells;
   const gj0 = cy * cells;
   const toBase = CELLS / cells;
-  const c = scratch;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const h00 = heights[j * n + i]!;
@@ -496,14 +566,26 @@ function sampleSurface(seed: number, cx: number, cy: number, cells: number, near
         const ny = 1 / Math.sqrt(1 + g[0]! * g[0]! + g[1]! * g[1]!);
         const u = i + (s[t * 6]! + s[t * 6 + 2]! + s[t * 6 + 4]!) / 3;
         const v = j + (s[t * 6 + 1]! + s[t * 6 + 3]! + s[t * 6 + 5]!) / 3;
-        climateIn(cl, u * toBase, v * toBase, c);
-        // (The face's own slope: its aspect is its own, not its neighbourhood's.)
-        c.gx = g[0]!;
-        c.gy = g[1]!;
-        c.h = (heights[a]! + heights[b]! + heights[d]!) / 3;
-        c.flat = near.length ? flatMix(near, x0 + u * cell, y0 + v * cell) : 0;
+        let h = (heights[a]! + heights[b]! + heights[d]!) / 3;
         const q = (j * cells + i) * 2 + t;
-        faceColor(c, (f.patch[a]! + f.patch[b]! + f.patch[d]!) / 3, f.built[a]! + f.built[b]! + f.built[d]! >= 2, ny, hash3(seed, gi0 + i, gj0 + j, salt * 4 + t + 7));
+        const patch = (f.patch[a]! + f.patch[b]! + f.patch[d]!) / 3;
+        const jitter = hash3(seed, gi0 + i, gj0 + j, salt * 4 + t + 7);
+        if (h < WATER_LEVEL - SHALLOWS) {
+          faceColor(null, 0, patch, false, ny, jitter);
+          biomes[q * N + WATER] = 255;
+        } else {
+          // (The shallows are their shore's: sand under clear water, a reed bed's mud.)
+          const floor = h < WATER_LEVEL - 0.2;
+          if (h < WATER_LEVEL + 0.02) h = WATER_LEVEL + 0.02;
+          cornersOf(u * toBase, v * toBase);
+          const crag = lerp(cl.crag);
+          // (The face's own slope: its aspect is its own, not its neighbourhood's.)
+          const m = moistureFrom(lerp(cl.moist), h, g[0]!, g[1]!, lerp(cl.hollow));
+          weightsFrom(weights, h, near.length ? flatMix(near, x0 + u * cell, y0 + v * cell) : 0, m, lerp(cl.woods), lerp(cl.kind), lerp(cl.rockline), crag, lerp(cl.ridge), lerp(cl.upland), lerp(cl.lift), lerp(cl.dunes));
+          for (let n2 = 0; n2 < N; n2++) biomes[q * N + n2] = Math.round(weights[n2]! * 255);
+          if (floor) faceColor(null, 0, patch, false, ny, jitter);
+          else faceColor(weights, crag, patch, f.built[a]! + f.built[b]! + f.built[d]! >= 2, ny, jitter);
+        }
         faces[q] = face.color;
         cover[q * 4] = Math.round(Math.min(1, face.grass) * 255);
         cover[q * 4 + 1] = Math.round(Math.min(1, face.heath) * 255);
@@ -512,7 +594,7 @@ function sampleSurface(seed: number, cx: number, cy: number, cells: number, near
       }
     }
   }
-  return { cells, heights, split, faces, cover, climate: cl };
+  return { cells, heights, split, faces, cover, biomes, climate: cl };
 }
 
 /**
@@ -526,7 +608,7 @@ export function fineSurface(seed: number, base: ChunkSamples, built: (x: number,
   const n = FINE_CELLS + 1;
   const coarse = new Float32Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) coarse[j * n + i] = surfaceHeight(base, i / FINE, j / FINE);
-  base.fine = { cells: s.cells, heights: s.heights, split: s.split, faces: s.faces, cover: s.cover, coarse };
+  base.fine = { cells: s.cells, heights: s.heights, split: s.split, faces: s.faces, cover: s.cover, biomes: s.biomes, coarse };
   return base.fine;
 }
 
@@ -571,6 +653,8 @@ interface LayerRule {
   crags?: number;
   /** Solid (walkers and the camera meet it): keeps off the trail he walks. */
   solid?: boolean;
+  /** Only this low over the lakes' level, metres (reeds: the wet ground at the water's edge). */
+  low?: number;
 }
 
 /** A pick among kinds by their shares: `table` is kind, share, kind, share… (the last kind takes the rest). */
@@ -702,6 +786,7 @@ const RULES: Record<Layer, LayerRule> = {
     kind: (_b, p) => (p < 0.5 ? 0 : p < 0.72 ? 1 : 2),
     salt: 121,
     wade: 0.55,
+    low: 2.6,
   },
   detail: {
     grid: 2.1,
@@ -753,6 +838,32 @@ export function onTrail(x: number, y: number): boolean {
   return false;
 }
 
+/** How many of the still shallows' cells off a reedy margin carry a lily pad. */
+const LILIES = 0.34;
+
+/**
+ * One biome for something small at (u, v), in a surface's cells from the chunk's south-west corner: one of the biomes of
+ * the triangle it stands on, by their shares of it and a hash in [0, 1).
+ */
+function biomeOn(s: Surface, u: number, v: number, pick: number): number {
+  const i = Math.max(0, Math.min(s.cells - 1, Math.floor(u)));
+  const j = Math.max(0, Math.min(s.cells - 1, Math.floor(v)));
+  const fu = u - i;
+  const fv = v - j;
+  // (Which of the cell's two triangles: as cellHeight has it.)
+  const t = s.split[j * s.cells + i] === 0 ? (fu >= fv ? 0 : 1) : fu + fv <= 1 ? 0 : 1;
+  const at = ((j * s.cells + i) * 2 + t) * BIOMES.length;
+  let total = 0;
+  for (let k = 0; k < BIOMES.length; k++) total += s.biomes[at + k]!;
+  let sum = 0;
+  const to = pick * total;
+  for (let k = 0; k < BIOMES.length; k++) {
+    sum += s.biomes[at + k]!;
+    if (to < sum) return k;
+  }
+  return MEADOW;
+}
+
 /** One biome for a placement, by the biomes' shares there and a hash in [0, 1): at an edge the two sides mix. */
 function pickBiome(w: Float32Array, pick: number): number {
   let sum = 0;
@@ -776,39 +887,53 @@ function placeLayer(seed: number, cx: number, cy: number, near: readonly Flat[],
   const y0 = cy * CHUNK;
   const per = Math.round(CHUNK / rule.grid);
   const step = CHUNK / per;
+  const cl = base.climate;
   const s = rule.salt;
-  const c = scratch;
+  // (The most of its cells a rule ever takes: a cell whose hash is over that is never taken, wherever it lies.)
+  let most = rule.crags ?? 0;
+  for (const d of rule.density) most = Math.max(most, d);
+  if (rule === RULES.detail) most = Math.max(most, LILIES);
   const trail = rule.solid === true && x0 <= TRAIL_BOX[2] && x0 + CHUNK >= TRAIL_BOX[0] && y0 <= TRAIL_BOX[3] && y0 + CHUNK >= TRAIL_BOX[1];
   for (let j = 0; j < per; j++) {
     for (let i = 0; i < per; i++) {
       const gx = cx * per + i;
       const gy = cy * per + j;
+      const u = hash3(seed, gx, gy, s);
+      if (u >= most) continue;
       const x = (gx + 0.12 + 0.76 * hash3(seed, gx, gy, s + 1)) * step;
       const y = (gy + 0.12 + 0.76 * hash3(seed, gx, gy, s + 2)) * step;
       if (!clearOfFlats(near, x, y, rule.clearance, rule.lawn)) continue;
       if (rule.lawn && built(x, y)) continue;
       if (trail && onTrail(x, y)) continue;
+      // (What only grows low is nowhere near it on most of the land: the base grid says so before the land's own height is asked.)
+      if (rule.low !== undefined && surfaceHeight(base, (x - x0) / CELL, (y - y0) / CELL) > WATER_LEVEL + rule.low + 1) continue;
       let z = fine ? surfaceHeight(fine, (x - x0) / FINE_CELL, (y - y0) / FINE_CELL) : heightAt(seed, x, y, near);
-      climateIn(base.climate, (x - x0) / CELL, (y - y0) / CELL, c);
+      if (rule.low !== undefined && z > WATER_LEVEL + rule.low) continue;
+      cornersOf((x - x0) / CELL, (y - y0) / CELL);
       let afloat = false;
       if (!rule.underwater) {
+        const stream = lerp(cl.stream);
         if (z < WATER_LEVEL + 0.15) {
           // Out in the water: only what wades (reeds) or floats (a lily pad), in still water no deeper than it goes.
-          if (!rule.wade || z < WATER_LEVEL - rule.wade || c.stream < 0.06) continue;
+          if (!rule.wade || z < WATER_LEVEL - rule.wade || stream < 0.06) continue;
           afloat = z < WATER_LEVEL;
-        } else if (c.stream < 0.07 && streamAt(seed, x, y) > 0.35 && z < streamLevel(seed, x, y) - 0.12) continue; // under a stream's pool
+        } else if (stream < 0.07 && streamAt(seed, x, y) > 0.35 && z < streamLevel(seed, x, y) - 0.12) continue; // under a stream's pool
       }
       if (rule.even && Math.abs(surfaceHeight(base, (x - x0) / CELL, (y - y0) / CELL) - z) > 0.35) continue;
-      const u = hash3(seed, gx, gy, s);
-      // (What stands in the shallows is its shore's: a reed bed's, or a beach's.)
-      c.h = rule.underwater ? z : Math.max(z, WATER_LEVEL + 0.02);
-      c.flat = near.length ? flatMix(near, x, y) : 0;
-      moistureOf(c);
-      const biome = pickBiome(biomeWeights(c, weights), hash3(seed, gx, gy, s + 6));
+      let biome = WATER;
+      // What's small is of the ground it stands on (its triangle's biomes, as the fine grid has them); what's big, of the land's own climate there.
+      if (fine) biome = biomeOn(fine, (x - x0) / FINE_CELL, (y - y0) / FINE_CELL, hash3(seed, gx, gy, s + 6));
+      else if (!rule.underwater || z >= WATER_LEVEL) {
+        // (What stands in the shallows is its shore's: a reed bed's, or a beach's.)
+        const h = z < WATER_LEVEL + 0.02 ? WATER_LEVEL + 0.02 : z;
+        const m = moistureFrom(lerp(cl.moist), h, lerp(cl.gx), lerp(cl.gy), lerp(cl.hollow));
+        weightsFrom(weights, h, near.length ? flatMix(near, x, y) : 0, m, lerp(cl.woods), lerp(cl.kind), lerp(cl.rockline), lerp(cl.crag), lerp(cl.ridge), lerp(cl.upland), lerp(cl.lift), lerp(cl.dunes));
+        biome = pickBiome(weights, hash3(seed, gx, gy, s + 6));
+      }
       let kind: number;
       if (afloat && rule === RULES.detail) {
         // Lily pads: on the still water of a reedy margin, clear of the reeds' own belt.
-        if (biome !== MARSH || z > WATER_LEVEL - 0.18 || u >= 0.34) continue;
+        if (biome !== MARSH || z > WATER_LEVEL - 0.18 || u >= LILIES) continue;
         kind = 5;
         z = WATER_LEVEL;
       } else {

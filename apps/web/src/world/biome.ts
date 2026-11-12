@@ -86,21 +86,31 @@ export function emptyClimate(): Climate {
   return { h: 0, water: Number.NEGATIVE_INFINITY, gx: 0, gy: 0, hollow: 0, flat: 0, woods: 0, kind: 0, rain: 0, margin: 0, rockline: 0, crag: 0, stream: 1, basin: 0, ridge: 0, upland: 0, marsh: 0, lift: 0, moisture: 0 };
 }
 
-/** The slow noises of the climate at a point, into `c` (everything but the heights and what follows from them). */
-export function climateNoises(seed: number, x: number, y: number, c: Climate): Climate {
+/** The slowest of the climate's noises: which kind of wood (310 m), the region's rain (900 m), reeds or sand along a shore (130 m). */
+export const kindNoise = (seed: number, x: number, y: number): number => simplex(seed + 43, x / 310, y / 310);
+export const rainNoise = (seed: number, x: number, y: number): number => simplex(seed + 211, x / 900, y / 900);
+export const marginNoise = (seed: number, x: number, y: number): number => simplex(seed + 223, x / 130, y / 130);
+
+/** The rest of a point's climate but its heights: where the woods are, the rock, the stream, the landforms; into `c`. */
+export function climateLocal(seed: number, x: number, y: number, c: Climate): Climate {
   c.woods = simplex(seed + 41, x / 170, y / 170);
-  c.kind = simplex(seed + 43, x / 310, y / 310);
-  c.rain = simplex(seed + 211, x / 900, y / 900);
-  c.margin = simplex(seed + 223, x / 130, y / 130);
   c.rockline = simplex(seed + 53, x / 60, y / 60);
   c.crag = outcrop(seed, x, y);
   c.stream = streamOff(seed, x, y);
-  c.basin = basinAt(seed, x, y);
   c.ridge = ridgeAt(seed, x, y);
   c.upland = uplandAt(seed, x, y);
   c.marsh = marshAt(seed, x, y);
   c.lift = scarpAt(seed, x, y) * SCARP + c.ridge * 6;
   return c;
+}
+
+/** The noises of the climate at a point, into `c` (everything but the heights and what follows from them). */
+export function climateNoises(seed: number, x: number, y: number, c: Climate): Climate {
+  c.kind = kindNoise(seed, x, y);
+  c.rain = rainNoise(seed, x, y);
+  c.margin = marginNoise(seed, x, y);
+  c.basin = basinAt(seed, x, y);
+  return climateLocal(seed, x, y, c);
 }
 
 /** The slope and the hollow at a point from the heights 4 m to its east, west, north and south, into `c` (its `h` set). */
@@ -113,20 +123,37 @@ export function climateSlope(c: Climate, east: number, west: number, north: numb
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
+/**
+ * The part of the ground's moisture that its own height and slope don't change: the region's rain, the stream it
+ * lies along, the marsh or the upland under it. (A chunk samples this once at each corner of its grid.)
+ */
+export function moistureBase(c: Climate): number {
+  return 0.28 + 0.24 * smoothstep(0.26, 0.06, c.stream) + 0.14 * c.rain + 0.07 * c.margin + 0.5 * c.marsh - 0.3 * c.upland;
+}
+
+/**
+ * The ground's moisture, 0 dry to 1 wet, from that and from where the point itself lies: wet at the lakes' level
+ * and drying out with height above it, drier on a steep slope, damper on one that falls away to the north (it keeps
+ * out of the sun) and in a hollow.
+ */
+export function moistureFrom(base: number, h: number, gx: number, gy: number, hollow: number): number {
+  const low = 1 - smoothstep(0.3, 4.5, h - WATER_LEVEL);
+  const steep = smoothstep(0.18, 0.6, Math.sqrt(gx * gx + gy * gy));
+  const north = gy > 1 / 3 ? -1 : gy < -1 / 3 ? 1 : -gy * 3;
+  const dip = hollow > 0.6 ? 0.6 : hollow < -0.6 ? -0.6 : hollow;
+  return clamp01(base + 0.36 * low - 0.2 * steep + 0.06 * north + 0.08 * dip);
+}
+
 /** The ground's moisture from the rest of a climate (`h`, the slope and the noises set), written into it and returned. */
 export function moistureOf(c: Climate): number {
-  const above = c.h - WATER_LEVEL;
-  // The water table: wet at the lakes' level, drying out with height above it.
-  const low = 1 - smoothstep(0.3, 4.5, above);
-  // Along a stream, as far as its banks reach.
-  const riparian = smoothstep(0.26, 0.06, c.stream);
-  const steep = smoothstep(0.18, 0.6, Math.hypot(c.gx, c.gy));
-  // A slope that falls away to the north keeps its damp; one that faces the sun dries.
-  const north = Math.max(-1, Math.min(1, -c.gy * 3));
-  const hollow = Math.max(-0.6, Math.min(0.6, c.hollow));
-  c.moisture = clamp01(0.28 + 0.36 * low + 0.24 * riparian + 0.14 * c.rain + 0.07 * c.margin + 0.5 * c.marsh - 0.3 * c.upland - 0.2 * steep + 0.06 * north + 0.08 * hollow);
+  c.moisture = moistureFrom(moistureBase(c), c.h, c.gx, c.gy, c.hollow);
   return c.moisture;
 }
+
+/** Where the woods are, with the landforms' say in it: a ridge's flanks are wooded, an upland open. */
+export const woodsOf = (c: Climate): number => c.woods + 0.55 * c.ridge * (1 - c.ridge) * 4 - 0.5 * c.upland;
+/** Where dunes lie behind the shore: here and there along it, in the drier regions. */
+export const dunesOf = (c: Climate): number => c.margin - c.rain * 0.4;
 
 /** The whole climate at (x, y), into `out`. */
 export function climateAt(seed: number, x: number, y: number, flats: readonly Flat[], out: Climate = emptyClimate()): Climate {
@@ -148,56 +175,74 @@ export function moistureAt(seed: number, x: number, y: number, flats: readonly F
 const scratch = emptyClimate();
 const scratchWeights = new Float32Array(BIOMES.length);
 
-/** Lays `amount` of biome `k` over what's there: the others give way in proportion. */
-function over(w: Float32Array, k: number, amount: number): void {
-  if (amount <= 0) return;
-  const a = amount > 1 ? 1 : amount;
-  for (let i = 0; i < w.length; i++) w[i] = w[i]! * (1 - a);
-  w[k] = w[k]! + a;
-}
-
 /** Where the bare rock starts, metres (it wavers by the rock line's noise). */
 const ROCK_LINE = 6.8;
 
 /**
- * Each biome's share at a point with this climate, into `out` (they sum to 1).
- * Laid one over another, the later the stronger: meadow everywhere, then heath
- * where it's high and dry, the woods where the woods are (birch, conifer or
- * deciduous by their own noise and the damp), marsh where it's wet and low,
- * rock where it breaks through, sand at the water's edge, and the kept ground
- * of the flats over all of it. Under water it's all water.
+ * Each biome's share of dry ground, into `out` (they sum to 1), from plain numbers: its height, how much of a flat
+ * it is, its moisture, where the woods are (`woodsOf`) and of which kind, the rock line's noise, how much of a crag,
+ * a ridge and an upland stand here, how far the landforms have lifted it, and where the dunes are (`dunesOf`).
+ *
+ * Laid one over another, the later the stronger: meadow everywhere, then heath where it's high and dry, the woods
+ * where the woods are (birch, conifer or deciduous by their own noise and the damp), marsh where it's wet and low,
+ * rock where it breaks through, sand at the water's edge, and the kept ground of the flats over all of it.
  */
+export function weightsFrom(out: Float32Array, h: number, flat: number, m: number, woods: number, kind: number, rockline: number, crag: number, ridge: number, upland: number, lift: number, dunes: number): Float32Array {
+  const above = h - WATER_LEVEL;
+  const wooded = smoothstep(-0.06, 0.3, woods);
+  // Heath: the uplands, and any high, dry, open ground.
+  const dry = m < 0.34 && h > 3.4 ? smoothstep(0.34, 0.16, m) * smoothstep(3.4, 5.2, h) * (1 - wooded * 0.8) : 0;
+  const heath = upland * 0.96 > dry ? upland * 0.96 : dry;
+  // The woods: conifers where their noise is high, the ground dry or a ridge under them; birches where it's low; the rest deciduous.
+  let woodland = 0;
+  let birchwood = 0;
+  let pinewood = 0;
+  if (wooded > 0) {
+    const conifer = smoothstep(0.12, 0.36, kind + (0.42 - m) * 0.5 + 0.3 * ridge);
+    const birch = (1 - conifer) * smoothstep(-0.2, -0.45, kind - (m - 0.5) * 0.3);
+    woodland = wooded * (1 - conifer) * (1 - birch);
+    birchwood = wooded * birch;
+    pinewood = wooded * conifer;
+  }
+  // Marsh: wet ground that lies low (the marsh flats are wet by their landform).
+  const marsh = m > 0.62 && above < 2.5 ? smoothstep(0.62, 0.84, m) * (1 - smoothstep(1.3, 2.5, above)) : 0;
+  // Rock: above the rock line, on a crag's crown, along a ridge's crest.
+  let outcrop = smoothstep(-0.5, 0.3, h - lift - (ROCK_LINE + rockline * 1.6)) * (1 - upland);
+  if (crag > 0.35) outcrop = Math.max(outcrop, smoothstep(0.35, 0.8, crag));
+  if (ridge > 0.8) outcrop = Math.max(outcrop, smoothstep(0.8, 0.97, ridge) * 0.85);
+  // Sand at the water's edge unless it's a reedy margin; and dunes behind it where the ground is dry.
+  let shore = above < 1.1 ? (1 - smoothstep(0.6, 1.1, above)) * (1 - smoothstep(0.58, 0.8, m)) : 0;
+  if (dunes > 0.15 && m < 0.52 && above < 3.4) shore = Math.max(shore, smoothstep(0.15, 0.4, dunes) * smoothstep(0.52, 0.4, m) * (1 - smoothstep(2.2, 3.4, above)) * (1 - wooded));
+  const lawn = flat > 0.45 ? smoothstep(0.45, 0.65, flat) : 0;
+  // Each takes its share of what those laid over it have left.
+  let left = 1 - lawn;
+  out[WATER] = 0;
+  out[LAWN] = lawn;
+  out[SHORE] = shore * left;
+  left *= 1 - shore;
+  out[OUTCROP] = outcrop * left;
+  left *= 1 - outcrop;
+  out[MARSH] = marsh * left;
+  left *= 1 - marsh;
+  out[PINEWOOD] = pinewood * left;
+  left *= 1 - pinewood;
+  out[BIRCHWOOD] = birchwood * left;
+  left *= 1 - birchwood;
+  out[WOODLAND] = woodland * left;
+  left *= 1 - woodland;
+  out[HEATH] = heath * left;
+  out[MEADOW] = left * (1 - heath);
+  return out;
+}
+
+/** Each biome's share at a point with this climate, into `out` (they sum to 1). Under water it's all water. */
 export function biomeWeights(c: Climate, out: Float32Array = scratchWeights): Float32Array {
-  out.fill(0);
   if (c.h < c.water || c.h < WATER_LEVEL) {
+    out.fill(0);
     out[WATER] = 1;
     return out;
   }
-  out[MEADOW] = 1;
-  const above = c.h - WATER_LEVEL;
-  const m = c.moisture;
-  const woods = smoothstep(-0.06, 0.3, c.woods + 0.55 * c.ridge * (1 - c.ridge) * 4 - 0.5 * c.upland);
-  // Heath: the uplands, and any high, dry, open ground.
-  over(out, HEATH, Math.max(c.upland * 0.96, smoothstep(0.34, 0.16, m) * smoothstep(3.4, 5.2, c.h) * (1 - woods * 0.8)));
-  // The woods: conifers where their noise is high, the ground dry or a ridge under them; birches where it's low; the rest deciduous.
-  if (woods > 0) {
-    const conifer = smoothstep(0.12, 0.36, c.kind + (0.42 - m) * 0.5 + 0.3 * c.ridge);
-    const birch = (1 - conifer) * smoothstep(-0.2, -0.45, c.kind - (m - 0.5) * 0.3);
-    over(out, WOODLAND, woods * (1 - conifer) * (1 - birch));
-    over(out, BIRCHWOOD, woods * birch);
-    over(out, PINEWOOD, woods * conifer);
-  }
-  // Marsh: wet ground that lies low (the marsh flats are wet by their landform).
-  const lowland = 1 - smoothstep(1.3, 2.5, above);
-  over(out, MARSH, smoothstep(0.62, 0.84, m) * lowland);
-  // Rock: above the rock line, and on a crag's crown.
-  over(out, OUTCROP, Math.max(smoothstep(-0.5, 0.3, c.h - c.lift - (ROCK_LINE + c.rockline * 1.6)) * (1 - c.upland), smoothstep(0.35, 0.8, c.crag), smoothstep(0.8, 0.97, c.ridge) * 0.85));
-  // Sand at the water's edge unless it's a reedy margin; and dunes behind it where the ground is dry.
-  const reedy = smoothstep(0.58, 0.8, m);
-  const dunes = smoothstep(0.15, 0.4, c.margin - c.rain * 0.4) * smoothstep(0.52, 0.4, m) * (1 - smoothstep(2.2, 3.4, above));
-  over(out, SHORE, Math.max((1 - smoothstep(0.6, 1.1, above)) * (1 - reedy), dunes * (1 - woods)));
-  over(out, LAWN, smoothstep(0.45, 0.65, c.flat));
-  return out;
+  return weightsFrom(out, c.h, c.flat, c.moisture, woodsOf(c), c.kind, c.rockline, c.crag, c.ridge, c.upland, c.lift, dunesOf(c));
 }
 
 /** The index (into BIOMES) of the biome with the most weight. */
