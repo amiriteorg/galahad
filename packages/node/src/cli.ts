@@ -188,7 +188,8 @@ Notifications (he comes to you: Web Push to your own paired devices, encrypted t
   notify quiet [on|off|HH:MM-HH:MM] [--tz Europe/Copenhagen]
                                   quiet hours (22:00-07:00, Denmark's time): everything but an alert waits,
                                   then one message says what waited
-  notify limit <n>                at most n a day (12); when it's reached, one last message says so
+  notify limit <n>                at most n a day (12), the last two kept for alerts; when ordinary news reaches
+                                  the limit, one message says so
   notify off <device>             remove a device's subscription
 
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)

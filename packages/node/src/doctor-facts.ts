@@ -157,7 +157,7 @@ export interface DoctorDeps {
   vault: Vault;
   identity: NodeIdentity;
   nodeName: string;
-  home: { dir: string; keyFilePath: string; adminTokenPath: string };
+  home: { dir: string; keyFilePath: string; adminTokenPath: string; pushKeyPath: string };
   keystore: "os" | "file";
   sync: { status(): PeerStatus[] };
   caps: () => Capabilities | null;
@@ -479,6 +479,7 @@ export async function gatherFacts(deps: DoctorDeps, opts: DoctorOptions = {}): P
     keys: {
       keystore: deps.keystore,
       keyFile: deps.keystore === "file" ? system.file(deps.home.keyFilePath) : null,
+      pushKeyFile: deps.keystore === "file" ? system.file(deps.home.pushKeyPath) : null,
       home: system.file(deps.home.dir),
       adminToken: system.file(deps.home.adminTokenPath),
     },

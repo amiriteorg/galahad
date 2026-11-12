@@ -158,11 +158,17 @@ export function actionItem(a: { id: string; connector: string; tool: string; sta
   };
 }
 
-/** A key he asked for: its name (letters, digits, . _ : -), never what it's for (that's a model's sentence). */
+/**
+ * A key he asked for. Neither its name nor what it's for is shown: whoever asked (an agent may) chose both, and a
+ * name is words enough to say something ("call-this-number-now"). The Inbox says which.
+ */
 export function secretItem(name: string): NotifyItem | null {
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(name)) return null;
-  return { key: `secret:${name}`, kind: "question", alert: false, title: "Galahad asks for a key", body: notifyClean(`${name}: fill it in the Vault. He learns only that it's there.`, NOTIFY_BODY_MAX), open: "inbox", needs: ["vault:read"] };
+  return { key: `secret:${name}`, kind: "question", alert: false, title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there.", open: "inbox", needs: ["vault:read"] };
 }
+
+/** Words of your own (a chat's title, a quest's goal) as a notification may show them: not when they speak of the bank, or look like a secret. */
+const yourWords = (text: string, max: number): string | null => (ABOUT_BANK.test(text) ? null : notifyLine(text, max));
 
 /**
  * A chat turn that ended with nobody watching: finished, couldn't finish, or ended by asking you.
@@ -171,7 +177,7 @@ export function secretItem(name: string): NotifyItem | null {
  */
 export function turnItem(t: { id: string; conversation: string; title: string; bank: boolean; state: "done" | "error"; question: boolean; waiting: boolean }): NotifyItem | null {
   if (!isConversationId(t.conversation)) return null;
-  const title = t.bank ? null : notifyLine(t.title, 90);
+  const title = t.bank ? null : yourWords(t.title, 90);
   const where = title ? `“${title}”` : "A chat you left him working in";
   const asks = t.state === "done" && t.question;
   return {
@@ -192,7 +198,7 @@ const QUEST_ENDS: Record<string, string> = { done: "Quest done", unverified: "Qu
 export function questItem(q: { quest: string; goal: string; state: string }): NotifyItem | null {
   const title = QUEST_ENDS[q.state];
   if (!title || !/^[A-Za-z0-9._:-]{1,64}$/.test(q.quest)) return null;
-  const goal = notifyLine(q.goal, 110);
+  const goal = yourWords(q.goal, 110);
   return { key: `quest:${q.quest}`, kind: "finished", alert: false, title, body: goal ? `“${goal}”` : "A quest you started has ended.", open: "overview", needs: ["mind:read"] };
 }
 
@@ -218,14 +224,25 @@ export interface NotifyPlan {
   send: NotifyItem[];
   /** Why the rest waits: quiet hours, the day's limit, or too soon after the last message. */
   waiting: "quiet" | "limit" | "gap" | null;
-  /** This message reaches the day's limit: one last message says so, then silence until tomorrow. */
-  limit: boolean;
 }
+
+/**
+ * How much of the day's limit is kept back for alerts. Without it, whatever can file an approval or ask for a
+ * key (an agent can) could spend the whole day's limit on noise, and the alert that mattered would never be told.
+ */
+export const alertReserve = (perDay: number): number => (perDay >= 6 ? 2 : perDay >= 3 ? 1 : 0);
+
+/**
+ * Whether ordinary news has reached the day's limit. When it has, one message says so (`limitMessage`): once
+ * that day, and not during quiet hours (it isn't an alert); after it only an alert is told, and few.
+ */
+export const limitReached = (prefs: NotifyPrefs, sentToday: number): boolean => sentToday >= prefs.perDay - alertReserve(prefs.perDay);
 
 /**
  * What to tell at this moment. Never anything for "all quiet": with nothing new there is nothing to send.
  * Everything new goes as one message (a burst is one buzz); quiet hours hold everything but alerts, and
- * what was held is told together when they end; the day's limit holds everything, alerts too.
+ * what was held is told together when they end. The day's limit holds everything, alerts too; its last
+ * one or two (`alertReserve`) are for alerts alone, so ordinary news stops a little before it.
  * `told`: the items already told (an alert is told again when it was told only as a warning).
  */
 export function planNotifications(input: {
@@ -241,24 +258,30 @@ export function planNotifications(input: {
     const before = input.told.get(item.key);
     return !before || (item.alert && !before.alert);
   });
-  if (!fresh.length) return { send: [], waiting: null, limit: false };
-  if (input.sentToday >= input.prefs.perDay) return { send: [], waiting: "limit", limit: false };
+  if (!fresh.length) return { send: [], waiting: null };
+  if (input.sentToday >= input.prefs.perDay) return { send: [], waiting: "limit" };
+  // Past the limit for ordinary news, only an alert is told.
+  const allowed = limitReached(input.prefs, input.sentToday) ? fresh.filter((item) => item.alert) : fresh;
+  if (!allowed.length) return { send: [], waiting: "limit" };
   const quiet = inQuietHours(input.prefs.quiet, input.now);
-  const due = quiet ? fresh.filter((item) => item.alert) : fresh;
-  if (!due.length) return { send: [], waiting: "quiet", limit: false };
+  const due = quiet ? allowed.filter((item) => item.alert) : allowed;
+  if (!due.length) return { send: [], waiting: "quiet" };
   const urgent = due.some((item) => item.alert);
-  if (!urgent && input.lastSentAt !== null && input.now - input.lastSentAt < NOTIFY_GAP_MS) return { send: [], waiting: "gap", limit: false };
-  return { send: due, waiting: quiet && due.length < fresh.length ? "quiet" : null, limit: input.sentToday + 1 >= input.prefs.perDay };
+  if (!urgent && input.lastSentAt !== null && input.now - input.lastSentAt < NOTIFY_GAP_MS) return { send: [], waiting: "gap" };
+  return { send: due, waiting: quiet && due.length < fresh.length ? "quiet" : allowed.length < fresh.length ? "limit" : null };
 }
 
 const counted = (n: number, one: string, many: string): string => (n === 1 ? one : many.replace("%", String(n)));
 
-/** One message for what's told now: the item itself when it's one, otherwise how many of each kind, without their words. */
-export function notifyMessage(items: readonly NotifyItem[]): NotifyPayload | null {
+/**
+ * One message for what's told now: the item itself when it's one, otherwise how many of each kind, without
+ * their words. `salt`: this node's own secret for tags (see `tagOf`).
+ */
+export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPayload | null {
   if (!items.length) return null;
   if (items.length === 1) {
     const item = items[0]!;
-    return { v: 1, kind: item.kind, title: notifyClean(item.title, NOTIFY_TITLE_MAX), body: notifyClean(item.body, NOTIFY_BODY_MAX), open: item.open, ...(item.conversation ? { conversation: item.conversation } : {}), tag: tagOf(item.key) };
+    return { v: 1, kind: item.kind, title: notifyClean(item.title, NOTIFY_TITLE_MAX), body: notifyClean(item.body, NOTIFY_BODY_MAX), open: item.open, ...(item.conversation ? { conversation: item.conversation } : {}), tag: tagOf(item.key, salt) };
   }
   const count = (kind: NotifyKind) => items.filter((item) => item.kind === kind).length;
   const parts = [
@@ -285,20 +308,21 @@ export function notifyMessage(items: readonly NotifyItem[]): NotifyPayload | nul
 /**
  * A notification's tag from an item's key: the same finding told again replaces its old notification.
  * A digest, never the key itself: a key names what it's about ("bank-consent:…"), and a payload doesn't.
+ * Keyed with the node's own salt, because a digest of the tag also travels in the clear as the message's
+ * topic: without the salt a push service could try likely keys ("notice:loop:ci") against it.
  */
-export function tagOf(key: string): string {
-  const tag = `t-${b64u(sha256(utf8(key))).slice(0, 22)}`;
+export function tagOf(key: string, salt = ""): string {
+  const tag = `t-${b64u(sha256(utf8(`${salt}\n${key}`))).slice(0, 22)}`;
   return isNotifyTag(tag) ? tag : "galahad";
 }
 
-export const limitMessage = (perDay: number): NotifyPayload => ({
-  v: 1,
-  kind: "limit",
-  title: "Galahad: quiet until tomorrow",
-  body: `That's ${perDay} ${perDay === 1 ? "notification" : "notifications"} today, the most you allow. The rest waits in your Inbox.`,
-  open: "inbox",
-  tag: "limit",
-});
+/** The message that says ordinary news has reached the day's limit (`perDay`: the limit you set). */
+export function limitMessage(perDay: number): NotifyPayload {
+  const reserve = alertReserve(perDay);
+  const sent = perDay - reserve;
+  const rest = reserve ? "Until tomorrow only an alert reaches you; the rest waits in your Inbox." : "The rest waits in your Inbox.";
+  return { v: 1, kind: "limit", title: "Galahad: quiet until tomorrow", body: `That's ${sent} ${sent === 1 ? "notification" : "notifications"} today. ${rest}`, open: "inbox", tag: "limit" };
+}
 
 export const testMessage = (device: string): NotifyPayload => ({
   v: 1,
@@ -319,7 +343,8 @@ const PUSH_SERVICES: { name: string; hosts: string[]; suffixes: string[] }[] = [
   { name: "Microsoft", hosts: [], suffixes: [".notify.windows.com"] },
 ];
 
-export type PushServiceVerdict = { ok: true; service: string; origin: string } | { ok: false; why: string };
+/** `href`: the address as it was read here, which is the one to call (never the text it was read from). */
+export type PushServiceVerdict = { ok: true; service: string; origin: string; href: string } | { ok: false; why: string };
 
 /**
  * Whether an endpoint is a push service a node may call: https, no credentials in it, the default port,
@@ -337,16 +362,16 @@ export function pushService(endpoint: string, allowed: readonly string[] = []): 
   if (url.username || url.password) return { ok: false, why: "the subscription's endpoint carries credentials" };
   const host = url.hostname.toLowerCase();
   // An origin the owner named whole (scheme, host and port) is taken as it is: a stand-in push service in a test.
-  if (allowed.some((entry) => /^https?:\/\//.test(entry) && entry.replace(/\/$/, "") === url.origin)) return { ok: true, service: "a push service you allowed", origin: url.origin };
+  if (allowed.some((entry) => /^https?:\/\//.test(entry) && entry.replace(/\/$/, "") === url.origin)) return { ok: true, service: "a push service you allowed", origin: url.origin, href: url.href };
   if (url.protocol !== "https:") return { ok: false, why: "a push service is reached over https" };
   if (url.port && url.port !== "443") return { ok: false, why: "a push service is reached on the standard https port" };
   for (const service of PUSH_SERVICES) {
-    if (service.hosts.includes(host) || service.suffixes.some((suffix) => host.endsWith(suffix) && host.length > suffix.length)) return { ok: true, service: service.name, origin: url.origin };
+    if (service.hosts.includes(host) || service.suffixes.some((suffix) => host.endsWith(suffix) && host.length > suffix.length)) return { ok: true, service: service.name, origin: url.origin, href: url.href };
   }
   for (const entry of allowed) {
     if (/^https?:\/\//.test(entry)) continue;
     const pattern = entry.toLowerCase();
-    if (pattern === host || (pattern.startsWith("*.") && host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1)) return { ok: true, service: "a push service you allowed", origin: url.origin };
+    if (pattern === host || (pattern.startsWith("*.") && host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1)) return { ok: true, service: "a push service you allowed", origin: url.origin, href: url.href };
   }
   return { ok: false, why: `${host} isn't a push service this node knows (Apple, Google, Mozilla, Microsoft); allow another with GALAHAD_PUSH_HOSTS on the node` };
 }

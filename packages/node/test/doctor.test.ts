@@ -119,6 +119,12 @@ describe("each fault gives its own line and advice", () => {
     expect(open.fix).toContain("chmod 600");
 
     expect(fault((f) => (f.keys.keyFile = { exists: false, mode: null }), "node.keys").state).toBe("broken");
+    // The notification key is a key too: open to others is broken; not there yet is nothing to say.
+    const pushKey = fault((f) => (f.keys.pushKeyFile = { exists: true, mode: 0o640 }), "node.keys");
+    expect(pushKey.state).toBe("broken");
+    expect(pushKey.line).toContain("push-key.json, mode 640");
+    expect(pushKey.fix).toContain("makes a new key");
+    expect(fault((f) => (f.keys.pushKeyFile = { exists: false, mode: null }), "node.keys").state).toBe("ok");
     const home = fault((f) => (f.keys.home = { exists: true, mode: 0o755 }), "node.home");
     expect(home.state).toBe("needs-you");
     expect(home.line).toContain("mode 755");

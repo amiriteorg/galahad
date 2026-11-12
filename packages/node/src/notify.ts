@@ -6,6 +6,7 @@ import {
   fromB64u,
   journalItem,
   limitMessage,
+  limitReached,
   noticeItem,
   notifyDay,
   type NotifyDeviceView,
@@ -21,6 +22,7 @@ import {
   questInHand,
   questItem,
   type QuestView,
+  randomId,
   redact,
   secretItem,
   testMessage,
@@ -90,8 +92,9 @@ export const PENDING_KEEP_MS = 18 * HOUR;
 /** A journal entry is news while it's this fresh. */
 const JOURNAL_FRESH_MS = 6 * HOUR;
 const TOLD_KEEP_MS = 48 * HOUR;
-/** Your own test, at most this often. */
+/** Your own test, at most this often, and this many a day. */
 export const TEST_EVERY_MS = 5_000;
+export const TESTS_PER_DAY = 20;
 const TURN_POLL_MS = 1_000;
 const QUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/;
 
@@ -114,6 +117,7 @@ export class NotifyService {
   /** Quests of yours seen in hand, by the quest they belong to. */
   private readonly quests = new Set<string>();
   private keyProblem: string | null = null;
+  private tagSalt: string | null = null;
 
   constructor(private readonly o: NotifyOptions) {
     this.now = o.now ?? Date.now;
@@ -143,6 +147,17 @@ export class NotifyService {
       this.soon = null;
       void this.tick();
     }, 1500);
+  }
+
+  /** This node's own secret for notification tags (notify.ts `tagOf`): random, made once, kept in its private database. */
+  private salt(): string {
+    if (this.tagSalt) return this.tagSalt;
+    let salt = this.o.db.setting("tag-salt");
+    if (!salt) {
+      salt = randomId(16);
+      this.o.db.setSetting("tag-salt", salt);
+    }
+    return (this.tagSalt = salt);
   }
 
   /* ---------- what happened: turns that end unwatched, quests and experiments you started ---------- */
@@ -182,6 +197,9 @@ export class NotifyService {
   /** A quest you run (from a terminal) that was in hand and has ended. With effort: once every attempt has. */
   lookAtQuests(): void {
     if (this.stopped) return;
+    // "you" is how the node names a quest run from your terminal or device. A node enrolled under that very name
+    // would be named the same, and a quest's goal is shown as your words: with such a node, nothing is told.
+    if (this.o.mind.devices().some((d) => d.kind === "node" && d.name === "you")) return;
     const mine = this.o.sources.quests.list().filter((q) => q.by === "you");
     const groups = new Map<string, QuestView[]>();
     for (const quest of mine) {
@@ -293,8 +311,13 @@ export class NotifyService {
 
     const day = notifyDay(now, prefs.quiet.tz);
     const plan = planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt() });
-    if (!plan.send.length) return;
-    await this.deliver(plan.send, devices, day, plan.limit ? prefs.perDay : null);
+    if (plan.send.length) await this.deliver(plan.send, devices, day);
+    // Ordinary news has reached the day's limit: one message says so, once that day, and not in quiet hours.
+    if (limitReached(prefs, db.countOn(day)) && db.setting("limit-said") !== day && !inQuietHours(prefs.quiet, now)) {
+      db.setSetting("limit-said", day);
+      const said = await Promise.all(devices.map((device) => this.send(device, limitMessage(prefs.perDay), { ttlSeconds: 12 * 3600, urgency: "normal" })));
+      db.logSent(day, "limit", devices.map((d) => d.name), said.some(Boolean));
+    }
   }
 
   /** The subscribed devices that are still yours: one that was revoked loses its subscription here. */
@@ -323,33 +346,27 @@ export class NotifyService {
     return outcome.ok;
   }
 
-  private async deliver(items: NotifyItem[], devices: { sub: Subscription; name: string; scopes: string[] }[], day: string, limit: number | null): Promise<void> {
+  private async deliver(items: NotifyItem[], devices: { sub: Subscription; name: string; scopes: string[] }[], day: string): Promise<void> {
     const { db } = this.o;
     const alert = items.some((item) => item.alert);
     const delivery: PushDelivery = { ttlSeconds: alert ? 24 * 3600 : 12 * 3600, urgency: alert || items.some((item) => item.kind === "approval" || item.kind === "question") ? "high" : "normal" };
     // Told from here on, whatever the push service answers: a failing service is never a reason to try the same news again.
     db.tell(items);
     db.dropPending(items.map((item) => item.key));
-    const reached: { sub: Subscription; name: string }[] = [];
     const results = await Promise.all(
       devices.map(async (device) => {
         // Each device is told what it could see in the app anyway.
-        const payload = notifyMessage(items.filter((item) => item.needs.every((scope) => device.scopes.includes(scope))));
+        const payload = notifyMessage(items.filter((item) => item.needs.every((scope) => device.scopes.includes(scope))), this.salt());
         if (!payload) return null;
-        reached.push(device);
         return { name: device.name, ok: await this.send(device, payload, delivery) };
       }),
     );
     const sent = results.filter((r): r is { name: string; ok: boolean } => r !== null);
     if (!sent.length) return;
-    const kind = notifyMessage(items)!.kind;
+    const kind = notifyMessage(items, this.salt())!.kind;
     db.logSent(day, kind, sent.map((s) => s.name), sent.some((s) => s.ok));
     // His own act, in the ledger: what kind and to which devices, never what it said.
     this.o.ledger({ class: "outward", resource: "notify", target: kind, verdict: "approved", reason: "you turned notifications on for these devices", quest: "galahad.self", detail: `to ${sent.map((s) => s.name).join(", ")}`.slice(0, 500) });
-    if (limit !== null) {
-      const told = await Promise.all(reached.map((device) => this.send(device, limitMessage(limit), { ttlSeconds: 12 * 3600, urgency: "normal" })));
-      db.logSent(day, "limit", reached.map((d) => d.name), told.some(Boolean));
-    }
   }
 
   /* ---------- the owner's own acts: this device on and off, the settings, a test ---------- */
@@ -397,10 +414,12 @@ export class NotifyService {
   /** A fixed test message, to one device or to all of them. Yours to send; it doesn't count against the day's limit. */
   async test(only?: string): Promise<{ sent: { device: string; ok: boolean; error: string | null }[] }> {
     const now = this.now();
-    const last = this.o.db.lastTestAt();
-    if (last !== null && now - last < TEST_EVERY_MS) throw new NotifyError(429, "a test was just sent; give it a few seconds");
     const devices = this.devices().filter((d) => !only || d.sub.device === only);
     if (!devices.length) throw new NotifyError(409, only ? "notifications aren't turned on for that device" : "no device has notifications turned on (Settings, on each device)");
+    // Yours to send, but not without end: a page stuck in a loop can't buzz the phone with tests.
+    const last = this.o.db.lastTestAt();
+    if (last !== null && now - last < TEST_EVERY_MS) throw new NotifyError(429, "a test was just sent; give it a few seconds");
+    if (this.o.db.testsOn(notifyDay(now, this.o.db.prefs().quiet.tz)) >= TESTS_PER_DAY) throw new NotifyError(429, `that's ${TESTS_PER_DAY} tests today; more tomorrow`);
     const sent = await Promise.all(
       devices.map(async (device) => {
         const ok = await this.send(device, testMessage(device.name), { ttlSeconds: 600, urgency: "high" });

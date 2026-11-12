@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   actionItem,
+  alertReserve,
   conversationFromHash,
   experimentItem,
   GENERIC_NOTIFICATION,
   inQuietHours,
   journalItem,
   limitMessage,
+  limitReached,
   NOTIFY_BODY_MAX,
   NOTIFY_DEFAULTS,
   NOTIFY_GAP_MS,
@@ -95,9 +97,12 @@ describe("what a notification may say", () => {
     expect(actionItem({ ...waiting, tool: "Send $$$ to evil" }, now)!.body).toBe("An action is waiting for your answer in the Inbox.");
   });
 
-  test("a key he asks for: its name, never what it's for", () => {
+  test("a key he asks for: neither its name nor what it's for (whoever asked chose both, and an agent may ask)", () => {
     expect(secretItem("github")).toMatchObject({ key: "secret:github", kind: "question", title: "Galahad asks for a key", needs: ["vault:read"] });
-    expect(secretItem("github")!.body).toStartWith("github: fill it in the Vault.");
+    // A name is words enough to say something: it never reaches a lock screen.
+    const planted = secretItem("call-0045-5550-1999-now.your-bank-is-locked")!;
+    expect(planted.body).toBe("He needs a key to go on. The Inbox says which; he learns only that it's there.");
+    expect(planted.body).toBe(secretItem("github")!.body);
     expect(secretItem("bad name with spaces")).toBeNull();
   });
 
@@ -112,6 +117,10 @@ describe("what a notification may say", () => {
     const bank = turnItem({ ...base, title: "What did I spend at the bakery?", bank: true })!;
     expect(bank.body).toBe("A chat you left him working in.");
     expect(bank.needs).toEqual(["chat", "bank:read"]);
+    // Your own words aren't shown when they speak of the bank, whether or not he read it.
+    for (const title of ["Check my bank balance", "List last month's transactions", "Why was my account charged?"]) {
+      expect(turnItem({ ...base, title })!.body).toBe("A chat you left him working in.");
+    }
     // A title that looks like it holds a secret isn't shown either.
     expect(turnItem({ ...base, title: "api_key=sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE" })!.body).toBe("A chat you left him working in.");
     expect(turnItem({ ...base, conversation: "not-a-chat" })).toBeNull();
@@ -124,6 +133,7 @@ describe("what a notification may say", () => {
     expect(questItem({ quest: "q-abc", goal: "x", state: "failed" })!.title).toBe("Quest failed");
     expect(questItem({ quest: "q-abc", goal: "x", state: "stopped" })).toBeNull();
     expect(questItem({ quest: "q-abc", goal: "x", state: "working" })).toBeNull();
+    expect(questItem({ quest: "q-abc", goal: "Reconcile the bank transactions with the ledger", state: "done" })!.body).toBe("A quest you started has ended.");
     expect(experimentItem({ id: "x-1", status: "failed" })).toMatchObject({ kind: "finished", title: "Experiment failed" });
     expect(journalItem("2026-11-12")).toMatchObject({ key: "journal:2026-11-12", kind: "journal", title: "His journal is written", body: "Thursday 12 November 2026", open: "journal" });
     expect(journalItem("yesterday")).toBeNull();
@@ -132,7 +142,7 @@ describe("what a notification may say", () => {
 
 describe("when he speaks, and when he stays silent", () => {
   test("all quiet sends nothing", () => {
-    expect(plan([])).toEqual({ send: [], waiting: null, limit: false });
+    expect(plan([])).toEqual({ send: [], waiting: null });
   });
 
   test("once per finding: what was told isn't told again while it stands; an alert told only as a warning is", () => {
@@ -157,8 +167,8 @@ describe("when he speaks, and when he stays silent", () => {
     const warn = item("notice:disk");
     const approval = item("action:a", { kind: "approval" });
     const alert = item("notice:vault", { alert: true });
-    expect(plan([warn, approval], { now: night })).toEqual({ send: [], waiting: "quiet", limit: false });
-    expect(plan([warn, approval, alert], { now: night })).toEqual({ send: [alert], waiting: "quiet", limit: false });
+    expect(plan([warn, approval], { now: night })).toEqual({ send: [], waiting: "quiet" });
+    expect(plan([warn, approval, alert], { now: night })).toEqual({ send: [alert], waiting: "quiet" });
     // 07:00 exactly: they've ended, and everything that waited goes as one message.
     const morning = at("2026-11-13T06:00:00Z");
     const woke = plan([warn, approval], { now: morning, told: new Map() });
@@ -187,12 +197,27 @@ describe("when he speaks, and when he stays silent", () => {
     expect(notifyDay(at("2026-11-12T22:30:00Z"), "Europe/Copenhagen")).toBe("2026-11-12");
   });
 
-  test("the day's limit: the message that reaches it is followed by one that says so; then nothing, alerts too", () => {
-    const prefs: NotifyPrefs = { ...NOTIFY_DEFAULTS, perDay: 3 };
-    expect(plan([item("a")], { prefs, sentToday: 1 }).limit).toBe(false);
-    expect(plan([item("a")], { prefs, sentToday: 2 })).toEqual({ send: [item("a")], waiting: null, limit: true });
-    expect(plan([item("a"), item("b", { alert: true })], { prefs, sentToday: 3 })).toEqual({ send: [], waiting: "limit", limit: false });
-    expect(limitMessage(3)).toMatchObject({ kind: "limit", title: "Galahad: quiet until tomorrow", body: "That's 3 notifications today, the most you allow. The rest waits in your Inbox." });
+  test("the day's limit: ordinary news stops a little before it, with one message that says so; the rest is for alerts; then nothing at all", () => {
+    // 12 a day: 10 for ordinary news, 2 kept back for alerts.
+    expect([alertReserve(12), alertReserve(6), alertReserve(5), alertReserve(3), alertReserve(2), alertReserve(1)]).toEqual([2, 2, 1, 1, 0, 0]);
+    const prefs: NotifyPrefs = { ...NOTIFY_DEFAULTS, perDay: 12 };
+    expect(limitReached(prefs, 9)).toBe(false);
+    // The tenth is told, and reaches it: one message says so.
+    expect(plan([item("a")], { prefs, sentToday: 9 })).toEqual({ send: [item("a")], waiting: null });
+    expect(limitReached(prefs, 10)).toBe(true);
+    expect(limitMessage(12)).toMatchObject({ kind: "limit", title: "Galahad: quiet until tomorrow", body: "That's 10 notifications today. Until tomorrow only an alert reaches you; the rest waits in your Inbox." });
+    // After that, ordinary news waits, however much of it there is: noise can't spend what's kept for an alert.
+    expect(plan([item("a"), item("b")], { prefs, sentToday: 10 })).toEqual({ send: [], waiting: "limit" });
+    const alert = item("vault", { alert: true });
+    expect(plan([item("a"), alert], { prefs, sentToday: 10 })).toEqual({ send: [alert], waiting: "limit" });
+    expect(plan([alert], { prefs, sentToday: 11 })).toEqual({ send: [alert], waiting: null });
+    // The whole limit is a limit: at 12, not even an alert.
+    expect(plan([item("a"), alert], { prefs, sentToday: 12 })).toEqual({ send: [], waiting: "limit" });
+    // A limit too small to keep anything back: the message that reaches it says so.
+    const two: NotifyPrefs = { ...NOTIFY_DEFAULTS, perDay: 2 };
+    expect([limitReached(two, 1), limitReached(two, 2)]).toEqual([false, true]);
+    expect(limitMessage(2).body).toBe("That's 2 notifications today. The rest waits in your Inbox.");
+    expect(limitMessage(1).body).toBe("That's 1 notification today. The rest waits in your Inbox.");
   });
 
   test("a burst is one buzz: everything new goes together, and the next waits a minute unless it's an alert", () => {
@@ -200,7 +225,7 @@ describe("when he speaks, and when he stays silent", () => {
     const many = [item("notice:1"), item("notice:2"), item("action:a", { kind: "approval" }), item("turn:t", { kind: "finished", open: "chat" })];
     expect(plan(many).send).toHaveLength(4);
     expect(notifyMessage(many)).toMatchObject({ kind: "summary", body: "2 things need you, 1 approval is waiting, he finished 1 piece of work.", open: "inbox", tag: "summary" });
-    expect(plan([item("notice:3")], { now, lastSentAt: now - 20_000 })).toEqual({ send: [], waiting: "gap", limit: false });
+    expect(plan([item("notice:3")], { now, lastSentAt: now - 20_000 })).toEqual({ send: [], waiting: "gap" });
     expect(plan([item("notice:3")], { now, lastSentAt: now - NOTIFY_GAP_MS }).send).toHaveLength(1);
     expect(plan([item("notice:3", { alert: true })], { now, lastSentAt: now - 1000 }).send).toHaveLength(1);
   });
@@ -212,6 +237,10 @@ describe("when he speaks, and when he stays silent", () => {
     expect(tagOf("notice:bank-consent:n_1")).toMatch(/^t-[A-Za-z0-9_-]{22}$/);
     expect(tagOf("notice:bank-consent:n_1")).toBe(tagOf("notice:bank-consent:n_1"));
     expect(tagOf("notice:bank-consent:n_1")).not.toBe(tagOf("notice:bank-consent:n_2"));
+    // Keyed with the node's own salt: a likely key can't be tried against a tag (or the topic made from it) by anyone without it.
+    expect(tagOf("notice:loop:ci", "one node's salt")).not.toBe(tagOf("notice:loop:ci"));
+    expect(tagOf("notice:loop:ci", "one node's salt")).not.toBe(tagOf("notice:loop:ci", "another's"));
+    expect(notifyMessage([turn], "salt")!.tag).toBe(tagOf("turn:t_9", "salt"));
     expect(notifyMessage([])).toBeNull();
     // Several chats at once open the Overview's In hand, not one of them.
     expect(notifyMessage([turn, { ...turn, key: "turn:t_8" }])).toMatchObject({ kind: "summary", open: "overview", body: "He finished 2 pieces of work." });
@@ -268,7 +297,11 @@ describe("the payload", () => {
 
 describe("where a notification may be sent", () => {
   test("the push services browsers use, over https, on the standard port", () => {
-    expect(pushService("https://web.push.apple.com/QGS8abc")).toEqual({ ok: true, service: "Apple", origin: "https://web.push.apple.com" });
+    expect(pushService("https://web.push.apple.com/QGS8abc")).toEqual({ ok: true, service: "Apple", origin: "https://web.push.apple.com", href: "https://web.push.apple.com/QGS8abc" });
+    // The address to call is the one that was read here, not the text it came as.
+    expect(pushService("HTTPS://FCM.googleapis.com:443/fcm/send/abc")).toMatchObject({ ok: true, href: "https://fcm.googleapis.com/fcm/send/abc" });
+    expect(pushService("https://evil.example\\@fcm.googleapis.com/x").ok).toBe(false);
+    expect(pushService("https://fcm.googleapis.com./fcm/send/abc").ok).toBe(false);
     expect(pushService("https://fcm.googleapis.com/fcm/send/abc:def")).toMatchObject({ ok: true, service: "Google" });
     expect(pushService("https://updates.push.services.mozilla.com/wpush/v2/gAAAA")).toMatchObject({ ok: true, service: "Mozilla" });
     expect(pushService("https://wns2-by3p.notify.windows.com/w/?token=abc")).toMatchObject({ ok: true, service: "Microsoft" });

@@ -83,7 +83,7 @@ bun galahad notify                         # the devices he can reach, what he t
 bun galahad notify test                    # one test notification to every device (notify test phone: to one)
 bun galahad notify kinds journal on        # also tell you when his journal is written (off by default)
 bun galahad notify quiet 22:00-07:00       # quiet hours, Denmark's time unless --tz says otherwise (notify quiet off)
-bun galahad notify limit 12                # at most this many a day; when it's reached, one last message says so
+bun galahad notify limit 12                # at most this many a day, the last two kept for alerts; one message says when it's reached
 bun galahad notify off phone               # stop notifying a device (it's turned on again from that device)
 ```
 

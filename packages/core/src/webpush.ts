@@ -95,16 +95,18 @@ const info = (label: string): Bytes => utf8(`Content-Encoding: ${label}\0`);
  * The plaintext is followed by the last-record delimiter (0x02), then sealed with a key and nonce derived
  * from the salt and the keying material (RFC 8188 §2.2, §2.3).
  */
-export function aes128gcmEncode(input: { ikm: Bytes; salt: Bytes; keyId: Bytes; plaintext: Bytes; recordSize?: number }): Bytes {
+export function aes128gcmEncode(input: { ikm: Bytes; salt: Bytes; keyId: Bytes; plaintext: Bytes; recordSize?: number; padTo?: number }): Bytes {
   if (input.salt.length !== 16) throw new Error("the salt is 16 bytes");
   if (input.keyId.length > 255) throw new Error("the key id is at most 255 bytes");
   const rs = input.recordSize ?? PUSH_RECORD_SIZE;
-  // One record: the plaintext, its delimiter and the tag must fit.
-  if (input.plaintext.length + 1 + 16 > rs) throw new Error("the message doesn't fit in one record");
+  // Padding (RFC 8188 §2): zeros after the delimiter, so a message's length doesn't say what it holds.
+  const padding = Math.max(0, Math.min(input.padTo ?? 0, rs - 17) - input.plaintext.length);
+  // One record: the plaintext, its delimiter, any padding and the tag must fit.
+  if (input.plaintext.length + 1 + padding + 16 > rs) throw new Error("the message doesn't fit in one record");
   const prk = extract(sha256, input.ikm, input.salt);
   const cek = expand(sha256, prk, info("aes128gcm"), 16);
   const nonce = expand(sha256, prk, info("nonce"), 12);
-  const sealed = gcm(cek, nonce).encrypt(concat(input.plaintext, new Uint8Array([0x02])));
+  const sealed = gcm(cek, nonce).encrypt(concat(input.plaintext, new Uint8Array([0x02]), new Uint8Array(padding)));
   const header = new Uint8Array(21 + input.keyId.length);
   header.set(input.salt, 0);
   new DataView(header.buffer).setUint32(16, rs, false);
@@ -123,10 +125,11 @@ export interface PushRecipient {
 
 /**
  * Encrypts a message to one subscription (RFC 8291 §3): a fresh sender key and salt for every message
- * (`sender` and `salt` are given only by tests, to reproduce the RFC's example).
+ * (`sender` and `salt` are given only by tests, to reproduce the RFC's example). `padTo`: the message is
+ * padded to that many bytes before it's sealed, so every message of a kind is the same size on the wire.
  * Returns the request body, to send with `Content-Encoding: aes128gcm`.
  */
-export function encryptPush(recipient: PushRecipient, plaintext: Bytes, fixed: { sender?: PushKeyPair; salt?: Bytes } = {}): Bytes {
+export function encryptPush(recipient: PushRecipient, plaintext: Bytes, fixed: { sender?: PushKeyPair; salt?: Bytes; padTo?: number } = {}): Bytes {
   if (!isP256Point(recipient.p256dh)) throw new Error("the subscription's key isn't a P-256 public key");
   if (recipient.auth.length !== 16) throw new Error("the subscription's authentication secret is 16 bytes");
   if (plaintext.length > PUSH_MAX_PLAINTEXT) throw new Error(`a push message carries at most ${PUSH_MAX_PLAINTEXT} bytes`);
@@ -137,5 +140,5 @@ export function encryptPush(recipient: PushRecipient, plaintext: Bytes, fixed: {
   // Mixed with the authentication secret and both public keys: only this browser and this sender derive it.
   const keyInfo = concat(utf8("WebPush: info\0"), recipient.p256dh, sender.publicKey);
   const ikm = expand(sha256, extract(sha256, shared, recipient.auth), keyInfo, 32);
-  return aes128gcmEncode({ ikm, salt, keyId: sender.publicKey, plaintext });
+  return aes128gcmEncode({ ikm, salt, keyId: sender.publicKey, plaintext, ...(fixed.padTo ? { padTo: fixed.padTo } : {}) });
 }

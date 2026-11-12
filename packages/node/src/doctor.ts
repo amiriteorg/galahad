@@ -36,7 +36,7 @@ export interface DoctorFacts {
   quick: boolean;
   offline: boolean;
   self: { id: string; name: string; fleetName: string; active: boolean; role: string | null; alwaysOn: boolean; startedAt: number };
-  keys: { keystore: "os" | "file"; keyFile: FileFact | null; home: FileFact | null; adminToken: FileFact | null };
+  keys: { keystore: "os" | "file"; keyFile: FileFact | null; home: FileFact | null; adminToken: FileFact | null; /** The notification key's file, once there is one (file keystore). */ pushKeyFile?: FileFact | null };
   mind: {
     events: number;
     /** SQLite's own check: "ok", what it found, or null when it wasn't run. */
@@ -177,6 +177,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   if (f.keys.keystore === "os") add("node", "node.keys", "ok", "its device keys are in the operating system's keychain");
   else if (f.keys.keyFile && !f.keys.keyFile.exists) add("node", "node.keys", "broken", "its key file (keys.json) is gone, so it can't start again", "Restore keys.json from a backup of the node's home, or enrol this machine again (galahad join) and revoke the old entry.");
   else if (openToOthers(f.keys.keyFile)) add("node", "node.keys", "broken", `its key file can be read by other users of this machine (mode ${octal(f.keys.keyFile!.mode!)})`, "chmod 600 keys.json in the node's home, then consider the keys read: revoke this node and enrol it again.");
+  else if (openToOthers(f.keys.pushKeyFile ?? null)) add("node", "node.keys", "broken", `its notification key can be read by other users of this machine (push-key.json, mode ${octal(f.keys.pushKeyFile!.mode!)})`, "Stop the node, delete push-key.json and start it again: it makes a new key, and each device subscribes to it the next time its app opens. Whoever read the old one could have sent notifications as this node.");
   else if (!f.keys.keyFile || f.keys.keyFile.mode === null) add("node", "node.keys", "ok", "its device keys are in a key file (keys.json); this system has no file modes to check");
   else add("node", "node.keys", "ok", "its device keys are in a file only its own user can read (keys.json)");
 

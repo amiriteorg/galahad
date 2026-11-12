@@ -147,6 +147,15 @@ export class NotifyStore {
     this.db.query("INSERT INTO settings (k, v) VALUES ('prefs', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v").run(JSON.stringify(prefs));
   }
 
+  /** A setting of the node's own, by name (null: never set). */
+  setting(key: string): string | null {
+    return this.db.query<{ v: string }, [string]>("SELECT v FROM settings WHERE k = ?").get(key)?.v ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.query("INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v").run(key, value);
+  }
+
   /* ---------- what was told ---------- */
 
   told(): Map<string, ToldRow> {
@@ -219,6 +228,11 @@ export class NotifyStore {
   /** When the last notification that counts was sent. */
   lastSentAt(): number | null {
     return this.db.query<{ at: number | null }, []>(`SELECT MAX(at) AS at FROM sent WHERE kind NOT IN ${UNCOUNTED}`).get()?.at ?? null;
+  }
+
+  /** How many tests were sent on a day. */
+  testsOn(day: string): number {
+    return this.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM sent WHERE day = ? AND kind = 'test'").get(day)!.n;
   }
 
   /** When the last test was sent to anyone (tests are yours to send, a few seconds apart). */

@@ -114,7 +114,8 @@ describe("every version, kept", () => {
     expect(ids(again.history.state(3)!.state.strokes)).toEqual([stroke(1).id]);
     expect(again.history.size).toBe(401);
     expect(again.version).toBe(400);
-  });
+    // 400 changes of 12 KB each, written through to disk: seconds of real work, and more on a busy machine.
+  }, 30_000);
 
   test("a crash mid-write: the half line is skipped and the next change still lands; a lost board file comes back from its history", () => {
     const d = dir();

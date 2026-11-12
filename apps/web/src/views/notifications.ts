@@ -193,7 +193,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
           h(
             "div",
             { class: "item center notify-row wrap" },
-            h("div", { class: "grow", style: "min-width:200px" }, h("label", { class: "strong small", for: "notify-per-day", style: "display:block" }, "At most a day"), h("div", { class: "tiny subtle" }, "So a fault can't buzz you all day. When it's reached, one last message says so.")),
+            h("div", { class: "grow", style: "min-width:200px" }, h("label", { class: "strong small", for: "notify-per-day", style: "display:block" }, "At most a day"), h("div", { class: "tiny subtle" }, "So a fault can't buzz you all day. The last one or two are kept for alerts; when ordinary news reaches the limit, one message says so.")),
             h("div", { class: "field" }, perDay),
           ),
           h("div", { class: "item" }, perDayNote),

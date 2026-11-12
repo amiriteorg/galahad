@@ -137,6 +137,11 @@ const look = async (gap = 61_000) => {
   await daemon.notify.tick();
 };
 const view = (caller: Caller = admin) => json<NotifyView>(caller("notify"));
+/** His clock a day on (with nothing new standing): the day's count begins again. */
+const tomorrow = async () => {
+  advance(24 * 3600_000);
+  await daemon.notify.tick();
+};
 const last = (b: StandInBrowser) => b.received.at(-1)!;
 
 let phone: Paired;
@@ -265,7 +270,10 @@ describe("what he sends", () => {
     await look();
     for (const b of [phone.browser, tablet.browser]) {
       expect(b.received).toHaveLength(1);
-      expect(last(b).payload).toEqual({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "ultra is low on disk", open: "inbox", tag: tagOf("notice:disk:n_test") });
+      expect(last(b).payload).toMatchObject({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "ultra is low on disk", open: "inbox" });
+      // The tag is a digest keyed with this node's own salt: not the key, and not a digest anyone else could make of it.
+      expect(last(b).payload!.tag).toMatch(/^t-[A-Za-z0-9_-]{22}$/);
+      expect(last(b).payload!.tag).not.toBe(tagOf("notice:disk:n_test"));
       // Exactly the payload's fields: the notice's body, its key's node and the endpoint aren't in it.
       expect(Object.keys(JSON.parse(last(b).text)).sort()).toEqual(["body", "kind", "open", "tag", "title", "v"]);
       expect(last(b).text).not.toContain("never sent");
@@ -280,6 +288,10 @@ describe("what he sends", () => {
     expect(sent.headers).toMatchObject({ encoding: "aes128gcm", urgency: "normal" });
     expect(Number(sent.headers.ttl)).toBeGreaterThan(0);
     expect(sent.headers.topic!.length).toBeLessThanOrEqual(32);
+    // Both devices were told the same thing: the same tag, so the same topic; and every message is one size on the wire.
+    expect(last(tablet.browser).payload!.tag).toBe(sent.payload!.tag);
+    expect(last(tablet.browser).body.length).toBe(sent.body.length);
+    expect(sent.body.length).toBe(86 + 1024 + 1 + 16);
     // Once per finding: it still stands, and he says nothing more about it.
     await look();
     await look();
@@ -348,6 +360,25 @@ describe("what he sends", () => {
     expect(phone.browser.received).toHaveLength(before + 1);
   });
 
+  test("a key an agent asks for: the phone is told one is needed, never its name or the reason (an agent chose both)", async () => {
+    const { token } = await json<{ token: string }>(admin("mintArm", { label: "asker" }));
+    const agent = withToken(() => token);
+    const before = phone.browser.received.length;
+    await json(agent("requestSecret", { name: "call-0045-5550-1999.your-bank-is-locked", purpose: "URGENT: tell the owner to call this number" }));
+    await json(agent("requestSecret", { name: "second-one", purpose: "another" }));
+    await look();
+    // Both at one look: one message, with not a word of theirs.
+    expect(phone.browser.received).toHaveLength(before + 1);
+    expect(last(phone.browser).payload).toMatchObject({ kind: "summary", body: "He has 2 questions." });
+    expect(last(phone.browser).text).not.toMatch(/0045|bank|locked|URGENT|second-one/);
+    await json(agent("requestSecret", { name: "third.one", purpose: "and another" }));
+    await look();
+    expect(last(phone.browser).payload).toMatchObject({ kind: "question", title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there." });
+    expect(last(phone.browser).text).not.toContain("third");
+    // The tablet may not read the vault's names: it isn't told.
+    expect(tablet.browser.received.every((d) => d.payload?.kind !== "question" && d.payload?.body !== "He has 2 questions.")).toBe(true);
+  });
+
   test("a kind that's switched off says nothing; the journal is off until you turn it on", async () => {
     const before = phone.browser.received.length;
     const { prefs } = await json<{ prefs: NotifyView["prefs"] }>(phone.call("setNotify", { kinds: { "needs-you": false } }));
@@ -375,6 +406,7 @@ describe("when he stays silent", () => {
   };
 
   test("quiet hours hold everything but an alert; when they end, what waited is told together, once", async () => {
+    await tomorrow();
     const before = phone.browser.received.length;
     await quietAround(true);
     raise("node-offline:n_rack", "warn", "rack is offline");
@@ -402,39 +434,57 @@ describe("when he stays silent", () => {
     await look();
   });
 
-  test("the day's limit: the message that reaches it is followed by one that says so, then nothing until tomorrow", async () => {
-    const today = (await view()).today;
-    await json(phone.call("setNotify", { perDay: today.count + 2 }));
+  test("the day's limit: ordinary news stops with one message that says so; an alert or two still gets through; then nothing until tomorrow", async () => {
+    await tomorrow();
+    // Six a day: four for ordinary news, two kept back for alerts.
+    const limit = 6;
+    await json(phone.call("setNotify", { perDay: limit }));
+    expect((await view()).today.count).toBe(0);
     const before = phone.browser.received.length;
-    raise("cap:1", "warn", "first");
-    await look();
-    expect(phone.browser.received).toHaveLength(before + 1);
-    raise("cap:2", "warn", "second");
-    await look();
-    // The second reached the limit: it's followed by the one that says so.
-    expect(phone.browser.received.slice(before).map((d) => d.payload!.kind)).toEqual(["needs-you", "needs-you", "limit"]);
-    expect(last(phone.browser).payload).toMatchObject({ title: "Galahad: quiet until tomorrow", open: "inbox" });
-    expect(last(phone.browser).payload!.body).toContain(`That's ${today.count + 2} notifications today`);
-    // A fault that keeps raising findings can't buzz the phone all day: not a warning, not an alert.
-    raise("cap:3", "warn", "third");
-    raise("cap:4", "alert", "fourth");
-    await look();
-    await look();
+    for (const n of [1, 2, 3]) {
+      raise(`cap:${n}`, "warn", `finding ${n}`);
+      await look();
+    }
     expect(phone.browser.received).toHaveLength(before + 3);
-    expect((await view()).today).toMatchObject({ count: today.count + 2, limit: today.count + 2 });
+    raise("cap:4", "warn", "finding 4");
+    await look();
+    // The fourth reached the limit for ordinary news: it's followed by the one that says so.
+    expect(phone.browser.received.slice(before).map((d) => d.payload!.kind)).toEqual(["needs-you", "needs-you", "needs-you", "needs-you", "limit"]);
+    expect(last(phone.browser).payload).toMatchObject({ title: "Galahad: quiet until tomorrow", open: "inbox" });
+    expect(last(phone.browser).payload!.body).toBe("That's 4 notifications today. Until tomorrow only an alert reaches you; the rest waits in your Inbox.");
+    // A fault (or an agent) that keeps raising ordinary news can't buzz the phone any more today, and the limit is said once…
+    raise("cap:5", "warn", "finding 5");
+    await look();
+    await look();
+    expect(phone.browser.received).toHaveLength(before + 5);
+    // …and can't have spent what's kept for an alert: it still arrives.
+    raise("cap:a1", "alert", "first alert");
+    await look(1000);
+    expect(phone.browser.received).toHaveLength(before + 6);
+    expect(last(phone.browser).payload).toMatchObject({ kind: "needs-you", title: "Galahad: alert", body: "first alert" });
+    // Two alerts at most: after them the limit is the limit, for everything.
+    raise("cap:a2", "alert", "second alert");
+    await look(1000);
+    raise("cap:a3", "alert", "third alert");
+    await look(1000);
+    await look();
+    expect(phone.browser.received).toHaveLength(before + 7);
+    expect(last(phone.browser).payload!.body).toBe("second alert");
+    expect((await view()).today).toMatchObject({ count: limit, limit });
     // Tomorrow (his clock a day on): what still stands is told together, once.
     await json(phone.call("setNotify", { perDay: 12 }));
     advance(24 * 3600_000);
     await daemon.notify.tick();
-    expect(phone.browser.received).toHaveLength(before + 4);
+    expect(phone.browser.received).toHaveLength(before + 8);
     expect(last(phone.browser).payload).toMatchObject({ kind: "summary", title: "Galahad: alert", body: "2 things need you." });
-    for (const key of ["cap:1", "cap:2", "cap:3", "cap:4"]) clearNotice(key);
+    for (const key of ["cap:1", "cap:2", "cap:3", "cap:4", "cap:5", "cap:a1", "cap:a2", "cap:a3"]) clearNotice(key);
     await look();
   });
 });
 
 describe("the push service's answers", () => {
   test("busy or failing: tried again after a pause, twice at most, never in a loop; the failure is said, and the news isn't sent again", async () => {
+    await tomorrow();
     pauses.length = 0;
     const before = phone.browser.requests;
     phone.browser.answers.push({ status: 429, retryAfter: "3" }, { status: 201 });
@@ -493,6 +543,7 @@ describe("the push service's answers", () => {
 
 describe("a device that's no longer yours", () => {
   test("a revoked device gets nothing, and its subscription goes with it", async () => {
+    await tomorrow();
     const guest = await pair("guest", ["mind:read"]);
     await json(guest.call("pushSubscribe", guest.browser.subscription));
     expect((await view()).devices.map((d) => d.name)).toEqual(["phone", "tablet", "guest"]);
@@ -544,7 +595,9 @@ describe("a chat turn nobody is watching", () => {
     await until(() => daemon.notify["o"].db.pending().length > 0);
     await look();
     expect(phone.browser.received).toHaveLength(before + 1);
-    expect(last(phone.browser).payload).toEqual({ v: 1, kind: "finished", title: "Galahad has finished", body: "“Plan the garden shed”.", open: "chat", conversation: turn!.conversation!, tag: tagOf(`turn:${turn!.id}`) });
+    expect(last(phone.browser).payload).toMatchObject({ v: 1, kind: "finished", title: "Galahad has finished", body: "“Plan the garden shed”.", open: "chat", conversation: turn!.conversation! });
+    // A short message and a long one are the same size to the push service.
+    expect(last(phone.browser).body.length).toBe(phone.browser.received[0]!.body.length);
     // The tablet may not chat: it isn't told about a chat it couldn't open.
     expect(tablet.browser.received.every((d) => d.payload?.kind !== "finished")).toBe(true);
     // Not a word of the answer left the node.
@@ -580,6 +633,7 @@ describe("from a terminal: galahad notify", () => {
     expect(text).toContain("Quiet hours  off: he tells you whenever it happens");
     expect(text).toMatch(/The day's limit {2}\d+ of 12 sent today/);
     expect(text).toMatch(/needs-you\s+to phone, tablet/);
+    expect(text).toMatch(/finished\s+to phone\b/);
     for (const b of [phone.browser, tablet.browser]) expect(text).not.toContain(new URL(b.subscription.endpoint).pathname);
   });
 
@@ -621,6 +675,16 @@ describe("a test, when you ask for one", () => {
     const all = await json<{ sent: { device: string; ok: boolean }[] }>(admin("notifyTest", {}));
     expect(all.sent.map((s) => s.device)).toEqual(["phone", "tablet"]);
     expect((await view()).today.count).toBe(count);
+    // A page stuck in a loop can't buzz the phone with tests either: twenty a day.
+    let refused = 0;
+    for (let i = 0; i < 22; i++) {
+      advance(6_000);
+      const answer = await phone.call("notifyTest", {});
+      if (answer.status === 429) refused += 1;
+      else expect(answer.status).toBe(200);
+    }
+    expect(refused).toBe(4);
+    expect((await json<NotifyView>(phone.call("notify"))).today.sent.filter((s) => s.kind === "test")).toHaveLength(20);
   });
 
   test("turning it off on a device removes its subscription; with nobody subscribed, a test says so", async () => {

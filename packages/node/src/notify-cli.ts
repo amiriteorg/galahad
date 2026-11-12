@@ -1,4 +1,4 @@
-import { CLOCK, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyDeviceView, type NotifyKind, type NotifyPrefs, type NotifyView, type RouteName } from "@galahad/core";
+import { alertReserve, CLOCK, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyDeviceView, type NotifyKind, type NotifyPrefs, type NotifyView, type RouteName } from "@galahad/core";
 
 /*
  * `galahad notify`: he comes to you, seen and set from a terminal. Thin: the node keeps
@@ -100,7 +100,8 @@ export async function notifyCommand(api: Api, sub: string | undefined, rest: str
     const n = Number(rest[0]);
     if (!rest[0] || !Number.isInteger(n) || n < NOTIFY_PER_DAY.min || n > NOTIFY_PER_DAY.max) throw new Error(`the day's limit is a whole number from ${NOTIFY_PER_DAY.min} to ${NOTIFY_PER_DAY.max}: galahad notify limit 12`);
     const { prefs } = await api.call<{ prefs: NotifyPrefs }>("setNotify", { perDay: n });
-    print(`At most ${prefs.perDay} a day. When it's reached, one last message says so.`);
+    const kept = alertReserve(prefs.perDay);
+    print(`At most ${prefs.perDay} a day${kept ? `, the last ${kept === 1 ? "one" : kept} kept for alerts` : ""}. When ordinary news reaches the limit, one message says so.`);
     return;
   }
   if (sub === "off") {

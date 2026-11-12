@@ -47,6 +47,8 @@ export interface PushSenderOptions {
 /** The node's contact for push services unless the owner names one: it identifies nobody. */
 export const DEFAULT_PUSH_CONTACT = "mailto:node-owner@example.com";
 export const PUSH_TIMEOUT_MS = 10_000;
+/** Every message is padded to this before it's sealed (a title and a line at their longest fit well inside). */
+export const PUSH_PAD_BYTES = 1024;
 /** Pauses before a second and a third try. */
 export const PUSH_RETRY_MS = [2_000, 8_000] as const;
 const MAX_RETRY_AFTER_MS = 30_000;
@@ -96,7 +98,8 @@ export class PushSender {
     let body: Uint8Array;
     let authorization: string;
     try {
-      body = encryptPush({ p256dh: fromB64u(target.p256dh), auth: fromB64u(target.auth) }, utf8(JSON.stringify(safe)));
+      // Padded: every notification is the same size on the wire, whatever it says.
+      body = encryptPush({ p256dh: fromB64u(target.p256dh), auth: fromB64u(target.auth) }, utf8(JSON.stringify(safe)), { padTo: PUSH_PAD_BYTES });
       authorization = await this.authorization(service.origin);
     } catch (error) {
       return { ok: false, gone: false, status: null, error: `the message couldn't be prepared: ${String((error as Error).message).slice(0, 120)}`, attempts: 0 };
@@ -116,7 +119,8 @@ export class PushSender {
       attempts += 1;
       let retryAfterMs: number | null = null;
       try {
-        const response = await this.fetchImpl(target.endpoint, {
+        // The address as it was read and checked, never the text it came as.
+        const response = await this.fetchImpl(service.href, {
           method: "POST",
           headers,
           body: body as Uint8Array<ArrayBuffer>,

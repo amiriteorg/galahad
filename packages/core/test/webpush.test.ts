@@ -110,6 +110,24 @@ describe("RFC 8291: message encryption for Web Push", () => {
     expect(new TextDecoder("utf-8", { fatal: false }).decode(body)).not.toContain("low on disk");
   });
 
+  test("padded: a short message and a long one are the same size on the wire, and both read back whole", async () => {
+    const browser = await browserSubscription();
+    const short = utf8('{"v":1,"kind":"test","title":"Galahad","body":"Hi.","open":"settings","tag":"test"}');
+    const long = utf8(JSON.stringify({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "x".repeat(140), open: "inbox", tag: "t-0123456789abcdefghijkl" }));
+    const a = encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, short, { padTo: 1024 });
+    const b = encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, long, { padTo: 1024 });
+    expect(a.length).toBe(b.length);
+    // Header (16 + 4 + 1 + 65), the padded record with its delimiter, the tag.
+    expect(a.length).toBe(86 + 1024 + 1 + 16);
+    expect(new TextDecoder().decode(await browserDecrypt(a, browser.keys.privateKey, browser.p256dh, browser.auth))).toBe(new TextDecoder().decode(short));
+    expect(new TextDecoder().decode(await browserDecrypt(b, browser.keys.privateKey, browser.p256dh, browser.auth))).toBe(new TextDecoder().decode(long));
+    // Unpadded they differ, which is what a push service would otherwise see.
+    expect(encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, short).length).not.toBe(encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, long).length);
+    // A message longer than the padding is sent as it is, never cut.
+    const big = new Uint8Array(1500).fill(65);
+    expect((await browserDecrypt(encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, big, { padTo: 1024 }), browser.keys.privateKey, browser.p256dh, browser.auth)).length).toBe(1500);
+  });
+
   test("a changed byte is refused by the browser, wherever it is", async () => {
     const browser = await browserSubscription();
     const body = encryptPush({ p256dh: browser.p256dh, auth: browser.auth }, utf8("approve?"));
