@@ -521,6 +521,32 @@ describe("one answer's tools", () => {
     expect(only("vault_read")).toBe(false);
   });
 
+  test("a recall gives long memories in short (a quest's whole report is thousands of characters), and whole when asked", async () => {
+    const report = `Quest (done): Report this sandbox's kernel version. ${"The reviewer checked each value against the command that measured it. ".repeat(60)}THE END`;
+    const asked: unknown[] = [];
+    const memory: ToolApi = {
+      call: async <T,>(_name: string, input?: unknown) => {
+        asked.push(input);
+        return { memories: [{ id: "m1", text: "The liege likes tea", tags: ["tea"], trust: "owner" }, { id: "m2", text: report, tags: ["quest"], trust: "untrusted" }] } as T;
+      },
+      bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
+    };
+    const tools = chatTools(TOOLS, memory, explain);
+    const short = await tools.run({ id: "1", name: "recall", input: { query: "sandbox" } });
+    expect(short.isError).toBeUndefined();
+    // The short memory is whole; the long one is cut, says how much is left, and how to read it all.
+    expect(short.content).toContain("- [owner] The liege likes tea  #tea");
+    expect(short.content).toContain("- [untrusted] Quest (done): Report this sandbox's kernel version.");
+    expect(short.content).not.toContain("THE END");
+    expect(short.content).toMatch(/… \(\d[\d,]* more characters: recall again with full=true to read it whole\)  #quest/);
+    expect(short.content.length).toBeLessThan(1100);
+    const whole = await tools.run({ id: "2", name: "recall", input: { query: "sandbox", full: true } });
+    expect(whole.content).toContain("THE END");
+    expect(whole.content.length).toBeGreaterThan(report.length);
+    // What the node is asked is the same either way: shortening is how it's told, not what's searched.
+    expect(asked).toEqual([{ q: "sandbox", limit: 12 }, { q: "sandbox", limit: 12 }]);
+  });
+
   test("the model's input is checked before anything runs; unknown tools are refused", async () => {
     let ran = 0;
     const tools = chatTools([fake("recall", undefined, async () => `${++ran}`)], api, explain);
