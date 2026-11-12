@@ -7,7 +7,7 @@ import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { toast } from "../ui/toast.ts";
-import { type ChatTurn, chatState, onChatChange, openChatAside, queueActions, sendMessage, stopChat, watchTurns } from "./chat.ts";
+import { type ChatTurn, chatState, onChatChange, openChatAside, queueActions, restoreOpenChat, sendMessage, stopChat, watchTurns } from "./chat.ts";
 import { queuePanel } from "./chat-queue.ts";
 
 /*
@@ -147,7 +147,6 @@ export function createWorldChat(opts: { api: Api; onAsk: () => void; openChat: (
       toast("Couldn't send it", { tone: "error", description: result.problem });
       return;
     }
-    if (result === "queued") toast("Queued", { description: "Kept on the node; sent when he's done with this turn." });
     if (wasIdle) opts.onAsk();
     schedule();
   }
@@ -178,6 +177,8 @@ export function createWorldChat(opts: { api: Api; onAsk: () => void; openChat: (
   const stop = onChatChange(schedule);
   // A turn started in this chat elsewhere (the Chat page on another device, the queue going on) is attached to here too.
   watchTurns(opts.api, watching.signal);
+  // After a reload here: back in the chat that was open, attached to what he's doing in it.
+  restoreOpenChat(opts.api);
   render();
 
   return {

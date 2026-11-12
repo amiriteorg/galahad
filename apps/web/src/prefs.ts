@@ -92,3 +92,31 @@ export const rememberRole = (role: string): void => write("role", role);
 export type ChatEnterPref = "steer" | "queue";
 export const chatEnter = (): ChatEnterPref => (read("enter") === "queue" ? "queue" : "steer");
 export const setChatEnter = (pref: ChatEnterPref): void => write("enter", pref === "steer" ? null : pref);
+
+/*
+ * For this tab only (sessionStorage: gone when the tab closes), so a reload comes back to where you
+ * were: which kept chat was open (its id, never a word of it), and the turn a temporary chat had
+ * running (so the reloaded page, which no longer has that chat, can stop it).
+ */
+const OPEN_CHAT = "galahad:open-chat";
+const TEMP_TURN = "galahad:temp-turn";
+function session(key: string, value?: string | null): string | null {
+  try {
+    if (value === undefined) return sessionStorage.getItem(key);
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable: a reload starts at a new chat */
+  }
+  return null;
+}
+export const openChatId = (): string | null => {
+  const id = session(OPEN_CHAT);
+  return id && /^cv_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
+};
+export const rememberOpenChat = (id: string | null): void => void session(OPEN_CHAT, id);
+export const orphanedTurn = (): string | null => {
+  const id = session(TEMP_TURN);
+  return id && /^tn_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
+};
+export const rememberTempTurn = (id: string | null): void => void session(TEMP_TURN, id);

@@ -28,7 +28,8 @@ export function composerAction(input: { busy: boolean; enter: EnterPref; modifie
 
 /** The line under the composer: what the keys do now. */
 export function composerHint(input: { busy: boolean; enter: EnterPref; canQueue: boolean; coarse: boolean; mac: boolean }): string {
-  if (input.coarse) return input.busy ? (input.canQueue ? "He's working: steer him now, or queue it for after" : "He's working: your message steers him now") : "";
+  // On a phone the controls say it themselves (Queue, Steer, Stop): there's no room for a line, and no keys to name.
+  if (input.coarse) return "";
   if (!input.busy) return "Enter to send · Shift+Enter for a new line";
   const mod = input.mac ? "⌘" : "Ctrl";
   if (!input.canQueue) return "Enter steers him now · Esc stops him";

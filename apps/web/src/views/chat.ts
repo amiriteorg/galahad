@@ -7,7 +7,7 @@ import { filterConversations, groupConversations } from "../lib/chats.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
-import { chatEnter, lastRole, rememberRole } from "../prefs.ts";
+import { chatEnter, lastRole, openChatId, orphanedTurn, rememberOpenChat, rememberRole, rememberTempTurn } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -165,6 +165,7 @@ function leave(): void {
   if (!was) return;
   live = null;
   if (!current && was.id) void was.api.post("/api/turns/stop", { turn: was.id }).catch(() => {});
+  rememberTempTurn(null);
   was.watch.abort();
   if (thread.target) endTurn(thread, Date.now());
   steering = [];
@@ -188,6 +189,8 @@ function handle(w: Watching, event: ChatStreamEvent): void {
   if (event.type === "turn") {
     w.id = event.id;
     w.deadline = event.deadline;
+    // A temporary chat's turn is known only to this page: if the page reloads, the next one stops it.
+    if (event.conversation === null) rememberTempTurn(event.id);
     if (w.stopAsked) {
       w.stopAsked = false;
       stopChat();
@@ -195,6 +198,7 @@ function handle(w: Watching, event: ChatStreamEvent): void {
   } else if (event.type === "conversation") {
     current = { id: event.id, title: event.title, project: event.project, bank: current?.bank ?? false, pinned: current?.pinned ?? false };
     startIn = null;
+    rememberOpenChat(event.id);
     for (const fn of keptChanged) fn();
     return;
   } else if (event.type === "steer") {
@@ -275,6 +279,7 @@ const RECONNECTING = "Reconnecting to the node";
 function finish(w: Watching, failure?: string): void {
   const turn = failure ? failTurn(thread, failure, Date.now()) : endTurn(thread, Date.now());
   live = null;
+  rememberTempTurn(null);
   steering = [];
   chatActivity.set({ streaming: false, model: null });
   emit(turn);
@@ -334,6 +339,7 @@ export async function openConversation(api: Api, id: string): Promise<void> {
   current = { id: conversation.id, title: conversation.title, project: conversation.project, bank: conversation.bank, pinned: conversation.pinned };
   temporary = false;
   startIn = null;
+  rememberOpenChat(conversation.id);
   queue = conversation.queue;
   held = conversation.held;
   steering = [];
@@ -355,15 +361,36 @@ export function newConversation(project: string | null = current?.project ?? sta
   queue = [];
   held = null;
   unwatchable = null;
+  rememberOpenChat(null);
   emit(null);
   for (const fn of keptChanged) fn();
   return () => {
     if (thread.turns.length) return;
     ({ current, startIn, temporary, queue, held } = saved);
+    rememberOpenChat(current?.id ?? null);
     thread.turns = saved.turns;
     emit(null);
     for (const fn of keptChanged) fn();
   };
+}
+
+/**
+ * After a reload (the page's memory is gone, the node's isn't): back to the kept chat that was open in this
+ * tab, attached to the turn he's working on in it. A temporary chat is gone with the page; the turn it had
+ * running has nobody left to watch it, so it's stopped. Once per page load.
+ */
+let restored = false;
+export function restoreOpenChat(api: Api): void {
+  if (restored) return;
+  restored = true;
+  const orphan = orphanedTurn();
+  if (orphan) {
+    rememberTempTurn(null);
+    void api.post("/api/turns/stop", { turn: orphan }).catch(() => {});
+  }
+  const id = openChatId();
+  if (!id || current || thread.turns.length || live) return;
+  void openConversation(api, id).catch(() => rememberOpenChat(null));
 }
 
 /** "New chat" from anywhere. A kept chat stays in your history; a temporary one can be brought back once. */
@@ -613,9 +640,12 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   function processView(turn: Turn): HTMLElement {
     const writing = turn.status === "streaming";
     const current = turn.steps.at(-1);
+    // An answer that was stopped, or that a message of yours cut, says so on its one line (not only inside).
+    const cut = turn.status === "stopped" ? (current?.text ?? "Stopped") : turn.status === "steered" ? "Steered here" : null;
     const summaryText = writing
       ? (current?.text ?? "Starting…")
       : [
+          cut,
           turn.as,
           turn.model,
           turn.endedAt ? duration(turn.endedAt - turn.startedAt) : null,
@@ -913,7 +943,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         check();
       } else if (!draft) draft = text;
       toast("Couldn't send it", { tone: "error", description: result.problem });
-    } else if (result === "queued") toast("Queued", { description: "Kept on the node; sent when he's done with this turn." });
+    }
   }
 
   input.addEventListener("input", () => {
@@ -1232,7 +1262,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   } else if (opts.project && !live && startIn !== opts.project) {
     if (thread.turns.length) newConversation(opts.project);
     else startIn = opts.project;
-  }
+  } else if (!opts.conversation && !opts.query && canChat) restoreOpenChat(ctx.api);
   renderSub();
   renderAll();
   renderRoles();

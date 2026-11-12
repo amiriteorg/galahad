@@ -30,7 +30,7 @@ describe("what sending does while he works", () => {
     expect(composerHint({ busy: true, enter: "queue", canQueue: true, coarse: false, mac: true })).toBe("Enter queues it · ⌘+Enter steers him now · Esc stops him");
     expect(composerHint({ busy: true, enter: "queue", canQueue: false, coarse: false, mac: false })).toBe("Enter steers him now · Esc stops him");
     expect(composerHint({ busy: false, enter: "steer", canQueue: true, coarse: true, mac: false })).toBe("");
-    expect(composerHint({ busy: true, enter: "steer", canQueue: true, coarse: true, mac: false })).toBe("He's working: steer him now, or queue it for after");
+    expect(composerHint({ busy: true, enter: "steer", canQueue: true, coarse: true, mac: false })).toBe("");
   });
 
   test("a side question typed into the composer", () => {
