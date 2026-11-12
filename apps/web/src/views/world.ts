@@ -120,6 +120,19 @@ function storedMap(): boolean {
   return !matchMedia("(max-width: 639px)").matches;
 }
 
+/** Whether this viewer has the world's sound on, and how loud (kept in this browser; off until they turn it on). */
+const SOUND_KEY = "galahad.world.sound";
+const VOLUME_KEY = "galahad.world.volume";
+
+function storedSound(): { on: boolean; volume: number } {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY));
+    return { on: localStorage.getItem(SOUND_KEY) === "on", volume: localStorage.getItem(VOLUME_KEY) !== null && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.6 };
+  } catch {
+    return { on: false, volume: 0.6 };
+  }
+}
+
 /** When the SANDBOX was last on screen in this browser (ms): he greets you when it's been a while (lib/greeting.ts). A time, nothing else. */
 const SEEN_KEY = "galahad.world.seen";
 
@@ -186,7 +199,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
-  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. C talks to Galahad, L picks what to look at, F follows Galahad, M shows the map, V shows what he sees through his own eyes and B swaps it with this view, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
+  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. C talks to Galahad, L picks what to look at, F follows Galahad, M shows the map, V shows what he sees through his own eyes and B swaps it with this view, S turns the sound on and off, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
   const loading = h("div", { class: "world-loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", {}, "Opening the world…"));
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
@@ -234,6 +247,66 @@ export const worldView: View = (root, ctx, { scope }) => {
   let mapOn = storedMap();
   const mapCanvas = h("canvas", { class: "world-map", "aria-hidden": "true", hidden: !mapOn }) as HTMLCanvasElement;
   const mapButton = button("Map", { iconOnly: true, icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
+  // The sound of his world (world/sound.ts): off until you turn it on; then a volume beside its button.
+  const soundPref = storedSound();
+  let soundOn = soundPref.on;
+  let volume = soundPref.volume;
+  /** Sounding now: a browser lets a page make sound only after a click or a key, so "on" from last time waits for one. */
+  let soundLive = false;
+  const soundButton = button("Sound", { iconOnly: true, icon: "volume-off", size: "sm", onClick: () => setSound(!soundOn, true) });
+  const volumeInput = h("input", { type: "range", min: 0, max: 100, step: 5, value: Math.round(volume * 100), "aria-label": "Volume" }) as HTMLInputElement;
+  const volumeWrap = h("span", { class: "range world-volume", hidden: true }, volumeInput);
+  const soundWrap = h("div", { class: "world-sound" }, soundButton, volumeWrap);
+  function showSound(): void {
+    soundButton.setAttribute("aria-pressed", String(soundOn));
+    const label = !soundOn ? "Sound: off. Turn it on to hear his world (S)" : soundLive ? "Sound: on (S turns it off)" : "Sound: on, from your next click or key (browsers ask for one)";
+    soundButton.title = label;
+    soundButton.setAttribute("aria-label", label);
+    replace(soundButton, icon(soundOn ? "volume" : "volume-off", { size: 14 }));
+    volumeWrap.hidden = !soundOn;
+    volumeInput.style.setProperty("--fill", `${Math.round(volume * 100)}%`);
+    volumeInput.setAttribute("aria-valuetext", `${Math.round(volume * 100)} %`);
+  }
+  /** The sound on or off. `gesture`: from a click or a key, so it may start now. */
+  function setSound(on: boolean, gesture: boolean): void {
+    soundOn = on;
+    try {
+      localStorage.setItem(SOUND_KEY, on ? "on" : "off");
+    } catch {
+      /* storage off: the choice lasts this visit */
+    }
+    if (!on) {
+      handle?.sound.set(false, volume);
+      soundLive = false;
+    } else if (gesture && handle) {
+      soundLive = handle.sound.set(true, volume);
+      if (!soundLive) {
+        soundOn = false;
+        toast("This browser can't play the world's sound", { tone: "info" });
+      }
+    }
+    showSound();
+  }
+  scope.listen(volumeInput, "input", () => {
+    volume = Number(volumeInput.value) / 100;
+    try {
+      localStorage.setItem(VOLUME_KEY, String(volume));
+    } catch {
+      /* storage off */
+    }
+    if (soundLive) handle?.sound.set(true, volume);
+    showSound();
+  });
+  // On from last time: it starts with the first click or key here (a page may not make a sound unasked).
+  const wake = (): void => {
+    if (soundOn && !soundLive && handle) {
+      soundLive = handle.sound.set(true, volume);
+      showSound();
+    }
+  };
+  scope.listen(document, "pointerdown", wake);
+  scope.listen(document, "keydown", wake);
+  showSound();
   // His eyes (world-eyes.ts): what he sees from his own visor, in a panel under the map; swapped, it's the main view.
   const eyesPanel = createEyes({ api: ctx.api, mayReview: ctx.can("brain:write"), stage, onSwap: (on) => on && lookAt({ kind: "galahad" }) });
   scope.add(() => eyesPanel.dispose());
@@ -256,7 +329,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       "div",
       { class: "world-top" },
       h("div", { class: "world-left" }, banner, mapCanvas, eyesPanel.el),
-      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, eyesPanel.button, skyWrap)),
+      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, eyesPanel.button, soundWrap, skyWrap)),
     ),
     h("div", { class: "world-bottom" }, panel, chat?.el ?? null, h("div", { class: "world-corner" }, controls)),
   );
@@ -942,6 +1015,8 @@ export const worldView: View = (root, ctx, { scope }) => {
       // Talk to him: the composer at the foot of the world.
       c: () => chat?.focus(),
       m: () => setMap(!mapOn),
+      // The world's sound, on and off.
+      s: () => setSound(!soundOn, true),
       // His eyes: the panel, and swapping it with the main view.
       v: () => eyesPanel.toggle(),
       b: () => eyesPanel.swap(),
@@ -1009,6 +1084,9 @@ export const worldView: View = (root, ctx, { scope }) => {
         return;
       }
       handle = mounted;
+      // (A new world makes no sound until a click or a key turns it on again.)
+      soundLive = false;
+      showSound();
       eyesPanel.mount(mounted);
       loading.remove();
       const s = mounted.stats();

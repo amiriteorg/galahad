@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BUILDS, Solids } from "./collide.ts";
+import { BED, DOG_BED, HEARTH_COLLIDERS } from "./hearth-plan.ts";
 import { RobotDog } from "./dog.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
 import { MicroduckFlock } from "./microducks.ts";
@@ -93,5 +94,76 @@ describe("the keep's walkers, together", () => {
       expect(Math.hypot(dog.x - walker.x, dog.y - walker.y)).toBeLessThan(2.2);
       expect(far).toBeLessThan(9);
     }
+  });
+});
+
+describe("the dog, sent somewhere it can't go straight to", () => {
+  test("its cushion, from behind the head of his bed (his sword's stand in the gap): it finds its way round and lies down there", () => {
+    const solids = new Solids();
+    solids.add(KEEP_COLLIDERS);
+    solids.add(HEARTH_COLLIDERS, () => 0);
+    const planner = new Planner(solids);
+    const dog = new RobotDog(false);
+    dog.join(solids, () => false, planner);
+    // He's on his bed; the dog came in behind the wedge he leans on, as it does when they come down from the keep at night.
+    const him = { x: BED.x, y: BED.y, heading: 0, moving: false, running: false, working: false };
+    dog.place({ ...him, x: -2.2, y: -16.4 }, () => 0);
+    dog.lead.on = true;
+    dog.lead.x = DOG_BED.x;
+    dog.lead.y = DOG_BED.y;
+    dog.lead.sit = dog.lead.lie = true;
+    const dt = 1 / 60;
+    let inside = 0;
+    for (let k = 0; k < 60 * 25; k++) {
+      dog.step(dt, k * dt, him, open, true, () => 0);
+      if (solids.overlaps(dog.x, dog.y, BUILDS.dog.r - 0.03, BUILDS.dog.step, BUILDS.dog.height)) inside++;
+    }
+    expect(Math.hypot(dog.x - DOG_BED.x, dog.y - DOG_BED.y)).toBeLessThan(0.3);
+    expect(dog.lying).toBe(true);
+    expect(inside).toBe(0);
+  });
+
+  test("its cushion, with him lying on his bed between it and the cushion: round his feet, never through him", () => {
+    const solids = new Solids();
+    solids.add(KEEP_COLLIDERS);
+    solids.add(HEARTH_COLLIDERS, () => 0);
+    const planner = new Planner(solids);
+    // He lies on his bed: a walker among the solids like any other (nobody walks through him).
+    const him = { x: BED.x, y: BED.y, heading: 0, moving: false, running: false, working: false };
+    solids.join({ x: BED.x, y: BED.y, r: BUILDS.galahad.r }, BUILDS.galahad);
+    const dog = new RobotDog(false);
+    dog.join(solids, () => false, planner);
+    // The dog came down the path with him and stands north of the bed; its cushion is against the bed's south side.
+    dog.place({ ...him, x: 0.6, y: -16.6 }, () => 0);
+    dog.lead.on = true;
+    dog.lead.x = DOG_BED.x;
+    dog.lead.y = DOG_BED.y;
+    dog.lead.sit = dog.lead.lie = true;
+    const dt = 1 / 60;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let k = 0; k < 60 * 30; k++) {
+      dog.step(dt, k * dt, him, open, true, () => 0);
+      solids.separate();
+      nearest = Math.min(nearest, Math.hypot(dog.x - him.x, dog.y - him.y));
+    }
+    expect(Math.hypot(dog.x - DOG_BED.x, dog.y - DOG_BED.y)).toBeLessThan(0.3);
+    expect(dog.lying).toBe(true);
+    expect(nearest).toBeGreaterThan(BUILDS.galahad.r + BUILDS.dog.r - 0.06);
+  });
+
+  test("after a ball in the open it goes straight, and asks for no way round", () => {
+    const solids = new Solids();
+    const planner = new Planner(solids);
+    const dog = new RobotDog(false);
+    dog.join(solids, () => false, planner);
+    const him = { x: 0, y: -20, heading: 0, moving: false, running: false, working: false };
+    dog.place(him, () => 0);
+    dog.lead.on = true;
+    dog.lead.x = 7;
+    dog.lead.y = -24;
+    dog.lead.run = true;
+    for (let k = 0; k < 60 * 5; k++) dog.step(1 / 60, k / 60, him, open, true, () => 0);
+    expect(Math.hypot(dog.x - 7, dog.y + 24)).toBeLessThan(0.3);
+    expect(planner.plans).toBe(0);
   });
 });

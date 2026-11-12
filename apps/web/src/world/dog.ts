@@ -5,6 +5,7 @@ import { headingToSceneYaw } from "./coords.ts";
 import type { indoorLight } from "./hall-materials.ts";
 import { FootPlanner } from "./ik.ts";
 import { at, bevelBox, Mesher } from "./mesher.ts";
+import type { Planner } from "./nav.ts";
 import { angleDiff, turnTowards } from "./path.ts";
 import { criticalDamping, type Ground, moveOnGround, rng, slideOnGround, type Spring, springStep } from "./physics.ts";
 import { limb, pointIn, Rig } from "./rig.ts";
@@ -118,6 +119,20 @@ export class RobotDog {
   /** Where it is (its place among the solids too: x, y and its radius). */
   private readonly spring: Spring & { r: number } = { x: 0, y: -8, vx: 0, vy: 0, r: BUILDS.dog.r };
   private mover: Mover | null = null;
+  /**
+   * Sent somewhere it can't go straight to (its cushion, from behind the head of his bed): the way round, asked of the
+   * planner once it's got no nearer for half a second (pressed against something, sliding to and fro); what it was
+   * asked for; how long it's been getting no nearer, and the nearest it's been.
+   */
+  private planner: Planner | null = null;
+  private wet: ((x: number, y: number) => boolean) | null = null;
+  private readonly way: { x: number; y: number }[] = [];
+  private wayX = Number.NaN;
+  private wayY = Number.NaN;
+  private stuck = 0;
+  private nearest = Number.POSITIVE_INFINITY;
+  /** Where its way round may not go: water, and him (he's no wall, so the planner doesn't know him: it would send the dog through where he lies). */
+  private readonly avoid = (x: number, y: number): boolean => (this.wet?.(x, y) ?? false) || Math.hypot(x - this.masterX, y - this.masterY) < BUILDS.galahad.r + BUILDS.dog.r - 0.02;
   /** His footsteps: the last places he walked, every half metre (x, y pairs, a ring). */
   private readonly trail = new Float64Array(TRAIL * 2);
   private trailCount = 0;
@@ -137,6 +152,10 @@ export class RobotDog {
   private gaze = 0;
   private masterX = 0;
   private masterY = 0;
+
+  /** How many times its forefeet have come down (a trot's two beats: the sound of its steps counts them). */
+  footfalls = 0;
+  private readonly down = [1, 1];
 
   /** Lying down (by him, or on its cushion). */
   get lying(): boolean {
@@ -255,10 +274,12 @@ export class RobotDog {
     return this.spring.y;
   }
 
-  /** Walks among the world's solids from now on. */
-  join(solids: Solids, blocked: (x: number, y: number) => boolean): void {
+  /** Walks among the world's solids from now on. With the planner (his own), it finds a way round to where it's sent when it can't go straight. */
+  join(solids: Solids, blocked: (x: number, y: number) => boolean, planner?: Planner): void {
     this.mover = solids.join(this.spring, BUILDS.dog);
     this.mover.ground = blocked;
+    this.planner = planner ?? null;
+    this.wet = blocked;
   }
 
   /** Puts it beside its master at once (first sight, reduced motion). */
@@ -345,9 +366,37 @@ export class RobotDog {
       // Care sends it: after a ball, to its dock. It sits there once arrived, if it's told to.
       tx = this.lead.x;
       ty = this.lead.y;
-      this.mode = (this.lead.sit || this.lead.lie) && Math.hypot(tx - this.x, ty - this.y) < 0.3 ? "sit" : "lead";
-    } else if (this.mode === "lead") this.mode = "follow";
-    else if (m.moving) this.mode = "follow";
+      const off = Math.hypot(tx - this.x, ty - this.y);
+      this.mode = (this.lead.sit || this.lead.lie) && off < 0.3 ? "sit" : "lead";
+      if (this.planner) {
+        // Somewhere new: the old way round is no use.
+        if (Math.hypot(this.wayX - tx, this.wayY - ty) > 0.5) {
+          this.way.length = 0;
+          this.wayX = this.wayY = Number.NaN;
+          this.stuck = 0;
+          this.nearest = Number.POSITIVE_INFINITY;
+        }
+        // Not there and getting no nearer (pressed against something): it asks for a way round, once.
+        if (off < this.nearest - 0.05) {
+          this.nearest = off;
+          this.stuck = 0;
+        } else if (off > 0.3) this.stuck += dt;
+        if (this.stuck > 0.5 && Number.isNaN(this.wayX)) {
+          this.wayX = tx;
+          this.wayY = ty;
+          this.planner.route(this.x, this.y, tx, ty, BUILDS.dog, this.avoid, this.way);
+        }
+        if (this.way.length) {
+          if (this.way.length > 1 && Math.hypot(this.way[0]!.x - this.x, this.way[0]!.y - this.y) < 0.3) this.way.shift();
+          tx = this.way[0]!.x;
+          ty = this.way[0]!.y;
+        }
+      }
+    } else if (this.mode === "lead") {
+      this.mode = "follow";
+      this.wayX = this.wayY = Number.NaN;
+      this.way.length = 0;
+    } else if (m.moving) this.mode = "follow";
     else if (this.mode === "follow" && Math.hypot(tx - this.x, ty - this.y) < 0.35) this.mode = "sit";
     // Now and then it has a sniff about; while he's busy it mostly stays by him.
     else if (this.mode === "sit" && this.stillFor > (m.working ? WANDER_BUSY : WANDER_IDLE)) this.pickGoal(m);
@@ -416,6 +465,11 @@ export class RobotDog {
     // A trot: the stride grows with the pace; the feet stay where they land.
     const stride = Math.min(1.6, Math.max(0.42, speed * 0.3 + 0.22));
     this.feet.step(dt, this.x, this.y, this.heading, vx, vy, stride, height);
+    for (let i = 0; i < 2; i++) {
+      const planted = this.feet.planted[i]!;
+      if (planted && !this.down[i]) this.footfalls++;
+      this.down[i] = planted;
+    }
     this.pose(t, speed, dt, this.feet.phase);
     return speed > 0.02 || Math.abs(angleDiff(this.heading, Math.atan2(m.y - this.y, m.x - this.x))) > 0.01;
   }

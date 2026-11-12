@@ -528,8 +528,16 @@ describe("his hearth, and his dog through the day", () => {
         chased++;
         expect(w.dog.lead).toMatchObject({ on: true, run: true, x: hare.x, y: hare.y });
         expect(w.dog.mood.joy).toBeGreaterThan(0);
+        // He watches it go, as he walks on (a glance: his head turns, his feet keep to the trail).
+        expect(out.glance).toBe(true);
+        expect(out.attention.on).toBe(true);
+        // (Where it was when he looked: it's moved a stride since.)
+        expect(Math.hypot(out.attention.x - w.dog.x, out.attention.y - w.dog.y)).toBeLessThan(0.8);
         farthest = Math.max(farthest, Math.hypot(w.dog.x - w.him.x, w.dog.y - w.him.y));
-      } else if (chased && !after) after = out.label;
+      } else {
+        expect(out.glance).toBe(false);
+        if (chased && !after) after = out.label;
+      }
     }
     // It went for it, a few seconds at most, got near enough to send it off, and never left him far behind.
     expect(chased).toBeGreaterThan(3);

@@ -14,8 +14,8 @@ import type { Collider } from "./colliders.ts";
 /** The way its face looks (atan2 convention): south-west, towards where he stands at the table and the keep beyond. */
 const FACING = -Math.PI / 2 - 0.5;
 
-/** Where it stands (world metres, z up), the way its face looks, and its face: a 16:9 slate from 0.72 m above the ground. */
-export const SLATE = { x: 4.35, y: 11.2, facing: FACING, width: 2.2, height: (2.2 * BOARD_H) / BOARD_W, bottom: 0.72 } as const;
+/** Where it stands (world metres, z up), the way its face looks, and its face: a 16:9 slate two and a half metres wide, from 0.7 m above the ground. */
+export const SLATE = { x: 4.7, y: 11.1, facing: FACING, width: 2.5, height: (2.5 * BOARD_H) / BOARD_W, bottom: 0.7 } as const;
 
 const nx = Math.cos(FACING);
 const ny = Math.sin(FACING);

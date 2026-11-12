@@ -7,6 +7,8 @@ import { greetingLine } from "../lib/greeting.ts";
 import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
 import { Care, type CareFrame, CareLook, type CareWild, lodestarPulse } from "./care.ts";
 import { type KnightFace, type KnightFeeling, knightFace, nod, tiredness } from "./expression.ts";
+import { emptySoundStats, Sound, type SoundStats } from "./sound.ts";
+import { chance, emptyMix, emptySoundWorld, hear, mixFor, type SoundKind, surfaceFor, thunderFor } from "./soundscape.ts";
 import type { EcoSummary } from "./eco/summary.ts";
 import { ACTIVITIES, type Activity, danishDate, withDog } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
@@ -30,7 +32,7 @@ import { Glows } from "./glows.ts";
 import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
 import { HelperFigures } from "./helpers.ts";
-import { FIRE } from "./hearth-plan.ts";
+import { FIRE, SWORD_STAND } from "./hearth-plan.ts";
 import { type SeasonChoice, seasonState } from "./season.ts";
 import { HALL, inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
@@ -41,7 +43,7 @@ import { Lightning } from "./lightning.ts";
 import { occlusion } from "./occlusion.ts";
 import { readThemeColors } from "./palette.ts";
 import { Planner } from "./nav.ts";
-import { type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
+import { built, type Obstacle, obstacles, PLACES, standAt, targetFor, Walker } from "./path.ts";
 import type { Ground } from "./physics.ts";
 import { BREEZE, type Place, type PlaceContext, type PlaceFrame, WIND_HEADING } from "./place.ts";
 import { plotColliders } from "./plot-plan.ts";
@@ -50,7 +52,7 @@ import { Assembly, benchFor, buildingAt } from "./assembly.ts";
 import { Post } from "./post.ts";
 import { Rain } from "./rain.ts";
 import { Horizon, Landmarks } from "./scenery.ts";
-import { onSite, SITE_COLLIDERS, SITE_VIEW } from "./sites.ts";
+import { onSite, paved, SITE_COLLIDERS, SITE_VIEW } from "./sites.ts";
 import { SkyDome } from "./sky.ts";
 import { skyNow } from "./sky/clock.ts";
 import { skyWords } from "./sky/words.ts";
@@ -195,6 +197,13 @@ export interface WorldHandle {
   where(out: WorldWhere): WorldWhere;
   /** The chalkboard's state, for its face (drawn again only when this is called). */
   setBoard(board: BoardView | null): void;
+  /** The sound of his world (sound.ts): synthesised here, off until it's turned on. */
+  sound: {
+    /** Turns it on (from a click or a key: browsers want a gesture) or off, at this volume (0..1). False: it couldn't be turned on here. */
+    set(on: boolean, volume: number): boolean;
+    /** What it holds and what it's cost (the same object every time). */
+    state(): SoundStats;
+  };
   /** His eyes (eyes.ts): a second view of the world from his own visor. */
   eyes: {
     /** Opens the panel in `container` (its canvas is put there), or closes it (null): closed, nothing is drawn for it. */
@@ -232,6 +241,8 @@ export interface EyesShot {
   words: string;
 }
 
+/** How far out the water's edge is looked for round the listener, for the lake's lapping (metres). */
+const SHORE_RINGS = [3, 7, 12, 20, 30] as const;
 /** Frames the page's trace keeps (`?trace=1`). */
 const TRACE = 2000;
 const REBASE_M = 2048;
@@ -482,6 +493,43 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
    * look your way and raise a hand (not with a blade, a pen or chalk in it: then a nod), and where the view is.
    */
   const greeting = { line: "", from: -1e9, until: -1e9, free: true, view: { on: false, x: 0, y: 0 } };
+  // ---------- what's heard (soundscape.ts says what, sound.ts plays it): nothing exists until it's turned on ----------
+  const sound = new Sound();
+  const soundWorld = emptySoundWorld();
+  const soundMix = emptyMix();
+  const soundStats = emptySoundStats();
+  const soundAt = { gain: 0, pan: 0 };
+  const dice = chance(0x51a7);
+  /** Where the listener is (the camera; his own head when the view is his), and the way it looks. */
+  const listener = { x: 0, y: 0, yaw: 0 };
+  const hearWay = new Vector3();
+  /** Time since the mix was last set, and since the shore and the wildlife were last looked for (seconds); what hearing has cost here (ms). */
+  let mixDue = 0;
+  let surveyDue = 0;
+  let hearMs = 0;
+  /** Footfalls already heard, and what was so at the last look (so a change is heard once). */
+  let knightSteps = 0;
+  let dogSteps = 0;
+  let wasLying = false;
+  let wasBall = "held";
+  let wasChasing = false;
+  let patDue = 0;
+  let strikes = 0;
+  let barkAt = -1;
+  let lastNeed = "";
+  /** A short sound at a place in the world, as the listener hears it (nothing at all while the sound is off). */
+  function sounded(kind: SoundKind, x: number, y: number, far: number, level = 1, jitter = 0.07): void {
+    if (!sound.on) return;
+    hear(listener.x, listener.y, listener.yaw, x, y, 2, far, soundAt);
+    sound.play(kind, soundAt.gain * level, soundAt.pan, 1 + (dice() - 0.5) * 2 * jitter);
+  }
+  /** A call from somewhere about the listener (a bird in a tree, the owl off in the wood): `near` to `far` metres off, its pitch by chance. */
+  function about(kind: SoundKind, near: number, far: number, level: number, low: number, high: number): void {
+    const a = dice() * Math.PI * 2;
+    const r = near + dice() * (far - near);
+    hear(listener.x, listener.y, listener.yaw, listener.x + Math.cos(a) * r, listener.y + Math.sin(a) * r, 6, far * 1.6, soundAt);
+    sound.play(kind, soundAt.gain * level, soundAt.pan, low + dice() * (high - low));
+  }
   /** The last noise in the world, for the dog's ears: where, and how long ago (seconds). */
   const noise = { x: 0, y: 0, age: 1e9 };
   const heard = (x: number, y: number): void => {
@@ -591,12 +639,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // Galahad and his dog among the solids: he plans round them (nav.ts) and slides; it follows in his footsteps.
   const walkerMover = solids.join(walker, BUILDS.galahad);
   walkerMover.ground = deep;
-  walker.join({ planner: new Planner(solids), mover: walkerMover, wet, deep, height: (x, y) => Math.max(land.heightAt(x, y), WATER_LEVEL - 0.6) });
+  const planner = new Planner(solids);
+  walker.join({ planner, mover: walkerMover, wet, deep, height: (x, y) => Math.max(land.heightAt(x, y), WATER_LEVEL - 0.6) });
   /** How high he stands, drawn: his feet's floor (the land, a tread, the deck), eased as he steps up and down. */
   let standZ = Number.NaN;
   /** Where his feet land: on the land, or what's no higher than his step above where he stands (a tread, a rock). */
   const feetGround = (x: number, y: number): number => Math.max(groundAt(x, y), solids.support(x, y, walker.z, BUILDS.galahad.step));
-  dog.join(solids, deep);
+  // (The dog has his planner too: sent somewhere it can't go straight to, its cushion behind his bed, it finds the way round.)
+  dog.join(solids, deep, planner);
   // The page's `?colliders=1`: what's solid, drawn as lines (nothing is built without it).
   const colliderLines = wantsColliders(location.search) ? new ColliderLines(scene, solids, (x, y) => land.heightAt(x, y)) : null;
   // The page's `?trace=1`: the last frames' camera and Galahad (time, camera x y z, his x y z), kept for a tour to read
@@ -617,8 +667,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   }
   // (`__sandboxFace()`: how he is and what shows of it, and the dog's mood; `__sandboxFeel("surprise" | "pleased" | "nod")` sets one off, for a tour.)
   if (trace) {
-    (globalThis as { __sandboxFace?: unknown }).__sandboxFace = () => ({ feeling: { ...feeling }, face: { ...face }, dog: { ...dog.mood } });
+    (globalThis as { __sandboxFace?: unknown }).__sandboxFace = () => ({ feeling: { ...feeling }, face: { ...face }, dog: { ...dog.mood }, dogAt: [dog.x, dog.y], dogLead: { ...dog.lead }, visor: knight.visorNow({ open: 0, line: 0, bright: 0 }) });
     (globalThis as { __sandboxGreet?: unknown }).__sandboxGreet = () => greet();
+    // (`__sandboxSound`: what the sound holds and has played, what the scene's side of it has cost (ms), the mix and what it was made from.)
+    (globalThis as { __sandboxSound?: unknown }).__sandboxSound = {
+      stats: () => ({ ...sound.stats(soundStats), beds: { ...soundStats.beds }, played: { ...soundStats.played }, sceneMs: hearMs }),
+      mix: () => ({ ...soundMix }),
+      world: () => ({ ...soundWorld }),
+      play: (kind: SoundKind) => sound.play(kind, 1, 0),
+    };
     (globalThis as { __sandboxFeel?: unknown }).__sandboxFeel = (kind: string) => {
       if (kind === "surprise") feeling.surprise = 1;
       else if (kind === "pleased") feeling.pleased = 1;
@@ -645,6 +702,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let shafted = false;
 
   let sparkTimer = 0;
+  /** Sparks struck (not every one rings). */
+  let rings = 0;
   const anvil = forgeAnvil();
   const knightState: KnightState = { moving: false, running: false, working: false, thinking: false, armed: false, bench: false };
   const attention: Attention = { x: 0, y: 0, z: 0, on: false };
@@ -925,6 +984,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     greeting.line = line ?? "";
     greeting.free = !knightState.armed && !knightState.bench && !knightState.writing && !(idle && care.out.writing);
     if (line && !reduced()) {
+      // (A bark, with the sound on, as the dog comes a step nearer.)
+      barkAt = t + 0.7;
       feeling.pleased = Math.max(feeling.pleased, 0.6);
       if (!greeting.free) nodAt = t + 0.3;
     }
@@ -1160,7 +1221,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   /** His eyes at his visor, turned with his head, and on towards what he attends to as far as eyes turn. */
   function poseEyes(dt: number, motion: boolean): void {
     eyes.pose(knight.head);
-    eyes.gaze(attention.on && !walker.moving, attention.x - origin[0], attention.z, -(attention.y - origin[1]), dt, motion);
+    eyes.gaze(attention.on && (!walker.moving || care.out.glance), attention.x - origin[0], attention.z, -(attention.y - origin[1]), dt, motion);
   }
   const sightEye: SightEye = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, fov: 1, aspect: EYE.aspect };
   const wildSpot = { x: 0, y: 0 };
@@ -1321,6 +1382,122 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     for (const o of hidden) o.visible = false;
   }
 
+  /**
+   * What's heard, while the sound is on: his steps and the dog's as they land, what just happened (a throw, a pat, his
+   * sword set down), and, eight times a second, how loud each continuous thing is for the listener and which calls come.
+   */
+  function hearWorld(dt: number, t: number): void {
+    const began = performance.now();
+    // His steps by what he walks on, the dog's quick feet.
+    if (knight.footfalls !== knightSteps) {
+      knightSteps = knight.footfalls;
+      const surface = surfaceFor({ raised: walker.raised, indoors: inHall(walker.x, walker.y), paved: paved(walker.x, walker.y), built: built(walker.x, walker.y), snow: weather.state.snowCover });
+      sounded(`step-${surface}`, walker.x, walker.y, 32, walker.running ? 1 : 0.7);
+    }
+    if (dog.footfalls !== dogSteps) {
+      dogSteps = dog.footfalls;
+      sounded("paw", dog.x, dog.y, 20, 0.55, 0.14);
+    }
+    // His sword onto its stand as he lies down, and off it as he gets up.
+    if (knight.lying !== wasLying) {
+      wasLying = knight.lying;
+      sounded("clink", SWORD_STAND.x, SWORD_STAND.y, 26, 0.7);
+    }
+    // The ball: a bark as it's thrown, a thud where it lands. A bark as the dog's off after something, and when you come.
+    if (care.ball !== wasBall) {
+      if (care.ball === "flying") sounded("bark", dog.x, dog.y, 45, 0.8, 0.1);
+      else if (care.ball === "resting") sounded("ball", care.ballAt[0], care.ballAt[1], 30, 0.8);
+      wasBall = care.ball;
+    }
+    const chasing = care.out.label.includes("the dog's after");
+    if (chasing && !wasChasing) sounded("bark", dog.x, dog.y, 45, 0.9, 0.1);
+    wasChasing = chasing;
+    if (barkAt > 0 && t >= barkAt) {
+      barkAt = -1;
+      sounded("bark", dog.x, dog.y, 45, 0.9, 0.08);
+    }
+    // A pat on its plates, while he pats it.
+    patDue -= dt;
+    if (feeling.pleased > 0.72 && patDue <= 0 && care.out.pose.reach > 0) {
+      patDue = 0.55;
+      sounded("pat", dog.x, dog.y, 14, 0.7, 0.1);
+    }
+    mixDue += dt;
+    if (mixDue < 0.125) {
+      hearMs += performance.now() - began;
+      return;
+    }
+    const step = Math.min(0.5, mixDue);
+    mixDue = 0;
+    // The listener: the camera (his own head, when the view is his), and the way it looks.
+    camera.getWorldDirection(hearWay);
+    listener.x = camera.position.x + origin[0];
+    listener.y = -camera.position.z + origin[1];
+    listener.yaw = Math.atan2(-hearWay.z, hearWay.x);
+    const w = soundWorld;
+    const state = weather.state;
+    w.wind = state.wind;
+    w.rain = state.rain;
+    w.snow = state.snow;
+    w.storm = state.storm;
+    w.x = listener.x;
+    w.y = listener.y;
+    w.yaw = listener.yaw;
+    w.indoors = inHall(listener.x, listener.y) ? 1 : 0;
+    w.fire = hearth.lit;
+    w.fireX = FIRE.x;
+    w.fireY = FIRE.y;
+    w.writing = Boolean(knightState.writing) && !walker.moving && attention.on;
+    w.writeX = attention.x;
+    w.writeY = attention.y;
+    w.sunElevation = heavens.sunElevation;
+    w.evening = heavens.evening;
+    w.spring = seasonState.spring;
+    w.summer = seasonState.summer;
+    w.autumn = seasonState.autumn;
+    w.winter = seasonState.winter;
+    surveyDue -= step;
+    if (surveyDue <= 0) {
+      // (Every two seconds: where the shore is and who's about change slowly, and looking is the dearest part of hearing.)
+      surveyDue = 2;
+      // The nearest water's edge, looked for round the listener (rings of twelve, out to thirty metres).
+      w.shore = Number.POSITIVE_INFINITY;
+      for (let ring = 0; ring < SHORE_RINGS.length && !Number.isFinite(w.shore); ring++) {
+        const r = SHORE_RINGS[ring]!;
+        for (let k = 0; k < 12; k++) {
+          const a = (k / 12) * Math.PI * 2 + ring;
+          const x = listener.x + Math.cos(a) * r;
+          const y = listener.y + Math.sin(a) * r;
+          if (!wet(x, y)) continue;
+          w.shore = r;
+          w.shoreX = x;
+          w.shoreY = y;
+          break;
+        }
+      }
+      // Who's about, by the ecosystem's own count (only what's there is heard).
+      w.songbirds = w.owls = w.ducks = w.geese = w.insects = 0;
+      const lines = fauna.summary().lines;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (line.kind === "songbird") w.songbirds = line.doing === "roosting" ? 0 : line.count;
+        else if (line.kind === "owl") w.owls = line.count;
+        else if (line.kind === "mallard") w.ducks = line.count;
+        else if (line.kind === "goose") w.geese = line.count;
+        else if (line.kind === "bumblebee" || line.kind === "butterfly" || line.kind === "dragonfly") w.insects += line.count;
+      }
+    }
+    mixFor(w, soundMix);
+    sound.mix(soundMix, step);
+    // The calls, each by chance at its own rate: a bird somewhere about, the owl off in the trees, a duck at the water's edge.
+    if (dice() < soundMix.song * step) about(dice() < soundMix.chorus ? "phrase" : "chirp", 8, 45, 0.8, 0.8, 1.3);
+    if (dice() < soundMix.owl * step) about("owl", 30, 70, 0.9, 0.95, 1.05);
+    if (dice() < soundMix.honk * step) about("honk", 20, 60, 0.7, 0.9, 1.1);
+    if (dice() < soundMix.quack * step) sounded("quack", w.shoreX, w.shoreY, 80, 0.8, 0.12);
+    if (dice() < soundMix.crackle * step) sounded("crackle", FIRE.x, FIRE.y, 20, 0.5 + dice() * 0.5, 0.35);
+    hearMs += performance.now() - began;
+  }
+
   // ---------- the loop ----------
   const projected = new Vector3();
   const lookWay = new Vector3();
@@ -1479,6 +1656,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (lightning.strike !== lastStrike) {
       lastStrike = lightning.strike;
       feeling.surprise = Math.max(feeling.surprise, 0.6);
+      // Thunder follows, by how far off it was; the dog's ears turn that way (a bearing: clockwise from north).
+      const tx = rig.x + Math.sin(lightning.bearing) * 400;
+      const ty = rig.y + Math.cos(lightning.bearing) * 400;
+      heard(tx, ty);
+      if (sound.on && lightning.strike !== strikes) {
+        const thunder = thunderFor(lightning.strike, lightning.bolt);
+        hear(listener.x, listener.y, listener.yaw, tx, ty, 1e6, 2e6, soundAt);
+        sound.play("thunder", thunder.gain, soundAt.pan * 0.7, 0.85 + dice() * 0.3, thunder.delay, thunder.seconds / 3);
+      }
+      strikes = lightning.strike;
       sky.strike(lightning.bearing, lightning.bolt, lightning.strike);
     }
     const moved =
@@ -1544,6 +1731,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const dt = Math.min(0.1, (now - lastTick) / 1000);
     lastTick = now;
     let active = walker.step(dt);
+    // What's heard, while the sound is on (one test a frame while it's off).
+    if (sound.on) hearWorld(dt, now / 1000);
     // The weather moves on (re-lighting marks the frame dirty); while it rains, every frame is drawn.
     if (stepWeather(dt, motion, now)) active = true;
     if (rig.follow) {
@@ -1699,6 +1888,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         if (benchSparks <= 0) {
           benchSparks = 0.4;
           fauna.sparksAt(atBench.bench.x, atBench.bench.y - 0.15, atBench.bench.z + 0.05, 2);
+          if (++rings % 2 === 0) sounded("hammer", atBench.bench.x, atBench.bench.y, 45, 0.7, 0.05);
         }
       }
     }
@@ -1709,7 +1899,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     }
     // At the chalkboard (or his slate), writing: his hand at the chalk, not busy at the station's work.
     knightState.writing = !walker.moving && (chalkboard.hand(attention) || planSlate.hand(attention));
-    if (idle && life.attention.on && !walker.moving) {
+    if (idle && life.attention.on && (!walker.moving || life.glance)) {
       attention.x = life.attention.x;
       attention.y = life.attention.y;
       attention.z = life.attention.z;
@@ -1803,6 +1993,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (sparkTimer <= 0) {
         sparkTimer = 0.22;
         fauna.sparksAt(anvil[0], anvil[1], anvil[2], 3);
+        // (Every third spark rings.)
+        if (++rings % 3 === 0) sounded("hammer", anvil[0], anvil[1], 45, 0.8, 0.05);
       }
     }
     fauna.step(renderDt, rig.x, rig.y, origin, skyState, weather.state, walker, dog, motion);
@@ -1946,6 +2138,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       // His heartbeat: what needs you (care sends him there), and a strong beat in the lodestar when it runs.
       if (!prev || prev.heartbeat !== next.heartbeat) {
         careFrame.concern = heartbeatConcern(next.heartbeat);
+        // Something new needs you: a quiet chime (never for what was already there when the page opened).
+        const need = careFrame.concern?.key ?? "";
+        if (prev && need && need !== lastNeed) sound.play("chime-needs", 0.9);
+        lastNeed = need;
         const ran = next.heartbeat?.ran ?? null;
         if (prev && ran !== null && ran !== lastRan) beatSeen = performance.now();
         lastRan = ran;
@@ -1961,6 +2157,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
             if (was && worldQuestInHand(was.state)) {
               feeling.pleased = 1;
               nodAt = performance.now() / 1000;
+              sound.play("chime-done", 0.9);
             }
           }
         }
@@ -2102,6 +2299,32 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       chalkboard.setBoard(board);
       dirty = true;
     },
+    sound: {
+      set(on, volume) {
+        if (disposed || lost) return false;
+        if (!on) {
+          sound.disable();
+          return false;
+        }
+        const first = !sound.on;
+        if (!sound.enable(volume)) return false;
+        if (first) {
+          // What's already so isn't news: only what happens from now on is heard.
+          knightSteps = knight.footfalls;
+          dogSteps = dog.footfalls;
+          wasLying = knight.lying;
+          wasBall = care.ball;
+          wasChasing = care.out.label.includes("the dog's after");
+          strikes = lightning.strike;
+          mixDue = 1;
+          surveyDue = 0;
+        }
+        return true;
+      },
+      state() {
+        return sound.stats(soundStats);
+      },
+    },
     eyes: {
       open(container) {
         if (disposed || lost) return;
@@ -2188,6 +2411,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       glows.dispose();
       rain.dispose();
       for (const shot of shots.splice(0)) shot.resolve(null);
+      sound.disable();
       eyes.dispose();
       post?.dispose();
       sky.dispose();

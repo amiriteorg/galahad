@@ -181,6 +181,8 @@ export interface CareOut {
   busy: boolean;
   /** At his desk, writing: his hand at the page (the attention point). */
   writing: boolean;
+  /** What he attends to he looks at as he walks, too (the dog off after a hare): a glance, not a stop. */
+  glance: boolean;
   /** What he's doing, for the selector and his bubble ("" at work: the stream's words are). */
   label: string;
 }
@@ -211,6 +213,7 @@ export class Care {
     thinking: false,
     busy: false,
     writing: false,
+    glance: false,
     label: STILL_LABEL,
   };
   /** The dog's battery (0..1), and whether it's on its dock. */
@@ -335,6 +338,7 @@ export class Care {
     out.thinking = false;
     out.busy = false;
     out.writing = false;
+    out.glance = false;
     this.joy = 0;
     this.dogSleep = 0;
     this.bow = false;
@@ -800,6 +804,9 @@ export class Care {
     lead.run = true;
     this.joy = 0.6;
     if (Math.hypot(f.dog.x - q.x, f.dog.y - q.y) < 2.4) wild.startle(q.x, q.y, 2.6);
+    // He watches it go as he walks on.
+    this.look(f.dog.x, f.dog.y, 0.45);
+    this.out.glance = true;
     this.out.label = `Out for a walk: the dog's after ${QUARRY_NAME[q.kind] ?? "something"}`;
     return true;
   }

@@ -186,6 +186,10 @@ export class Knight {
   private lie = 0;
   private asleep = 0;
 
+  /** How many times a foot of his has come down (the sound of his steps counts them: soundscape.ts). */
+  footfalls = 0;
+  private readonly down = [1, 1];
+
   /** His head's bone, posed for this frame: his eyes ride on it (eyes.ts). */
   get head(): Object3D {
     return this.rig.bones[this.B.head!]!;
@@ -610,6 +614,11 @@ export class Knight {
       this.feet.liftHeight = 0.13 + 0.1 * runAmount;
       const stride = Math.min(3, Math.max(1.1, speed * 0.62 + 0.25));
       this.feet.step(dt, x, y, heading, this.vx, this.vy, stride, ground);
+      for (let i = 0; i < 2; i++) {
+        const planted = this.feet.planted[i]!;
+        if (planted && !this.down[i]) this.footfalls++;
+        this.down[i] = planted;
+      }
     }
     // ---- care's gestures, eased (at once under reduced motion) ----
     const care = s.care;

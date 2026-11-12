@@ -1127,6 +1127,10 @@
       @media (max-width: 639px) { .world-tools > .btn > span { display: none; } .world-tools > .btn { width: var(--control-h-sm); padding: 0; } }
       /* The sky: the time in Denmark and its weather on one button; the choices in a small card under it. */
       .world-tools .world-sky-btn { gap: 6px; font-variant-numeric: tabular-nums; }
+      .world-sound { display: flex; align-items: center; gap: 6px; }
+      .world-sound .world-volume { width: 88px; height: var(--control-h-sm); padding: 0 10px; justify-content: center; border-radius: 99px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow-2); }
+      .world-sound .world-volume[hidden] { display: none; }
+      @media (max-width: 639px) { .world-sound .world-volume { display: none; } }
       .world-sky-btn .sky-more { color: var(--text-2); font-weight: 450; white-space: nowrap; }
       .world-sky-btn[data-preview="true"] { border-color: var(--accent); }
       .world-sky-btn[data-preview="true"] .sky-more { color: var(--accent-text, var(--accent)); }
