@@ -39,3 +39,4 @@ export * from "./trials.ts";
 export * from "./compute.ts";
 export * from "./world-compute.ts";
 export * from "./world-quest.ts";
+export * from "./scorecard.ts";
