@@ -9,6 +9,7 @@ import { button, dot, empty, meter, pageHead, section, skeletonRows, skeletonSta
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { autonomyCard, ledgerItem } from "./activity.ts";
+import { inHandSection } from "./in-hand.ts";
 import { startNewChat } from "./chat.ts";
 import { isOnline, openInvite, peerOf } from "./fleet.ts";
 import { openAddKey, vaultChanged } from "./vault.ts";
@@ -172,6 +173,8 @@ export const overviewView: View = (root, ctx, { scope }) => {
         h(
           "div",
           { class: "stack loose" },
+          // What he's working on now: the turns the node is running, and the quests in hand with their plan and gates.
+          inHandSection(ctx, scope),
           ctx.can("mind:read") ? section("Fleet health", { actions: h("a", { href: "#/fleet", class: "btn ghost sm" }, "Open fleet", icon("chevron-right", { size: 14 })) }, health) : null,
           section("Recent activity", { actions: h("a", { href: "#/activity", class: "btn ghost sm" }, "View all", icon("chevron-right", { size: 14 })) }, recent),
         ),

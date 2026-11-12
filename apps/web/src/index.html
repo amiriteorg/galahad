@@ -859,6 +859,21 @@
       /* A chat's state in a list: working (with a spinner), needs you, queued, stopped, failed. */
       .chat-state { flex: none; max-width: 48%; overflow: hidden; text-overflow: ellipsis; gap: 5px; }
       .chat-state .spinner { border-width: 1.5px; }
+      /* In hand (Overview): the turns the node is running, and each quest's plan, step and gates. */
+      .in-hand .section { gap: var(--sp-2); }
+      .in-hand-turn .meta { flex-wrap: wrap; row-gap: 2px; }
+      .in-hand-doing { display: flex; align-items: center; gap: 6px; color: var(--text-2); min-width: 0; font-family: var(--font-mono); font-size: var(--fs-12); }
+      .in-hand-doing > svg { flex: none; color: var(--text-3); }
+      .in-hand-summary { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .in-hand-gate { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .in-hand-gate code { flex: 1; min-width: 0; font-size: var(--fs-12); color: var(--text-2); }
+      .in-hand-gate .badge, .in-hand-gate .tiny { flex: none; }
+      .in-hand-gate-detail > summary { list-style: none; cursor: pointer; }
+      .in-hand-gate-detail > summary::-webkit-details-marker { display: none; }
+      .in-hand-gate-detail pre, .in-hand-plan-text { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--bg-sunken); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+      .in-hand-plan > summary { cursor: pointer; color: var(--text-3); width: fit-content; }
+      .in-hand-plan-text { font: inherit; font-size: var(--fs-13); color: var(--text-2); }
+      @media (max-width: 520px) { .in-hand-gate { flex-wrap: wrap; } .in-hand-gate code { flex-basis: 100%; order: 3; } }
       .aside-answer { min-height: 48px; }
       .aside-answer:empty { display: none; }
       .aside-answer > .md > :first-child { margin-top: 0; }

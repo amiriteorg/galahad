@@ -28,3 +28,25 @@ describe("gates typed into the app", () => {
     expect(gateOwner("planner")).toBe("proposed by the planner");
   });
 });
+
+describe("a quest in hand, as the app shows it", () => {
+  test("its state as a badge: only a reviewed quest is green, and a silent runner is said", async () => {
+    const { questBadge, questInHand, questWhere } = await import("./quests.ts");
+    const { QUEST_STATES, questInHand: contractInHand } = await import("@galahad/core");
+    // The app's states are the contract's, each with words.
+    for (const state of QUEST_STATES) {
+      expect(questBadge(state).text.length).toBeGreaterThan(0);
+      expect(questInHand(state)).toBe(contractInHand(state));
+    }
+    expect(questBadge("working")).toEqual({ text: "Working", tone: "accent", live: true });
+    expect(questBadge("gating")).toEqual({ text: "Running its gates", tone: "accent", live: true });
+    expect(questBadge("done")).toEqual({ text: "Done, reviewed", tone: "ok", live: false });
+    expect(questBadge("unverified").tone).toBe("warn");
+    expect(questBadge("failed").tone).toBe("danger");
+    expect(questBadge("working", true)).toEqual({ text: "No word from its runner", tone: "warn", live: false });
+    expect(questBadge("done", true).text).toBe("Done, reviewed");
+    expect(questWhere({ step: 3, maxSteps: 30, revisions: 0 })).toBe("command 3 of 30");
+    expect(questWhere({ step: 3, maxSteps: 30, revisions: 1, attempt: { index: 2, attempts: 3 } })).toBe("attempt 2 of 3 · command 3 of 30 · sent back once");
+    expect(questWhere({ step: 9, maxSteps: 30, revisions: 2 })).toBe("command 9 of 30 · sent back 2 times");
+  });
+});

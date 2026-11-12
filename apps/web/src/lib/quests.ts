@@ -28,3 +28,41 @@ export function gateResult(exitCode: number | null): { text: string; tone: "ok" 
   if (exitCode === null) return { text: "not run yet", tone: "neutral" };
   return exitCode === 0 ? { text: "passed", tone: "ok" } : { text: `failed (exit ${exitCode})`, tone: "danger" };
 }
+
+/* ---------- a quest in hand, as the node shows it ---------- */
+
+export type QuestStateName = "planning" | "working" | "gating" | "reviewing" | "done" | "unverified" | "gave-up" | "stopped" | "failed";
+
+/** Still in hand: planning, working, its gates running, under review. */
+export const questInHand = (state: QuestStateName): boolean => state === "planning" || state === "working" || state === "gating" || state === "reviewing";
+
+/** A quest's state as a badge: what it's doing, or how it ended (honestly: only "done" is green). */
+export function questBadge(state: QuestStateName, silent = false): { text: string; tone: "accent" | "ok" | "warn" | "danger" | "neutral"; live: boolean } {
+  if (silent && questInHand(state)) return { text: "No word from its runner", tone: "warn", live: false };
+  switch (state) {
+    case "planning":
+      return { text: "Planning", tone: "accent", live: true };
+    case "working":
+      return { text: "Working", tone: "accent", live: true };
+    case "gating":
+      return { text: "Running its gates", tone: "accent", live: true };
+    case "reviewing":
+      return { text: "Under review", tone: "accent", live: true };
+    case "done":
+      return { text: "Done, reviewed", tone: "ok", live: false };
+    case "unverified":
+      return { text: "Not accepted", tone: "warn", live: false };
+    case "gave-up":
+      return { text: "Gave up", tone: "warn", live: false };
+    case "stopped":
+      return { text: "Stopped", tone: "neutral", live: false };
+    case "failed":
+      return { text: "Couldn't run", tone: "danger", live: false };
+  }
+}
+
+/** Where he is in it, in a line: "command 3 of 30 · sent back once". */
+export function questWhere(q: { step: number; maxSteps: number; revisions: number; attempt?: { index: number; attempts: number } | undefined }): string {
+  const back = q.revisions === 0 ? "" : q.revisions === 1 ? "sent back once" : `sent back ${q.revisions} times`;
+  return [q.attempt ? `attempt ${q.attempt.index} of ${q.attempt.attempts}` : "", `command ${q.step} of ${q.maxSteps}`, back].filter(Boolean).join(" · ");
+}
