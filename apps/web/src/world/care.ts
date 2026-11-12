@@ -134,6 +134,8 @@ export interface CareFrame {
   concern: HeartbeatFinding | null;
   galahad: { x: number; y: number; heading: number; moving: boolean; /** Up on something (the deck, the stairs): the dog can't come to him there. */ raised?: boolean };
   dog: { x: number; y: number; speed: number; /** The way it faces (for its ears). */ heading?: number };
+  /** You've just come to look in (the page's greeting): where the view is, while he greets you. The dog's pleased to see you too. */
+  greet?: { on: boolean; x: number; y: number };
   /** Something just made a noise there (a strike, the hammer, an animal off through the grass), `age` seconds ago: the dog's ears turn to it. */
   noise?: { x: number; y: number; age: number };
   /** A node's spot at the keep (its label's place), into `out`; false if it isn't shown. */
@@ -246,6 +248,9 @@ export class Care {
   private dogSleep = 0;
   /** A play bow, this frame (he's winding up to throw); how the dog is, and what shows of it (expression.ts). */
   private bow = false;
+  /** Greeting you: where the dog steps to (a step nearer the view from where it stood), once it's begun. */
+  private greeted = false;
+  private readonly greetAt = { x: 0, y: 0 };
   private readonly feel: DogFeeling = { asleep: false, low: false, playing: false, keen: false, alert: 0, bow: false, noise: Number.NaN };
   private readonly face: DogFace = { wag: 0.5, ears: 0.6, eye: 1, bow: 0, earTurn: 0 };
   /** The dog's chase on a walk: what's left of it (seconds), how long until it may be off again, and what it's after. */
@@ -386,11 +391,34 @@ export class Care {
     else if (intent === "charge") this.toDock(f);
     else this.live(f);
 
+    // You've come to look in: the dog's pleased to see you. Awake and free, a step towards the view, sitting, tail going;
+    // lying by him, its tail goes where it lies; asleep, it lifts its head. (After a ball or on a chase, it has no time.)
+    const greet = f.greet;
+    if (greet?.on && f.motion) {
+      if (this.dogSleep > 0) this.dogSleep = 0.3;
+      else if (!lead.on && !this.docked) {
+        if (!this.greeted) {
+          const d = Math.hypot(greet.x - f.dog.x, greet.y - f.dog.y) || 1;
+          this.greeted = true;
+          this.greetAt.x = f.dog.x + ((greet.x - f.dog.x) / d) * 0.9;
+          this.greetAt.y = f.dog.y + ((greet.y - f.dog.y) / d) * 0.9;
+        }
+        lead.on = true;
+        lead.x = this.greetAt.x;
+        lead.y = this.greetAt.y;
+        lead.sit = true;
+        lead.faceX = greet.x;
+        lead.faceY = greet.y;
+        this.joy = Math.max(this.joy, 0.7);
+      } else if (lead.lie && !lead.run) this.joy = Math.max(this.joy, 0.5);
+    } else this.greeted = false;
+
     // The dog's mood (expression.ts says what shows of it): keen when it's playing, greeted or patted; alert at a noise
     // or on a chase, its ears turned to it; tired when it's low; at peace asleep; a play bow as he winds up to throw.
     const mood = this.dog.mood;
     const feel = this.feel;
-    feel.asleep = this.dogSleep > 0;
+    // (Its head up to see who's come, it isn't asleep for the moment.)
+    feel.asleep = this.dogSleep > 0.5;
     feel.low = this.charge < LOW;
     feel.playing = this.ball === "flying" || this.ball === "resting" || this.ball === "carried" || pose.reach > 0 || this.joy > 0;
     feel.keen = this.ball === "flying" || this.ball === "resting" || this.joy > 0;

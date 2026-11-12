@@ -20,6 +20,7 @@ import {
   worldSummary,
 } from "../lib/world.ts";
 import { relativeTime } from "../lib/time.ts";
+import { shouldGreet } from "../lib/greeting.ts";
 import { badge, button, callout, dot, segmented } from "../ui/controls.ts";
 import { h, isTyping, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -117,6 +118,26 @@ function storedMap(): boolean {
     /* storage off: the default */
   }
   return !matchMedia("(max-width: 639px)").matches;
+}
+
+/** When the SANDBOX was last on screen in this browser (ms): he greets you when it's been a while (lib/greeting.ts). A time, nothing else. */
+const SEEN_KEY = "galahad.world.seen";
+
+function storedSeen(): number | null {
+  try {
+    const v = Number(localStorage.getItem(SEEN_KEY));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function markSeen(): void {
+  try {
+    localStorage.setItem(SEEN_KEY, String(Date.now()));
+  } catch {
+    /* storage off: he greets you each time the page opens */
+  }
 }
 
 /** The map's colours: paper and ink, the same in both themes (it lies over the world, like the labels). */
@@ -582,12 +603,39 @@ export const worldView: View = (root, ctx, { scope }) => {
       void syncBoard();
     }
     handle?.update(shown(), event);
+    if (event.type === "hello") noticeYou();
     if ((event.type === "weather" || event.type === "hello") && weatherChoice === "live") {
       applyWeather();
       showClock();
     }
     if (event.type !== "frame" || selected === event.frame.experiment) scheduleHud();
   }
+
+  // ---------- he notices you: once a visit, and again after a long absence (never on every return to this page) ----------
+  let greetTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Greets if it's due, once the world is drawn and says what he's doing; either way, the SANDBOX has now been seen. */
+  function noticeYou(): void {
+    if (!handle || !model.at || document.hidden || greetTimer) return;
+    const due = shouldGreet(Date.now(), storedSeen());
+    markSeen();
+    if (!due) return;
+    // A moment after it's on screen, so you see him turn to you.
+    greetTimer = setTimeout(() => {
+      greetTimer = null;
+      if (scope.disposed || !handle || document.hidden) return;
+      const line = handle.greet();
+      // Said, too, for whoever can't see his bubble.
+      if (line) summary.textContent = `Galahad says: ${line}`;
+    }, 1400);
+  }
+  scope.interval(() => {
+    if (handle && !document.hidden) markSeen();
+  }, 60_000);
+  scope.listen(document, "visibilitychange", () => (document.hidden ? handle && markSeen() : noticeYou()));
+  scope.add(() => {
+    if (greetTimer) clearTimeout(greetTimer);
+    if (handle && !document.hidden) markSeen();
+  });
 
   function scheduleHud(): void {
     if (hudTimer) return;
@@ -977,6 +1025,7 @@ export const worldView: View = (root, ctx, { scope }) => {
       applyWeather(true);
       showClock();
       updateBeacon();
+      noticeYou();
       scope.add(() => handle?.dispose());
     } catch (error) {
       showFallback(`This device can't draw the world: ${errorMessage(error)}. Here is what's happening, in words.`);

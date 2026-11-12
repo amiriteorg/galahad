@@ -601,3 +601,60 @@ describe("the dog shows how it is", () => {
     expect(Math.abs(w.dog.mood.earTurn)).toBeLessThan(1e-6);
   });
 });
+
+describe("you come to look in (the page's greeting)", () => {
+  test("awake and free, the dog takes a step towards the view and sits there, tail going; then it's back with him", () => {
+    const w = world();
+    w.care.forced = "rounds";
+    w.run(20);
+    const before = { x: w.dog.x, y: w.dog.y };
+    w.frame.greet = { on: true, x: before.x + 10, y: before.y };
+    w.run(2);
+    expect(w.dog.lead.on).toBe(true);
+    expect(w.dog.lead.sit).toBe(true);
+    expect(w.dog.x - before.x).toBeGreaterThan(0.7);
+    expect(w.dog.x - before.x).toBeLessThan(1.1);
+    expect(w.dog.mood.joy).toBeGreaterThan(0.5);
+    expect(w.dog.mood.wag).toBeGreaterThan(0.8);
+    w.frame.greet.on = false;
+    w.run(3);
+    expect(w.dog.mood.joy).toBeLessThan(0.05);
+  });
+
+  test("asleep, only its head comes up: it stays on its cushion, and settles again", () => {
+    const w = world();
+    w.care.forced = "sleep";
+    w.run(40);
+    expect(w.dog.mood.asleep).toBeGreaterThan(0.95);
+    const at = { x: w.dog.x, y: w.dog.y };
+    w.frame.greet = { on: true, x: at.x + 10, y: at.y };
+    w.run(3);
+    expect(w.dog.mood.asleep).toBeLessThan(0.45);
+    expect(w.dog.mood.eye).toBeGreaterThan(0.6);
+    expect(Math.hypot(w.dog.x - at.x, w.dog.y - at.y)).toBeLessThan(0.05);
+    expect(w.care.out.pose.asleep).toBe(1);
+    w.frame.greet.on = false;
+    w.run(8);
+    expect(w.dog.mood.asleep).toBeGreaterThan(0.9);
+  });
+
+  test("after a ball it has no time for you; under reduced motion nothing moves", () => {
+    const w = world();
+    w.care.forced = "walk-dog";
+    w.frame.greet = { on: true, x: 100, y: 100 };
+    let fetched = false;
+    for (let i = 0; i < 600 && !fetched; i++) {
+      w.run(0.05);
+      if (w.care.ball === "flying" || w.care.ball === "resting") {
+        fetched = true;
+        // It's after the ball: led there, at a run, not to the view.
+        expect(w.dog.lead.run).toBe(true);
+      }
+    }
+    expect(fetched).toBe(true);
+    const still = world({ motion: false });
+    still.frame.greet = { on: true, x: 100, y: 100 };
+    still.run(2);
+    expect(still.dog.lead.on).toBe(false);
+  });
+});

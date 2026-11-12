@@ -245,7 +245,7 @@ export const settingsView: View = (root, ctx, { scope }) => {
           "div",
           { class: "card rows" },
           h("div", { class: "item" }, icon("key", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "A device key"), h("div", { class: "subtle tiny" }, "In IndexedDB, created non-extractable: it can sign, but nothing can read it out, not even this page."))),
-          h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page, chat role, what Enter does while he works, and which kept chat you had open (its id, never a word of it), in localStorage. Nothing else."))),
+          h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page, chat role, what Enter does while he works, which kept chat you had open (its id, never a word of it), and the SANDBOX's choices (its map, his eyes, the sky you preview, and when you last looked in, so he knows to greet you), in localStorage. Nothing else."))),
           h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chats: not on this device"), h("div", { class: "subtle tiny" }, "Kept privately on the node you talk to, with what you queued behind them, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept."))),
         ),
       ),

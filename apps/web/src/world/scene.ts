@@ -3,6 +3,7 @@ import type { BoardView } from "@galahad/core/board";
 import { padAt, SITE_NAMES, SITES, STATIONS } from "@galahad/core/world";
 import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object3D, PCFShadowMap, PerspectiveCamera, Plane, Raycaster, Scene, Vector2, Vector3, WebGPURenderer } from "three/webgpu";
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, slateQuest, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
+import { greetingLine } from "../lib/greeting.ts";
 import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
 import { Care, type CareFrame, CareLook, type CareWild, lodestarPulse } from "./care.ts";
 import { type KnightFace, type KnightFeeling, knightFace, nod, tiredness } from "./expression.ts";
@@ -161,6 +162,12 @@ export interface WorldStats {
 export interface WorldHandle {
   /** The model after an event; `event` is the event that produced it (frames feed the playback buffer). */
   update(model: WorldModel, event: WorldEvent | null): void;
+  /**
+   * He notices you (lib/greeting.ts): he says a line that fits the hour and what he's at, looks your way and raises a
+   * hand, and the dog's pleased to see you; asleep, only the dog lifts its head. Returns what he says (null: nothing).
+   * The page calls it when a greeting is due (once a visit; again after a long absence).
+   */
+  greet(): string | null;
   setFollow(on: boolean): void;
   goTo(target: GoTo): void;
   /** Zoom steps: positive zooms in. */
@@ -470,6 +477,11 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let tiredAt = -1e12;
   let nodAt = -1e9;
   let ballBack = false;
+  /**
+   * He notices you (lib/greeting.ts): what he says, from when to when (the frame clock, seconds), whether he's free to
+   * look your way and raise a hand (not with a blade, a pen or chalk in it: then a nod), and where the view is.
+   */
+  const greeting = { line: "", from: -1e9, until: -1e9, free: true, view: { on: false, x: 0, y: 0 } };
   /** The last noise in the world, for the dog's ears: where, and how long ago (seconds). */
   const noise = { x: 0, y: 0, age: 1e9 };
   const heard = (x: number, y: number): void => {
@@ -509,6 +521,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       },
     } satisfies CareWild,
     noise,
+    greet: greeting.view,
   };
   /** The last target of his day he was sent to, and whether he was working then; the dog's last place (for its speed). */
   let careKey = -1;
@@ -605,6 +618,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   // (`__sandboxFace()`: how he is and what shows of it, and the dog's mood; `__sandboxFeel("surprise" | "pleased" | "nod")` sets one off, for a tour.)
   if (trace) {
     (globalThis as { __sandboxFace?: unknown }).__sandboxFace = () => ({ feeling: { ...feeling }, face: { ...face }, dog: { ...dog.mood } });
+    (globalThis as { __sandboxGreet?: unknown }).__sandboxGreet = () => greet();
     (globalThis as { __sandboxFeel?: unknown }).__sandboxFeel = (kind: string) => {
       if (kind === "surprise") feeling.surprise = 1;
       else if (kind === "pleased") feeling.pleased = 1;
@@ -770,11 +784,14 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   for (const site of SITE_NAMES) addLabel(`site:${site}`, div("world-label station", SITES[site].label), copy(SITE_VIEW[site].label), 14, RANK.site);
 
   const bubble = div("world-bubble");
+  /** What he says to you when you come (lib/greeting.ts), for a few seconds. */
+  const bubbleGreet = div("greet");
+  bubbleGreet.hidden = true;
   const bubbleDoing = div("doing");
   const bubbleThought = div("thought");
   const bubbleThinking = div("thinking");
   const bubbleHeart = div("heart");
-  bubble.append(bubbleDoing, bubbleThought, bubbleThinking, bubbleHeart);
+  bubble.append(bubbleGreet, bubbleDoing, bubbleThought, bubbleThinking, bubbleHeart);
   /** What the bubble says he's doing with no work (care's label), as last written. */
   let bubbleLife = "";
   bubble.hidden = true;
@@ -876,8 +893,47 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     bubbleThought.hidden = !thought;
     bubbleThinking.hidden = !g.model;
     if (g.model) bubbleThinking.replaceChildren(div("dots"), document.createTextNode(`thinking with ${g.model}`));
-    bubble.hidden = !g.doing && !thought;
+    bubble.hidden = !g.doing && !thought && bubbleGreet.hidden;
     remeasure("bubble");
+  }
+
+  /**
+   * He notices you: a line in his bubble that fits the hour and what he's at; with motion, he looks your way and
+   * raises a hand (or nods, with his hands at something), and the dog's pleased to see you. Asleep he says nothing
+   * and only the dog lifts its head. Returns what he says (null: nothing).
+   */
+  function greet(): string | null {
+    const g = model?.galahad;
+    const idle = (!g || isIdle(g)) && !chalkboard.stand() && !planSlate.stand();
+    const asleep = knight.eyesShut > 0.5 || (idle && care.out.pose.asleep > 0);
+    const w = weather.state;
+    const line = greetingLine({
+      now: Date.now(),
+      activity: idle ? care.now : null,
+      station: idle ? null : (g?.station ?? null),
+      asleep,
+      lying: knight.lying,
+      quest: (model?.quests ?? []).some((q) => worldQuestInHand(q.state)),
+      needsYou: Boolean(heartbeatConcern(model?.heartbeat ?? null)),
+      weather: w.storm > 0.5 ? "storm" : w.snow > 0.15 ? "snow" : w.rain > 0.2 ? "rain" : w.mist > 0.5 ? "mist" : null,
+      dog: dogName,
+    });
+    const t = performance.now() / 1000;
+    greeting.from = t;
+    // (Asleep, the dog's the one who looks up; it settles again in a few seconds.)
+    greeting.until = t + (line ? 8 : 4.5);
+    greeting.line = line ?? "";
+    greeting.free = !knightState.armed && !knightState.bench && !knightState.writing && !(idle && care.out.writing);
+    if (line && !reduced()) {
+      feeling.pleased = Math.max(feeling.pleased, 0.6);
+      if (!greeting.free) nodAt = t + 0.3;
+    }
+    bubbleGreet.textContent = greeting.line;
+    bubbleGreet.hidden = !line;
+    bubble.hidden = !line && !bubbleDoing.textContent && bubbleThought.hidden;
+    remeasure("bubble");
+    dirty = true;
+    return line;
   }
 
   // ---------- Galahad ----------
@@ -1565,6 +1621,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     careFrame.dog.speed = Number.isNaN(dogLast.x) || renderDt <= 0 ? 0 : Math.hypot(dog.x - dogLast.x, dog.y - dogLast.y) / renderDt;
     careFrame.dog.heading = dog.heading;
     noise.age += renderDt;
+    // Greeting you: where the view is (his own eyes aren't "the view": then there's nowhere to look to).
+    const greeted = t < greeting.until;
+    greeting.view.on = greeted && motion && t - greeting.from > 0.25;
+    greeting.view.x = camera.position.x + origin[0];
+    greeting.view.y = -camera.position.z + origin[1];
+    if (!greeted && !bubbleGreet.hidden) {
+      bubbleGreet.hidden = true;
+      bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden;
+      remeasure("bubble");
+    }
     dogLast.x = dog.x;
     dogLast.y = dog.y;
     const life = care.step(careFrame);
@@ -1592,7 +1658,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       bubbleLife = lifeLabel;
       if (model) syncBubble(model);
       bubbleDoing.textContent = lifeLabel || g?.doing || "";
-      bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden;
+      bubble.hidden = !bubbleDoing.textContent && bubbleThought.hidden && bubbleGreet.hidden;
       remeasure("bubble");
     }
     hearth.setLying(knight.lying);
@@ -1669,7 +1735,16 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     feeling.asleep = knight.eyesShut;
     feeling.concentrating = !walker.moving && (knightState.bench || knightState.working || Boolean(knightState.writing));
     feeling.thinking = knightState.thinking;
-    feeling.listening = idle && !walker.moving && life.pose.tilt > 0;
+    feeling.listening = (idle && !walker.moving && life.pose.tilt > 0) || (greeted && greeting.line !== "");
+    // He notices you: for a few seconds he looks your way and raises a hand (his hands free); a nod otherwise.
+    const waving = greeted && motion && greeting.line !== "" && greeting.free && t - greeting.from > 0.3 && t - greeting.from < 3.6;
+    if (waving && !eyes.swapped) {
+      attention.x = greeting.view.x;
+      attention.y = greeting.view.y;
+      attention.z = camera.position.y;
+      attention.on = true;
+    }
+    knightState.wave = waving && !knightState.armed && !knightState.writing ? 1 : 0;
     knightState.face = knightFace(feeling, face);
     knightState.nod = motion ? nod(t - nodAt) : 0;
     // Up and down steps, eased (his feet are planted on them already: knight.ts' foot planner, on feetGround).
@@ -1926,6 +2001,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         rig.trail(walker.heading, false, 0, cameraClear);
         rig.update(0, false);
       }
+    },
+    greet() {
+      if (disposed || lost) return null;
+      return greet();
     },
     setFollow(on) {
       rig.follow = on;

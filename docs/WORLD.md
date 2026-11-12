@@ -86,6 +86,18 @@ He sits down where he stands (the seat is just behind him: his hips come down an
 
 `?life=walk-dog` (or sleep, wake, rounds, walk, friends, library, workshop, field, council, observatory, ponder, hearth, journal) on the page fixes his day to one part of it, and `?charge=0.15` sets the dog's battery, for tours; with `?trace=1`, `globalThis.__sandboxLife` says what he's doing, how he is (sitting, lying, asleep, writing), whether the dog's lying down and how far it is from him, and whether the fire's lit (and its `force(activity)` and `setCharge(c)` change it).
 
+## He notices you
+
+When you open the SANDBOX, Galahad notices. He turns his head to the view, raises his right hand, and says a line in his bubble for a few seconds: the hour's greeting in Denmark, what he's at, and one more thing if there is one ("Good morning, my liege. Bors and I are out on the trail. It's raining here."). The dog's pleased to see you too: a step towards the view, sitting, its tail going (and a bark, with the sound on); lying by him, its tail goes where it lies.
+
+- **What he says** is a pure function of what the page already knows (`greetingLine` in `apps/web/src/lib/greeting.ts`, unit-tested): the time, the part of his day (or, at work, the station: never what the work is about), whether a quest is in hand, whether something needs you (said before the weather), rain, snow, thunder or mist, and the dog's name once it has one. No model is asked and nothing is fetched.
+- **Asleep, he sleeps on.** No line, no gesture: only the dog lifts its head from its cushion, looks, and settles again.
+- **He doesn't drop what he's doing.** With a blade's tip, a pen or chalk in his hand he neither turns nor waves: he nods, and goes on. On a walk he waves as he goes. Looking through his own eyes, his hand comes up into view.
+- **Once a visit.** A greeting is due the first time the SANDBOX is on screen in this browser, and again when it hasn't been for half an hour (the page closed, the tab hidden, or you elsewhere in the app): never on every return to the page. The time it was last on screen is kept in this browser (`galahad.world.seen`: a time, nothing else).
+- **Under reduced motion** he says the line, and nothing moves. The line is also given to screen readers ("Galahad says: …").
+
+`?trace=1`: `__sandboxGreet()` has him greet you now.
+
 ## How they are, shown
 
 His visor and the dog show how they are. One pure function (`express` in `apps/web/src/world/expression.ts`, unit-tested) goes from what's so to what shows; the knight and the dog ease to it, so nothing snaps, and nothing is allocated for it.
