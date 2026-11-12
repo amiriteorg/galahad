@@ -28,11 +28,25 @@ export type LookTarget =
   | { kind: "journal" }
   /** A place of his own: his hearth south of the keep, the bench by the lake. */
   | { kind: "place"; place: HisPlace }
+  /** A kind of animal that's about: the view goes to the nearest. */
+  | { kind: "wild"; species: string }
   /** An agent working with him (its figure in the world), or one of the fleet's nodes (its spot at the keep). */
   | { kind: "partner"; name: string }
   | { kind: "node"; id: string };
 
-export type LookGroup = "Galahad" | "Experiments" | "Saved experiments" | "Partners" | "Test sites" | "The keep";
+export type LookGroup = "Galahad" | "Experiments" | "Saved experiments" | "Partners" | "Test sites" | "The keep" | "Wildlife";
+
+/** A kind of animal or insect that's about now, as the ecosystem says it (world/eco/summary.ts). */
+export interface WildLine {
+  kind: string;
+  name: string;
+  count: number;
+  young: number;
+  doing: string;
+}
+
+/** "12 · 3 young · grazing". */
+export const wildLine = (w: WildLine): string => `${w.count}${w.young ? ` · ${w.young} young` : ""}${w.doing ? ` · ${w.doing}` : ""}`;
 
 export type HisPlace = "hearth" | "bench";
 
@@ -104,9 +118,9 @@ export function galahadLine(model: WorldModel, life = ""): string {
  * ended, newest first); the saved ones to replay (newest first; the most recent few,
  * or every match of a search); his partners (the agents with him, then the fleet's
  * nodes); the test sites; his hearth, the bench by the lake and the keep's stations,
- * the one he's at marked. Filtered by `query`.
+ * the one he's at marked; and the wildlife that's about. Filtered by `query`.
  */
-export function lookOptions(model: WorldModel, query = "", life = "", now = Date.now(), dog: DogLook | null = null): LookOption[] {
+export function lookOptions(model: WorldModel, query = "", life = "", now = Date.now(), dog: DogLook | null = null, wild: readonly WildLine[] = []): LookOption[] {
   const g = model.galahad;
   const idle = isIdle(g);
   const out: LookOption[] = [
@@ -189,6 +203,11 @@ export function lookOptions(model: WorldModel, query = "", life = "", now = Date
     // (With no work he's wherever his day has him, not at the keep the stream leaves him at.)
     const here = g.station === id && !(idle && life);
     out.push({ key: `station:${id}`, target: { kind: "station", station: id }, group: "The keep", label: s.label, meta: here ? "Galahad is here" : "", icon: "compass", here });
+  }
+  // Who's about in the ecosystem now: the view goes to the nearest of a kind.
+  for (const w of wild) {
+    if (w.count <= 0) continue;
+    out.push({ key: `wild:${w.kind}`, target: { kind: "wild", species: w.kind }, group: "Wildlife", label: w.name, meta: wildLine(w), icon: "paw" });
   }
   return searching ? out.filter((o) => matches(`${o.label} ${o.meta} ${o.group}`, query)) : out;
 }

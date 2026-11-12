@@ -139,7 +139,27 @@ export interface CareFrame {
   height(x: number, y: number): number;
   /** Wet: where a ball or a dog shouldn't go. */
   wet(x: number, y: number): boolean;
+  /** The wildlife, as the dog meets it (fauna.ts): what small animal is near enough to give a short chase, and a fright where it gets to. */
+  wild?: CareWild;
 }
+
+/** What the dog might chase, as the ecosystem tells it (written into the object it's handed). */
+export interface Quarry {
+  x: number;
+  y: number;
+  kind: string;
+  slot: number;
+}
+
+export interface CareWild {
+  nearestSmall(x: number, y: number, r: number, out: Quarry): boolean;
+  startle(x: number, y: number, r: number): void;
+}
+
+/** A chase: how far off the dog notices something, how far from him it will go after it, how long it lasts, and how long before the next. */
+export const CHASE = { sight: 14, leash: 20, seconds: 4.5, every: 55 };
+/** What it's after, as his line says it. */
+const QUARRY_NAME: Record<string, string> = { hare: "a hare", squirrel: "a squirrel", mallard: "the ducks", songbird: "the birds" };
 
 /** What care says, each frame. */
 export interface CareOut {
@@ -219,6 +239,10 @@ export class Care {
   /** What the dog feels this frame, beyond its battery and the ball: greeted (0..1), asleep (0..1). */
   private joy = 0;
   private dogSleep = 0;
+  /** The dog's chase on a walk: what's left of it (seconds), how long until it may be off again, and what it's after. */
+  private chaseLeft = 0;
+  private chaseRest = 2.5;
+  private readonly quarry: Quarry = { x: 0, y: 0, kind: "", slot: -1 };
 
   constructor(
     private readonly dog: CareDog,
@@ -283,6 +307,7 @@ export class Care {
     this.sub = 0;
     this.ball = "held";
     this.throws = 0;
+    this.chaseLeft = 0;
     this.field.preflight = false;
     this.flock.led = -1;
   }
@@ -666,7 +691,9 @@ export class Care {
     if (held < 0) {
       // A point he only passes: on to the next as he reaches it, without stopping.
       if (stop.pause <= 0 && Math.hypot(g.x - stop.x, g.y - stop.y) < 1.6) return this.next();
-      // On the way the dog's out in front, leading (it stays on its cushion while it charges).
+      // On the way the dog's out in front, leading (it stays on its cushion while it charges); now and then it's
+      // off after something.
+      if (g.moving && !this.docked && this.chase(f)) return;
       if (g.moving && !this.docked) {
         const lead = this.dog.lead;
         lead.on = true;
@@ -687,6 +714,45 @@ export class Care {
       this.out.pose.reach = at > 0.6 ? 1 : 0;
     }
     if (held > stop.pause) this.next();
+  }
+
+  /**
+   * On a walk, now and then, the dog's off after a hare, a squirrel, ducks ashore or birds on the ground: a short
+   * dash, never far from him and never into the water. They bolt (the ecosystem's own doing) and it comes back.
+   * True while it's at it.
+   */
+  private chase(f: CareFrame): boolean {
+    const wild = f.wild;
+    if (!wild) return false;
+    const g = f.galahad;
+    const q = this.quarry;
+    if (this.chaseLeft <= 0) {
+      this.chaseRest -= f.dt;
+      if (this.chaseRest > 0 || !wild.nearestSmall(f.dog.x, f.dog.y, CHASE.sight, q)) return false;
+      if (Math.hypot(q.x - g.x, q.y - g.y) > CHASE.leash || f.wet(q.x, q.y)) {
+        // Too far from him, or out on the water: not this one. It looks again in a moment.
+        this.chaseRest = 4;
+        return false;
+      }
+      this.chaseLeft = CHASE.seconds;
+    }
+    this.chaseLeft -= f.dt;
+    // Where it's got to (it runs); given up when it's away, over the water, too far from him, or time's up.
+    const seen = wild.nearestSmall(f.dog.x, f.dog.y, CHASE.sight + 5, q);
+    if (!seen || this.chaseLeft <= 0 || f.wet(q.x, q.y) || Math.hypot(q.x - g.x, q.y - g.y) > CHASE.leash + 5) {
+      this.chaseLeft = 0;
+      this.chaseRest = CHASE.every;
+      return false;
+    }
+    const lead = this.dog.lead;
+    lead.on = true;
+    lead.x = q.x;
+    lead.y = q.y;
+    lead.run = true;
+    this.joy = 0.6;
+    if (Math.hypot(f.dog.x - q.x, f.dog.y - q.y) < 2.4) wild.startle(q.x, q.y, 2.6);
+    this.out.label = `Out for a walk: the dog's after ${QUARRY_NAME[q.kind] ?? "something"}`;
+    return true;
   }
 
   // ---------- fetch with the dog ----------

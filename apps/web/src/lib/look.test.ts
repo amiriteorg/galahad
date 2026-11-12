@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type ExperimentView, PADS, SITES, STATIONS } from "@galahad/core/world";
-import { dogLine, HIS_PLACES, lookingAt, lookOptions, matches, runningCount } from "./look.ts";
+import { dogLine, HIS_PLACES, lookingAt, lookOptions, matches, runningCount, wildLine } from "./look.ts";
 import { applyWorldEvent, emptyWorld, type WorldModel } from "./world.ts";
 
 const experiment = (over: Partial<ExperimentView> = {}): ExperimentView => ({
@@ -120,5 +120,32 @@ describe("the SANDBOX's selector", () => {
     // The view over one of his places says so.
     expect(lookingAt(m, { x: HIS_PLACES.hearth.x + 2, y: HIS_PLACES.hearth.y }, false, null)).toMatchObject({ label: "His hearth", target: { kind: "place", place: "hearth" } });
     expect(lookingAt(m, { x: HIS_PLACES.bench.x, y: HIS_PLACES.bench.y + 3 }, false, null).label).toBe("The bench by the lake");
+  });
+
+  test("the wildlife that's about: each kind with how many, its young and what most are doing; picking one goes to the nearest", () => {
+    const m = world([], { idle: true });
+    const wild = [
+      { kind: "roe", name: "Roe deer", count: 5, young: 2, doing: "grazing" },
+      { kind: "hare", name: "Hare", count: 9, young: 0, doing: "feeding" },
+      { kind: "owl", name: "Tawny owl", count: 0, young: 0, doing: "" },
+      { kind: "bumblebee", name: "Bumblebee", count: 14, young: 0, doing: "" },
+    ];
+    const options = lookOptions(m, "", "", 0, null, wild).filter((o) => o.group === "Wildlife");
+    // (What isn't about isn't listed.)
+    expect(options.map((o) => [o.label, o.meta])).toEqual([
+      ["Roe deer", "5 · 2 young · grazing"],
+      ["Hare", "9 · feeding"],
+      ["Bumblebee", "14"],
+    ]);
+    expect(options[0]).toMatchObject({ target: { kind: "wild", species: "roe" }, icon: "paw" });
+    expect(wildLine(wild[0]!)).toBe("5 · 2 young · grazing");
+    // The last group; found by name, by what they're doing, or as "wildlife".
+    const all = lookOptions(m, "", "", 0, null, wild);
+    expect(all.at(-1)!.group).toBe("Wildlife");
+    expect(lookOptions(m, "roe", "", 0, null, wild).map((o) => o.label)).toEqual(["Roe deer"]);
+    expect(lookOptions(m, "grazing", "", 0, null, wild).map((o) => o.label)).toEqual(["Roe deer"]);
+    expect(lookOptions(m, "wildlife", "", 0, null, wild)).toHaveLength(3);
+    // None about (a node's world before the page has stepped): no group.
+    expect(lookOptions(m).some((o) => o.group === "Wildlife")).toBe(false);
   });
 });

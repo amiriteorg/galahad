@@ -1,4 +1,4 @@
-import { type DogLook, type LookGroup, type LookOption, type LookTarget, lookOptions } from "../lib/look.ts";
+import { type DogLook, type LookGroup, type LookOption, type LookTarget, lookOptions, type WildLine } from "../lib/look.ts";
 import type { WorldModel } from "../lib/world.ts";
 import { dot } from "../ui/controls.ts";
 import { h, replace } from "../ui/dom.ts";
@@ -31,7 +31,7 @@ export interface Look {
 
 let ids = 0;
 
-export function createLook(options: { model: () => WorldModel; life?: () => string; dog?: () => DogLook | null; onPick: (target: LookTarget) => void; onOpen?: () => void }): Look {
+export function createLook(options: { model: () => WorldModel; life?: () => string; dog?: () => DogLook | null; wild?: () => readonly WildLine[]; onPick: (target: LookTarget) => void; onOpen?: () => void }): Look {
   const listId = `world-look-list-${++ids}`;
   const label = h("span", { class: "look-label ellipsis" });
   const meta = h("span", { class: "look-meta ellipsis" });
@@ -73,7 +73,7 @@ export function createLook(options: { model: () => WorldModel; life?: () => stri
   let last = { label: "", meta: "", running: -1 };
 
   function render(): void {
-    shown = lookOptions(options.model(), input.value, options.life?.() ?? "", Date.now(), options.dog?.() ?? null);
+    shown = lookOptions(options.model(), input.value, options.life?.() ?? "", Date.now(), options.dog?.() ?? null, options.wild?.() ?? []);
     active = Math.min(active, Math.max(0, shown.length - 1));
     const rows: HTMLElement[] = [];
     let group: LookGroup | null = null;

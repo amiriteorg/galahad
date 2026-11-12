@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { HeartbeatFinding } from "@galahad/core/world";
 import { BUILDS, Solids } from "./collide.ts";
-import { ballFlight, Care, type CareDog, type CareField, type CareFrame, CRITICAL, DOCK, DOCK_STAND, FULL, LOW, lodestarPulse, PAT_AFTER, ROUND_PLANE, stepCharge, WALK } from "./care.ts";
+import { ballFlight, Care, type CareDog, type CareField, type CareFrame, CHASE, CRITICAL, DOCK, DOCK_STAND, FULL, LOW, lodestarPulse, PAT_AFTER, ROUND_PLANE, stepCharge, WALK } from "./care.ts";
 import { BED, BENCH_DOG, BENCH_SEAT, DESK_DOG, DESK_SEAT, FIRE, HEARTH_COLLIDERS, JOURNAL, LOG_DOG, LOG_SEAT, TRAIL } from "./hearth-plan.ts";
 import { DECK_REST } from "./keep-deck.ts";
 import { fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
@@ -497,5 +497,67 @@ describe("his hearth, and his dog through the day", () => {
     up.frame.galahad.raised = true;
     up.frame.working = false;
     expect(up.run(0.1).label).toBe("Reading at the library");
+  });
+
+  test("on a walk the dog's off after a hare now and then: a short dash that sends it bolting, never far from him, then back out in front; not over the water, not one too far off", () => {
+    const w = world();
+    w.care.forced = "walk";
+    // A hare ahead on his way, which runs from the dog once it's close (as the ecosystem's do).
+    const hare = { x: 4, y: -22, up: true };
+    const frights: number[] = [];
+    w.frame.wild = {
+      nearestSmall: (x, y, r, out) => {
+        if (!hare.up || Math.hypot(hare.x - x, hare.y - y) > r) return false;
+        out.x = hare.x;
+        out.y = hare.y;
+        out.kind = "hare";
+        out.slot = 3;
+        return true;
+      },
+      startle: (x, y) => {
+        frights.push(Math.hypot(hare.x - x, hare.y - y));
+        hare.up = false;
+      },
+    };
+    let chased = 0;
+    let farthest = 0;
+    let after = "";
+    for (let i = 0; i < 400; i++) {
+      const out = w.run(0.1);
+      if (out.label === "Out for a walk: the dog's after a hare") {
+        chased++;
+        expect(w.dog.lead).toMatchObject({ on: true, run: true, x: hare.x, y: hare.y });
+        expect(w.dog.mood.joy).toBeGreaterThan(0);
+        farthest = Math.max(farthest, Math.hypot(w.dog.x - w.him.x, w.dog.y - w.him.y));
+      } else if (chased && !after) after = out.label;
+    }
+    // It went for it, a few seconds at most, got near enough to send it off, and never left him far behind.
+    expect(chased).toBeGreaterThan(3);
+    expect(chased).toBeLessThanOrEqual(Math.ceil(CHASE.seconds / 0.1) + 1);
+    expect(frights.length).toBeGreaterThan(0);
+    expect(frights[0]).toBe(0);
+    expect(farthest).toBeLessThan(CHASE.leash + 6);
+    expect(after).toBe("Out for a walk with the dog");
+
+    // One over the water is left alone, and one too far from him.
+    for (const [x, y, wet] of [[5, -24, true], [60, -24, false]] as const) {
+      const v = world();
+      v.care.forced = "walk";
+      v.frame.wet = () => wet;
+      let went = false;
+      v.frame.wild = {
+        nearestSmall: (qx, qy, r, out) => {
+          // (Always "near the dog", wherever it is: only where it is, and the water, decide.)
+          out.x = wet ? qx + 1 : x;
+          out.y = wet ? qy : y;
+          out.kind = "mallard";
+          out.slot = 1;
+          return true;
+        },
+        startle: () => void (went = true),
+      };
+      for (let i = 0; i < 300; i++) expect(v.run(0.1).label).toBe("Out for a walk with the dog");
+      expect(went).toBe(false);
+    }
   });
 });

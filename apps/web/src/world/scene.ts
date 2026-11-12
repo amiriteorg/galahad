@@ -5,6 +5,7 @@ import { AgXToneMapping, Color, DirectionalLight, Group, HemisphereLight, Object
 import { ENGINE_LABEL, heartbeatConcern, heartbeatLine, isIdle, STATUS_LABEL, type WorldModel } from "../lib/world.ts";
 import { computeOfNode, slotPips, slotWords } from "../lib/world-compute.ts";
 import { Care, type CareFrame, CareLook, lodestarPulse } from "./care.ts";
+import type { EcoSummary } from "./eco/summary.ts";
 import { ACTIVITIES, type Activity, withDog } from "@galahad/core/life";
 import { Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
@@ -91,7 +92,9 @@ export type GoTo =
   | { kind: "point"; x: number; y: number; close?: boolean }
   /** One of his partners: an agent's figure, or a node's spot at the keep (the selector's "Partners"). */
   | { kind: "partner"; name: string }
-  | { kind: "node"; id: string };
+  | { kind: "node"; id: string }
+  /** The nearest animal of a kind that's about (the selector's "Wildlife"). */
+  | { kind: "wild"; species: string };
 
 /** Where Galahad is and where the camera looks (world metres; headings in the atan2 convention): what the map draws. */
 export interface WorldWhere {
@@ -162,6 +165,8 @@ export interface WorldHandle {
   setTimeOfDay(preset: TimePreset | null): void;
   /** The season to show: Denmark's by the real date ("live"), or one to look at. Eased to, never snapped. */
   setSeason(choice: SeasonChoice): void;
+  /** Who's about now in the ecosystem: each kind in sight with how many, how many young and what most are doing (the same object every time). */
+  wildlife(): EcoSummary;
   /** The weather to ease towards. */
   setWeather(kind: WeatherKind): void;
   /** The real weather (Denmark's, now) to ease towards, as cloud, rain and mist; `snap` goes straight there (first sight). */
@@ -375,7 +380,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return false;
     },
   };
-  const fauna = new Fauna(worldRoot, tier, wildGround);
+  const fauna = new Fauna(worldRoot, tier, wildGround, land);
   const plots = new Plots(colors, shadows, fauna);
   const duckGround: Ground = {
     height,
@@ -427,6 +432,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     nodeSpot: spotOf,
     height: (x, y) => land.heightAt(x, y),
     wet: (x, y) => land.heightAt(x, y) < land.waterAt(x, y) + 0.05,
+    // The wildlife, as the dog meets it on a walk (a short chase; they bolt).
+    wild: fauna,
   };
   /** The last target of his day he was sent to, and whether he was working then; the dog's last place (for its speed). */
   let careKey = -1;
@@ -946,7 +953,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   let hoverUntil = 0;
   let hoverShown = false;
   function probe(clientX: number, clientY: number): string | null {
-    if (!groundUnder(clientX, clientY)) return null;
+    // (Over the sky there's no ground under the pointer, but there may be a bird.)
+    if (!groundUnder(clientX, clientY)) return fauna.hover(raycaster.ray, origin, hoverPoint);
     const x = hit.x + origin[0];
     const y = -hit.z + origin[1];
     // His dog first: its name (once it has one) and its battery.
@@ -962,7 +970,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       const name = place.hover?.(x, y, hoverPoint);
       if (name) return name;
     }
-    return null;
+    // An animal: what it is and what it's doing ("Roe deer · grazing").
+    return fauna.hover(raycaster.ray, origin, hoverPoint);
   }
   function placeHover(): void {
     const text = performance.now() < hoverUntil ? probe(hoverAt[0], hoverAt[1]) : null;
@@ -1455,8 +1464,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         fauna.sparksAt(anvil[0], anvil[1], anvil[2], 3);
       }
     }
-    const dusk = Math.min(1, skyState.night * 1.4) * (skyState.evening > 0.5 ? 1 : 0.4) * (1 - weather.state.rain);
-    fauna.step(renderDt, rig.x, rig.y, origin, skyState.night, dusk, motion);
+    fauna.step(renderDt, rig.x, rig.y, origin, skyState, weather.state, walker, dog, motion);
     galahadLead.x = walker.x;
     galahadLead.y = walker.y;
     galahadLead.heading = walker.heading;
@@ -1644,6 +1652,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
         } else if (target.kind === "node") {
           const spot = { x: 0, y: 0 };
           if (spotOf(target.id, spot)) rig.lookAt(spot.x, spot.y, 16);
+        } else if (target.kind === "wild") {
+          // The nearest of them to where the view is now.
+          const at = { x: 0, y: 0 };
+          if (fauna.locate(target.species, rig.x, rig.y, at)) rig.lookAt(at.x, at.y, 14);
         } else {
           const e = plots.get(target.id)?.exp;
           if (e) rig.lookAt(e.plot.x, e.plot.y, Math.max(28, e.plot.size * 1.6));
@@ -1683,6 +1695,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       placeHeavens();
       weather.settleMist(heavens.sunElevation * DEG, heavens.evening);
       applySky();
+    },
+    wildlife() {
+      return fauna.summary();
     },
     setSeason(choice) {
       seasonChoice = choice;

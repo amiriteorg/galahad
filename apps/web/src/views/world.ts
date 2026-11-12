@@ -51,7 +51,7 @@ import type { WorldWhere } from "../world/scene.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 10;
+const WORLD_API = 11;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -172,7 +172,7 @@ export const worldView: View = (root, ctx, { scope }) => {
   const lookFocus: WorldWhere = { galahadX: 0, galahadY: 0, galahadHeading: 0, focusX: 0, focusY: 0, yaw: 0, distance: 0, life: "", dogX: 0, dogY: 0, dogCharge: 1, dogState: "with him" };
   /** His dog, for the selector: its name (the node's `companion`, once you've named it), what it's doing, its battery. */
   const dogLook = () => (handle ? { name: model.companion?.name ?? "", state: lookFocus.dogState, charge: lookFocus.dogCharge } : null);
-  const look = createLook({ model: () => model, life: () => lookFocus.life, dog: dogLook, onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
+  const look = createLook({ model: () => model, life: () => lookFocus.life, dog: dogLook, wild: () => handle?.wildlife().lines ?? [], onPick: (target) => lookAt(target), onOpen: () => setSky(false) });
   scope.add(() => look.dispose());
   const followButton = button("Follow Galahad", { iconOnly: true, icon: "user", size: "sm", onClick: () => lookAt({ kind: "galahad" }) });
   const time = segmented<TimeChoice>(TIME_CHOICES.map((c) => ({ value: c.value, label: c.short, title: c.label, icon: c.icon })), "now", (v) => setTime(v), { label: "Time of day", small: true, block: true });
