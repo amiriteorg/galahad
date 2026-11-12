@@ -1,14 +1,23 @@
 import {
+  type Comparison,
+  compareTrials,
   costOf,
   type EffortLevel,
   mergeSpend,
+  modelReport,
+  reviewerLine,
+  reviewerReport,
+  type RoleReport,
+  variantReport,
   parseVariant,
   type Price,
   type Prices,
+  describeVariant,
   spendLabel,
   spendTotal,
   tokensLabel,
   TRIAL_ROLES,
+  VARIANTS,
   type TrialPins,
   type TrialRunsView,
   type TrialVariant,
@@ -18,7 +27,7 @@ import {
   usdLabel,
 } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
-import { budgetLabel, describeCost, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
+import { budgetLabel, describeCost, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
 import { suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
 
 /*
@@ -148,6 +157,45 @@ async function runOptions(args: TrialArgs, names: readonly string[]) {
   };
 }
 
+const pct = (x: number): string => `${(100 * x).toFixed(0)}%`;
+const fig = (x: number): string => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toPrecision(2));
+
+/** Each role's candidates: the Index with its interval, tokens, time and money a trial, and what the quality cost; then which is best, and how sure. */
+export function describeModels(reports: readonly RoleReport[]): string {
+  const out: string[] = [];
+  for (const report of reports) {
+    out.push(`${bold(`As ${report.role}`)} ${dim("(one role held to one model; every other role as the roster has it; effort 1, the baseline harness)")}`);
+    for (const row of report.rows) {
+      const cost = [
+        row.tokensPerTrial !== null ? `${tokensLabel(row.tokensPerTrial)} tokens a trial` : "tokens unknown",
+        `${Math.round(row.secondsPerTrial)}s a trial`,
+        row.usdPerTrial !== null ? `${usdLabel(row.usdPerTrial)} a trial` : "no price",
+        row.perUsd ? `${fig(row.perUsd.mean)} points a dollar (${fig(row.perUsd.low)}–${fig(row.perUsd.high)})` : row.perMTok ? `${fig(row.perMTok.mean)} points a million tokens (${fig(row.perMTok.low)}–${fig(row.perMTok.high)})` : "",
+      ].filter(Boolean);
+      out.push(`  ${(row.model ?? "the roster as it is").padEnd(40)} ${pct(row.quality.mean).padStart(4)}  ${dim(`90% interval ${pct(row.quality.low)}–${pct(row.quality.high)} · ${row.quality.n} trial${row.quality.n === 1 ? "" : "s"}${row.crashed ? ` · ${row.crashed} crashed` : ""} · ${cost.join(" · ")}`)}`);
+    }
+    out.push(`  ${report.best}`, `  ${report.bestForCost}`);
+  }
+  return out.join("\n");
+}
+
+/** A comparison of two sets of trials, in the words the report gives it. */
+export const describeComparison = (c: Comparison): string => [`${bold(`${c.b.name} against ${c.a.name}`)} ${dim(`(runs ${[...c.a.runs, ...c.b.runs].join(", ")})`)}`, ...c.lines.map((line) => `  ${line}`)].join("\n");
+
+/** What a budget has left after what was spent (a run made after others in one command gets the rest). */
+function remaining(budget: TrialBudget | undefined, spent: readonly UsageLine[], prices: Prices): TrialBudget | undefined {
+  if (!budget) return undefined;
+  return {
+    ...(budget.tokens !== undefined ? { tokens: Math.max(1, budget.tokens - spendTotal(spent).tokens) } : {}),
+    ...(budget.usd !== undefined ? { usd: Math.max(0, budget.usd - costOf(spent, prices).usd) } : {}),
+  };
+}
+const spentOut = (budget: TrialBudget | undefined, spent: readonly UsageLine[], prices: Prices): boolean =>
+  !!budget && ((budget.tokens !== undefined && spendTotal(spent).tokens >= budget.tokens) || (budget.usd !== undefined && costOf(spent, prices).usd >= budget.usd));
+
+/** A fresh seed for runs that must pose the same tasks, and the group they share. */
+const freshGroup = (): { seed: number; group: string } => ({ seed: crypto.getRandomValues(new Uint32Array(1))[0]! >>> 1, group: `g-${Date.now().toString(36)}` });
+
 /** `galahad trial …` and `galahad trials`. Returns the process's exit code. */
 export async function trialCommand(args: TrialArgs): Promise<number> {
   const { command, sub, rest, flags } = args;
@@ -166,6 +214,72 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     const { trials } = await trialRunFromCli(node, options, suite.where);
     return trials.length ? 0 : 1;
   }
+  // One run a candidate, each with the role held to it, on the same seeded tasks: then the role's table.
+  if (command === "trial" && sub === "sweep") {
+    const [role, ...candidates] = rest;
+    if (!role || !(TRIAL_ROLES as readonly string[]).includes(role) || !candidates.length) bad(`usage: galahad trial sweep <${TRIAL_ROLES.join("|")}> <provider/model> [<provider/model> …] [--suite s] [--only problem,…] [--repeat n] [--seed n] [--budget 2M]`);
+    for (const ref of candidates) if (!/^[A-Za-z0-9._:-]+\/\S+$/.test(ref)) bad(`a candidate is <provider>/<model>, not "${ref}"`);
+    const { node, suite, options } = await runOptions(args, (str(flags, "only") ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+    if (options.pins?.[role as keyof TrialPins]) bad(`--pin ${role}=… and a sweep of ${role} disagree: the sweep holds that role to each candidate in turn`);
+    const together = { ...freshGroup(), ...(options.seed !== undefined ? { seed: options.seed } : {}) };
+    const spent: UsageLine[] = [];
+    const made: RunResult[] = [];
+    console.log(dim(`[a sweep of ${candidates.length} candidate(s) for ${role}: each runs the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed}) with every other role as the roster has it]\n`));
+    for (const ref of candidates) {
+      if (spentOut(options.budget, spent, options.prices)) {
+        console.log(`${bold("■ The budget is spent:")} ${ref} and what follows weren't run.`);
+        break;
+      }
+      console.log(bold(`— ${role} = ${ref} —`));
+      const result = await trialRunFromCli(node, { ...options, ...together, pins: { ...options.pins, [role as string]: ref }, ...(options.budget ? { budget: remaining(options.budget, spent, options.prices)! } : {}) }, suite.where);
+      made.push(result);
+      spent.push(...result.spent);
+      console.log("");
+    }
+    const { trials, runs = {} } = await node.call<{ trials: TrialView[]; runs?: TrialRunsView }>("trials");
+    const mine = new Set(made.map((m) => m.run));
+    const report = modelReport(trials.filter((t) => mine.has(t.run)), runs, options.prices, suite.id);
+    if (report.length) console.log(describeModels(report));
+    console.log(dim(`\nspent in all: ${spendLabel(mergeSpend(spent), options.prices)} · every run of this suite: galahad trials --suite ${suite.id}`));
+    return made.some((m) => m.trials.length) ? 0 : 1;
+  }
+  // The same seeded tasks under two variants of the harness: then whether the second measurably helps, and what it cost.
+  if (command === "trial" && sub === "ab") {
+    const [first, second, ...names] = rest;
+    if (!first || !second) bad("usage: galahad trial ab <variant> <variant> [problem …] [--suite s] [--repeat n] [--seed n] [--budget 2M]   (variants: galahad trial variants)");
+    let variants: TrialVariant[] = [];
+    try {
+      variants = [parseVariant(first!), parseVariant(second!)];
+    } catch (error) {
+      bad((error as Error).message);
+    }
+    if (variants[0]!.name === variants[1]!.name) bad("an A/B needs two different variants");
+    if (str(flags, "variant") || str(flags, "effort")) bad("an A/B takes its two variants (and their effort) as its arguments, not --variant or --effort");
+    const { node, suite, options } = await runOptions(args, names);
+    const together = { ...freshGroup(), ...(options.seed !== undefined ? { seed: options.seed } : {}) };
+    const spent: UsageLine[] = [];
+    const made: { variant: TrialVariant; result: RunResult }[] = [];
+    console.log(dim(`[${variants[0]!.name} and ${variants[1]!.name} on the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed}): the second is compared with the first]\n`));
+    for (const variant of variants) {
+      if (spentOut(options.budget, spent, options.prices)) {
+        console.log(`${bold("■ The budget is spent:")} ${variant.name} wasn't run, so there is nothing to compare.`);
+        break;
+      }
+      console.log(bold(`— ${variant.name}: ${describeVariant(variant.options)} —`));
+      const result = await trialRunFromCli(node, { ...options, ...together, variant, ...(options.budget ? { budget: remaining(options.budget, spent, options.prices)! } : {}) }, suite.where);
+      made.push({ variant, result });
+      spent.push(...result.spent);
+      console.log("");
+    }
+    if (made.length === 2) console.log(describeComparison(compareTrials({ name: made[0]!.variant.name, trials: made[0]!.result.trials }, { name: made[1]!.variant.name, trials: made[1]!.result.trials }, options.prices)));
+    console.log(dim(`\nspent in all: ${spendLabel(mergeSpend(spent), options.prices)}`));
+    return made.length === 2 && made.every((m) => m.result.trials.length) ? 0 : 1;
+  }
+  if (command === "trial" && sub === "variants" && !rest.length && !str(flags, "suite")) {
+    console.log(dim("Named sets of harness switches. Each differs from the baseline by one (bare: by all); your own: <name>:gates=off,skills=on,effort=2,planner-gates=on,archive=off,revisions=1"));
+    for (const [name, options] of Object.entries(VARIANTS)) console.log(`  ${name.padEnd(15)} ${describeVariant(options)}`);
+    return 0;
+  }
   if (command === "trial" && sub === "estimate") {
     const { node, options } = await runOptions(args, rest);
     const { trials, runs = {} } = await node.call<{ trials: TrialView[]; runs?: TrialRunsView }>("trials");
@@ -181,7 +295,18 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     node.call<{ trials: TrialView[]; runs?: TrialRunsView }>("trials"),
     node.call<{ prices: Record<string, Price> }>("prices").catch(() => ({ prices: {} as Record<string, Price> })),
   ]);
-  if (command === "trials" || !sub) {
+  // Two runs, the second against the first: by the rule, with what each cost.
+  if (command === "trial" && sub === "compare") {
+    const [a, b] = rest;
+    const of = (run: string | undefined): TrialView[] => trials.filter((t) => t.run === run);
+    if (!a || !b || !of(a).length || !of(b).length) bad("usage: galahad trial compare <run> <run>   (two runs that have trials: galahad trials lists them)");
+    // A run is called by what set it apart (its variant, the role it held to a model), else by its id.
+    const said = (run: string): string => settings[run]?.variant?.name ?? Object.entries(settings[run]?.pins ?? {}).map(([role, model]) => `${role}=${model}`).join(" ");
+    const names = said(a!) && said(b!) && said(a!) !== said(b!) ? [said(a!), said(b!)] : [a!, b!];
+    console.log(describeComparison(compareTrials({ name: names[0]!, trials: of(a) }, { name: names[1]!, trials: of(b) }, prices)));
+    return 0;
+  }
+  if (command === "trials" || !sub || sub === "models" || sub === "variants") {
     if (!trials.length) {
       console.log("No trials yet: galahad trial run (or galahad trial run cantilever-beam for one)");
       return 0;
@@ -206,6 +331,16 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
       // Did more compute make him more capable? The Index per effort level, with its interval, says.
       const byEffort = describeEffort(of, settings);
       if (byEffort) console.log(`\n${byEffort}`);
+      // Which model is best in which role, and best for its cost: from the runs that held a role to one model.
+      const byModel = modelReport(of, settings, prices, suite);
+      if (byModel.length) console.log(`\n${describeModels(byModel)}`);
+      // Does a change to the harness help? Each variant against the baseline run beside it.
+      const byVariant = variantReport(of, settings, prices, suite);
+      if (byVariant.length) console.log(`\n${bold("Variants of the harness")} ${dim("(the same tasks under each; a change wins only if its interval clears the baseline's)")}\n${byVariant.map(describeComparison).join("\n")}`);
+      if (suite === "reviewer") {
+        console.log(`\n${bold("The reviewer")} ${dim("(by the model that reviewed; the first error lets wrong work through, the second wastes revisions)")}`);
+        for (const row of reviewerReport(of)) console.log(`  ${reviewerLine(row)}`);
+      }
       console.log(`\n${bold("By problem")} ${dim("(every run)")}`);
       const known = TRIAL_SUITES[suite]?.list() ?? [];
       const ids = [...new Set([...known.map((p) => p.id), ...of.map((t) => t.problem)])];

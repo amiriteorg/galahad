@@ -118,18 +118,27 @@ Work
                                   the scientific method: hypothesis and predictions registered before anything
                                   runs, a verified experiment in the Lab, an independent method review
   findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
-  trial run [problem|domain …] [--suite engineering] [--repeat 1] [--parallel auto|n] [--effort 1|2|3] [--seed n] [--net gateway|online] [--vm|--container]
-                                  problems with exact answers, posed with fresh random parameters, solved in the Lab,
-                                  graded by a program: the Galahad Index. Trials run across the free slots;
-                                  --effort makes that many attempts a trial (the reviewer takes one before
-                                  anything is graded) and records it, so the Index per effort can be compared
+  trial run [problem|domain …] [--suite engineering|agentic|reviewer] [--level 1..4] [--repeat 1] [--parallel auto|n]
+            [--effort 1|2|3] [--seed n] [--net …] [--vm|--container]
+                                  the Trials: problems posed from a seed, worked as quests, graded by a program: the
+                                  Galahad Index. engineering: exact answers, in the Lab. agentic: real work in a small
+                                  repository, graded by hidden tests in a fresh sandbox (--level turns the difficulty).
+                                  reviewer: a quest's evidence with a known answer, put to the reviewer. --effort makes
+                                  that many attempts a trial (the reviewer takes one before anything is graded)
      … --pin <role>=<provider/model> [--pin …] --variant <name[:switch=value,…]> --budget 2M --budget-usd 5
                                   hold a role to one model; run under a named set of harness switches; stop cleanly
                                   when the budget is spent (it says first what past runs of these problems cost)
+  trial sweep <planner|engineer|reviewer> <provider/model> [<provider/model> …] [--suite s] [--only problem,…]
+                                  the same seeded tasks once per candidate, that role held to it: which model is best
+                                  in the role, which is best for its cost, and how sure that is
+  trial ab <variant> <variant> [problem …] [--suite s]
+                                  the same seeded tasks under two variants of the harness: measurably helps, measurably
+                                  hurts, or no measurable difference, with what each cost (trial variants lists them)
+  trial compare <run> <run>       two recorded runs, the second against the first, by the same rule
   trial estimate [problem …] [--suite s] [--repeat n] [--effort n]   what such a run would cost, going by past runs
-  trials [--suite s] [--all] | trial <id|run> | trial problems [--suite s]
-                                  the Index per run with what it cost (tokens, time, money, and the quality
-                                  each bought), per effort level (did more compute help?), each answer
+  trials [--suite s] [--all] | trial <id|run> | trial problems [--suite s] [--level n] | trial variants
+                                  the Index per run with what it cost (tokens, time, money, and the quality each
+                                  bought), per effort, per model in each role, per variant; each answer or hidden check
   price | price set <provider/model | provider/*> <$/M in> <$/M out> [--cached x] | price rm <provider/model>
                                   your prices, per million tokens: tokens are always counted, money only where
                                   you've stated a price

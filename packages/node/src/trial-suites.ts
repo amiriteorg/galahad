@@ -1,6 +1,7 @@
 import type { SandboxNetwork } from "@galahad/core";
-import { AGENTIC_SUITE, agenticProblem, agenticProblems, ENGINEERING_SUITE, LEVELS, USUAL_LEVEL } from "@galahad/brain";
+import { AGENTIC_SUITE, agenticProblem, agenticProblems, ENGINEERING_SUITE, LEVELS, reviewDomain, REVIEWER_CASES, USUAL_LEVEL } from "@galahad/brain";
 import { agenticUnit } from "./trial-agentic.ts";
+import { reviewerUnit } from "./trial-reviewer.ts";
 import type { Tryable } from "./trial-cli.ts";
 
 /*
@@ -73,7 +74,18 @@ const agentic: SuiteInfo = {
   },
 };
 
-export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering, agentic };
+/** The reviewer, measured directly: cases of a quest's evidence with a known answer. Named by case, or by what a careful reviewer does with it. */
+const reviewer: SuiteInfo = {
+  id: "reviewer",
+  about: "a quest's evidence with a known answer, put to the reviewer: does it pass what it should fail, or fail what it should pass?",
+  where: "put to the reviewer as a quest's evidence is (no sandbox)",
+  network: "gateway",
+  networks: ["gateway", "isolated", "online"],
+  list: () => REVIEWER_CASES.map((c) => ({ id: c.id, domain: reviewDomain(c.truth), title: c.title })),
+  choose: (names) => named(REVIEWER_CASES.map((c) => ({ ...reviewerUnit(c), domain: reviewDomain(c.truth) })), names, "reviewer"),
+};
+
+export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering, agentic, reviewer };
 
 export function suiteNamed(id: string): SuiteInfo {
   const suite = TRIAL_SUITES[id];
