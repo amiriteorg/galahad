@@ -389,6 +389,26 @@ describe("the SANDBOX, live", () => {
     expect(JSON.stringify(events)).not.toContain("55555");
   });
 
+  test("he looks through his own eyes: the words, an honest 'no picture' with no page open; looking takes him nowhere, and it's still his after the bank", async () => {
+    const seen: any[] = [];
+    const stop = daemon.world.watch((e) => seen.push(e));
+    script = [callTool("bank_status", {}), callTool("look", {}), say("I can't see just now: no page has my world open.")];
+    const answer = await ask(home.adminToken(), "What's my balance, and what do you see?");
+    stop();
+    // After the bank it isn't refused: it only reads.
+    expect(answer.find((e) => e.type === "tool_result" && e.name === "look")).toMatchObject({ ok: true });
+    const told = bodies.at(-1).messages.at(-1).content as string;
+    expect(told).toContain("What the node itself knows");
+    expect(told).toContain("Through Galahad's eyes");
+    expect(told).toContain("No page with the SANDBOX open is connected");
+    expect(told).toContain("don't describe a picture");
+    // The world heard of the bank's tool by name, and nothing of the look: he wasn't sent anywhere for it.
+    const doing = seen.filter((e) => e.type === "galahad").map((e) => e.galahad.doing as string);
+    expect(doing.some((d) => d.startsWith("Bank connection status"))).toBe(true);
+    expect(doing.some((d) => /look/i.test(d))).toBe(false);
+    expect(seen.some((e) => e.type === "eyes")).toBe(false);
+  });
+
   test("how it ran on a device comes back to the node, for galahad world --logs", async () => {
     const report = {
       session: "a1b2c3d4e5f6a7b8c9d0e1f2",
