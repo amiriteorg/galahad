@@ -62,7 +62,7 @@ describe("the SANDBOX's selector", () => {
     // He's out at the flight, on the proving ground: that site is marked.
     expect(options.find((o) => o.label === SITES.field.label)?.here).toBe(true);
     // His own places, then the keep's stations.
-    expect(options.filter((o) => o.group === "The keep").map((o) => o.label)).toEqual(["His hearth", "The bench by the lake", ...Object.values(STATIONS).map((s) => s.label)]);
+    expect(options.filter((o) => o.group === "The keep").map((o) => o.label)).toEqual(["His hearth", "The bench by the lake", "His slate", ...Object.values(STATIONS).map((s) => s.label)]);
   });
 
   test("the station he's at is marked, and the search narrows everything", () => {

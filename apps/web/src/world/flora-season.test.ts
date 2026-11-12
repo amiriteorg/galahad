@@ -100,6 +100,20 @@ describe("the season's amounts", () => {
     expect(autumn[2]!).toBeLessThan(autumn[1]!);
   });
 
+  test("after it flowers the heath is russet, not olive: by November it's redder than it's green, and mostly so", () => {
+    for (const [m, d] of [[10, 25], [11, 12], [11, 30]] as const) {
+      const heath = at(m, d).heath;
+      // Russet: red over green over blue (the ground under it is an olive: green over red).
+      expect(heath[0]!).toBeGreaterThan(heath[1]! * 1.15);
+      expect(heath[1]!).toBeGreaterThan(heath[2]!);
+      // And the season's colour is most of what's seen, not half of it over the summer's olive.
+      expect(heath[3]!).toBeGreaterThan(0.72);
+    }
+    // In winter it's grey-gold, paler; in summer before it flowers it's the heath's own olive.
+    expect(at(1, 20).heath[3]!).toBeGreaterThan(0.6);
+    expect(at(6, 20).heath[3]!).toBeLessThan(0.1);
+  });
+
   test("every amount stays within 0 and 1, all year", () => {
     for (let n = 0; n < 365; n++) {
       const d = day(n);

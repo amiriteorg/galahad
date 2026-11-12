@@ -42,6 +42,7 @@ import {
   type WorldHeartbeat,
   type WorldNode,
   type WorldPartner,
+  type WorldQuest,
   type WorldReport,
   type WorldWeather,
 } from "@galahad/core";
@@ -165,6 +166,8 @@ export class WorldHub {
       if (this.watchers.size) this.heartbeatChanged();
       if (this.watchers.size) this.companionChanged();
       this.computeChanged();
+      // (An ended quest is wiped off his slate a while after: nobody reports that.)
+      this.questsChanged();
     }, 15_000);
     this.sweep.unref?.();
     // Saved ones changed (one ended, was pinned or deleted): the world's list of them follows.
@@ -228,6 +231,7 @@ export class WorldHub {
       heartbeat: this.heartbeatNow(),
       partners: this.partnerViews(),
       ...(companion ? { companion } : {}),
+      ...(this.quests ? { quests: this.questsNow() } : {}),
     };
   }
 
@@ -385,6 +389,35 @@ export class WorldHub {
     if (key === this.companionKey) return;
     this.companionKey = key;
     this.emit({ type: "companion", at: this.now(), companion });
+  }
+
+  /* ---------- the quests in hand, on his slate (world-quest.ts) ---------- */
+
+  private quests: (() => WorldQuest[]) | null = null;
+  private questsKey = "[]";
+
+  /** Where the quests the world draws are read from (the daemon sets it: quests.ts' QuestBoard.world). */
+  setQuests(source: () => WorldQuest[]): void {
+    this.quests = source;
+    this.questsKey = JSON.stringify(this.questsNow());
+  }
+
+  private questsNow(): WorldQuest[] {
+    try {
+      return this.quests?.() ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A quest was reported, ended, or is due to be wiped: watchers hear of it if what the world draws changed. */
+  questsChanged(): void {
+    if (!this.quests || !this.watchers.size) return;
+    const quests = this.questsNow();
+    const key = JSON.stringify(quests);
+    if (key === this.questsKey) return;
+    this.questsKey = key;
+    this.emit({ type: "quests", at: this.now(), quests });
   }
 
   /* ---------- partners: the agents working with him (their MCP calls) ---------- */

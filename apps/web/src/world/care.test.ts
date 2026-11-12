@@ -94,7 +94,7 @@ function world(opts: { motion?: boolean } = {}) {
     x: 0,
     y: -9,
     lead: { on: false, x: 0, y: 0, sit: false, lie: false, run: false, faceX: Number.NaN, faceY: Number.NaN },
-    mood: { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0 },
+    mood: { wag: 0.5, ears: 0.6, eye: 1, joy: 0, asleep: 0, bow: 0, earTurn: 0 },
     charge: { value: 1 },
     mouth: (out) => {
       out[0] = dog.x;
@@ -528,8 +528,16 @@ describe("his hearth, and his dog through the day", () => {
         chased++;
         expect(w.dog.lead).toMatchObject({ on: true, run: true, x: hare.x, y: hare.y });
         expect(w.dog.mood.joy).toBeGreaterThan(0);
+        // He watches it go, as he walks on (a glance: his head turns, his feet keep to the trail).
+        expect(out.glance).toBe(true);
+        expect(out.attention.on).toBe(true);
+        // (Where it was when he looked: it's moved a stride since.)
+        expect(Math.hypot(out.attention.x - w.dog.x, out.attention.y - w.dog.y)).toBeLessThan(0.8);
         farthest = Math.max(farthest, Math.hypot(w.dog.x - w.him.x, w.dog.y - w.him.y));
-      } else if (chased && !after) after = out.label;
+      } else {
+        expect(out.glance).toBe(false);
+        if (chased && !after) after = out.label;
+      }
     }
     // It went for it, a few seconds at most, got near enough to send it off, and never left him far behind.
     expect(chased).toBeGreaterThan(3);
@@ -559,5 +567,102 @@ describe("his hearth, and his dog through the day", () => {
       for (let i = 0; i < 300; i++) expect(v.run(0.1).label).toBe("Out for a walk with the dog");
       expect(went).toBe(false);
     }
+  });
+});
+
+describe("the dog shows how it is", () => {
+  test("a play bow as he winds up to throw, gone once the ball's away", () => {
+    const w = world();
+    w.care.forced = "walk-dog";
+    let bowed = 0;
+    let flying = 1;
+    for (let i = 0; i < 1200; i++) {
+      const out = w.run(1 / 30);
+      if (w.care.ball === "held" && out.pose.throw > 0) bowed = Math.max(bowed, w.dog.mood.bow);
+      if (w.care.ball === "carried") flying = Math.min(flying, w.dog.mood.bow);
+    }
+    expect(bowed).toBeGreaterThan(0.8);
+    expect(flying).toBeLessThan(0.05);
+  });
+
+  test("its ears turn to a noise for a few seconds, and it's alert (tail stiller); then it forgets", () => {
+    const w = world();
+    w.care.forced = "hearth";
+    w.run(20);
+    const rest = w.dog.mood.wag;
+    // Something off to its left, as it faces east.
+    w.frame.dog.heading = 0;
+    w.frame.noise = { x: w.dog.x, y: w.dog.y + 8, age: 0 };
+    w.run(0.6);
+    expect(w.dog.mood.earTurn).toBeGreaterThan(0.4);
+    expect(w.dog.mood.ears).toBeGreaterThan(0.75);
+    expect(w.dog.mood.wag).toBeLessThan(rest);
+    // (The scene ages the noise; here it's said to be old.)
+    w.frame.noise.age = 10;
+    w.run(2);
+    expect(Math.abs(w.dog.mood.earTurn)).toBeLessThan(0.02);
+    // Asleep, it hears nothing.
+    w.care.forced = "sleep";
+    w.run(30);
+    w.frame.noise.age = 0;
+    w.run(1);
+    expect(Math.abs(w.dog.mood.earTurn)).toBeLessThan(1e-6);
+  });
+});
+
+describe("you come to look in (the page's greeting)", () => {
+  test("awake and free, the dog takes a step towards the view and sits there, tail going; then it's back with him", () => {
+    const w = world();
+    w.care.forced = "rounds";
+    w.run(20);
+    const before = { x: w.dog.x, y: w.dog.y };
+    w.frame.greet = { on: true, x: before.x + 10, y: before.y };
+    w.run(2);
+    expect(w.dog.lead.on).toBe(true);
+    expect(w.dog.lead.sit).toBe(true);
+    expect(w.dog.x - before.x).toBeGreaterThan(0.7);
+    expect(w.dog.x - before.x).toBeLessThan(1.1);
+    expect(w.dog.mood.joy).toBeGreaterThan(0.5);
+    expect(w.dog.mood.wag).toBeGreaterThan(0.8);
+    w.frame.greet.on = false;
+    w.run(3);
+    expect(w.dog.mood.joy).toBeLessThan(0.05);
+  });
+
+  test("asleep, only its head comes up: it stays on its cushion, and settles again", () => {
+    const w = world();
+    w.care.forced = "sleep";
+    w.run(40);
+    expect(w.dog.mood.asleep).toBeGreaterThan(0.95);
+    const at = { x: w.dog.x, y: w.dog.y };
+    w.frame.greet = { on: true, x: at.x + 10, y: at.y };
+    w.run(3);
+    expect(w.dog.mood.asleep).toBeLessThan(0.45);
+    expect(w.dog.mood.eye).toBeGreaterThan(0.6);
+    expect(Math.hypot(w.dog.x - at.x, w.dog.y - at.y)).toBeLessThan(0.05);
+    expect(w.care.out.pose.asleep).toBe(1);
+    w.frame.greet.on = false;
+    w.run(8);
+    expect(w.dog.mood.asleep).toBeGreaterThan(0.9);
+  });
+
+  test("after a ball it has no time for you; under reduced motion nothing moves", () => {
+    const w = world();
+    w.care.forced = "walk-dog";
+    w.frame.greet = { on: true, x: 100, y: 100 };
+    let fetched = false;
+    for (let i = 0; i < 600 && !fetched; i++) {
+      w.run(0.05);
+      if (w.care.ball === "flying" || w.care.ball === "resting") {
+        fetched = true;
+        // It's after the ball: led there, at a run, not to the view.
+        expect(w.dog.lead.run).toBe(true);
+      }
+    }
+    expect(fetched).toBe(true);
+    const still = world({ motion: false });
+    still.frame.greet = { on: true, x: 100, y: 100 };
+    still.run(2);
+    expect(still.dog.lead.on).toBe(false);
   });
 });

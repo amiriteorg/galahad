@@ -25,6 +25,7 @@ import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/exp
 import { readCompanion } from "@galahad/core/companion";
 import { EYES, EYES_PLACES, type EyesPlace } from "@galahad/core/eyes";
 import type { WorldCompute } from "@galahad/core/world-compute";
+import { readWorldQuests, type WorldQuest, worldQuestInHand, worldQuestLine } from "@galahad/core/world-quest";
 import { helpersLine, readCompute } from "./world-compute.ts";
 
 /*
@@ -72,6 +73,8 @@ export interface WorldModel {
   partners: WorldPartner[];
   /** His dog, by the name the owner gave it (null: not named, or an older node). */
   companion: WorldCompanion | null;
+  /** The quests in hand and just ended, as his slate draws them (none: nothing in hand, or an older node). */
+  quests: WorldQuest[];
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -89,6 +92,7 @@ export const emptyWorld = (): WorldModel => ({
   heartbeat: null,
   partners: [],
   companion: null,
+  quests: [],
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -128,8 +132,11 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
         heartbeat: event.heartbeat ?? null,
         partners: event.partners ?? [],
         companion: event.companion ?? null,
+        quests: event.quests ?? [],
       };
     }
+    case "quests":
+      return { ...state, at, quests: event.quests };
     case "saved":
       return { ...state, at, saved: event.saved };
     case "galahad":
@@ -470,7 +477,14 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       // His dog's name, when the node says one this page can read (the same check the node makes).
       const companion = readCompanion(v.companion);
       if (companion) hello.companion = companion;
+      // The quests on his slate, each checked and bounded again (one it can't read is left out).
+      const quests = v.quests === undefined ? null : readWorldQuests(v.quests);
+      if (quests) hello.quests = quests;
       return hello;
+    }
+    case "quests": {
+      const quests = readWorldQuests(v.quests);
+      return quests ? { type: "quests", at, quests } : null;
     }
     case "companion": {
       if (v.companion === null) return { type: "companion", at, companion: null };
@@ -671,6 +685,9 @@ export function worldSummary(model: WorldModel): string {
   const heart = heartbeatLine(model.heartbeat);
   if (heart) parts.push(`${heart}.`);
   if (model.partners.length) parts.push(`With him: ${model.partners.map((p) => p.name).join(", ")}.`);
+  // What's on his slate, in fixed words (the plan itself is on Overview's In hand).
+  const quest = slateQuest(model.quests);
+  if (quest) parts.push(`${worldQuestInHand(quest.state) ? "A quest in hand" : "A quest ended"}: ${worldQuestLine(quest).toLowerCase()}.`);
   const running = model.experiments.filter((e) => !isEnded(e));
   const ended = model.experiments.filter(isEnded);
   if (!model.experiments.length) parts.push("No experiments.");
@@ -682,6 +699,9 @@ export function worldSummary(model: WorldModel): string {
 }
 
 export const experimentEnded = isEnded;
+
+/** The quest his slate shows: the first in hand (the node lists the latest word first), else the one that ended last. */
+export const slateQuest = (quests: readonly WorldQuest[]): WorldQuest | null => quests.find((q) => worldQuestInHand(q.state)) ?? quests[0] ?? null;
 
 // ---------- the stream, kept open ----------
 

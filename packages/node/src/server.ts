@@ -1529,7 +1529,8 @@ export function createApp(ctx: AppContext) {
     quests: () => ({ quests: ctx.quests.list() }),
     questProgress: (input, p) => {
       // Each reporter's quests are its own: an agent's or a loop's report never writes over yours.
-      ctx.quests.report(p.kind === "arm" ? p.label! : p.kind === "node" ? (ctx.store.device(p.device)?.name ?? "a node") : "you", input);
+      // (An agent that may read the bank: the world draws its quest's shape, never its words. world-quest.ts.)
+      ctx.quests.report(p.kind === "arm" ? p.label! : p.kind === "node" ? (ctx.store.device(p.device)?.name ?? "a node") : "you", input, { bank: p.kind === "arm" && p.scopes.includes("bank:read") });
       return { ok: true };
     },
     projects: () => ({ projects: projectsView() }),

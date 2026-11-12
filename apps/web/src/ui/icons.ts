@@ -125,6 +125,9 @@ const ICONS = {
   flame: ["M12 3.5c.5 2.9 4.25 4.9 4.25 9.1a4.25 4.25 0 0 1-8.5 0c0-1.6.7-2.7 1.6-3.6.3 1.3.95 2.05 1.85 2.3-.55-2.85-.2-5.35.8-7.8z", "M12 20.5v-3"],
   /** His journal: a bound book, its spine and a few lines on the cover. */
   journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
+  /** The SANDBOX's sound: a speaker, sounding and silent. */
+  volume: ["M4.5 9.75h3l4-3.5v11.5l-4-3.5h-3z", "M14.75 9.5a3.6 3.6 0 0 1 0 5", "M17.25 7a7.1 7.1 0 0 1 0 10"],
+  "volume-off": ["M4.5 9.75h3l4-3.5v11.5l-4-3.5h-3z", "M15.25 9.75l4.5 4.5M19.75 9.75l-4.5 4.5"],
   /** His eyes: his visor, a rounded slit with its two eyes; and swapping two views. */
   visor: [rect(3.5, 7.5, 17, 9, 4.5), circle(9, 12, 1.25), circle(15, 12, 1.25)],
   swap: ["M4.5 8.5h13M14 5l3.5 3.5L14 12", "M19.5 15.5h-13M10 12l-3.5 3.5L10 19"],

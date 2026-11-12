@@ -1076,6 +1076,7 @@
       }
       .world-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; border-right: inherit; border-bottom: inherit; transform: translateX(-50%) rotate(45deg); }
       .world-bubble .doing { font-weight: 650; }
+      .world-bubble .greet { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgb(59 53 80 / 0.16); color: #3b3550; }
       .world-bubble .thought { color: #5d5568; font-style: italic; margin-top: 3px; }
       .world-bubble .heart { margin-top: 4px; font-size: 10.5px; color: #6b5c4c; font-variant-numeric: tabular-nums; }
       .world-bubble .heart[data-needs="true"] { color: #b4462e; font-weight: 650; }
@@ -1126,6 +1127,10 @@
       @media (max-width: 639px) { .world-tools > .btn > span { display: none; } .world-tools > .btn { width: var(--control-h-sm); padding: 0; } }
       /* The sky: the time in Denmark and its weather on one button; the choices in a small card under it. */
       .world-tools .world-sky-btn { gap: 6px; font-variant-numeric: tabular-nums; }
+      .world-sound { display: flex; align-items: center; gap: 6px; }
+      .world-sound .world-volume { width: 88px; height: var(--control-h-sm); padding: 0 10px; justify-content: center; border-radius: 99px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow-2); }
+      .world-sound .world-volume[hidden] { display: none; }
+      @media (max-width: 639px) { .world-sound .world-volume { display: none; } }
       .world-sky-btn .sky-more { color: var(--text-2); font-weight: 450; white-space: nowrap; }
       .world-sky-btn[data-preview="true"] { border-color: var(--accent); }
       .world-sky-btn[data-preview="true"] .sky-more { color: var(--accent-text, var(--accent)); }

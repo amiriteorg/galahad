@@ -20,7 +20,8 @@
     "./secret-scan": "./src/secret-scan.ts",
     "./turns": "./src/turns.ts",
     "./world": "./src/world.ts",
-    "./world-compute": "./src/world-compute.ts"
+    "./world-compute": "./src/world-compute.ts",
+    "./world-quest": "./src/world-quest.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

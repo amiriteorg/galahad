@@ -1,5 +1,6 @@
 import { padAt, phaseOf, type SiteName, SITE_NAMES, SITES, type Station, STATIONS } from "@galahad/core/world";
 import { BENCH_AREA, CAMP } from "../world/hearth-plan.ts";
+import { SLATE } from "../world/slate-plan.ts";
 import { relativeTime } from "./time.ts";
 import { ENGINE_LABEL, experimentEnded, experimentPlace, heartbeatLine, isIdle, PHASE_LABEL, STATUS_LABEL, STATUS_TONE, stationLabel, type WorldModel } from "./world.ts";
 import { computeOfNode, helperDoing, slotWords } from "./world-compute.ts";
@@ -48,12 +49,14 @@ export interface WildLine {
 /** "12 · 3 young · grazing". */
 export const wildLine = (w: WildLine): string => `${w.count}${w.young ? ` · ${w.young} young` : ""}${w.doing ? ` · ${w.doing}` : ""}`;
 
-export type HisPlace = "hearth" | "bench";
+export type HisPlace = "hearth" | "bench" | "slate";
 
 /** His own places: where they are, what they're called, what they're for, and what of his day happens there. */
 export const HIS_PLACES: Record<HisPlace, { x: number; y: number; near: number; label: string; meta: string; life: RegExp }> = {
   hearth: { x: CAMP.x, y: CAMP.y, near: 7, label: "His hearth", meta: "His bed, the fire, his desk and journal, the dog's bed", life: /hearth|fire|journal|turning in|woken|bed to charge/i },
   bench: { x: BENCH_AREA.x, y: BENCH_AREA.y, near: 6, label: "The bench by the lake", meta: "Where he sits and thinks", life: /by the lake/i },
+  // (Never "here" from his day's words: he's at it only while a quest is in hand.)
+  slate: { x: SLATE.x, y: SLATE.y, near: 3, label: "His slate", meta: "By the council table: the plan of the quest in hand, in chalk", life: /^$/ },
 };
 
 /** His dog, as the selector says it: its name (once it has one), what it's doing, its battery (0..1). */

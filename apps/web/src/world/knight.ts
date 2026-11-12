@@ -1,4 +1,4 @@
-import { attribute, clamp, float, min, mix, uniform, vec3, vertexColor } from "three/tsl";
+import { attribute, clamp, float, min, mix, step, uniform, vec3, vertexColor } from "three/tsl";
 import {
   type Object3D,
   BoxGeometry,
@@ -23,6 +23,7 @@ import {
 } from "three/webgpu";
 import { STAR, STAR_CENTER } from "../brand.ts";
 import type { indoorLight } from "./hall-materials.ts";
+import type { KnightFace } from "./expression.ts";
 import { FootPlanner } from "./ik.ts";
 import { at, bevelBox, between, Mesher } from "./mesher.ts";
 import { aim, limb, piston, pointIn, Rig } from "./rig.ts";
@@ -76,6 +77,12 @@ export interface KnightState {
   writing?: boolean;
   /** Looking after someone or something (care.ts): his gestures, each a weight he eases to. */
   care?: CarePose;
+  /** How he is, shown in his visor and his head's tilt (expression.ts); without it his eyes are simply open, or shut asleep. */
+  face?: KnightFace;
+  /** A nod, now (radians of pitch on top of where he looks; expression.ts' `nod`). */
+  nod?: number;
+  /** Raising his right hand in greeting (0 or 1: eased). */
+  wave?: number;
 }
 
 /**
@@ -99,6 +106,11 @@ export interface CarePose {
 const SIT = { drop: 0.5, back: 0.15, feet: 0.3 };
 /** Lying back: his hips down onto the mat and back, how far back his trunk leans, and where his heels rest. */
 const LIE = { drop: 0.8, back: 0.3, lean: 0.85, heels: 0.54, heelY: 0.07 };
+
+/** His eyes on the visor (the head's frame): their middle, where they hinge shut. The glow value that marks his visor's own lights (his eyes and its line). */
+const EYES = [0, 0.168, 0.2] as const;
+const VISOR_LINE = [0, 0.185, 0] as const;
+const VISOR_GLOW = 0.95;
 
 /** What he's attending to, in the world (z up), or nothing. */
 export interface Attention {
@@ -157,6 +169,14 @@ export class Knight {
   readonly pulse = uniform(0);
   /** How awake he is: 1, or a glimmer when he's asleep (his eyes, visor and seams; never the lodestar). */
   private readonly awake = uniform(1);
+  /** How bright his visor's own lights are (his eyes and its line): 1 as ever, less tired, more pleased (expression.ts). */
+  private readonly visor = uniform(1);
+  // His face, eased (see KnightFace).
+  private eyeOpen = 1;
+  private eyeBright = 1;
+  private lineWidth = 1;
+  private faceTilt = 0;
+  private wave = 0;
   // Care's gestures, eased (see CarePose).
   private crouch = 0;
   private reach = 0;
@@ -166,6 +186,10 @@ export class Knight {
   private lie = 0;
   private asleep = 0;
 
+  /** How many times a foot of his has come down (the sound of his steps counts them: soundscape.ts). */
+  footfalls = 0;
+  private readonly down = [1, 1];
+
   /** His head's bone, posed for this frame: his eyes ride on it (eyes.ts). */
   get head(): Object3D {
     return this.rig.bones[this.B.head!]!;
@@ -174,6 +198,14 @@ export class Knight {
   /** How far his eyes are shut, 0..1: asleep (eased, as his head goes back and his visor dims). */
   get eyesShut(): number {
     return this.asleep;
+  }
+
+  /** His visor as it's drawn now: how far his eyes are open (their height), how thick its line, how bright its lights (for the page's trace, and the tests). */
+  visorNow(out: { open: number; line: number; bright: number }): { open: number; line: number; bright: number } {
+    out.open = this.rig.bones[this.B.eyes!]!.scale.y;
+    out.line = this.rig.bones[this.B.visorLine!]!.scale.y;
+    out.bright = this.visor.value;
+    return out;
   }
 
   /** Lying on his bed (his sword is off him then: on its stand, hearth.ts). */
@@ -265,6 +297,9 @@ export class Knight {
     B.chest = r.add(0, HIP_Y + 0.34, 0);
     B.neck = r.add(0, HIP_Y + 0.64, -0.01);
     B.head = r.add(0, HIP_Y + 0.74, 0);
+    // His eyes and the visor's line ride on the head, each on a bone of its own: they narrow, widen and shut by its scale.
+    B.eyes = r.add(EYES[0], HIP_Y + 0.74 + EYES[1], EYES[2]);
+    B.visorLine = r.add(VISOR_LINE[0], HIP_Y + 0.74 + VISOR_LINE[1], VISOR_LINE[2]);
     B.flapF = r.add(0, HIP_Y - 0.02, 0.16);
     B.flapB = r.add(0, HIP_Y - 0.02, -0.15);
     for (const [i, s] of [[0, 1], [1, -1]] as const) {
@@ -378,9 +413,9 @@ export class Knight {
     part(B.head, new CylinderGeometry(0.2075, 0.2075, 0.012, 20, 1, true), JOINT, at(0, 0.258, -0.005), 0);
     part(B.head, new CylinderGeometry(0.214, 0.212, 0.03, 20, 1, false, -1.05, 2.1), CREAM_SHADE, at(0, 0.247, 0), 0.02);
     part(B.head, new CylinderGeometry(0.207, 0.212, 0.15, 20, 1, false, -0.95, 1.9), VISOR, at(0, 0.165, 0), 0);
-    part(B.head, new CylinderGeometry(0.214, 0.214, 0.011, 22, 1, true, -0.85, 1.7), GLOW, at(0, 0.185, 0), 0, 1);
+    part(B.visorLine, new CylinderGeometry(0.214, 0.214, 0.011, 22, 1, true, -0.85, 1.7), GLOW, at(0, 0, 0), 0, VISOR_GLOW);
     for (const s of [1, -1]) {
-      part(B.head, new BoxGeometry(0.056, 0.03, 0.02), GLOW, at(s * 0.068, 0.168, 0.205, s * 0.32), 0, 1);
+      part(B.eyes, new BoxGeometry(0.058, 0.034, 0.02), GLOW, at(s * 0.068, 0, 0.005, s * 0.32), 0, VISOR_GLOW);
       part(B.head, bv(0.045, 0.17, 0.14), CREAM, at(s * 0.19, 0.1, 0.07, s * 0.35), 0.03);
       part(B.head, new CylinderGeometry(0.058, 0.058, 0.05, 16).rotateZ(Math.PI / 2), JOINT, at(s * 0.205, 0.15, -0.03), 0);
       part(B.head, new CylinderGeometry(0.064, 0.064, 0.02, 16).rotateZ(Math.PI / 2), ORANGE, at(s * 0.228, 0.15, -0.03), 0);
@@ -476,9 +511,12 @@ export class Knight {
     const glow = attribute("glow", "float");
     // The star (glow 2) beats with his heart: brighter by `pulse`.
     const star = clamp(glow.sub(1), 0, 1);
+    // His visor's own lights (glow VISOR_GLOW: his eyes and the line) brighten and dim with how he is.
+    const face = step(VISOR_GLOW - 0.01, glow).mul(step(glow, VISOR_GLOW + 0.01));
     this.glowNode = mix(this.glowColor, vec3(1, 0.93, 0.8), star)
       .mul(min(glow, 1))
       .mul(1.5)
+      .mul(mix(float(1), this.visor, face))
       .mul(star.mul(this.pulse).add(1))
       .mul(mix(this.awake, float(1), star)) as unknown as NonNullable<MeshLambertNodeMaterial["emissiveNode"]>;
     this.material.emissiveNode = this.glowNode;
@@ -576,6 +614,11 @@ export class Knight {
       this.feet.liftHeight = 0.13 + 0.1 * runAmount;
       const stride = Math.min(3, Math.max(1.1, speed * 0.62 + 0.25));
       this.feet.step(dt, x, y, heading, this.vx, this.vy, stride, ground);
+      for (let i = 0; i < 2; i++) {
+        const planted = this.feet.planted[i]!;
+        if (planted && !this.down[i]) this.footfalls++;
+        this.down[i] = planted;
+      }
     }
     // ---- care's gestures, eased (at once under reduced motion) ----
     const care = s.care;
@@ -589,6 +632,15 @@ export class Knight {
     this.lie += ((still && care ? care.lie : 0) - this.lie) * (motion ? 1 - Math.exp(-dt * 2.2) : 1);
     this.asleep += ((still && care ? care.asleep : 0) - this.asleep) * (motion ? 1 - Math.exp(-dt * 1.2) : 1);
     this.awake.value = 1 - 0.88 * this.asleep;
+    // ---- his face (expression.ts): eased, but for the blink, which is quicker than any easing ----
+    const face = s.face;
+    const fe = motion ? 1 - Math.exp(-dt * 9) : 1;
+    this.eyeOpen += ((face ? face.open : 1 - 0.95 * this.asleep) - this.eyeOpen) * fe;
+    this.eyeBright += ((face ? face.bright : 1) - this.eyeBright) * (motion ? 1 - Math.exp(-dt * 5) : 1);
+    this.lineWidth += ((face ? face.line : 1) - this.lineWidth) * fe;
+    this.faceTilt += ((still && face ? face.tilt : 0) - this.faceTilt) * (motion ? 1 - Math.exp(-dt * 3) : 1);
+    this.visor.value = this.eyeBright;
+    this.wave += ((s.wave ?? 0) - this.wave) * (motion ? 1 - Math.exp(-dt * 6) : 1);
     const down = Math.max(this.sit, this.lie);
     if (this.bow > 0) this.bow = Math.max(0, this.bow - dt);
     const bowing = this.bow > 0 ? Math.sin((1 - this.bow / 1.3) * Math.PI) : 0;
@@ -644,7 +696,7 @@ export class Knight {
     const le = motion ? 1 - Math.exp(-dt * 5) : 1;
     this.lookYaw += (yaw - this.lookYaw) * le;
     this.lookPitch += (pitch - this.lookPitch) * le;
-    R.head.setFromEuler(eul.set(this.lookPitch, this.lookYaw, this.think * 0.18 + this.tilt * 0.28 * Math.sin(t * 1.7) + 0.16 * this.asleep));
+    R.head.setFromEuler(eul.set(this.lookPitch + (s.nod ?? 0), this.lookYaw, this.think * 0.18 + this.tilt * 0.28 * Math.sin(t * 1.7) + 0.16 * this.asleep + this.faceTilt));
     this.qa.setFromEuler(eul.set(this.lookPitch * 0.4, this.lookYaw * 0.4, 0));
     this.rig.set(this.B.neck!, P.neck, this.qa);
     pointIn(P.head, P.neck, this.qa, 0, 0.1, 0.01);
@@ -653,6 +705,13 @@ export class Knight {
     this.rig.set(this.B.spine!, P.spine, R.spine);
     this.rig.set(this.B.chest!, P.chest, R.chest);
     this.rig.set(this.B.head!, P.head, R.head);
+    // His eyes and the visor's line, on the head: as far open, and as thick, as he is (a blink shuts his eyes in a moment).
+    pointIn(this.t1, P.head, R.head, EYES[0], EYES[1], EYES[2]);
+    this.rig.set(this.B.eyes!, this.t1, R.head);
+    this.rig.bones[this.B.eyes!]!.scale.y = Math.max(0.04, this.eyeOpen * (1 - 0.94 * (face ? face.blink : 0)));
+    pointIn(this.t1, P.head, R.head, VISOR_LINE[0], VISOR_LINE[1], VISOR_LINE[2]);
+    this.rig.set(this.B.visorLine!, this.t1, R.head);
+    this.rig.bones[this.B.visorLine!]!.scale.y = this.lineWidth;
     // The tabard's flaps swing with the thighs.
     const flap = Math.sin(phase) * 0.35 * gait;
     this.qb.setFromEuler(eul.set(-Math.abs(flap) - 0.1 * this.run, 0, 0)).premultiply(R.pelvis);
@@ -879,6 +938,14 @@ export class Knight {
       this.t1.lerp(this.t2, down);
       blend(target, this.t1, this.throwW);
       this.curl[1] = this.curl[1]! + ((p < 0.55 ? 1.1 : 0.2) - this.curl[1]!) * this.throwW;
+    }
+    if (this.wave > 0.01) {
+      // A greeting: his right hand up beside his helm, open, a small wave from the wrist.
+      this.t1.set(-0.4 + Math.sin(t * 7.5) * 0.06, this.p.head.y + 0.2 - 0.5 * this.lie, 0.2 + 0.25 * this.lie);
+      blend(target, this.t1, this.wave);
+      this.t2.set(Math.sin(t * 7.5) * 0.25, 1, 0.1).normalize();
+      blendDir(grip, this.t2, this.wave);
+      this.curl[1] = this.curl[1]! + (0.12 - this.curl[1]!) * this.wave;
     }
   }
 

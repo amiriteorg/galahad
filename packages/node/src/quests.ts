@@ -1,4 +1,4 @@
-import { type QuestProgressInput, questInHand, type QuestView, redact } from "@galahad/core";
+import { type QuestProgressInput, questInHand, questsForWorld, type QuestView, redact, type WorldQuest } from "@galahad/core";
 
 /*
  * The quests in hand, as this node shows them: whoever runs a quest (a terminal's
@@ -22,15 +22,24 @@ interface Entry {
   progress: QuestProgressInput;
   startedAt: number;
   updatedAt: number;
+  /** Its reporter may read the bank (an agent granted bank:read): the world draws its shape, never its words. Once so, it stays so. */
+  bank: boolean;
 }
 
 export class QuestBoard {
   private readonly entries = new Map<string, Entry>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /** Where a quest stands, as its runner says. `by`: who that is ("you", a loop, an agent). */
-  report(by: string, progress: QuestProgressInput): void {
+  /** Called after every report (the world's slate follows: world-hub.ts). */
+  onChange(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Where a quest stands, as its runner says. `by`: who that is ("you", a loop, an agent); `bank`: whether that reporter may read the bank. */
+  report(by: string, progress: QuestProgressInput, opts: { bank?: boolean } = {}): void {
     const key = `${by}\n${progress.quest}`;
     const at = this.now();
     const clean: QuestProgressInput = {
@@ -45,8 +54,26 @@ export class QuestBoard {
     // An ended quest stays ended: a late report from a step that was still in flight doesn't bring it back.
     if (known && !questInHand(known.progress.state) && questInHand(clean.state)) return;
     this.entries.delete(key);
-    this.entries.set(key, { by, progress: clean, startedAt: known?.startedAt ?? at, updatedAt: at });
+    this.entries.set(key, { by, progress: clean, startedAt: known?.startedAt ?? at, updatedAt: at, bank: Boolean(opts.bank) || Boolean(known?.bank) });
     this.trim(by);
+    for (const fn of this.listeners) {
+      try {
+        fn();
+      } catch {
+        /* a listener's problem */
+      }
+    }
+  }
+
+  /**
+   * The quests the SANDBOX draws on his slate (core's world-quest.ts): those in hand and those that just ended,
+   * bounded, without anything a command printed; a quest whose reporter may read the bank, or whose words
+   * mention it, as its shape alone.
+   */
+  world(): WorldQuest[] {
+    const bank = new Set<string>();
+    for (const e of this.entries.values()) if (e.bank) bank.add(`${e.by}\n${e.progress.quest}`);
+    return questsForWorld(this.list(), this.now(), (q) => bank.has(`${q.by}\n${q.quest}`));
   }
 
   /** In hand first (the latest word first), then the ones that ended, most recent first. */

@@ -38,3 +38,4 @@ export * from "./self-action.ts";
 export * from "./trials.ts";
 export * from "./compute.ts";
 export * from "./world-compute.ts";
+export * from "./world-quest.ts";
