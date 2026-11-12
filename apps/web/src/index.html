@@ -1100,7 +1100,7 @@
       .eyes-blink { inset: 0; background: linear-gradient(#15131c 50%, #15131c 50%); transform: scaleY(0); animation: eyes-blink 6.4s linear infinite; }
       @keyframes eyes-blink { 0%, 96.5%, 100% { transform: scaleY(0); } 98% { transform: scaleY(1); } }
       [data-eyes-shut="true"] .eyes-blink, [data-eyes="main"] .world-eyes .eyes-blink, [data-eyes="main"] .world-eyes .eyes-lid { display: none; }
-      .world-lids { position: absolute; inset: 0; pointer-events: none; z-index: 1; display: none; }
+      .world-lids { position: absolute; inset: 0; pointer-events: none; z-index: 2; display: none; }
       [data-eyes="main"] > .world-lids { display: block; }
       :root[data-motion="reduce"] .eyes-blink { animation: none; }
       :root[data-motion="reduce"] .eyes-lid { transition: none; }

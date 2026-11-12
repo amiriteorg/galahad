@@ -565,7 +565,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   if (trace) (globalThis as { __sandboxLife?: unknown }).__sandboxLife = lifeTrace;
   // (And for a tour of the seasons: `__sandboxSeason(name | 0..1 | "live")` looks at one; `__sandboxStats()` says what's drawn.)
   if (trace) seasonHook();
-  if (trace) (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => ({ fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts() });
+  // (`work`: the main thread's time in the frames drawn since it was last asked, in milliseconds, and how many: what a frame costs the CPU, the eyes' panel included.)
+  const frameWork = { ms: 0, frames: 0 };
+  if (trace) {
+    (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => {
+      const work = { ms: frameWork.ms, frames: frameWork.frames };
+      frameWork.ms = frameWork.frames = 0;
+      return { fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts(), work };
+    };
+  }
   if (trace) (globalThis as { __sandboxLook?: unknown }).__sandboxLook = (x: number, y: number, distance?: number, yaw?: number) => (stopFollowing(), rig.lookAt(x, y, distance), yaw === undefined || (rig.target.yaw = yaw), (dirty = true));
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
@@ -1724,6 +1732,10 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     if (shots.length) stepShots(now, growing || filling);
     placeLabels(renderDt);
     placeHover();
+    if (trace) {
+      frameWork.ms += performance.now() - started;
+      frameWork.frames += 1;
+    }
     // Only frames rendered back to back, at full rate, and not growing land, say how long a frame takes.
     if (judged && !growing && !filling) {
       const action = governor.frame(now, interval);
