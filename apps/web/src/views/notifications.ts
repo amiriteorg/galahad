@@ -125,7 +125,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     const on = state === "on";
     const me = view?.devices.find((d) => d.device === ctx.identity.device);
     const toggle = switchControl("Notifications on this device", on, (checked) => void flip(checked), {
-      hint: on && me ? `${PUSH_STATE_TEXT.on} Through ${me.service}, since ${relativeTime(me.since)}.` : PUSH_STATE_TEXT[state],
+      hint: on && me ? `${PUSH_STATE_TEXT.on} Through ${me.service}, turned on ${relativeTime(me.since)}.` : PUSH_STATE_TEXT[state],
       disabled: !SWITCHABLE[state] || !view,
     });
     toggle.classList.add("notify-device");
@@ -212,8 +212,8 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
                 h(
                   "div",
                   { class: "item center" },
-                  icon("phone", { size: 16 }),
-                  h("div", { class: "grow small" }, h("div", { class: "strong" }, d.name, d.device === ctx.identity.device ? h("span", { class: "tiny subtle" }, " · this device") : null), h("div", { class: "tiny subtle" }, d.lastError ? `Not arriving: ${d.lastError}` : `Through ${d.service}, since ${relativeTime(d.since)}`)),
+                  icon(/iPhone|iPad|Android|phone/i.test(d.name) ? "phone" : "laptop", { size: 16 }),
+                  h("div", { class: "grow small" }, h("div", { class: "strong" }, d.name, d.device === ctx.identity.device ? h("span", { class: "tiny subtle" }, " · this device") : null), h("div", { class: "tiny subtle" }, d.lastError ? `Not arriving: ${d.lastError}` : `Through ${d.service}, turned on ${relativeTime(d.since)}`)),
                 ),
               ),
             ),

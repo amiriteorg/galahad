@@ -24,14 +24,13 @@ function attentionRow(check: DoctorCheck): HTMLElement {
   );
 }
 
+/** How many things to attend to are shown before the rest fold away. */
+const ATTENTION_AT_A_GLANCE = 3;
+
+/** A line in the whole list: its state as a dot, and what was found (what to do is said once, above). */
 function plainRow(check: DoctorCheck): HTMLElement {
   const tone = stateTone(check.state);
-  return h(
-    "li",
-    { class: "doctor-row", "data-state": check.state },
-    dot(tone === "neutral" ? null : tone, { label: STATE_LABEL[check.state] }),
-    h("div", { class: "doctor-row-text" }, h("span", {}, checkLine(check)), check.fix && check.state !== "ok" ? h("span", { class: "doctor-row-fix" }, check.fix) : null),
-  );
+  return h("li", { class: "doctor-row", "data-state": check.state }, dot(tone === "neutral" ? null : tone, { label: STATE_LABEL[check.state] }), h("div", { class: "doctor-row-text" }, h("span", {}, checkLine(check))));
 }
 
 export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
@@ -41,6 +40,7 @@ export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
   const el = section("Doctor", {}, body);
   let report: DoctorReport | null = null;
   let open = false;
+  let more = false;
   let failed: string | null = null;
   let working: "quick" | "full" | null = null;
 
@@ -59,6 +59,9 @@ export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
     }
     const view = doctorCard(report);
     const all = report.checks.length;
+    // The worst three at a glance; the rest one click away, so a node with much to mend doesn't bury the page.
+    const first = view.attention.slice(0, ATTENTION_AT_A_GLANCE);
+    const rest = view.attention.slice(ATTENTION_AT_A_GLANCE);
     keepPlace(body, () =>
       replace(
         body,
@@ -69,7 +72,15 @@ export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
           h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small", role: "status" }, view.headline), h("div", { class: "tiny subtle" }, `${view.how}, ${relativeTime(report!.at)}`)),
         ),
         failed ? h("div", { class: "doctor-note error", role: "alert" }, failed) : null,
-        view.attention.length ? h("ul", { class: "doctor-list" }, ...view.attention.map(attentionRow)) : null,
+        first.length ? h("ul", { class: "doctor-list" }, ...first.map(attentionRow)) : null,
+        rest.length
+          ? h(
+              "details",
+              { class: "doctor-more", open: more, ontoggle: (event: Event) => (more = (event.currentTarget as HTMLDetailsElement).open) },
+              h("summary", { class: "tiny" }, `${rest.length} more ${rest.length === 1 ? "thing needs" : "things need"} a look`),
+              h("ul", { class: "doctor-list" }, ...rest.map(attentionRow)),
+            )
+          : null,
         h(
           "details",
           { class: "doctor-all", open, ontoggle: (event: Event) => (open = (event.currentTarget as HTMLDetailsElement).open) },

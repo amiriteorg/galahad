@@ -91,7 +91,7 @@ export function quietLine(prefs: NotifyPrefs): string {
 
 /** Today's count against the limit, and what's held, in a line. */
 export function todayLine(view: Pick<NotifyView, "today" | "quiet" | "held">): string {
-  const sent = view.today.count === 0 ? "Nothing sent today" : `${view.today.count} of ${view.today.limit} sent today`;
+  const sent = view.today.count === 0 ? "Nothing sent today (a test doesn't count)" : `${view.today.count} of ${view.today.limit} sent today`;
   const held = view.quiet && view.held ? `; ${view.held} ${view.held === 1 ? "thing waits" : "things wait"} for quiet hours to end` : "";
   return `${sent}${held}.`;
 }

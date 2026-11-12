@@ -907,10 +907,15 @@
       .notify-row > .switch { flex: 1 1 240px; min-width: 0; align-items: flex-start; }
       .notify-row > .switch .track { margin-top: 2px; }
       .notify-hours { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
-      .notify-time { width: 112px; font-variant-numeric: tabular-nums; }
+      .notify-time { width: 9.5em; max-width: 42vw; font-variant-numeric: tabular-nums; }
       .notify-count { width: 84px; font-variant-numeric: tabular-nums; }
       .notify-row .error, .notify-row + .item .error { font-size: var(--fs-12); color: var(--danger); }
       @media (pointer: coarse) { .notify-row > .switch { min-height: 44px; } }
+      /* A switch that's on: its knob is the ink that reads on the track (in the dark the track is white, and a white knob vanished). */
+      .switch input:checked + .track::after { background: var(--on-accent); }
+      .doctor-more > summary { cursor: pointer; color: var(--text-3); width: fit-content; min-height: 24px; margin-bottom: var(--sp-2); }
+      .doctor-more[open] > summary { margin-bottom: var(--sp-2); }
+      @media (pointer: coarse) { .doctor-more > summary { min-height: 44px; display: flex; align-items: center; } }
       .aside-answer { min-height: 48px; }
       .aside-answer:empty { display: none; }
       .aside-answer > .md > :first-child { margin-top: 0; }

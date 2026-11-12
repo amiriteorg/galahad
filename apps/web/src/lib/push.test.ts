@@ -77,7 +77,7 @@ describe("the settings' own checks, before anything is sent", () => {
   test("in a line: quiet hours, and today", () => {
     expect(quietLine(NOTIFY_DEFAULTS)).toBe("From 22:00 to 07:00, Europe/Copenhagen time, everything but an alert waits; then one message says what waited.");
     expect(quietLine({ ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, on: false } })).toBe("No quiet hours: he tells you whenever it happens.");
-    expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 0, limit: 12 }, quiet: false, held: 0 })).toBe("Nothing sent today.");
+    expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 0, limit: 12 }, quiet: false, held: 0 })).toBe("Nothing sent today (a test doesn't count).");
     expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 3, limit: 12 }, quiet: true, held: 2 })).toBe("3 of 12 sent today; 2 things wait for quiet hours to end.");
     expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 3, limit: 12 }, quiet: true, held: 1 })).toBe("3 of 12 sent today; 1 thing waits for quiet hours to end.");
   });
