@@ -212,6 +212,23 @@ export class Workshop implements Place {
     return indoorLight(this.u, this.lighting);
   }
 
+  private readonly opened = [0, 0, 0, 0, 0, 0];
+
+  /**
+   * For a view of his own (his eyes, eyes.ts): the hall whole, with nothing dissolved, whatever the main view
+   * has open (its roof and the walls its camera is outside of go for that camera, not for him: standing inside
+   * he'd see the sky where the roof is, and from outside a building cut open). `false` puts back what was open.
+   */
+  whole(on: boolean): void {
+    const u = this.u;
+    for (let i = 0; i < 5; i++) {
+      if (on) this.opened[i] = u.wallValues[i]!;
+      u.wallValues[i] = on ? 0 : this.opened[i]!;
+    }
+    if (on) this.opened[5] = u.roof.value;
+    u.roof.value = on ? 0 : this.opened[5]!;
+  }
+
   /** The sky's light as the scene has it now, and the glass for where the camera is. */
   private light(frame: PlaceFrame, cx: number, cy: number, ch: number): void {
     const u = this.u;

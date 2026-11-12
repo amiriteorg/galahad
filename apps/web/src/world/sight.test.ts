@@ -155,6 +155,28 @@ describe("what he sees from where he is", () => {
     expect(words).not.toContain("hare");
   });
 
+  test("walls: in the workshop he sees its machines and not the land; from outside, the hall and nothing inside it", () => {
+    const inside = sightInWords(buildSight(input({ x: 84.2, y: 6.2, eye: eyeAt(84.2, 6.2, Math.PI / 2, -0.2), activity: "workshop", label: "Looking in on the workshop", attention: { on: false, x: 0, y: 0, z: 0 }, dog: { x: 84.9, y: 5.2, name: "Bors", state: "with him" }, wild: [{ name: "Roe deer", count: 9, doing: "grazing", x: 84, y: 76, tall: 1.75, air: false }] })));
+    expect(inside).toContain("He is in the workshop: looking in on the workshop.");
+    expect(inside).toContain("the printer farm, 3 m");
+    expect(inside).not.toContain("roe deer");
+    expect(inside).not.toContain("the keep");
+    expect(inside).not.toContain("the workshop hall");
+    const outside = sightInWords(buildSight(input({ x: 60, y: 0, eye: eyeAt(60, 0, 0, -0.05), moving: true, activity: "workshop", label: "Looking in on the workshop" })));
+    expect(outside).toContain("the workshop hall, about 45 m ahead");
+    expect(outside).toContain("the hall's wide door");
+    expect(outside).not.toContain("printer farm");
+    expect(outside).not.toContain("test cell");
+  });
+
+  test("up on the proving ground its own things are named", () => {
+    const words = sightInWords(buildSight(input({ x: -95, y: -30, z: 5, eye: eyeAt(-95, -30, 2.2, -0.05, 5 + EYE_HEIGHT), activity: "field", label: "Looking after the proving ground", attention: { on: false, x: 0, y: 0, z: 0 }, dog: { x: -94, y: -29, name: "Bors", state: "with him" }, ground: (x) => (x < -70 ? 5 : 0) })));
+    expect(words).toContain("He is up on the proving ground");
+    expect(words).toContain("the control tower, about 20 m a little to the right");
+    expect(words).toContain("the windsock, about 20 m a little to the left");
+    expect(words).not.toContain("on its heights");
+  });
+
   test("asleep: his eyes are shut, and it says what's round him instead", () => {
     const words = sightInWords(buildSight(input({ shut: 1, activity: "sleep", label: "Asleep at his hearth, Bors beside him", x: -0.9, y: -18, eye: eyeAt(-1.9, -18, 0, 0.4, 0.8), dog: { x: -1, y: -18.85, name: "Bors", state: "asleep" }, attention: { on: false, x: 0, y: 0, z: 0 } })));
     expect(words).toContain("He is at his hearth, asleep: his eyes are shut, so he sees nothing now.");

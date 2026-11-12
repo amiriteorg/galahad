@@ -1039,6 +1039,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     // What grows near a view dissolves out of its way: the eye's own reach for his eyes, the usual one for the view over his shoulder.
     const reach = armsReach.value;
     armsReach.value = view === eyes.camera ? EYE_REACH : 1;
+    // The workshop is whole for him: what's opened for the main view's camera isn't opened for his eyes.
+    if (view === eyes.camera) workshop.whole(true);
     const auto = sun.shadow.autoUpdate;
     sun.shadow.autoUpdate = false;
     try {
@@ -1047,6 +1049,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       sun.shadow.autoUpdate = auto;
       occlusion.on.value = dither;
       armsReach.value = reach;
+      if (view === eyes.camera) workshop.whole(false);
       sky.unview(camera, top);
       horizon.follow(camera.position, 0, !reduced());
     }

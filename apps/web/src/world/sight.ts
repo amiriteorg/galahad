@@ -3,7 +3,8 @@ import type { Activity } from "@galahad/core/life";
 import { BENCH as ASSEMBLY_BENCH, SITES, type Station, STATIONS } from "@galahad/core/world";
 import { BOARD_SPOT } from "./board.ts";
 import { BED, BENCH, BENCH_AREA, CAMP, CAMP_GATE, DESK, DOG_BED, FIRE, JOURNAL, LOG, POLE, SWORD_STAND, TRAIL } from "./hearth-plan.ts";
-import { inHall } from "./hall-plan.ts";
+import { CELLS, FARM, HALL_DOOR, inHall, LINE, MILL } from "./hall-plan.ts";
+import { BLOCKHOUSE, COURSE, DRONE_PAD, FIELD_LEVEL, HANGAR, LAUNCH_SLAB, RUNWAY, TOWER, WINDSOCK } from "./field-plan.ts";
 import { standAt } from "./path.ts";
 import type { Season } from "./season.ts";
 
@@ -181,8 +182,26 @@ export function buildSight(i: SightInput): Sight {
   }
   add("the chalkboard", BOARD_SPOT.x, BOARD_SPOT.y, 6, { h: 2.4, reach: 90 });
   add("the workshop hall", SITES.hall.x, SITES.hall.y, 4, { h: 9, reach: 500 });
-  add("the proving ground on its heights", SITES.field.x, SITES.field.y, 4, { z: g(SITES.field.x, SITES.field.y), h: 8, reach: 500 });
+  // (Seen from below as a whole; up on it, it's its own things that are seen.)
+  const onField = Math.abs(i.eye.x - SITES.field.x) < SITES.field.w / 2 && Math.abs(i.eye.y - SITES.field.y) < SITES.field.d / 2;
+  if (!onField) add("the proving ground on its heights", SITES.field.x, SITES.field.y, 4, { z: g(SITES.field.x, SITES.field.y), h: 8, reach: 500 });
+  // In the workshop: its machines (seen only from inside: its walls hide them, and hide the land from in there).
   add("the assembly bench", ASSEMBLY_BENCH.x, ASSEMBLY_BENCH.y, 6, { h: 1.2, reach: 30 });
+  add("the printer farm", FARM.bench.x, FARM.bench.y, 5, { h: 1.9, reach: 50 });
+  add("the assembly line and its arms", (LINE.west + LINE.east) / 2, LINE.y, 5, { h: 1.8, reach: 60 });
+  add("the mill", MILL.x, MILL.y, 4, { h: 2.2, reach: 40 });
+  add("the hall's wide door", HALL_DOOR.x, HALL_DOOR.y, 4, { h: HALL_DOOR.height, reach: 70 });
+  for (const c of CELLS) add(`a test cell (${lower(c.name)})`, c.x, c.y, 4, { h: 2.6, reach: 45 });
+  // Up on the proving ground (5 m above the keep): what stands there.
+  const up = (what: string, x: number, y: number, rank: number, h: number, reach: number) => add(what, x, y, rank, { z: FIELD_LEVEL, h, reach });
+  up("the runway", RUNWAY.x, RUNWAY.y, 4, 0.2, 220);
+  up("the hangar", HANGAR.x, HANGAR.y, 5, HANGAR.ridge, 300);
+  up("the control tower", TOWER.x, TOWER.y, 5, TOWER.beacon, 400);
+  up("the launch pad", LAUNCH_SLAB.x, LAUNCH_SLAB.y, 5, 6, 200);
+  up("the blockhouse", BLOCKHOUSE.x, BLOCKHOUSE.y, 4, BLOCKHOUSE.dish, 120);
+  up("the rover course", COURSE.x, COURSE.y, 4, 1.2, 120);
+  up("the quadcopter's pad", DRONE_PAD.x, DRONE_PAD.y, 5, 1.2, 60);
+  up("the windsock", WINDSOCK.x, WINDSOCK.y, 3, WINDSOCK.height, 150);
   // Experiments on their plots; the agents and helpers with him; his friends the Microducks.
   for (const e of i.experiments) add(`the experiment "${e.title.slice(0, 60)}"`, e.x, e.y, 7, { doing: e.phase, h: Math.max(2, e.size * 0.3), reach: 300 });
   for (const f of i.figures) add(f.what, f.x, f.y, 6, { doing: f.doing, h: 1.6, reach: 90 });
@@ -193,6 +212,14 @@ export function buildSight(i: SightInput): Sight {
   }
   // Who's about: the nearest of each kind (what's on the wing is up in the air).
   for (const w of i.wild) add(one(w.name), w.x, w.y, 3, { doing: w.doing, count: w.count, plural: `${plural(w.name)}, the nearest`, z: g(w.x, w.y) + (w.air ? 6 : 0), h: w.air ? 14 : w.tall, reach: w.tall > 1 ? 160 : 70 });
+
+  // Walls: from inside the workshop only what's in it is seen, and from outside nothing of its inside but the hall itself.
+  const indoors = inHall(i.eye.x, i.eye.y);
+  for (let k = things.length - 1; k >= 0; k--) {
+    const t = things[k]!;
+    const inside = inHall(t.x, t.y) && t.what !== "the workshop hall" && t.what !== "the hall's wide door";
+    if (indoors ? !inside && t.what !== "the hall's wide door" : inside) things.splice(k, 1);
+  }
 
   // What he attends to: the thing his head is turned to, when one is there.
   let lookingAt: string | null = null;
