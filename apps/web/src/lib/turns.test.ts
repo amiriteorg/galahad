@@ -188,10 +188,10 @@ describe("attaching to a turn already under way", () => {
     const thread = loaded([stored(1, "user", "Plan my week."), stored(3, "user", "Only Monday."), stored(4, "assistant", "", "streaming")]);
     feed(thread, [turnEvent({ answer: 2, replay: true }), { type: "model", ref: "a/m" }, { type: "steer", text: "Only Monday." }, { type: "text", text: "Rest." }]);
     expect(shape(thread)).toEqual([
-      ["user", "Plan my week."],
-      ["user", "Only Monday."],
-      ["assistant", "Rest."],
-    ].map(([role, content], i) => [role, content, i === 2 ? "streaming" : "done"]));
+      ["user", "Plan my week.", "done"],
+      ["user", "Only Monday.", "done"],
+      ["assistant", "Rest.", "streaming"],
+    ]);
   });
 
   test("the page that started it, after its connection dropped: rebuilt from where its own answers began, nothing twice", () => {

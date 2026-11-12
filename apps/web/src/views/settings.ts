@@ -4,7 +4,7 @@ import { isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { forgetIdentity } from "../identity.ts";
 import { shortId } from "../lib/text.ts";
-import { type MotionPref, motionPref, setMotion, setTheme, type ThemePref, themePref } from "../prefs.ts";
+import { chatEnter, type ChatEnterPref, type MotionPref, motionPref, setChatEnter, setMotion, setTheme, type ThemePref, themePref } from "../prefs.ts";
 import { button, callout, copyText, pageHead, section, segmented } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
 import { h, replace, type Scope } from "../ui/dom.ts";
@@ -152,6 +152,17 @@ export const settingsView: View = (root, ctx, { scope }) => {
     { label: "Motion" },
   );
 
+  // What Enter does when you send a message while he's working (the other is Ctrl or ⌘ with Enter, or its own button).
+  const enter = segmented<ChatEnterPref>(
+    [
+      { value: "steer", label: "Steers him" },
+      { value: "queue", label: "Queues it" },
+    ],
+    chatEnter(),
+    setChatEnter,
+    { label: "Enter while he works" },
+  );
+
   const row = (label: string, hint: string, control: HTMLElement) =>
     h("div", { class: "item center", style: "flex-wrap:wrap" }, h("div", { class: "grow", style: "min-width:200px" }, h("div", { class: "strong small" }, label), h("div", { class: "tiny subtle" }, hint)), control);
 
@@ -172,6 +183,21 @@ export const settingsView: View = (root, ctx, { scope }) => {
           row("Motion", "Reduced keeps every change instant.", motion.el),
         ),
       ),
+      ctx.can("chat")
+        ? section(
+            "Chat",
+            {},
+            h(
+              "div",
+              { class: "card rows" },
+              row(
+                "Enter while he works",
+                "Steer: your message reaches him now, at his next safe point. Queue: it's kept on the node and sent when he's done. Ctrl or ⌘ with Enter does the other; on a phone each has its own button.",
+                enter.el,
+              ),
+            ),
+          )
+        : null,
       dogSection(ctx, scope),
       section(
         "This device",
@@ -219,8 +245,8 @@ export const settingsView: View = (root, ctx, { scope }) => {
           "div",
           { class: "card rows" },
           h("div", { class: "item" }, icon("key", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "A device key"), h("div", { class: "subtle tiny" }, "In IndexedDB, created non-extractable: it can sign, but nothing can read it out, not even this page."))),
-          h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page and chat role, in localStorage. Nothing else."))),
-          h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chats: not on this device"), h("div", { class: "subtle tiny" }, "Kept privately on the node you talk to, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept."))),
+          h("div", { class: "item" }, icon("settings", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Display preferences"), h("div", { class: "subtle tiny" }, "Theme, motion, sidebar, last page, chat role and what Enter does while he works, in localStorage. Nothing else."))),
+          h("div", { class: "item" }, icon("chat", { size: 16 }), h("div", { class: "grow small" }, h("div", { class: "strong" }, "Chats: not on this device"), h("div", { class: "subtle tiny" }, "Kept privately on the node you talk to, with what you queued behind them, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept."))),
         ),
       ),
       section(

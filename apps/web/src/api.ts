@@ -90,6 +90,8 @@ export interface Api {
   /** A POST whose answer is bytes (an artifact's file), not JSON. */
   bytes(path: string, body: unknown, signal?: AbortSignal): Promise<Bytes>;
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
+  /** A POST that answers with a turn's events (watching a turn the node runs, a side question). Aborting the signal ends the watching, never the turn. */
+  events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
   /** A signed GET that answers with server-sent events (the world): each `data:` frame, parsed as JSON. Unchecked: callers read it at their boundary. */
   stream(path: string, signal: AbortSignal): AsyncGenerator<unknown>;
 }
@@ -105,6 +107,17 @@ function lateError(payload: unknown): ApiError | null {
 }
 
 export function apiFor(identity: BrowserIdentity): Api {
+  async function* events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent> {
+    const response = await signedFetch(identity, "POST", path, body, signal);
+    if (!response.body) return;
+    for await (const data of sseData(response.body)) {
+      try {
+        yield JSON.parse(data) as ChatStreamEvent;
+      } catch {
+        /* ignore malformed frames */
+      }
+    }
+  }
   return {
     async get<T>(path: string, signal?: AbortSignal) {
       return (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
@@ -119,17 +132,8 @@ export function apiFor(identity: BrowserIdentity): Api {
       const response = await signedFetch(identity, "POST", path, body, signal);
       return { data: new Uint8Array(await response.arrayBuffer()), type: response.headers.get("content-type") ?? "application/octet-stream" };
     },
-    async *chat(body: unknown, signal: AbortSignal) {
-      const response = await signedFetch(identity, "POST", "/api/chat", body, signal);
-      if (!response.body) return;
-      for await (const data of sseData(response.body)) {
-        try {
-          yield JSON.parse(data) as ChatStreamEvent;
-        } catch {
-          /* ignore malformed frames */
-        }
-      }
-    },
+    chat: (body: unknown, signal: AbortSignal) => events("/api/chat", body, signal),
+    events,
     async *stream(path: string, signal: AbortSignal) {
       const response = await signedFetch(identity, "GET", path, undefined, signal);
       if (!response.body) return;
