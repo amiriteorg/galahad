@@ -26,6 +26,7 @@ import { readCompanion } from "@galahad/core/companion";
 import { EYES, EYES_PLACES, type EyesPlace } from "@galahad/core/eyes";
 import type { WorldCompute } from "@galahad/core/world-compute";
 import { readWorldQuests, type WorldQuest, worldQuestInHand, worldQuestLine } from "@galahad/core/world-quest";
+import { readWorldSkills, type WorldSkills } from "@galahad/core/skills";
 import { helpersLine, readCompute } from "./world-compute.ts";
 
 /*
@@ -75,6 +76,8 @@ export interface WorldModel {
   companion: WorldCompanion | null;
   /** The quests in hand and just ended, as his slate draws them (none: nothing in hand, or an older node). */
   quests: WorldQuest[];
+  /** His skills, for the books on his library's shelves: how many stand where, the last few learned or used (null: an older node). */
+  skills: WorldSkills | null;
 }
 
 export const emptyWorld = (): WorldModel => ({
@@ -93,6 +96,7 @@ export const emptyWorld = (): WorldModel => ({
   partners: [],
   companion: null,
   quests: [],
+  skills: null,
 });
 
 const isEnded = (e: ExperimentView): boolean => e.status === "done" || e.status === "failed";
@@ -133,10 +137,13 @@ export function applyWorldEvent(state: WorldModel, event: WorldEvent): WorldMode
         partners: event.partners ?? [],
         companion: event.companion ?? null,
         quests: event.quests ?? [],
+        skills: event.skills ?? null,
       };
     }
     case "quests":
       return { ...state, at, quests: event.quests };
+    case "skills":
+      return { ...state, at, skills: event.skills };
     case "saved":
       return { ...state, at, saved: event.saved };
     case "galahad":
@@ -480,7 +487,14 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       // The quests on his slate, each checked and bounded again (one it can't read is left out).
       const quests = v.quests === undefined ? null : readWorldQuests(v.quests);
       if (quests) hello.quests = quests;
+      // His skills' counts and latest titles, checked and bounded again (skills.ts).
+      const skills = v.skills === undefined ? null : readWorldSkills(v.skills);
+      if (skills) hello.skills = skills;
       return hello;
+    }
+    case "skills": {
+      const skills = readWorldSkills(v.skills);
+      return skills ? { type: "skills", at, skills } : null;
     }
     case "quests": {
       const quests = readWorldQuests(v.quests);
