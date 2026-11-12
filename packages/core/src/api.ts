@@ -64,6 +64,7 @@ export type PlacementNeeds = z.infer<typeof PlacementNeeds>;
 const TurnId = z.string().regex(TURN_ID);
 const QueuedText = z.string().trim().min(1).max(100_000);
 const QueuedId = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+const AsideId = z.string().regex(/^as_[A-Za-z0-9_-]{22}$/);
 
 /** A node, by name or device id. */
 const NodeRef = z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/);
@@ -299,6 +300,21 @@ export const routes = {
   sendQueued: { method: "POST", path: "/api/conversations/queue/send", scope: "chat", input: z.strictObject({ conversation: ConversationId, id: QueuedId }) },
   /** A held queue (after a stop, a failure or a restart) goes on. */
   resumeQueue: { method: "POST", path: "/api/conversations/queue/resume", scope: "chat", input: z.strictObject({ conversation: ConversationId }) },
+  /**
+   * A side question: answered (server-sent events) from what a chat holds and what its running turn has said
+   * and done so far, without his tools, and added to nothing. The working turn never sees it unless you
+   * bring it back. Names a kept chat, or a running turn (a temporary chat's).
+   */
+  askAside: {
+    method: "POST",
+    path: "/api/turns/aside",
+    scope: "chat",
+    input: z
+      .strictObject({ conversation: ConversationId.optional(), turn: TurnId.optional(), question: z.string().trim().min(1).max(4000) })
+      .refine((input) => Boolean(input.conversation) !== Boolean(input.turn), "name a conversation or a turn (one of them)"),
+  },
+  /** Bring a side question and its answer back: the turn under way is steered with them; with none running, they join the kept chat. */
+  bringBack: { method: "POST", path: "/api/turns/aside/bring", scope: "chat", input: z.strictObject({ aside: AsideId }) },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
   /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
   world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },
@@ -1094,5 +1110,7 @@ export type ChatStreamEvent =
   | { type: "stopped"; reason: StopReason }
   /** Messages of yours that hadn't reached him when the turn ended: queued (held) in a kept chat, handed back otherwise. */
   | { type: "undelivered"; texts: string[]; queued: boolean }
+  /** First in a side question's stream: its id, to bring it back by. */
+  | { type: "aside"; id: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };

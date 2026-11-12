@@ -1,5 +1,6 @@
 import { Steering } from "@galahad/brain";
 import {
+  type ChatMessage,
   type ChatStreamEvent,
   DEFAULT_TURN_LIMITS,
   endsWithQuestion,
@@ -102,6 +103,8 @@ export interface TurnSpec {
   conversation: { id: string; title: string; project: string | null } | null;
   /** The owner's message that starts it. */
   question: string;
+  /** What the model is given: what was said before, then the question (a side question is answered from the same). */
+  messages: ChatMessage[];
   /** What it leaves waiting on the owner, noted as its tools run: approvals it filed, keys it asked for. */
   waits: { actions: string[]; secrets: string[] };
   /** The answer itself: chat()'s events (its slot, its tools, the archive and the world inside). */
@@ -152,6 +155,44 @@ interface Live extends LiveTurn {
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** What a running turn has said and done since its question. */
+export interface TurnSoFar {
+  /** Answers cut by a steer, and the steers, in order. */
+  exchange: ChatMessage[];
+  /** What he's said since the last of them. */
+  said: string;
+  /** Each step he's taken since, in a line: the tool, what it was asked, how it went. */
+  steps: string[];
+}
+
+/**
+ * What a side question is answered from: what the chat holds (and, with a turn under way, what that turn
+ * has said and done so far), then the aside, marked as one. It asks for an answer, not a change of course,
+ * and it is sent without tools: answering it can do nothing.
+ */
+export function asideMessages(held: readonly ChatMessage[], working: TurnSoFar | null, question: string): ChatMessage[] {
+  const messages: ChatMessage[] = [...held, ...(working?.exchange ?? [])];
+  if (working) messages.push({ role: "assistant", content: working.said.trim() ? working.said : "(Still working on it: nothing said yet.)" });
+  const steps = working?.steps.length ? `\n\nWhat you have done so far in this turn:\n${working.steps.map((s) => `- ${s}`).join("\n")}` : "";
+  messages.push({
+    role: "user",
+    content: `An aside from your liege${working ? ", while the work above goes on" : ", about the conversation above"}. Answer it briefly and directly from what is here. It is a question, not an instruction to change course, and you have no tools for it: say so if answering would need one.${steps}\n\nThe aside: ${question}`,
+  });
+  // Every provider wants the two voices in turn: neighbours of one voice are joined.
+  const turned: ChatMessage[] = [];
+  for (const m of messages) {
+    const last = turned.at(-1);
+    if (last && last.role === m.role) turned[turned.length - 1] = { role: m.role, content: `${last.content}\n\n${m.content}` };
+    else turned.push({ role: m.role, content: m.content });
+  }
+  if (turned[0]?.role === "assistant") turned.unshift({ role: "user", content: "(The conversation so far.)" });
+  return turned;
+}
+
+/** A side question and its answer, as you'd bring them back into the work. */
+export const broughtBack = (question: string, answer: string): string =>
+  `While you worked I asked you something on the side, and you answered. Take it into account from here.\n\nMy aside: ${question}\n\nYour answer: ${answer}`;
 
 export class TurnHub {
   private readonly turns = new Map<string, Live>();
@@ -286,6 +327,28 @@ export class TurnHub {
     }
     turn.listeners.add(listener);
     return () => void turn.listeners.delete(listener);
+  }
+
+  /**
+   * What a turn has said and done since its question, for a side question about it: the exchange so far
+   * (an answer cut by a steer, the steer), then what he's said and each step he's taken since.
+   */
+  sofar(live: LiveTurn): TurnSoFar {
+    const exchange: ChatMessage[] = [];
+    let said = "";
+    let steps: string[] = [];
+    for (const event of (live as Live).buffer) {
+      if (event.type === "text") said += event.text;
+      else if (event.type === "tool") steps.push(`${event.title}${event.input ? ` ${event.input}` : ""}`);
+      else if (event.type === "tool_result" && steps.length) steps[steps.length - 1] += ` → ${event.summary}`;
+      else if (event.type === "steer") {
+        if (said.trim()) exchange.push({ role: "assistant", content: said });
+        exchange.push({ role: "user", content: event.text });
+        said = "";
+        steps = [];
+      }
+    }
+    return { exchange, said, steps };
   }
 
   /** Stop a turn. True if it was running. */

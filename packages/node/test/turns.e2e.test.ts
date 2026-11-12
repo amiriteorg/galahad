@@ -502,6 +502,7 @@ describe("steering", () => {
     ];
     const first = await ask(admin, "Fetch the report, then take a quick look.", { save: true });
     await slow.started;
+    await first.seen("tool");
     const turn = first.turn();
     // Mid-tool: your message is accepted, and nothing about the tool is reported yet.
     expect(await json(admin("steerTurn", { turn: turn.id, text: "Only the report: skip the look." }))).toEqual({ steered: true, waiting: 1 });
@@ -636,6 +637,106 @@ describe("a steered or queued message is your message, and checked like one", ()
     await again.done;
     expect(again.text()).toBe("A passing thought.");
     expect((await summaries()).some((c) => c.title === "Just between us.")).toBe(false);
+  });
+});
+
+describe("a side question", () => {
+  const asideOf = (w: ReturnType<typeof watch>) => (w.events.find((e) => e.type === "aside") as Extract<ChatStreamEvent, { type: "aside" }>).id;
+
+  test("answered from the work in hand without changing its course, apart from the turn; brought back, it steers him", async () => {
+    armSlow();
+    reached.length = 0;
+    script = [callTools({ id: "call_slow", name: "connector_call", args: { connector: "forge", tool: "slow", args: {} } })];
+    const first = await ask(admin, "Fetch the report and summarise it.", { save: true });
+    await slow.started;
+    await first.seen("tool");
+    const turn = first.turn();
+    const id = turn.conversation!;
+    const before = first.events.length;
+
+    // The aside: its own model call, with no tools, from the same context.
+    script = [say("He is fetching the report from the forge; it hasn't come back yet.")];
+    const aside = watch(await admin("askAside", { conversation: id, question: "What is he waiting on?" }));
+    await aside.done;
+    expect(aside.types()).toEqual(["aside", "model", "text", "done"]);
+    expect(aside.text()).toBe("He is fetching the report from the forge; it hasn't come back yet.");
+    const sideCall = bodies.at(-1);
+    expect(sideCall.tools).toBeUndefined();
+    const sideMessages = sideCall.messages.filter((m: any) => m.role !== "system");
+    expect(sideMessages.map((m: any) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(sideMessages[0].content).toBe("Fetch the report and summarise it.");
+    expect(sideMessages[2].content).toContain('- Call a connector tool {"connector":"forge","tool":"slow","args":{}}');
+    expect(sideMessages[2].content).toContain("The aside: What is he waiting on?");
+    // The working turn saw none of it: nothing new in its stream, nothing in the kept chat, nothing waiting to steer.
+    expect(first.events.length).toBe(before);
+    expect((await chatOf(id)).messages).toHaveLength(2);
+    expect((await listed()).turns[0]).toMatchObject({ steering: 0 });
+
+    // Bring back: now it's your message to him, and reaches him at the next safe point.
+    expect(await json(admin("bringBack", { aside: asideOf(aside) }))).toEqual({ how: "steered" });
+    expect((await admin("bringBack", { aside: asideOf(aside) })).status).toBe(404);
+    script = [say("Summary: the report is ready.")];
+    slow.finish();
+    await first.done;
+    expect(first.types()).toEqual(["turn", "conversation", "model", "tool", "tool_result", "steer", "text", "done"]);
+    const steer = first.events.find((e) => e.type === "steer") as Extract<ChatStreamEvent, { type: "steer" }>;
+    expect(steer.text).toContain("My aside: What is he waiting on?");
+    expect(steer.text).toContain("Your answer: He is fetching the report from the forge");
+    expect((await chatOf(id)).messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  test("with nothing running it's about the chat, added to nothing; brought back, it joins the chat as an exchange", async () => {
+    script = [say("Dry and cold.")];
+    const first = await ask(admin, "What's the weather?", { save: true });
+    await first.done;
+    const id = first.turn().conversation!;
+    script = [say("In Copenhagen.")];
+    const aside = watch(await admin("askAside", { conversation: id, question: "Where?" }));
+    await aside.done;
+    expect(bodies.at(-1).messages.filter((m: any) => m.role !== "system").map((m: any) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect((await chatOf(id)).messages).toHaveLength(2);
+    // Another device can't bring back what it didn't ask.
+    expect((await phone.call("bringBack", { aside: asideOf(aside) })).status).toBe(404);
+    expect(await json(admin("bringBack", { aside: asideOf(aside) }))).toEqual({ how: "kept" });
+    expect((await chatOf(id)).messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "What's the weather?"],
+      ["assistant", "Dry and cold."],
+      ["user", "Where?"],
+      ["assistant", "In Copenhagen."],
+    ]);
+  });
+
+  test("checked like any message, yours alone, and bounded", async () => {
+    script = [say("Hello.")];
+    const first = await ask(admin, "Hello.", { save: true });
+    await first.done;
+    const id = first.turn().conversation!;
+    const secret = await admin("askAside", { conversation: id, question: `Is sk-ant-api03-${"FAKE".repeat(8)} a good key?` });
+    expect(secret.status).toBe(422);
+    expect((await admin("askAside", { question: "About what?" })).status).toBe(400);
+    const { token } = await json<{ token: string }>(admin("mintArm", { label: "nosy" }));
+    expect((await withToken(token)("askAside", { conversation: id, question: "What did they say?" })).status).toBe(403);
+    // A turn that may read the bank: its work in hand isn't told to a device that may not read the bank.
+    const pace = paced("Your balance is", " 1 DKK");
+    script = [pace.reply];
+    const bank = await ask(admin, "What's my balance?", { save: true });
+    await bank.seen("text");
+    expect((await phone.call("askAside", { conversation: bank.turn().conversation!, question: "What did he find?" })).status).toBe(403);
+    // Two at once on the node, the third says so.
+    const a = paced("One", ".");
+    const b = paced("Two", ".");
+    script = [a.reply, b.reply];
+    const one = watch(await admin("askAside", { conversation: id, question: "One?" }));
+    const two = watch(await admin("askAside", { conversation: id, question: "Two?" }));
+    await one.seen("text");
+    await two.seen("text");
+    const third = await admin("askAside", { conversation: id, question: "Three?" });
+    expect(third.status).toBe(429);
+    expect(((await third.json()) as { error: string }).error).toBe("This node is already answering 2 side questions, its limit. Ask again when one is done.");
+    a.go();
+    b.go();
+    pace.go();
+    await Promise.all([one.done, two.done, bank.done]);
   });
 });
 

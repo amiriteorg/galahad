@@ -8,6 +8,7 @@ import {
   SELF_ACTIONS,
   type SelfActionView,
   type ChatStreamEvent,
+  type ChatMessage,
   stationForTool,
   type WorldEvent,
   type WorldNode,
@@ -91,7 +92,7 @@ import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore, KeptSummary, QueuedBy, Waits } from "./chats.ts";
-import { type AnswerRecord, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
+import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ExperimentError } from "./experiment-store.ts";
 import { RunError, runExperiment } from "./experiment-run.ts";
@@ -992,6 +993,7 @@ export function createApp(ctx: AppContext) {
       role,
       conversation: kept ? { id: kept.id, title: kept.title, project: kept.project } : null,
       question: asked.content,
+      messages,
       waits,
       run: async function* (steering, signal) {
         // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
@@ -1094,6 +1096,124 @@ export function createApp(ctx: AppContext) {
       },
     });
     return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+  }
+
+  /*
+   * Side questions: answered from a chat's context without his tools, kept apart (here, in memory, for the
+   * device that asked, for half an hour) and part of nothing unless brought back. A few at once, no more.
+   */
+  interface Aside {
+    conversation: string | null;
+    turn: string | null;
+    by: QueuedBy;
+    question: string;
+    answer: string;
+    model: string | null;
+    at: number;
+  }
+  const asides = new Map<string, Aside>();
+  let asidesAnswering = 0;
+  const MAX_ASIDES_AT_ONCE = 2;
+  const ASIDE_KEEP_MS = 30 * 60_000;
+
+  function askAside(input: { conversation?: string; turn?: string; question: string }, p: Principal, req: Request): Response {
+    ownerOnly(p);
+    // It goes to a model like any message of yours.
+    guardAgainstSecrets(input.question);
+    let turn: LiveTurn | null = null;
+    let kept: KeptSummary | null = null;
+    if (input.turn) {
+      turn = watchedTurn(input.turn, p);
+      const c = turn.spec.conversation;
+      if (c) kept = keptChat(c.id, p);
+    } else {
+      kept = keptChat(input.conversation!, p);
+      // What a turn under way has said is part of the answer's context: asking needs what watching needs.
+      const running = ctx.turns.runningIn(kept.id);
+      if (running) turn = watchedTurn(running.id, p);
+    }
+    if (asidesAnswering >= MAX_ASIDES_AT_ONCE) throw new HttpError(429, `This node is already answering ${MAX_ASIDES_AT_ONCE} side questions, its limit. Ask again when one is done.`);
+    const working = turn && turn.state === "running" ? ctx.turns.sofar(turn) : null;
+    const done = turn && turn.state !== "running" ? ctx.turns.sofar(turn) : null;
+    // A kept chat already holds the turn's question and what a steer cut; a temporary one is only what the turn was given.
+    const held: ChatMessage[] = kept ? ctx.chats.history(kept.id) : [...turn!.spec.messages, ...(done ? [...done.exchange, ...(done.said.trim() ? [{ role: "assistant" as const, content: done.said }] : [])] : [])];
+    const messages = asideMessages(held, working && kept ? { ...working, exchange: [] } : working, input.question);
+    const role = turn?.spec.role ?? kept?.role ?? "planner";
+    const id = `as_${randomId(16)}`;
+    const by = byOf(p);
+    const encoder = new TextEncoder();
+    asidesAnswering += 1;
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let open = true;
+        const send = (event: ChatStreamEvent): void => {
+          if (!open) return;
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          } catch {
+            open = false;
+          }
+        };
+        let answer = "";
+        let model: string | null = null;
+        let failed = false;
+        let leave: (() => void) | null = null;
+        send({ type: "aside", id });
+        try {
+          leave = await ctx.governor.enterModel({ wait: false }, req.signal);
+          // No tools: answering a side question can do nothing, whatever it's asked.
+          for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { role, messages, signal: req.signal })) {
+            if (event.type === "text") answer += event.text;
+            else if (event.type === "model" || event.type === "done") model = event.ref;
+            else if (event.type === "error") failed = true;
+            send(event);
+          }
+        } catch (error) {
+          failed = true;
+          send({ type: "error", error: redact(String((error as Error).message ?? error)).slice(0, 500) });
+        } finally {
+          leave?.();
+          asidesAnswering -= 1;
+        }
+        // Kept only when it was answered whole, for the device that asked.
+        if (!failed && !req.signal.aborted && answer.trim()) {
+          asides.set(id, { conversation: kept?.id ?? null, turn: turn?.id ?? null, by, question: input.question, answer, model, at: Date.now() });
+          while (asides.size > 50) asides.delete(asides.keys().next().value!);
+        }
+        if (open) controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+  }
+
+  function bringBack(id: string, p: Principal): { how: "steered" | "kept" } {
+    ownerOnly(p);
+    const aside = asides.get(id);
+    if (!aside || !sameAsker(aside.by, p) || Date.now() - aside.at > ASIDE_KEEP_MS) {
+      throw new HttpError(404, "That side question is gone (one is kept for half an hour, for the device that asked it). Ask it again, or put it in a message.");
+    }
+    // Brought back, it is your message to him, checked like one.
+    const text = broughtBack(aside.question, aside.answer);
+    guardAgainstSecrets(text);
+    const live = aside.conversation ? ctx.turns.runningIn(aside.conversation) : aside.turn ? ctx.turns.get(aside.turn) : null;
+    if (live && live.state === "running") {
+      watchedTurn(live.id, p);
+      try {
+        ctx.turns.steer(live.id, text, byOf(p));
+        asides.delete(id);
+        return { how: "steered" };
+      } catch (error) {
+        // He finished in the meantime: it joins the chat instead (below), if there is one.
+        if (!(error instanceof TurnError && error.status === 409)) throw error instanceof TurnError ? new HttpError(error.status, error.message) : error;
+      }
+    }
+    if (!aside.conversation) throw new HttpError(409, "That temporary chat's turn has ended. Put the answer in your next message if you want him to have it.");
+    const kept = keptChat(aside.conversation, p);
+    if (ctx.turns.runningIn(kept.id)) throw new HttpError(409, "He has just started working in that chat again. Try once more: it will steer him.");
+    ctx.chats.addUser(kept.id, aside.question);
+    ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: aside.answer, model: aside.model, steps: aside.model ? [{ kind: "model", ref: aside.model }] : [], status: "done", error: null, bank: false });
+    asides.delete(id);
+    return { how: "kept" };
   }
 
   type Handler = (input: any, principal: Principal, req: Request) => unknown;
@@ -1388,6 +1508,8 @@ export function createApp(ctx: AppContext) {
       const running = ctx.turns.runningIn(kept.id);
       return { ...queueView(kept.id), turn: running ? turnView(running, p) : null };
     },
+    askAside: (input, p, req) => askAside(input, p, req),
+    bringBack: (input, p) => bringBack(input.aside, p),
     projects: () => ({ projects: projectsView() }),
     worldReport: (input, p) => {
       ownerOnly(p);

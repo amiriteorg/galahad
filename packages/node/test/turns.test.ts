@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Steering } from "@galahad/brain";
 import type { ChatStreamEvent } from "@galahad/core";
 import { ChatStore, type Queued, type QueuedBy } from "../src/chats.ts";
-import { TurnError, TurnHub, type TurnSpec } from "../src/turns.ts";
+import { asideMessages, broughtBack, TurnError, TurnHub, type TurnSpec } from "../src/turns.ts";
 
 /*
  * The turn hub on its own: a real chat store (in memory) and scripted answers. A turn
@@ -87,7 +87,7 @@ function setup(limits: ConstructorParameters<typeof TurnHub>[0]["limits"] = {}) 
     const answer = scriptedAnswer();
     answers.push(answer);
     const kept = conversation ? chats.summary(conversation)! : null;
-    return { by: admin, bank: false, role: "planner", conversation: kept ? { id: kept.id, title: kept.title, project: kept.project } : null, question, waits: { actions: [], secrets: [] }, run: answer.run, ...extra };
+    return { by: admin, bank: false, role: "planner", conversation: kept ? { id: kept.id, title: kept.title, project: kept.project } : null, question, messages: [{ role: "user", content: question }], waits: { actions: [], secrets: [] }, run: answer.run, ...extra };
   };
   hub.setPrepare((conversation, queued) => {
     if (refuse) throw refuse;
@@ -476,7 +476,7 @@ describe("when the node stops, and comes back", () => {
     const hub = new TurnHub({ chats });
     const answer = scriptedAnswer();
     const starts: string[] = [];
-    const make = (conversation: string, question: string, by: QueuedBy): TurnSpec => ({ by, bank: false, role: "planner", conversation: { id: conversation, title: "t", project: null }, question, waits: { actions: [], secrets: [] }, run: answer.run });
+    const make = (conversation: string, question: string, by: QueuedBy): TurnSpec => ({ by, bank: false, role: "planner", conversation: { id: conversation, title: "t", project: null }, question, messages: [{ role: "user", content: question }], waits: { actions: [], secrets: [] }, run: answer.run });
     hub.setPrepare((conversation, queued) => {
       starts.push(queued.text);
       return make(conversation, queued.text, queued.by);
@@ -512,6 +512,64 @@ describe("when the node stops, and comes back", () => {
     expect(starts).toEqual(["Two."]);
     await hub2.close();
     again.close();
+  });
+});
+
+describe("a side question", () => {
+  test("is answered from what the turn was given and what it has said and done so far, and is marked as an aside", async () => {
+    const t = setup();
+    const turn = t.hub.start(t.spec(null, "Fetch the report and summarise it."));
+    t.answers[0]!.say("Fetching ");
+    t.answers[0]!.emit({ type: "tool", id: "c1", name: "connector_call", title: "Call a connector", input: '{"tool":"report"}' });
+    t.answers[0]!.emit({ type: "tool_result", id: "c1", name: "connector_call", ok: true, summary: "42 pages" });
+    t.answers[0]!.say("it now.");
+    await settle();
+    const sofar = t.hub.sofar(turn);
+    expect(sofar).toEqual({ exchange: [], said: "Fetching it now.", steps: ['Call a connector {"tool":"report"} → 42 pages'] });
+    const messages = asideMessages(turn.spec.messages, sofar, "How many pages was it?");
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(messages[1]!.content).toBe("Fetching it now.");
+    expect(messages[2]!.content).toContain("An aside from your liege, while the work above goes on.");
+    expect(messages[2]!.content).toContain('- Call a connector {"tool":"report"} → 42 pages');
+    expect(messages[2]!.content).toMatch(/not an instruction to change course/);
+    expect(messages[2]!.content.endsWith("The aside: How many pages was it?")).toBe(true);
+    t.answers[0]!.end();
+  });
+
+  test("after a steer, what was cut and the steer are part of it; only what he's done since counts as now", async () => {
+    const t = setup();
+    const turn = t.hub.start(t.spec(null, "Plan the week."));
+    t.answers[0]!.say("Monday: ");
+    await settle();
+    t.hub.steer(turn.id, "Only Friday.", admin);
+    t.answers[0]!.handOver();
+    await settle();
+    expect(t.hub.sofar(turn)).toEqual({
+      exchange: [
+        { role: "assistant", content: "Monday: " },
+        { role: "user", content: "Only Friday." },
+      ],
+      said: "",
+      steps: [],
+    });
+    const messages = asideMessages(turn.spec.messages, t.hub.sofar(turn), "Why?");
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant", "user"]);
+    expect(messages[3]!.content).toBe("(Still working on it: nothing said yet.)");
+    t.answers[0]!.end();
+  });
+
+  test("about a chat with nothing running: its history, then the aside; the two voices always in turn", () => {
+    const held = [
+      { role: "user" as const, content: "What's the weather?" },
+      { role: "assistant" as const, content: "Dry and cold." },
+    ];
+    const idle = asideMessages(held, null, "In which city?");
+    expect(idle.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(idle[2]!.content).toContain("about the conversation above");
+    // A chat whose last answer never came (stopped before a word): the aside joins your question.
+    expect(asideMessages([{ role: "user", content: "Hello?" }], null, "Still there?").map((m) => m.role)).toEqual(["user"]);
+    expect(asideMessages([{ role: "assistant", content: "An answer." }], null, "Why?").map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(broughtBack("How many pages?", "42.")).toBe("While you worked I asked you something on the side, and you answered. Take it into account from here.\n\nMy aside: How many pages?\n\nYour answer: 42.");
   });
 });
 
