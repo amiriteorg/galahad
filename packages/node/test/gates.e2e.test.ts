@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, type Calibration, ceilingThreads, type LedgerEntry, type LoopView, REFERENCE_SINGLE, routes, type RouteName } from "@galahad/core";
+import { bodyFingerprint, type Calibration, ceilingThreads, type LedgerEntry, type LoopView, type QuestView, REFERENCE_SINGLE, routes, type RouteName } from "@galahad/core";
 import type { QuestEvent } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -58,7 +58,8 @@ const measure: Measure = async (reason, body, limit): Promise<Calibration> => {
 
 /** The stand-in models. The engineer writes, says DONE, and when sent back fixes it and says DONE again. */
 const asked: { role: string; prompt: string }[] = [];
-let plan = "1. Write the file.\n2. Check it.\nDone when: the file is there and says hi.";
+let atReview: QuestView[] = [];
+let plan ="1. Write the file.\n2. Check it.\nDone when: the file is there and says hi.";
 const fence = "```";
 const models = Bun.serve({
   port: 0,
@@ -76,6 +77,8 @@ const models = Bun.serve({
     } else if (first.startsWith("You are reviewing")) {
       role = "reviewer";
       text = "PASS\nThe gates passed and the file is there.";
+      // What the node shows of the quest while its review is under way.
+      for (let i = 0; i < 200 && !(atReview = (await call<{ quests: QuestView[] }>("quests")).quests.filter((q) => q.state === "reviewing")).length; i++) await Bun.sleep(5);
     } else if (first.startsWith("Quest:")) {
       role = "engineer";
       const said = turns.filter((m) => m.role === "assistant").length;
@@ -232,6 +235,69 @@ describe("gates on a quest, on a real node", () => {
     expect(docker.execs).toHaveLength(0);
     expect(docker.peak()).toBe(before);
   });
+});
+
+describe("seeing where a quest is", () => {
+  test("the node shows its plan, the step he's on and each gate's last result while it runs, and how it ended", async () => {
+    asked.length = 0;
+    atReview = [];
+    scriptSandbox();
+    const { quest } = await runNodeQuest(client(), { goal: "write hi to a file", network: "isolated", gates: [GATE] });
+    // While the reviewer read the evidence: under review, the gate passed on its second run, one revision.
+    expect(atReview).toHaveLength(1);
+    expect(atReview[0]).toMatchObject({
+      quest,
+      by: "you",
+      goal: "write hi to a file",
+      state: "reviewing",
+      step: 2,
+      maxSteps: 30,
+      revisions: 1,
+      silent: false,
+      gates: [{ command: GATE, by: "owner", exitCode: 0 }],
+    });
+    expect(atReview[0]!.plan).toContain("Done when: the file is there and says hi.");
+    // Afterwards: done, with its summary; an agent may read it, as it may the ledger.
+    const { token } = await call<{ token: string }>("mintArm", { label: "reader" });
+    const { quests } = await call<{ quests: QuestView[] }>("quests", undefined, token);
+    const ended = quests.find((q) => q.quest === quest)!;
+    expect(ended).toMatchObject({ state: "done", step: 2, summary: "The file is there." });
+    expect(ended.doing).toBeUndefined();
+  });
+
+  test("a quest that can't run at all is shown as failed, with why; a gate that never passes, as unverified with the failure", async () => {
+    scriptSandbox({ neverPasses: true });
+    const { quest } = await runNodeQuest(client(), { goal: "write hi, but the gate never passes", network: "isolated", gates: [GATE] });
+    const shown = (await call<{ quests: QuestView[] }>("quests")).quests.find((q) => q.quest === quest)!;
+    expect(shown).toMatchObject({ state: "unverified", revisions: 2, gates: [{ command: GATE, exitCode: 1 }] });
+    expect(shown.gates[0]!.excerpt).toContain("hi.txt is empty");
+    // No sandbox host by that name: nothing runs.
+    await expect(runNodeQuest(client(), { goal: "nowhere to run", network: "isolated", on: "no-such-node" })).rejects.toThrow();
+    const failed = (await call<{ quests: QuestView[] }>("quests")).quests.find((q) => q.goal === "nowhere to run")!;
+    expect(failed).toMatchObject({ state: "failed", step: 0 });
+    expect(failed.summary).toMatch(/no-such-node/);
+  });
+
+  test("with effort each attempt stands on its own; a loop's and an agent's quests are theirs, never yours", async () => {
+    scriptSandbox();
+    const { quest } = await runNodeQuest(client(), { goal: "write hi twice over", network: "isolated", gates: [GATE], effort: 2 });
+    const attempts = (await call<{ quests: QuestView[] }>("quests")).quests.filter((q) => q.attempt?.of === quest);
+    expect(attempts.map((q) => [q.quest, q.attempt!.index, q.attempt!.attempts, q.state]).sort()).toEqual([
+      [`${quest}.1`, 1, 2, "done"],
+      [`${quest}.2`, 2, 2, "done"],
+    ]);
+    // An agent reporting under one of your quests' names changes nothing of yours.
+    const { token } = await call<{ token: string }>("mintArm", { label: "forger" });
+    await call("questProgress", { quest: `${quest}.1`, goal: "forged", state: "failed", step: 0, maxSteps: 1, revisions: 0, gates: [] }, token);
+    const after = (await call<{ quests: QuestView[] }>("quests")).quests.filter((q) => q.quest === `${quest}.1`);
+    expect(after.map((q) => [q.by, q.state]).sort()).toEqual([
+      ["forger", "failed"],
+      ["you", "done"],
+    ]);
+    // Reporting needs the sandbox scope; an agent without it can't.
+    const { token: reader } = await call<{ token: string }>("mintArm", { label: "no-sandbox", scopes: ["mind:read"] });
+    await expect(call("questProgress", { quest: "q-x", goal: "g", state: "working", step: 0, maxSteps: 1, revisions: 0, gates: [] }, reader)).rejects.toThrow(/403/);
+  }, 20_000);
 });
 
 describe("a loop's quest carries its gates", () => {

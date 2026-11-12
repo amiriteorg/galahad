@@ -93,6 +93,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
 import type { ChatStore, KeptSummary, QueuedBy, Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
+import type { QuestBoard } from "./quests.ts";
 import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
 import { ExperimentError } from "./experiment-store.ts";
 import { RunError, runExperiment } from "./experiment-run.ts";
@@ -159,6 +160,8 @@ export interface AppContext {
   chats: ChatStore;
   /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
   turns: TurnHub;
+  /** The quests in hand, as whoever runs each one reports it. */
+  quests: QuestBoard;
   /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
   world: WorldHub;
   /** The chalkboard you and Galahad share. */
@@ -1510,6 +1513,13 @@ export function createApp(ctx: AppContext) {
     },
     askAside: (input, p, req) => askAside(input, p, req),
     bringBack: (input, p) => bringBack(input.aside, p),
+    // ---------- quests in hand: where each stands, as whoever runs it says ----------
+    quests: () => ({ quests: ctx.quests.list() }),
+    questProgress: (input, p) => {
+      // Each reporter's quests are its own: an agent's or a loop's report never writes over yours.
+      ctx.quests.report(p.kind === "arm" ? p.label! : p.kind === "node" ? (ctx.store.device(p.device)?.name ?? "a node") : "you", input);
+      return { ok: true };
+    },
     projects: () => ({ projects: projectsView() }),
     worldReport: (input, p) => {
       ownerOnly(p);

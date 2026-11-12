@@ -9,7 +9,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { QuestGates } from "./quests.ts";
+import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
@@ -315,6 +315,10 @@ export const routes = {
   },
   /** Bring a side question and its answer back: the turn under way is steered with them; with none running, they join the kept chat. */
   bringBack: { method: "POST", path: "/api/turns/aside/bring", scope: "chat", input: z.strictObject({ aside: AsideId }) },
+  /** The quests in hand on this node and the ones that just ended: each one's plan, the step he's on, its gates' last results. */
+  quests: { method: "GET", path: "/api/quests", scope: "mind:read", input: null },
+  /** Whoever runs a quest says where it stands (whoever may run its sandbox may: the sandbox scope). */
+  questProgress: { method: "POST", path: "/api/quests/progress", scope: "sandbox", input: QuestProgressInput },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
   /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
   world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },

@@ -31,12 +31,15 @@ import {
   investigate,
   type InvestigationOutcome,
   observation,
+  QUEST_DEFAULTS,
   type QuestEvent,
   type QuestOptions,
   type QuestOutcome,
+  questStanding,
   readResults,
   runEffort,
   runQuest,
+  standingAfter,
 } from "@galahad/brain";
 
 /*
@@ -109,6 +112,58 @@ export function checkGates(gates: readonly string[] | undefined): string[] {
     if (finding) throw new Error(`That gate looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
   }
   return checked;
+}
+
+/**
+ * Tells the node where a quest stands after each of its events (quest-progress.ts folds them): always the
+ * latest standing, one report in flight at a time, and a node that doesn't take them (an older one) is left
+ * alone after a few tries. Telling never holds the quest up, and never fails it.
+ */
+function standingReporter(node: NodeClient, options: DoOptions, quest: string, attempt?: { of: string; index: number; attempts: number }) {
+  const goal = (options.label ?? options.goal).replace(/\s+/g, " ").trim().slice(0, 400);
+  let standing = questStanding(options.maxSteps ?? QUEST_DEFAULTS.maxSteps);
+  let sending: Promise<void> | null = null;
+  let stale = false;
+  let refused = 0;
+  const send = (): void => {
+    if (refused >= 3) return;
+    if (sending) {
+      stale = true;
+      return;
+    }
+    const { plan, doing, summary, ...rest } = standing;
+    sending = node
+      .call("questProgress", { quest, ...(attempt ? { attempt } : {}), goal, ...rest, ...(plan ? { plan } : {}), ...(doing ? { doing: doing.slice(0, 300) } : {}), ...(summary ? { summary } : {}) })
+      .then(
+        () => void (refused = 0),
+        () => void (refused += 1),
+      )
+      .finally(() => {
+        sending = null;
+        if (stale) {
+          stale = false;
+          send();
+        }
+      });
+  };
+  send();
+  return {
+    on(event: QuestEvent): void {
+      const next = standingAfter(standing, event);
+      if (next === standing) return;
+      standing = next;
+      send();
+    },
+    /** It couldn't run (no sandbox, an outage past its retries): shown as failed, with why. */
+    failed(error: unknown): void {
+      standing = { ...standing, state: "failed", doing: "", summary: redact(String((error as Error)?.message ?? error)).slice(0, 800) };
+      send();
+    },
+    /** When the last word has reached the node (or it's clear none will). */
+    async settled(): Promise<void> {
+      while (sending) await sending;
+    },
+  };
 }
 
 /** What became of shipping a quest's work. */
@@ -479,13 +534,22 @@ export async function runNodeQuest(
   if (attempts === 1) {
     // The node shows a quest whose effort it granted (as his own work: there's one attempt).
     const tag = grant ? { quest: grant.quest, index: 1, of: 1 } : undefined;
-    const shop = await openWorkshop(node, options, quest, agent, tag);
-    hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+    // The node is told where the quest stands as it goes (its plan, the step he's on, each gate's last result).
+    const standing = standingReporter(node, options, quest);
     try {
-      outcome = await workIn(node, options, shop, agent, { emit: hooks.emit, signal: hooks.signal, ...(tag ? { tag } : {}) });
-      await hooks.finished?.(shop.exec);
+      const shop = await openWorkshop(node, options, quest, agent, tag);
+      hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+      try {
+        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}) });
+        await hooks.finished?.(shop.exec);
+      } finally {
+        artifact = await closeWorkshop(node, options, shop, true);
+      }
+    } catch (error) {
+      standing.failed(error);
+      throw error;
     } finally {
-      artifact = await closeWorkshop(node, options, shop, true);
+      await standing.settled();
     }
   } else {
     const open: Workshop[] = [];
@@ -497,22 +561,32 @@ export async function runNodeQuest(
         {
           attempt: async (index, of, signal) => {
             const tag = { quest: grant!.quest, index, of };
-            const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
-            open.push(shop);
-            hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
-            const collect = evidenceCollector();
-            const done = await workIn(node, options, shop, agent, {
-              emit: (event) => {
-                collect.emit(event);
-                hooks.emit?.(event, index);
-              },
-              signal,
-              tag,
-              instructions: attemptInstructions(index, of),
-              // Parallel sub-steps too: independent commands may run at once inside each sandbox.
-              parallelCommands: of,
-            });
-            return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+            // Each attempt stands on its own: its plan, its steps, its gates in its own sandbox.
+            const standing = standingReporter(node, options, `${quest}.${index}`, { of: quest, index, attempts: of });
+            try {
+              const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
+              open.push(shop);
+              hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
+              const collect = evidenceCollector();
+              const done = await workIn(node, options, shop, agent, {
+                emit: (event) => {
+                  collect.emit(event);
+                  standing.on(event);
+                  hooks.emit?.(event, index);
+                },
+                signal,
+                tag,
+                instructions: attemptInstructions(index, of),
+                // Parallel sub-steps too: independent commands may run at once inside each sandbox.
+                parallelCommands: of,
+              });
+              return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+            } catch (error) {
+              standing.failed(error);
+              throw error;
+            } finally {
+              await standing.settled();
+            }
           },
           // The pick is his own decision, by the independent reviewer: no attempt's tag, no rotation.
           ask: async (messages) => {

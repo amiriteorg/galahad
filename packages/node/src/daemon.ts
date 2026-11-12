@@ -25,6 +25,7 @@ import { BoardStore, writeOnBoard } from "./board.ts";
 import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
+import { QuestBoard } from "./quests.ts";
 import { WorldHub } from "./world-hub.ts";
 import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
@@ -471,6 +472,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     turns,
+    quests: new QuestBoard(),
     world,
     board,
     archive,
