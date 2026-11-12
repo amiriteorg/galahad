@@ -1,4 +1,4 @@
-import { float, length, positionGeometry, smoothstep } from "three/tsl";
+import { cameraPosition, float, fract as fraction, length, positionGeometry, positionWorld, screenCoordinate, smoothstep } from "three/tsl";
 import { type BufferGeometry, CircleGeometry, DoubleSide, FrontSide, type Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicNodeMaterial, MeshLambertNodeMaterial, Quaternion, Vector3 } from "three/webgpu";
 import { models, plantModel, together, treeTriangles } from "./flora-models.ts";
 import { DEADWOOD_SINK, deadwoodScale, rockHeight } from "./flora-plan.ts";
@@ -126,6 +126,8 @@ export class Vegetation {
   /** The trees' and the bushes' materials: while their crowns are thin, their leaves are drawn from both sides. */
   private leafy: MeshLambertNodeMaterial[] = [];
   private thin = false;
+  /** How many of a small kind must be in reach for it to be drawn (1 on the highest tier). */
+  private few = 1;
   /** Each layer's cap (the tier's), and how many instances its kinds' pages hold now. */
   private readonly caps: Record<Layer, number>;
   private readonly held: Record<Layer, number> = { trees: 0, bushes: 0, rocks: 0, reeds: 0, flowers: 0, grass: 0, detail: 0 };
@@ -144,7 +146,9 @@ export class Vegetation {
       const mat = new MeshLambertNodeMaterial();
       const n = plantNodes(look);
       mat.positionNode = n.position;
-      if (mask) mat.maskNode = occlusionMask();
+      // Whatever would hide Galahad dissolves; and a crown or a bush right at the camera does too (a full one would
+      // fill the view with green, a thinning one with a few great leaves): a fine dither over its last two metres.
+      if (mask) mat.maskNode = leafy ? occlusionMask().and(atArmsLength()) : occlusionMask();
       // Rain darkens rock and bark most, leaves and grass a little, and gives them a sheen; snow lies on what faces up.
       mat.colorNode = n.colour.mul(n.shimmer.add(1)).mul(wetDarken(porosity, 1, n.colour));
       // (And a turned leaf lets the sky's light through: its shaded side glows a little by day, not at all by night.)
@@ -188,36 +192,45 @@ export class Vegetation {
     // Trees: near models (only on tiers that draw them), simpler ones farther, and five far ones.
     const tints: [number, number][] = [[0.12, 0.06], [0.1, 0], [0.12, 0.08], [0.1, 0.06], [0.1, 0.04], [0.08, 0.02], [0.1, 0], [0.1, 0.04], [0.1, 0.05]];
     const shares = [0.36, 0.32, 0.14, 0.14, 0.2, 0.12, 0.2, 0.1, 0.1];
-    // (Every model is a draw call: a tier below the highest has fewer of them. Its spruces, alders and willows have no
-    // near model of their own, a far spruce is a far pine and a far birch any broad tree, its rushes are reeds, and it
-    // has no driftwood.)
+    // (Every model is a draw call, and a phone pays for each: a tier below the highest has fewer of them. There a
+    // round tree and an alder are oaks at every distance, a spruce and a willow have no near model of their own, a
+    // far spruce is a far pine and a far birch or cherry any broad tree, gorse is a bush, rushes are reeds, marram and the
+    // marsh's tussocks are tufts of another size and colour, there's no driftwood, and a small thing of which only
+    // a handful is in reach isn't drawn at all.)
     const rich = tier.name === "high";
+    this.few = rich ? 1 : 6;
     TREE_KINDS.forEach((name, i) => {
+      // The oak's models stand in for the round tree (farther off, on every tier: at that distance they're alike) and, below the highest tier, the alder.
+      if (name === "round" || name === "alder") {
+        if (rich && tier.treeDetail > 0) make(models[name](1), tree, cap(tier.trees, shares[i]! * 0.5), "trees", [i], 4, 1 << NEAR, shadows, tints[i]!);
+        if (rich && name === "alder") make(models[name](0), tree, cap(tier.trees, shares[i]!), "trees", [i], 8, 1 << MID, shadows, tints[i]!);
+        return;
+      }
       const near = tier.treeDetail > 0 && (rich || i < 6);
-      if (near) make(models[name](1), tree, cap(tier.trees, shares[i]! * 0.5), "trees", [i], 4, 1 << NEAR, shadows, tints[i]!);
-      // Farther off, a round tree is drawn as a small oak (one draw call fewer; at that distance they're alike).
-      if (name === "round") return;
-      make(models[name](0), tree, cap(tier.trees, shares[i]! + (name === "oak" ? shares[2]! : 0)), "trees", name === "oak" ? [0, 2] : [i], 8, near || tier.treeDetail === 0 ? 1 << MID : CLOSE, shadows, tints[i]!);
+      const oaks = rich ? [0] : [0, 2, 7];
+      if (near) make(models[name](1), tree, cap(tier.trees, (shares[i]! + (name === "oak" && !rich ? shares[2]! + shares[7]! : 0)) * 0.5), "trees", name === "oak" ? oaks : [i], 4, 1 << NEAR, shadows, tints[i]!);
+      make(models[name](0), tree, cap(tier.trees, shares[i]! + (name === "oak" ? shares[2]! + (rich ? 0 : shares[7]!) : 0)), "trees", name === "oak" ? (rich ? [0, 2] : oaks) : [i], 8, near || tier.treeDetail === 0 ? 1 << MID : CLOSE, shadows, tints[i]!);
     });
-    make(models.farBroad(), tree, cap(tier.trees, 0.8), "trees", rich ? [0, 2, 3, 7, 8] : [0, 2, 3, 4, 7, 8], 16, 1 << FAR, false, [0.12, 0.06]);
+    make(models.farBroad(), tree, cap(tier.trees, 0.8), "trees", rich ? [0, 2, 3, 7, 8] : [0, 2, 3, 4, 5, 7, 8], 16, 1 << FAR, false, [0.12, 0.06]);
     if (rich) make(models.farBirch(), tree, cap(tier.trees, 0.3), "trees", [4], 16, 1 << FAR, false, [0.1, 0.04]);
     make(models.farConifer(), tree, cap(tier.trees, 0.4), "trees", rich ? [1] : [1, 6], 16, 1 << FAR, false, [0.1, 0]);
     if (rich) make(models.farSpruce(), tree, cap(tier.trees, 0.24), "trees", [6], 16, 1 << FAR, false, [0.1, 0]);
-    make(models.farBlossom(), tree, cap(tier.trees, 0.12), "trees", [5], 8, 1 << FAR, false, [0.08, 0.02]);
+    if (rich) make(models.farBlossom(), tree, cap(tier.trees, 0.12), "trees", [5], 8, 1 << FAR, false, [0.08, 0.02]);
     // Bushes: leafy, in flower, ferns under the trees; gorse and mounds of heather on the heath.
-    make(models.bush(), bush, cap(tier.bushes, 0.6), "bushes", [0, 1], 8, CLOSE, false, [0.12, 0.05]);
-    make(models.farBush(), bush, cap(tier.bushes, 0.85), "bushes", [0, 1], 16, 1 << FAR, false, [0.12, 0.05]);
+    make(models.bush(), bush, cap(tier.bushes, 0.6), "bushes", rich ? [0, 1] : [0, 1, 3], 8, CLOSE, false, [0.12, 0.05]);
+    make(models.farBush(), bush, cap(tier.bushes, 0.85), "bushes", rich ? [0, 1] : [0, 1, 3], 16, 1 << FAR, false, [0.12, 0.05]);
     make(models.fern(), bush, cap(tier.bushes, 0.3), "bushes", [2], 4, ALL, false, [0.12, 0.04]);
-    make(models.gorse(), bush, cap(tier.bushes, 0.25), "bushes", [3], 4, ALL, false, [0.1, 0.03]);
+    if (rich) make(models.gorse(), bush, cap(tier.bushes, 0.25), "bushes", [3], 4, ALL, false, [0.1, 0.03]);
     make(models.heatherMound(), bush, cap(tier.bushes, 0.3), "bushes", [4], 4, ALL, false, [0.1, 0.04]);
     // Rocks: a boulder with a stone beside it, or a layered slab; and deadwood, a fallen log by its stump.
     make(models.boulder(), rock, cap(tier.rocks, 0.75), "rocks", [0, 1], 4, ALL, shadows, [0.1, 0.03]);
     make(models.slab(), rock, cap(tier.rocks, 0.4), "rocks", [2], 4, ALL, shadows, [0.1, 0.03]);
     make(models.log(), rock, cap(tier.rocks, 0.3), "rocks", [3], 4, ALL, shadows, [0.1, 0.04]);
-    // The water's edge: reeds with cattails among them, and stands of rushes (which a lower tier draws as reeds).
-    make(models.reeds(), reed, cap(tier.reeds, 0.5), "reeds", rich ? [0, 1] : [0, 1, 2], 16, CLOSE, false, [0.1, 0.04]);
+    // The water's edge: reeds with cattails among them, stands of rushes, and far off a few broad strokes. (One model
+    // on the lower tiers: the reeds themselves at every distance on the medium, the strokes on the low.)
+    if (tier.name !== "low") make(models.reeds(), reed, rich ? cap(tier.reeds, 0.5) : tier.reeds, "reeds", rich ? [0, 1] : [0, 1, 2], 16, rich ? CLOSE : ALL, false, [0.1, 0.04]);
     if (rich) make(models.rushes(), reed, cap(tier.reeds, 0.2), "reeds", [2], 16, CLOSE, false, [0.1, 0.04]);
-    make(models.farReeds(), reed, tier.reeds, "reeds", [0, 1, 2], 32, 1 << FAR, false, [0.1, 0.04]);
+    if (tier.name !== "medium") make(models.farReeds(), reed, tier.reeds, "reeds", [0, 1, 2], 32, rich ? 1 << FAR : ALL, false, [0.1, 0.04]);
     // Flowers in mixed patches (fewer draw calls): daisies with buttercups; lupines, campions and lavender; the
     // woodland floor's anemones; the heath's heather. Out of their season there is nothing of them, and they aren't drawn.
     make(together(models.daisy(3), models.buttercup(3), 0.24, 0.08), small, cap(tier.flowers, 0.5), "flowers", [0, 3], 16, ALL, false, [0.06, 0.02], [GROW.long, GROW.flower]);
@@ -226,9 +239,9 @@ export class Vegetation {
     make(models.heather(), small, cap(tier.flowers, 0.8), "flowers", [6], 16, ALL, false, [0.12, 0.05]);
     // Grass: tufts, lush clumps with a stalk gone to seed, and the dunes' marram (which, smaller and darker, is the
     // marsh's tussock too: one model, one draw call).
-    make(models.grass(), small, cap(tier.grass, 0.55), "grass", [0], 32, ALL, false, [0.16, 0.08]);
+    make(models.grass(), small, cap(tier.grass, rich ? 0.55 : 0.7), "grass", rich ? [0] : [0, 3, 4], 32, ALL, false, [0.16, 0.08]);
     make(models.lush(1), small, cap(tier.grass, 0.45), "grass", [1, 2], 32, ALL, false, [0.14, 0.07]);
-    make(models.marram(), small, cap(tier.grass, 0.4), "grass", [3, 4], 32, ALL, false, [0.12, 0.05]);
+    if (rich) make(models.marram(), small, cap(tier.grass, 0.4), "grass", [3, 4], 32, ALL, false, [0.12, 0.05]);
     // Underfoot: pebbles and clover; in the woods mushrooms and fallen leaves; driftwood on the shores; lily pads afloat.
     make(models.pebbles(), pebble, cap(tier.detail, 0.5), "detail", [0], 16, ALL, false, [0.1, 0.02]);
     make(models.clover(), small, cap(tier.detail, 0.5), "detail", [1], 16, ALL, false, [0.1, 0.04]);
@@ -392,7 +405,9 @@ export class Vegetation {
     // (Deadwood is in the rocks' layer, and drawn at its own size; what's afloat lies on the water as it's placed.)
     const dead = rocks && (kind.kinds?.[0] ?? 0) >= 3;
     const floats = kind.layer === "detail" && kind.kinds?.[0] === 5;
-    const coarse = kind.layer === "grass" && kind.kinds?.[0] === 3;
+    // (Marram and the marsh's tussock share a model: the marram's on the highest tier, the tuft's below it.)
+    const grassy = kind.layer === "grass";
+    const marrams = kind.kinds?.[0] === 3;
     for (let i = 0; i < packed.length; i += STRIDE) {
       if (!this.matches(kind, packed[i + 5]!)) continue;
       if (left === 0) {
@@ -404,9 +419,10 @@ export class Vegetation {
       }
       const x = packed[i]!;
       const y = packed[i + 1]!;
-      // (A tussock of rushes is the marram's model, smaller and darker.)
-      const tussock = coarse && packed[i + 5] === 4;
-      const scale = dead ? deadwoodScale(packed[i + 3]!) : tussock ? packed[i + 3]! * 0.6 : packed[i + 3]!;
+      // (A tussock of rushes is smaller and darker than the model it's drawn with; marram drawn as a tuft, taller and paler.)
+      const tussock = grassy && packed[i + 5] === 4;
+      const marram = grassy && packed[i + 5] === 3 && !marrams;
+      const scale = dead ? deadwoodScale(packed[i + 3]!) : tussock ? packed[i + 3]! * (marrams ? 0.6 : 0.9) : marram ? packed[i + 3]! * 1.5 : packed[i + 3]!;
       const z = packed[i + 2]! - (dead ? DEADWOOD_SINK * scale : rocks ? 0.14 * scale : floats ? 0 : 0.04);
       this.v.set(x - this.anchorX, z, -(y - this.anchorY));
       this.q.setFromAxisAngle(this.up, packed[i + 4]!);
@@ -419,9 +435,9 @@ export class Vegetation {
       const h2 = fract(h * 7.31);
       const b = 1 - kind.tint[0] + 2 * kind.tint[0] * h;
       const warm = kind.tint[1] * (h2 - 0.5) * 2;
-      kind.colors[slot * 3] = b * (1 + warm) * (tussock ? 0.6 : 1);
-      kind.colors[slot * 3 + 1] = b * (tussock ? 0.82 : 1);
-      kind.colors[slot * 3 + 2] = b * (1 - warm) * (tussock ? 0.5 : 1);
+      kind.colors[slot * 3] = b * (1 + warm) * (tussock ? 0.6 : marram ? 1.1 : 1);
+      kind.colors[slot * 3 + 1] = b * (tussock ? 0.82 : marram ? 1.06 : 1);
+      kind.colors[slot * 3 + 2] = b * (1 - warm) * (tussock ? 0.5 : marram ? 1.25 : 1);
       slot++;
       left--;
       written++;
@@ -525,7 +541,8 @@ export class Vegetation {
 
   private refreshCount(kind: Kind): void {
     kind.mesh.count = kind.top * kind.page;
-    kind.mesh.visible = kind.live > 0 && !kind.dormant;
+    // (Of the small things, a handful in reach isn't worth a draw call on a phone.)
+    kind.mesh.visible = kind.live >= (SMALL.includes(kind.layer) ? this.few : 1) && !kind.dormant;
   }
 
   /** Instances drawn now, per layer (for the stats). */
@@ -589,6 +606,14 @@ export class Vegetation {
     this.grown.clear();
     this.order.length = 0;
   }
+}
+
+/** False (discarded) for a share of the pixels of what's within two and a half metres of the camera, all of them within one: a fine, even dither. */
+function atArmsLength() {
+  const near = smoothstep(0.9, 2.6, length(positionWorld.sub(cameraPosition)));
+  const p = screenCoordinate.xy.floor();
+  const threshold = fraction(fraction(p.x.mul(0.06711056).add(p.y.mul(0.00583715))).mul(52.9829189));
+  return threshold.lessThan(near.mul(1.02));
 }
 
 /** Each tree's contact shadow's radius (by kind, before its scale), and each bush's. */
