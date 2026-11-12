@@ -39,6 +39,8 @@ import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
 import { shipNative } from "./ship.ts";
 import { WeatherService } from "./weather.ts";
+import { Eyes, EyesStore } from "./eyes.ts";
+import { ReviewState, worldReviewer } from "./world-review.ts";
 
 export interface Daemon {
   port: number;
@@ -321,6 +323,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   );
   const board = new BoardStore({ dir: join(home.dir, "boards"), log, onChange: (change) => world.boardChanged(change) });
   world.setBoard(() => board.version);
+  // His eyes (eyes.ts): the last few frames a page rendered, node-local in the home, never the mind's log.
+  const eyes = new Eyes({ store: new EyesStore({ dir: join(home.dir, "eyes"), log }), world, weather: () => weather.current(), dog: () => companionOf(store)?.name ?? null });
+  const reviewState = new ReviewState(join(home.dir, "eyes"));
   // An experiment's examination, written up on the chalkboard at the observatory where it's examined: each in place
   // of the last write-up (the board's history keeps every one), so the board doesn't fill with them.
   world.onExamine(
@@ -418,6 +423,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   taskDeps.chats = chats;
   taskDeps.experiments = experiments;
   taskDeps.board = board;
+  // His review of his own world (world-review.ts): the owner's to start, or a loop's the owner set up.
+  const reviewWorld = worldReviewer({ store, vault, identity, eyes, state: reviewState, noteIdea: (input) => archive.noteIdea(input, { trust: "agent", who: "arm:galahad" }), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
+  taskDeps.review = reviewWorld;
   world.setHeartbeat(() => heartbeatView(store));
   // His dog's name, from the mind: every node's world shows the same one.
   world.setCompanion(() => companionOf(store));
@@ -455,6 +463,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     chats,
     world,
     board,
+    eyes,
+    review: { run: reviewWorld, state: reviewState },
     archive,
     ledger,
     shutdown: shutdown.signal,
@@ -561,6 +571,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
       await archive.stop();
       world.close();
+      eyes.close();
       weather.close();
       await loops.stop();
       await connectors.drain();

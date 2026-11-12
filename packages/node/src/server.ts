@@ -9,6 +9,8 @@ import {
   type SelfActionView,
   type ChatStreamEvent,
   stationForTool,
+  staysPut,
+  type EyesPlace,
   type WorldEvent,
   type WorldNode,
   type ConversationSummary,
@@ -92,6 +94,8 @@ import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts
 import { fenceMemories } from "./archive/retrieval.ts";
 import type { ArchiveService } from "./archive/service.ts";
 import { ArchiveError } from "./archive/store.ts";
+import { type Eyes, EyesError } from "./eyes.ts";
+import type { ReviewResult, ReviewState } from "./world-review.ts";
 import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
@@ -153,6 +157,10 @@ export interface AppContext {
   world: WorldHub;
   /** The chalkboard you and Galahad share. */
   board: BoardStore;
+  /** His eyes: frames a page rendered from his point of view, and the words for what he sees (eyes.ts). */
+  eyes: Eyes;
+  /** His review of his own world through them (world-review.ts): yours to start. */
+  review: { run(places?: readonly EyesPlace[], signal?: AbortSignal): Promise<ReviewResult>; state: ReviewState };
   /** The archive: what this node keeps for good, and searches by words and meaning. */
   archive: ArchiveService;
   /** What the node did, for the ledger (the git gateway's reads). */
@@ -592,6 +600,8 @@ export function createApp(ctx: AppContext) {
       if (event.type === "model") {
         model = event.ref;
         thinking();
+      } else if (event.type === "tool" && staysPut(event.name)) {
+        // Looking through his own eyes takes him nowhere: he looks from where he stands.
       } else if (event.type === "tool") {
         const tool = TOOLS.find((t) => t.name === event.name);
         // Once the bank is in the answer, a tool's input may carry it: the world gets only its name.
@@ -621,6 +631,7 @@ export function createApp(ctx: AppContext) {
   function armActivity(name: RouteName, input: unknown, label?: string): void {
     const tool = TOOLS.find((t) => t.routes[0] === name);
     if (!tool || (name === "connectors" || name === "fleet")) return;
+    if (staysPut(tool.name)) return;
     const q = input && typeof input === "object" ? ((input as Record<string, unknown>).q ?? (input as Record<string, unknown>).query) : undefined;
     const station = stationForTool(tool.name);
     const line = `${tool.title}${typeof q === "string" && tool.flow !== "private" ? `: ${q.slice(0, 80)}` : ""}`;
@@ -1197,9 +1208,12 @@ export function createApp(ctx: AppContext) {
           const send = (event: WorldEvent) => write(`data: ${JSON.stringify(event)}\n\n`);
           send(ctx.world.hello());
           const stop = ctx.world.watch(send);
+          // A page that draws the world can render his eyes (eyes.ts): it says so when it opens the stream.
+          const blind = new URL(req.url).searchParams.get("eyes") === "1" ? ctx.world.watchEyes(send) : null;
           const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
           const end = () => {
             stop();
+            blind?.();
             clearInterval(heartbeat);
             if (open) {
               open = false;
@@ -1216,6 +1230,24 @@ export function createApp(ctx: AppContext) {
         },
       });
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+    },
+    // ---------- his eyes: what he sees, in words and (when a page can render it) a picture; his review of his world ----------
+    look: (input) => eyesErrors(() => ctx.eyes.look(input)),
+    worldEyes: (input, p) => {
+      // A frame is a rendering made on one of your own devices: nothing else answers for his eyes.
+      if (!isOwner(p)) throw new HttpError(403, "only your own devices answer for his eyes");
+      const frame = eyesErrors(() => ctx.eyes.answer(input, deviceName(p) ?? "a paired device"));
+      return { kept: frame.id, at: frame.at };
+    },
+    worldReviewStatus: () => ctx.review.state.status(),
+    worldReview: (input, p, req) => {
+      // It spends the day's budget on a model and files suggestions: yours to start (a loop you set up runs it in the node).
+      if (!isOwner(p)) throw new HttpError(403, "only you ask him to review his world");
+      return longRunning(ctx.review.run(input.places, req.signal));
+    },
+    setReviewBudget: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you set the review's budget");
+      return ctx.review.state.setBudget(input.budget);
     },
     // ---------- the chalkboard: you draw, Galahad and your agents write, and only you erase your drawing ----------
     board: () => ctx.board.view(),
@@ -1861,6 +1893,20 @@ export function createApp(ctx: AppContext) {
     } catch (error) {
       if (error instanceof BankError) throw new HttpError(error.status, error.message);
       throw new HttpError(500, "bank access failed");
+    }
+  }
+
+  /** His eyes' own refusals (nobody asked, not the image it claims, asked too often), with their statuses. */
+  function eyesErrors<T>(run: () => T): T {
+    const refuse = (error: unknown): never => {
+      if (error instanceof EyesError) throw new HttpError(error.status, error.message);
+      throw error;
+    };
+    try {
+      const out = run();
+      return out instanceof Promise ? (out.catch(refuse) as T) : out;
+    } catch (error) {
+      return refuse(error);
     }
   }
 

@@ -125,6 +125,9 @@ const ICONS = {
   flame: ["M12 3.5c.5 2.9 4.25 4.9 4.25 9.1a4.25 4.25 0 0 1-8.5 0c0-1.6.7-2.7 1.6-3.6.3 1.3.95 2.05 1.85 2.3-.55-2.85-.2-5.35.8-7.8z", "M12 20.5v-3"],
   /** His journal: a bound book, its spine and a few lines on the cover. */
   journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
+  /** His eyes: his visor, a rounded slit with its two eyes; and swapping two views. */
+  visor: [rect(3.5, 7.5, 17, 9, 4.5), circle(9, 12, 1.25), circle(15, 12, 1.25)],
+  swap: ["M4.5 8.5h13M14 5l3.5 3.5L14 12", "M19.5 15.5h-13M10 12l-3.5 3.5L10 19"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

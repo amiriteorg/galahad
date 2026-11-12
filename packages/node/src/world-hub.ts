@@ -46,6 +46,7 @@ import {
   type WorldWeather,
 } from "@galahad/core";
 import type { z } from "zod";
+import type { EyesRequest } from "@galahad/core";
 import { ExperimentError, type ExperimentStore } from "./experiment-store.ts";
 
 /*
@@ -793,6 +794,39 @@ export class WorldHub {
     for (const e of ended.slice(KEEP_ENDED)) this.experiments.delete(e.id);
   }
 
+  /* ---------- his eyes (eyes.ts) ---------- */
+
+  /** The watchers that draw the world (a page with the SANDBOX open): they can render a frame from his eyes. */
+  private readonly lookers = new Set<(event: WorldEvent) => void>();
+
+  /** A watcher that draws the world joins those asked for frames (it said so when it opened the stream). */
+  watchEyes(fn: (event: WorldEvent) => void): () => void {
+    this.lookers.add(fn);
+    return () => this.lookers.delete(fn);
+  }
+
+  get eyesOpen(): number {
+    return this.lookers.size;
+  }
+
+  /** Asks every page that draws the world for a frame from his eyes (terminals and other pages don't hear it); how many were asked. */
+  askEyes(request: EyesRequest): number {
+    const event: WorldEvent = { type: "eyes", at: this.now(), request };
+    for (const look of this.lookers) {
+      try {
+        look(event);
+      } catch {
+        /* a page that went away */
+      }
+    }
+    return this.lookers.size;
+  }
+
+  /** Where he is and what he's doing now. */
+  get state(): GalahadState {
+    return this.galahad;
+  }
+
   /** A device says how the world ran there. The 20 most recent sessions are kept, in memory. */
   report(input: z.infer<typeof WorldReport>, device: string): void {
     this.reports.delete(input.session);
@@ -809,6 +843,7 @@ export class WorldHub {
     clearInterval(this.sweep);
     for (const e of this.experiments.values()) if (e.timer) clearTimeout(e.timer);
     this.watchers.clear();
+    this.lookers.clear();
     this.examiners.clear();
   }
 }

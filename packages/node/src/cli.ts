@@ -29,6 +29,7 @@ import { streamedError } from "./server.ts";
 import { chooseProblems, describeEffort, describeIndex, describeTrial, trialRunFromCli } from "./trial-cli.ts";
 import type { EffortLevel, TrialRunsView } from "@galahad/core";
 import { describeExamination, describeRun, describeSaved } from "./tools.ts";
+import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
 
 const VERSION = "0.1.0";
 
@@ -65,6 +66,11 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX (his heartbeat, the agents with him);
                                   how it ran on your devices
+  look [--place hearth|bench|council|forge|meadow] [--out view.jpg]
+                                  what he sees through his own eyes: the words, and the picture saved where you say
+                                  (a picture needs the SANDBOX open on one of your devices)
+  world review [--places hearth,forge] | world review --status | world review --budget 40000
+                                  he looks at his world and suggests what to mend (inbox and ideas; he changes nothing)
   journal [<YYYY-MM-DD>] | journal --list [--limit 30]
                                   his journal: every evening (21:30, Denmark) he recollects his day in his own
                                   words; the latest entry, one day's, or the days he wrote
@@ -142,6 +148,7 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
      | --reflect [--budget 4000]                       his journal: the day recollected, as his own memory; tokens a day
+     | --review                                        he reviews his world through his eyes: suggestions only
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
   heartbeat                       run the heartbeat's checks now and print what they find
   self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
@@ -402,6 +409,11 @@ async function main(): Promise<void> {
       summaries: { type: "boolean" },
       // The journal's list of days.
       list: { type: "boolean" },
+      // His eyes: `look --place hearth --out view.jpg`, `world review --places hearth,forge | --status`, `loop add … --review`.
+      place: { type: "string" },
+      places: { type: "string" },
+      status: { type: "boolean" },
+      review: { type: "boolean" },
     },
   });
   const [command, sub, ...rest] = positionals;
@@ -797,7 +809,15 @@ Next:
       return;
     }
 
+    case "look":
+      // What he sees through his own eyes in the SANDBOX: the words, and the picture saved where you say.
+      await lookCommand(new Admin(home), flags);
+      return;
     case "world": {
+      if (sub === "review") {
+        await worldReviewCommand(new Admin(home), flags);
+        return;
+      }
       if (flags.logs) {
         // How the world ran on each device that opened it lately (newest first).
         const { reports } = await new Admin(home).call<{ reports: (WorldReportInput & { device: string; at: number })[] }>("worldReports");

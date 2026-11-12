@@ -14,6 +14,7 @@ import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, 
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 import { cleanCompanionName, companionNameProblem } from "./companion.ts";
 import { JOURNAL_DAY } from "./journal.ts";
+import { EyesFrameInput, LookInput, ReviewBudgetInput, WorldReviewInput } from "./eyes-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -151,6 +152,12 @@ export const LoopTask = z.discriminatedUnion("kind", [
   }),
   /** One connector tool; outward and delete tools file an approval request instead. */
   z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),
+  /**
+   * He looks at his own world through his eyes and says what looks wrong or unfinished (world-review.ts):
+   * suggestions in your inbox and ideas in the archive, never a change. Within the review's own daily budget
+   * (`setReviewBudget`); a picture needs a page with the SANDBOX open, and a model that sees.
+   */
+  z.strictObject({ kind: z.literal("review") }),
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
 
@@ -273,6 +280,18 @@ export const routes = {
   /** How the world ran on a device (yours alone), and the latest reports, for `galahad world --logs`. */
   worldReport: { method: "POST", path: "/api/world/report", scope: "mind:read", input: WorldReport },
   worldReports: { method: "GET", path: "/api/world/reports", scope: "mind:read", input: null },
+  /**
+   * His eyes (eyes.ts). `look`: what he sees, in words always, and a picture when a page with the SANDBOX open
+   * can render one (the node asks over the world's stream and waits a few seconds; else the last kept frame
+   * with its age). `worldEyes`: a page's answer to that request, yours alone (a paired device or a terminal),
+   * refused unless it names a request that's waiting. The review looks at his world and suggests what to mend:
+   * reading where it stands is the world's scope; running it and setting its daily budget are yours.
+   */
+  look: { method: "POST", path: "/api/world/look", scope: "mind:read", input: LookInput },
+  worldEyes: { method: "POST", path: "/api/world/eyes", scope: "chat", input: EyesFrameInput },
+  worldReviewStatus: { method: "GET", path: "/api/world/review", scope: "mind:read", input: null },
+  worldReview: { method: "POST", path: "/api/world/review", scope: "brain:write", input: WorldReviewInput },
+  setReviewBudget: { method: "POST", path: "/api/world/review/budget", scope: "brain:write", input: ReviewBudgetInput },
   /*
    * The chalkboard you and Galahad share (node-local, a file in the home). Reading is mind:read. Drawing,
    * writing and erasing are part of your conversation with him (chat): what you draw reaches his models as

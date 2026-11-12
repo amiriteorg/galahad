@@ -316,7 +316,7 @@ export class BoardStore {
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
 /** A temporary file beside the target, then a rename over it: a reader sees the old file or the new one, never half of one. */
-function atomicWrite(path: string, data: string | Uint8Array): void {
+export function atomicWrite(path: string, data: string | Uint8Array): void {
   const tmp = `${path}.tmp-${randomBytes(6).toString("hex")}`;
   try {
     writeFileSync(tmp, data, { mode: 0o600 });
