@@ -24,10 +24,10 @@ import { dither } from "./sky.ts";
 
 /*
  * What's far away: three ranges of faceted lavender mountains, each hazier than
- * the one before; low-poly clouds drifting across the sky, lit warm on the sun's
- * side and lavender underneath; wind turbines turning on the far ridges and the
- * white domes of research stations at the horizon. All of it rides with the
- * camera (it's always at the horizon). And a few landmarks standing in the world
+ * the one before; wind turbines turning on the far ridges and the white domes
+ * of research stations at the horizon. All of it rides with the camera (it's
+ * always at the horizon). (The clouds are the sky's: the weather's own, standing
+ * in the world and drifting with the wind, sky/cloud-mesh.ts.) And a few landmarks standing in the world
  * itself: a research station of domes, solar panels and wind turbines, and a
  * cream limestone cliff with an arch. All procedural.
  */
@@ -97,36 +97,6 @@ function mountainRanges(): BufferGeometry {
   return g;
 }
 
-/** Puffy low-poly clouds: flat-bottomed heaps of facets, in two rings (the nearer lower). */
-function clouds(seed: number): BufferGeometry {
-  const m = new Mesher();
-  const random = rng(seed);
-  for (let ring = 0; ring < 2; ring++) {
-    const count = ring ? 9 : 12;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + random() * 0.4 + ring * 0.3;
-      const r = ring ? 640 + random() * 140 : 380 + random() * 140;
-      const y = ring ? 200 + random() * 70 : 120 + random() * 60;
-      const cx = Math.cos(a) * r;
-      const cz = Math.sin(a) * r;
-      const size = (ring ? 22 : 16) * (0.8 + random() * 0.5);
-      const puffs = 5 + Math.floor(random() * 4);
-      // Tangent to the ring, so each heap shows its length to the camera.
-      const tx = -Math.sin(a);
-      const tz = Math.cos(a);
-      for (let k = 0; k < puffs; k++) {
-        const along = (k - (puffs - 1) / 2) * size * 0.85;
-        const s = size * (1 - Math.abs(k - (puffs - 1) / 2) / puffs) * (0.75 + random() * 0.4);
-        const lift = s * 0.32;
-        m.add(new IcosahedronGeometry(s, 0), 0xffffff, at(cx + tx * along, y + lift, cz + tz * along + (random() - 0.5) * size * 0.4, random() * 3, [1.25, 0.62, 1]), 0.04);
-      }
-      // A flat base slab, so the heap sits on one level like the references' clouds.
-      m.add(new CylinderGeometry(size * 1.9, size * 1.6, size * 0.35, 9), 0xffffff, at(cx, y, cz, a, [1.4, 1, 0.55]), 0.03);
-    }
-  }
-  return m.build();
-}
-
 /** Distant wind turbines (towers and nacelles) and research domes along the horizon. */
 function horizonSettlements(): { solid: BufferGeometry; blades: BufferGeometry } {
   const m = new Mesher();
@@ -185,18 +155,13 @@ function horizonSettlements(): { solid: BufferGeometry; blades: BufferGeometry }
 
 export class Horizon {
   readonly group = new Group();
-  private readonly cloudGroup = new Group();
   private readonly tint = uniform(new Color(1, 1, 1));
   private readonly haze = uniform(new Color(0xe4d4f0));
   private readonly hazeBoost = uniform(0);
-  private readonly cloudLit = uniform(new Color(1, 1, 1));
-  private readonly cloudShade = uniform(new Color(0xd8d0f0));
   private readonly sunDir = uniform(new Vector3(0, 1, 0));
-  private readonly underlight = uniform(0);
   private readonly spin = uniform(1);
   private readonly materials: MeshBasicNodeMaterial[] = [];
   private readonly scratch = new Color();
-  private readonly scratch2 = new Color();
 
   constructor() {
     // Mountains: lit by the sun on their facets, and hazier the farther the range (its feet always in the haze).
@@ -209,19 +174,6 @@ export class Horizon {
     const ring = new Mesh(mountainRanges(), mountains);
     ring.renderOrder = -5;
     ring.frustumCulled = false;
-
-    // Clouds: the sun's side warm and bright, the underside lavender.
-    const cloud = new MeshBasicNodeMaterial({ vertexColors: true, transparent: true, opacity: 0.96, depthWrite: false });
-    cloud.fog = false;
-    const side = max(dot(normalWorld, this.sunDir), 0);
-    const top = normalWorld.y.mul(0.5).add(0.5);
-    // With the sun at the horizon the clouds are lit from below: their bellies glow, their tops go to shade.
-    const facing = mix(top, float(1).sub(top), this.underlight);
-    cloud.colorNode = mix(this.cloudShade, this.cloudLit, side.mul(0.55).add(facing.mul(0.45)).min(1)).mul(vertexColor());
-    const puffs = new Mesh(clouds(5), cloud);
-    puffs.renderOrder = -6;
-    puffs.frustumCulled = false;
-    this.cloudGroup.add(puffs);
 
     // The far settlements: as hazy as the near range.
     const { solid, blades } = horizonSettlements();
@@ -248,38 +200,28 @@ export class Horizon {
     const rotors = new Mesh(blades, rotor);
     rotors.renderOrder = -4;
     rotors.frustumCulled = false;
-    this.materials.push(mountains, cloud, far, rotor);
-    this.group.add(ring, this.cloudGroup, settlements, rotors);
+    this.materials.push(mountains, far, rotor);
+    this.group.add(ring, settlements, rotors);
   }
 
   /**
-   * Light on the far hills and the clouds for the time of day: `light` tints, `horizon` is the haze; `overcast` greys
-   * and darkens the clouds; `veil` (falling rain or snow, 0..1) hides the far ranges in it.
+   * Light on the far hills for the time of day: `light` tints, `horizon` is the haze; `overcast` hazes them more;
+   * `veil` (falling rain or snow, 0..1) hides the far ranges in it. (`glow`, `golden` and `underlight` lit the clouds
+   * that rode here once; the sky's own clouds take their light from the sky now.)
    */
-  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], glow: number, golden: number, overcast = 0, underlight = 0, veil = 0): void {
-    this.underlight.value = underlight;
+  set(light: number, horizon: number, night: number, sun: readonly [number, number, number], _glow: number, _golden: number, overcast = 0, _underlight = 0, veil = 0): void {
     const l = this.scratch.setHex(light);
     this.tint.value.setRGB(1, 1, 1).lerp(l, 0.3).multiplyScalar(1 - night * 0.72);
     this.haze.value.setHex(horizon).multiplyScalar(0.8);
     this.hazeBoost.value = night * 0.18;
     this.sunDir.value.set(sun[0], Math.max(0.05, sun[2]), -sun[1]).normalize();
-    // Clouds: lit in the sun's colour (peach at golden hour), shaded lavender, all dim at night.
-    const g = this.scratch2.setHex(glow);
-    this.cloudLit.value.setRGB(1, 1, 1).lerp(l, 0.35 + golden * 0.25).lerp(g, golden * 0.3).multiplyScalar(1 - night * 0.78);
-    this.cloudShade.value.setHex(0xcfc6ee).lerp(this.haze.value, 0.35).multiplyScalar(1 - night * 0.7);
-    if (overcast > 0) {
-      this.cloudLit.value.lerp(this.haze.value, overcast * 0.6).multiplyScalar(1 - overcast * 0.25);
-      this.cloudShade.value.lerp(this.haze.value, overcast * 0.4).multiplyScalar(1 - overcast * 0.35);
-      this.hazeBoost.value += overcast * 0.2;
-    }
-    this.hazeBoost.value += veil * 0.45;
+    this.hazeBoost.value += overcast * 0.2 + veil * 0.45;
   }
 
-  /** Rides with the camera; clouds drift; rotors turn (not under reduced motion). */
-  follow(camera: Vector3, t: number, motion: boolean): void {
+  /** Rides with the camera; rotors turn (not under reduced motion). */
+  follow(camera: Vector3, _t: number, motion: boolean): void {
     this.group.position.set(camera.x, 0, camera.z);
     this.spin.value = motion ? 1 : 0;
-    if (motion) this.cloudGroup.rotation.y = t * 0.0035;
   }
 
   dispose(): void {

@@ -51,7 +51,7 @@ import type { WorldWhere } from "../world/scene.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 11;
+const WORLD_API = 12;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -184,6 +184,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   const skyButton = h("button", { class: "btn sm world-sky-btn", type: "button", "aria-expanded": "false", "aria-controls": "world-sky", onclick: () => setSky(!skyOpen) }, icon("clock", { size: 15 }), clock, skyMore);
   const skyWrap = h("div", { class: "world-sky-wrap" });
   const skyNote = h("p", { class: "tiny muted grow" });
+  /** What's in the sky now, in a few words (the scene's skyWords: the moon, planets, a shower, a rainbow, the clouds). */
+  const skySeen = h("p", { class: "small sky-seen", hidden: true });
   const skyReset = button("Back to now", {
     icon: "clock",
     size: "sm",
@@ -202,6 +204,7 @@ export const worldView: View = (root, ctx, { scope }) => {
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Time"), time.el),
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Weather"), weatherControl.el),
     h("div", { class: "sky-row" }, h("span", { class: "small strong" }, "Season"), seasonControl.el),
+    skySeen,
     h("div", { class: "sky-foot" }, skyNote, skyReset),
   );
   skyWrap.append(skyButton, skyPanel);
@@ -392,6 +395,9 @@ export const worldView: View = (root, ctx, { scope }) => {
         ? `${w.place}: ${real}, wind ${Math.round(w.wind)} m/s. ${w.source}, ${new Date(w.observed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
         : "The real sun and moon over Denmark. Its weather isn't known right now, so the sky is shown clear.";
     skyReset.hidden = !showing;
+    const seen = handle?.skyWords() ?? [];
+    skySeen.hidden = !seen.length;
+    if (seen.length) skySeen.textContent = seen.join(" · ");
   }
   scope.interval(showClock, 15_000);
 

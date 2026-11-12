@@ -1075,12 +1075,13 @@
       .world-sky-btn .sky-more { color: var(--text-2); font-weight: 450; white-space: nowrap; }
       .world-sky-btn[data-preview="true"] { border-color: var(--accent); }
       .world-sky-btn[data-preview="true"] .sky-more { color: var(--accent-text, var(--accent)); }
-      .world-sky { width: min(340px, 100%); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); box-shadow: var(--shadow-3); }
+      .world-sky { width: min(364px, calc(100vw - 48px)); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); box-shadow: var(--shadow-3); }
       .world-sky .sky-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: var(--sp-2); }
       .world-sky .segmented svg { display: none; }
       .world-sky .segmented button { padding: 0 4px; }
       .world-sky .sky-foot { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-sm); }
       .world-sky .sky-foot p { margin: 0; }
+      .world-sky .sky-seen { margin: 0; color: var(--text-2, inherit); line-height: 1.35; }
       /* The map: paper and ink over the world, like the labels. */
       .world-map { width: 136px; height: 136px; border-radius: var(--r-lg); box-shadow: var(--shadow-2); background: rgb(255 252 246 / 0.82); cursor: pointer; display: block; }
       .world-map[hidden] { display: none; }

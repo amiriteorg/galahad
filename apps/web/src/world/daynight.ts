@@ -1,3 +1,4 @@
+import { seenElevation } from "./sky/panorama.ts";
 import { direction, emptyMoon, emptySun, type MoonPosition, moonAt, type SunPosition, sunAt } from "./sun.ts";
 import type { WeatherState } from "./weather.ts";
 
@@ -7,7 +8,9 @@ import type { WeatherState } from "./weather.ts";
  * so winter days are short and their low noon sun is one long, soft golden hour,
  * and midsummer nights never get quite dark. A low sun gives golden, peach and
  * lavender light; below the horizon come civil and nautical twilight, then deep
- * blue night under the stars and the moon (in its real phase). Weather lies on
+ * blue night under the stars and the moon (in its real phase: a full moon high
+ * in the south lights the land twice as brightly as no moon does, a low one less
+ * and warmer). Weather lies on
  * top: clouds grey the sky, soften the light and the shadows, and lower the
  * exposure; broken cloud throws drifting shadows and breaks the sun into rays;
  * mist lies as a sheet on the ground when the sun is low. The air itself has a
@@ -31,6 +34,8 @@ export interface Sky {
   /** The moon's lit fraction, and how far it's risen (0 below the horizon, 1 a few degrees up). */
   moonLit: number;
   moonUp: number;
+  /** How much the moon lights the night, 0..1: by its phase (a full moon far more than a half one) and its height; 0 by day. */
+  moonlight: number;
   /** 0 by day, 1 in the dead of night. */
   night: number;
   /** 0..1 while the sun is low: warmth in the light, the haze and the clouds. */
@@ -58,7 +63,7 @@ export interface Sky {
   mist: number;
   /** How dark the sun's shadows are, 0..1 (soft under cloud). */
   shadow: number;
-  /** The moon as it's drawn: at its real bearing, its height squeezed into the strip of sky a low camera sees (seenElevation). */
+  /** The moon as it's drawn: at its real bearing, its height squeezed into the strip of sky a low camera sees (seenElevation, as the stars' and the planets' are). */
   moonSeen: Vec3;
   /** The sun's direction turned as the moon was moved, so the drawn moon keeps its real phase. */
   moonSun: Vec3;
@@ -101,6 +106,8 @@ export interface Heavens {
   moonElevation: number;
   moonAzimuth: number;
   moonLit: number;
+  /** Where the moon is in its month: 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter. A preset has none. */
+  moonPhase?: number;
 }
 
 interface Key {
@@ -186,6 +193,7 @@ export const emptySky = (): Sky => ({
   evening: 0.5,
   moonLit: 0,
   moonUp: 0,
+  moonlight: 0,
   night: 0,
   golden: 0,
   zenith: 0,
@@ -245,6 +253,7 @@ export function heavensAt(ms: number, out: Heavens): Heavens {
   out.moonElevation = m.elevation;
   out.moonAzimuth = m.azimuth;
   out.moonLit = m.lit;
+  out.moonPhase = m.phase;
   return out;
 }
 
@@ -273,24 +282,18 @@ function look(e: number, evening: number, field: Exclude<keyof Key, "e">, color:
   return color ? mixColor(m, v, evening) : m + (v - m) * evening;
 }
 
-/** The top of the strip of sky the camera sees over the far hills, and how fast a rising body climbs into it (radians). */
-const SEEN_TOP = 8.6 * RAD;
-const SEEN_RISE = 6 * RAD;
-
-/**
- * The height the moon is drawn at for its real height (radians). The camera
- * looks at the horizon, over Galahad's shoulder, and sees only the lowest ten
- * degrees of the sky: a moon standing high in the south would never show. So its
- * height is squeezed into that strip: it rises as it really does, clears the
- * far hills quickly, and then climbs ever more slowly towards the strip's top.
- * Its bearing and its phase stay real. Below the horizon nothing changes.
+/*
+ * The height the moon is drawn at for its real height: the camera looks at the
+ * horizon, over Galahad's shoulder, and sees only the lowest ten degrees of the
+ * sky, where a moon standing high in the south would never show. So its height
+ * is squeezed into that strip, by the same function as the stars' and the
+ * planets' (sky/panorama.ts), so it stands among the right ones. Its bearing and
+ * its phase stay real.
  */
-export function seenElevation(elevation: number): number {
-  return elevation <= 0 ? elevation : SEEN_TOP * (1 - Math.exp(-elevation / SEEN_RISE));
-}
+export { seenElevation };
 
 /** Turns `v` by the rotation that takes unit vector `from` to unit vector `to` (Rodrigues), into `out`. */
-function turned(v: Vec3, from: Vec3, to: Vec3, out: Vec3): void {
+export function turned(v: Readonly<Vec3>, from: Readonly<Vec3>, to: Readonly<Vec3>, out: Vec3): void {
   let kx = from[1] * to[2] - from[2] * to[1];
   let ky = from[2] * to[0] - from[0] * to[2];
   let kz = from[0] * to[1] - from[1] * to[0];
@@ -322,6 +325,19 @@ const AIR_SWITCH = -10.5;
 
 /** A fallback for the night light when the moon is down: the sky's glow, from high in the south. */
 const SKYGLOW: Vec3 = [0.18, -0.42, 0.89];
+/** A moon low over the hills is seen through thick air: its light a pale amber. */
+const MOON_LOW = 0xf6d2a0;
+/** The night's light with no moon (the sky's own glow), and what a full moon high in the south adds to it. */
+const MOONLESS = 0.78;
+const MOON_FULL = 0.66;
+
+/**
+ * How much of a full moon's light a moon gives when `lit` of its face is lit
+ * (0..1): far less than its lit share, since the moon's dusty face is brightest
+ * lit head-on (a half moon gives about a tenth of a full one's light; drawn
+ * here a little kinder, so a quarter moon's night still differs from none).
+ */
+const moonPhaseLight = (lit: number): number => clamp01(lit) ** 1.5;
 
 /** A grade: saturation, shadow tint, highlight tint (linear light). */
 interface Grade {
@@ -367,6 +383,7 @@ export function skyFor(h: Heavens, out: Sky): Sky {
   out.evening = h.evening;
   out.moonLit = h.moonLit;
   out.moonUp = smooth(-1.5, 4, h.moonElevation * DEG);
+  out.moonlight = 0;
   // The moon as drawn: squeezed into the visible strip of sky, its phase kept by turning the sun with it.
   direction(seenElevation(h.moonElevation), h.moonAzimuth, out.moonSeen);
   turned(out.sun, out.moon, out.moonSeen, out.moonSun);
@@ -403,8 +420,13 @@ export function skyFor(h: Heavens, out: Sky): Sky {
     out.lightDir[1] = SKYGLOW[1] * (1 - up) + out.moon[1] * mh * up;
     out.lightDir[2] = SKYGLOW[2] * (1 - up) + mz * up;
     normalize(out.lightDir);
-    // A bright moon lights the night a little more; a new moon (or none) leaves the sky's glow, still enough to read.
-    intensity *= 0.78 + 0.4 * up * h.moonLit;
+    // The moon lights the night by its phase and its height (low, its light crosses more air and falls flatter);
+    // a new moon, or none, leaves the sky's glow, still enough to read by. Low, its light is warmer.
+    const height = 0.45 + 0.55 * smooth(0, 40, h.moonElevation * DEG);
+    out.moonlight = up * moonPhaseLight(h.moonLit) * height * smooth(-4, -12, e);
+    intensity *= MOONLESS + MOON_FULL * out.moonlight;
+    out.light = mixColor(out.light, MOON_LOW, 0.55 * up * (1 - smooth(3, 22, h.moonElevation * DEG)));
+    out.hemiIntensity *= 0.97 + 0.12 * out.moonlight;
   }
   out.lightIntensity = intensity;
   // Lamps: on as the sun goes down, and glowing a little through golden hour (not at a low winter noon).
@@ -474,7 +496,8 @@ export function applyWeather(out: Sky, w: SkyWeather): Sky {
   // Rays: the sun broken by cloud with gaps in it, or by mist, and strongest when it's low.
   const broken = smooth(0.12, 0.32, c) * (1 - smooth(0.62, 0.88, c));
   out.rays = out.lightFromSun ? Math.max(broken, w.mist * 0.7 * (1 - c)) * (1 - 0.6 * smooth(12, 45, e)) * smooth(0, 3, e) : 0;
-  out.cloudShadow = out.lightFromSun ? broken * smooth(2, 12, e) : 0;
+  // (Wherever there is cloud with gaps in it: the clouds themselves say where their shadows fall, sky/clouds.ts.)
+  out.cloudShadow = out.lightFromSun ? smooth(0.02, 0.12, c) * (1 - smooth(0.62, 0.88, c)) * smooth(2, 12, e) : 0;
   // Mist and cloud quieten the grade (no warm-and-cool without a sun to make it); rain dulls the colour a little.
   quieten(out, Math.min(1, 0.85 * c + 0.4 * w.mist + 0.3 * snow), Math.min(1, 0.6 * c + 0.25 * w.mist + 0.3 * w.rain));
   if (c <= 0.001 && w.rain <= 0.001 && snow <= 0.001) return out;

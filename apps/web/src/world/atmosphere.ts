@@ -1,8 +1,9 @@
-import { cameraPosition, dot, exp, float, Fn, length, max, min, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
-import { Color, type Node, Vector2, Vector3 } from "three/webgpu";
-import { air, airColor, lobes, wind as windWay } from "./air.ts";
+import { cameraPosition, dot, exp, float, Fn, length, max, min, mix, normalize, output, positionWorld, rangeFogFactor, renderGroup, select, sin, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { Color, type Node, Vector3 } from "three/webgpu";
+import { air, airColor, lobes } from "./air.ts";
 import type { Sky } from "./daynight.ts";
-import { dither } from "./sky.ts";
+import { cloudShade } from "./sky/cloud-field.ts";
+import { dither } from "./sky/dither.ts";
 import { WATER_LEVEL } from "./terrain.ts";
 import { only, weatherUniforms } from "./wet.ts";
 
@@ -23,15 +24,19 @@ import { only, weatherUniforms } from "./wet.ts";
  * - Light in the near air: forward scattering towards a low sun (or the moon),
  *   the glow of the light shafts without their shadows, for the tiers that have
  *   no shafts (on the high tier post.ts marches the real thing and this is off).
- * - Cloud shadows: on days of broken cloud, soft shadows drift over the land
- *   with the wind (what's already lit is dimmed a little and cooled).
+ * - Cloud shadows: under a sky of cloud with gaps in it, the shadows of the
+ *   clouds themselves drift over the land (what's already lit is dimmed a
+ *   little and cooled). They are the same clouds the sky draws: each point asks
+ *   whether the low cloud or the patch of sheet that stands between it and the
+ *   sun is there (sky/cloud-field.ts), so a shadow has its cloud overhead and
+ *   moves as it does.
  * - Lightning: a flash lights the land and the air for an instant.
  * - The grade: what's lit is given the time of day's colour (daynight.ts: a
  *   saturation, and tints for its shadows and its highlights) before the air
  *   lies over it, so the distance still melts into the sky.
  *
- * Mist, cloud shadows and rays each sit behind a branch on their uniform, so a
- * clear day pays for none of them; the uniforms are in the render's shared
+ * Mist, cloud shadows (each kind of cloud's too) and rays each sit behind a
+ * branch on their uniform, so a clear day pays for none of them; the uniforms are in the render's shared
  * group (uploaded once a render, not once per draw). Dithered against banding.
  */
 
@@ -62,8 +67,6 @@ export class Atmosphere {
   private readonly mistGlow = uniform(new Color(0xffffff)).setGroup(renderGroup);
   private readonly mistDrift = uniform(0).setGroup(renderGroup);
   private readonly shade = uniform(0).setGroup(renderGroup);
-  private readonly shadeCover = uniform(0.4).setGroup(renderGroup);
-  private readonly shadeAt = uniform(new Vector2(0, 0)).setGroup(renderGroup);
   private readonly gradeSat = uniform(1).setGroup(renderGroup);
   private readonly gradeShadow = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
   private readonly gradeLight = uniform(new Vector3(1, 1, 1)).setGroup(renderGroup);
@@ -123,13 +126,8 @@ export class Atmosphere {
     });
     const mistTint = mix(this.mistColor, this.mistGlow, l.broad.mul(0.6).add(l.tight.mul(0.4))).mul(float(1).add(weatherUniforms.flash));
 
-    // Cloud shadows: soft blobs sliding over the land, more of them the more cloud there is.
-    const shadow = only(this.shade.greaterThan(0.003), float(0) as unknown as F, () => {
-      const q = vec2(positionWorld.x, positionWorld.z).add(this.shadeAt);
-      const n = sin(q.x.mul(0.043).add(sin(q.y.mul(0.031)).mul(2.1))).mul(sin(q.y.mul(0.049).add(sin(q.x.mul(0.023)).mul(1.7))));
-      const edge = float(1.02).sub(this.shadeCover);
-      return smoothstep(edge.sub(0.3), edge, n.mul(0.5).add(0.5)).mul(this.shade) as unknown as F;
-    });
+    // Cloud shadows: the clouds' own, where each stands between the land and the sun.
+    const shadow = only(this.shade.greaterThan(0.003), float(0) as unknown as F, () => cloudShade(positionWorld as unknown as Node<"vec3">).mul(this.shade) as unknown as F);
 
     // The near air's glow towards the light (as the shafts' phase: a broad lobe and a tight one), over its first 40 m.
     const glow = only(this.nearOn.greaterThan(0.003), vec3(0) as unknown as Node<"vec3">, () => {
@@ -181,7 +179,6 @@ export class Atmosphere {
     this.sheetDensity.value = s.groundMist * SHEET_DENSITY;
     this.reachFactor = Math.max(0.3, 1 - 0.3 * rain - 0.12 * s.cloud - 0.15 * s.mist - 0.32 * snow);
     this.shade.value = s.cloudShadow * 0.5;
-    this.shadeCover.value = Math.min(0.7, Math.max(0.15, s.cloud));
     this.gradeSat.value = s.gradeSat;
     this.gradeShadow.value.set(s.gradeShadow[0], s.gradeShadow[1], s.gradeShadow[2]);
     this.gradeLight.value.set(s.gradeLight[0], s.gradeLight[1], s.gradeLight[2]);
@@ -211,15 +208,12 @@ export class Atmosphere {
     if (Math.abs(this.sheetLevel.value - this.level) > 0.004) this.sheetLevel.value = this.level;
   }
 
-  /** Moves the banks, the cloud shadows and the rays on with the wind (metres a second). Only what's in the air moves: a clear day uploads nothing. */
+  /**
+   * Moves the banks and the rays on with the wind (metres a second). Only what's in the air moves: a clear day
+   * uploads nothing. (The cloud shadows move with the clouds themselves: the sky blows them, sky.ts.)
+   */
   drift(dt: number, wind: number): void {
     if (this.mistDensity.value + this.sheetDensity.value > 1e-5) this.mistDrift.value = (this.mistDrift.value + dt * (0.004 + 0.0012 * wind)) % 10_000;
-    if (this.shade.value > 0.003) {
-      // Clouds ride a faster wind than the one on the ground. (Wrapped far out, so the GPU's floats stay precise.)
-      const speed = 3 + wind * 1.3;
-      const at = this.shadeAt.value;
-      at.set((at.x - windWay.x * speed * dt) % 60_000, (at.y - windWay.z * speed * dt) % 60_000);
-    }
     if (air.rays.value > 0.003) air.rayDrift.value = (air.rayDrift.value + dt * 0.03) % 6000;
   }
 }
