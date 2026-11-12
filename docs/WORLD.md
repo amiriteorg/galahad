@@ -371,6 +371,8 @@ A crown or a bush within two and a half metres of the camera dissolves in a fine
 
 The season is Denmark's, by the real date (`season.ts`): not four switches but a year that turns. What grows reads it as a few amounts (`flora-season.ts`): how far the leaves are out and how far turned, what's in flower, how pale the grass is, how many leaves lie on the ground. Each part of each model says which amount grows it and which one colours it, the point it grows from and its place in the queue; the vertex shader does the rest, each plant a little ahead of or behind its neighbours (`flora-shade.ts`). So a crown thins leaf by leaf, a meadow comes into flower patch by patch, and nothing pops; a kind whose season is over (anemones in summer, the meadows' flowers in winter) isn't drawn at all.
 
+The keep's great tree keeps the season with the rest (`keep.ts`): each facet of its crown is its own leaf-mass, turning gold and rust one by one in autumn and most coming down; what it holds through the winter is brown (an oak keeps some of its leaves), and in spring it's thin and fresh until it fills. The HUD's sky panel has the Season control: live is Denmark's by the real date, or any season to look at (`flora-shade.ts` keeps `seasonState` to it and eases what grows).
+
 | When | What you see |
 |---|---|
 | Spring | Buds swelling on every twig at once; blossom on the cherries for a few weeks of April and May; wood anemones white under the bare woods, gone by June; daisies from March; fresh, lighter green |
