@@ -100,20 +100,26 @@ describe("every version, kept", () => {
 
   test("bounded: checkpoints keep any version a short replay; a full segment is sealed (gzipped) and still reads", () => {
     const d = dir();
-    const board = new BoardStore({ dir: d, now });
+    // The same rules at a size that takes moments: a 64 KB segment and a checkpoint every fifth change (a node's
+    // are 2 MB and every hundredth, which took 400 changes and five seconds of disk to reach).
+    const small = { segmentBytes: 64 * 1024, checkpointEvery: 5 };
+    const board = new BoardStore({ dir: d, now, history: small });
     const big = Array.from({ length: 1000 }, (_, i) => [((i * 37) % 15_990) / 10 + 0.1, ((i * 71) % 8_990) / 10 + 0.1]).flat();
-    // About 12 KB a stroke: 200 of them fill more than a 2 MB segment.
-    for (let i = 0; i < 200; i++) {
+    // About 12 KB a stroke: 20 of them fill more than three such segments.
+    for (let i = 0; i < 20; i++) {
       board.draw([stroke(i, { points: big })]);
       board.erase({ strokes: [stroke(i).id] }, { by: "owner", owner: true });
     }
     const files = readdirSync(join(d, "main.history"));
-    expect(files.some((f) => f.endsWith(".jsonl.gz"))).toBe(true);
-    // Version 3 (the second stroke on the board) from the sealed segment, after a restart.
-    const again = new BoardStore({ dir: d, now });
+    expect(files.filter((f) => f.endsWith(".jsonl.gz")).length).toBeGreaterThanOrEqual(2);
+    // Version 3 (the second stroke on the board) from the first sealed segment, after a restart; and one from
+    // the middle of a later segment, between two checkpoints.
+    const again = new BoardStore({ dir: d, now, history: small });
     expect(ids(again.history.state(3)!.state.strokes)).toEqual([stroke(1).id]);
-    expect(again.history.size).toBe(401);
-    expect(again.version).toBe(400);
+    expect(ids(again.history.state(27)!.state.strokes)).toEqual([stroke(13).id]);
+    expect(ids(again.history.state(28)!.state.strokes)).toEqual([]);
+    expect(again.history.size).toBe(41);
+    expect(again.version).toBe(40);
   });
 
   test("a crash mid-write: the half line is skipped and the next change still lands; a lost board file comes back from its history", () => {

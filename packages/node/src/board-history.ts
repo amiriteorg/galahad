@@ -83,11 +83,16 @@ export class BoardHistory {
   private lastPictureAt = 0;
   private readonly cache = new Map<string, (HistoryRecord | null)[]>();
   readonly picturesDir: string;
+  private readonly segmentMax: number;
+  private readonly every: number;
 
   constructor(
     readonly dir: string,
-    private readonly opts: { now?: () => number; log?: (message: string) => void } = {},
+    /** `segmentBytes` and `checkpointEvery`: how big a segment grows before it's sealed, and how often the whole board is written (their defaults are what a node uses). */
+    private readonly opts: { now?: () => number; log?: (message: string) => void; segmentBytes?: number; checkpointEvery?: number } = {},
   ) {
+    this.segmentMax = Math.max(1, opts.segmentBytes ?? SEGMENT_MAX);
+    this.every = Math.max(1, opts.checkpointEvery ?? CHECKPOINT_EVERY);
     this.picturesDir = join(dir, "pictures");
     this.load();
   }
@@ -120,7 +125,7 @@ export class BoardHistory {
     // Records since the last checkpoint, in the segment being written.
     const tail = this.entries.filter((e) => e.segment === segmentName(this.segment));
     const lastCheckpoint = tail.findLastIndex((e) => e.checkpoint);
-    this.sinceCheckpoint = lastCheckpoint < 0 ? CHECKPOINT_EVERY : tail.length - 1 - lastCheckpoint;
+    this.sinceCheckpoint = lastCheckpoint < 0 ? this.every : tail.length - 1 - lastCheckpoint;
     // A segment that ends mid-line (a crash): the next record starts on a line of its own.
     const active = join(this.dir, `${segmentName(this.segment)}.jsonl`);
     if (existsSync(active)) {
@@ -179,16 +184,16 @@ export class BoardHistory {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     let active = join(this.dir, `${segmentName(this.segment)}.jsonl`);
     // A full segment is sealed (gzipped, never written again); the next starts with the whole board.
-    if (existsSync(active) && statSync(active).size >= SEGMENT_MAX) {
+    if (existsSync(active) && statSync(active).size >= this.segmentMax) {
       writeFileSync(`${active}.gz.tmp`, gzipSync(readFileSync(active)), { mode: 0o600 });
       renameSync(`${active}.gz.tmp`, `${active}.gz`);
       rmSync(active, { force: true });
       this.cache.delete(segmentName(this.segment));
       this.segment++;
-      this.sinceCheckpoint = CHECKPOINT_EVERY;
+      this.sinceCheckpoint = this.every;
       active = join(this.dir, `${segmentName(this.segment)}.jsonl`);
     }
-    const checkpoint = this.sinceCheckpoint >= CHECKPOINT_EVERY || change.change === "start";
+    const checkpoint = this.sinceCheckpoint >= this.every || change.change === "start";
     const record: HistoryRecord = {
       v: 1,
       version: change.version,

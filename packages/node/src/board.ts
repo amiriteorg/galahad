@@ -53,6 +53,8 @@ export interface BoardStoreOptions {
   log?: (message: string) => void;
   /** Told after every change (the world's stream says it). */
   onChange?: (change: BoardChange) => void;
+  /** The history's own bounds, when not a node's defaults (a test fills a small segment instead of two megabytes). */
+  history?: { segmentBytes?: number; checkpointEvery?: number };
 }
 
 const newId = (prefix: "s" | "i") => `${prefix}_${randomBytes(9).toString("base64url")}`;
@@ -85,7 +87,7 @@ export class BoardStore {
     this.path = join(opts.dir, `${id}.json`);
     this.pngPath = join(opts.dir, `${id}.png`);
     this.now = opts.now ?? Date.now;
-    this.history = new BoardHistory(join(opts.dir, `${id}.history`), { now: this.now, ...(opts.log ? { log: opts.log } : {}) });
+    this.history = new BoardHistory(join(opts.dir, `${id}.history`), { now: this.now, ...(opts.log ? { log: opts.log } : {}), ...opts.history });
     this.state = this.load();
     const latest = this.history.latest;
     if (latest === null || latest < this.state.version) {
