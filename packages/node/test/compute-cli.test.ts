@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bodyFingerprint, type Calibration, type ComputeBody, type ComputeNodeView, type ComputeView, deriveCapacity, derivePlan, REFERENCE_SINGLE, whatMoreBuys } from "@galahad/core";
+import { bodyFingerprint, type Calibration, type ComputeBody, type ComputeNodeView, type ComputeView, deriveCapacity, derivePlan, KERNEL, REFERENCE_SINGLE, whatMoreBuys } from "@galahad/core";
 import { ago, computeCommand, describeCompute, limitLine, measuredLine, parseEffort } from "../src/compute-cli.ts";
 
 /* The terminal's census: every number a node measured, its ceiling and why, what's in use and waiting. */
@@ -11,7 +11,7 @@ const calibration: Calibration = {
   tookMs: 3400,
   reason: "joined",
   body: bodyFingerprint(body, null),
-  cpu: { single: REFERENCE_SINGLE * 0.98, multi: REFERENCE_SINGLE * 0.98 * 14.2, threads: 16 },
+  cpu: { single: REFERENCE_SINGLE * 0.98, multi: REFERENCE_SINGLE * 0.98 * 14.2, threads: 16, kernel: KERNEL },
   memoryGbps: 9.5,
   disk: { writeMbps: 1200, readMbps: 1800 },
   sandbox: [{ kind: "container", startMs: 640 }, { kind: "vm", startMs: 1710 }],

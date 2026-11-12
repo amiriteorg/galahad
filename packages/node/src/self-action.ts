@@ -32,7 +32,7 @@ export interface SelfSnapshot {
   compute?: {
     /** It can measure itself here. */
     canMeasure: boolean;
-    /** It should: it never has, or its body or ceiling isn't what it measured. */
+    /** It should: it never has, or its body, its ceiling or the benchmark isn't what it measured with. */
     due: "joined" | "changed" | null;
     /** When it last did, and when the owner last set its ceiling (ms; null: never). */
     lastAt: number | null;
@@ -69,7 +69,7 @@ export function planSelfActions(s: SelfSnapshot): SelfAction[] {
   if (s.weather?.enabled && s.weather.watched && !s.weather.known) out.push({ kind: "refresh-weather" });
   const c = s.compute;
   if (c) {
-    // Measured for the first time at once; again when its body or ceiling changed, but not in a loop: at most once
+    // Measured for the first time at once; again when its body, its ceiling or the benchmark changed, but not in a loop: at most once
     // an hour (a runtime that comes and goes, a busy day), unless the owner changed its ceiling since.
     const settled = c.lastAt === null || s.now - c.lastAt >= RECALIBRATE_AFTER_MS || (c.limitSetAt !== null && c.limitSetAt > c.lastAt);
     if (c.canMeasure && c.due && settled) out.push({ kind: "calibrate", why: c.lastAt === null ? "joined" : "changed" });

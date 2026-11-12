@@ -55,7 +55,7 @@ export function capacityBlock(ctx: Ctx, node: ComputeNodeView, changed: () => vo
         { class: "row wrap" },
         h("span", { class: "strong" }, strengthText(node)),
         node.calibration ? h("span", { class: "tiny subtle" }, `measured ${relativeTime(node.calibration.at)}`) : null,
-        // Its body or ceiling changed since: it measures itself again shortly.
+        // Its body, its ceiling or the benchmark changed since: it measures itself again shortly.
         node.due === "changed" ? badge("measuring again", "warn") : null,
       ),
       measure,

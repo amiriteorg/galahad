@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { bodyFingerprint, type Calibration, type CalibrationReason, ceilingThreads, type ComputeBody, type ComputeLimit, redact } from "@galahad/core";
+import { bodyFingerprint, type Calibration, type CalibrationReason, ceilingThreads, type ComputeBody, type ComputeLimit, KERNEL, redact } from "@galahad/core";
 import type { BenchOptions, BenchResult } from "./bench.ts";
 
 /*
@@ -70,7 +70,7 @@ export async function calibrate(reason: CalibrationReason, deps: CalibrateDeps):
     tookMs: Math.max(1, Math.round(deps.now() - started)),
     reason,
     body: bodyFingerprint(deps.body, deps.limit),
-    cpu: { single: Math.round(measured.single), multi: Math.round(measured.multi), threads: measured.threads },
+    cpu: { single: Math.round(measured.single), multi: Math.round(measured.multi), threads: measured.threads, kernel: KERNEL },
     ...(measured.memoryGbps !== undefined ? { memoryGbps: measured.memoryGbps } : {}),
     ...(measured.disk ? { disk: measured.disk } : {}),
     ...(sandbox ? { sandbox } : {}),

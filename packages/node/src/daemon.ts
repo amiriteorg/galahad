@@ -510,7 +510,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   }
   loops.start(opts.loopIntervalMs);
-  // A node that just joined (or whose body or ceiling changed while it was down) measures itself now.
+  // A node that just joined (or whose body, ceiling or benchmark changed while it was down) measures itself now.
   if (measure) upkeep();
   const drain = () => connectors.drain().catch((error) => log(`outbox: ${(error as Error).message}`));
   void drain();

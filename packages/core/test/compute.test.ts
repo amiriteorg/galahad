@@ -17,6 +17,7 @@ import {
   effortReport,
   freeSlots,
   type HostLoad,
+  KERNEL,
   MODEL_CALLS_DEFAULT,
   planChanges,
   planDigest,
@@ -39,7 +40,7 @@ const measured = (body: ComputeBody, threads: number, delivered: number, extra: 
   tookMs: 3_200,
   reason: "joined",
   body: bodyFingerprint(body, null),
-  cpu: { single: REFERENCE_SINGLE, multi: REFERENCE_SINGLE * delivered, threads },
+  cpu: { single: REFERENCE_SINGLE, multi: REFERENCE_SINGLE * delivered, threads, kernel: KERNEL },
   ...extra,
 });
 
@@ -125,6 +126,26 @@ describe("when to calibrate", () => {
     expect(calibrationDue(ultra, calibration, { memoryGb: 64 })).toBeNull();
     // Measured on fewer threads than he may use (the machine was busy): again, when it's quieter.
     expect(calibrationDue(ultra, measured(ultra, 5, 4.8), null)).toBe("changed");
+  });
+
+  test("a measurement by another benchmark kernel is taken again; until then it's read against its own kernel's reference", () => {
+    // What ultra recorded with the first kernel (no version on it): a Ryzen 9 9950X at 0.44× an i7-11700, because that
+    // kernel's remainder was a C library call, 2.5× slower under Linux than under Windows on the same hardware.
+    const first: Calibration = { ...measured(ultra, 16, 13.4), cpu: { single: 30_800, multi: 30_800 * 13.4, threads: 16 } };
+    expect(calibrationDue(ultra, first, null)).toBe("changed");
+    expect(calibrationDue(ultra, measured(ultra, 16, 13.4), null)).toBeNull();
+    // Its slots hold (they come from how the threads scaled, whatever the kernel); its speed is the first kernel's, not this one's.
+    const was = deriveCapacity(ultra, first, null);
+    expect(was).toMatchObject({ cores: 13, sandboxes: 3, measured: true });
+    expect(was.speed).toBeCloseTo(0.44, 2);
+    expect(was.strength).toBeCloseTo(5.9, 1);
+    // A kernel this node doesn't know (a newer node's): counted the same, its speed against the reference not known here.
+    const now = measured(ultra, 16, 13.4);
+    const newer = deriveCapacity(ultra, { ...now, cpu: { ...now.cpu, kernel: KERNEL + 1 } }, null);
+    expect(newer).toMatchObject({ cores: 13, sandboxes: 3, measured: true, speed: null });
+    expect(newer.strength).toBeCloseTo(13.4, 5);
+    expect(newer.reasons.join("\n")).toMatch(/newer benchmark/);
+    expect(calibrationDue(ultra, { ...now, cpu: { ...now.cpu, kernel: KERNEL + 1 } }, null)).toBe("changed");
   });
 });
 

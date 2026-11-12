@@ -9,6 +9,7 @@ import {
   ceilingThreads,
   type ComputeView,
   type EffortGrant,
+  KERNEL,
   type LedgerEntry,
   type NoticeView,
   REFERENCE_SINGLE,
@@ -70,7 +71,7 @@ let measured = 0;
 const measure: Measure = async (reason, body, limit): Promise<Calibration> => {
   measured += 1;
   const threads = ceilingThreads(body, limit);
-  return { at: Date.now(), tookMs: 1200, reason, body: bodyFingerprint(body, limit), cpu: { single: REFERENCE_SINGLE, multi: REFERENCE_SINGLE * threads * 0.75, threads }, memoryGbps: 9.5 };
+  return { at: Date.now(), tookMs: 1200, reason, body: bodyFingerprint(body, limit), cpu: { single: REFERENCE_SINGLE, multi: REFERENCE_SINGLE * threads * 0.75, threads, kernel: KERNEL }, memoryGbps: 9.5 };
 };
 
 /** The stand-in models: who was asked (by role and model), and how many engineers were thinking at once. */

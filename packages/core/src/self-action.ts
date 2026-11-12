@@ -29,7 +29,7 @@ export const SelfAction = z.discriminatedUnion("kind", [
   /** Denmark's weather for the world isn't known though someone has it open: ask again (one fixed request, rate-limited by the weather service). */
   z.strictObject({ kind: z.literal("refresh-weather") }),
   /**
-   * This node measures itself (a calibration): it never has, or its body or ceiling isn't what it measured.
+   * This node measures itself (a calibration): it never has, or its body, its ceiling or the benchmark isn't what it measured with.
    * A few seconds at low priority, within its ceiling; nothing leaves the machine, nothing is installed.
    */
   z.strictObject({ kind: z.literal("calibrate"), why: z.enum(["joined", "changed"]) }),
@@ -68,7 +68,7 @@ export function selfActionTitle(action: SelfAction): string {
     case "refresh-weather":
       return "Asked again for Denmark's weather";
     case "calibrate":
-      return action.why === "joined" ? "Measured this node for the first time" : "Measured this node again (its body or its ceiling had changed)";
+      return action.why === "joined" ? "Measured this node for the first time" : "Measured this node again (its body, its ceiling or the benchmark had changed)";
     case "adapt-compute":
       return "Re-derived his compute defaults";
   }

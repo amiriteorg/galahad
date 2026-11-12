@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type Calibration, bodyFingerprint, computeBody, deriveCapacity, REFERENCE_SINGLE } from "@galahad/core";
+import { type Calibration, bodyFingerprint, computeBody, deriveCapacity, KERNEL, REFERENCE_SINGLE } from "@galahad/core";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Candidate, place } from "../src/placement.ts";
 
@@ -31,7 +31,7 @@ function node(name: string, c: Capabilities, measured: { delivered: number; spee
   const body = computeBody(c)!;
   const threads = Math.floor(c.cores / 2);
   const single = REFERENCE_SINGLE * (measured?.speed ?? 1);
-  const calibration: Calibration | null = measured ? { at: 1, tookMs: 1, reason: "joined", body: bodyFingerprint(body, null), cpu: { single, multi: single * measured.delivered, threads } } : null;
+  const calibration: Calibration | null = measured ? { at: 1, tookMs: 1, reason: "joined", body: bodyFingerprint(body, null), cpu: { single, multi: single * measured.delivered, threads, kernel: KERNEL } } : null;
   return { device: `n_${name}`, name, caps: c, online: true, self: false, presence: null, compute: { capacity: deriveCapacity(body, calibration, null), free: room?.free ?? null, queued: room?.queued ?? 0 } };
 }
 

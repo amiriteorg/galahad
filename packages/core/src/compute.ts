@@ -39,10 +39,24 @@ export const WORTH_HIRING_TPS = 10;
 /** A GPU with at least this much memory could run a local model worth having. */
 export const LOCAL_MODEL_VRAM_GB = 8;
 /**
- * The calibration kernel's score on one thread of the reference machine (an i7-11700 core, 2021).
- * Strength is in "reference cores": a node of strength 12 does the work of twelve of them.
+ * The calibration kernel's version (packages/node/src/compute/bench.ts), and its score on one thread of the
+ * reference machine (an i7-11700 core, 2021). Strength is in "reference cores": a node of strength 12 does
+ * the work of twelve of them.
+ *
+ * A score means something only against the reference of the kernel that made it. So a calibration says which
+ * kernel measured it, one from another kernel is taken again (calibrationDue), and until it is, it's read
+ * against its own kernel's reference.
+ *
+ * Measured on that machine (Bun 1.4.4, the best of repeated runs while it was doing other work): good to
+ * about one part in ten, which is all that ranking machines against each other needs.
  */
-export const REFERENCE_SINGLE = 70_000;
+export const KERNEL = 2;
+export const REFERENCE_SINGLE = 62_000;
+/**
+ * Each kernel's reference. Kernel 1 took a remainder of doubles, which is a C library call: its score was the
+ * library's as much as the machine's (a Ryzen 9 9950X under Linux read 0.44× this i7-11700 under Windows).
+ */
+const REFERENCES: Readonly<Record<number, number>> = { 1: 70_000, [KERNEL]: REFERENCE_SINGLE };
 /** The ledger's resource for an extra attempt: the day's budget is counted from these entries. */
 export const ATTEMPT_RESOURCE = "compute.attempt";
 /** The ledger's resource for a calibration, and for anything he re-derived. */
@@ -67,7 +81,13 @@ export const Calibration = z.object({
   /** The body it measured (bodyFingerprint): when the body or the ceiling changes, it's taken again. */
   body: z.string().regex(/^[A-Za-z0-9_-]{16}$/),
   /** The kernel's score on one thread, and on `threads` at once (never more threads than his ceiling). */
-  cpu: z.object({ single: z.number().positive().max(1e9), multi: z.number().positive().max(1e12), threads: z.number().int().min(1).max(4096) }),
+  cpu: z.object({
+    single: z.number().positive().max(1e9),
+    multi: z.number().positive().max(1e12),
+    threads: z.number().int().min(1).max(4096),
+    /** Which kernel measured it (KERNEL then); absent: the first. */
+    kernel: z.number().int().min(1).max(1_000_000).optional(),
+  }),
   /** Memory copied, GB a second. */
   memoryGbps: z.number().min(0).max(1e5).optional(),
   /** A file in the node's home written and read back, MB a second. */
@@ -161,12 +181,14 @@ export function bodyFingerprint(body: ComputeBody, limit: ComputeLimit | null): 
 }
 
 /**
- * Whether a node should measure itself: it never has, its body or ceiling isn't what it measured, or
- * it measured on fewer threads than it may use (the machine was busy then).
+ * Whether a node should measure itself: it never has, its body or ceiling isn't what it measured, it
+ * measured with another benchmark kernel than this one, or it measured on fewer threads than it may use
+ * (the machine was busy then).
  */
 export function calibrationDue(body: ComputeBody, calibration: Calibration | null, limit: ComputeLimit | null): "joined" | "changed" | null {
   if (!calibration) return "joined";
   if (calibration.body !== bodyFingerprint(body, limit)) return "changed";
+  if ((calibration.cpu.kernel ?? 1) !== KERNEL) return "changed";
   return calibration.cpu.threads < ceilingThreads(body, limit) ? "changed" : null;
 }
 
@@ -211,9 +233,12 @@ export function deriveCapacity(body: ComputeBody, calibration: Calibration | nul
     // Measured on other threads than the ceiling's now (it changed since): the same share of fewer, never more than was measured.
     const counted = delivered * Math.min(1, threads / calibration.cpu.threads);
     cores = Math.max(1, Math.min(threads, Math.round(counted)));
-    strength = calibration.cpu.multi / REFERENCE_SINGLE;
-    speed = calibration.cpu.single / REFERENCE_SINGLE;
+    const reference = REFERENCES[calibration.cpu.kernel ?? 1];
+    // A kernel this node doesn't know: what it did at once still counts, as that many reference cores until a node that knows it says.
+    strength = reference ? calibration.cpu.multi / reference : delivered;
+    speed = reference ? calibration.cpu.single / reference : null;
     reasons.push(`Measured: ${plural(calibration.cpu.threads, "thread")} did ${fixed1(delivered)} cores' worth of work at once, so he counts ${cores}.`);
+    if (!reference) reasons.push("Measured with a newer benchmark than this node knows: how fast one of its threads is against the reference isn't known here.");
     if (calibration.cpu.threads !== threads) reasons.push(`That was measured on ${plural(calibration.cpu.threads, "thread")}; he measures again for ${threads}.`);
   } else {
     cores = Math.max(1, Math.min(threads, SLOT_CPUS));
@@ -566,7 +591,7 @@ export interface ComputeNodeView {
   /** null: no capability profile yet. */
   body: ComputeBody | null;
   calibration: Calibration | null;
-  /** It should measure itself (it never has, or its body or ceiling changed). */
+  /** It should measure itself (it never has, or its body, its ceiling or the benchmark changed). */
   due: "joined" | "changed" | null;
   /** The owner's ceiling (null: the defaults). */
   limit: ComputeLimit | null;

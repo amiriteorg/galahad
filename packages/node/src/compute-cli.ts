@@ -58,7 +58,7 @@ export function limitLine(limit: ComputeLimit | null): string {
 const bar = (used: number, of: number): string => (of > 0 && of <= 24 ? `${"█".repeat(Math.min(used, of))}${"░".repeat(Math.max(0, of - used))} ` : "");
 
 function nodeLines(n: ComputeNodeView, now: number): string[] {
-  const lines = [`${bold(n.name)} ${dim(`${n.self ? "this node" : n.online ? "online" : "offline"}${n.due ? ` · due to measure itself (${n.due === "joined" ? "it never has" : "its body or ceiling changed"})` : ""}`)}`];
+  const lines = [`${bold(n.name)} ${dim(`${n.self ? "this node" : n.online ? "online" : "offline"}${n.due ? ` · due to measure itself (${n.due === "joined" ? "it never has" : "its body, its ceiling or the benchmark changed"})` : ""}`)}`];
   if (!n.body || !n.capacity) return [...lines, dim("  no capability profile yet")];
   lines.push(`  measured  ${n.calibration ? `${measuredLine(n.calibration, n.capacity)} ${dim(`· ${ago(n.calibration.at, now)}`)}` : dim(`not yet: galahad compute calibrate ${n.name}`)}`);
   lines.push(`  ceiling   ${n.capacity.cores} of ${n.body.cores} threads and ${n.capacity.memoryGb} of ${Math.round(n.body.memoryGb)} GB are his to use ${dim(`· ${limitLine(n.limit)}`)}`);

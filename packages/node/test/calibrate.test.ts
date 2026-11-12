@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, Calibration, type ComputeBody, deriveCapacity } from "@galahad/core";
-import type { BenchOptions, BenchResult } from "../src/compute/bench.ts";
+import { bodyFingerprint, Calibration, calibrationDue, type ComputeBody, deriveCapacity, KERNEL } from "@galahad/core";
+import { type BenchOptions, type BenchResult, kernelDigest } from "../src/compute/bench.ts";
 import { calibrate, spawnBench } from "../src/compute/calibrate.ts";
 
 /*
@@ -42,7 +42,9 @@ describe("a calibration", () => {
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ threads: 16, dir: "/home/galahad/.galahad" });
     expect(Calibration.parse(c)).toEqual(c);
-    expect(c).toMatchObject({ reason: "joined", cpu: { single: 70_000, threads: 16 }, memoryGbps: 9.5, disk: { writeMbps: 1200 }, body: bodyFingerprint(ultra, null) });
+    expect(c).toMatchObject({ reason: "joined", cpu: { single: 70_000, threads: 16, kernel: KERNEL }, memoryGbps: 9.5, disk: { writeMbps: 1200 }, body: bodyFingerprint(ultra, null) });
+    // It says which kernel measured it, so it isn't taken again until the body, the ceiling or the kernel changes.
+    expect(calibrationDue(ultra, c, null)).toBeNull();
     expect(c.tookMs).toBeGreaterThan(0);
     expect(deriveCapacity(ultra, c, null)).toMatchObject({ cores: 15, sandboxes: 3, measured: true });
   });
@@ -94,6 +96,14 @@ describe("a calibration", () => {
 });
 
 describe("the benchmark itself", () => {
+  test("its kernel is the one the reference was measured with, and computes the same on every machine", () => {
+    // The kernel uses only operations that are exact everywhere (no library call), so its state after a fixed
+    // number of blocks is one value on every machine and OS. If this changes, the kernel changed: raise KERNEL
+    // and measure REFERENCE_SINGLE again on the reference machine (packages/core/src/compute.ts), then set both here.
+    expect({ kernel: KERNEL, digest: kernelDigest() }).toEqual({ kernel: 2, digest: "c3e7c819" });
+    expect(kernelDigest()).toBe(kernelDigest());
+    expect(kernelDigest(8)).not.toBe(kernelDigest(9));
+  });
   test("runs as its own short process, on the threads asked for, and leaves nothing behind", async () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-bench-"));
     try {
