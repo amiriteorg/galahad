@@ -19,6 +19,8 @@ import { archiveCommand } from "./archive-cli.ts";
 import { dogCommand, journalCommand } from "./journal-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
+import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
+import { chatStateWords } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
@@ -60,8 +62,22 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
   roster | roster set <role> <provider/model>...
-  ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] <prompt>
-                                  kept in your chat history (the app's too) unless --temp; --chat goes on with one
+  ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] [--detach] <prompt>
+                                  kept in your chat history (the app's too) unless --temp; --chat goes on with one.
+                                  The turn runs on the node: Ctrl-C stops it; a terminal that goes away stops
+                                  nothing; --detach starts it and leaves him to it (the answer is in the chat)
+  ask --chat <id> --steer <msg>   he's working in that chat: tell him now (it reaches him at his next safe point)
+  ask --chat <id> --queue <msg>   … or keep it on the node, to send as the next turn when he's done
+  ask --chat <id> --aside <question> [--bring]
+                                  a side question about that chat: answered apart, without his tools, added to
+                                  nothing; --bring hands it to him after all
+  turns | turn watch <turn|chat> | turn stop <turn|chat>
+                                  the turns he's working on now (what each has cost, who's watching, when it
+                                  stops by itself); watch one from its start; stop one
+  queue <chat> [add "<msg>" | edit <n> "<msg>" | rm <n|all> | send <n> | resume]
+                                  your messages queued behind a chat; after a stop, a failure or a restart
+                                  they're held until you resume
+  quests [--all]                  the quests in hand on this node: plan, the step he's on, each gate's last result
   chats [--project id] | chat <id> | chat rm <id>
   world [--follow] | world --logs   what Galahad is doing in the SANDBOX (his heartbeat, the agents with him);
                                   how it ran on your devices
@@ -396,6 +412,12 @@ async function main(): Promise<void> {
       // Quests: gates ("done means this command passes").
       gate: { type: "string", multiple: true },
       "no-planner-gates": { type: "boolean" },
+      // Turns the node owns: what `ask` does while he's working in a chat, and leaving him to it.
+      steer: { type: "boolean" },
+      queue: { type: "boolean" },
+      aside: { type: "boolean" },
+      bring: { type: "boolean" },
+      detach: { type: "boolean" },
       // Compute: effort and ceilings.
       effort: { type: "string" },
       cores: { type: "string" },
@@ -783,28 +805,36 @@ Next:
 
     case "ask": {
       const text = [sub, ...rest].filter(Boolean).join(" ");
-      if (!text) fail("usage: galahad ask [--chat <id>] [--project <id>] [--temp] <prompt>");
-      // Kept in your history like the app's chats, unless --temp; --chat goes on with one.
-      const continued = str("chat");
-      for await (const event of new Admin(home).stream("chat", {
+      if (!text) fail("usage: galahad ask [--chat <id> [--steer | --queue | --aside [--bring]]] [--project <id>] [--temp] [--detach] <prompt>");
+      // The turn runs on the node (turn-cli.ts): this terminal watches it, Ctrl-C stops it, --detach leaves him to it.
+      const code = await askCommand(new Admin(home), text, {
         role: str("role"),
         model: str("model"),
-        messages: [{ role: "user", content: text }],
-        ...(continued ? { conversation: continued } : flags.temp ? {} : { save: true }),
-        ...(str("project") && !continued ? { project: str("project") } : {}),
-      })) {
-        if (event.type === "conversation") process.stderr.write(dim(`[chat ${event.id}${event.project ? ` · project ${event.project}` : ""}]\n`));
-        else if (event.type === "text") process.stdout.write(event.text);
-        else if (event.type === "model") process.stderr.write(dim(`[${event.ref}]\n`));
-        else if (event.type === "archive") process.stderr.write(dim(`[from the archive: ${event.entries.map((e) => `${e.id} ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
-        else if (event.type === "tool") process.stderr.write(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
-        else if (event.type === "tool_result") process.stderr.write(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
-        else if (event.type === "fallback") process.stderr.write(dim(`[skipped ${event.from}: ${event.error}]\n`));
-        else if (event.type === "error") fail(event.error);
-      }
-      process.stdout.write("\n");
+        chat: str("chat"),
+        project: str("project"),
+        temp: Boolean(flags.temp),
+        steer: Boolean(flags.steer),
+        queue: Boolean(flags.queue),
+        aside: Boolean(flags.aside),
+        bring: Boolean(flags.bring),
+        detach: Boolean(flags.detach),
+      });
+      if (code) process.exit(code);
       return;
     }
+
+    case "turns":
+    case "turn":
+      await turnsCommand(new Admin(home), command === "turns" ? undefined : sub, rest);
+      return;
+
+    case "queue":
+      await queueCommand(new Admin(home), sub, rest[0], rest.slice(1));
+      return;
+
+    case "quests":
+      await questsCommand(new Admin(home), Boolean(flags.all));
+      return;
 
     case "world": {
       if (flags.logs) {
@@ -985,7 +1015,9 @@ Next:
       const shown = conversations.filter((c) => !str("project") || c.project === str("project"));
       if (!shown.length) console.log(str("project") ? `No chats in ${str("project")}.` : "No chats yet. `galahad ask …` starts one.");
       for (const c of shown) {
-        console.log(`${c.pinned ? "★ " : "  "}${c.title}  ${dim(`${c.id} · ${c.count} messages · ${new Date(c.updatedAt).toLocaleString()}${c.project ? ` · ${c.project}` : ""}${c.bank ? " · bank" : ""}`)}`);
+        // Where each stands, at a glance: working, needs you, queued, stopped, failed (nothing to say when it's done).
+        const state = chatStateWords(c);
+        console.log(`${c.pinned ? "★ " : "  "}${c.title}  ${state ? `${bold(state)}  ` : ""}${dim(`${c.id} · ${c.count} messages · ${new Date(c.updatedAt).toLocaleString()}${c.project ? ` · ${c.project}` : ""}${c.bank ? " · bank" : ""}`)}`);
       }
       return;
     }
@@ -1010,6 +1042,9 @@ Next:
           console.log(dim(`  ${[m.model, tools.length ? `tools: ${tools.join(", ")}` : null].filter(Boolean).join(" · ")}\n`));
         }
       }
+      // What he's doing in it now, and what you queued behind it.
+      if (conversation.turn) console.log(`${bold("He's working on it now:")} ${turnLine(conversation.turn, Date.now())}\n${dim(`  galahad turn watch ${conversation.turn.id} · galahad turn stop ${conversation.turn.id} · galahad ask --chat ${conversation.id} --steer|--queue "…"`)}\n`);
+      if (conversation.queue.length) console.log(`${queueLines(conversation.queue, conversation.held).join("\n")}\n${dim(`  galahad queue ${conversation.id} [resume | rm <n|all> | send <n>]`)}\n`);
       console.log(dim(`Go on with: galahad ask --chat ${conversation.id} "…"`));
       return;
     }

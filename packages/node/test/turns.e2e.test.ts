@@ -8,6 +8,8 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { LocalClient } from "../src/loop-tasks.ts";
+import { askCommand, type Io, queueCommand, turnsCommand } from "../src/turn-cli.ts";
 
 /*
  * Turns the node owns, end to end: a real daemon over real HTTP, with a stand-in model
@@ -737,6 +739,139 @@ describe("a side question", () => {
     b.go();
     pace.go();
     await Promise.all([one.done, two.done, bank.done]);
+  });
+});
+
+describe("from a terminal (galahad ask, turns, queue)", () => {
+  const cli = () => new LocalClient(`http://127.0.0.1:${port}`, home.adminToken());
+  /** What the command printed, and a Ctrl-C the test can press. */
+  function terminal() {
+    const out: string[] = [];
+    const err: string[] = [];
+    let press: () => void = () => {};
+    const io: Io = { out: (text) => void out.push(text), err: (text) => void err.push(text), tty: false };
+    const onInterrupt = (stop: () => void) => {
+      press = stop;
+      return () => {};
+    };
+    return { io, onInterrupt, out: () => out.join(""), err: () => err.join(""), ctrlC: () => press() };
+  }
+
+  test("ask watches a turn the node owns: his words, which turn it is, and that it outlives the terminal", async () => {
+    script = [say("Dry and cold.")];
+    const t = terminal();
+    expect(await askCommand(cli(), "How's the weather?", {}, t.io, t.onInterrupt)).toBe(0);
+    expect(t.out()).toBe("Dry and cold.\n");
+    expect(t.err()).toMatch(/\[turn tn_[A-Za-z0-9_-]{22} · he goes on working if this terminal goes away; Ctrl-C stops him\]/);
+    expect(t.err()).toMatch(/\[chat cv_/);
+  });
+
+  test("Ctrl-C is the terminal's Stop, said to the node: the answer so far is kept as stopped", async () => {
+    const pace = paced("Chapter one. ", "never");
+    script = [pace.reply];
+    const t = terminal();
+    const asking = askCommand(cli(), "A long report, please.", {}, t.io, t.onInterrupt);
+    await until(() => t.out().includes("Chapter one."));
+    t.ctrlC();
+    expect(await asking).toBe(130);
+    expect(t.err()).toContain("[stopped by you]");
+    const id = /\[chat (cv_[A-Za-z0-9_-]{22})/.exec(t.err())![1]!;
+    expect((await chatOf(id)).messages[1]).toMatchObject({ content: "Chapter one. ", status: "stopped" });
+    pace.go();
+  });
+
+  test("--detach starts it and leaves; he works on, and the answer is in the chat", async () => {
+    const pace = paced("Working ", "alone.");
+    script = [pace.reply];
+    const t = terminal();
+    expect(await askCommand(cli(), "Do this while I'm away.", { detach: true }, t.io, t.onInterrupt)).toBe(0);
+    expect(t.out()).toBe("");
+    const [, turn, id] = /(tn_[A-Za-z0-9_-]{22}) in chat (cv_[A-Za-z0-9_-]{22})/.exec(t.err())!;
+    expect(t.err()).toContain(`galahad turn watch ${turn}`);
+    await until(async () => (await listed()).turns.some((x) => x.id === turn && x.watchers === 0));
+    // From another terminal: what he's on, then watching it to its end.
+    const list = terminal();
+    await turnsCommand(cli(), undefined, [], list.io);
+    expect(list.out()).toContain(`● ${turn} · Do this while I'm away. (${id}) · planner`);
+    expect(list.out()).toContain("nobody watching");
+    expect(list.out()).toContain("At most 3 turns at once on this node, 30 minutes each");
+    const watching = terminal();
+    const watched = turnsCommand(cli(), "watch", [id!], watching.io);
+    await until(() => watching.out().includes("Working"));
+    pace.go();
+    expect(await watched).toBe(0);
+    expect(watching.out()).toBe("Working alone.\n");
+    expect((await chatOf(id!)).messages[1]).toMatchObject({ content: "Working alone.", status: "done" });
+  });
+
+  test("while he works in a chat: a plain ask says what you can do; --queue keeps it; --steer tells him now and follows to the end", async () => {
+    const pace = paced("On the first thing", " (never said)");
+    script = [pace.reply, say("The second thing instead."), say("And the queued one.")];
+    const started = terminal();
+    await askCommand(cli(), "Do the first thing.", { detach: true }, started.io, started.onInterrupt);
+    const id = /in chat (cv_[A-Za-z0-9_-]{22})/.exec(started.err())![1]!;
+    await until(async () => (await chatOf(id)).turn?.step === "Answering");
+
+    await expect(askCommand(cli(), "And another.", { chat: id }, terminal().io)).rejects.toThrow(/still working in this chat\. Steer him .* queue it .* or stop him first/);
+    await expect(askCommand(cli(), "x", { steer: true }, terminal().io)).rejects.toThrow(/go with --chat/);
+    await expect(askCommand(cli(), "x", { chat: id, steer: true, queue: true }, terminal().io)).rejects.toThrow(/one of --steer, --queue or --aside/);
+
+    const queued = terminal();
+    expect(await askCommand(cli(), "Then the queued thing.", { chat: id, queue: true }, queued.io)).toBe(0);
+    expect(queued.err()).toContain("1 queued: each is sent as the next turn when the one before it ends well.");
+    expect(queued.err()).toContain("1. Then the queued thing.  (from a terminal on keep)");
+    const shown = terminal();
+    await queueCommand(cli(), id, undefined, [], shown.io);
+    expect(shown.out()).toContain("1. Then the queued thing.");
+
+    const steered = terminal();
+    expect(await askCommand(cli(), "The second thing instead, please.", { chat: id, steer: true }, steered.io, steered.onInterrupt)).toBe(0);
+    expect(steered.err()).toContain("[told him: it reaches him at his next safe point");
+    expect(steered.err()).toContain("↳ your message reached him: The second thing instead, please.");
+    expect(steered.out()).toBe("On the first thingThe second thing instead.\n");
+    // The queued one went by itself once that turn ended.
+    await until(async () => (await chatOf(id)).messages.length === 6 && (await chatOf(id)).turn === null);
+    expect((await chatOf(id)).messages.map((m) => m.content)).toEqual(["Do the first thing.", "On the first thing", "The second thing instead, please.", "The second thing instead.", "Then the queued thing.", "And the queued one."]);
+    pace.go();
+  });
+
+  test("a queue held after a stop is shown as held, and resumed from the terminal", async () => {
+    const pace = paced("Starting", "…");
+    script = [pace.reply, say("Second, done.")];
+    const started = terminal();
+    await askCommand(cli(), "First.", { detach: true }, started.io, started.onInterrupt);
+    const id = /in chat (cv_[A-Za-z0-9_-]{22})/.exec(started.err())![1]!;
+    await askCommand(cli(), "Second.", { chat: id, queue: true }, terminal().io);
+    const stopped = terminal();
+    await turnsCommand(cli(), "stop", [id], stopped.io);
+    expect(stopped.out()).toContain("Stopped. What he'd said is kept; anything queued behind it is held until you resume.");
+    pace.go();
+    await until(async () => (await chatOf(id)).held === "stopped");
+    const held = terminal();
+    await queueCommand(cli(), id, undefined, [], held.io);
+    expect(held.out()).toContain("1 queued, held: you stopped him. Nothing is sent until you resume (or send one now).");
+    const all = terminal();
+    await turnsCommand(cli(), undefined, [], all.io);
+    expect(all.out()).toContain(`First. (${id}): 1 queued, held (you stopped him)`);
+    const resumed = terminal();
+    await queueCommand(cli(), id, "resume", [], resumed.io);
+    expect(resumed.out()).toMatch(/Resumed: he's on the next one \(tn_/);
+    await until(async () => (await chatOf(id)).turn === null && (await chatOf(id)).messages.length === 4);
+    expect((await chatOf(id)).messages.at(-1)!.content).toBe("Second, done.");
+    await expect(queueCommand(cli(), id, "rm", ["3"], terminal().io)).rejects.toThrow(/no message 3 in that queue/);
+  });
+
+  test("--aside asks on the side and adds nothing; --bring hands it to him", async () => {
+    script = [say("Dry and cold."), say("In Copenhagen.")];
+    const first = terminal();
+    await askCommand(cli(), "The weather?", {}, first.io, first.onInterrupt);
+    const id = /\[chat (cv_[A-Za-z0-9_-]{22})/.exec(first.err())![1]!;
+    const aside = terminal();
+    expect(await askCommand(cli(), "Where?", { chat: id, aside: true, bring: true }, aside.io)).toBe(0);
+    expect(aside.out()).toBe("In Copenhagen.\n");
+    expect(aside.err()).toContain("a side question · stand-in/m · no tools, added to nothing");
+    expect(aside.err()).toContain("[brought back: it's in the chat now]");
+    expect((await chatOf(id)).messages.map((m) => m.content)).toEqual(["The weather?", "Dry and cold.", "Where?", "In Copenhagen."]);
   });
 });
 
