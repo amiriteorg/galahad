@@ -283,4 +283,34 @@ describe("the stations, made finer, keep what stands on them", () => {
     for (const x of [0.65, 1.2, 1.75]) expect(topAt("forge", x, 2.0)).toBeCloseTo(LAB_BENCH_TOP, 3);
     keep.dispose();
   });
+
+  test("the watchtower's ladder has rails: its rungs don't hang in the air between its legs", () => {
+    const keep = new Keep(false, 0);
+    const solids = keep.group.children.filter((o): o is Mesh => o instanceof Mesh);
+    const ray = new Raycaster();
+    // Looking at the ladder from in front (the tower's own frame), at each rung's end and between two rungs: wood, all the way up.
+    for (const x of [-0.36, 0.36]) {
+      for (const y of [0.75, 2.05, 3.4, 4.7, 6.0]) {
+        ray.set(new Vector3(x, y, 3).applyMatrix4(stationMatrix("watchtower")), new Vector3(0, 0, -1).transformDirection(stationMatrix("watchtower")));
+        const hit = ray.intersectObjects(solids, false)[0];
+        expect([x, y, hit ? hit.distance < 1.5 : false]).toEqual([x, y, true]);
+      }
+    }
+    keep.dispose();
+  });
+
+  test("the library's roof has an underside: from where he reads, looking up, the deck is overhead (no sky between the shingles)", () => {
+    const keep = new Keep(false, 0);
+    const solids = keep.group.children.filter((o): o is Mesh => o instanceof Mesh);
+    const ray = new Raycaster();
+    // From his eye height inside the nook (the library's own frame), up towards each slope and along the ridge.
+    for (const [x, z] of [[0, 0.4], [-1.6, -1.2], [1.2, 1.2], [-2, 1.4], [1.9, -1.5], [0.3, -0.6]] as const) {
+      ray.set(new Vector3(x, 2.3, z).applyMatrix4(stationMatrix("library")), new Vector3(0, 1, 0));
+      // (A raycaster meets only the faces turned towards it, as the renderer draws only those.)
+      const hit = ray.intersectObjects(solids, false)[0];
+      expect([x, z, hit ? hit.distance < 2.4 : false]).toEqual([x, z, true]);
+      expect(hit!.face!.normal.y).toBeLessThan(0);
+    }
+    keep.dispose();
+  });
 });

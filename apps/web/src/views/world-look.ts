@@ -63,7 +63,7 @@ export function createLook(options: { model: () => WorldModel; life?: () => stri
     { class: "world-look-card card", role: "dialog", "aria-label": "Go to", hidden: true },
     h("div", { class: "look-search" }, icon("search", { size: 14, class: "subtle" }), input),
     list,
-    h("div", { class: "look-foot" }, foot, h("span", { class: "tiny subtle" }, "L opens · F follows · M map")),
+    h("div", { class: "look-foot" }, foot, h("span", { class: "tiny subtle" }, "L opens · F follows · M map · V his eyes")),
   );
   const el = h("div", { class: "world-look" }, button, card);
 

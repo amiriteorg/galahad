@@ -9,6 +9,7 @@
     "./bytes": "./src/bytes.ts",
     "./companion": "./src/companion.ts",
     "./experiments": "./src/experiments.ts",
+    "./eyes": "./src/eyes.ts",
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",
     "./journal": "./src/journal.ts",

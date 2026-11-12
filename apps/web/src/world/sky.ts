@@ -557,6 +557,34 @@ export class SkyDome {
     this.bow.set(rainbowStrength(this.sunElevation, this.rain, this.rainPast, this.cover), this.sunDir.value);
   }
 
+  /**
+   * A second view of the same instant (his eyes): the dome centred on that camera and the heavens' strip
+   * opened to its view, at once. Returns the strip's top as the main view had it, for `unview` to put back
+   * with the dome, so the main view's own easing goes on undisturbed. Two uniforms and a position: no uploads.
+   */
+  view(camera: PerspectiveCamera): number {
+    const was = this.top.value;
+    this.group.position.copy(camera.position);
+    const viewTop = Math.asin(Math.max(-1, Math.min(1, camera.getWorldDirection(this.forward).y))) + (camera.fov * Math.PI) / 360;
+    const top = heavensTop(viewTop);
+    if (Math.abs(top - was) > 1e-5) {
+      this.top.value = top;
+      this.stars.open(top);
+      this.placeMoon();
+    }
+    return was;
+  }
+
+  /** After `view`: the main camera's dome and strip again. */
+  unview(camera: PerspectiveCamera, top: number): void {
+    this.group.position.copy(camera.position);
+    if (Math.abs(top - this.top.value) > 1e-5) {
+      this.top.value = top;
+      this.stars.open(top);
+      this.placeMoon();
+    }
+  }
+
   /** What the sky remembers of a shower just past, 0..1 (for the HUD's words). */
   get showerPast(): number {
     return this.rainPast;

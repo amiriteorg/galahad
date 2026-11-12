@@ -50,6 +50,7 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
   reflect: { label: "Journal", icon: "journal" },
+  review: { label: "World review", icon: "visor" },
 };
 
 /** His journal's daily budget (the reflect loop's), as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
@@ -76,6 +77,7 @@ export function describeTask(task: LoopTask | null): string {
     const gates = task.gates?.length ? ` Done means ${task.gates.length === 1 ? "this passes" : `these ${task.gates.length} pass`}: ${clip(task.gates.join(" · "), 160)}` : "";
     return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
   }
+  if (task.kind === "review") return "World review: he looks at the SANDBOX through his own eyes and suggests what to mend. Suggestions only, within its own daily budget.";
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
 }
@@ -264,7 +266,16 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   connectorSelect.addEventListener("change", () => syncTools());
   toolSelect.addEventListener("change", () => syncArgs());
 
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel };
+  const reviewPanel = h(
+    "div",
+    { class: "stack" },
+    h(
+      "p",
+      { class: "small muted" },
+      "He looks at his own world through his eyes (from where he is, and from his hearth, the lake bench, the council table, the forge and the north meadow) and a model that sees says what looks wrong, broken or unfinished. Each finding is kept as one of his ideas and becomes a suggestion in your Inbox; he changes nothing. A picture needs the SANDBOX open on one of your devices when it runs, and a role with a model that sees. Its daily budget is its own: the eyes panel in the SANDBOX shows it, and `galahad world review --budget` sets it.",
+    ),
+  );
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel, review: reviewPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -291,6 +302,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       if (!Number.isInteger(n) || n < REFLECT.min || n > REFLECT.max) return { problem: `A daily budget is a whole number of tokens from ${REFLECT.min} to ${REFLECT.max}.`, focus: budget };
       return { task: { kind: "reflect", ...(n !== REFLECT.budget ? { budget: n } : {}) } };
     }
+    if (kind === "review") return { task: { kind: "review" } };
     if (kind === "quest") {
       const text = goal.value.trim();
       if (!text) return { problem: "Give the quest a goal.", focus: goal };
@@ -375,6 +387,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     questPanel,
     callPanel,
     reflectPanel,
+    reviewPanel,
     status,
     h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
   );

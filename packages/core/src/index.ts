@@ -12,6 +12,8 @@ export * from "./life.ts";
 export * from "./world.ts";
 export * from "./world-input.ts";
 export * from "./experiments.ts";
+export * from "./eyes.ts";
+export * from "./eyes-input.ts";
 export * from "./bytes.ts";
 export * from "./canonical.ts";
 export * from "./connectors.ts";

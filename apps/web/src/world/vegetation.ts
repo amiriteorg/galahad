@@ -1,4 +1,4 @@
-import { cameraPosition, float, fract as fraction, length, positionGeometry, positionWorld, screenCoordinate, smoothstep } from "three/tsl";
+import { cameraPosition, float, fract as fraction, length, positionGeometry, positionWorld, renderGroup, screenCoordinate, smoothstep, uniform } from "three/tsl";
 import { type BufferGeometry, CircleGeometry, DoubleSide, FrontSide, type Group, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicNodeMaterial, MeshLambertNodeMaterial, Quaternion, Vector3 } from "three/webgpu";
 import { models, plantModel, together, treeTriangles } from "./flora-models.ts";
 import { DEADWOOD_SINK, deadwoodScale, rockHeight } from "./flora-plan.ts";
@@ -608,9 +608,18 @@ export class Vegetation {
   }
 }
 
+/**
+ * How far from the camera a crown or a bush starts to dissolve, as a share of the usual two and a half metres.
+ * The usual view rides on an arm over his shoulder, and a bush it brushes would fill it with green. His own eyes
+ * (eyes.ts) are where he is: a plant two metres off is something he sees, so for his view only what's at his very
+ * face goes (`EYE_REACH`). One number, set for each view as it's drawn.
+ */
+export const armsReach = uniform(1).setGroup(renderGroup);
+export const EYE_REACH = 0.25;
+
 /** False (discarded) for a share of the pixels of what's within two and a half metres of the camera, all of them within one: a fine, even dither. */
 function atArmsLength() {
-  const near = smoothstep(0.9, 2.6, length(positionWorld.sub(cameraPosition)));
+  const near = smoothstep(armsReach.mul(0.9), armsReach.mul(2.6), length(positionWorld.sub(cameraPosition)));
   const p = screenCoordinate.xy.floor();
   const threshold = fraction(fraction(p.x.mul(0.06711056).add(p.y.mul(0.00583715))).mul(52.9829189));
   return threshold.lessThan(near.mul(1.02));

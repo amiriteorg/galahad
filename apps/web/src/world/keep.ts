@@ -1,6 +1,6 @@
 import type { WorldNode } from "@galahad/core/world";
 import { STATIONS } from "@galahad/core/world";
-import { dot, float, fract, mix, smoothstep, uniform, vec3, vertexColor } from "three/tsl";
+import { dot, float, fract, mix, smoothstep, uniform, varying, vec3, vertexColor } from "three/tsl";
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -89,7 +89,9 @@ function gable(w: number, h: number, l: number): BufferGeometry {
   const D = [x0, 0, z1];
   const R1 = [x0, h, 0];
   const R2 = [x1, h, 0];
-  const tris = [D, Cc, R2, D, R2, R1, B, A, R1, B, R1, R2, Cc, B, R2, A, D, R1];
+  // The two slopes and the gable ends from outside; and the slopes again from inside, so the roof has an
+  // underside: standing under it (as he does at the library), the deck is overhead, not the sky between the shingles.
+  const tris = [D, Cc, R2, D, R2, R1, B, A, R1, B, R1, R2, Cc, B, R2, A, D, R1, R2, Cc, D, R1, R2, D, R1, A, B, R2, R1, B];
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(new Float32Array(tris.flat()), 3));
   return g;
@@ -547,7 +549,8 @@ function buildStations(p: Parts): void {
     // A desk under the screens.
     add(new BoxGeometry(2.4, 0.08, 0.5), C.wood, at(-0.35, 0.95, 1.5));
     for (const x of [-1.45, 0.75]) add(new BoxGeometry(0.07, 0.9, 0.45), C.grey, at(x, 0.47, 1.5), 0);
-    p.cool.push([...scenePoint(m, -0.9, 1.95, 1.5), 0.9], [...scenePoint(m, 0.25, 1.95, 1.5), 0.9]);
+    // (Each screen's glow on its own face: a hand's breadth before it, so it's on the screen from a metre off too.)
+    p.cool.push([...scenePoint(m, -0.9, 1.95, 1.34), 0.9], [...scenePoint(m, 0.25, 1.95, 1.34), 0.9]);
     // The 3D printer: a cream frame with its glowing build window.
     // (On a shelf above the workbench's back edge, so the arms have the bench to themselves.)
     add(new BoxGeometry(0.9, 0.06, 0.55), C.grey, at(1.35, 1.1, 1.5), 0);
@@ -611,6 +614,8 @@ function buildStations(p: Parts): void {
     add(new ConeGeometry(0.4, 1.1, 3), C.orange, at(-1.9 + 0.55, H + 3.7, 1.9, 0, [1, 1, 0.08], 0, -Math.PI / 2), 0);
     add(new CylinderGeometry(0.1, 0.13, 0.8, 8), C.cream, at(-0.6, H + 0.9, 0.6, 0.6, 1, -0.9), 0.02);
     for (let i = 0; i < 10; i++) add(new BoxGeometry(0.7, 0.05, 0.07), C.wood, at(0, 0.4 + i * 0.66, 1.62), 0);
+    // (The ladder's two rails, from the ground to the platform: without them its rungs hung in the air, as he saw from below.)
+    for (const x of [-0.36, 0.36]) add(new BoxGeometry(0.07, H, 0.07), C.woodDark, at(x, H / 2, 1.62), 0.02);
     lit.add(new IcosahedronGeometry(0.12, 0), 0xff9a4a, within(m, at(0.9, H + 7.35, -0.9)), 0);
     p.warm.push([...scenePoint(m, 0.9, H + 7.35, -0.9), 0.9]);
     const [lx, ly, lz] = scenePoint(m, 1.4, H + 1.9, 1.4);
@@ -763,7 +768,11 @@ export class Keep {
     // in spring it's thin and fresh until it fills. Each facet is its own leaf-mass: its own shade (the mesher
     // varies every face a little) is what orders it.
     const leaf = vertexColor().rgb;
-    const each = fract(leaf.r.mul(91.7).add(leaf.g.mul(37.3)).add(leaf.b.mul(57.1)).mul(13.7));
+    // (One number a facet: its shade taken flat, from one corner. A facet low to the ground, as a potted plant's
+    // is, has its baked shade deepening across it; read smoothly, every pixel of it was its own leaf-mass with
+    // its own season, and the plant was a speckle of holes and rust in autumn.)
+    const facet = (varying(vertexColor().rgb) as unknown as { setInterpolation(type: string): typeof leaf }).setInterpolation("flat");
+    const each = fract(facet.r.mul(91.7).add(facet.g.mul(37.3)).add(facet.b.mul(57.1)).mul(13.7));
     const turned = smoothstep(each.mul(0.6), each.mul(0.6).add(0.4), this.crownTurn);
     // (The baked shade under the crown stays: the autumn colour takes the facet's own lightness.)
     const light = dot(leaf, vec3(0.3, 0.6, 0.1)).div(0.45).clamp(0.4, 1.3);

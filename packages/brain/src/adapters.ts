@@ -11,6 +11,8 @@ export interface CompletionInput {
   effort: Effort;
   signal?: AbortSignal;
   fetch?: typeof fetch;
+  /** Pictures that go with the last user message, for a model that sees (a review of his world through his eyes): data, never instructions. */
+  images?: ToolImage[];
 }
 
 export class RefusalError extends Error {}
@@ -33,11 +35,11 @@ export interface ToolCall {
 }
 
 /**
- * A picture a tool hands back (the chalkboard as the owner sees it): a PNG, and
- * what to say instead to a model that can't see it.
+ * A picture a tool hands back (the chalkboard as the owner sees it, a frame from
+ * his eyes), and what to say instead to a model that can't see it.
  */
 export interface ToolImage {
-  mediaType: "image/png";
+  mediaType: "image/png" | "image/jpeg" | "image/webp";
   /** Base64. */
   data: string;
   alt: string;
@@ -117,6 +119,11 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   const client = new Anthropic({ apiKey: input.provider.apiKey ?? "", baseURL: input.provider.baseUrl, maxRetries: 2, fetch: withoutRedirects(input.fetch) });
   const serverFallback = input.provider.baseUrl === "https://api.anthropic.com" && SERVER_FALLBACK_MODELS.has(input.model);
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
+  // Pictures given with the question lead the last user message.
+  const asked = messages.findLast((m) => m.role === "user");
+  if (input.images?.length && asked && typeof asked.content === "string") {
+    asked.content = [...input.images.map((i) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.mediaType, data: i.data } })), { type: "text" as const, text: asked.content }];
+  }
   let last: Anthropic.Beta.BetaContentBlockParam[] = [];
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
   let finalPending = false;
@@ -219,6 +226,13 @@ const READ_DELTA = new Set(["role", "content", "reasoning_content", "tool_calls"
 export function openAIConversation(input: CompletionInput): Conversation {
   const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
   const vision = seesImages(input.provider, input.model);
+  // Pictures given with the question go with the last user message, to a model that sees; else in words.
+  const asked = messages.findLast((m) => m.role === "user");
+  if (input.images?.length && asked && typeof asked.content === "string") {
+    asked.content = vision
+      ? [{ type: "text", text: asked.content }, ...input.images.map((i) => ({ type: "image_url" as const, image_url: { url: `data:${i.mediaType};base64,${i.data}` } }))]
+      : withoutImages(asked.content, input.images);
+  }
   let last = "";
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
   let finalPending = false;

@@ -27,6 +27,7 @@ import { toast } from "../ui/toast.ts";
 import { HIS_PLACES, type LookTarget, lookingAt, runningCount } from "../lib/look.ts";
 import { createWorldChat } from "./world-chat.ts";
 import { createLook } from "./world-look.ts";
+import { createEyes } from "./world-eyes.ts";
 import { boardFeed, fetchBoard, openBoardSheet } from "./board.ts";
 import { busyPlot, decodeRecording, frameAt, posesAt, type Recording, ReplayClock, replayView, ReplayWorld } from "../lib/replay.ts";
 import { examinationView, type ReplayPanel, replayPanel } from "./world-replay.ts";
@@ -51,7 +52,7 @@ import type { WorldWhere } from "../world/scene.ts";
 
 const WORLD_MODULE = "/world.js";
 /** The bundle this page speaks to (bumped together with world.ts's WORLD_API). */
-const WORLD_API = 12;
+const WORLD_API = 13;
 
 type WorldModule = typeof import("../world.ts");
 type Handle = Awaited<ReturnType<WorldModule["mountWorld"]>>;
@@ -164,7 +165,7 @@ export const worldView: View = (root, ctx, { scope }) => {
 
   // ---------- layout ----------
   const statusBadge = h("span", {});
-  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. C talks to Galahad, L picks what to look at, F follows Galahad, M shows the map, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
+  const stage = h("div", { class: "world-stage", role: "region", "aria-label": "The SANDBOX: a 3D view. C talks to Galahad, L picks what to look at, F follows Galahad, M shows the map, V shows what he sees through his own eyes and B swaps it with this view, arrow keys pan, plus and minus zoom, Q and E turn.", tabindex: 0 });
   const loading = h("div", { class: "world-loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", {}, "Opening the world…"));
   const fallback = h("div", { class: "world-fallback", hidden: true });
   const banner = h("div", { class: "world-banner", hidden: true });
@@ -212,6 +213,9 @@ export const worldView: View = (root, ctx, { scope }) => {
   let mapOn = storedMap();
   const mapCanvas = h("canvas", { class: "world-map", "aria-hidden": "true", hidden: !mapOn }) as HTMLCanvasElement;
   const mapButton = button("Map", { iconOnly: true, icon: "landscape", size: "sm", onClick: () => setMap(!mapOn) });
+  // His eyes (world-eyes.ts): what he sees from his own visor, in a panel under the map; swapped, it's the main view.
+  const eyesPanel = createEyes({ api: ctx.api, mayReview: ctx.can("brain:write"), stage, onSwap: (on) => on && lookAt({ kind: "galahad" }) });
+  scope.add(() => eyesPanel.dispose());
   const panel = h("div", { class: "world-panel card", hidden: true });
   // Talking to Galahad here: the same conversation as the Chat page; asking follows him, so you see him go to work.
   const chat = ctx.can("chat") ? createWorldChat({ api: ctx.api, onAsk: () => lookAt({ kind: "galahad" }), openChat: () => ctx.navigate("chat") }) : null;
@@ -230,13 +234,13 @@ export const worldView: View = (root, ctx, { scope }) => {
     h(
       "div",
       { class: "world-top" },
-      h("div", { class: "world-left" }, banner, mapCanvas),
-      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, skyWrap)),
+      h("div", { class: "world-left" }, banner, mapCanvas, eyesPanel.el),
+      h("div", { class: "world-right" }, h("div", { class: "world-tools" }, look.el, followButton, mapButton, eyesPanel.button, skyWrap)),
     ),
     h("div", { class: "world-bottom" }, panel, chat?.el ?? null, h("div", { class: "world-corner" }, controls)),
   );
   const summary = h("div", { class: "sr-only", "aria-live": "polite" });
-  stage.append(loading, fallback, hud);
+  stage.append(loading, fallback, eyesPanel.lids, hud);
   replace(
     root,
     h(
@@ -568,6 +572,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   }
 
   function apply(event: WorldEvent): void {
+    // The node asks for a frame from his eyes (the `look` tool, his review): this page renders one and posts it back.
+    if (event.type === "eyes") return eyesPanel.answer(event.request);
     const next = applyWorldEvent(model, event);
     if (next === model) return;
     model = next;
@@ -888,6 +894,9 @@ export const worldView: View = (root, ctx, { scope }) => {
       // Talk to him: the composer at the foot of the world.
       c: () => chat?.focus(),
       m: () => setMap(!mapOn),
+      // His eyes: the panel, and swapping it with the main view.
+      v: () => eyesPanel.toggle(),
+      b: () => eyesPanel.swap(),
       // (Only while the sky's choices are open: Escape belongs to whatever else is.)
       ...(skyOpen ? { Escape: () => setSky(false) } : {}),
     };
@@ -952,6 +961,7 @@ export const worldView: View = (root, ctx, { scope }) => {
         return;
       }
       handle = mounted;
+      eyesPanel.mount(mounted);
       loading.remove();
       const s = mounted.stats();
       note("start", `${s.backend} · ${s.tier} · dpr ${s.dpr}${restarts ? ` (restart ${restarts})` : ""}`);
@@ -978,6 +988,7 @@ export const worldView: View = (root, ctx, { scope }) => {
     note("lost", `${reason} (${was?.backend ?? "?"} · ${was?.tier ?? "?"})`);
     handle?.dispose();
     handle = null;
+    eyesPanel.mount(null);
     if (scope.disposed) return;
     if (restarts >= MAX_RESTARTS) {
       showFallback(`The graphics device stopped (${reason}). Here is what's happening, in words.`);
@@ -1031,7 +1042,8 @@ export const worldView: View = (root, ctx, { scope }) => {
   const moduleReady = start();
   showStatus();
   void followWorld({
-    open: (signal) => ctx.api.stream("/api/world", signal),
+    // (`eyes=1`: this page draws the world, so the node may ask it for a frame from his eyes.)
+    open: (signal) => ctx.api.stream("/api/world?eyes=1", signal),
     signal: scope.signal,
     unavailable: isUnavailable,
     onStatus: (next) => {

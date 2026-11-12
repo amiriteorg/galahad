@@ -15,7 +15,7 @@ import { BUILDS, Solids } from "./collide.ts";
 import { headingToSceneYaw, onPlot, type Vec3 } from "./coords.ts";
 import { applyWeather, emptyHeavens, emptySky, heavensAt, skyFor, TIME_PRESETS, type TimePreset } from "./daynight.ts";
 import { ColliderLines, wantsColliders } from "./debug-colliders.ts";
-import { type LabelBox, layoutLabels } from "./labels.ts";
+import { before, type LabelBox, layoutLabels } from "./labels.ts";
 import { RobotDog } from "./dog.ts";
 import { Critters } from "./critters.ts";
 import { Fauna } from "./fauna.ts";
@@ -28,7 +28,7 @@ import { Workshop } from "./hall.ts";
 import { Hearth } from "./hearth.ts";
 import { HelperFigures } from "./helpers.ts";
 import { FIRE } from "./hearth-plan.ts";
-import type { SeasonChoice } from "./season.ts";
+import { type SeasonChoice, seasonState } from "./season.ts";
 import { HALL, inHall } from "./hall-plan.ts";
 import { forgeAnvil, Keep, stationLabelPoint } from "./keep.ts";
 import { BEACON_COLLIDERS, fleetColliders, KEEP_COLLIDERS } from "./keep-plan.ts";
@@ -53,10 +53,14 @@ import { skyNow } from "./sky/clock.ts";
 import { skyWords } from "./sky/words.ts";
 import { BASE_FLATS, KEEP_RADIUS, plotFlat, SEED, WATER_LEVEL } from "./terrain.ts";
 import { chooseTier, type DeviceInfo, ResolutionGovernor, type Tier, TIERS, type TierName } from "./tiers.ts";
-import { Vegetation, wind } from "./vegetation.ts";
+import { armsReach, EYE_REACH, Vegetation, wind } from "./vegetation.ts";
 import type { WeatherTarget } from "./live-weather.ts";
 import { Weather, type WeatherKind } from "./weather.ts";
 import { weatherUniforms } from "./wet.ts";
+import { EYES_PLACE_LABEL, type EyesPlace, type SightEye, sightInWords } from "@galahad/core/eyes";
+import { AIR, SPECS } from "./eco/species.ts";
+import { EYE, Eyes } from "./eyes.ts";
+import { buildSight, EYE_HEIGHT, EYE_PLACES, type SightInput } from "./sight.ts";
 
 /*
  * The SANDBOX's renderer, on three.js's WebGPU renderer (its WebGL2 backend where
@@ -181,7 +185,41 @@ export interface WorldHandle {
   where(out: WorldWhere): WorldWhere;
   /** The chalkboard's state, for its face (drawn again only when this is called). */
   setBoard(board: BoardView | null): void;
+  /** His eyes (eyes.ts): a second view of the world from his own visor. */
+  eyes: {
+    /** Opens the panel in `container` (its canvas is put there), or closes it (null): closed, nothing is drawn for it. */
+    open(container: HTMLElement | null): void;
+    /** His view as the main one (full size), the usual view in the panel; and back. */
+    swap(on: boolean): void;
+    /** How far his eyes are shut (0..1), whether his view is the main one, and what the panel has cost since it opened (frames drawn, CPU milliseconds). */
+    state(): EyesState;
+    /** What he sees, in words (the panel's accessible text; what the model gets beside a picture). */
+    words(): string;
+    /**
+     * One frame from his eyes for the node (`look`), this many pixels wide; from a standing place of his day
+     * (the view goes there for a moment, so the land is drawn in full, and comes back), or from where he is.
+     * Null when nothing can be drawn now (the tab is hidden, the device lost).
+     */
+    shot(request: { width: number; place?: EyesPlace }): Promise<EyesShot | null>;
+  };
   dispose(): void;
+}
+
+export interface EyesState {
+  shut: number;
+  swapped: boolean;
+  open: boolean;
+  frames: number;
+  ms: number;
+}
+
+/** A frame from his eyes: the picture (null when his eyes are shut), its size, and what he sees in words. */
+export interface EyesShot {
+  blob: Blob | null;
+  width: number;
+  height: number;
+  shut: boolean;
+  words: string;
 }
 
 /** Frames the page's trace keeps (`?trace=1`). */
@@ -256,13 +294,17 @@ export async function detectDevice(): Promise<DeviceInfo> {
 
 export async function mountWorld(container: HTMLElement, options: WorldOptions): Promise<WorldHandle> {
   const device = await detectDevice();
-  if (options.forceWebGL) device.webgpu = false;
-  const tierName = options.tier ?? chooseTier(device);
+  // Tours and measurements (`?trace=1` only): `tier=low|medium|high` fixes the tier, `webgl=1` the WebGL2 backend.
+  const asked = /[?&]trace=1(&|$)/.test(location.search) ? new URLSearchParams(location.search) : null;
+  const askedTier = asked?.get("tier");
+  const forceWebGL = (options.forceWebGL ?? false) || asked?.get("webgl") === "1";
+  if (forceWebGL) device.webgpu = false;
+  const tierName = options.tier ?? (askedTier === "low" || askedTier === "medium" || askedTier === "high" ? askedTier : chooseTier(device));
   const tier: Tier = TIERS[tierName];
   const small = Math.min(innerWidth, innerHeight) < 600;
   // Multisampling: by tier, and on phones and tablets (tile-based GPUs resolve it on chip, nearly free).
   const antialias = tier.antialias || (device.coarse && !device.fallbackAdapter);
-  const renderer = new WebGPURenderer({ antialias, alpha: false, forceWebGL: options.forceWebGL ?? false, reversedDepthBuffer: device.webgpu });
+  const renderer = new WebGPURenderer({ antialias, alpha: false, forceWebGL, reversedDepthBuffer: device.webgpu });
   const startDpr = Math.min(devicePixelRatio || 1, tier.maxDpr, small ? 1.5 : 2);
   const governor = new ResolutionGovernor(tier, startDpr);
   renderer.setPixelRatio(governor.dpr);
@@ -523,7 +565,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   if (trace) (globalThis as { __sandboxLife?: unknown }).__sandboxLife = lifeTrace;
   // (And for a tour of the seasons: `__sandboxSeason(name | 0..1 | "live")` looks at one; `__sandboxStats()` says what's drawn.)
   if (trace) seasonHook();
-  if (trace) (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => ({ fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts() });
+  // (`work`: the main thread's time in the frames drawn since it was last asked, in milliseconds, and how many: what a frame costs the CPU, the eyes' panel included.)
+  const frameWork = { ms: 0, frames: 0 };
+  if (trace) {
+    (globalThis as { __sandboxStats?: unknown }).__sandboxStats = () => {
+      const work = { ms: frameWork.ms, frames: frameWork.frames };
+      frameWork.ms = frameWork.frames = 0;
+      return { fps, frameMs, drawCalls, triangles: renderer.info.render.triangles, instances: vegetation.counts(), work };
+    };
+  }
   if (trace) (globalThis as { __sandboxLook?: unknown }).__sandboxLook = (x: number, y: number, distance?: number, yaw?: number) => (stopFollowing(), rig.lookAt(x, y, distance), yaw === undefined || (rig.target.yaw = yaw), (dirty = true));
   let origin: [number, number] = [0, 0];
   const originScene = new Vector3();
@@ -987,6 +1037,170 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
   shafted = post?.shafting ?? false;
   applySky();
 
+  // ---------- his eyes (eyes.ts): a second view from his visor, for the HUD's panel and the node's `look` ----------
+  /** The scene from another camera: what follows a camera set for it, and put back after. No post effects; the sun's shadow map as the main view drew it. */
+  function drawFrom(view: PerspectiveCamera): void {
+    const top = sky.view(view);
+    horizon.follow(view.position, 0, !reduced());
+    const dither = occlusion.on.value;
+    occlusion.on.value = 0;
+    // What grows near a view dissolves out of its way: the eye's own reach for his eyes, the usual one for the view over his shoulder.
+    const reach = armsReach.value;
+    armsReach.value = view === eyes.camera ? EYE_REACH : 1;
+    // The workshop is whole for him: what's opened for the main view's camera isn't opened for his eyes.
+    if (view === eyes.camera) workshop.whole(true);
+    const auto = sun.shadow.autoUpdate;
+    sun.shadow.autoUpdate = false;
+    try {
+      renderer.render(scene, view);
+    } finally {
+      sun.shadow.autoUpdate = auto;
+      occlusion.on.value = dither;
+      armsReach.value = reach;
+      if (view === eyes.camera) workshop.whole(false);
+      sky.unview(camera, top);
+      horizon.follow(camera.position, 0, !reduced());
+    }
+  }
+  const eyes = new Eyes(tier.eyes, { renderer, webgpu: backend === "webgpu", canvas, draw: drawFrom, redraw: () => renderer.render(scene, camera) });
+  /** His eyes at his visor, turned with his head, and on towards what he attends to as far as eyes turn. */
+  function poseEyes(dt: number, motion: boolean): void {
+    eyes.pose(knight.head);
+    eyes.gaze(attention.on && !walker.moving, attention.x - origin[0], attention.z, -(attention.y - origin[1]), dt, motion);
+  }
+  const sightEye: SightEye = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, fov: 1, aspect: EYE.aspect };
+  const wildSpot = { x: 0, y: 0 };
+  /** The weather as it's drawn, in a word. */
+  function weatherNow(): string {
+    const w = weather.state;
+    const kind = w.storm > 0.5 ? "a storm" : w.snow > 0.15 ? "snow" : w.rain > 0.45 ? "rain" : w.rain > 0.08 ? "drizzle" : w.mist > 0.45 ? "mist" : w.cloud > 0.75 ? "overcast" : w.cloud > 0.35 ? "cloudy" : "clear";
+    // Denmark's temperature goes with it only while the weather drawn is Denmark's own (not a preset to look at).
+    const live = model?.weather;
+    const same = live && (live.kind === kind || (live.kind === "storm" && kind === "a storm") || ((live.kind === "cloudy" || live.kind === "overcast") && (kind === "cloudy" || kind === "overcast")));
+    return same ? `${kind}, ${Math.round(live.temperature)} °C` : kind;
+  }
+  const skyPhrases = (): string[] => {
+    const w = weather.state;
+    return skyWords(skyNow(), heavens, { cloud: w.cloud, rain: w.rain, mist: w.mist, snow: w.snow, storm: w.storm, wind: w.wind, windHeading: w.windHeading, rainPast: sky.showerPast });
+  };
+  /** What he sees, from the world's own knowledge, with the eye camera as it's posed now (sight.ts; asked a few times a second at most). */
+  function sightWords(from: EyesPlace | null): string {
+    const g = model?.galahad;
+    const idle = (!g || isIdle(g)) && !chalkboard.stand();
+    const wild: SightInput["wild"][number][] = [];
+    for (const line of fauna.summary().lines) {
+      if (!fauna.locate(line.kind, walker.x, walker.y, wildSpot)) continue;
+      const spec = SPECS.find((s) => s.kind === line.kind);
+      wild.push({ name: line.name, count: line.count, doing: line.doing, x: wildSpot.x, y: wildSpot.y, tall: spec?.tall ?? 0.6, air: spec?.realm === AIR });
+    }
+    const figures: SightInput["figures"][number][] = [];
+    for (const s of partners.figures.squires) if (s.name && s.shown > 0.5) figures.push({ what: `the agent ${s.name}`, doing: "working with him", x: s.x, y: s.y });
+    for (const s of helperLook.figures.squires) if (s.name && s.shown > 0.5) figures.push({ what: "one of his helpers", doing: "at an attempt of a quest", x: s.x, y: s.y });
+    return sightInWords(
+      buildSight({
+        now: Date.now(),
+        x: walker.x,
+        y: walker.y,
+        z: Number.isNaN(standZ) ? groundAt(walker.x, walker.y) : standZ,
+        eye: eyes.sightEye(origin, sightEye),
+        shut: from ? 0 : eyes.shut,
+        working: !idle,
+        activity: care.now,
+        label: dogName ? withDog(care.out.label, dogName) : care.out.label,
+        station: g?.station ?? null,
+        moving: walker.moving,
+        attention,
+        writing: idle && care.out.writing && !walker.moving,
+        // (Asleep on its cushion it's charging too: asleep is what he'd see.)
+        dog: { x: dog.x, y: dog.y, name: dogName, state: dog.mood.asleep > 0.5 ? "asleep" : care.docked ? "charging" : care.ball !== "held" ? "playing" : dog.lying ? "lying by him" : "with him" },
+        fire: hearth.lit,
+        sunElevation: heavens.sunElevation,
+        evening: heavens.evening,
+        season: seasonState,
+        weather: weatherNow(),
+        sky: skyPhrases(),
+        wild,
+        experiments: (model?.experiments ?? []).map((e) => ({ title: e.title, x: e.plot.x, y: e.plot.y, size: e.plot.size, phase: STATUS_LABEL[e.status].toLowerCase() })),
+        figures,
+        ducks: critters.flock.ducks,
+        ground: groundAt,
+        from: from ? EYES_PLACE_LABEL[from] : null,
+      }),
+    );
+  }
+  /** Frames asked for by the node, one at a time. A place's is taken once the view has gone there and the land has grown. */
+  interface Shot {
+    place: EyesPlace | null;
+    width: number;
+    resolve(shot: EyesShot | null): void;
+    /** A place's: when the view went there, the frames since with nothing left to grow, and where the view was. */
+    since: number;
+    settled: number;
+    back: { follow: boolean; x: number; y: number; tx: number; ty: number; yaw: number; distance: number } | null;
+  }
+  const shots: Shot[] = [];
+  function stepShots(now: number, busy: boolean): void {
+    const shot = shots[0];
+    if (!shot) return;
+    let from: EyesPlace | null = null;
+    if (shot.place) {
+      const p = EYE_PLACES[shot.place];
+      if (!shot.back) {
+        // The view goes there, so the land and what grows on it are drawn in full where he'd stand.
+        shot.back = { follow: rig.follow, x: rig.x, y: rig.y, tx: rig.target.x, ty: rig.target.y, yaw: rig.target.yaw, distance: rig.target.distance };
+        shot.since = now;
+        rig.follow = false;
+        rig.lookAt(p.x, p.y);
+        rig.x = p.x;
+        rig.y = p.y;
+        dirty = true;
+        return;
+      }
+      shot.settled = busy ? 0 : shot.settled + 1;
+      dirty = true;
+      if (shot.settled < 8 && now - shot.since < 4000) return;
+      eyes.poseAt(p.x - origin[0], groundAt(p.x, p.y) + EYE_HEIGHT, -(p.y - origin[1]), p.heading, p.pitch);
+      from = shot.place;
+    } else if (!eyes.wanted) poseEyes(0, false);
+    shots.shift();
+    const shut = !from && eyes.shut > 0.5;
+    const words = sightWords(from);
+    const taken = shut ? Promise.resolve(null) : eyes.capture(shot.width);
+    if (shot.back) {
+      const b = shot.back;
+      rig.follow = b.follow;
+      rig.target.x = b.tx;
+      rig.target.y = b.ty;
+      rig.target.yaw = b.yaw;
+      rig.target.distance = b.distance;
+      rig.x = b.x;
+      rig.y = b.y;
+    }
+    dirty = true;
+    void taken.then(
+      (blob) => shot.resolve({ blob, width: shot.width, height: Math.round(shot.width / EYE.aspect), shut, words }),
+      () => shot.resolve(null),
+    );
+  }
+  // (`?trace=1`: a tour reads what he sees, and takes a frame from his eyes as a data URL, without the node.)
+  if (trace) {
+    (globalThis as { __sandboxEyes?: unknown }).__sandboxEyes = {
+      eyes,
+      words: () => (eyes.wanted || poseEyes(0, false), sightWords(null)),
+      frame: async (place?: EyesPlace, width = 768) => {
+        dirty = true;
+        const shot = await new Promise<EyesShot | null>((resolve) => shots.push({ place: place ?? null, width, resolve, since: 0, settled: 0, back: null }));
+        if (!shot?.blob) return { url: null, words: shot?.words ?? "", shut: shot?.shut ?? false };
+        const url = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.readAsDataURL(shot.blob!);
+        });
+        return { url, words: shot.words, shut: shot.shut };
+      },
+    };
+  }
+
   // Every material's pipeline compiled before the first frame (and the night's glows with them), so
   // nothing stalls later when a chunk's grass or the lamps first appear.
   {
@@ -1014,6 +1228,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
 
   // ---------- the loop ----------
   const projected = new Vector3();
+  const lookWay = new Vector3();
   const point: Vec3 = [0, 0, 0];
   /**
    * Projects every label with the camera as it is this frame and lays them out so none sits on another (labels.ts:
@@ -1028,6 +1243,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     const motion = !reduced();
     const ease = motion ? 1 - Math.exp(-dt * 28) : 1;
     const settle = motion ? 1 - Math.exp(-dt * 12) : 1;
+    camera.getWorldDirection(lookWay);
     // Where each would stand, and how far it fades with distance.
     for (let i = 0; i < labelList.length; i++) {
       const label = labelList[i]!;
@@ -1036,6 +1252,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       if (label.el.hidden) continue;
       if (!label.point(point)) continue;
       projected.set(point[0] - origin[0], point[2], -(point[1] - origin[1]));
+      // (Behind the view it has no place: through his own eyes there's always something labelled behind him.)
+      if (!before(projected.x, projected.y, projected.z, camera.position.x, camera.position.y, camera.position.z, lookWay.x, lookWay.y, lookWay.z)) continue;
       const dist = projected.distanceTo(camera.position);
       projected.project(camera);
       if (projected.z > 1 || projected.x < -1.2 || projected.x > 1.2 || projected.y < -1.2 || projected.y > 1.3) continue;
@@ -1465,6 +1683,17 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     rig.wanted(focusGround, armWant, armPivot);
     arm.update(armPivot, armWant, solids, groundAt, renderDt, motion);
     rig.apply(camera, origin, focusGround, arm);
+    // His eyes: at his visor, turned with his head, when something shows them. Swapped, his view is the main one
+    // (through the post effects, at the main view's rate) and the usual view goes to the panel.
+    eyes.shut = knight.eyesShut;
+    if (eyes.wanted) poseEyes(renderDt, motion);
+    if (eyes.swapped) {
+      eyes.outside.position.copy(camera.position);
+      eyes.outside.quaternion.copy(camera.quaternion);
+      eyes.outside.updateMatrixWorld();
+      camera.position.copy(eyes.camera.position);
+      camera.quaternion.copy(eyes.camera.quaternion);
+    }
     colliderLines?.update(rig.x, rig.y, origin, arm.x, arm.y, arm.z);
     if (trace) {
       const f = trace.frames;
@@ -1484,7 +1713,9 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     occlusion.from.value.copy(camera.position);
     occlusion.to.value.set(walker.x - origin[0], gz + 1.3, -(walker.y - origin[1]));
     occlusion.floor.value = gz;
-    occlusion.on.value = rig.follow ? 1 : 0;
+    // (Nothing stands between his own eyes and him.)
+    occlusion.on.value = rig.follow && !eyes.swapped ? 1 : 0;
+    armsReach.value = eyes.swapped ? EYE_REACH : 1;
     sky.follow(camera, renderDt, motion);
     horizon.follow(camera.position, t, motion);
     // The light: from the sun by day, the moon by night, kept over the focus.
@@ -1496,8 +1727,15 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       post.render();
     } else renderer.render(scene, camera);
     drawCalls = renderer.info.render.drawCalls;
+    // His eyes' panel, a few times a second while it's open; and a frame for the node when one is asked for.
+    if (eyes.due(now, motion)) eyes.draw(now);
+    if (shots.length) stepShots(now, growing || filling);
     placeLabels(renderDt);
     placeHover();
+    if (trace) {
+      frameWork.ms += performance.now() - started;
+      frameWork.frames += 1;
+    }
     // Only frames rendered back to back, at full rate, and not growing land, say how long a frame takes.
     if (judged && !growing && !filling) {
       const action = governor.frame(now, interval);
@@ -1680,8 +1918,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       return fauna.summary();
     },
     skyWords() {
-      const w = weather.state;
-      return skyWords(skyNow(), heavens, { cloud: w.cloud, rain: w.rain, mist: w.mist, snow: w.snow, storm: w.storm, wind: w.wind, windHeading: w.windHeading, rainPast: sky.showerPast });
+      return skyPhrases();
     },
     setSeason(choice) {
       // (flora-shade.ts keeps seasonState to the date or to this choice, and eases what grows to it.)
@@ -1700,6 +1937,34 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
     setBoard(board) {
       chalkboard.setBoard(board);
       dirty = true;
+    },
+    eyes: {
+      open(container) {
+        if (disposed || lost) return;
+        eyes.open(container);
+        dirty = true;
+      },
+      swap(on) {
+        if (eyes.swapped === on) return;
+        eyes.swapped = on;
+        // His view's own lens, and the usual one back.
+        camera.fov = on ? EYE.fov : 45;
+        camera.near = on ? EYE.near : 0.25;
+        camera.updateProjectionMatrix();
+        dirty = true;
+      },
+      state() {
+        return { shut: eyes.shut, swapped: eyes.swapped, open: eyes.isOpen, frames: eyes.cost.frames, ms: eyes.cost.ms };
+      },
+      words() {
+        if (!eyes.wanted) poseEyes(0, false);
+        return sightWords(null);
+      },
+      shot(request) {
+        if (disposed || lost || document.hidden) return Promise.resolve(null);
+        dirty = true;
+        return new Promise((resolve) => shots.push({ place: request.place ?? null, width: request.width, resolve, since: 0, settled: 0, back: null }));
+      },
     },
     where(out) {
       out.galahadX = walker.x;
@@ -1758,6 +2023,8 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       landmarks.dispose();
       glows.dispose();
       rain.dispose();
+      for (const shot of shots.splice(0)) shot.resolve(null);
+      eyes.dispose();
       post?.dispose();
       sky.dispose();
       horizon.dispose();

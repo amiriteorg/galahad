@@ -56,6 +56,8 @@ export interface LoopTaskDeps {
   board?: { history: { before(before: number | null, limit: number): { versions: BoardVersionInfo[] } } };
   /** This node's compute: its calibration and the fleet's plan (self-action), what he'd suggest (the heartbeat). */
   compute?: ComputeService;
+  /** His review of his own world through his eyes (world-review.ts; set by the daemon). */
+  review?: (places?: undefined, signal?: AbortSignal) => Promise<{ status: "ok" | "attention"; summary: string }>;
 }
 
 /** A node that joined this long ago and still hasn't measured itself is worth a line. */
@@ -412,6 +414,11 @@ export function loopExecutor(deps: LoopTaskDeps) {
         return beat(deps, task.checklist, ctx.signal, task.selfAction !== false);
       case "reflect":
         return reflect(deps, task.budget ?? REFLECT_BUDGET, ctx.signal);
+      case "review": {
+        if (!deps.review) return { status: "attention", summary: "This node can't review his world." };
+        const { status, summary } = await deps.review(undefined, ctx.signal);
+        return { status, summary };
+      }
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

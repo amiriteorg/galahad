@@ -224,7 +224,12 @@ export type WorldEvent =
   /** Something needs you (a notice, an approval waiting). */
   | { type: "notice"; at: number; severity: "info" | "warn" | "error"; title: string }
   /** The chalkboard changed (board.ts): fetch it again; `region` is where an item went, so the world can show him writing it. Older pages ignore it. */
-  | ({ type: "board"; at: number } & BoardChange);
+  | ({ type: "board"; at: number } & BoardChange)
+  /** The node asks for a frame from his eyes (eyes.ts): a page with the world drawn renders one and posts it back (`worldEyes`). Older pages, and terminals, ignore it. */
+  | { type: "eyes"; at: number; request: import("./eyes.ts").EyesRequest };
+
+/** Tools that take him nowhere: he looks through his own eyes from where he stands. */
+export const staysPut = (tool: string): boolean => tool === "look";
 
 /** Which station a tool sends him to. Reading saved experiments is the observatory's work; running one takes him out to it. */
 export function stationForTool(name: string): Station {
