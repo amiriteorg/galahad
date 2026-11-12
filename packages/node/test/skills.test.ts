@@ -109,9 +109,14 @@ const status = (work: () => unknown): number | string => {
   }
 };
 
-/** A quest that ended, as the server tells the service: its own ref, its sandbox recorded in the ledger. */
-async function learn(r: Rig, e: QuestEvidence = evidence(), network: string | null = "isolated") {
+/**
+ * A quest that ended, as the server tells the service: its own ref, its sandbox recorded in the ledger, and (as
+ * on every call of a quest the node serves) what its planner and engineer were given that others wrote: nothing,
+ * unless `given` says otherwise; `given: null` is a quest this node never served.
+ */
+async function learn(r: Rig, e: QuestEvidence = evidence(), network: string | null = "isolated", given: string[] | null = []) {
   if (network) r.sandbox(e.quest, network);
+  if (given) r.skills.gave(e.quest, given);
   return r.skills.learn(e, { ref: e.quest, sandboxes: e.quest });
 }
 
@@ -191,6 +196,41 @@ describe("where skills come from", () => {
     const other = rig();
     other.sandbox("q-other", "isolated");
     expect((await learn(other, evidence(), null)).skill).toMatchObject({ trust: "untrusted" });
+  });
+
+  test("an isolated sandbox is not enough: a quest whose planner or engineer was given others' words teaches an untrusted skill", async () => {
+    // The node itself gives a quest recalled memories and archived entries: untrusted ones are strangers' words in its plan.
+    for (const reason of ["its planner or engineer was given untrusted memories", "its planner or engineer was given untrusted archived entries"]) {
+      const r = rig();
+      const learned = await learn(r, evidence(), "isolated", [reason]);
+      expect(learned.skill).toMatchObject({ trust: "untrusted", state: "proposed" });
+      expect(r.skills.detail(learned.skill!.id).history[0]!.source).toBe(`quest:q-1 (${reason})`);
+    }
+    // A quest this node has no record of serving (it restarted, or the runner never asked it): no trust by silence.
+    const unseen = rig();
+    const learned = await learn(unseen, evidence(), "isolated", null);
+    expect(learned.skill).toMatchObject({ trust: "untrusted", state: "proposed" });
+    expect(unseen.skills.detail(learned.skill!.id).history[0]!.source).toBe("quest:q-1 (this node has no record of what its planner was given)");
+    // Reasons add up over a quest's calls, and are forgotten with it.
+    const both = rig();
+    both.skills.gave("q-1", ["its planner or engineer was given untrusted memories"]);
+    both.skills.gave("q-1", []);
+    expect((await learn(both, evidence(), "isolated", ["its planner or engineer was given untrusted archived entries"])).skill!.trust).toBe("untrusted");
+    expect(both.store.event(both.skills.view().skills[0]!.head)?.prov?.source).toBe("quest:q-1 (its planner or engineer was given untrusted memories; its planner or engineer was given untrusted archived entries)");
+  });
+
+  test("a quest given a skill that read the outside world (one you approved) teaches an untrusted skill too", async () => {
+    const r = rig();
+    const outside = (await learn(r, evidence({ quest: "q-online", network: "online" }), "online")).skill!;
+    r.skills.approve(outside.id, outside.head);
+    expect(r.skills.forQuest("q-2", "fix the failing parser test")!.skills).toMatchObject([{ id: outside.id, trust: "untrusted" }]);
+    r.answer = { text: reply({ title: "A second way" }) };
+    const learned = await learn(r, evidence({ quest: "q-2" }), "isolated", null);
+    expect(learned.skill).toMatchObject({ title: "A second way", trust: "untrusted", state: "proposed", pending: expect.any(String) });
+    // (It revised nothing by itself either: the one you approved stays as you approved it.)
+    const pending = r.skills.view().skills.find((s) => s.id !== outside.id)!;
+    expect(r.store.event(pending.head)?.prov?.source).toBe("quest:q-2 (it was given a skill shaped by the outside world)");
+    expect(r.skills.detail(outside.id)).toMatchObject({ versions: 1, offered: outside.head });
   });
 
   test("only a quest whose review passed teaches anything; no model is asked otherwise", async () => {
@@ -287,6 +327,21 @@ describe("costs are bounded and visible", () => {
     quiet.answer = { text: reply() };
     expect((await learn(quiet)).why).toBe("this quest was distilled already");
     expect(quiet.asked.length).toBe(1);
+  });
+
+  test("distillations take their turn: two quests ending at once never both spend the last of the budget", async () => {
+    const r = rig();
+    r.skills.setBudget(DISTIL_MAX_TOKENS);
+    r.sandbox("q-a", "isolated");
+    r.sandbox("q-b", "isolated");
+    r.skills.gave("q-a", []);
+    r.skills.gave("q-b", []);
+    const many = Array.from({ length: 80 }, (_, i) => ({ command: `step ${i} ${"x".repeat(250)}`, exitCode: 0 }));
+    const [a, b] = await Promise.all([r.skills.learn(evidence({ quest: "q-a", steps: many }), { ref: "q-a", sandboxes: "q-a" }), r.skills.learn(evidence({ quest: "q-b", steps: many }), { ref: "q-b", sandboxes: "q-b" })]);
+    expect(r.asked).toHaveLength(1);
+    expect([a.skill, b.skill].filter(Boolean)).toHaveLength(1);
+    expect([a.why, b.why].find(Boolean)).toMatch(/today's budget for skills is spent/);
+    expect(r.skills.budget().usedToday).toBeLessThanOrEqual(DISTIL_MAX_TOKENS);
   });
 
   test("no usable role: nothing is asked", async () => {
@@ -558,6 +613,14 @@ describe("where skills go", () => {
     expect(given.skills.map((s) => s.id)).toEqual([skill.id]);
     expect(r.skills.detail(skill.id)).toMatchObject({ uses: 0, chats: 1 });
     expect(r.skills.forAnswer("what's for dinner?")).toBeNull();
+    // Counted once a day however much you talk: a chat never fills the log.
+    const events = r.store.eventCount();
+    for (let i = 0; i < 5; i++) expect(r.skills.forAnswer("and the failing parser test again?")!.skills).toHaveLength(1);
+    expect(r.store.eventCount()).toBe(events);
+    expect(r.skills.detail(skill.id).chats).toBe(1);
+    r.now += 24 * 60 * 60_000;
+    r.skills.forAnswer("the failing parser test, a day later");
+    expect(r.skills.detail(skill.id).chats).toBe(2);
   });
 });
 

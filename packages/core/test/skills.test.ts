@@ -163,7 +163,7 @@ describe("where a skill stands", () => {
   test("the track record, in a line", () => {
     expect(skillRecordLine({ uses: 0, passed: 0, failed: 0, chats: 0 })).toBe("not used yet");
     expect(skillRecordLine({ uses: 1, passed: 1, failed: 0, chats: 0 })).toBe("used in 1 quest: 1 passed review");
-    expect(skillRecordLine({ uses: 4, passed: 2, failed: 1, chats: 2 })).toBe("used in 4 quests: 2 passed review, 1 didn't, 1 without an outcome; offered in 2 chat answers");
+    expect(skillRecordLine({ uses: 4, passed: 2, failed: 1, chats: 2 })).toBe("used in 4 quests: 2 passed review, 1 didn't, 1 without an outcome; at hand in chat on 2 days");
   });
 });
 
@@ -344,6 +344,15 @@ describe("which skills bear on a goal", () => {
     expect(relevantSkills(["migrat", "table"], skills).map((s) => s.id)).toEqual(["Write a migration"]);
     const ranked = relevantSkills(["parser", "tests"], skills).map((s) => s.id);
     expect(ranked[0]).toBe("Fix a failing parser test");
+  });
+
+  test("equally relevant, yours come first: a note of his never crowds out what you wrote", () => {
+    const his = Array.from({ length: 5 }, (_, i) => ({ ...skill(`Fix parser test ${i}`, ["fix"], { passed: 9, at: 100 + i }), trust: "agent" as const }));
+    const yours = { ...skill("Fix parser test, ours", ["fix"], { at: 1 }), trust: "owner" as const };
+    expect(relevantSkills(["parser", "test"], [...his, yours])[0]!.id).toBe("Fix parser test, ours");
+    // More relevant still wins: yours first only among equals.
+    const better = { ...skill("Parser test fixing for the parser tests", ["parser test"], {}), trust: "agent" as const };
+    expect(relevantSkills(["parser", "test", "fixing"], [yours, better])[0]!.id).toBe("Parser test fixing for the parser tests");
   });
 
   test("never more than the cap, whatever matches; ties go to the better record, then the newer", () => {

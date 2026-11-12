@@ -200,12 +200,12 @@ export interface SkillDetail extends SkillView {
 /** A use that isn't a quest's: a chat answer he was given the skill for. */
 export const SKILL_CHAT_USE = "chat:";
 
-/** A skill's track record in a line. */
+/** A skill's track record in a line. A chat's use is counted once a day (`chat:<day>`), however many answers it went with. */
 export function skillRecordLine(s: Pick<SkillView, "uses" | "passed" | "failed" | "chats">): string {
   if (!s.uses && !s.chats) return "not used yet";
   const open = s.uses - s.passed - s.failed;
   const quests = s.uses ? `used in ${s.uses} quest${s.uses === 1 ? "" : "s"}: ${s.passed} passed review${s.failed ? `, ${s.failed} didn't` : ""}${open > 0 ? `, ${open} without an outcome` : ""}` : "";
-  const chats = s.chats ? `offered in ${s.chats} chat answer${s.chats === 1 ? "" : "s"}` : "";
+  const chats = s.chats ? `at hand in chat on ${s.chats} day${s.chats === 1 ? "" : "s"}` : "";
   return [quests, chats].filter(Boolean).join("; ");
 }
 
@@ -398,9 +398,9 @@ const wordsOf = (text: string): Set<string> => new Set(text.toLowerCase().match(
  * The skills that bear on a goal, best first, at most `limit`: by the goal's terms (the archive's own
  * search words) found in a skill's title, when, steps and pitfalls, as the beginning of a word. A skill
  * clears the bar with at least half the terms (two at least; one when that's all there is), as the
- * archive's context does; the title counts double. Ties: the better record, then the newer.
+ * archive's context does; the title counts double. Ties: yours first, then the better record, then the newer.
  */
-export function relevantSkills<T extends { doc: SkillDoc; passed: number; failed: number; at: number }>(terms: readonly string[], skills: readonly T[], limit = SKILLS_OFFERED): T[] {
+export function relevantSkills<T extends { doc: SkillDoc; passed: number; failed: number; at: number; trust?: SkillTrust }>(terms: readonly string[], skills: readonly T[], limit = SKILLS_OFFERED): T[] {
   if (!terms.length) return [];
   const bar = terms.length <= 1 ? 1 : Math.max(2, Math.ceil(terms.length / 2));
   const has = (words: Set<string>, term: string): boolean => {
@@ -423,7 +423,8 @@ export function relevantSkills<T extends { doc: SkillDoc; passed: number; failed
       return { skill, matched, score };
     })
     .filter((x) => x.matched >= bar)
-    .sort((a, b) => b.score - a.score || b.skill.passed - b.skill.failed - (a.skill.passed - a.skill.failed) || b.skill.at - a.skill.at)
+    // Equally relevant: yours first (a note of his never crowds out what you wrote), then the better record, then the newer.
+    .sort((a, b) => b.score - a.score || Number(b.skill.trust === "owner") - Number(a.skill.trust === "owner") || b.skill.passed - b.skill.failed - (a.skill.passed - a.skill.failed) || b.skill.at - a.skill.at)
     .slice(0, Math.max(0, limit))
     .map((x) => x.skill);
 }

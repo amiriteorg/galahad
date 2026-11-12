@@ -1100,7 +1100,8 @@ export class MindStore {
         return null;
       }
       case "skill.used": {
-        if (signer.kind !== "node") return "only nodes record a skill's use";
+        // A full node: the one that gave it to a model (a limited node holds no keys, and asks no model).
+        if (!isFullNode(signer)) return "only full nodes record a skill's use";
         const body = bodyOf(event, "skill.used");
         const version = this.db.query<{ skill: string; trust: string; approved_hlc: string | null }, [string]>("SELECT skill, trust, approved_hlc FROM v_skill_versions WHERE id = ?").get(body.version);
         if (!version || version.skill !== body.skill) return "no such version of that skill";
@@ -1114,7 +1115,7 @@ export class MindStore {
         return null;
       }
       case "skill.outcome": {
-        if (signer.kind !== "node") return "only nodes record a quest's outcome";
+        if (!isFullNode(signer)) return "only full nodes record a quest's outcome";
         const body = bodyOf(event, "skill.outcome");
         if (body.quest.startsWith(SKILL_CHAT)) return "a chat answer has no review";
         const use = this.db.query<{ status: string | null }, [string, string]>("SELECT status FROM v_skill_uses WHERE skill = ? AND quest = ?").get(body.skill, body.quest);

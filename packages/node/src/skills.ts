@@ -108,8 +108,9 @@ export function skillVersions(record: SkillRecord): SkillVersionView[] {
     n: v.n,
     prev: v.prev,
     trust: trustOf(v.trust),
-    by: v.by,
-    quest: v.quest,
+    // What a misbehaving node could have put in a name is cleaned like any text of a skill.
+    by: cleanSkillText(v.by).slice(0, 100),
+    quest: v.quest === null ? null : cleanSkillText(v.quest).slice(0, 64),
     via: v.via,
     source: v.source ? cleanSkillText(v.source).slice(0, 400) : null,
     at: ms(v.hlc),
@@ -169,7 +170,7 @@ export function skillDetail(store: Pick<MindStore, "skill" | "skillUses">, id: s
   const record = store.skill(id);
   if (!record) return null;
   const history = skillVersions(record);
-  return { ...viewOf(record, history).view, history, record: store.skillUses(id, 100).map((u) => ({ quest: u.quest, version: u.version, at: ms(u.hlc), status: u.status })) };
+  return { ...viewOf(record, history).view, history, record: store.skillUses(id, 100).map((u) => ({ quest: cleanSkillText(u.quest).slice(0, 100), version: u.version, at: ms(u.hlc), status: u.status === null ? null : cleanSkillText(u.status).slice(0, 32) })) };
 }
 
 /** What anyone but you reads in place of words that wait for your approval. */
@@ -227,8 +228,16 @@ export interface SkillsDeps {
 export class SkillsService {
   /** Per quest: the skills it was given, chosen once from its goal (null: none bore on it). */
   private readonly given = new Map<string, GivenSkills | null>();
+  /**
+   * Per quest this node served: why its planner or engineer may have read others' words (untrusted memories,
+   * archived entries or skills the node itself gave them). Present, even empty: the node knows what it gave.
+   * A quest it has no such record of (a restart, a runner that never asked) earns no trust by silence.
+   */
+  private readonly others = new Map<string, Set<string>>();
   /** Quests being distilled now: never two calls for one quest. */
   private readonly distilling = new Set<string>();
+  /** One distillation at a time on this node: the budget is read and spent in turn, never by two at once. */
+  private turn: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: SkillsDeps) {}
 
@@ -415,12 +424,30 @@ export class SkillsService {
     const given = this.offer(goal, ref);
     this.given.set(ref, given);
     while (this.given.size > GIVEN_KEPT) this.given.delete(this.given.keys().next().value!);
+    // A skill that read the outside world (and that you approved) is still others' words in this quest's plan.
+    this.gave(ref, given?.skills.some((s) => s.trust === "untrusted") ? ["it was given a skill shaped by the outside world"] : []);
     return given;
   }
 
-  /** An answer's skills: chosen from your question, under a nonce of its own. */
+  /**
+   * What the node gave a quest's planner or engineer on one call, as far as others' words go: each reason is
+   * why a skill learned from that quest can't be trusted as his alone (none: that call was given nothing
+   * untrusted). The server says so on every call of a quest it serves.
+   */
+  gave(ref: string, reasons: readonly string[]): void {
+    const known = this.others.get(ref) ?? new Set<string>();
+    for (const reason of reasons) known.add(reason);
+    this.others.delete(ref);
+    this.others.set(ref, known);
+    while (this.others.size > GIVEN_KEPT * 2) this.others.delete(this.others.keys().next().value!);
+  }
+
+  /**
+   * An answer's skills: chosen from your question, under a nonce of its own. Counted once a skill a day
+   * (`chat:<day>`), however many answers it went with: a chat never fills the log.
+   */
   forAnswer(question: string): GivenSkills | null {
-    return this.offer(question, `${SKILL_CHAT_USE}${randomId(9)}`);
+    return this.offer(question, `${SKILL_CHAT_USE}${new Date(this.now()).toISOString().slice(0, 10)}`);
   }
 
   // ---- learning -------------------------------------------------------------------------
@@ -443,6 +470,9 @@ export class SkillsService {
       }
     }
     this.given.delete(about.ref);
+    // What this node gave the quest's planner and engineer besides the goal (null: it has no record of serving it).
+    const served = this.others.get(about.ref) ?? null;
+    this.others.delete(about.ref);
     // Only what the mind now holds is said to have been recorded.
     const used = store.skillsUsedBy(about.ref).map((u) => ({ id: u.skill, title: titles.get(u.skill) ?? u.skill }));
     if (uses.length) this.deps.onChange?.();
@@ -451,6 +481,21 @@ export class SkillsService {
     if (evidence.status !== "done") return nothing("only a quest whose review passed teaches a skill");
     if (!evidence.steps.length) return nothing("the quest ran no commands");
     if (this.distilling.has(about.ref)) return nothing("this quest is being distilled already");
+    // One distillation at a time on this node, each in its turn: the budget it reads is the budget it spends from.
+    this.distilling.add(about.ref);
+    const mine = this.turn.then(() => this.distil(evidence, about, used, served));
+    this.turn = mine.catch(() => {});
+    try {
+      return await mine;
+    } finally {
+      this.distilling.delete(about.ref);
+    }
+  }
+
+  /** The one bounded call, and what becomes of its answer. Runs in its turn (see learn). */
+  private async distil(evidence: QuestEvidence, about: { ref: string; sandboxes: string; signal?: AbortSignal }, used: SkillLearned["used"], served: Set<string> | null): Promise<SkillLearned> {
+    const { store } = this.deps;
+    const nothing = (why: string): SkillLearned => ({ skill: null, revised: false, why, used });
     const now = this.now();
     // One distillation a quest, ever: the ledger says whether this one had its.
     if (store.ledgerOf(SKILL_DISTIL_RESOURCE, now - 30 * DAY_MS).some((e) => e.body.target === about.ref)) return nothing("this quest was distilled already");
@@ -478,7 +523,6 @@ export class SkillsService {
       ...(evidence.gates ? { gates: evidence.gates.map((g) => ({ command: redact(g.command), exitCode: g.exitCode })) } : {}),
     };
     const prompt = distilPrompt(safe, { nonce: randomId(12), offered, maxChars: (total - reply) * 4 });
-    this.distilling.add(about.ref);
     let answer: { text: string; model: string };
     try {
       answer = await this.deps.ask(role, prompt, reply * 4, about.signal);
@@ -486,8 +530,6 @@ export class SkillsService {
       // An attempt costs what was sent: it's in the ledger, and this quest isn't asked about again.
       this.deps.ledger({ class: "create", resource: SKILL_DISTIL_RESOURCE, target: about.ref, verdict: "allow", reason: "a skill from a quest that passed review", detail: `${distilDetail(skillTokens(prompt), role)} · no answer` });
       return nothing(`the ${role} role couldn't answer (${redact(String((error as Error).message ?? error)).slice(0, 160)})`);
-    } finally {
-      this.distilling.delete(about.ref);
     }
     const text = answer.text.slice(0, reply * 4);
     this.deps.ledger({ class: "create", resource: SKILL_DISTIL_RESOURCE, target: about.ref, verdict: "allow", reason: "a skill from a quest that passed review", detail: distilDetail(skillTokens(prompt) + skillTokens(text), answer.model || role) });
@@ -500,7 +542,7 @@ export class SkillsService {
       // Each sandbox as it was made (its removal is a line too, and says nothing of its network).
       .filter((e) => e.body.class === "create" && e.body.quest === about.sandboxes)
       .map((e) => ledgerNetwork(e.body.detail) ?? "unknown");
-    const reasons = questReadOutside(evidence, recorded);
+    const reasons = [...questReadOutside(evidence, recorded), ...(served ? [...served] : ["this node has no record of what its planner was given"])];
     const trust = distilledTrust(reasons);
     const revises = read.revises && offered.some((o) => o.id === read.revises && o.revisable) ? read.revises : undefined;
     try {
@@ -617,7 +659,7 @@ export class SkillsService {
       if (at < since) continue;
       const title = titles.get(use.skill);
       if (!title) continue;
-      out.push({ at, line: use.quest.startsWith(SKILL_CHAT_USE) ? `you had the skill "${title}" at hand in a chat` : `you used the skill "${title}" in quest ${use.quest}${use.status ? ` (${use.status})` : ""}` });
+      out.push({ at, line: use.quest.startsWith(SKILL_CHAT_USE) ? `you had the skill "${title}" at hand in a chat` : `you used the skill "${title}" in quest ${cleanSkillText(use.quest).slice(0, 100)}${use.status ? ` (${cleanSkillText(use.status).slice(0, 32)})` : ""}` });
     }
     return out.sort((a, b) => b.at - a.at);
   }

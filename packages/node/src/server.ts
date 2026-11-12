@@ -798,6 +798,16 @@ export function createApp(ctx: AppContext) {
   }
   /** His tools for an answer. In a chat where he read the bank he's offered no way to write a skill: none is ever drawn from one. */
   const toolsIn = (scopes: readonly string[], kept: ConversationSummary | null) => (kept?.bank ? toolsFor(scopes).filter((t) => t.name !== "skill_write") : toolsFor(scopes));
+  /**
+   * Why a call was given others' words by this node itself: untrusted memories recalled for it (the same recall
+   * memoryContext makes), untrusted archived entries among its steps. None: nothing untrusted went with it.
+   */
+  function othersWords(asked: ChatMessage, steps: StoredStep[]): string[] {
+    const why: string[] = [];
+    if (asked.role === "user" && ctx.store.recall(asked.content, 8).some((m) => m.trust === "untrusted")) why.push("its planner or engineer was given untrusted memories");
+    if (steps.some((s) => s.kind === "archive" && s.entries.some((e) => e.trust === "untrusted"))) why.push("its planner or engineer was given untrusted archived entries");
+    return why;
+  }
   /** The skills as an answer's step: shown wherever the archive's entries are (kind "skill"). */
   const skillsStep = (given: GivenSkills): ChatStreamEvent => ({ type: "archive", entries: given.skills.map((s) => ({ id: s.id, title: s.title, kind: "skill", trust: s.trust })) });
 
@@ -1482,6 +1492,9 @@ export function createApp(ctx: AppContext) {
               context = [context, given.text].filter(Boolean).join("\n\n");
               send(skillsStep(given));
             }
+            // And what else this node gave the call that others wrote: a skill learned from a quest whose planner or
+            // engineer read others' words waits for you, whatever its sandbox could reach (skills.ts).
+            if (quest && request.role !== "reviewer") ctx.skills.gave(questRef(p, quest.id), othersWords(ready.asked, answer.steps));
             for await (const event of chat({ store: ctx.store, vault: ctx.vault }, { ...request, messages, tools, context, signal: req.signal })) {
               keepStep(answer, event);
               seen(event);
