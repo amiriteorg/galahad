@@ -130,7 +130,7 @@ const GRASS_SPRING = 0xa9d858;
 const GRASS_AUTUMN = 0xb8cd62;
 const GRASS_WINTER = 0xbccc90;
 const HEATH_BLOOM = 0xc190dd;
-const HEATH_AUTUMN = 0xbba878;
+const HEATH_AUTUMN = 0xc7a183;
 const HEATH_WINTER = 0xb7b28e;
 const LITTER_GOLD = 0xe9d187;
 const LITTER_OLD = 0xdbd1b0;
@@ -177,7 +177,8 @@ export function seasonDrivers(s: Season, out: Drivers = emptyDrivers()): Drivers
   blend(out.grass, 0.3 * s.spring + 0.6 * s.autumn + 0.75 * s.winter, [GRASS_SPRING, GRASS_AUTUMN, GRASS_WINTER], [0.3 * s.spring, 0.6 * s.autumn, 0.75 * s.winter]);
   // Heath: mauve while the heather flowers, russet after, grey-gold in winter.
   const bloom = heatherBloom(y);
-  blend(out.heath, 0.85 * bloom + (1 - bloom) * (0.5 * s.autumn + 0.55 * s.winter), [HEATH_BLOOM, HEATH_AUTUMN, HEATH_WINTER], [bloom * 2, (1 - bloom) * s.autumn, (1 - bloom) * s.winter]);
+  // (Out of flower the season's colour is most of what's seen: at half, the summer's olive showed through all November.)
+  blend(out.heath, 0.85 * bloom + (1 - bloom) * (0.84 * s.autumn + 0.7 * s.winter), [HEATH_BLOOM, HEATH_AUTUMN, HEATH_WINTER], [bloom * 2, (1 - bloom) * s.autumn, (1 - bloom) * s.winter]);
   // Fallen leaves: gold while the trees are turned, faded by midwinter.
   blend(out.litter, s.litter, [LITTER_GOLD, LITTER_OLD], [s.turn, 1 - s.turn]);
   blend(out.marsh, 0.75 * tint[TINT.reed]!, [MARSH_STRAW], [1]);
