@@ -1,7 +1,9 @@
 /*
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
- * last page, sidebar state and the last chat role. Never secrets, never chat,
- * never anything from the server. boot.ts reads the same keys before paint.
+ * last page, sidebar state, the last chat role, what Enter does while Galahad is
+ * working, and which kept chat you had open (its id only). Never secrets, never a
+ * word of a chat, never anything else from the server. boot.ts reads the same keys
+ * before paint.
  */
 
 export type ThemePref = "system" | "light" | "dark";
@@ -13,6 +15,8 @@ const KEYS = {
   route: "galahad:last-route",
   sidebar: "galahad:sidebar",
   role: "galahad:chat-role",
+  enter: "galahad:chat-enter",
+  chat: "galahad:open-chat",
 } as const;
 
 type PrefKey = keyof typeof KEYS;
@@ -85,3 +89,18 @@ export const lastRoute = (): string | null => read("route");
 export const rememberRoute = (route: string): void => write("route", route);
 export const lastRole = (): string | null => read("role");
 export const rememberRole = (role: string): void => write("role", role);
+
+/** What Enter does while he's working, on this device: steer (the default: he's told now) or queue (sent when he's done). */
+export type ChatEnterPref = "steer" | "queue";
+export const chatEnter = (): ChatEnterPref => (read("enter") === "queue" ? "queue" : "steer");
+export const setChatEnter = (pref: ChatEnterPref): void => write("enter", pref === "steer" ? null : pref);
+
+/**
+ * The kept chat you had open (its id, never a word of it), so the app comes back to it, and to the turn he's
+ * working on in it, after a reload: where you were, like the last page.
+ */
+export const openChatId = (): string | null => {
+  const id = read("chat");
+  return id && /^cv_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
+};
+export const rememberOpenChat = (id: string | null): void => write("chat", id);

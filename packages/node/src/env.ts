@@ -22,6 +22,9 @@ const Env = z.object({
     .optional(),
   /** off: the archive keeps what it has and serves it, but pulls, embeds and summarises nothing new. */
   GALAHAD_ARCHIVE: z.enum(["on", "off"]).optional(),
+  /** Chat turns this node runs at once (default 4), and how long one may run, in minutes (default 30). */
+  GALAHAD_TURNS_MAX: z.coerce.number().int().min(1).max(64).optional(),
+  GALAHAD_TURN_MINUTES: z.coerce.number().min(1).max(720).optional(),
 });
 
 export type Env = z.infer<typeof Env>;

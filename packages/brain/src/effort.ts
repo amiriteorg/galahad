@@ -1,5 +1,5 @@
 import { type ChatMessage, redact } from "@galahad/core";
-import { clip, type QuestEvent, type QuestOutcome } from "./quest.ts";
+import { clip, type GateResult, type QuestEvent, type QuestOutcome } from "./quest.ts";
 
 /*
  * Effort: more compute for a better answer. Several independent attempts at the
@@ -194,9 +194,12 @@ const STEPS_SHOWN = 30;
 export function evidenceCollector(): { emit(event: QuestEvent): void; text(outcome: QuestOutcome, fromSandbox?: string): string } {
   const commands = new Map<number, string>();
   const steps: { command: string; exitCode: number; excerpt: string }[] = [];
+  /** The gates' last run (a quest with gates): the comparison shows what each printed then. */
+  let gates: GateResult[] = [];
   return {
     emit(event) {
       if (event.type === "command") commands.set(event.step, event.command);
+      else if (event.type === "gated") gates = event.results;
       else if (event.type === "observation") {
         steps.push({ command: commands.get(event.step) ?? "(unknown)", exitCode: event.exitCode, excerpt: clip(event.output.split("\n").slice(1).join("\n"), STEP_HEAD, STEP_TAIL) });
       }
@@ -207,6 +210,9 @@ export function evidenceCollector(): { emit(event: QuestEvent): void; text(outco
       return redact(
         [
           `What it ran (${steps.length} command${steps.length === 1 ? "" : "s"}${shown.length < steps.length ? `, the last ${shown.length} shown` : ""}; exit code and an excerpt of the output):\n${ran || "(nothing)"}`,
+          gates.length
+            ? `Gates (commands that each had to exit 0 in its sandbox before its own review; their last run):\n${gates.map((g, i) => `${i + 1}. $ ${g.command}\n   exit ${g.exitCode}\n${clip(g.excerpt, STEP_HEAD, STEP_TAIL).replace(/^/gm, "   ")}`).join("\n")}`
+            : "",
           fromSandbox.trim() ? `What these print now, in its sandbox:\n${fromSandbox.trim()}` : "",
           `Its own summary (a claim, not evidence):\n${outcome.summary.trim() || "(none)"}`,
         ]

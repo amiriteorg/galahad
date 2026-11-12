@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AnswerStatus, ChatNeeds, ChatState, QueuedMessage, QueueHold, TurnView } from "./turns.ts";
 
 /*
  * Chat history and projects.
@@ -47,7 +48,8 @@ export interface StoredMessage {
   /** Assistant answers: which model, what it did, how it ended. */
   model: string | null;
   steps: StoredStep[];
-  status: "done" | "error" | "stopped" | "streaming";
+  /** "steered": you sent a message while he was answering; the turn went on with it, in the next answer. */
+  status: AnswerStatus;
   error: string | null;
   createdAt: number;
   endedAt: number | null;
@@ -66,10 +68,21 @@ export interface ConversationSummary {
   count: number;
   /** Galahad read the bank in it: shown only to devices that may read the bank. */
   bank: boolean;
+  /** Where it stands, at a glance (turns.ts): working, waiting on you, queued, stopped, failed or done. */
+  state: ChatState;
+  /** Messages of yours queued behind it, and why they're held (null: they go when the turn before them ends). */
+  queued: number;
+  held: QueueHold | null;
+  /** What it waits on you for (null: nothing). */
+  needs: ChatNeeds | null;
 }
 
 export interface ConversationView extends ConversationSummary {
   messages: StoredMessage[];
+  /** The turn the node is running in it now (attach to watch it), if any. */
+  turn: TurnView | null;
+  /** Your queued messages, in the order they'll be sent. */
+  queue: QueuedMessage[];
 }
 
 /** A title from the first thing you asked: its first line, at most 60 characters. */

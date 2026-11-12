@@ -1,6 +1,7 @@
 import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, SelfActionView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { gatesFromText } from "../lib/quests.ts";
 import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
@@ -71,7 +72,10 @@ export function describeTask(task: LoopTask | null): string {
     return `${what}${task.selfAction === false ? " Only reports: self-action is off." : " Then fixes what's safe himself."}`;
   }
   if (task.kind === "reflect") return `His journal: the day recollected in his own words, kept as his own memory, within ${(task.budget ?? REFLECT.budget).toLocaleString("en-US")} tokens a day.`;
-  if (task.kind === "quest") return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}`;
+  if (task.kind === "quest") {
+    const gates = task.gates?.length ? ` Done means ${task.gates.length === 1 ? "this passes" : `these ${task.gates.length} pass`}: ${clip(task.gates.join(" · "), 160)}` : "";
+    return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
+  }
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
 }
@@ -216,10 +220,16 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     { label: "Network", block: true },
   );
   syncNet();
+  // Gates: "done means this command passes", one shell command a line.
+  const gatesField = h("textarea", { class: "textarea mono", rows: 2, spellcheck: false, autocapitalize: "off", autocomplete: "off", placeholder: "e.g. test -s /work/out/summary.md" });
+  if (task0?.kind === "quest" && task0.gates?.length) gatesField.value = task0.gates.join("\n");
   const questPanel = h(
     "div",
     { class: "stack" },
     field("Goal", goal, { hint: "Each run is a fresh quest in its own sandbox: plan, work, an independent review, remembered." }),
+    field("Gates (optional)", gatesField, {
+      hint: "Done means these pass: one shell command a line, run in the quest's sandbox when the engineer says he's done. Every one must exit 0 before the reviewer is asked; a run whose gates never pass is never done.",
+    }),
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Network"), networkControl.el, netExplain),
   );
 
@@ -285,7 +295,9 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       const text = goal.value.trim();
       if (!text) return { problem: "Give the quest a goal.", focus: goal };
       const maxSteps = task0?.kind === "quest" ? task0.maxSteps : undefined;
-      return { task: { kind: "quest", goal: text, network, ...(maxSteps ? { maxSteps } : {}) } };
+      const typed = gatesFromText(gatesField.value);
+      if ("problem" in typed) return { problem: typed.problem, focus: gatesField };
+      return { task: { kind: "quest", goal: text, network, ...(maxSteps ? { maxSteps } : {}), ...(typed.gates.length ? { gates: typed.gates } : {}) } };
     }
     if (!connectorSelect.value) return { problem: "Choose a connector.", focus: connectorSelect };
     if (!toolSelect.value || !args) return { problem: "Choose a tool.", focus: toolSelect };
@@ -316,7 +328,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
         const zone = tz.value.trim() || "UTC";
         if (!knownZone(zone)) return stop(`"${zone}" isn't a time zone. Use a name such as Europe/Copenhagen, or UTC.`, tz);
         // Loops are shared in plaintext and their words reach models: no keys in them.
-        for (const input of [label, checklist, goal]) {
+        for (const input of [label, checklist, goal, gatesField]) {
           if (!findSecrets(input.value).length) continue;
           input.value = "";
           return stop("That looked like a key, so the field was cleared. Loops are shared in plaintext and their words reach models; keys belong in the vault.", input);

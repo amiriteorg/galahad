@@ -24,6 +24,8 @@ import { BankService } from "./bank/service.ts";
 import { BoardStore, writeOnBoard } from "./board.ts";
 import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
+import { type HubLimits, TurnHub } from "./turns.ts";
+import { QuestBoard } from "./quests.ts";
 import { WorldHub } from "./world-hub.ts";
 import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
@@ -58,6 +60,8 @@ export interface Daemon {
   archive: ArchiveService;
   /** Compute: the census, this node's calibration and slots, the plan, effort. */
   compute: ComputeService;
+  /** The chat turns this node runs for you, and what you queued behind your chats. */
+  turns: TurnHub;
   stop(): Promise<void>;
 }
 
@@ -89,6 +93,10 @@ export interface DaemonOptions {
   hostLoad?: () => Omit<HostLoad, "oursRecently"> | null;
   /** The longest a sandbox waits for a slot (default 30 minutes). */
   slotWaitMs?: number;
+  /** The node's limits on chat turns (default: 4 at once, 30 minutes each, 20 queued a chat; GALAHAD_TURNS_MAX and GALAHAD_TURN_MINUTES set the first two). */
+  turnLimits?: Partial<HubLimits>;
+  /** How long requests and turns under way get to finish when the node stops (default 10 s; tests pass less). */
+  shutdownGraceMs?: number;
 }
 
 /**
@@ -306,6 +314,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
+  // Your chat turns run here to their end, whoever is listening; what you queue behind a chat waits in chats.db.
+  const turns = new TurnHub({
+    chats,
+    log,
+    limits: {
+      ...(env.GALAHAD_TURNS_MAX ? { maxTurns: env.GALAHAD_TURNS_MAX } : {}),
+      ...(env.GALAHAD_TURN_MINUTES ? { maxMinutes: env.GALAHAD_TURN_MINUTES } : {}),
+      ...opts.turnLimits,
+    },
+  });
   // Every experiment the world shows is saved here, node-local (its view, readouts, recording, code).
   const experiments = new ExperimentStore({ dir: home.experimentsDir, log });
   const world = new WorldHub({ store: experiments });
@@ -453,6 +471,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     heartbeatCheck: async () => assess(await heartbeatSnapshot(taskDeps)),
     bank,
     chats,
+    turns,
+    quests: new QuestBoard(),
     world,
     board,
     archive,
@@ -542,6 +562,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     board,
     archive,
     compute,
+    turns,
     /**
      * In order: take nothing new (stop listening; requests under way go on), start nothing
      * new (timers, sync, loops), let what's under way finish (the outbox, then requests, for
@@ -556,6 +577,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       stopPush();
       sync.stop();
       stopping = true;
+      // No new turns from here (nothing queued is sent); the ones under way get the same grace as requests do.
+      const turnsEnded = turns.drain();
       governor.close();
       await upkeeping;
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
@@ -564,7 +587,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       weather.close();
       await loops.stop();
       await connectors.drain();
-      await Promise.race([finished, Bun.sleep(SHUTDOWN_GRACE_MS)]);
+      await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);
+      // A turn still going after that is stopped: its answer kept as stopped, what's queued behind it held until you resume.
+      await turns.close();
       await Promise.all(servers.map((s) => s.stop(true)));
       bank.close();
       chats.close();

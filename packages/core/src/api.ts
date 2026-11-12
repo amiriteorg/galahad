@@ -9,6 +9,8 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
+import { QuestGates, QuestProgressInput } from "./quests.ts";
+import { type StopReason, TURN_ID } from "./turns.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -57,6 +59,12 @@ export const PlacementNeeds = z.strictObject({
   prefer: z.string().optional(),
 });
 export type PlacementNeeds = z.infer<typeof PlacementNeeds>;
+
+/** A turn the node is running, by its id; a message of yours to steer or queue; a queued message's id. */
+const TurnId = z.string().regex(TURN_ID);
+const QueuedText = z.string().trim().min(1).max(100_000);
+const QueuedId = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+const AsideId = z.string().regex(/^as_[A-Za-z0-9_-]{22}$/);
 
 /** A node, by name or device id. */
 const NodeRef = z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/);
@@ -148,6 +156,8 @@ export const LoopTask = z.discriminatedUnion("kind", [
     goal: z.string().min(1).max(4000),
     network: SandboxNetwork,
     maxSteps: z.number().int().min(1).max(100).optional(),
+    /** Gates (quests.ts): each must exit 0 in the quest's sandbox before the reviewer is asked. */
+    gates: QuestGates.optional(),
   }),
   /** One connector tool; outward and delete tools file an approval request instead. */
   z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),
@@ -267,6 +277,48 @@ export const routes = {
   },
   /** Gone for good: the node overwrites what it held. */
   deleteConversation: { method: "POST", path: "/api/conversations/delete", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  /*
+   * Turns the node owns (turns.ts): a chat turn of yours (the chat route, with his tools) runs on the node to
+   * its end whether or not anyone is listening. Yours alone, like your chats: never an agent's. A turn that may
+   * read the bank is watched and steered only by a device that may read the bank; a temporary chat's, only by
+   * the device that started it.
+   */
+  /** The turns running on this node now, and its limits. */
+  turns: { method: "GET", path: "/api/turns", scope: "chat", input: null },
+  /** Watch a turn from its start to its end (server-sent events): what happened so far, then live. Leaving doesn't stop it. */
+  attachTurn: { method: "POST", path: "/api/turns/attach", scope: "chat", input: z.strictObject({ turn: TurnId }) },
+  /** Stop a turn: the only thing that does, besides the node's own limit for one turn. */
+  stopTurn: { method: "POST", path: "/api/turns/stop", scope: "chat", input: z.strictObject({ turn: TurnId }) },
+  /** Steer: your message reaches him at the next safe point, and the turn goes on with it. */
+  steerTurn: { method: "POST", path: "/api/turns/steer", scope: "chat", input: z.strictObject({ turn: TurnId, text: QueuedText }) },
+  /** Queue: kept on the node behind a kept chat, sent as its next turn when the one before it ends well. */
+  queueMessage: { method: "POST", path: "/api/conversations/queue", scope: "chat", input: z.strictObject({ conversation: ConversationId, text: QueuedText, role: Name.optional() }) },
+  editQueued: { method: "POST", path: "/api/conversations/queue/edit", scope: "chat", input: z.strictObject({ conversation: ConversationId, id: QueuedId, text: QueuedText }) },
+  /** Remove one queued message, or (no id) discard them all. */
+  removeQueued: { method: "POST", path: "/api/conversations/queue/remove", scope: "chat", input: z.strictObject({ conversation: ConversationId, id: QueuedId.optional() }) },
+  /** Send now: steers the turn under way with it, or starts it as a turn at once. */
+  sendQueued: { method: "POST", path: "/api/conversations/queue/send", scope: "chat", input: z.strictObject({ conversation: ConversationId, id: QueuedId }) },
+  /** A held queue (after a stop, a failure or a restart) goes on. */
+  resumeQueue: { method: "POST", path: "/api/conversations/queue/resume", scope: "chat", input: z.strictObject({ conversation: ConversationId }) },
+  /**
+   * A side question: answered (server-sent events) from what a chat holds and what its running turn has said
+   * and done so far, without his tools, and added to nothing. The working turn never sees it unless you
+   * bring it back. Names a kept chat, or a running turn (a temporary chat's).
+   */
+  askAside: {
+    method: "POST",
+    path: "/api/turns/aside",
+    scope: "chat",
+    input: z
+      .strictObject({ conversation: ConversationId.optional(), turn: TurnId.optional(), question: z.string().trim().min(1).max(4000) })
+      .refine((input) => Boolean(input.conversation) !== Boolean(input.turn), "name a conversation or a turn (one of them)"),
+  },
+  /** Bring a side question and its answer back: the turn under way is steered with them; with none running, they join the kept chat. */
+  bringBack: { method: "POST", path: "/api/turns/aside/bring", scope: "chat", input: z.strictObject({ aside: AsideId }) },
+  /** The quests in hand on this node and the ones that just ended: each one's plan, the step he's on, its gates' last results. */
+  quests: { method: "GET", path: "/api/quests", scope: "mind:read", input: null },
+  /** Whoever runs a quest says where it stands (whoever may run its sandbox may: the sandbox scope). */
+  questProgress: { method: "POST", path: "/api/quests/progress", scope: "sandbox", input: QuestProgressInput },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
   /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
   world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },
@@ -1051,5 +1103,18 @@ export type ChatStreamEvent =
   /** Archived entries offered to the model as context for this answer (data, never instructions). */
   | { type: "archive"; entries: ArchiveContextEntry[] }
   | { type: "fallback"; from: string; error: string }
+  /** A message of yours reached him while he worked (a steer): what follows answers it, in the same turn. */
+  | { type: "steer"; text: string }
+  /**
+   * First in the stream of a turn the node owns: its id (to attach to, steer or stop), and `answer`, the kept
+   * message its first answer is (null: a temporary chat). `replay`: what follows first is what already happened.
+   */
+  | { type: "turn"; id: string; conversation: string | null; answer: number | null; role: string; startedAt: number; deadline: number; replay: boolean }
+  /** It was stopped, and by what (a turn that ran into the node's time limit ends with an error that says so). */
+  | { type: "stopped"; reason: StopReason }
+  /** Messages of yours that hadn't reached him when the turn ended: queued (held) in a kept chat, handed back otherwise. */
+  | { type: "undelivered"; texts: string[]; queued: boolean }
+  /** First in a side question's stream: its id, to bring it back by. */
+  | { type: "aside"; id: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };

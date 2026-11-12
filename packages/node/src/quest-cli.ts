@@ -1,4 +1,22 @@
-import { type ArtifactView, type AttemptTag, type ChatStreamEvent, type EffortAsk, type EffortGrant, type ExecResult, type FleetView, type ProviderView, redact, type Results, type RouteName, type SandboxNetwork, type SandboxView } from "@galahad/core";
+import {
+  type ArtifactView,
+  type AttemptTag,
+  type ChatStreamEvent,
+  type EffortAsk,
+  type EffortGrant,
+  type ExecResult,
+  findSecrets,
+  type FleetView,
+  MAX_QUEST_GATES,
+  type ProviderView,
+  QuestGates,
+  redact,
+  type Results,
+  type RouteName,
+  type SandboxNetwork,
+  type SandboxView,
+  SECRET_REDIRECT,
+} from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import {
   AGENTS,
@@ -8,15 +26,20 @@ import {
   type EffortPick,
   type EffortResult,
   evidenceCollector,
+  gateBy,
+  type GateResult,
   investigate,
   type InvestigationOutcome,
   observation,
+  QUEST_DEFAULTS,
   type QuestEvent,
   type QuestOptions,
   type QuestOutcome,
+  questStanding,
   readResults,
   runEffort,
   runQuest,
+  standingAfter,
 } from "@galahad/brain";
 
 /*
@@ -63,6 +86,84 @@ export interface DoOptions {
    * the day's budget. Left out: one attempt, and the node isn't asked.
    */
   effort?: EffortAsk;
+  /**
+   * Gates: "done means this command passes". Each is run in the quest's own sandbox after the engineer says
+   * DONE, and every one must exit 0 before the reviewer is asked (with effort: in each attempt's sandbox).
+   */
+  gates?: string[];
+  /** The planner may add gates of its own from its "Done when:" line, marked as its proposal (yours stay as given). */
+  proposeGates?: boolean;
+}
+
+/** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
+export function gatesLine(gates: readonly GateResult[]): string {
+  const failed = gates.filter((g) => g.exitCode !== 0);
+  const head = `Gates: ${gates.length - failed.length} of ${gates.length} passed`;
+  return failed.length ? `${head}; failed: ${failed.map((g) => `$ ${g.command} (exit ${g.exitCode})`).join(", ")}` : `${head} (${gates.map((g) => `$ ${g.command}`).join(", ")})`;
+}
+
+/** Your gates, checked at the door: commands only, a few of them, and nothing that looks like a key (they reach models and the ledger). */
+export function checkGates(gates: readonly string[] | undefined): string[] {
+  const parsed = QuestGates.safeParse(gates ?? []);
+  if (!parsed.success) throw new Error(`gates: ${parsed.error.issues.map((i) => i.message).join("; ")} (at most ${MAX_QUEST_GATES} gates, each a shell command of at most 1000 characters)`);
+  const checked = parsed.data;
+  for (const gate of checked) {
+    const finding = findSecrets(gate)[0];
+    if (finding) throw new Error(`That gate looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
+  }
+  return checked;
+}
+
+/**
+ * Tells the node where a quest stands after each of its events (quest-progress.ts folds them): always the
+ * latest standing, one report in flight at a time, and a node that doesn't take them (an older one) is left
+ * alone after a few tries. Telling never holds the quest up, and never fails it.
+ */
+function standingReporter(node: NodeClient, options: DoOptions, quest: string, attempt?: { of: string; index: number; attempts: number }) {
+  const goal = (options.label ?? options.goal).replace(/\s+/g, " ").trim().slice(0, 400);
+  let standing = questStanding(options.maxSteps ?? QUEST_DEFAULTS.maxSteps);
+  let sending: Promise<void> | null = null;
+  let stale = false;
+  let refused = 0;
+  const send = (): void => {
+    if (refused >= 3) return;
+    if (sending) {
+      stale = true;
+      return;
+    }
+    const { plan, doing, summary, ...rest } = standing;
+    sending = node
+      .call("questProgress", { quest, ...(attempt ? { attempt } : {}), goal, ...rest, ...(plan ? { plan } : {}), ...(doing ? { doing: doing.slice(0, 300) } : {}), ...(summary ? { summary } : {}) })
+      .then(
+        () => void (refused = 0),
+        () => void (refused += 1),
+      )
+      .finally(() => {
+        sending = null;
+        if (stale) {
+          stale = false;
+          send();
+        }
+      });
+  };
+  send();
+  return {
+    on(event: QuestEvent): void {
+      const next = standingAfter(standing, event);
+      if (next === standing) return;
+      standing = next;
+      send();
+    },
+    /** It couldn't run (no sandbox, an outage past its retries): shown as failed, with why. */
+    failed(error: unknown): void {
+      standing = { ...standing, state: "failed", doing: "", summary: redact(String((error as Error)?.message ?? error)).slice(0, 800) };
+      send();
+    },
+    /** When the last word has reached the node (or it's clear none will). */
+    async settled(): Promise<void> {
+      while (sending) await sending;
+    },
+  };
 }
 
 /** What became of shipping a quest's work. */
@@ -194,6 +295,17 @@ function print(event: QuestEvent): void {
     case "submitted":
       console.log(`\n${bold("◇ Submitted")}\n${indent(firstLines(event.summary, 6))}`);
       return;
+    case "gates":
+      console.log(`${bold("◇ Gates")} ${dim("· each must exit 0 before the reviewer is asked")}\n${event.gates.map((g, i) => `  ${i + 1}. $ ${firstLines(g.command, 2)} ${dim(`(${gateBy(g.by)})`)}`).join("\n")}\n`);
+      return;
+    case "gate": {
+      const [, ...output] = event.output.split("\n");
+      console.log(`${bold(`◇ Gate ${event.index}/${event.of}: ${event.exitCode === 0 ? "passed" : `failed (exit ${event.exitCode})`}`)} ${dim(`· $ ${firstLines(event.command, 1)}`)}${event.exitCode !== 0 && output.length ? `\n${dim(indent(firstLines(output.join("\n"), 6), "    "))}` : ""}`);
+      return;
+    }
+    case "gated":
+      if (!event.passed) console.log(dim(`  (not reviewed: ${event.results.filter((g) => g.exitCode !== 0).length} of ${event.results.length} gate(s) failed; the work goes back to the engineer)`));
+      return;
     case "review":
       console.log(`${bold(`◇ Review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}${event.notes ? `\n${indent(firstLines(event.notes, 6))}` : ""}\n`);
       return;
@@ -220,6 +332,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "review":
       console.log(`${tag} ${bold(`review: ${event.verdict === "pass" ? "PASS" : "REVISE"}`)} ${dim(`· ${event.model}`)}`);
+      return;
+    case "gated":
+      console.log(`${tag} ${bold(`gates: ${event.passed ? "passed" : `${event.results.filter((g) => g.exitCode !== 0).length} of ${event.results.length} failed`}`)}`);
       return;
     case "retry":
       console.log(`${tag} ${dim(`the ${event.role} couldn't answer; asking again in ${Math.round(event.waitMs / 1000)} s`)}`);
@@ -325,6 +440,9 @@ async function workIn(
       ...(evidence ? { evidence } : {}),
       ...(agent ? { agent } : {}),
       ...(run.parallelCommands && run.parallelCommands > 1 ? { parallelCommands: run.parallelCommands } : {}),
+      // The gates run in this workshop's own sandbox (with effort: each attempt's own).
+      ...(options.gates?.length ? { gates: options.gates } : {}),
+      ...(options.proposeGates ? { proposeGates: true } : {}),
     },
     {
       ask: async (role, messages) => {
@@ -396,9 +514,11 @@ async function sandboxEvidence(exec: Exec, commands: readonly string[]): Promise
  */
 export async function runNodeQuest(
   node: NodeClient,
-  options: DoOptions,
+  given: DoOptions,
   hooks: NodeQuestHooks = {},
 ): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone }> {
+  // Before anything is created: the gates are checked as any input is.
+  const options: DoOptions = { ...given, gates: checkGates(given.gates) };
   const quest = questId();
   const agent = options.agent ? await agentFor(node, options) : undefined;
   let grant: EffortGrant | null = null;
@@ -414,13 +534,22 @@ export async function runNodeQuest(
   if (attempts === 1) {
     // The node shows a quest whose effort it granted (as his own work: there's one attempt).
     const tag = grant ? { quest: grant.quest, index: 1, of: 1 } : undefined;
-    const shop = await openWorkshop(node, options, quest, agent, tag);
-    hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+    // The node is told where the quest stands as it goes (its plan, the step he's on, each gate's last result).
+    const standing = standingReporter(node, options, quest);
     try {
-      outcome = await workIn(node, options, shop, agent, { emit: hooks.emit, signal: hooks.signal, ...(tag ? { tag } : {}) });
-      await hooks.finished?.(shop.exec);
+      const shop = await openWorkshop(node, options, quest, agent, tag);
+      hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
+      try {
+        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}) });
+        await hooks.finished?.(shop.exec);
+      } finally {
+        artifact = await closeWorkshop(node, options, shop, true);
+      }
+    } catch (error) {
+      standing.failed(error);
+      throw error;
     } finally {
-      artifact = await closeWorkshop(node, options, shop, true);
+      await standing.settled();
     }
   } else {
     const open: Workshop[] = [];
@@ -432,22 +561,32 @@ export async function runNodeQuest(
         {
           attempt: async (index, of, signal) => {
             const tag = { quest: grant!.quest, index, of };
-            const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
-            open.push(shop);
-            hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
-            const collect = evidenceCollector();
-            const done = await workIn(node, options, shop, agent, {
-              emit: (event) => {
-                collect.emit(event);
-                hooks.emit?.(event, index);
-              },
-              signal,
-              tag,
-              instructions: attemptInstructions(index, of),
-              // Parallel sub-steps too: independent commands may run at once inside each sandbox.
-              parallelCommands: of,
-            });
-            return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+            // Each attempt stands on its own: its plan, its steps, its gates in its own sandbox.
+            const standing = standingReporter(node, options, `${quest}.${index}`, { of: quest, index, attempts: of });
+            try {
+              const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
+              open.push(shop);
+              hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
+              const collect = evidenceCollector();
+              const done = await workIn(node, options, shop, agent, {
+                emit: (event) => {
+                  collect.emit(event);
+                  standing.on(event);
+                  hooks.emit?.(event, index);
+                },
+                signal,
+                tag,
+                instructions: attemptInstructions(index, of),
+                // Parallel sub-steps too: independent commands may run at once inside each sandbox.
+                parallelCommands: of,
+              });
+              return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+            } catch (error) {
+              standing.failed(error);
+              throw error;
+            } finally {
+              await standing.settled();
+            }
           },
           // The pick is his own decision, by the independent reviewer: no attempt's tag, no rotation.
           ask: async (messages) => {
@@ -490,6 +629,7 @@ export async function runNodeQuest(
       `Quest (${outcome.status}): ${options.goal}`,
       outcome.summary.trim(),
       outcome.review ? `Reviewer: ${outcome.review.trim()}` : "",
+      outcome.gates?.length ? gatesLine(outcome.gates) : "",
       effort
         ? `Effort ${effort.attempts.length + effort.failed.length}: ${[...effort.attempts.map((a) => `attempt ${a.index} ${a.status}`), ...effort.failed.map((f) => `attempt ${f.index} didn't run`)].join(", ")}. Taken: attempt ${effort.pick.index} (${effort.pick.reason.trim().split("\n")[0]})`
         : "",
@@ -604,7 +744,10 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
 
   console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
   console.log(indent(outcome.summary.trim()));
-  if (outcome.status !== "done" && outcome.review) console.log(`\nReviewer:\n${indent(outcome.review.trim())}`);
+  // A gate that never passed is why, not a reviewer: the reviewer was never asked.
+  const gatesFailed = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
+  if (outcome.status !== "done" && outcome.review) console.log(`\n${gatesFailed ? "Never reviewed:" : "Reviewer:"}\n${indent(outcome.review.trim())}`);
+  if (outcome.gates?.length) console.log(dim(`\n${gatesLine(outcome.gates)}`));
   if (artifact) {
     const kb = Math.max(1, Math.round(artifact.bytes / 1024));
     console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));

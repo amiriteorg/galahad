@@ -246,6 +246,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | **The bank** | Offered only when the caller holds `bank:read`. Once bank data is in an answer, tools that can carry data out (`web_search`, `connector_call`, `sandbox_run`, `sandbox_exec`, `experiment_run`, `decide`, flow `egress`) and tools that write the model's words into the shared mind or onto the chalkboard (`remember`, `request_secret`, `sandbox_save`, `sandbox_create`, `board_write`, flow `record`) are refused for the rest of it, and the world shows the later tools by name only. Every tool either only reads the mind or names its flow; a test holds them to it. |
 | **Pictures** | A tool's result can carry a picture (`board_read`: the chalkboard as you last saw it). Claude gets it as an image block inside the tool result; an OpenAI-compatible model that's documented to see and whose provider takes a user message after tool messages (Ollama's vision models) gets it as a user message after them (tool messages are text only); every other model gets the picture in words (`seesImages`, `withoutImages` in `packages/brain/src/adapters.ts`). DeepSeek is text only and Mistral refuses a user message after a tool message, so both get words. Over MCP the picture goes as image content. |
 | **Long answers** | An answer cut off by the model's output limit goes on where it stopped (up to 3 times; some providers' default limit is short), and says so if it still didn't finish. A tool result over 30,000 characters is cut with a note that tells the model to ask for less (a filter, a narrower range, the next page). |
+| **Steering** | A message of yours can reach an answer that's under way (`Steering` in `chat.ts`; §10¼ says who offers it). It's taken at the next **safe point**: a model call is ended cleanly and what he'd said stays said; a tool that is running always finishes and its outcome is reported first, and tools of that round that hadn't started aren't run (each gets an outcome that says so); a message that arrives as the answer ends is answered in the same turn, after the whole answer; one that arrives after the end is refused, because it's a new turn's. Both provider formats take it the same way (`interject` in `adapters.ts`): what he said (or a pause in his own words), then your message as a user's, so no tool call is ever left without its outcome and no provider is handed a user message straight after a tool's. The tools are the same set for the whole turn, so what the bank's rules refuse stays refused after a steer. Each steer gives the rounds a new message would, never more at once. |
 | **Quests** | Their roles keep their own tools (the workshop's shell, the reviewer's reading): they ask for chat without tools (`tools: false`). |
 
 ## 7. Placement: using every body well ✅
@@ -344,6 +345,25 @@ Guarantees:
 - **Outcomes are honest.** `done` (the reviewer passed it), `unverified`, `gave-up` (the engineer says why) or `stopped`.
 - **An outage isn't the end.** A model call that fails (a provider down, a reply cut off mid-stream, which the roster can't fall back from) is asked again after 15 s, 60 s and 3 minutes; only then does the error stand.
 
+### Gates: done means this command passes ✅
+
+`galahad do "<goal>" --gate "<command>"` (repeatable, at most 8) says what "done" means in a way a program can check. A gate is a shell command, run in the quest's own sandbox when the engineer says DONE.
+
+| | How |
+|---|---|
+| **Before the reviewer** | Every gate runs, in order, on every submission, and **every one must exit 0 before the reviewer is asked at all**: the reviewer's model call isn't spent on work that a test plainly fails. A gate the sandbox can't run has not passed. |
+| **A failing gate** | Its command, exit code and an excerpt of what it printed go back to the engineer as a revision, within the one revision limit (a gate's failure and a reviewer's REVISE share it). The engineer is told the gates up front, word for word, and that it can't change them. With a coding agent the failure continues the agent's own session. |
+| **Evidence** | When they pass, the reviewer sees each gate's run that passed and every earlier run that failed, beside the engineer's commands. |
+| **Honest as ever** | The outcomes keep their meaning. A quest whose gates never pass is never `done`: it ends `unverified`, its "review" says which gate failed and how, and the reviewer was never asked. Giving up, stopping and running out of commands are what they were. |
+| **Yours and the planner's** | Yours are run exactly as you gave them: never dropped, never rewritten. The planner may propose up to 3 more from its "Done when:" line (lines starting `Gate:`); they run after yours, are marked *proposed by the planner* wherever gates are shown, and one that repeats yours isn't run twice. `galahad do` lets it; `--no-planner-gates` is yours only; a loop's quest and a trial run yours only (a fixed plan proposes nothing). |
+| **Ledgered** | A gate is an `execSandbox` like every command: in the ledger under the quest. It isn't one of the engineer's commands, so it doesn't spend the step budget; each has the per-command time limit. |
+| **With effort** | Each attempt runs the gates in its own sandbox (its planner may propose its own); an attempt is `done` only past them, so the pick is among attempts that passed both. Each attempt's evidence in the comparison shows its gates' last run. |
+| **Where** | `galahad do --gate`, a loop's quest (`gates` in its task: `galahad loop add … --quest "…" --gate "…"`, the Loops form), checked at the door like any input (`QuestGates` in `packages/core/src/quests.ts`): commands only, and nothing key-shaped (they reach models and the ledger). |
+
+A gate is the cheap check that comes first, not the proof: it runs in the sandbox the engineer works in, so an engineer that games it (deleting the failing test) is still the reviewer's to catch, from the trail of commands it also sees.
+
+**Where a quest stands.** Whoever runs a quest (`galahad do`, a loop, each attempt of an effort) tells its node after every event: the plan, the command he's on, each gate's last result, how it ended (`questProgress`, the `sandbox` scope; a pure fold of the quest's own events in `packages/brain/src/quest-progress.ts`). The node shows the quests in hand and the ones that just ended (`GET /api/quests`, `mind:read`; `galahad quests`; **In hand** on the app's Overview). It's a view, not a record: in memory on that node, bounded, redacted again on the way in, and each reporter's quests are its own, so an agent's report never writes over yours. The ledger has every command and the mind the outcome.
+
 ### Effort: more compute for a better answer ✅
 
 `galahad do --effort 3 "<goal>"` spends more compute on one quest: **several independent attempts at once**, each in its own sandbox, each planned, worked and reviewed exactly as a quest is; then the independent reviewer takes the best **on the evidence alone**.
@@ -401,7 +421,7 @@ Each search is ledgered. Results are trimmed to title, URL and snippet (web page
 
 Native tools (`NATIVE_TOOLS` in `packages/core/src/connectors.ts`) are named by a manifest but defined only in code, each bound to the one origin it may talk to; their arguments are checked like any tool's, and approvals, standing orders and the ledger treat them like any other call.
 
-The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path. Quests also run on a schedule, as loops (§9). Next: quests started from the PWA and MCP, with live progress.
+The loop is pure orchestration (`packages/brain/src/quest.ts`): models, the sandbox and output are injected, so the CLI, a node or a test run the same code. `packages/brain/test/quest.test.ts` scripts every path (`gates.test.ts` the gates). Quests also run on a schedule, as loops (§9). Next: starting a quest from the PWA and MCP (where one stands is already shown).
 
 ### Investigations: the scientific method ✅
 
@@ -429,7 +449,7 @@ A **loop** is work Galahad does on a schedule: `every 30m` (aligned to the clock
 |---|---|
 | `heartbeat` | Galahad's regular look around (below), then what he may fix himself (self-action, below) |
 | `reflect` | His journal: once a day, the day recollected in his own words, as his own memory (below). The kind keeps the name it had as his daily reflection |
-| `quest` | A quest in a fresh sandbox (§8⅞), through a short-lived **arm token**: its sandboxes are its own and ephemeral, its memories are `untrusted`, and it can't touch the vault, devices or the roster |
+| `quest` | A quest in a fresh sandbox (§8⅞), through a short-lived **arm token**: its sandboxes are its own and ephemeral, its memories are `untrusted`, and it can't touch the vault, devices or the roster. Its task may carry your gates (`gates`): a run whose gates never pass is never `ok` |
 | `call` | One connector tool (§10). A loop is Galahad acting on his own, never you, so an outward or delete tool files an approval request instead of running |
 
 | Guarantee | How |
@@ -548,6 +568,28 @@ A covered call is still filed as an action, so it's in your inbox and the ledger
 | **Yours alone** | The conversation routes and keeping a chat are for you (a terminal or a paired device), never an agent or a quest. A chat where Galahad read the bank is marked and shown only to devices that may read the bank. |
 | **Projects** | `project.set` / `project.removed` in the mind (LWW by id, full nodes only): a name, instructions, an optional https repository. Setting one needs `brain:write`, which agents can never hold, because its instructions steer Galahad. In a project's chats, the project (name, repository, instructions, its 10 latest memories) goes with every answer after the persona, and what Galahad remembers there is tagged `project:<id>`. Removing a project leaves its chats and memories. |
 | **Surfaces** | The app's Chat (Chats, Temporary, rename, pin, move, delete) and Projects pages; `galahad ask [--project] [--chat] [--temp]`, `galahad chats`, `galahad chat <id>`, `galahad projects`, `galahad project set|rm`. |
+
+### Turns the node owns: steer, queue, a side question ✅
+
+A chat turn of yours belongs to the node, not to the page or terminal that started it (`TurnHub` in `packages/node/src/turns.ts`; the rules that are pure are in `packages/core/src/turns.ts`).
+
+| | How |
+|---|---|
+| **It runs to its end** | The chat route, for you and with his tools, starts a turn on the node and only *watches* it: the stream begins with `turn` (its id, the kept message its first answer is, when it stops by itself). The page going away (a locked phone, a reload, a lost signal) ends the watching and nothing else; the finished turn is in the kept chat like any other. A quest's or an agent's call to the same route (and yours with `tools: false`, a quest you're running) lives and ends with its request, as ever. |
+| **Attach** | `attachTurn` replays the turn from its start (text runs joined) and then goes on live; a turn that just ended can still be attached to for ten minutes. A kept chat says which turn is running in it (`turn` in `conversation`), so a reloaded page, or another device, finds it. |
+| **Stop is explicit** | `stopTurn` (the button, Esc, `galahad turn stop`, Ctrl-C in `galahad ask`) and nothing else: the answer so far is kept as stopped. A stopped turn winds down by itself (a tool that is running finishes and reports); one that hasn't after 30 s (a tool that never returns) is recorded as it stands and gives up its place. |
+| **Steer** | `steerTurn` hands your message to the running turn (§6 says when it reaches him). It becomes part of the kept chat where it reached him: the answer so far (kept as `steered`), your message, the rest. A steer that hadn't reached him when the turn ended isn't lost: it's queued, first in line, and held. |
+| **Queue** | `queueMessage` keeps your message on the node (in `chats.db`, with which device queued it) behind a kept chat; when the turn before it ends well it becomes the next turn, with nobody attached. Each is sent once and never retried. `editQueued`, `removeQueued`, `sendQueued` ("Send now": steers the turn under way, or starts it at once), `resumeQueue`. |
+| **Held** | After a Stop, a failure, or a node restart the queue is **held**: nothing is sent until you resume or discard. A restart never sends anything by itself. |
+| **Your message, checked like one** | A steered or queued message is scanned for secrets when it's sent, queued or edited. A queued message becomes a turn exactly as a message sent then would: the chat route's own input check and secret scan, as the device that queued (or last rewrote) it **stands then**: its scopes now, in a chat it may still see. A device revoked since, or one that may no longer see the chat, and it isn't sent: the queue is held and says why. Who acts, the tools within your scopes, the bank's rules, the model's slot and the archive are those of any answer: the turn is prepared by the same code (`prepareAnswer`, `turnSpec` in `server.ts`). |
+| **Unattended fails closed** | Nothing is approved because nobody is there: in chat he acts as the agent `galahad` whether or not you're watching, so anything outward or destructive is filed for your approval and a key is asked for through a secret request, and both wait. The app says so wherever he's working. |
+| **Bounded** | Per node: 4 turns at once and 30 minutes each (`GALAHAD_TURNS_MAX`, `GALAHAD_TURN_MINUTES`), 20 messages queued behind a chat, 20 steers a turn; each said plainly when hit (429, or the turn's own error: "reached this node's limit of 30 minutes for one turn and was stopped. Nothing is retried"). A temporary chat's turn is kept nowhere, so one that nobody has watched for two minutes is stopped. `GET /api/turns` lists what's running with what each has cost so far (time, tools), who's watching, and when it stops. |
+| **Who may** | You (a terminal or a paired device), never an agent or another node. A turn that may read the bank is watched, steered and asked about only by a device that may read the bank (any of your devices may stop it); a temporary chat's turn is known only to the device that started it. |
+| **A side question** | `askAside` answers something *about* the work in hand without changing its course: from what the chat holds and what the running turn has said and done so far, with no tools (answering can do nothing), as its own stream, added to nothing. `bringBack` makes it your message: it steers the turn under way, or with none running joins the kept chat as an exchange. Kept in memory for half an hour for the device that asked; two at once on a node. |
+| **At a glance** | Every chat summary carries where it stands (`chatState`): working, waiting on you (an approval he filed in it that you haven't answered, a key he asked for, or an answer that ends by asking), queued (and held, and why), stopped, failed or done. |
+| **When the node stops** | No new turns; the ones under way get the same grace as requests (10 s), then are stopped and kept as stopped, their queues held. |
+
+Routes (all `chat`): `turns`, `attachTurn`, `stopTurn`, `steerTurn`, `queueMessage`, `editQueued`, `removeQueued`, `sendQueued`, `resumeQueue`, `askAside`, `bringBack`. Stream events added: `turn`, `steer`, `stopped`, `undelivered`, `aside`. Surfaces: the app's Chat page and the SANDBOX's composer (Enter steers or queues by this device's choice, the other with Ctrl/⌘; the queue above the composer; `/btw`); `galahad ask [--steer | --queue | --aside [--bring]] [--detach]`, `galahad turns`, `galahad turn watch|stop`, `galahad queue <chat> …`. End to end, over real HTTP with paired devices: `packages/node/test/turns.e2e.test.ts`.
 
 ## 10⅓. The SANDBOX: Galahad's world ✅
 

@@ -429,8 +429,10 @@ export function loopExecutor(deps: LoopTaskDeps) {
         const { token } = deps.arms.mint(label, ["mind:read", "mind:write", "sandbox", "chat"]);
         try {
           const client = new LocalClient(`http://127.0.0.1:${deps.port}`, token);
-          const { outcome } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps }, { signal: ctx.signal });
-          const review = outcome.status !== "done" && outcome.review ? ` Reviewer: ${outcome.review.trim()}` : "";
+          // Your gates go with it as you gave them; on his own, the planner proposes none of its own.
+          const { outcome } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
+          const gated = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
+          const review = outcome.status !== "done" && outcome.review ? ` ${gated ? "Never reviewed:" : "Reviewer:"} ${outcome.review.trim()}` : "";
           return {
             status: outcome.status === "done" ? "ok" : "attention",
             summary: `${outcome.status} after ${outcome.steps} commands: ${outcome.summary.trim()}${review}`,

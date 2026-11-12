@@ -24,7 +24,68 @@ export interface ChatRequest {
   tools?: ChatTools;
   /** Start the role's models at this position (effort: each parallel attempt takes another one first). */
   rotate?: number;
+  /** Messages the owner sends while this answer is under way: each reaches the model at the next safe point. */
+  steering?: Steering;
 }
+
+/**
+ * Steering: what the owner says while an answer is under way. Whoever owns the turn offers
+ * each message; `chat()` takes them at the next safe point (a model call is ended cleanly;
+ * a running tool finishes and reports first; tools not yet started aren't run) and goes on
+ * with them, as with any message of the owner's. When the answer ends with nothing waiting
+ * it accepts no more: a message after that belongs to a new turn.
+ */
+export class Steering {
+  private pending: string[] = [];
+  private closed = false;
+  private readonly listeners = new Set<() => void>();
+
+  /** The owner's message for the answer under way. False once the answer has ended: send it as a new message. */
+  offer(text: string): boolean {
+    if (this.closed) return false;
+    this.pending.push(text);
+    for (const listener of [...this.listeners]) listener();
+    return true;
+  }
+
+  /** How many messages wait to be handed over. */
+  get waiting(): number {
+    return this.pending.length;
+  }
+
+  /** Everything waiting, in the order it came. */
+  take(): string[] {
+    const taken = this.pending;
+    this.pending = [];
+    return taken;
+  }
+
+  /** The answer has come to its end: what arrived in time is taken (and the answer goes on); nothing waiting, and it's over. */
+  finish(): string[] {
+    const late = this.take();
+    if (!late.length) this.closed = true;
+    return late;
+  }
+
+  /** The answer ended some other way (an error, a stop): no more is accepted, and what never reached him is handed back. */
+  close(): string[] {
+    this.closed = true;
+    return this.take();
+  }
+
+  /** Told when a message arrives. Returns how to stop listening. */
+  onArrive(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  }
+}
+
+/** What a tool that hadn't started is answered with when a message from the owner arrived first. */
+const NOT_RUN = {
+  content: "Not run: a new message from your liege arrived before this call started. Read it first; call the tool again only if it is still wanted.",
+  isError: true,
+  summary: "not run: your new message came first",
+} as const;
 
 /**
  * Tools for one answer. The specs stay the same for the whole answer (the provider
@@ -80,6 +141,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   // A parallel attempt starts at another of the role's models; the rest stay its fallbacks, in order.
   const candidates = req.rotate ? rotated(listed, req.rotate) : listed;
   const tools = req.tools?.specs.length ? req.tools : undefined;
+  const steering = req.steering;
+  // Every message handed over so far: a model that takes over (or starts again without tools) is handed them too.
+  const handed: string[][] = [];
   for (const ref of candidates) {
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.
     const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
@@ -99,8 +163,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield { type: "fallback", from: ref, error: `provider "${parsed.provider}" has no key in the vault` };
       continue;
     }
-    const start = () =>
-      (provider.kind === "anthropic" ? anthropicConversation : openAIConversation)({
+    const start = () => {
+      const fresh = (provider.kind === "anthropic" ? anthropicConversation : openAIConversation)({
         provider,
         model: parsed.model,
         system,
@@ -109,6 +173,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         signal: req.signal,
         fetch: ctx.fetch,
       });
+      for (const texts of handed) fresh.interject(texts, "");
+      return fresh;
+    };
     let conversation = start();
     let offered = tools?.specs ?? [];
     let emitted = false;
@@ -117,20 +184,47 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       let spoke = false;
       let resumed = false;
       let continued = 0;
+      // The owner's message(s) reach him: the turn goes on with them, as with a new message of theirs.
+      const handOver = function* (texts: string[], partial: string | null): Generator<ChatStreamEvent> {
+        conversation.interject(texts, partial);
+        handed.push(texts);
+        for (const text of texts) yield { type: "steer", text };
+        // What follows answers a new message: its own paragraphs, its own continuations.
+        spoke = resumed = false;
+        continued = 0;
+      };
       for (let round = 0; ; round++) {
+        // A message that came while a tool ran (or before he began): he's told before the next model call.
+        const waiting = steering?.take() ?? [];
+        if (waiting.length) {
+          yield* handOver(waiting, null);
+          round = 0;
+        }
         let end: TurnEnd;
+        // A message arriving ends this one model call cleanly; the turn's own signal still ends everything.
+        const cut = new AbortController();
+        const deaf = steering?.onArrive(() => cut.abort());
+        let said = "";
         try {
-          const turn = conversation.turn(offered);
+          const turn = conversation.turn(offered, steering ? (req.signal ? AbortSignal.any([req.signal, cut.signal]) : cut.signal) : undefined);
           let next = await turn.next();
           for (; !next.done; next = await turn.next()) {
             // Text after a round of tools starts a new paragraph.
             if (resumed) yield { type: "text", text: "\n\n" };
             resumed = false;
             emitted = spoke = true;
+            said += next.value;
             yield { type: "text", text: next.value };
           }
           end = next.value;
         } catch (error) {
+          // Cut short for the owner's message (not a stop): what he'd said stays said, and the turn goes on with it.
+          const arrived = cut.signal.aborted && !req.signal?.aborted ? (steering?.take() ?? []) : [];
+          if (arrived.length) {
+            yield* handOver(arrived, said);
+            round = -1;
+            continue;
+          }
           // A runtime that can't take tools (some local models): the same model, without them.
           if (error instanceof ToolsUnsupportedError && !emitted) {
             conversation = start();
@@ -139,6 +233,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             continue;
           }
           throw error;
+        } finally {
+          deaf?.();
         }
         if (!end.calls.length) {
           // Cut off by the model's output limit: it goes on where it stopped, in the same answer.
@@ -149,6 +245,13 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             continue;
           }
           if (end.truncated) yield { type: "text", text: "\n\n*(This answer reached the model's length limit. Ask me to go on.)*" };
+          // A message that arrived as he finished is answered in this turn, after the whole answer. None: it's over.
+          const late = steering?.finish() ?? [];
+          if (late.length) {
+            yield* handOver(late, null);
+            round = -1;
+            continue;
+          }
           break;
         }
         const calls: ToolCall[] = end.calls;
@@ -158,8 +261,11 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         for (const call of calls) {
           const { title, input } = tools!.describe(call);
           yield { type: "tool", id: call.id, name: call.name, title, input };
-          const outcome =
-            round >= MAX_TOOL_ROUNDS
+          // A tool that is running always finishes and reports. One that hasn't started when a message
+          // arrives isn't run: every call still gets its outcome, and this one's says why.
+          const outcome = steering?.waiting
+            ? NOT_RUN
+            : round >= MAX_TOOL_ROUNDS
               ? { content: `No more tools for this answer (${MAX_TOOL_ROUNDS} rounds). Answer with what you have.`, isError: true, summary: "no more tools for this answer" }
               : await tools!.run(call, req.signal);
           yield { type: "tool_result", id: call.id, name: call.name, ok: !outcome.isError, summary: outcome.summary };
