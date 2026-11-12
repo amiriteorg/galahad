@@ -223,7 +223,8 @@ type OpenAIMessage =
 interface OpenAIChunk {
   choices?: {
     delta?: {
-      content?: string | null;
+      /** A string from most; a list of parts from some (Mistral's larger models: text parts, and thinking parts that aren't his words). */
+      content?: string | { type?: string; text?: unknown }[] | null;
       reasoning_content?: string | null;
       tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string | Record<string, unknown> } }[];
     };
@@ -232,6 +233,15 @@ interface OpenAIChunk {
   error?: { message?: string };
   /** The call's tokens, on the last chunk when the stream was asked for them (stream_options.include_usage). */
   usage?: unknown;
+}
+
+/** The words in a streamed delta's `content`: the string itself, or its text parts in order (never a thinking part). */
+function wordsOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  let words = "";
+  for (const part of content) if (part && typeof part === "object" && (part as { type?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string") words += (part as { text: string }).text;
+  return words;
 }
 
 /** The fields of a streamed delta this adapter reads. */
@@ -327,9 +337,10 @@ export function openAIConversation(input: CompletionInput): Conversation {
           if (args !== undefined) slot.args += typeof args === "string" ? args : JSON.stringify(args);
           calls.set(index, slot);
         }
-        if (delta?.content) {
-          text += delta.content;
-          yield delta.content;
+        const said = wordsOf(delta?.content);
+        if (said) {
+          text += said;
+          yield said;
         }
       }
       // Nothing said how it ended: the stream just stopped (a dropped connection, a proxy's timeout). Never an answer.

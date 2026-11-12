@@ -195,3 +195,31 @@ describe("an answer with no words in it", () => {
     expect(model.bodies.map((b) => b.model)).toEqual(["a", "b"]);
   });
 });
+
+describe("a provider that sends its words in parts", () => {
+  test("text parts are his words, in order; a thinking part is not; every text event is a string", async () => {
+    // Mistral's larger models stream `content` as a list of parts (a terminal crashed printing one).
+    const model = scripted([
+      whole(
+        { choices: [{ delta: { content: [{ type: "thinking", thinking: [{ type: "text", text: "Let me see." }] }] } }] },
+        { choices: [{ delta: { content: [{ type: "text", text: "Good " }] } }] },
+        { choices: [{ delta: { content: [{ type: "text", text: "morning" }, { type: "text", text: ", my liege." }] } }] },
+        { choices: [{ delta: { content: "" } }] },
+        stop,
+      ),
+    ]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Greet me") }));
+    for (const e of events) if (e.type === "text") expect(typeof e.text).toBe("string");
+    expect(textOf(events)).toBe("Good morning, my liege.");
+    expect(types(events).at(-1)).toBe("done");
+  });
+
+  test("only a thinking part and nothing said: that is an answer with no words, and it says what did arrive", async () => {
+    const model = scripted([whole({ choices: [{ delta: { content: [{ type: "thinking", thinking: [{ type: "text", text: "Hm." }] }] } }] }, stop)]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Greet me") }));
+    expect(types(events)).not.toContain("done");
+    expect(textOf(events)).toBe("");
+    // Nothing had happened yet, so it's a skip (and there is no other model here to take over).
+    expect(events.find((e) => e.type === "fallback")).toMatchObject({ error: expect.stringMatching(/without saying anything/) });
+  });
+});
