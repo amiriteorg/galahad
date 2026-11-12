@@ -1,6 +1,6 @@
 import { type ChatMessage, type ChatStreamEvent, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, openAIConversation, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { anthropicConversation, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
@@ -107,6 +107,13 @@ export const MAX_TOOL_ROUNDS = 12;
 /** How many times an answer cut off by the model's output limit is continued. */
 export const MAX_CONTINUATIONS = 3;
 
+/**
+ * How many times one model call is asked again when its provider's filter ended it before it said or asked
+ * for anything. Such filters aren't steady (the same conversation passes the next time more often than not),
+ * and asking again loses nothing: what he'd said and done stays, and no tool is run twice.
+ */
+export const MAX_REFUSAL_RETRIES = 2;
+
 /** Expand `<provider>/*` wildcards into the first model that provider serves on this node. */
 async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
   const out: string[] = [];
@@ -184,6 +191,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       let spoke = false;
       let resumed = false;
       let continued = 0;
+      let refused = 0;
       // The owner's message(s) reach him: the turn goes on with them, as with a new message of theirs.
       const handOver = function* (texts: string[], partial: string | null): Generator<ChatStreamEvent> {
         conversation.interject(texts, partial);
@@ -225,6 +233,12 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             round = -1;
             continue;
           }
+          // Declined before this call came to anything: the same call, again (see MAX_REFUSAL_RETRIES).
+          if (error instanceof RefusalError && !said && refused < MAX_REFUSAL_RETRIES && !req.signal?.aborted) {
+            refused++;
+            round--;
+            continue;
+          }
           // A runtime that can't take tools (some local models): the same model, without them.
           if (error instanceof ToolsUnsupportedError && !emitted) {
             conversation = start();
@@ -236,6 +250,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         } finally {
           deaf?.();
         }
+        refused = 0;
         if (!end.calls.length) {
           // Cut off by the model's output limit: it goes on where it stopped, in the same answer.
           if (end.truncated && continued < MAX_CONTINUATIONS) {

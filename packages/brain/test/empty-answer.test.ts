@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, type ChatTools } from "../src/index.ts";
+import { chat, type ChatTools, MAX_REFUSAL_RETRIES } from "../src/index.ts";
 
 /*
  * An answer with no words in it is never an answer. A reply that stops arriving before
@@ -95,6 +95,47 @@ describe("an answer with no words in it", () => {
     expect(textOf(events)).toBe("Posting it now.");
     expect(types(events).at(-1)).toBe("done");
     expect(errorOf(events)).toBe("");
+  });
+
+  test("a reply his provider's filter ended is asked for again: what was done stays done, and nothing runs twice", async () => {
+    const t = tools();
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([whole(...calls("c1", { text: "one" })), filtered, whole(words("All posted."), stop)]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Post it, then tell me"), tools: t }));
+    expect(t.ran).toBe(1);
+    expect(textOf(events)).toBe("All posted.");
+    expect(types(events).at(-1)).toBe("done");
+    // The same conversation, sent again as it stood.
+    expect(model.bodies).toHaveLength(3);
+    expect(model.bodies[2].messages).toEqual(model.bodies[1].messages);
+  });
+
+  test("ended by the filter again and again: the answer ends saying he declined, and is never kept as done", async () => {
+    const t = tools();
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([whole(...calls("c1", { text: "one" })), filtered, filtered, filtered, whole(words("Too late."), stop)]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Post it, then tell me"), tools: t }));
+    expect(model.bodies).toHaveLength(1 + 1 + MAX_REFUSAL_RETRIES);
+    expect(types(events)).not.toContain("done");
+    expect(errorOf(events)).toMatch(/declined to go on/);
+    expect(errorOf(events)).toMatch(/content filter/);
+    expect(textOf(events)).toBe("");
+  });
+
+  test("a reply the filter cut after he had begun to speak is not asked for again (he would say it twice)", async () => {
+    const model = scripted([whole(words("The first half, and"), { choices: [{ delta: {}, finish_reason: "content_filter" }] }), whole(words("never asked"), stop)]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Go on") }));
+    expect(model.bodies).toHaveLength(1);
+    expect(textOf(events)).toBe("The first half, and");
+    expect(errorOf(events)).toMatch(/declined to go on/);
+  });
+
+  test("filtered before anything happened, every time: the next model takes over", async () => {
+    const filtered = whole({ choices: [{ delta: {}, finish_reason: "content_filter" }] });
+    const model = scripted([filtered, filtered, filtered, whole(words("Here I am."), stop)]);
+    const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Anyone?") }));
+    expect(types(events)).toEqual(["model", "fallback", "model", "text", "done"]);
+    expect(model.bodies.map((b) => b.model)).toEqual(["a", "a", "a", "b"]);
   });
 
   test("a first reply with nothing in it: the next model takes over", async () => {

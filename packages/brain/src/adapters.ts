@@ -286,6 +286,9 @@ export function openAIConversation(input: CompletionInput): Conversation {
       }
       // Nothing said how it ended: the stream just stopped (a dropped connection, a proxy's timeout). Never an answer.
       if (finish === null && !ended) throw new Error(`${input.provider.id}/${input.model}: its reply stopped arriving before it was finished (${events} event${events === 1 ? "" : "s"}, no finish reason)`);
+      // The provider's own filter ended the reply (how a router passes on a model's refusal). Whatever tool calls
+      // had begun to arrive are never run: a filter can cut one off in the middle of its input.
+      if (finish === "content_filter") throw new RefusalError(`${input.model} declined to go on (its provider's content filter ended the reply)`);
       if (!calls.size) {
         last = text;
         finalPending = true;
