@@ -1,0 +1,30 @@
+{
+  "suite": "archive",
+  "commit": "a40e7196793f+dirty",
+  "at": 1794493749647,
+  "seed": 20261112,
+  "machine": {
+    "name": "11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz",
+    "calibration": 32281,
+    "cores": 16
+  },
+  "metrics": [
+    {"id":"archive.words.recall-at-10","value":0.485,"unit":"","kind":"quality","better":"higher","n":40,"note":"by words alone: the share of a topic's entries among the first ten; 40 questions over 1200 passages (60 topics, 10 entries each)"},
+    {"id":"archive.words.mrr","value":0.702916667,"unit":"","kind":"quality","better":"higher","n":40,"note":"one over the place of the first relevant entry, averaged"},
+    {"id":"archive.meaning.recall-at-10","value":0.915,"unit":"","kind":"quality","better":"higher","n":40,"note":"by meaning alone (the int8 scan)"},
+    {"id":"archive.meaning.mrr","value":1,"unit":"","kind":"quality","better":"higher","n":40},
+    {"id":"archive.both.recall-at-10","value":1,"unit":"","kind":"quality","better":"higher","n":40,"note":"words and meaning fused, as a search with an embedder does"},
+    {"id":"archive.both.mrr","value":1,"unit":"","kind":"quality","better":"higher","n":40},
+    {"id":"archive.int8-top-10-agreement","value":0.9925,"unit":"","kind":"quality","better":"higher","note":"of the ten nearest passages by the int8 scan, the share that are the Float32 scan's ten"},
+    {"id":"archive.n1200.ingest","value":1.782,"unit":"ms","kind":"speed","better":"lower","spread":0.235,"n":1,"note":"a passage scrubbed, chunked and indexed for words"},
+    {"id":"archive.n1200.store-vector","value":0.1741,"unit":"ms","kind":"speed","better":"lower","spread":0.0229,"n":1,"note":"a passage's vector quantised to int8 and stored"},
+    {"id":"archive.n1200.search-words","value":1.131,"unit":"ms","kind":"speed","better":"lower","spread":0.361,"n":15},
+    {"id":"archive.n1200.search-meaning","value":1.205,"unit":"ms","kind":"speed","better":"lower","spread":0.505,"n":15,"note":"the int8 scan over every passage"},
+    {"id":"archive.n1200.search-both","value":2.395,"unit":"ms","kind":"speed","better":"lower","spread":0.518,"n":15},
+    {"id":"archive.n4800.ingest","value":1.524,"unit":"ms","kind":"speed","better":"lower","spread":0.303,"n":1,"note":"a passage scrubbed, chunked and indexed for words"},
+    {"id":"archive.n4800.store-vector","value":0.1586,"unit":"ms","kind":"speed","better":"lower","spread":0.0315,"n":1,"note":"a passage's vector quantised to int8 and stored"},
+    {"id":"archive.n4800.search-words","value":3.102,"unit":"ms","kind":"speed","better":"lower","spread":0.52,"n":15},
+    {"id":"archive.n4800.search-meaning","value":4.334,"unit":"ms","kind":"speed","better":"lower","spread":1.14,"n":15,"note":"the int8 scan over every passage"},
+    {"id":"archive.n4800.search-both","value":7.066,"unit":"ms","kind":"speed","better":"lower","spread":0.899,"n":15}
+  ]
+}
