@@ -613,6 +613,8 @@ function buildStations(p: Parts): void {
     add(new ConeGeometry(0.4, 1.1, 3), C.orange, at(-1.9 + 0.55, H + 3.7, 1.9, 0, [1, 1, 0.08], 0, -Math.PI / 2), 0);
     add(new CylinderGeometry(0.1, 0.13, 0.8, 8), C.cream, at(-0.6, H + 0.9, 0.6, 0.6, 1, -0.9), 0.02);
     for (let i = 0; i < 10; i++) add(new BoxGeometry(0.7, 0.05, 0.07), C.wood, at(0, 0.4 + i * 0.66, 1.62), 0);
+    // (The ladder's two rails, from the ground to the platform: without them its rungs hung in the air, as he saw from below.)
+    for (const x of [-0.36, 0.36]) add(new BoxGeometry(0.07, H, 0.07), C.woodDark, at(x, H / 2, 1.62), 0.02);
     lit.add(new IcosahedronGeometry(0.12, 0), 0xff9a4a, within(m, at(0.9, H + 7.35, -0.9)), 0);
     p.warm.push([...scenePoint(m, 0.9, H + 7.35, -0.9), 0.9]);
     const [lx, ly, lz] = scenePoint(m, 1.4, H + 1.9, 1.4);
