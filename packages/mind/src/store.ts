@@ -61,8 +61,10 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
  * 1: log_devices, v_slots and the kind, loop and (device, hlc, id) indexes.
  * 2: his dog's name (companion.named, companion.unnamed). The tables are the same; a replica that
  *    held such events before it knew the kinds applies them once, by a replay.
+ * 3: skills (skill.written and the rest; v_skills, v_skill_versions, v_skill_uses), applied the same way
+ *    by a replica that held such events before it knew them.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const MAX_PENDING = 2000;
 
@@ -114,9 +116,31 @@ CREATE TABLE IF NOT EXISTS v_slots (loop TEXT NOT NULL, device TEXT NOT NULL, sl
 -- Devices with an event refused for its place in their chain (a gap, a fork, a pin): their next
 -- events are judged by a replay, never incrementally.
 CREATE TABLE IF NOT EXISTS v_chainbad (device TEXT PRIMARY KEY);
+-- Skills (core's skills.ts): each skill with its head and its track record, every version ever written
+-- (never deleted), and the quests and answers each was given to. Their marks (locked, retired, stale) are
+-- in v_lww as skill-mark:<skill>:<mark>.
+CREATE TABLE IF NOT EXISTS v_skills (
+  id TEXT PRIMARY KEY, head TEXT NOT NULL, created_hlc TEXT NOT NULL, touched_hlc TEXT NOT NULL,
+  uses INTEGER NOT NULL DEFAULT 0, passed INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+  chats INTEGER NOT NULL DEFAULT 0, used_hlc TEXT
+);
+CREATE TABLE IF NOT EXISTS v_skill_versions (
+  id TEXT PRIMARY KEY, skill TEXT NOT NULL, n INTEGER NOT NULL, prev TEXT, doc TEXT NOT NULL, trust TEXT NOT NULL,
+  author TEXT NOT NULL, quest TEXT, via TEXT, hlc TEXT NOT NULL, approved_hlc TEXT
+);
+CREATE INDEX IF NOT EXISTS v_skill_versions_skill ON v_skill_versions (skill, n);
+CREATE TABLE IF NOT EXISTS v_skill_uses (
+  skill TEXT NOT NULL, quest TEXT NOT NULL, version TEXT NOT NULL, hlc TEXT NOT NULL, status TEXT, PRIMARY KEY (skill, quest)
+);
 `;
 
-const VIEW_TABLES = ["v_state", "v_devices", "v_memories", "v_memories_fts", "v_lww", "v_grants", "v_rejected", "v_slots", "v_chainbad"];
+const VIEW_TABLES = ["v_state", "v_devices", "v_memories", "v_memories_fts", "v_lww", "v_grants", "v_rejected", "v_slots", "v_chainbad", "v_skills", "v_skill_versions", "v_skill_uses"];
+
+/** Who wrote a skill's version, as its event says (core's skills.ts). */
+const SKILL_OWNER = "owner";
+const SKILL_GALAHAD = "galahad";
+/** A use that is a chat answer's, not a quest's: it has no review to pass. */
+const SKILL_CHAT = "chat:";
 
 /** What one ingest adds to log_devices, written once at its end. */
 interface LogDelta {
@@ -234,6 +258,9 @@ export class MindStore {
         this.replay();
       } else if (from < 2 && this.db.query("SELECT 1 FROM events WHERE kind IN ('companion.named', 'companion.unnamed') LIMIT 1").get()) {
         // Kept while this replica didn't know the kinds (a newer node named his dog): applied now, as a rebuild would.
+        this.replay();
+      } else if (from < 3 && this.db.query("SELECT 1 FROM events WHERE kind LIKE 'skill.%' LIMIT 1").get()) {
+        // Skills a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
         this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -1016,9 +1043,97 @@ export class MindStore {
         this.putLww("companion", event, null);
         return null;
       }
+      case "skill.written": {
+        if (!isFullNode(signer)) return "only full nodes write skills";
+        const body = bodyOf(event, "skill.written");
+        // Without a word on its trust, it's a stranger's.
+        const trust = event.prov?.trust ?? "untrusted";
+        if ((trust === "owner") !== (body.by === SKILL_OWNER)) return "only your own words are yours";
+        if (trust === "agent" && body.by !== SKILL_GALAHAD) return "only his own reviewed work is trusted as his";
+        const skill = this.db.query<{ head: string }, [string]>("SELECT head FROM v_skills WHERE id = ?").get(body.skill);
+        const insert = this.db.query("INSERT INTO v_skill_versions (id, skill, n, prev, doc, trust, author, quest, via, hlc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        if (!skill) {
+          insert.run(event.id, body.skill, 1, null, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.hlc);
+          this.db.query("INSERT INTO v_skills (id, head, created_hlc, touched_hlc) VALUES (?, ?, ?, ?)").run(body.skill, event.id, event.hlc, event.hlc);
+          return null;
+        }
+        if (trust !== "owner") {
+          // You change any skill. He changes only what he wrote, and nothing you locked; another agent proposes, never revises.
+          if (body.by !== SKILL_GALAHAD) return "only you and Galahad revise a skill";
+          if (this.skillMarked(body.skill, "locked")) return "the skill is locked";
+          const head = this.db.query<{ author: string }, [string]>("SELECT author FROM v_skill_versions WHERE id = ?").get(skill.head);
+          if (head?.author !== SKILL_GALAHAD) return "he revises only skills he wrote";
+        }
+        const n = this.db.query<{ n: number }, [string]>("SELECT MAX(n) AS n FROM v_skill_versions WHERE skill = ?").get(body.skill)!.n + 1;
+        insert.run(event.id, body.skill, n, skill.head, canonical(body.doc as Json), trust, body.by, body.quest ?? null, event.prov?.via ?? null, event.hlc);
+        this.db.query("UPDATE v_skills SET head = ?, touched_hlc = ? WHERE id = ?").run(event.id, event.hlc, body.skill);
+        return null;
+      }
+      case "skill.approved": {
+        if (!isFullNode(signer)) return "only full nodes record your approval";
+        const body = bodyOf(event, "skill.approved");
+        const version = this.db.query<{ skill: string; approved_hlc: string | null }, [string]>("SELECT skill, approved_hlc FROM v_skill_versions WHERE id = ?").get(body.version);
+        if (!version || version.skill !== body.skill) return "no such version of that skill";
+        // The first approval stands: it names what you read then.
+        if (version.approved_hlc) return "already approved";
+        this.db.query("UPDATE v_skill_versions SET approved_hlc = ? WHERE id = ?").run(event.hlc, body.version);
+        this.db.query("UPDATE v_skills SET touched_hlc = ? WHERE id = ?").run(event.hlc, body.skill);
+        return null;
+      }
+      case "skill.marked": {
+        if (!isFullNode(signer)) return "only full nodes mark skills";
+        const body = bodyOf(event, "skill.marked");
+        if (!this.db.query("SELECT 1 FROM v_skills WHERE id = ?").get(body.skill)) return "no such skill";
+        this.putLww(`skill-mark:${body.skill}:${body.mark}`, event, { on: body.on });
+        return null;
+      }
+      case "skill.reverted": {
+        if (!isFullNode(signer)) return "only full nodes roll a skill back";
+        const body = bodyOf(event, "skill.reverted");
+        const skill = this.db.query<{ head: string }, [string]>("SELECT head FROM v_skills WHERE id = ?").get(body.skill);
+        if (!skill) return "no such skill";
+        // One step, from the version you saw: a version that arrived meanwhile isn't undone unseen.
+        if (skill.head !== body.from) return "the skill changed since";
+        const prev = this.db.query<{ prev: string | null }, [string]>("SELECT prev FROM v_skill_versions WHERE id = ?").get(skill.head)?.prev;
+        if (!prev) return "nothing to go back to";
+        this.db.query("UPDATE v_skills SET head = ?, touched_hlc = ? WHERE id = ?").run(prev, event.hlc, body.skill);
+        return null;
+      }
+      case "skill.used": {
+        if (signer.kind !== "node") return "only nodes record a skill's use";
+        const body = bodyOf(event, "skill.used");
+        const version = this.db.query<{ skill: string; trust: string; approved_hlc: string | null }, [string]>("SELECT skill, trust, approved_hlc FROM v_skill_versions WHERE id = ?").get(body.version);
+        if (!version || version.skill !== body.skill) return "no such version of that skill";
+        // What was given to a model must have been his to be given: every replica checks it again.
+        if (version.trust === "untrusted" && !version.approved_hlc) return "that version was not approved";
+        if (this.skillMarked(body.skill, "retired")) return "the skill is retired";
+        if (this.db.query("SELECT 1 FROM v_skill_uses WHERE skill = ? AND quest = ?").get(body.skill, body.quest)) return "already counted";
+        this.db.query("INSERT INTO v_skill_uses (skill, quest, version, hlc) VALUES (?, ?, ?, ?)").run(body.skill, body.quest, body.version, event.hlc);
+        const chat = body.quest.startsWith(SKILL_CHAT);
+        this.db.query(`UPDATE v_skills SET ${chat ? "chats = chats + 1" : "uses = uses + 1"}, used_hlc = ?, touched_hlc = ? WHERE id = ?`).run(event.hlc, event.hlc, body.skill);
+        return null;
+      }
+      case "skill.outcome": {
+        if (signer.kind !== "node") return "only nodes record a quest's outcome";
+        const body = bodyOf(event, "skill.outcome");
+        if (body.quest.startsWith(SKILL_CHAT)) return "a chat answer has no review";
+        const use = this.db.query<{ status: string | null }, [string, string]>("SELECT status FROM v_skill_uses WHERE skill = ? AND quest = ?").get(body.skill, body.quest);
+        if (!use) return "that quest didn't use the skill";
+        if (use.status) return "already recorded";
+        this.db.query("UPDATE v_skill_uses SET status = ? WHERE skill = ? AND quest = ?").run(body.status, body.skill, body.quest);
+        // Its review passed, or it didn't. A quest you stopped (or an ending this node doesn't know) says nothing about the skill.
+        const counted = body.status === "done" ? "passed" : body.status === "unverified" || body.status === "gave-up" ? "failed" : null;
+        if (counted) this.db.query(`UPDATE v_skills SET ${counted} = ${counted} + 1 WHERE id = ?`).run(body.skill);
+        return null;
+      }
       default:
         return null;
     }
+  }
+
+  /** A skill's mark as it stands (at this point of a replay): locked, retired. */
+  private skillMarked(skill: string, mark: string): boolean {
+    return this.lww<{ on?: unknown }>(`skill-mark:${skill}:${mark}`)?.value?.on === true;
   }
 
   private putGrant(kid: string, device: string, box: Json): void {
@@ -1124,6 +1239,75 @@ export class MindStore {
           .query<MemoryRow, [number]>("SELECT * FROM v_memories WHERE forgotten = 0 ORDER BY hlc DESC LIMIT ?")
           .all(limit);
     return rows.map((row) => ({ ...row, tags: JSON.parse(row.tags) as string[] }));
+  }
+
+  // ---- skills ----------------------------------------------------------------
+
+  /** Every skill, with every version kept, oldest skill first. Where each stands is the reader's to say (core's skillStanding). */
+  skills(): SkillRecord[] {
+    const versions = new Map<string, SkillVersionRecord[]>();
+    for (const row of this.db.query<SkillVersionRow, []>("SELECT * FROM v_skill_versions ORDER BY skill, n").all()) {
+      const list = versions.get(row.skill) ?? [];
+      list.push(toSkillVersion(row));
+      versions.set(row.skill, list);
+    }
+    return this.db
+      .query<SkillRow, []>("SELECT * FROM v_skills ORDER BY created_hlc, id")
+      .all()
+      .map((row) => this.toSkill(row, versions.get(row.id) ?? []));
+  }
+
+  skill(id: string): SkillRecord | null {
+    const row = this.db.query<SkillRow, [string]>("SELECT * FROM v_skills WHERE id = ?").get(id);
+    if (!row) return null;
+    return this.toSkill(row, this.db.query<SkillVersionRow, [string]>("SELECT * FROM v_skill_versions WHERE skill = ? ORDER BY n").all(id).map(toSkillVersion));
+  }
+
+  private toSkill(row: SkillRow, versions: SkillVersionRecord[]): SkillRecord {
+    const stale = this.lww<{ on?: unknown }>(`skill-mark:${row.id}:stale`);
+    return {
+      id: row.id,
+      head: row.head,
+      createdHlc: row.created_hlc,
+      touchedHlc: row.touched_hlc,
+      uses: row.uses,
+      passed: row.passed,
+      failed: row.failed,
+      chats: row.chats,
+      usedHlc: row.used_hlc,
+      locked: this.skillMarked(row.id, "locked"),
+      retired: this.skillMarked(row.id, "retired"),
+      staleHlc: stale?.value?.on === true ? stale.hlc : null,
+      versions,
+    };
+  }
+
+  /** The quests and answers a skill was given to, newest first. */
+  skillUses(skill: string, limit = 50): SkillUseRecord[] {
+    return this.db.query<SkillUseRecord, [string, number]>("SELECT skill, quest, version, hlc, status FROM v_skill_uses WHERE skill = ? ORDER BY hlc DESC, quest LIMIT ?").all(skill, limit);
+  }
+
+  /** The skills one quest was given. */
+  skillsUsedBy(quest: string): SkillUseRecord[] {
+    return this.db.query<SkillUseRecord, [string]>("SELECT skill, quest, version, hlc, status FROM v_skill_uses WHERE quest = ? ORDER BY hlc, skill").all(quest);
+  }
+
+  /** The latest uses of any skill, newest first. */
+  recentSkillUses(limit = 20): SkillUseRecord[] {
+    return this.db.query<SkillUseRecord, [number]>("SELECT skill, quest, version, hlc, status FROM v_skill_uses ORDER BY hlc DESC, skill, quest LIMIT ?").all(limit);
+  }
+
+  /** Accepted ledger entries of one resource since `sinceMs` (by their own clocks), newest first: a day's spend is summed from these. */
+  ledgerOf(resource: string, sinceMs: number, limit = 1000): (GEvent & { body: BodyOf<"ledger.recorded"> })[] {
+    const since = `${String(Math.max(0, Math.floor(sinceMs))).padStart(15, "0")}.000000`;
+    return this.db
+      .query<{ raw: string }, [string, string, number]>(
+        `SELECT e.raw FROM events e LEFT JOIN v_rejected r ON r.id = e.id
+         WHERE e.kind = 'ledger.recorded' AND e.hlc >= ? AND json_extract(e.raw, '$.body.resource') = ? AND r.id IS NULL
+         ORDER BY e.hlc DESC, e.id DESC LIMIT ?`,
+      )
+      .all(since, resource, limit)
+      .map((row) => JSON.parse(row.raw) as GEvent & { body: BodyOf<"ledger.recorded"> });
   }
 
   // ---- sync ----------------------------------------------------------------
@@ -1272,11 +1456,102 @@ export class MindStore {
       lww: this.db.query("SELECT * FROM v_lww ORDER BY k").all(),
       grants: this.db.query("SELECT * FROM v_grants ORDER BY kid, device").all(),
       rejected: this.db.query("SELECT * FROM v_rejected ORDER BY id").all(),
+      // Only once there's a skill: a mind without one keeps the digest it always had (and an older node's).
+      ...(this.db.query("SELECT 1 FROM v_skills LIMIT 1").get()
+        ? {
+            skills: this.db.query("SELECT * FROM v_skills ORDER BY id").all(),
+            skillVersions: this.db.query("SELECT * FROM v_skill_versions ORDER BY id").all(),
+            skillUses: this.db.query("SELECT * FROM v_skill_uses ORDER BY skill, quest").all(),
+          }
+        : {}),
     };
     this.stateDigest = { version, digest: sha256B64u(canonical(dump as unknown as Json)) };
     return this.stateDigest.digest;
   }
 }
+
+/** One version of a skill, as the log's event wrote it. Its words (`doc`) are as written: the reader checks them. */
+export interface SkillVersionRecord {
+  id: string;
+  skill: string;
+  n: number;
+  /** The head it replaced. */
+  prev: string | null;
+  doc: Json;
+  trust: string;
+  by: string;
+  quest: string | null;
+  via: string | null;
+  hlc: string;
+  approvedHlc: string | null;
+}
+
+/** A skill as the mind holds it: its head, its marks, its track record, every version. */
+export interface SkillRecord {
+  id: string;
+  head: string;
+  createdHlc: string;
+  /** When it was last written, approved, rolled back or used. */
+  touchedHlc: string;
+  uses: number;
+  passed: number;
+  failed: number;
+  chats: number;
+  usedHlc: string | null;
+  locked: boolean;
+  retired: boolean;
+  /** When it was last marked stale (it is stale while that's after touchedHlc). */
+  staleHlc: string | null;
+  versions: SkillVersionRecord[];
+}
+
+export interface SkillUseRecord {
+  skill: string;
+  quest: string;
+  version: string;
+  hlc: string;
+  status: string | null;
+}
+
+interface SkillRow {
+  id: string;
+  head: string;
+  created_hlc: string;
+  touched_hlc: string;
+  uses: number;
+  passed: number;
+  failed: number;
+  chats: number;
+  used_hlc: string | null;
+}
+
+interface SkillVersionRow {
+  id: string;
+  skill: string;
+  n: number;
+  prev: string | null;
+  doc: string;
+  trust: string;
+  author: string;
+  quest: string | null;
+  via: string | null;
+  hlc: string;
+  approved_hlc: string | null;
+}
+
+const toSkillVersion = (row: SkillVersionRow): SkillVersionRecord => ({
+  id: row.id,
+  skill: row.skill,
+  n: row.n,
+  prev: row.prev,
+  doc: JSON.parse(row.doc) as Json,
+  trust: row.trust,
+  by: row.author,
+  quest: row.quest,
+  via: row.via,
+  hlc: row.hlc,
+  approvedHlc: row.approved_hlc,
+});
 
 export const isFullNode = (device: Device | null): device is Device =>
   !!device && device.kind === "node" && device.role === "full" && !device.revokedHlc;

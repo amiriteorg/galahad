@@ -139,7 +139,7 @@ describe("his dog's name", () => {
       raw.exec("DELETE FROM v_lww WHERE k = 'companion'; PRAGMA user_version = 1;");
       raw.close();
       const upgraded = new MindStore(path);
-      expect(upgraded.schemaVersion()).toBe(2);
+      expect(upgraded.schemaVersion()).toBe(3);
       expect(nameOn(upgraded)).toBe("Bors");
       expect(upgraded.digest()).toBe(digest);
       upgraded.close();
