@@ -90,10 +90,22 @@ export const CONTINUE =
  * stays inside.
  */
 export interface Conversation {
-  turn(tools: ToolSpec[]): AsyncGenerator<string, TurnEnd>;
+  /** `signal` ends just this call (a message arrived for the answer under way); without one, the conversation's own. */
+  turn(tools: ToolSpec[], signal?: AbortSignal): AsyncGenerator<string, TurnEnd>;
   answer(outcomes: ToolOutcome[]): void;
   resume(): void;
+  /**
+   * The owner's message(s) for the answer under way, at a safe point: never between a tool call and its
+   * outcome. `partial` is what the call it cut short had said (maybe nothing); null when no call was cut
+   * short: the last turn ended whole (it goes back as it came), or tool outcomes were just handed back.
+   * Every provider takes an assistant message and then a user's, so that's what this is: what he said (or
+   * a pause in his own words), then your message.
+   */
+  interject(texts: string[], partial: string | null): void;
 }
+
+/** What stands for his side of the conversation when a message arrives and he hadn't said anything yet. */
+export const INTERJECTED = "(I paused here: my liege sent a new message.)";
 
 /** Models that accept Anthropic's server-side refusal fallback ("default" routing). */
 const SERVER_FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
@@ -104,8 +116,11 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   const serverFallback = input.provider.baseUrl === "https://api.anthropic.com" && SERVER_FALLBACK_MODELS.has(input.model);
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
   let last: Anthropic.Beta.BetaContentBlockParam[] = [];
+  /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
+  let finalPending = false;
   return {
-    async *turn(tools) {
+    async *turn(tools, signal) {
+      finalPending = false;
       if (!input.provider.apiKey) throw new Error(`${input.provider.id} has no API key`);
       // pause_turn only comes from server-side tools; resume it a few times, never forever.
       for (let pauses = 0; ; pauses++) {
@@ -120,7 +135,7 @@ export function anthropicConversation(input: CompletionInput): Conversation {
             ...(tools.length ? { tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema as Anthropic.Beta.BetaTool.InputSchema })) } : {}),
             ...(serverFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
           },
-          { signal: input.signal },
+          { signal: signal ?? input.signal },
         );
         for await (const event of stream) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield event.delta.text;
@@ -135,6 +150,7 @@ export function anthropicConversation(input: CompletionInput): Conversation {
         const calls = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
         if (!calls.length) {
           last = final.content as Anthropic.Beta.BetaContentBlockParam[];
+          finalPending = true;
           return { calls: [], truncated: final.stop_reason === "max_tokens" };
         }
         if (final.stop_reason === "max_tokens") throw new Error(`${input.model} ran out of room in the middle of a tool call`);
@@ -162,7 +178,15 @@ export function anthropicConversation(input: CompletionInput): Conversation {
     },
     resume() {
       if (last.length) messages.push({ role: "assistant", content: last });
+      finalPending = false;
       messages.push({ role: "user", content: CONTINUE });
+    },
+    interject(texts, partial) {
+      // A whole answer goes back as it came (thinking and signatures included); a call cut short, as the text it had said.
+      if (partial === null && finalPending && last.length) messages.push({ role: "assistant", content: last });
+      else messages.push({ role: "assistant", content: partial?.trim() ? partial : INTERJECTED });
+      finalPending = false;
+      messages.push({ role: "user", content: texts.join("\n\n") });
     },
   };
 }
@@ -190,8 +214,11 @@ export function openAIConversation(input: CompletionInput): Conversation {
   const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
   const vision = seesImages(input.provider, input.model);
   let last = "";
+  /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
+  let finalPending = false;
   return {
-    async *turn(tools) {
+    async *turn(tools, signal) {
+      finalPending = false;
       const response = await (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", ...keyHeaders(input.provider) },
@@ -202,7 +229,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
           ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) } : {}),
         }),
         redirect: "manual",
-        signal: input.signal,
+        signal: signal ?? input.signal,
       });
       if (!response.ok || !response.body) {
         const body = (await response.text().catch(() => "")).slice(0, 300);
@@ -243,6 +270,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
       }
       if (!calls.size) {
         last = text;
+        finalPending = true;
         return { calls: [], truncated: finish === "length" };
       }
       if (finish === "length") throw new Error(`${input.provider.id}/${input.model} ran out of room in the middle of a tool call`);
@@ -278,7 +306,15 @@ export function openAIConversation(input: CompletionInput): Conversation {
     },
     resume() {
       if (last) messages.push({ role: "assistant", content: last });
+      finalPending = false;
       messages.push({ role: "user", content: CONTINUE });
+    },
+    interject(texts, partial) {
+      // An assistant message always comes first: some providers (Mistral) refuse a user message right after a tool's.
+      const said = partial === null ? (finalPending ? last : "") : partial;
+      messages.push({ role: "assistant", content: said.trim() ? said : INTERJECTED });
+      finalPending = false;
+      messages.push({ role: "user", content: texts.join("\n\n") });
     },
   };
 }

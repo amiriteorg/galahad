@@ -1054,5 +1054,7 @@ export type ChatStreamEvent =
   /** Archived entries offered to the model as context for this answer (data, never instructions). */
   | { type: "archive"; entries: ArchiveContextEntry[] }
   | { type: "fallback"; from: string; error: string }
+  /** A message of yours reached him while he worked (a steer): what follows answers it, in the same turn. */
+  | { type: "steer"; text: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };
