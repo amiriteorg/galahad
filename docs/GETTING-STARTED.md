@@ -446,6 +446,20 @@ bun galahad projects
 
 The app's **SANDBOX** page is a world where Galahad walks between the places of his keep as he works, and every experiment he runs stands on its own plot, live. In a terminal: `bun galahad world --follow`. In any sandbox with a network, `python3 -m galahad_world arm|plane|rocket` puts a demo on a plot (the Lab has MuJoCo, JSBSim and RocketPy); `bun galahad sandbox run --gazebo -- python3 -m galahad_world gazebo` runs one in Gazebo. More: [WORLD](WORLD.md).
 
+He sees his world through his own eyes, and so can you: **His eyes** on the SANDBOX (`V`) is the view from his visor, and `B` swaps it with the main view. With the SANDBOX open on one of your devices:
+
+```sh
+bun galahad look                              # what he sees, in words (where he is, what he's looking at, what's in view)
+bun galahad look --out view.jpg               # and the picture, saved
+bun galahad look --place hearth --out h.jpg   # the view standing at his hearth (or bench, council, forge, meadow)
+bun galahad world review                      # he looks at his world and suggests what to mend (inbox and ideas; he changes nothing)
+bun galahad world review --status             # its daily budget, what's used today, how the last went
+bun galahad world review --budget 40000       # tokens a day
+bun galahad loop add world-review --cron "0 15 * * 6" --tz Europe/Copenhagen --review   # every Saturday afternoon, if you like
+```
+
+In chat he has the same as a tool (`look`): ask him what he sees. The review needs a role with a model that sees (Claude, or one of Ollama's vision models).
+
 ## 13. Your bank, read-only
 
 Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:
