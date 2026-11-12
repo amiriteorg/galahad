@@ -192,6 +192,7 @@ export function collector(seed: number, full: boolean, log: (line: string) => vo
   const timed: Timed[] = [];
   const seen = new Set<string>();
   const add = (metric: ScoreMetric): ScoreMetric => {
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(metric.id)) throw new Error(`metric "${metric.id}" isn't a name a scorecard takes (lower-case letters, digits, dots and dashes)`);
     if (seen.has(metric.id)) throw new Error(`metric ${metric.id} recorded twice`);
     if (!Number.isFinite(metric.value)) throw new Error(`metric ${metric.id} is not a finite number (${metric.value})`);
     seen.add(metric.id);

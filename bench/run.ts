@@ -16,6 +16,7 @@ const SUITES: Record<string, () => Promise<{ suite: Suite }>> = {
   fleet: () => import("./suites/fleet.ts"),
   compute: () => import("./suites/compute.ts"),
   "world-algorithms": () => import("./suites/world-algorithms.ts"),
+  "procedural-models": () => import("./suites/procedural-models.ts"),
 };
 
 /** Suites measured elsewhere, whose last result is shown when there is one (the SANDBOX in a real browser: bench/browser/world-scale.ts). */
