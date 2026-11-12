@@ -23,6 +23,7 @@ import type {
 import { HEARTBEAT_FINDINGS, MAX_PARTNERS, padAt, phaseOf, SITES, STATIONS } from "@galahad/core/world";
 import { readoutLabel, readoutValue, type SavedSummary } from "@galahad/core/experiments";
 import { readCompanion } from "@galahad/core/companion";
+import { EYES, EYES_PLACES, type EyesPlace } from "@galahad/core/eyes";
 import type { WorldCompute } from "@galahad/core/world-compute";
 import { helpersLine, readCompute } from "./world-compute.ts";
 
@@ -526,6 +527,14 @@ export function readWorldEvent(v: unknown): WorldEvent | null {
       if (v.weather === null) return { type: "weather", at, weather: null };
       const weather = readWeather(v.weather);
       return weather === undefined ? null : { type: "weather", at, weather };
+    }
+    case "eyes": {
+      // The node asks for a frame from his eyes (eyes.ts): the request's id, how wide, and from which standing place, if any.
+      const r = v.request;
+      if (!isObj(r) || typeof r.id !== "string" || !/^ey_[A-Za-z0-9_-]{16}$/.test(r.id)) return null;
+      if (!num(r.width) || !Number.isInteger(r.width) || r.width < EYES.minWidth || r.width > EYES.maxWidth) return null;
+      if (r.place !== undefined && !(EYES_PLACES as readonly unknown[]).includes(r.place)) return null;
+      return { type: "eyes", at, request: { id: r.id, width: r.width, ...(r.place === undefined ? {} : { place: r.place as EyesPlace }) } };
     }
     default:
       return null;

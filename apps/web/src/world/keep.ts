@@ -89,7 +89,9 @@ function gable(w: number, h: number, l: number): BufferGeometry {
   const D = [x0, 0, z1];
   const R1 = [x0, h, 0];
   const R2 = [x1, h, 0];
-  const tris = [D, Cc, R2, D, R2, R1, B, A, R1, B, R1, R2, Cc, B, R2, A, D, R1];
+  // The two slopes and the gable ends from outside; and the slopes again from inside, so the roof has an
+  // underside: standing under it (as he does at the library), the deck is overhead, not the sky between the shingles.
+  const tris = [D, Cc, R2, D, R2, R1, B, A, R1, B, R1, R2, Cc, B, R2, A, D, R1, R2, Cc, D, R1, R2, D, R1, A, B, R2, R1, B];
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(new Float32Array(tris.flat()), 3));
   return g;

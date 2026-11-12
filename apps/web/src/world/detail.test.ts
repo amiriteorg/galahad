@@ -283,4 +283,19 @@ describe("the stations, made finer, keep what stands on them", () => {
     for (const x of [0.65, 1.2, 1.75]) expect(topAt("forge", x, 2.0)).toBeCloseTo(LAB_BENCH_TOP, 3);
     keep.dispose();
   });
+
+  test("the library's roof has an underside: from where he reads, looking up, the deck is overhead (no sky between the shingles)", () => {
+    const keep = new Keep(false, 0);
+    const solids = keep.group.children.filter((o): o is Mesh => o instanceof Mesh);
+    const ray = new Raycaster();
+    // From his eye height inside the nook (the library's own frame), up towards each slope and along the ridge.
+    for (const [x, z] of [[0, 0.4], [-1.6, -1.2], [1.2, 1.2], [-2, 1.4], [1.9, -1.5], [0.3, -0.6]] as const) {
+      ray.set(new Vector3(x, 2.3, z).applyMatrix4(stationMatrix("library")), new Vector3(0, 1, 0));
+      // (A raycaster meets only the faces turned towards it, as the renderer draws only those.)
+      const hit = ray.intersectObjects(solids, false)[0];
+      expect([x, z, hit ? hit.distance < 2.4 : false]).toEqual([x, z, true]);
+      expect(hit!.face!.normal.y).toBeLessThan(0);
+    }
+    keep.dispose();
+  });
 });

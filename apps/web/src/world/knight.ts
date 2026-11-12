@@ -1,5 +1,6 @@
 import { attribute, clamp, float, min, mix, uniform, vec3, vertexColor } from "three/tsl";
 import {
+  type Object3D,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -164,6 +165,16 @@ export class Knight {
   private sit = 0;
   private lie = 0;
   private asleep = 0;
+
+  /** His head's bone, posed for this frame: his eyes ride on it (eyes.ts). */
+  get head(): Object3D {
+    return this.rig.bones[this.B.head!]!;
+  }
+
+  /** How far his eyes are shut, 0..1: asleep (eased, as his head goes back and his visor dims). */
+  get eyesShut(): number {
+    return this.asleep;
+  }
 
   /** Lying on his bed (his sword is off him then: on its stand, hearth.ts). */
   get lying(): boolean {

@@ -84,6 +84,11 @@ export interface Tier {
    * drawn straight to the screen, as before.
    */
   post: PostEffects;
+  /**
+   * His eyes (eyes.ts): the panel's own canvas, in pixels across (its height follows, 1.6 to 1), and how many
+   * times a second it's drawn while open. A second render of the scene: small and seldom, more where there's room.
+   */
+  eyes: { width: number; fps: number };
 }
 
 /**
@@ -146,6 +151,7 @@ export const TIERS: Record<TierName, Tier> = {
     antialias: false,
     rain: 500,
     splashes: false,
+    eyes: { width: 192, fps: 2 },
     post: NO_POST,
   },
   medium: {
@@ -184,6 +190,7 @@ export const TIERS: Record<TierName, Tier> = {
     antialias: true,
     rain: 1400,
     splashes: false,
+    eyes: { width: 256, fps: 5 },
     post: NO_POST,
   },
   high: {
@@ -222,6 +229,7 @@ export const TIERS: Record<TierName, Tier> = {
     antialias: true,
     rain: 3600,
     splashes: true,
+    eyes: { width: 384, fps: 12 },
     post: { ao: true, shafts: true, bloom: true },
   },
 };

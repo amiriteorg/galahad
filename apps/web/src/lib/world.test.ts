@@ -336,3 +336,22 @@ describe("his dog's name", () => {
     expect(readWorldEvent({ type: "companion", companion: null })).toBeNull();
   });
 });
+
+describe("the node asks for a frame from his eyes", () => {
+  test("the request is read at the boundary: its id, how wide, and a known place or none", () => {
+    const request = { id: "ey_AbCdEfGhIjKlMnOp", width: 768 };
+    expect(readWorldEvent({ type: "eyes", at: 5, request })).toEqual({ type: "eyes", at: 5, request });
+    expect(readWorldEvent({ type: "eyes", at: 5, request: { ...request, place: "forge" } })).toEqual({ type: "eyes", at: 5, request: { ...request, place: "forge" } });
+    // What it carries beyond the contract is dropped.
+    expect(readWorldEvent({ type: "eyes", at: 5, request: { ...request, run: "anything" } })).toEqual({ type: "eyes", at: 5, request });
+    for (const bad of [{}, { id: "nope", width: 768 }, { id: request.id, width: 9000 }, { id: request.id, width: 12.5 }, { id: request.id }, { ...request, place: "the vault" }, { ...request, place: null }]) {
+      expect(readWorldEvent({ type: "eyes", at: 5, request: bad })).toBeNull();
+    }
+    expect(readWorldEvent({ type: "eyes", at: 5 })).toBeNull();
+  });
+
+  test("it changes nothing in the world's model: it's a question, not a fact", () => {
+    const world = emptyWorld();
+    expect(applyWorldEvent(world, { type: "eyes", at: 9, request: { id: "ey_AbCdEfGhIjKlMnOp", width: 768 } })).toBe(world);
+  });
+});

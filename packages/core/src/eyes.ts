@@ -288,7 +288,7 @@ export function sightInWords(s: Sight, max: number = EYES.words): string {
   if (eye) {
     const near = (t: SightThing) => Math.hypot(t.x - eye.x, t.y - eye.y);
     if (shut) {
-      const around = s.things.filter((t) => near(t) < 14).sort((a, b) => b.rank - a.rank || near(a) - near(b)).slice(0, 6);
+      const around = s.things.filter((t) => near(t) < Math.min(14, t.reach ?? 120)).sort((a, b) => b.rank - a.rank || near(a) - near(b)).slice(0, 6);
       if (around.length) parts.push(`Around him: ${around.map((t) => placed(eye, t)).join("; ")}.`);
     } else {
       const seen = s.things.filter((t) => inView(eye, t)).sort((a, b) => b.rank - a.rank || near(a) - near(b));
