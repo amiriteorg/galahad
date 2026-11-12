@@ -221,6 +221,7 @@ async function solveProblem(node: NodeClient, problem: TrialProblem, job: TrialJ
         evidence: TRIAL_EVIDENCE,
         label: `Trial ${problem.id} (seed ${seed})`,
         remember: false,
+        trial: true,
         ...harnessOptions(job),
       },
       {

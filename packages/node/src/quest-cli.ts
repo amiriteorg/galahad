@@ -19,6 +19,7 @@ import {
   type SkillLearned,
   addUsage,
   type Price,
+  TRIAL_QUEST_PREFIX,
   spendLabel,
   type Usage,
   type UsageLine,
@@ -108,6 +109,8 @@ export interface DoOptions {
   archive?: boolean;
   /** How many times the gates or the reviewer may send the work back (default 2). */
   maxRevisions?: number;
+  /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
+  trial?: boolean;
 }
 
 /** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
@@ -547,7 +550,7 @@ export async function runNodeQuest(
 ): Promise<{ outcome: QuestOutcome; quest: string; artifact: ArtifactView | null; shipped?: Shipped; effort?: EffortDone; learned?: SkillLearned | null; usage: UsageLine[] }> {
   // Before anything is created: the gates are checked as any input is.
   const options: DoOptions = { ...given, gates: checkGates(given.gates) };
-  const quest = questId();
+  const quest = questId(options.trial ? TRIAL_QUEST_PREFIX : "q");
   const agent = options.agent ? await agentFor(node, options) : undefined;
   let grant: EffortGrant | null = null;
   if (options.effort !== undefined) {

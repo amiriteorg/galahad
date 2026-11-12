@@ -133,6 +133,8 @@ describe("an agentic trial", () => {
     const [engineer] = fake.engineers();
     expect(fake.created[0]!.input).toMatchObject({ network: "isolated" });
     expect(fake.created[0]!.input.lab).toBeUndefined();
+    // Its quest is of a trial's kind: what it keeps is archived as a trial's, and never offered to a model.
+    expect(fake.created[0]!.input.quest).toMatch(/^t-[a-z0-9]+$/);
     expect(engineer!.commands.findIndex((c) => c.includes("put-apply /work/repo"))).toBeLessThan(engineer!.commands.findIndex((c) => c.startsWith("leave-the-work")));
     // The planner, the engineer and the reviewer read the goal with its contract; the gates are the task's own.
     expect(fake.chats.find((c) => c.role === "planner").messages[0].content).toContain("/work/out/result.json");

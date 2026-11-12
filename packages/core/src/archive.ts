@@ -15,7 +15,8 @@ import { Trust } from "./events.ts";
  */
 
 /** Kinds Galahad archives today; more may come (a newer node's kind is kept and shown as it is). */
-export const ARCHIVE_KINDS = ["experiment", "model", "teaching", "idea", "artifact", "chat", "board", "lesson"] as const;
+/** (`trial`: a trial's record and what it kept. Searchable by you; never offered to a model as context: trials.ts.) */
+export const ARCHIVE_KINDS = ["experiment", "model", "teaching", "idea", "artifact", "chat", "board", "lesson", "trial"] as const;
 export type KnownArchiveKind = (typeof ARCHIVE_KINDS)[number];
 
 export const ArchiveKind = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/, "a lowercase kind, e.g. idea");

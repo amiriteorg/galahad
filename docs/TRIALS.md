@@ -50,6 +50,7 @@ Every problem but the cavity draws **fresh random parameters** from a seed each 
 - **The thing measured can't write its marks.** Recording a trial needs `brain:write`, which agents (arms) never get, and **every replica checks** that each verdict follows from the recorded numbers and the score is the share passed; an inflated mark is refused by the log itself.
 - **Crashes aren't counted** (no sandbox, a model outage: that says nothing about ability) and are shown separately; a run you stop isn't recorded at all. Running out of commands is scored: that is ability.
 - **Every trial keeps its work** (scripts, plots, the answer file) as an artifact, so any score can be audited.
+- **A trial is never handed an earlier trial's answers.** A trial's record (which holds the exact answers of its seed, or the names of its hidden checks) and whatever a trial kept are archived as kind `trial`: yours to search, and never offered to a model as context. Without that, the second run of an A/B or a sweep (the same seeds by design) could be given the first run's answers by the archive, and a later honesty task an earlier one's report. A trial's quest has an id of its own kind (`t-…`) so its kept work can be told from other work; trials aren't remembered and teach no skills, as before.
 
 `galahad trials` shows the Index for each run (mean score, 90 % bootstrap interval, the revision and the models that ran it) and how each problem has fared over every run; `galahad trial <id or run>` shows every answer next to the exact one. The PWA shows the same under **Trials**.
 

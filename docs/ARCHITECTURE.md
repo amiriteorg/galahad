@@ -726,7 +726,7 @@ Everything Galahad made, was taught or thought of is archived on the node that h
 |---|---|---|
 | Memories (through `recall`) | teaching | as remembered (yours are `owner`) |
 | Investigations, once concluded: question, pre-registration, outcomes, finding, the reviewer's judgement, linked to their evidence | teaching | untrusted (model output shaped by a sandbox, as the mind has it) |
-| Trials: problem, seed, each answer against the exact one | teaching | agent (graded by a program) |
+| Trials: problem, seed, each answer against the exact one (or each hidden check); and whatever a trial's quest kept | trial: yours to search, never offered to a model as context (a later trial must not be handed an earlier one's answers) | agent (graded by a program) |
 | Kept artifacts this node holds: copied in, streamed by SHA-256 | artifact | agent for Galahad's own quests and investigations, else untrusted |
 | Model files in them (STL, OBJ, glTF, STEP, URDF/SDF/MJCF, notebooks, scripts that import build123d, CadQuery, gmsh, MuJoCo…) with what's known (triangles and bounding box, links and joints, products, cells, imports), `part-of` their artifact | model | as their artifact |
 | Kept chats, once quiet for an hour; never one where Galahad read the bank (the flag, and any bank tool in its steps) | chat | agent, or untrusted when his tools read the outside |

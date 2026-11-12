@@ -161,6 +161,17 @@ export function describeVariant(options: HarnessOptions): string {
   return said.join(", ") || "as the baseline";
 }
 
+/**
+ * A trial's quest has an id of its own kind (t-…, where any other quest's is q-…), so what it kept can be told
+ * from other work wherever it goes. The archive keeps a trial's record and its kept work as kind `trial`, and
+ * that kind is never offered to a model as context: a later trial of the same problem (the same seed, in an A/B
+ * or a sweep; the same kind of task, any time) must not be handed an earlier one's answers, or its marks.
+ */
+export const TRIAL_QUEST_PREFIX = "t";
+export const isTrialQuest = (quest: string | null | undefined): boolean => typeof quest === "string" && quest.startsWith(`${TRIAL_QUEST_PREFIX}-`);
+/** The archive's kind for a trial's record and what a trial kept. */
+export const TRIAL_ARCHIVE_KIND = "trial";
+
 /** An answer passes when it is within its tolerance of the exact one. */
 export const answerOk = (got: number | null, expected: number, tolerance: number): boolean =>
   got !== null && Number.isFinite(got) && Math.abs(got - expected) <= tolerance;

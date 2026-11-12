@@ -114,6 +114,7 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
         evidence: AGENTIC_EVIDENCE,
         label: `Trial ${id} (seed ${job.seed})`,
         remember: false,
+        trial: true,
         ...(gates.length ? { gates } : {}),
         ...harnessOptions(job),
       },

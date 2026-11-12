@@ -60,6 +60,7 @@ import {
   TrialRunSettings,
   type TrialView,
   TrialSpent,
+  TRIAL_ARCHIVE_KIND,
   type Usage,
   type UsageView,
   ComputeLimit,
@@ -762,7 +763,8 @@ export function createApp(ctx: AppContext) {
    */
   const archiveHidden = (p: Principal): string[] => (isOwner(p) || (p.kind === "arm" && p.label === GALAHAD_ARM) ? [] : ["chat"]);
   /** What the archive's own context leaves out: his skills too (he is given those through their own fence, by where each stands now). */
-  const contextHidden = (p: Principal): string[] => [...archiveHidden(p), "skill"];
+  // (And never a trial's record or what a trial kept: a later trial must not be handed an earlier one's answers. trials.ts)
+  const contextHidden = (p: Principal): string[] => [...archiveHidden(p), "skill", TRIAL_ARCHIVE_KIND];
   const archiveErrors = async <T,>(work: () => Promise<T> | T): Promise<T> => {
     try {
       return await work();
