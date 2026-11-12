@@ -47,3 +47,4 @@ export * from "./notify.ts";
 export * from "./notify-input.ts";
 export * from "./spend.ts";
 export * from "./usage.ts";
+export * from "./trial-reports.ts";

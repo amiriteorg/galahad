@@ -128,10 +128,14 @@ export const AGENTIC_EVIDENCE = [
   `cd ${REPO} && bun test 2>&1 | tail -25`,
 ];
 
-/** A file's fingerprint, the same in the generator and in the check script (FNV-1a over its UTF-16 code units, line endings folded). */
+/**
+ * A file's fingerprint, the same in the generator and in the check script: FNV-1a over its UTF-16 code units,
+ * with what a trip through a sandbox may change and no reader of the file would notice folded away (a
+ * byte-order mark at the start, CRLF line endings).
+ */
 export function fingerprint(text: string): string {
   let h = 0x811c9dc5;
-  const folded = text.replace(/\r\n/g, "\n");
+  const folded = text.replace(/^﻿/, "").replace(/\r\n/g, "\n");
   for (let i = 0; i < folded.length; i++) {
     h ^= folded.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
@@ -188,7 +192,7 @@ const rng = (seed) => {
 };
 const fingerprint = (text) => {
   let h = 0x811c9dc5;
-  const folded = text.replace(/\r\n/g, "\n");
+  const folded = text.replace(/^﻿/, "").replace(/\r\n/g, "\n");
   for (let i = 0; i < folded.length; i++) {
     h ^= folded.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;

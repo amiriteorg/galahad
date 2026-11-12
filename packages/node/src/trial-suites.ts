@@ -1,5 +1,6 @@
 import type { SandboxNetwork } from "@galahad/core";
-import { ENGINEERING_SUITE } from "@galahad/brain";
+import { AGENTIC_SUITE, agenticProblem, agenticProblems, ENGINEERING_SUITE, LEVELS, USUAL_LEVEL } from "@galahad/brain";
+import { agenticUnit } from "./trial-agentic.ts";
 import type { Tryable } from "./trial-cli.ts";
 
 /*
@@ -43,7 +44,36 @@ const engineering: SuiteInfo = {
   choose: (names) => named(ENGINEERING_SUITE, names, "engineering"),
 };
 
-export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering };
+/**
+ * Agentic tasks: a problem is a task at a level (`slow-rollup-l3`). Named without one, a task is posed at the
+ * run's `--level`, or at its usual level; a kind of work (`debugging`) names every task of that kind.
+ */
+const agentic: SuiteInfo = {
+  id: "agentic",
+  about: "real work in a small repository, graded by hidden tests run in a fresh sandbox against what he left",
+  where: "in the workshop, with no network",
+  network: "isolated",
+  networks: ["isolated", "gateway"],
+  levels: { min: 1, max: LEVELS, usual: USUAL_LEVEL },
+  list: (level) => agenticProblems(level).map((p) => ({ id: p.id, domain: p.task.kind, title: `${p.task.title} (${p.task.dial})` })),
+  choose: (names, level) => {
+    if (!names.length) return agenticProblems(level).map((p) => agenticUnit(p.task, p.level));
+    const chosen: Tryable[] = [];
+    const unknown: string[] = [];
+    for (const name of names) {
+      const one = agenticProblem(name, level);
+      const ofKind = AGENTIC_SUITE.filter((t) => t.kind === name);
+      if (one) chosen.push(agenticUnit(one.task, one.level));
+      else if (ofKind.length) for (const task of ofKind) chosen.push(agenticUnit(task, agenticProblem(task.id, level)!.level));
+      else unknown.push(name);
+    }
+    if (unknown.length) throw new Error(`no such task, or kind of work: ${unknown.join(", ")} (galahad trial problems --suite agentic lists them; a level is named as slow-rollup-l3)`);
+    // Named twice (by name and by kind), a problem is posed once.
+    return chosen.filter((p, i) => chosen.findIndex((q) => q.id === p.id) === i);
+  },
+};
+
+export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering, agentic };
 
 export function suiteNamed(id: string): SuiteInfo {
   const suite = TRIAL_SUITES[id];

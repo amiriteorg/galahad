@@ -216,7 +216,7 @@ function gateNotes(results: readonly GateResult[]): string {
 }
 
 /** The gates as the reviewer sees them: each one's run that passed, and the runs that failed before it. */
-function gatesEvidence(rounds: readonly (readonly GateResult[])[]): string {
+export function gatesEvidence(rounds: readonly (readonly GateResult[])[]): string {
   const last = rounds.at(-1);
   if (!last?.length) return "";
   const lines = [
@@ -291,7 +291,7 @@ interface Step {
   excerpt: string;
 }
 
-const reviewPrompt = (o: Resolved, plan: string, steps: Step[], summary: string): string => `You are reviewing another engineer's work, independently. Be strict but fair, and judge only from the evidence below; claims without evidence don't count.
+const reviewPrompt = (o: Pick<Resolved, "goal">, plan: string, steps: Step[], summary: string): string => `You are reviewing another engineer's work, independently. Be strict but fair, and judge only from the evidence below; claims without evidence don't count.
 
 Quest: ${o.goal}
 
@@ -305,6 +305,15 @@ Their summary:
 ${summary}
 
 Reply with PASS on the first line if the quest is done and the evidence shows it works. Otherwise reply with REVISE on the first line, then exactly what is missing or wrong.`;
+
+/**
+ * The question a quest's reviewer is asked, whole: the quest, the plan, what was run, the summary, then the
+ * gates' runs and what the evidence commands print now. The loop below asks exactly this; so does the
+ * reviewer's own measure (reviewer-cases.ts), which is why it is one function.
+ */
+export function reviewQuestion(input: { goal: string; plan: string; steps: { command: string; exitCode: number; excerpt: string }[]; summary: string; gated?: string; evidence?: string }): string {
+  return reviewPrompt({ goal: input.goal }, input.plan, input.steps, input.summary) + (input.gated ? `\n\n${input.gated}` : "") + (input.evidence?.trim() ? `\n\nWhat these commands print now, in the sandbox:\n${input.evidence.trim()}` : "");
+}
 
 /* ---------- the loop ---------- */
 
@@ -445,7 +454,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         role: "user",
         content: o.review
           ? o.review.prompt({ goal: o.goal, plan, steps: trail, summary, evidence: [evidence.trim(), gated].filter(Boolean).join("\n\n") })
-          : reviewPrompt(o, plan, trail, summary) + (gated ? `\n\n${gated}` : "") + (evidence ? `\n\nWhat these commands print now, in the sandbox:\n${evidence.trim()}` : ""),
+          : reviewQuestion({ goal: o.goal, plan, steps: trail, summary, gated, evidence }),
       },
     ]);
     const verdict: { verdict: "pass" | "revise"; notes: string; conclusion?: string } = o.review ? o.review.read(reviewed.text) : parseVerdict(reviewed.text);
