@@ -53,6 +53,13 @@ import {
   type RouteName,
   routes,
   type Scope,
+  type SandboxView,
+  type Teammate,
+  TEAM_GALAHAD,
+  teamArmLabel,
+  avatarExpression,
+  resolveAvatar,
+  MAX_PARTNERS,
   type SecretView,
   type TrialRecord,
   trialProblem,
@@ -71,6 +78,9 @@ import {
 } from "@galahad/core";
 import {
   CATALOG,
+  agentCleanupCommand,
+  chooseAgentModels,
+  roleModels,
   chat,
   decide,
   DecisionError,
@@ -127,6 +137,10 @@ import { companionOf, companionView, journalEntries } from "./journal.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
+import { TeamService, TeamError } from "./team.ts";
+import type { TeamStore } from "./team-store.ts";
+import { teamRuntime } from "./team-runtime.ts";
+import { githubRepo } from "./quest-cli.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -175,6 +189,7 @@ export interface AppContext {
   bank: BankService;
   /** Your chat history, on this node. */
   chats: ChatStore;
+  team?: { store: TeamStore; service?: TeamService };
   /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
   turns: TurnHub;
   /** The quests in hand, as whoever runs each one reports it. */
@@ -207,6 +222,11 @@ interface Principal {
   kind: "admin" | "node" | "client" | "arm";
   scopes: Scope[];
   label?: string;
+  /**
+   * On Galahad's own principal (galahadFor): he is answering you, on a device that may command his team itself (it
+   * holds fleet:admin, which he never does). Only then are the tools to his workers his to use: within what your device may do.
+   */
+  commandsTeam?: boolean;
 }
 
 class HttpError extends Error {
@@ -536,7 +556,8 @@ export function createApp(ctx: AppContext) {
    */
   function galahadFor(p: Principal): Principal {
     if (p.kind === "arm") return p;
-    return { device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: p.scopes.filter((s) => !ARM_FORBIDDEN_SCOPES.includes(s)) };
+    // (A fleet node holds every scope and is still not you: Team is yours, and it leads no workers through him.)
+    return { device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: p.scopes.filter((s) => !ARM_FORBIDDEN_SCOPES.includes(s)), commandsTeam: (p.kind === "admin" || p.kind === "client") && p.scopes.includes("fleet:admin") };
   }
 
   /** The tools' way into the node from inside it: the same routes, scope checks and input validation as over HTTP. */
@@ -651,7 +672,7 @@ export function createApp(ctx: AppContext) {
 
   /** A tool's failure in words the model may see: what the API would say, never an internal error's detail. */
   function explain(error: unknown): string {
-    if (error instanceof HttpError || error instanceof PairingError || error instanceof SandboxError || error instanceof BoardError) return error.message;
+    if (error instanceof HttpError || error instanceof PairingError || error instanceof SandboxError || error instanceof BoardError || error instanceof TeamError) return error.message;
     if (error instanceof ZodError) return `invalid input: ${error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}`;
     const message = String((error as Error)?.message ?? error);
     if (/not authorized|already|unknown or|refusing|no secret|not configured/.test(message)) return message;
@@ -664,6 +685,11 @@ export function createApp(ctx: AppContext) {
 
   /** You, at a terminal or on a paired device: never an agent, never another node. */
   const isOwner = (p: Principal) => p.kind === "admin" || p.kind === "client";
+  /**
+   * Galahad himself, running his own tools in your conversation with him (never another agent, a loop or a node),
+   * and answering a device that may command his team itself: what you couldn't do in Team there, he doesn't do for you.
+   */
+  const leadsTeam = (p: Principal) => p.kind === "arm" && p.label === GALAHAD_ARM && p.commandsTeam === true;
   /** Whose model calls these are, in this node's count of them: yours, an agent's (a loop's quest is arm:loop.<name>), a node's. */
   const whoOf = (p: Principal): string => (isOwner(p) ? "you" : p.kind === "arm" ? `arm:${p.label ?? "unnamed"}` : `node:${ctx.store.device(p.device)?.name ?? p.device.slice(0, 12)}`);
   /** The brain, counting what each call cost on this node (counts only). */
@@ -710,6 +736,15 @@ export function createApp(ctx: AppContext) {
     const turn = ctx.turns.get(id);
     if (!turn || !knowsTurn(turn, p)) throw new HttpError(404, "no such turn here (one that ended a while ago is in its chat)");
     if (!watchesTurn(turn, p)) throw new HttpError(403, "that turn may read the bank, and this device may not: it can be stopped from here, not watched or steered");
+    return turn;
+  }
+  /**
+   * A turn to steer: watched, and if it has the tools to his workers, only from a device that may command the team
+   * itself. What it says next is his to act on with those tools, so steering it would be commanding the team through him.
+   */
+  function steeredTurn(id: string, p: Principal): LiveTurn {
+    const turn = watchedTurn(id, p);
+    if (turn.spec.team && !p.scopes.includes("fleet:admin")) throw new HttpError(403, "that turn may change the team, and this device may not: it can be watched and stopped from here, not steered");
     return turn;
   }
   const turnView = (turn: LiveTurn, p: Principal): TurnView => ctx.turns.view(turn, watchesTurn(turn, p));
@@ -811,7 +846,11 @@ export function createApp(ctx: AppContext) {
     }
   }
   /** His tools for an answer. In a chat where he read the bank he's offered no way to write a skill: none is ever drawn from one. */
-  const toolsIn = (scopes: readonly string[], kept: ConversationSummary | null) => (kept?.bank ? toolsFor(scopes).filter((t) => t.name !== "skill_write") : toolsFor(scopes));
+  const toolsIn = (agent: Principal, kept: ConversationSummary | null) => {
+    // (His own tools, the ones to his workers, only where he may lead them and this node keeps a team.)
+    const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team);
+    return kept?.bank ? tools.filter((t) => t.name !== "skill_write") : tools;
+  };
   /**
    * Why a call was given others' words by this node itself: untrusted memories recalled for it (the same recall
    * memoryContext makes), untrusted archived entries among its steps. None: nothing untrusted went with it.
@@ -1098,6 +1137,8 @@ export function createApp(ctx: AppContext) {
       by: byOf(p),
       // Offered the bank's tools, so the answer may come to hold bank data.
       bank: agent.scopes.includes("bank:read"),
+      // Offered the tools to his workers, so what it is told next it may do with them.
+      team: leadsTeam(agent) && !!ctx.team,
       role,
       conversation: kept ? { id: kept.id, title: kept.title, project: kept.project } : null,
       question: asked.content,
@@ -1105,7 +1146,7 @@ export function createApp(ctx: AppContext) {
       waits,
       run: async function* (steering, signal) {
         // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
-        const tools = chatTools(toolsIn(agent.scopes, kept), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
+        const tools = chatTools(toolsIn(agent, kept), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
         const shown: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
         const seen = worldWatcher(role, false, shown);
         let leave: (() => void) | null = null;
@@ -1313,7 +1354,7 @@ export function createApp(ctx: AppContext) {
     guardAgainstSecrets(text);
     const live = aside.conversation ? ctx.turns.runningIn(aside.conversation) : aside.turn ? ctx.turns.get(aside.turn) : null;
     if (live && live.state === "running") {
-      watchedTurn(live.id, p);
+      steeredTurn(live.id, p);
       try {
         ctx.turns.steer(live.id, text, byOf(p));
         asides.delete(id);
@@ -1333,7 +1374,179 @@ export function createApp(ctx: AppContext) {
   }
 
   type Handler = (input: any, principal: Principal, req: Request) => unknown;
+  /* The team controller owns identity and scheduling; its workers never inherit owner scopes. */
+  const teamOwner: Principal = { kind: "admin", device: ctx.identity.id, scopes: OWNER_SCOPES };
+  const teammateLabel = (id: string) => teamArmLabel(ctx.identity.id, id);
+  const teammatePrincipal = (id: string): Principal => ({ kind: "arm", device: `arm:${teammateLabel(id)}`, label: teammateLabel(id), scopes: ["mind:read", "mind:write", "sandbox", "connect"] });
+  const teamOf = () => {
+    if (!ctx.team?.service) throw new HttpError(503, "the team controller is unavailable");
+    return ctx.team.service;
+  };
+  const teamMember = (id: string) => {
+    if (!ctx.team) throw new HttpError(503, "the team controller is unavailable");
+    return ctx.team.store.requireTeammate(id);
+  };
+  const vmProvisioning = new Map<string, Promise<SandboxView>>();
+  async function teamWorkspace(member: Teammate, signal: AbortSignal): Promise<SandboxView | null> {
+    if (!member.workspace) return null;
+    const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[] }>("sandboxes", { on: member.workspace.node });
+    const sandbox = view.sandboxes.find((s) => s.id === member.workspace!.id);
+    if (!sandbox) throw new HttpError(404, "the teammate's VM is missing; recover its retained workspace before continuing");
+    if (sandbox.quest !== armQuest(teammateLabel(member.id)) || sandbox.ephemeral || sandbox.isolation !== "vm") throw new HttpError(403, "the workspace is not this teammate's persistent VM");
+    return sandbox;
+  }
+  async function provisionTeam(id: string, input: { on?: string; cpus?: number; memoryGb?: number; diskGb?: number }, signal: AbortSignal): Promise<SandboxView> {
+    const pending = vmProvisioning.get(id);
+    if (pending) return pending;
+    const work = (async () => {
+      const member = teamMember(id);
+      const existing = await teamWorkspace(member, signal);
+      if (existing) return existing;
+      const chosen = member.workspaceNode ?? input.on;
+      const hosts = candidates().filter((c) => c.online && c.caps?.sandbox?.vm);
+      const best = chosen ? hosts.find((c) => c.device === resolveNode(chosen).id) : sandboxHost(hosts);
+      if (!best) throw new HttpError(424, chosen ? "this teammate's VM host is unavailable or lacks KVM/Kata" : "no VM-capable host is online; enroll a Linux host with KVM and Kata");
+      teamOf().planWorkspace(id, best.device);
+      const api = inProcess(teamOwner, signal);
+      // A previous attempt may have created its VM before the controller stopped. Recover it by immutable ownership.
+      const listed = await api.call<{ sandboxes: SandboxView[] }>("sandboxes", { on: best.device });
+      const owned = listed.sandboxes.filter((s) => s.quest === armQuest(teammateLabel(id)) && !s.ephemeral);
+      if (owned.length > 1) throw new HttpError(409, "more than one VM claims this teammate; choose the retained workspace manually");
+      let sandbox = owned[0];
+      if (sandbox && sandbox.isolation !== "vm") throw new HttpError(409, "this teammate's existing workspace is not a VM");
+      if (!sandbox) {
+        const providers = providerViews(ctx.store, ctx.vault).filter((p) => p.hasKey).map((p) => p.id).slice(0, 16);
+        const made = await api.call<{ sandbox: SandboxView }>("createSandbox", { on: best.device, persistent: true, isolation: "vm", network: "gateway", quest: armQuest(teammateLabel(id)), cpus: input.cpus ?? 1, memoryGb: input.memoryGb ?? 2, diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers });
+        sandbox = made.sandbox;
+      }
+      teamOf().setWorkspace(id, { node: best.device, id: sandbox.id });
+      return sandbox;
+    })();
+    vmProvisioning.set(id, work);
+    try { return await work; } finally { vmProvisioning.delete(id); }
+  }
+  async function execTeam(member: Teammate, command: string, timeout: number, signal: AbortSignal) {
+    if (signal.aborted) throw new HttpError(409, "teammate stopped");
+    const current = teamMember(member.id);
+    if (!current.enabled) throw new HttpError(409, "teammate paused");
+    if (!current.workspace) throw new HttpError(424, "this teammate has no VM yet");
+    return inProcess(teammatePrincipal(member.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: current.workspace.node, id: current.workspace.id, cmd: ["bash", "-lc", command], timeoutSec: timeout });
+  }
+  async function prepareTeam(member: Teammate, signal: AbortSignal) {
+    const workspace = await provisionTeam(member.id, {}, signal);
+    member = teamMember(member.id);
+    // A controller crash can leave the old harness running. Stop that exact process
+    // before replacing its lease or allowing any new writer into this VM.
+    if (workspace.status === "running") await stopTeamWorker(member);
+    if (signal.aborted) throw new HttpError(409, "teammate stopped");
+    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}) });
+    if (member.repository) {
+      // No key in command text or git config. The leased token is read inside the VM; the remote is reset to its public URL.
+      const script = `import json,os,subprocess,sys\nd=json.load(open('/work/.galahad-gateway.json'))\np='/work/repo'\nif os.path.exists(p):\n sys.exit(0 if os.path.isdir(p+'/.git') else 1)\nr=subprocess.run(['git','-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'clone','--quiet',d['GALAHAD_REPO_URL'],p],capture_output=True)\nif r.returncode: print('Repository clone failed through the read-only gateway'); sys.exit(r.returncode)\nsubprocess.run(['git','-C',p,'remote','set-url','origin',sys.argv[1]],check=True)`;
+      const encoded = Buffer.from(script).toString("base64");
+      const cloned = await execTeam(member, `python3 -c "import base64; exec(base64.b64decode('${encoded}'))" '${member.repository}'`, 900, signal);
+      if (cloned.exitCode !== 0) throw new HttpError(424, "could not clone the teammate's repository through its GitHub connector");
+    }
+  }
+  async function stopTeamWorker(member: Teammate): Promise<void> {
+    const bound = teamMember(member.id).workspace;
+    if (!bound) return;
+    const result = await inProcess(teammatePrincipal(member.id), new AbortController().signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: bound.node, id: bound.id, cmd: ["bash", "-lc", agentCleanupCommand()], timeoutSec: 15 });
+    if (result.exitCode !== 0) throw new HttpError(424, "the previous worker could not be safely stopped; inspect its VM before resuming");
+  }
+  if (ctx.team) {
+    const runtime = teamRuntime({
+      brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }),
+      enter: (signal) => ctx.governor.enterModel({ wait: true }, signal),
+      exec: execTeam, prepare: prepareTeam, teammate: teamMember,
+      dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
+      stopWorker: stopTeamWorker,
+      models: () => chooseAgentModels(roleModels(ctx.store, "engineer"), providerViews(ctx.store, ctx.vault)),
+      memories: (query) => memoryContext(query) ?? "",
+      tools: (member, signal) => {
+        const p = teammatePrincipal(member.id);
+        const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
+        return chatTools(toolsFor(p.scopes).filter((t) => allowed.has(t.name)), inProcess(p, signal), explain);
+      },
+    });
+    // A worker Galahad makes for himself goes in the ledger: its handle and role, never its job's words.
+    const onRecruit = (made: Teammate) => ctx.ledger?.({
+      class: "create", resource: "team", target: `worker:${made.id}`, verdict: "allow",
+      reason: made.createdBy === TEAM_GALAHAD ? "Galahad made a worker of his own, in your conversation with him" : `his worker ${made.createdBy} made another, in its room`,
+      detail: `${made.role} · ${made.dailyTurns} turns a day`,
+    });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, onRecruit, onChange: () => {
+      const active = ctx.team!.service?.activeWork() ?? [];
+      const activity = ctx.team!.store.avatarActivity();
+      const now = Date.now();
+      const latest = new Map<string, number>();
+      for (const job of [...activity.tasks.map((t) => ({ id: t.assignee, at: t.updatedAt })), ...activity.deliveries.map((d) => ({ id: d.teammate, at: d.updatedAt }))]) {
+        if (now - job.at < 30_000) latest.set(job.id, Math.max(latest.get(job.id) ?? 0, job.at));
+      }
+      // The world's existing six-figure bound stays intact. Active workers take
+      // precedence over recent outcomes, and terminal states replace stale work faces.
+      const ids = [...new Set([...active.map((work) => work.teammate), ...[...latest].sort((a, b) => b[1] - a[1]).map(([id]) => id)])].slice(0, MAX_PARTNERS);
+      const labels = { idle: "Ready for the next task", thinking: "Coordinating within the hivemind", working: "Working in his persistent VM", waiting: "Waiting for queued work", pleased: "Task completed and verified", concerned: "Work needs attention", resting: "Worker paused" };
+      for (const id of ids.reverse()) {
+        const member = teamMember(id);
+        const expression = avatarExpression(member, activity, now);
+        ctx.world.partner(`Galahad · ${member.name}`, expression === "working" || expression === "pleased" ? "forge" : "council", labels[expression], { id: teammateLabel(id), avatar: resolveAvatar(id, member.avatar), expression });
+      }
+    } });
+    ctx.team.service.start();
+  }
+
   const handlers: Record<RouteName, Handler> = {
+    team: (_input, p) => { ownerOnly(p); return teamOf().snapshot(); },
+    saveTeammate: (input, p) => { ownerOnly(p); return { teammate: teamOf().saveTeammate(input) }; },
+    saveTeamRoom: (input, p) => { ownerOnly(p); return { room: teamOf().saveRoom(input) }; },
+    directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
+    teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
+    postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input) }; },
+    createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
+    controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },
+    teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
+    /* His own way to his workers. Making one and writing to them are his alone: you have the routes above, and
+     * no other agent, loop or node has either. */
+    teamOverview: (input, p) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "this is Galahad's own reading of his workers; you read them in Team");
+      return teamOf().overview(input.room);
+    },
+    recruitTeammate: (input, p) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself makes a worker of his own; you add one in Team");
+      return { teammate: teamOf().recruit(input) };
+    },
+    sayToTeam: (input, p) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself writes to his workers as himself; you write to them in Team");
+      return { message: teamOf().say(input) };
+    },
+    provisionTeammate: (input, p, req) => { ownerOnly(p); return longRunning(provisionTeam(input.id, input, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace }))); },
+    teamWorkspace: async (input, p, req) => {
+      ownerOnly(p);
+      const member = teamMember(input.id);
+      const workspace = await teamWorkspace(member, req.signal);
+      const state = teamOf().snapshot();
+      const busy = state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running");
+      const harnesses: { id: string; ready: boolean; reason?: string }[] = [{ id: "native", ready: true }];
+      for (const id of ["opencode", "hermes"]) {
+        let ready = false;
+        if (!busy && workspace?.status === "running" && member.enabled) ready = (await execTeam(member, id === "hermes" ? "hermes acp --check" : "opencode --version", 30, req.signal)).exitCode === 0;
+        harnesses.push({ id, ready, ...(!ready ? { reason: busy ? "Readiness is checked when this teammate is idle" : "Install this harness in the teammate's VM" } : {}) });
+      }
+      return { workspace, harnesses };
+    },
+    prepareTeamWorkspace: (input, p) => {
+      if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller prepares worker credentials");
+      const repo = input.repository ? githubRepo(input.repository) : null;
+      let git: { connector: string; owner: string; repo: string } | undefined;
+      if (repo) {
+        const own = `github-${repo.owner.toLowerCase()}`;
+        const connector = installedConnector(ctx.store, own) ? own : "github";
+        if (!installedConnector(ctx.store, connector)) throw new HttpError(424, "add the GitHub connector before using a repository workspace");
+        git = { connector, ...repo };
+      }
+      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git), { sandbox: input.id }));
+    },
     whoami: (_input, p) => ({
       device: p.device,
       kind: p.kind,
@@ -1464,7 +1677,7 @@ export function createApp(ctx: AppContext) {
       const helper = attempt && ctx.compute.isHelper(attempt) ? attempt : null;
       // The same Galahad on every surface: his tools, within what the caller may do.
       const agent = galahadFor(p);
-      const tools = wantTools === false ? undefined : chatTools(toolsIn(agent.scopes, kept), inProcess(agent, req.signal), explain, project ? { tag: `project:${project.id}` } : {});
+      const tools = wantTools === false ? undefined : chatTools(toolsIn(agent, kept), inProcess(agent, req.signal), explain, project ? { tag: `project:${project.id}` } : {});
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
@@ -1594,7 +1807,7 @@ export function createApp(ctx: AppContext) {
       return { stopped: ctx.turns.stop(turn.id, "you"), state: turn.state };
     },
     steerTurn: (input, p) => {
-      const turn = watchedTurn(input.turn, p);
+      const turn = steeredTurn(input.turn, p);
       // Your message, like any other: nothing credential-shaped goes to a model.
       guardAgainstSecrets(input.text);
       turnErrors(() => ctx.turns.steer(turn.id, input.text, byOf(p)));
@@ -1623,8 +1836,9 @@ export function createApp(ctx: AppContext) {
     sendQueued: (input, p) => {
       const kept = keptChat(input.conversation, p);
       const running = ctx.turns.runningIn(kept.id);
-      // Steering needs what watching needs: a turn that may read the bank isn't steered from a device that may not.
-      if (running) watchedTurn(running.id, p);
+      // Steering needs what watching needs: a turn that may read the bank isn't steered from a device that may not
+      // (nor one that may change the team, from a device that may not).
+      if (running) steeredTurn(running.id, p);
       const sent = turnErrors(() => ctx.turns.sendNow(kept.id, input.id, byOf(p)));
       return { how: sent.how, turn: turnView(sent.turn, p), ...queueView(kept.id) };
     },
@@ -2599,6 +2813,7 @@ export function createApp(ctx: AppContext) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       if (error instanceof PairingError) return json({ error: error.message }, error.status);
       if (error instanceof SandboxError) return json({ error: error.message }, error.status);
+      if (error instanceof TeamError) return json({ error: error.message }, error.status);
       if (error instanceof BoardError) return json({ error: error.message }, error.status);
       if (error instanceof ZodError) return json({ error: "invalid input", issues: error.issues }, 400);
       if (error instanceof SyntaxError) return json({ error: "invalid JSON" }, 400);

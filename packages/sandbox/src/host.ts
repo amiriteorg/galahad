@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxView } from "@galahad/core";
+import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxView, TeamWorkspaceQuest } from "@galahad/core";
 import {
   chooseIsolation,
   containerName,
@@ -329,8 +329,13 @@ export class SandboxHost {
         try {
           spec.workspace = await this.opts.workspaces!.create(id, diskGb);
           spec.diskGb = diskGb;
+          if (input.persistent && quest.startsWith("arm.team.")) {
+            if (!this.opts.workspaces!.retain) throw new Error("the workspace helper needs persistent teammate support");
+            await this.opts.workspaces!.retain!(id);
+          }
         } catch (error) {
           if (tokenHash) this.opts.tokens.revoke(tokenHash);
+          if (spec.workspace) await this.opts.workspaces!.remove(id).catch(() => {});
           throw new SandboxError(`could not create the workspace: ${(error as Error).message}`, 500);
         }
       } else {
@@ -432,6 +437,45 @@ export class SandboxHost {
     return (await this.list()).find((s) => s.id === id) ?? null;
   }
 
+  /** Owner/controller only. Resume the exact existing VM and give this run bounded model access. */
+  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }): Promise<SandboxView> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
+    if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
+      throw new SandboxError("that is not this teammate's persistent VM", 403);
+    }
+    if (sandbox.disk) {
+      if (!this.opts.workspaces?.mount || !this.opts.workspaces.retain) throw new SandboxError("update the workspace helper before resuming this teammate", 424);
+      await this.opts.workspaces.retain(id);
+      await this.opts.workspaces.mount(id);
+    }
+    if (sandbox.status !== "running") {
+      if (!['exited', 'created'].includes(sandbox.status)) throw new SandboxError(`the teammate's VM is ${sandbox.status}`, 409);
+      const started = await this.docker(["start", containerName(id)], 120_000);
+      if (started.code !== 0) throw new SandboxError(`could not resume the teammate's VM: ${redact(started.stderr).slice(0, 300)}`, 424);
+    }
+    // Fresh credentials are written directly inside the VM, never returned through an API or logged.
+    // Revocation and request caps remain real: this is a new lease, not an indefinitely extended token.
+    const previous = this.tokenStore.take(id);
+    if (previous) this.opts.tokens.revoke(previous);
+    const scopes = [...sandbox.providers, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
+    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: 30, maxRequests: 500 });
+    this.tokenStore.put(id, minted.info.hash);
+    const env = gatewayEnv(minted.token, sandbox.providers);
+    if (git) env.GALAHAD_REPO_URL = `${env.GALAHAD_GATEWAY!.replace(/\/gw$/, "")}/git/${git.connector}/${git.owner}/${git.repo}.git`;
+    const payload = Buffer.from(JSON.stringify(env)).toString("base64");
+    const write = "import os,sys,base64,tempfile; f,p=tempfile.mkstemp(prefix='.galahad-gateway-',dir='/work'); os.write(f,base64.b64decode(sys.argv[1])); os.fsync(f); os.close(f); os.replace(p,'/work/.galahad-gateway.json')";
+    try {
+      const wrote = await this.docker(execArgs(id, ["python3", "-c", write, payload], 30), 45_000);
+      if (wrote.code !== 0) throw new Error("lease write failed");
+    } catch {
+      this.opts.tokens.revoke(minted.info.hash);
+      throw new SandboxError("could not prepare the teammate's model access", 424);
+    }
+    this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: "existing VM resumed; model access capped at 30 minutes and 500 requests" });
+    return { ...sandbox, status: "running" };
+  }
+
   async exec(id: string, cmd: string[], timeoutSec = 600): Promise<ExecResult> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
@@ -483,7 +527,11 @@ export class SandboxHost {
       return decision;
     }
     await this.docker(["rm", "--force", "--volumes", containerName(id)]);
-    if (sandbox.disk) await this.opts.workspaces?.remove(id).catch((error) => this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: id, verdict: "allow", detail: `not removed: ${(error as Error).message}` }));
+    if (sandbox.disk) {
+      const ws = this.opts.workspaces;
+      const remove = opts.approvedBy && !sandbox.ephemeral && ws?.removeRetained ? ws.removeRetained.bind(ws) : ws?.remove.bind(ws);
+      await remove?.(id).catch((error) => this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: id, verdict: "allow", detail: `not removed: ${(error as Error).message}` }));
+    }
     else await this.docker(["volume", "rm", "--force", volumeName(id)]);
     const tokenHash = this.tokenStore.take(id);
     if (tokenHash) this.opts.tokens.revoke(tokenHash);
@@ -517,7 +565,7 @@ export class SandboxHost {
       for (const image of stats.images) {
         // Any galahad container on this Docker counts (another node or a test may share the host), and a
         // young workspace may belong to a sandbox that is still starting in another process.
-        if (listed.code !== 0 || alive.has(image.id) || this.creating.has(image.id) || now - image.createdAt < 10 * 60_000) continue;
+        if (image.retained || listed.code !== 0 || alive.has(image.id) || this.creating.has(image.id) || now - image.createdAt < 10 * 60_000) continue;
         await this.opts.workspaces!.remove(image.id).catch(() => {});
         this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: image.id, verdict: "allow", reason: "cleaning up the workspace of a sandbox that no longer exists" });
         reaped.push(`workspace ${image.id}`);

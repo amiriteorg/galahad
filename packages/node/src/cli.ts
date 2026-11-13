@@ -34,10 +34,27 @@ import { describeExamination, describeRun, describeSaved } from "./tools.ts";
 import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
 import { notifyCommand } from "./notify-cli.ts";
+import { teamCommand } from "./team-cli.ts";
 
 const VERSION = "0.1.0";
 
 const HELP = `galahad — one mind, many bodies
+
+Team (persistent sub-Galahads, rooms and verified work in VMs)
+  team                              teammates, rooms and tasks (those Galahad made for himself say so:
+                                    ask him in chat to make and brief a worker)
+  team add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes]
+                                    [--repo https://github.com/owner/repo] [--limit daily-turns]
+  team dm <id> [message]             open/read a direct chat, or send a message
+  team room <name> <member…>         create a shared room (--limit bounds its coordination chain)
+  team chat <room> [message]         read a room, or send a message; work continues on the node
+  team task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
+  team provision <id> [--on node] [--cpus 1 --mem 2 --disk 20]
+  team memory <id> [text]            read or replace that teammate's notes
+  team avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
+                  [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
+                                    customize that worker's little knight, or read its saved appearance
+  team pause|resume|stop <room|teammate|task> <id>
 
 Set up
   init [--name laptop] [--fleet camelot] [--port 7777]     found a fleet on this machine
@@ -466,6 +483,13 @@ async function main(): Promise<void> {
       chat: { type: "string" },
       project: { type: "string" },
       instructions: { type: "string" },
+      after: { type: "string" },
+      form: { type: "string" },
+      color: { type: "string" },
+      accent: { type: "string" },
+      eyes: { type: "string" },
+      accessory: { type: "string" },
+      temperament: { type: "string" },
       "instructions-file": { type: "string" },
       base: { type: "string" },
       branch: { type: "string" },
@@ -1722,6 +1746,9 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "notify":
       await notifyCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "team":
+      await teamCommand(new Admin(home), sub, rest, flags);
       return;
 
     case "doctor": {

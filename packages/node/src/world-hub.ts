@@ -457,33 +457,59 @@ export class WorldHub {
   /* ---------- partners: the agents working with him (their MCP calls) ---------- */
 
   private readonly partners = new Map<string, WorldPartner>();
+  /** Refreshes and renames do not extend a brief completion/attention face. */
+  private readonly partnerExpressions = new Map<string, number>();
 
   /** An agent's call: it arrives (or moves on) to the station its tool sends it to, beside him. */
-  partner(name: string, station: Station, doing: string): void {
+  partner(name: string, station: Station, doing: string, metadata: Pick<WorldPartner, "id" | "avatar" | "expression"> = {}): void {
     const now = this.now();
-    const was = this.partners.get(name);
+    const key = metadata.id ? `id:${metadata.id}` : `name:${name}`;
+    const was = this.partners.get(key);
     const line = clipThought(doing);
-    const next: WorldPartner = { name: name.slice(0, 48), station, doing: line, since: was?.since ?? now, last: now };
-    this.partners.delete(name);
-    this.partners.set(name, next);
-    while (this.partners.size > MAX_PARTNERS) this.partners.delete(this.partners.keys().next().value!);
-    if (!was || was.station !== station || was.doing !== line) this.emit({ type: "partners", at: now, partners: this.partnerViews() });
+    const next: WorldPartner = {
+      name: name.slice(0, 48), station, doing: line, since: was?.since ?? now, last: now,
+      ...(metadata.id ? { id: metadata.id } : {}),
+      ...(metadata.avatar ? { avatar: { ...metadata.avatar } } : {}),
+      ...(metadata.expression ? { expression: metadata.expression } : {}),
+    };
+    this.partners.delete(key);
+    this.partners.set(key, next);
+    if (next.expression === "pleased" || next.expression === "concerned") {
+      if (was?.expression !== next.expression) this.partnerExpressions.set(key, now);
+    } else this.partnerExpressions.delete(key);
+    while (this.partners.size > MAX_PARTNERS) {
+      const oldest = this.partners.keys().next().value!;
+      this.partners.delete(oldest);
+      this.partnerExpressions.delete(oldest);
+    }
+    if (!was || was.name !== next.name || was.station !== station || was.doing !== line || was.expression !== next.expression || JSON.stringify(was.avatar) !== JSON.stringify(next.avatar)) {
+      this.emit({ type: "partners", at: now, partners: this.partnerViews() });
+    }
   }
 
   /** Partners that have made no call for a while go home. */
   partnersQuiet(): void {
     const now = this.now();
-    let gone = false;
-    for (const [name, p] of this.partners) {
-      if (now - p.last < PARTNER_IDLE_MS) continue;
-      this.partners.delete(name);
-      gone = true;
+    let changed = false;
+    for (const [key, p] of this.partners) {
+      if (now - p.last >= PARTNER_IDLE_MS) {
+        this.partners.delete(key);
+        this.partnerExpressions.delete(key);
+        changed = true;
+        continue;
+      }
+      const since = this.partnerExpressions.get(key);
+      if (since !== undefined && now - since >= 30_000) {
+        p.expression = "idle";
+        this.partnerExpressions.delete(key);
+        changed = true;
+      }
     }
-    if (gone) this.emit({ type: "partners", at: now, partners: this.partnerViews() });
+    if (changed) this.emit({ type: "partners", at: now, partners: this.partnerViews() });
   }
 
   private partnerViews(): WorldPartner[] {
-    return [...this.partners.values()].map((p) => ({ ...p }));
+    return [...this.partners.values()].map((p) => ({ ...p, ...(p.avatar ? { avatar: { ...p.avatar } } : {}) }));
   }
 
   /* ---------- experiments ---------- */

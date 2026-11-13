@@ -9,9 +9,13 @@
 #
 #   ping                 → ok
 #   create <id> <gib>    → ok <mountpoint>   a new, empty, mounted workspace of <gib> GiB
-#   remove <id>          → ok                unmount it and delete its image
+#   remove <id>          → ok                unmount and delete an unretained image
+#   remove-owned <id>    → ok                owner-approved deletion, retained images too
+#   mount <id>           → ok                remount an existing image; never create one
+#   retain <id>          → ok                keep it when its container is absent
 #   stats                → ok <fs-total-bytes> <fs-free-bytes>
 #                          <id> <size-bytes> <used-bytes> <mounted 0|1> <created-epoch-s>   (one per workspace)
+#   stats-v2             → same, with a sixth <retained 0|1> column per workspace
 #
 # Nothing else is accepted, ids are 10 hex digits, and every path is built here from
 # a fixed root that only root can enter. Installed by scripts/remote-setup.sh.
@@ -55,9 +59,21 @@ case "$verb" in
       rmdir "$mnt"; rm -f "$img"; fail "mount failed"
     fi
     echo "ok $mnt" ;;
-  remove)
+  mount|retain)
+    [ "$#" -eq 2 ] || fail "bad arguments"
     valid_id "$id" || fail "bad id"
     img="$ROOT/$id.img" mnt="$ROOT/$id"
+    [ -f "$img" ] && [ ! -L "$img" ] && [ -d "$mnt" ] && [ ! -L "$mnt" ] || fail "existing workspace is missing"
+    if [ "$verb" = retain ]; then
+      : > "$ROOT/$id.keep" || fail "cannot retain workspace"
+    elif ! mountpoint -q "$mnt"; then
+      mount -o loop,nodev,nosuid,discard "$img" "$mnt" || fail "mount failed"
+    fi
+    echo ok ;;
+  remove|remove-owned)
+    valid_id "$id" || fail "bad id"
+    img="$ROOT/$id.img" mnt="$ROOT/$id"
+    if [ "$verb" = remove ] && [ -f "$ROOT/$id.keep" ]; then fail "retained workspace needs owner-approved removal"; fi
     if mountpoint -q "$mnt"; then
       # The container is gone by now; if something still holds it, detach lazily
       # (the loop device frees itself when the last user lets go).
@@ -65,8 +81,9 @@ case "$verb" in
     fi
     [ -d "$mnt" ] && rmdir "$mnt"
     rm -f "$img"
+    rm -f "$ROOT/$id.keep"
     echo ok ;;
-  stats)
+  stats|stats-v2)
     set -- $(df -B1 --output=size,avail "$ROOT" | tail -n 1)
     echo "ok $1 $2"
     set +f
@@ -77,7 +94,12 @@ case "$verb" in
       size=$(stat -c %s "$img")
       used=$(( $(stat -c %b "$img") * $(stat -c %B "$img") ))
       if mountpoint -q "$ROOT/$name"; then on=1; else on=0; fi
-      echo "$name $size $used $on $(stat -c %Y "$img")"
+      if [ -f "$ROOT/$name.keep" ]; then keep=1; else keep=0; fi
+      if [ "$verb" = stats-v2 ]; then
+        echo "$name $size $used $on $(stat -c %Y "$img") $keep"
+      else
+        echo "$name $size $used $on $(stat -c %Y "$img")"
+      fi
     done ;;
   *)
     fail "unknown command" ;;

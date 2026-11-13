@@ -37,6 +37,7 @@ export class ArmTokens {
   mint(label: string, scopes: Scope[] = ARM_DEFAULT_SCOPES): { token: string; info: ArmInfo } {
     if (!ARM_LABEL.test(label)) throw new Error("arm labels are lowercase letters, digits, . _ - (max 48)");
     if (label === GALAHAD_ARM) throw new Error(`"${GALAHAD_ARM}" is Galahad himself (his tools in chat); choose another name`);
+    if (label.startsWith("team.")) throw new Error(`"${label}" is reserved for Galahad's internal workers; choose another name`);
     const forbidden = scopes.filter((s) => ARM_FORBIDDEN_SCOPES.includes(s));
     if (forbidden.length) throw new Error(`arms may never hold: ${forbidden.join(", ")}`);
     const token = `arm_${randomId(32)}`;
@@ -63,6 +64,9 @@ export class ArmTokens {
   verify(token: string): ArmInfo | null {
     if (!/^arm_[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const row = this.db.query<Row, [string]>("SELECT * FROM arm_tokens WHERE hash = ?").get(sha256B64u(token));
+    // Tokens minted before workers existed must not acquire an internal worker's identity; nor one minted
+    // before his own name was reserved, Galahad's: what he alone may do is decided by that name.
+    if (row?.label.startsWith("team.") || row?.label === GALAHAD_ARM) return null;
     return row ? toInfo(row) : null;
   }
 

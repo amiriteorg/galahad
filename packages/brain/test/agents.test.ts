@@ -89,7 +89,7 @@ function sandbox(batches: string[][], exit: number | null = 0, options: { stderr
   const exec = async (command: string): Promise<ExecResult> => {
     commands.push(command);
     const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
-    if (command.startsWith("python3 -c")) {
+    if (command.startsWith("python3 -c") && command.includes("d, off =")) {
       const batch = batches[polls] ?? [];
       polls += 1;
       const alive = options.forever || polls < batches.length;
@@ -107,13 +107,32 @@ const model = { provider: "orcarouter", model: "anthropic/claude-opus-5.5" };
 const noSleep = async () => {};
 
 describe("running an agent", () => {
+  test("an agent that finishes during launch still reports its session and result", async () => {
+    let launched = false;
+    const early = [LINES.start, LINES.text];
+    const bytes = early.join("\n").length + 1;
+    const exec = async (command: string): Promise<ExecResult> => {
+      let stdout = "";
+      if (command.startsWith("mkdir -p")) launched = true;
+      if (command.startsWith("stat -c")) stdout = String(launched ? bytes : 0);
+      if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+        const offset = Number(command.split(" ").at(-1));
+        stdout = JSON.stringify({ alive: false, exit: 0, next: bytes, lines: offset < bytes ? early : [] });
+      }
+      return { exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false };
+    };
+    const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, { exec, sleep: noSleep });
+    expect(run.session).toBe(SESSION);
+    expect(run.summary).toContain("now passes");
+  });
+
   test("started in the background with stdin closed, followed to the end, its last words its summary", async () => {
     const box = sandbox([[LINES.start, LINES.shell], [LINES.edit, LINES.finish], [LINES.text]]);
     const seen: AgentEvent[] = [];
     const run = await runAgent(OPENCODE, { model, prompt: "Fix it ‘now’", session: null, deadline: Date.now() + 60_000, workdir: "/work/repo" }, { exec: box.exec, sleep: noSleep, event: (e) => seen.push(e) });
     expect(run).toMatchObject({ status: "finished", steps: 2, session: SESSION, tokens: { input: 8140, output: 94 } });
     expect(run.summary).toContain("now passes");
-    const launch = box.commands[0]!;
+    const launch = box.commands.find((c) => c.startsWith("mkdir -p"))!;
     expect(launch).toContain(`base64 -d > ${AGENT_DIR}/prompt.md`);
     expect(launch).toContain("cd '/work/repo'");
     expect(launch).toContain("setsid bash -c");
@@ -127,7 +146,7 @@ describe("running an agent", () => {
     let t = 0;
     await runAgent(OPENCODE, { model, prompt: "it's \"quoted\" & $(dangerous)", session: SESSION, deadline: 15_000, workdir: "/work/my repo" }, { exec: box.exec, sleep: noSleep, now: () => (t += 10_000) });
     const kinds = new Set(box.commands.map((c) => c.split(" ")[0]));
-    expect([...kinds].sort()).toEqual(["kill", "mkdir", "python3", "stat"]);
+    expect([...kinds].sort()).toEqual(["mkdir", "python3", "stat"]);
     for (const command of box.commands) {
       const check = Bun.spawnSync(["bash", "-n", "-c", command]);
       expect({ command: command.slice(0, 120), stderr: check.stderr.toString() }).toEqual({ command: command.slice(0, 120), stderr: "" });
@@ -147,7 +166,7 @@ describe("running an agent", () => {
     let t = 0;
     const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: 25_000, workdir: "/work" }, { exec: box.exec, sleep: noSleep, now: () => (t += 10_000) });
     expect(run.status).toBe("timeout");
-    expect(box.commands.some((c) => c.startsWith(`kill -TERM -- -$(cat ${AGENT_DIR}/pid)`))).toBe(true);
+    expect(box.commands.some((c) => c.startsWith("python3 -c") && c.includes("cleanup(sys.argv[1])"))).toBe(true);
   });
 
   test("stopped by you: it's stopped", async () => {
@@ -157,9 +176,42 @@ describe("running an agent", () => {
     const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, { exec: box.exec, sleep: noSleep, signal: controller.signal });
     expect(run.status).toBe("stopped");
   });
+
+  test("abort during launch awaits trusted cleanup even when the normal exec transport rejects", async () => {
+    const controller = new AbortController();
+    let cleaned = false;
+    const exec = async (command: string): Promise<ExecResult> => {
+      if (command.startsWith("mkdir -p")) {
+        controller.abort();
+        throw new Error("the request ended after the worker started");
+      }
+      if (controller.signal.aborted) throw new Error("ordinary commands are now refused");
+      return { exitCode: 0, stdout: "0", stderr: "", durationMs: 1, truncated: false };
+    };
+    const result = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, {
+      exec, sleep: noSleep, signal: controller.signal,
+      stopAgent: async () => { await Promise.resolve(); cleaned = true; },
+    }).catch(() => ({ status: "threw" }));
+    expect(cleaned).toBe(true);
+    expect(result.status).toBe("stopped");
+  });
 });
 
 describe("a quest with a coding agent", () => {
+  test("a resumed task uses its saved harness session and persists a newly observed session before review", async () => {
+    const box = sandbox([[LINES.start, LINES.text]]);
+    const saved: string[] = [];
+    const outcome = await runQuest({ goal: "continue", environment: "a sandbox", plan: "Continue the task", agent: { driver: OPENCODE, models: [model], minutes: 1, workdir: "/work", session: "saved-session" } }, {
+      exec: box.exec, sleep: noSleep,
+      agentSession: async (id) => { await Promise.resolve(); saved.push(id); },
+      ask: async () => { expect(saved).toEqual([SESSION]); return { text: "PASS", model: "test/reviewer" }; },
+    });
+    expect(outcome.status).toBe("done");
+    expect(box.commands.find((c) => c.startsWith("mkdir -p /work/.agent"))).toContain("--session");
+    expect(box.commands.find((c) => c.startsWith("mkdir -p /work/.agent"))).toContain("saved-session");
+    expect(saved).toEqual([SESSION]);
+  });
+
   test("plan, the agent's run, an independent review; the reviewer's notes continue the agent's session", async () => {
     const replies: Record<QuestRole, string[]> = { planner: ["1. Fix calc.py.\nDone when: the test passes."], engineer: [], reviewer: ["REVISE\nAlso add a test for negative numbers.", "PASS\nBoth tests pass in the sandbox."] };
     const box = sandbox([[LINES.start, LINES.shell, LINES.text]]);
@@ -168,7 +220,7 @@ describe("a quest with a coding agent", () => {
     const exec = async (command: string) => {
       commands.push(command);
       if (command.startsWith("mkdir -p /work/.agent")) runs += 1;
-      if (runs === 2 && command.startsWith("python3 -c")) {
+      if (runs === 2 && command.startsWith("python3 -c") && command.includes("d, off =")) {
         return { exitCode: 0, stdout: JSON.stringify({ alive: false, exit: 0, next: 9999, lines: [LINES.edit, LINES.text] }), stderr: "", durationMs: 1, truncated: false };
       }
       return box.exec(command);
@@ -215,7 +267,7 @@ describe("an agent's model fails", () => {
         launches.push(command);
         return ok();
       }
-      if (command.startsWith("python3 -c")) {
+      if (command.startsWith("python3 -c") && command.includes("d, off =")) {
         return ok(JSON.stringify(runs === 1 ? { alive: false, exit: 1, next: 10, lines: [LINES.start, LINES.shell, filtered] } : { alive: false, exit: 0, next: 20, lines: [LINES.edit, LINES.text] }));
       }
       return ok(command.startsWith("stat") ? "0" : "");

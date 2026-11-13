@@ -31,6 +31,14 @@ describe("what he knows about his own work", () => {
     expect(TOOL_GUIDE).toMatch(/Say a skill is saved only when the tool or the quest's outcome says it is/);
   });
 
+  test("he knows his workers are his to grow: look first, make one when asked or needed, brief it, and claim nothing the tool didn't say", () => {
+    for (const tool of ["team", "team_recruit", "team_message"]) expect(TOOL_GUIDE).toContain(tool);
+    expect(TOOL_GUIDE).toMatch(/When your liege asks for another, or the work needs a lasting job none of them fits/);
+    expect(TOOL_GUIDE).toMatch(/before making another/);
+    expect(TOOL_GUIDE).toMatch(/only a few in a day/);
+    expect(TOOL_GUIDE).toMatch(/only when the tool says so/);
+  });
+
   test("it stays small: the guide and the persona are sent with every answer", () => {
     expect(TOOL_GUIDE.length).toBeLessThan(6500);
     expect(GALAHAD_SYSTEM.length).toBeLessThan(2500);

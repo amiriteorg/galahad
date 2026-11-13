@@ -1,4 +1,8 @@
-import { type ExecResult, redact } from "@galahad/core";
+import { type ExecResult, randomId, redact } from "@galahad/core";
+import { agentCleanupCommand, agentProcessCommand, AGENT_PROCESS_PY } from "./agent-process.ts";
+import { HERMES } from "./hermes.ts";
+export { HERMES } from "./hermes.ts";
+export { agentCleanupCommand } from "./agent-process.ts";
 
 /*
  * Coding agents in the sandbox: for long work on real codebases, a full harness
@@ -113,10 +117,14 @@ export const OPENCODE: AgentDriver = {
   },
 };
 
-export const AGENTS: Record<string, AgentDriver> = { opencode: OPENCODE };
+export const AGENTS: Record<string, AgentDriver> = { opencode: OPENCODE, hermes: HERMES };
 
 export interface AgentRunDeps {
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
+  /** Trusted, workspace-bound cleanup that remains available after the request aborts. */
+  stopAgent?(): Promise<void>;
+  /** Persist a newly observed harness session before following more events. */
+  session?(id: string): Promise<void>;
   /** Each event as it arrives. */
   event?(event: AgentEvent): void;
   signal?: AbortSignal;
@@ -137,12 +145,12 @@ export interface AgentRun {
 }
 
 /** Prints {alive, exit, next, lines} for the events written since byte `offset`. */
-const POLL = `import json, os, sys
+const POLL = `${AGENT_PROCESS_PY}
 d, off = ${JSON.stringify(AGENT_DIR)}, int(sys.argv[1])
 alive = False
 try:
-    os.kill(int(open(d + "/pid").read()), 0)
-    alive = True
+    item = marker()
+    alive = bool(item and matches(item, identity(item["pid"])))
 except Exception:
     pass
 exit_code = None
@@ -175,67 +183,95 @@ export async function runAgent(
 ): Promise<AgentRun> {
   const now = deps.now ?? Date.now;
   const run: AgentRun = { status: "finished", summary: "", steps: 0, session: input.session, tokens: { input: 0, output: 0 } };
-  const prompt = Buffer.from(input.prompt, "utf8").toString("base64");
-  const started = await deps.exec(
-    [
-      `mkdir -p ${AGENT_DIR} && rm -f ${AGENT_DIR}/exit ${AGENT_DIR}/pid`,
-      `printf %s ${quote(prompt)} | base64 -d > ${AGENT_DIR}/prompt.md`,
-      `cd ${quote(input.workdir)}`,
-      // Backgrounded inside braces: `… & && …` isn't shell.
-      `{ setsid bash -c ${quote(`${driver.command(input.model, input.session)} < /dev/null >> ${AGENT_DIR}/events.jsonl 2>> ${AGENT_DIR}/stderr.log; echo $? > ${AGENT_DIR}/exit`)} > /dev/null 2>&1 & echo $! > ${AGENT_DIR}/pid; }`,
-    ].join(" && "),
-    60,
-  );
-  if (started.exitCode !== 0) return { ...run, status: "failed", error: redact(`couldn't start ${driver.name}: ${started.stderr || started.stdout}`).slice(0, 2000) };
+  const runId = randomId(12);
+  let launched = false;
+  let stopping: Promise<void> | undefined;
+  const stop = () => stopping ??= deps.stopAgent
+    ? deps.stopAgent()
+    : deps.exec(agentCleanupCommand(runId), 30).then((result) => {
+      if (result.exitCode !== 0) throw new Error("Could not safely stop the worker process");
+    });
+  try {
+    if (deps.signal?.aborted) return { ...run, status: "stopped" };
+    // Read the previous end before spawning: a fast agent can write its entire run
+    // before the launch command returns. The per-workspace caller serializes runs.
+    const offsetCmd = `stat -c %s ${AGENT_DIR}/events.jsonl 2>/dev/null || echo 0`;
+    let offset = Number((await deps.exec(offsetCmd, 30)).stdout.trim()) || 0;
+    const prompt = Buffer.from(input.prompt, "utf8").toString("base64");
+    // A transport can abort after starting the process but before returning its
+    // response. From this point cleanup must run even if the launch promise rejects.
+    launched = true;
+    const started = await deps.exec(
+      [
+        `mkdir -p ${AGENT_DIR} && rm -f ${AGENT_DIR}/exit ${AGENT_DIR}/pid`,
+        `printf %s ${quote(prompt)} | base64 -d > ${AGENT_DIR}/prompt.md`,
+        `cd ${quote(input.workdir)}`,
+        // Backgrounded inside braces: `… & && …` isn't shell.
+        `{ setsid bash -c ${quote(`${agentProcessCommand("record", runId)} && ${driver.command(input.model, input.session)} < /dev/null >> ${AGENT_DIR}/events.jsonl 2>> ${AGENT_DIR}/stderr.log; echo $? > ${AGENT_DIR}/exit`)} > /dev/null 2>&1 & echo $! > ${AGENT_DIR}/pid; }`,
+        agentProcessCommand("wait_record", runId),
+      ].join(" && "),
+      60,
+    );
+    if (started.exitCode !== 0) {
+      await stop();
+      return { ...run, status: "failed", error: redact(`couldn't start ${driver.name}: ${started.stderr || started.stdout}`).slice(0, 2000) };
+    }
 
-  const offsetCmd = `stat -c %s ${AGENT_DIR}/events.jsonl 2>/dev/null || echo 0`;
-  // A continued session appends to the same stream: start reading where the last run ended.
-  let offset = Number((await deps.exec(offsetCmd, 30)).stdout.trim()) || 0;
-  const stop = async () => {
-    await deps.exec(`kill -TERM -- -$(cat ${AGENT_DIR}/pid) 2>/dev/null; sleep 5; kill -KILL -- -$(cat ${AGENT_DIR}/pid) 2>/dev/null; true`, 30).catch(() => {});
-  };
-  let lastError = "";
-  for (;;) {
-    let poll: { alive: boolean; exit: number | null; next: number; lines: string[] };
-    try {
-      const result = await deps.exec(`python3 -c ${quote(POLL)} ${offset}`, 60);
-      poll = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
-    } catch {
-      poll = { alive: true, exit: null, next: offset, lines: [] };
-    }
-    offset = poll.next;
-    for (const line of poll.lines) {
-      for (const event of driver.read(line)) {
-        if (event.type === "session") {
-          run.session = event.id;
-          continue;
-        }
-        if (event.type === "text") run.summary = event.text;
-        if (event.type === "tool") run.steps += 1;
-        if (event.type === "tokens") {
-          run.tokens.input += event.input;
-          run.tokens.output += event.output;
-        }
-        if (event.type === "error") lastError = event.message;
-        deps.event?.(event);
+    let lastError = "";
+    for (;;) {
+      let poll: { alive: boolean; exit: number | null; next: number; lines: string[] };
+      try {
+        const result = await deps.exec(`python3 -c ${quote(POLL)} ${offset}`, 60);
+        poll = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
+      } catch {
+        poll = { alive: true, exit: null, next: offset, lines: [] };
       }
-    }
-    if (!poll.alive) {
-      if (poll.exit !== 0 || (!run.summary && lastError)) {
-        const stderr = (await deps.exec(`tail -c 2000 ${AGENT_DIR}/stderr.log 2>/dev/null`, 30).catch(() => null))?.stdout ?? "";
-        return { ...run, status: "failed", error: redact([lastError, poll.exit === null ? "it stopped without an exit code" : `it exited with ${poll.exit}`, stderr.trim()].filter(Boolean).join("\n")).slice(0, 3000) };
+      offset = poll.next;
+      for (const line of poll.lines) {
+        for (const event of driver.read(line)) {
+          if (event.type === "session") {
+            const changed = run.session !== event.id;
+            run.session = event.id;
+            if (changed) await deps.session?.(event.id);
+            continue;
+          }
+          if (event.type === "text") run.summary = event.text;
+          if (event.type === "tool") run.steps += 1;
+          if (event.type === "tokens") {
+            run.tokens.input += event.input;
+            run.tokens.output += event.output;
+          }
+          if (event.type === "error") lastError = event.message;
+          deps.event?.(event);
+        }
       }
-      return run;
+      if (deps.signal?.aborted) {
+        await stop();
+        return { ...run, status: "stopped" };
+      }
+      if (!poll.alive) {
+        const cleared = await deps.exec(agentProcessCommand("finish", runId), 30);
+        if (cleared.exitCode !== 0) throw new Error("Could not clear the completed worker's process marker");
+        if (poll.exit !== 0 || (!run.summary && lastError)) {
+          const stderr = (await deps.exec(`tail -c 2000 ${AGENT_DIR}/stderr.log 2>/dev/null`, 30).catch(() => null))?.stdout ?? "";
+          return { ...run, status: "failed", error: redact([lastError, poll.exit === null ? "it stopped without an exit code" : `it exited with ${poll.exit}`, stderr.trim()].filter(Boolean).join("\n")).slice(0, 3000) };
+        }
+        return run;
+      }
+      if (now() > input.deadline) {
+        await stop();
+        return { ...run, status: "timeout", error: "it ran out of time" };
+      }
+      await deps.sleep(input.pollMs ?? 10_000);
     }
-    if (deps.signal?.aborted) {
-      await stop();
-      return { ...run, status: "stopped" };
-    }
-    if (now() > input.deadline) {
-      await stop();
-      return { ...run, status: "timeout", error: "it ran out of time" };
-    }
-    await deps.sleep(input.pollMs ?? 10_000);
+  } catch (error) {
+    // Any exception after launch may leave a background worker behind. Await its
+    // trusted cleanup before the caller can release this workspace's writer lock.
+    if (launched) await stop();
+    if (deps.signal?.aborted) return { ...run, status: "stopped" };
+    throw error;
+  } finally {
+    if (launched && deps.signal?.aborted) await stop();
   }
 }
 

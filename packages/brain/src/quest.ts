@@ -20,6 +20,10 @@ export interface QuestDeps {
   ask(role: QuestRole, messages: ChatMessage[]): Promise<{ text: string; model: string }>;
   /** Run one shell command in the quest's workspace. */
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
+  /** Fixed cleanup for this worker, available even after ordinary execution is cancelled. */
+  stopAgent?(): Promise<void>;
+  /** Persist the harness session as soon as it is created; used when resuming a task. */
+  agentSession?(id: string): Promise<void>;
   /** Progress, for whoever is watching. */
   emit?(event: QuestEvent): void;
   signal?: AbortSignal;
@@ -49,7 +53,7 @@ export interface QuestOptions {
    * command per turn, bounded by time rather than a command count. The reviewer's notes
    * continue the agent's own session.
    */
-  agent?: { driver: AgentDriver; models: AgentModel[]; minutes: number; workdir: string };
+  agent?: { driver: AgentDriver; models: AgentModel[]; minutes: number; workdir: string; session?: string };
   /**
    * Parallel sub-steps (effort): the engineer may send up to this many commands in one reply when they
    * don't depend on each other; they run at the same time in the same sandbox, each counting as a step.
@@ -471,7 +475,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       if (written.exitCode !== 0) return finish({ status: "gave-up", summary: `Couldn't set up ${agent.driver.name}: ${written.stderr || written.stdout}` });
     }
     let prompt = agentBriefing(o, plan, gates);
-    let session: string | null = null;
+    let session: string | null = agent.session ?? null;
     let current = 0;
     for (;;) {
       check();
@@ -481,6 +485,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         { model, prompt, session, deadline, workdir: agent.workdir },
         {
           exec: deps.exec,
+          stopAgent: deps.stopAgent,
+          session: deps.agentSession,
           signal: deps.signal,
           sleep: pause,
           event: (event) => {

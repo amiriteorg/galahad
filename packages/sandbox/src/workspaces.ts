@@ -18,7 +18,7 @@ const GIB = 2 ** 30;
 export interface WorkspaceStats {
   totalBytes: number;
   freeBytes: number;
-  images: { id: string; sizeBytes: number; usedBytes: number; mounted: boolean; createdAt: number }[];
+  images: { id: string; sizeBytes: number; usedBytes: number; mounted: boolean; createdAt: number; retained?: boolean }[];
 }
 
 /** What the sandbox host needs from the helper (a fake in tests). */
@@ -26,7 +26,13 @@ export interface Workspaces {
   available(): Promise<boolean>;
   /** Creates and mounts an empty workspace; returns its host path. */
   create(id: string, gib: number): Promise<string>;
+  /** Remount existing data after a host restart; never creates an empty image. */
+  mount?(id: string): Promise<void>;
+  /** Protect a persistent teammate's data even if its container is lost. */
+  retain?(id: string): Promise<void>;
   remove(id: string): Promise<void>;
+  /** Only an owner-approved destruction may remove retained data. */
+  removeRetained?(id: string): Promise<void>;
   stats(): Promise<WorkspaceStats>;
 }
 
@@ -38,13 +44,14 @@ export function parseStats(text: string): WorkspaceStats {
   if (top[0] !== "ok" || top.length !== 3) throw new WorkspaceError(`unexpected stats: ${head?.slice(0, 100)}`);
   const images = rows
     .map((row) => row.trim().split(" "))
-    .filter((cols) => cols.length === 5 && /^[0-9a-f]{10}$/.test(cols[0]!))
-    .map(([id, size, used, mounted, created]) => ({
+    .filter((cols) => (cols.length === 5 || cols.length === 6) && /^[0-9a-f]{10}$/.test(cols[0]!))
+    .map(([id, size, used, mounted, created, retained]) => ({
       id: id!,
       sizeBytes: Number(size),
       usedBytes: Number(used),
       mounted: mounted === "1",
       createdAt: Number(created) * 1000,
+      ...(retained === undefined ? {} : { retained: retained === "1" }),
     }));
   return { totalBytes: Number(top[1]), freeBytes: Number(top[2]), images };
 }
@@ -130,7 +137,30 @@ export class WorkspaceHelper implements Workspaces {
     await this.ask(`remove ${id}`);
   }
 
+  async mount(id: string): Promise<void> {
+    if (!/^[0-9a-f]{10}$/.test(id)) throw new WorkspaceError("bad workspace id");
+    await this.ask(`mount ${id}`);
+  }
+
+  async removeRetained(id: string): Promise<void> {
+    if (!/^[0-9a-f]{10}$/.test(id)) throw new WorkspaceError("bad workspace id");
+    await this.ask(`remove-owned ${id}`);
+  }
+
+  async retain(id: string): Promise<void> {
+    if (!/^[0-9a-f]{10}$/.test(id)) throw new WorkspaceError("bad workspace id");
+    await this.ask(`retain ${id}`);
+  }
+
   async stats(): Promise<WorkspaceStats> {
-    return parseStats(await this.ask("stats"));
+    // Old helpers keep their original five-column protocol. They cannot create
+    // retained teammate workspaces, but existing ephemeral sandboxes still work.
+    let answer: string;
+    try { answer = await this.ask("stats-v2"); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("unknown command")) throw error;
+      answer = await this.ask("stats");
+    }
+    return parseStats(answer);
   }
 }

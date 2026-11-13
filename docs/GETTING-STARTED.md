@@ -192,6 +192,18 @@ bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 2. Run `bun galahad provider add ollama` once.
 3. The `swift` role already tries `ollama/*`, then `llamacpp/*`, then `anthropic/claude-haiku-5-5`.
 
+## 6½. Give the hivemind persistent workers
+
+The whole system is Galahad. **Team** gives parts of his shared mind persistent names, jobs, rooms and DMs. Open it in the PWA paired to the node you want to keep as the controller, choose **New teammate**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a worker and brief it; he does so within a daily allowance, and Team marks it as made by him. The CLI equivalent starts with:
+
+```sh
+bun galahad team add ada --name Ada --role engineer --agent native --limit 40
+bun galahad team dm ada "Help me plan the next small, verifiable improvement."
+bun galahad team
+```
+
+Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode and Hermes must be installed by the owner in that VM before selecting them for work. Team state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin. SANDBOX remains his home, with his dog, builds and experiments.
+
 ## 7. Let tools use your keys without seeing them
 
 ```sh

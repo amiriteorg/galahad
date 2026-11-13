@@ -39,6 +39,8 @@ import { overviewView } from "./views/overview.ts";
 import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
 import { trialsView } from "./views/trials.ts";
+import { teamView } from "./views/team.ts";
+import { teamHash, teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
 interface RouteSpec {
@@ -59,6 +61,7 @@ const ROUTES: RouteSpec[] = [
   { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
   { id: "world", label: "SANDBOX", icon: "landscape", group: "main", scope: "mind:read", key: "x", keywords: ["sandbox", "world", "3d", "experiments", "simulation", "galahad", "playground"], view: worldView },
+  { id: "team", label: "Team", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
   { id: "board", label: "Chalkboard", icon: "board", group: "main", scope: "mind:read", key: "d", keywords: ["whiteboard", "chalk", "draw", "sketch", "board", "notes", "equations", "charts"], view: boardView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
   { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "dog", "learned", "log"], view: journalView },
@@ -82,7 +85,7 @@ const ROUTES: RouteSpec[] = [
 ];
 
 const GROUP_LABEL: Record<RouteSpec["group"], string | null> = { main: null, mind: "Mind", bodies: "Bodies", keys: "Keys & models" };
-const MOBILE_PRIMARY: Route[] = ["overview", "chat", "inbox", "fleet", "activity", "memory"];
+const MOBILE_PRIMARY: Route[] = ["world", "team", "chat", "inbox", "overview", "fleet", "activity", "memory"];
 
 export interface ShellBase {
   api: Api;
@@ -129,8 +132,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     navigate(route, opts = {}) {
       const target = visible.find((r) => r.id === route) ? route : "overview";
       pending = { route: target, opts };
-      if (location.hash === `#/${target}`) render();
-      else location.hash = `#/${target}`;
+      const hash = target === "team" ? teamHash(opts) : `#/${target}`;
+      if (location.hash === hash) render();
+      else location.hash = hash;
     },
     palette: (query) => {
       // Your chats and projects, so the palette can find them by name.
@@ -302,7 +306,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   function render(): void {
     const route = routeFromHash() ?? "overview";
     const spec = visible.find((r) => r.id === route)!;
-    const opts = pending?.route === route ? pending.opts : {};
+    const opts = pending?.route === route ? pending.opts : route === "team" ? teamLocation(location.hash) : {};
     pending = null;
     viewScope?.dispose();
     viewScope = new Scope();

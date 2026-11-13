@@ -1,4 +1,5 @@
 import type { BoardChange } from "./board.ts";
+import type { AvatarExpression, AvatarProfile } from "./avatar.ts";
 
 /*
  * The SANDBOX: an infinite synthetic world where Galahad is visible as he works, and
@@ -253,6 +254,8 @@ export function stationForTool(name: string): Station {
   if (name.startsWith("experiment")) return "field";
   // The chalkboard stands at the observatory: he thinks out loud there, and writes results up.
   if (name.startsWith("board_")) return "observatory";
+  // His workers gather at the council table: he goes there to see to them.
+  if (name === "team" || name.startsWith("team_")) return "council";
   return "keep";
 }
 
@@ -423,6 +426,12 @@ export interface WorldCompanion {
 /** An agent working with Galahad over MCP (Claude Code, OpenCode…), while it's at work: its name is its arm's label. */
 export interface WorldPartner {
   name: string;
+  /** Stable worker identity, independent of its display name. Absent for legacy MCP arms. */
+  id?: string;
+  /** Optional custom mascot; old partners keep their familiar squire. */
+  avatar?: AvatarProfile;
+  /** What this worker's current activity looks like, never private task contents. */
+  expression?: AvatarExpression;
   /** Where its latest call sent it (and him). */
   station: Station;
   /** Its latest call, in a line ("Recalling memories"). */

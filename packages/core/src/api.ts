@@ -12,6 +12,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
+import { TeammateInput, TeamRecruitInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
@@ -177,6 +178,29 @@ export const LoopTask = z.discriminatedUnion("kind", [
 export type LoopTask = z.infer<typeof LoopTask>;
 
 export const routes = {
+  team: { method: "GET", path: "/api/team", scope: "chat", input: null },
+  saveTeammate: { method: "POST", path: "/api/team/teammates", scope: "fleet:admin", input: TeammateInput },
+  saveTeamRoom: { method: "POST", path: "/api/team/rooms", scope: "fleet:admin", input: TeamRoomInput },
+  directTeammate: { method: "POST", path: "/api/team/direct", scope: "fleet:admin", input: z.strictObject({ id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/) }) },
+  teamRoom: { method: "POST", path: "/api/team/room", scope: "chat", input: z.strictObject({ id: z.string().min(1).max(80) }) },
+  postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
+  createTeamTask: { method: "POST", path: "/api/team/tasks", scope: "fleet:admin", input: TeamTaskInput },
+  controlTeam: { method: "POST", path: "/api/team/control", scope: "fleet:admin", input: TeamControlInput },
+  teamMemory: { method: "POST", path: "/api/team/memory", scope: "fleet:admin", input: z.strictObject({ id: z.string().min(1).max(32), text: z.string().max(20000) }) },
+  /* Galahad's own way to his workers, from your conversation with him (his tools: team, team_recruit, team_message).
+   * Refused to everyone else whatever their scopes, you included: the routes above are yours. */
+  teamOverview: { method: "POST", path: "/api/team/overview", scope: "mind:read", input: z.strictObject({ room: TeamRoomId.optional() }) },
+  recruitTeammate: { method: "POST", path: "/api/team/recruit", scope: "mind:write", input: TeamRecruitInput },
+  sayToTeam: { method: "POST", path: "/api/team/say", scope: "mind:write", input: TeamSayInput },
+  teamWorkspace: { method: "POST", path: "/api/team/workspace", scope: "sandbox", input: z.strictObject({ id: z.string().min(1).max(32) }) },
+  provisionTeammate: {
+    method: "POST", path: "/api/team/provision", scope: "fleet:admin",
+    input: z.strictObject({ id: z.string().min(1).max(32), on: NodeRef.optional(), cpus: z.number().min(0.25).max(64).default(1), memoryGb: z.number().min(0.25).max(512).default(2), diskGb: z.number().int().min(1).max(2048).default(20) }),
+  },
+  prepareTeamWorkspace: {
+    method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
+    input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional() }),
+  },
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },
   recall: {

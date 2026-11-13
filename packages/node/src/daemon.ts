@@ -25,6 +25,8 @@ import { BankService } from "./bank/service.ts";
 import { BoardStore, writeOnBoard } from "./board.ts";
 import { writeUpExaminations } from "./board-examination.ts";
 import { ChatStore } from "./chats.ts";
+import { TeamStore } from "./team-store.ts";
+import type { TeamService } from "./team.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
 import { QuestBoard } from "./quests.ts";
 import { skillAsker, SkillsService } from "./skills.ts";
@@ -347,6 +349,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
+  const team: { store: TeamStore; service?: TeamService } = { store: new TeamStore(join(home.dir, "team.db")) };
   // Your chat turns run here to their end, whoever is listening; what you queue behind a chat waits in chats.db.
   const turns = new TurnHub({
     chats,
@@ -591,6 +594,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     bank,
     chats,
     turns,
+    team,
     quests,
     world,
     board,
@@ -696,6 +700,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     async stop() {
       const finished = Promise.all(servers.map((s) => s.stop()));
       shutdown.abort();
+      const teamEnded = team.service?.stop();
       clearInterval(outbox);
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
@@ -718,10 +723,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);
       // A turn still going after that is stopped: its answer kept as stopped, what's queued behind it held until you resume.
       await turns.close();
+      await teamEnded;
       await Promise.all(servers.map((s) => s.stop(true)));
       bank.close();
       notifyDb.close();
       chats.close();
+      team.store.close();
       archiveStore.close(); // requests may still have been searching it
       experiments.close(); // flushes what requests wrote, so after them
       local.close();

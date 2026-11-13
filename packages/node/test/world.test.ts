@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GatewayTokens } from "@galahad/brain";
+import { defaultAvatar } from "@galahad/core/avatar";
 import { EXAMINE_MAX_MS, HOLD_MAX_MS, PADS, padKindFor, type Pose, SITES, STATIONS, type WorldEvent, type WorldQuest } from "@galahad/core";
 import { GAZEBO_IMAGE, gatewayEnv, OWN_IMAGES } from "@galahad/sandbox";
 import { ExperimentStore } from "../src/experiment-store.ts";
@@ -23,6 +24,102 @@ function hub(now = { t: 1_000_000 }) {
   world.watch((e) => events.push(e));
   return { world, events, now };
 }
+
+describe("world partner identity", () => {
+  test("a terminal expression settles after 30 seconds even if ordinary refreshes keep the worker present", () => {
+    for (const expression of ["pleased", "concerned"] as const) {
+      const { world, events, now } = hub();
+      try {
+        const avatar = defaultAvatar("a");
+        world.partner("Moss", "forge", "Needs attention", { id: "team:a", avatar, expression });
+        now.t += 25_000;
+        world.partner("Fern", "forge", "Needs attention", { id: "team:a", avatar: { ...avatar, color: "#123456" }, expression });
+        now.t += 4_999;
+        world.partnersQuiet();
+        expect(world.hello()).toMatchObject({ partners: [{ expression }] });
+        now.t += 1;
+        const before = events.length;
+        world.partnersQuiet();
+        expect(events).toHaveLength(before + 1);
+        expect(world.hello()).toMatchObject({ partners: [{ name: "Fern", expression: "idle", doing: "Needs attention" }] });
+        world.partnersQuiet();
+        expect(events).toHaveLength(before + 1);
+      } finally { world.close(); }
+    }
+  });
+
+  test("a genuinely changed expression starts its own interval", () => {
+    const { world, now } = hub();
+    try {
+      world.partner("Moss", "forge", "Building", { id: "team:a", expression: "pleased" });
+      now.t += 20_000;
+      world.partner("Moss", "forge", "Needs attention", { id: "team:a", expression: "concerned" });
+      now.t += 10_000;
+      world.partnersQuiet();
+      expect(world.hello()).toMatchObject({ partners: [{ expression: "concerned" }] });
+      now.t += 20_000;
+      world.partnersQuiet();
+      expect(world.hello()).toMatchObject({ partners: [{ expression: "idle" }] });
+    } finally { world.close(); }
+  });
+
+  test("old external arms keep their wire shape while workers can share a display name", () => {
+    const { world, events, now } = hub();
+    try {
+      world.partner("Moss", "library", "Remembering");
+      const first = events.at(-1)!;
+      expect(first.type).toBe("partners");
+      if (first.type !== "partners") throw new Error("missing partner event");
+      expect(first.partners).toEqual([{ name: "Moss", station: "library", doing: "Remembering", since: now.t, last: now.t }]);
+      world.partner("Moss", "forge", "Building", { id: "team:a", avatar: defaultAvatar("a"), expression: "working" });
+      world.partner("Moss", "forge", "Building", { id: "team:b", avatar: defaultAvatar("b"), expression: "working" });
+      const event = events.at(-1)!;
+      if (event.type !== "partners") throw new Error("missing partner event");
+      expect(event.partners).toHaveLength(3);
+      expect(event.partners.map((p) => p.id)).toEqual([undefined, "team:a", "team:b"]);
+    } finally { world.close(); }
+  });
+
+  test("renames preserve arrival time and changes in expression or appearance reach watchers", () => {
+    const { world, events, now } = hub();
+    try {
+      const avatar = defaultAvatar("a");
+      world.partner("Moss", "forge", "Building", { id: "team:a", avatar, expression: "working" });
+      const arrived = now.t;
+      now.t += 10;
+      const before = events.length;
+      world.partner("Moss", "forge", "Building", { id: "team:a", avatar: { ...avatar }, expression: "working" });
+      expect(events).toHaveLength(before);
+      world.partner("Fern", "forge", "Building", { id: "team:a", avatar, expression: "pleased" });
+      const renamed = events.at(-1)!;
+      if (renamed.type !== "partners") throw new Error("missing partner event");
+      expect(renamed.partners).toHaveLength(1);
+      expect(renamed.partners[0]).toMatchObject({ id: "team:a", name: "Fern", since: arrived, last: now.t, expression: "pleased" });
+      world.partner("Fern", "forge", "Building", { id: "team:a", avatar: { ...avatar, color: "#123456" }, expression: "pleased" });
+      expect(events).toHaveLength(before + 2);
+      now.t += 45_000;
+      world.partnersQuiet();
+      expect(events.at(-1)).toMatchObject({ type: "partners", partners: [] });
+    } finally { world.close(); }
+  });
+
+  test("caller and snapshot mutations cannot change a worker's saved appearance", () => {
+    const { world, events } = hub();
+    try {
+      const avatar = defaultAvatar("a");
+      const color = avatar.color;
+      world.partner("Moss", "forge", "Building", { id: "team:a", avatar });
+      avatar.color = "#000000";
+      const event = events.at(-1)!;
+      if (event.type !== "partners") throw new Error("missing partner event");
+      expect(event.partners[0]!.avatar!.color).toBe(color);
+      event.partners[0]!.avatar!.color = "#ffffff";
+      const hello = world.hello();
+      if (hello.type !== "hello") throw new Error("missing snapshot");
+      expect(hello.partners![0]!.avatar!.color).toBe(color);
+    } finally { world.close(); }
+  });
+});
 
 describe("the world's plots", () => {
   test("never overlap, never on the keep, ring by ring", () => {
