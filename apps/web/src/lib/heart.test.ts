@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { defaultAvatar } from "@galahad/core/avatar";
 import type { GalahadState, WorldHeartbeat, WorldPartner } from "@galahad/core/world";
 import { galahadLine, lookOptions } from "./look.ts";
 import { applyWorldEvent, danishClock, emptyWorld, heartbeatConcern, heartbeatLine, isIdle, readWorldEvent, worldSummary } from "./world.ts";
@@ -12,6 +13,9 @@ import { applyWorldEvent, danishClock, emptyWorld, heartbeatConcern, heartbeatLi
 const RAN = Date.parse("2026-11-11T11:30:00Z"); // 12:30 in Denmark
 const beat = (over: Partial<WorldHeartbeat> = {}): WorldHeartbeat => ({ ran: RAN, status: "ok", counts: { info: 0, warn: 0, alert: 0 }, findings: [], fixed: [], selfAction: true, ...over });
 const partner = (name: string): WorldPartner => ({ name, station: "library", doing: "Recall from the shared mind: the round table", since: 1, last: 2 });
+/** One of his own workers, as the node projects it: an arm's label for an id, and a name to show. */
+const WORKER = "team.0a1b2c3d4e.ada";
+const worker = (over: Partial<WorldPartner> = {}): WorldPartner => ({ ...partner("Galahad · Ada"), id: WORKER, station: "forge", avatar: defaultAvatar("ada"), expression: "working", ...over });
 const galahad: GalahadState = { station: "keep", doing: "At the keep", experiment: null, model: null, since: 0, idle: true };
 const hello = (extra: object = {}) => ({ type: "hello", at: 5, galahad, nodes: [], experiments: [], thoughts: [], ...extra });
 const round = (v: unknown) => readWorldEvent(JSON.parse(JSON.stringify(v)));
@@ -41,6 +45,40 @@ describe("reading the heartbeat and partners", () => {
     expect(round({ type: "heartbeat", at: 1, heartbeat: { ...beat(), counts: { info: -1, warn: 0, alert: 0 } } })).toBeNull();
     expect(round({ type: "partners", at: 1, partners: [{ ...partner("x"), name: "<script>" }] })).toBeNull();
     expect(round({ type: "partners", at: 1, partners: Array.from({ length: 10 }, (_, i) => partner(`a${i}`)) })).toMatchObject({ partners: { length: 6 } });
+  });
+
+  test("one of his own workers is read as the node sends it: the name to show, its identity, its look and its expression", () => {
+    expect(round({ type: "partners", at: 7, partners: [partner("claude-code"), worker()] })).toEqual({ type: "partners", at: 7, partners: [partner("claude-code"), worker()] });
+    const read = round(hello({ partners: [worker(), partner("opencode")] }));
+    expect(read && read.type === "hello" && read.partners).toEqual([worker(), partner("opencode")]);
+    expect(applyWorldEvent(emptyWorld(), read!).partners.map((p) => p.name)).toEqual(["Galahad · Ada", "opencode"]);
+    expect(round({ type: "partners", at: 7, partners: [worker({ name: "Galahad · 研究員" })] })).toMatchObject({ partners: [{ name: "Galahad · 研究員", id: WORKER }] });
+  });
+
+  test("a worker's name is words to show with nothing hidden in them, and never its identity: that is its id, a label", () => {
+    const names = (name: string) => { const read = round({ type: "partners", at: 1, partners: [worker({ name })] }); return read && read.type === "partners" ? read.partners.map((p) => p.name) : null; };
+    expect(names("Galahad · \u202eAda\u0007\n  Lovelace\u200b")).toEqual(["Galahad · Ada Lovelace"]);
+    expect(names("\u200b\u202e")).toEqual([WORKER]);
+    expect(names("Galahad · " + "a".repeat(200))).toEqual(["Galahad · " + "a".repeat(38)]);
+    expect(names("Galahad · " + "a".repeat(37) + "😀")).toEqual(["Galahad · " + "a".repeat(37)]);
+    // Without an id the name is the identity, so it is still an agent's label and nothing else.
+    expect(round({ type: "partners", at: 1, partners: [{ ...partner("x"), name: "Galahad · Ada" }] })).toBeNull();
+    expect(round({ type: "partners", at: 1, partners: [worker({ id: "Not A Label!" })] })).toBeNull();
+    expect(round({ type: "partners", at: 1, partners: [{ ...worker(), id: 7 }] })).toBeNull();
+  });
+
+  test("what a partner is doing is a line of words too, with nothing hidden in it, whoever it is", () => {
+    const doing = "Recalling\u001b[2J the\r\nround\u202e table\u200b";
+    expect(round({ type: "partners", at: 1, partners: [{ ...partner("claude-code"), doing }, { ...worker(), doing }] })).toMatchObject({ partners: [{ name: "claude-code", doing: "Recalling[2J the round table" }, { id: WORKER, doing: "Recalling[2J the round table" }] });
+    // A name with nothing drawn in it is no name: the worker is shown by its id.
+    expect(round({ type: "partners", at: 1, partners: [worker({ name: "\u3164\u00ad\u{e0041}" })] })).toMatchObject({ partners: [{ name: WORKER }] });
+  });
+
+  test("a look it can't read is the worker's plain default, and an expression it doesn't know is left out", () => {
+    const read = round({ type: "partners", at: 1, partners: [{ ...worker(), avatar: { v: 1, form: "dragon", color: "url(https://example.test/x)" }, expression: "furious" }] });
+    expect(read).toEqual({ type: "partners", at: 1, partners: [{ ...partner("Galahad · Ada"), id: WORKER, station: "forge", avatar: defaultAvatar(WORKER) }] });
+    const plain = round({ type: "partners", at: 1, partners: [{ ...partner("Galahad · Ada"), id: WORKER }] });
+    expect(plain).toEqual({ type: "partners", at: 1, partners: [{ ...partner("Galahad · Ada"), id: WORKER }] });
   });
 
   test("idle: as the node says, or (an older node) resting at the keep", () => {
@@ -105,5 +143,16 @@ describe("in words", () => {
     ]);
     expect(partners[2]!.meta).toBe("Silent");
     expect(lookOptions(m, "claude").map((o) => o.label)).toEqual(["claude-code"]);
+  });
+
+  test("two workers that share a name are two places to look, each found by its own id", () => {
+    const other = "team.0a1b2c3d4e.ada-2";
+    const m = applyWorldEvent(emptyWorld(), { type: "hello", at: 1, galahad, nodes: [], experiments: [], thoughts: [], partners: [worker(), worker({ id: other }), partner("claude-code")] });
+    const partners = lookOptions(m).filter((o) => o.group === "Partners");
+    expect(partners.map((o) => [o.key, o.label, o.target])).toEqual([
+      [`partner:${WORKER}`, "Galahad · Ada", { kind: "partner", name: WORKER }],
+      [`partner:${other}`, "Galahad · Ada", { kind: "partner", name: other }],
+      ["partner:claude-code", "claude-code", { kind: "partner", name: "claude-code" }],
+    ]);
   });
 });

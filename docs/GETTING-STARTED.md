@@ -202,6 +202,8 @@ bun galahad team dm ada "Help me plan the next small, verifiable improvement."
 bun galahad team
 ```
 
+A worker you no longer want is paused (`bun galahad team pause teammate ada`) or removed for good (`bun galahad team remove ada`, or **Workspace → Remove teammate** in Team). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [HIVEMIND](HIVEMIND.md#removing-a-worker) has the details.
+
 Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode and Hermes must be installed by the owner in that VM before selecting them for work. Team state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin. SANDBOX remains his home, with his dog, builds and experiments.
 
 ## 7. Let tools use your keys without seeing them

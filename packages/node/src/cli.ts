@@ -21,7 +21,7 @@ import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { chatStateWords, worldQuestLine } from "@galahad/core";
+import { chatStateWords, plainDeep, worldQuestLine } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
@@ -55,6 +55,10 @@ Team (persistent sub-Galahads, rooms and verified work in VMs)
                   [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
                                     customize that worker's little knight, or read its saved appearance
   team pause|resume|stop <room|teammate|task> <id>
+  team remove <id> [--destroy-workspace] [--yes]
+                                    remove a teammate for good: it leaves its rooms and does no more work; what it
+                                    said stays to read, and its handle is never used again. One with a VM is removed
+                                    only with --destroy-workspace, which destroys that VM and everything in /work
 
 Set up
   init [--name laptop] [--fleet camelot] [--port 7777]     found a fleet on this machine
@@ -515,6 +519,7 @@ async function main(): Promise<void> {
       sandboxes: { type: "string" },
       "model-calls": { type: "string" },
       reset: { type: "boolean" },
+      "destroy-workspace": { type: "boolean" },
       // The archive's filters and ideas.
       trust: { type: "string" },
       source: { type: "string" },
@@ -953,7 +958,8 @@ Next:
       }
       if (flags.logs) {
         // How the world ran on each device that opened it lately (newest first).
-        const { reports } = await new Admin(home).call<{ reports: (WorldReportInput & { device: string; at: number })[] }>("worldReports");
+        // (What a device reports of itself is its words, not this node's: plain lines.)
+        const { reports } = plainDeep(await new Admin(home).call<{ reports: (WorldReportInput & { device: string; at: number })[] }>("worldReports"));
         if (!reports.length) console.log("No reports yet: open the SANDBOX in the app, and its device reports here every 30 s.");
         for (const r of reports) {
           console.log(`${bold(r.device)} ${dim(`${new Date(r.at).toLocaleString()} · session ${r.session.slice(0, 8)} · ${r.mode}`)}`);
@@ -1015,7 +1021,8 @@ Next:
         else if (e.type === "companion") console.log(`${at} ${e.companion ? `his dog is named ${bold(e.companion.name)}` : dim("his dog has no name now")}`);
       };
       for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
-        say(event as WorldEvent);
+        // What he thinks and does, an experiment's title, a partner's name are a model's or an agent's words: plain lines, every one.
+        say(plainDeep(event as WorldEvent));
         if (!flags.follow) return;
       }
       return;
@@ -1748,7 +1755,7 @@ Evidence: galahad artifact ${i!.artifact}`));
       await notifyCommand(new Admin(home), sub, rest, flags);
       return;
     case "team":
-      await teamCommand(new Admin(home), sub, rest, flags);
+      await teamCommand(new Admin(home), sub, rest, flags, console.log, confirm, process.stdout.isTTY ? process.stdout.columns : undefined);
       return;
 
     case "doctor": {

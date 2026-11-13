@@ -318,3 +318,116 @@ describe("stopping, interruption and resource bounds", () => {
     expect(calls).toBe(2); expect(store.task(active.id)?.status).toBe("done");
   });
 });
+
+describe("removing a worker", () => {
+  test("its work is stopped first, then it is gone; the room goes on without it", async () => {
+    let calls = 0;
+    const heard: string[] = [];
+    const { store, service } = setup({ respond: async (teammate, _room, _history, context) => {
+      if (teammate.id !== "ada") { heard.push(teammate.id); return ""; }
+      calls++;
+      return new Promise<string>((resolve) => context.signal.addEventListener("abort", () => resolve("late words"), { once: true }));
+    } });
+    service.post({ room: "workshop", text: "Work." }); service.start(); await until(() => calls === 1);
+    const next = service.createTask({ room: "workshop", assignee: "ada", title: "Next", goal: "Next" });
+    const removed = await service.remove("ada");
+    expect(removed).toMatchObject({ id: "ada", enabled: false });
+    expect(removed.removedAt).toBeGreaterThan(0);
+    expect(store.teammate("ada")).toBeNull();
+    expect(service.activeWork().some((work) => work.teammate === "ada")).toBe(false);
+    // What it was saying never lands; what it was doing and what waited for it both say why they stopped.
+    expect(store.messages("workshop").some((m) => m.text === "late words")).toBe(false);
+    expect(store.deliveries().find((d) => d.teammate === "ada")).toMatchObject({ status: "stopped", error: "Stopped to remove its worker." });
+    expect(store.task(next.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+    service.post({ room: "workshop", text: "Carry on." }); await service.settled();
+    expect(heard.filter((id) => id === "lin")).toHaveLength(2);
+    expect(store.deliveries().filter((d) => d.teammate === "ada")).toHaveLength(1);
+    expect(() => service.control({ teammate: "ada", action: "resume" })).toThrow(/was removed/);
+    await expect(service.remove("ada")).rejects.toThrow(/was removed/);
+  });
+
+  test("work that will not stop keeps the worker: paused, and still here to remove once it has ended", async () => {
+    const finish = deferred<{ verified: boolean; output: string }>(); let calls = 0;
+    const { store, service } = setup({ executeTask: async () => { calls++; return finish.promise; } });
+    const first = service.createTask({ room: "workshop", assignee: "ada", title: "First", goal: "First" });
+    const waiting = service.createTask({ room: "workshop", assignee: "ada", title: "Waiting", goal: "Waiting" });
+    service.start(); await until(() => calls === 1);
+    await expect(service.remove("ada", { waitMs: 20 })).rejects.toThrow(/still stopping/);
+    expect(store.teammate("ada")).toMatchObject({ enabled: false });
+    expect(store.room("workshop")!.members).toEqual(["ada", "lin"]);
+    expect(store.task(first.id)).toMatchObject({ status: "stopped", error: "Stopped to remove its worker." });
+    // What had not started is untouched: resuming the worker would run it.
+    expect(store.task(waiting.id)!.status).toBe("queued");
+    finish.resolve({ verified: true, output: "Too late" }); await service.settled();
+    expect(store.task(first.id)).toMatchObject({ status: "stopped", verified: false, output: "" });
+    expect((await service.remove("ada")).removedAt).toBeGreaterThan(0);
+    expect(store.task(waiting.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+  });
+
+  test("a workspace goes only when the caller releases it; a release that fails leaves the worker here and bound", async () => {
+    const { store, service } = setup();
+    service.start();
+    service.setWorkspace("ada", { node: "host", id: "0123456789" });
+    // Nobody said the workspace may go: refused before anything is touched.
+    await expect(service.remove("ada")).rejects.toThrow(/workspace/);
+    expect(store.teammate("ada")).toMatchObject({ enabled: true, workspace: { node: "host", id: "0123456789" } });
+    await expect(service.remove("ada", { release: async () => { throw new TeamError(424, "its VM host is offline"); } })).rejects.toThrow(/offline/);
+    expect(store.teammate("ada")).toMatchObject({ enabled: false, workspace: { node: "host", id: "0123456789" } });
+    const released: string[] = [];
+    const removed = await service.remove("ada", { release: async (member) => { released.push(`${member.workspace!.node}/${member.workspace!.id}`); } });
+    expect(released).toEqual(["host/0123456789"]);
+    expect(removed).toMatchObject({ id: "ada", workspace: null });
+    expect(removed.removedAt).toBeGreaterThan(0);
+    expect(store.teammate("ada")).toBeNull();
+  });
+
+  test("while it is being removed nothing brings it back, changes it or gives it a workspace", async () => {
+    const gate = deferred();
+    const { store, service } = setup();
+    service.start();
+    service.setWorkspace("ada", { node: "host", id: "0123456789" });
+    const removing = service.remove("ada", { release: () => gate.promise });
+    await Promise.resolve();
+    expect(() => service.control({ teammate: "ada", action: "resume" })).toThrow(/being removed/);
+    expect(() => service.saveTeammate({ id: "ada", name: "Ada", enabled: true })).toThrow(/being removed/);
+    expect(() => service.planWorkspace("ada", "host")).toThrow(/being removed/);
+    expect(() => service.setWorkspace("ada", null)).toThrow(/being removed/);
+    await expect(service.remove("ada", { release: async () => {} })).rejects.toThrow(/being removed/);
+    expect(store.teammate("ada")).toMatchObject({ enabled: false, workspace: { node: "host", id: "0123456789" } });
+    gate.resolve();
+    expect((await removing).removedAt).toBeGreaterThan(0);
+    expect(store.teammate("ada")).toBeNull();
+    // Nobody else was held up by it.
+    expect(service.saveTeammate({ id: "lin", name: "Lin" }).id).toBe("lin");
+  });
+
+  test("the caller's release runs for a worker with no binding too, and a release already made is not left half done by a controller that begins to stop", async () => {
+    // A VM made just before a crash may never have been bound: only the caller can know, so it is always asked.
+    const { store, service } = setup();
+    service.start();
+    const asked: (string | null)[] = [];
+    await service.remove("sam", { release: async (member) => { asked.push(member.workspace?.id ?? null); } });
+    expect(asked).toEqual([null]);
+    expect(store.teammate("sam")).toBeNull();
+    // The VM is destroyed, and the controller begins to stop before the record is retired: it is retired all the same.
+    service.setWorkspace("ada", { node: "host", id: "0123456789" });
+    let stopping: Promise<void> | undefined;
+    const removed = await service.remove("ada", { release: async () => { stopping = service.stop(); } });
+    expect(removed).toMatchObject({ id: "ada", workspace: null });
+    expect(removed.removedAt).toBeGreaterThan(0);
+    expect(store.teammate("ada")).toBeNull();
+    await stopping;
+  });
+
+  test("its observers hear of it, and a stopped controller removes no one", async () => {
+    let changes = 0;
+    const { store, service } = setup({ onChange: () => { changes++; } });
+    service.start();
+    const before = changes;
+    await service.remove("sam");
+    expect(changes).toBeGreaterThan(before);
+    await service.stop();
+    await expect(service.remove("ada")).rejects.toThrow(/stopped/);
+    expect(store.teammate("ada")).not.toBeNull();
+  });
+});

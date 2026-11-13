@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { TeammateInput, TeamRecruitInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema } from "../src/team.ts";
+import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema } from "../src/team.ts";
+import { routes } from "../src/api.ts";
 import { defaultAvatar } from "../src/avatar.ts";
 
 describe("team contracts", () => {
@@ -45,10 +46,34 @@ describe("team contracts", () => {
       "You", "owner", "Galahad", "GALAHAD", " system ", "ſystem", "ｏｗｎｅｒ", "-", "<b>Scout</b>"]) {
       expect(TeamRecruitInput.safeParse({ ...job, name }).success).toBe(false);
     }
+    // Nor a name that only reads as one of those, or that is written in two scripts at once (lookalike.ts). Each
+    // look-alike is given by its code point: typed here it could not be told from the Latin letter.
+    const cyrillic = { a: "\u0430", o: "\u043e", S: "\u0405", Y: "\u04ae", T: "\u0422", E: "\u0415", M: "\u041c" };
+    for (const name of [`G${cyrillic.a}lahad`, `Y${cyrillic.o}u`, `${cyrillic.o}wner`, "GaIahad", "Ga1ahad", "0wner", "systern", "Gala-had", "G\u00e1lahad",
+      cyrillic.S + cyrillic.Y + cyrillic.S + cyrillic.T + cyrillic.E + cyrillic.M, "\u0262\u1d00\u029f\u1d00\u029c\u1d00\u1d05", "\u03b3\u03bf\u03c5", "\u13c0\u13aa\u13de\u13aa\u13bb\u13aa\u13a0", `Ad${cyrillic.a}`, "Ada\u7814"]) {
+      expect(TeamRecruitInput.safeParse({ ...job, name }).success).toBe(false);
+    }
+    // (Found by an independent review: the other case of a look-alike, Latin letters with hooks and bars, letters
+    // that are hardly or never drawn, scripts drawn like Latin capitals, and three scripts in one name.)
+    for (const name of ["\uab90\uab7a\uabae\uab7a\uab8b\uab7a\uab70", "\ua7acalahad", "OWNE\u01a6", "\u043e\u051d\u043f\u0435\u0433", "\u0405\u0443\u0455\u0442\u0435\u043c", "Yo\u0289", "yo\u028b", "\u0263ou",
+      "\u01e4alahad", "Ga\u019aahad", "Galaha\u0257", "own\u025br", "Galahacl", "Galahad\u02bc", "\u7814\u7a76\u54e1\u3164", "Ada\u200d", "\ua4d6\ua4ee\ua4e1\ua4ee\ua4e7\ua4ee\ua4d3", "\u10e7\u2c9f\u0e1a"]) {
+      expect([name, TeamRecruitInput.safeParse({ ...job, name }).success]).toEqual([name, false]);
+    }
+    for (const name of ["Systems", "Yours", "Owen", "Galadriel", "Lan", "Ian", "Io", "\u0410\u0434\u0430", "\u30b3\u30fc\u30d2\u30fc", "\u10d7\u10d0\u10db\u10d0\u10e0"]) expect(TeamRecruitInput.parse({ ...job, name }).name).toBe(name);
     // A worker is made for a job, and a handle that is someone else's is refused.
     for (const invalid of [{ ...job, instructions: undefined }, { ...job, instructions: "   " }, { ...job, instructions: "x".repeat(8001) }, { ...job, id: "galahad" }, { ...job, id: "owner" }, { ...job, role: "Not A Role" }]) {
       expect(TeamRecruitInput.safeParse(invalid).success).toBe(false);
     }
+  });
+  test("removing a worker: its handle, and whether its workspace goes with it; yours to ask, with fleet:admin", () => {
+    expect(TeamRemoveInput.parse({ id: "ada" })).toEqual({ id: "ada" });
+    expect(TeamRemoveInput.parse({ id: "ada", destroyWorkspace: true })).toEqual({ id: "ada", destroyWorkspace: true });
+    // (Any stored handle can be named, a reserved one from an older database included: removal is how it goes.)
+    expect(TeamRemoveInput.parse({ id: "galahad" })).toEqual({ id: "galahad" });
+    for (const invalid of [{}, { id: "" }, { id: "x".repeat(33) }, { id: "ada", destroyWorkspace: "yes" }, { id: "ada", keepWorkspace: true }, { id: 7 }]) {
+      expect(TeamRemoveInput.safeParse(invalid).success).toBe(false);
+    }
+    expect(routes.removeTeammate).toMatchObject({ method: "POST", path: "/api/team/remove", scope: "fleet:admin" });
   });
   test("Galahad's own words go to one worker or to one room, as nobody but himself", () => {
     expect(TeamSayInput.parse({ teammate: "ada", text: " Look at this. " })).toEqual({ teammate: "ada", text: "Look at this." });

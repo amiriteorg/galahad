@@ -487,6 +487,14 @@ export class WorldHub {
     }
   }
 
+  /** One of his workers is gone for good (you removed it): it leaves now, rather than when it would have gone quiet. */
+  partnerLeft(id: string): void {
+    const key = `id:${id}`;
+    if (!this.partners.delete(key)) return;
+    this.partnerExpressions.delete(key);
+    this.emit({ type: "partners", at: this.now(), partners: this.partnerViews() });
+  }
+
   /** Partners that have made no call for a while go home. */
   partnersQuiet(): void {
     const now = this.now();

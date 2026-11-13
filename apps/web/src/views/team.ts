@@ -5,11 +5,11 @@ import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { activeTeamWork, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type TeamTab } from "../lib/team.ts";
+import { activeTeamWork, HANDLE_PATTERN, removalPlan, takenHandles, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type TeamTab } from "../lib/team.ts";
 import { relativeTime } from "../lib/time.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, dot, empty, errorState, field, section, skeletonRows } from "../ui/controls.ts";
-import { openSheet } from "../ui/dialog.ts";
+import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace, type Child } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
@@ -68,7 +68,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
 
   const nameOf = (id: string): string => snapshot?.teammates.find((person) => person.id === id)?.name ?? id;
   /** "made by Galahad", for a worker he (or a worker of his) made; nothing for one of yours. */
-  const madeBy = (person: Teammate): string => { const maker = teammateMaker(person, snapshot?.teammates ?? []); return maker ? `made by ${maker}` : ""; };
+  const madeBy = (person: Teammate): string => { const maker = teammateMaker(person, snapshot?.teammates ?? [], snapshot?.removed); return maker ? `made by ${maker}` : ""; };
   const personOf = (id: string): Teammate | undefined => snapshot?.teammates.find((person) => person.id === id);
   const members = (): Teammate[] => (room?.members ?? []).flatMap((id) => { const person = personOf(id); return person ? [person] : []; });
   const avatar = (person: Teammate, live = true, size = 40): SVGSVGElement => workerAvatar({ id: person.id, name: person.name, profile: person.avatar, size, still: !live, expression: live && snapshot ? avatarExpression(person, snapshot, Date.now()) : "idle" });
@@ -96,10 +96,10 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
 
   function editTeammate(existing?: Teammate): void {
     const name = h("input", { class: "input", required: true, maxlength: 80, value: existing?.name ?? "", placeholder: "e.g. Ada", autocomplete: "off" });
-    const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: "[a-z][a-z0-9-]{0,31}", value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", spellcheck: "false" });
+    const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", spellcheck: "false" });
     let idEdited = Boolean(existing);
     id.addEventListener("input", () => { idEdited = true; });
-    name.addEventListener("input", () => { if (!idEdited) id.value = teammateId(name.value, snapshot?.teammates.map((person) => person.id) ?? []); });
+    name.addEventListener("input", () => { if (!idEdited) id.value = teammateId(name.value, takenHandles(snapshot)); });
     const instructions = h("textarea", { class: "input", rows: 6, maxlength: 8000, placeholder: "Their job, how they work, and when to ask you." }, existing?.instructions ?? "");
     const repository = h("input", { class: "input mono", type: "url", maxlength: 300, value: existing?.repository ?? "", placeholder: "https://github.com/owner/repository", autocomplete: "off" });
     const harness = h("select", { class: "select" }, ...Object.entries(HARNESS).map(([value, label]) => h("option", { value, selected: value === (existing?.harness ?? "native") }, label)));
@@ -156,6 +156,21 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       const result = await ctx.api.post<{ room: TeamRoom }>("/api/team/direct", { id: person.id }, scope.signal);
       if (!scope.disposed) goRoom(result.room.id);
     } catch (error) { if (!isAbort(error)) toast("Couldn't open the conversation", { tone: "error", description: errorMessage(error) }); }
+  }
+
+  /** Removing a worker is for good: said plainly first, with its handle typed to confirm. Its VM goes with it. */
+  async function removeTeammate(person: Teammate): Promise<void> {
+    const plan = removalPlan(person, { sandbox: ctx.can("sandbox") });
+    if (plan.blocked) { toast("This device can't remove it", { tone: "error", description: plan.blocked }); return; }
+    const ok = await confirmAction({ title: `Remove ${person.name}?`, body: plan.lines.map((line) => h("p", {}, line)), confirmLabel: plan.destroyWorkspace ? "Remove and destroy its VM" : "Remove", tone: "danger", typeToConfirm: person.id });
+    if (!ok || scope.disposed) return;
+    try {
+      await ctx.api.post("/api/team/remove", { id: person.id, ...(plan.destroyWorkspace ? { destroyWorkspace: true } : {}) }, scope.signal);
+      toast(`${person.name} was removed`, { tone: "info" });
+      // Its direct conversation is no longer one of the open ones: back to the team.
+      if (room?.direct && room.members.includes(person.id)) ctx.navigate("team");
+      else await load(true);
+    } catch (error) { if (!isAbort(error)) toast("Couldn't remove it", { tone: "error", description: errorMessage(error) }); }
   }
 
   async function control(change: TeamControlInput): Promise<boolean> {
@@ -236,7 +251,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       ...data.teammates.map((person) => {
         const state = teammateState(person, data);
         const directRoom = data.rooms.find((item) => item.direct && item.members.length === 1 && item.members[0] === person.id);
-        const maker = teammateMaker(person, data.teammates);
+        const maker = teammateMaker(person, data.teammates, data.removed);
         const job = person.instructions.split("\n")[0]?.slice(0, 80) || person.role;
         return h("button", { class: "team-nav-row", type: "button", "data-key": `person:${person.id}`, "aria-current": directRoom?.id === roomId ? "true" : null, onclick: () => void direct(person) }, avatar(person), h("span", { class: "grow" }, h("span", { class: "strong ellipsis" }, person.name), h("span", { class: "meta ellipsis" }, state.text === "Ready" ? (maker ? `Made by ${maker} · ${job}` : job) : state.text)), dot(state.tone, { live: state.live, label: state.text }));
       }),
@@ -356,7 +371,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     const people = members();
     if (!people.some((person) => person.id === selectedWorkspace)) selectedWorkspace = people[0]?.id ?? "";
     const person = people.find((candidate) => candidate.id === selectedWorkspace);
-    if (!person) return;
+    // A room whose teammates have all left it (the last one was removed) has no workspace to show.
+    if (!person) { replace(content, empty({ icon: "sandbox", title: "Nobody is in this room", body: "Add teammates to it in the room's settings.", compact: true })); return; }
     const known = workspaces.get(person.id);
     const workspace = known?.workspace;
     const chooser = h("select", { class: "select", "aria-label": "Teammate workspace" }, ...people.map((candidate) => h("option", { value: candidate.id, selected: candidate.id === person.id }, candidate.name)));
@@ -364,7 +380,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     keepPlace(content, () => replace(content, h("div", { class: "team-panel stack loose" },
       h("div", { class: "row between wrap" }, h("h3", {}, `${person.name}'s workspace`), people.length > 1 ? chooser : null),
       h("div", { class: "team-person-summary" }, avatar(person, true, 56), h("div", { class: "grow" }, h("strong", {}, person.name), h("p", { class: "small muted" }, person.instructions || "No instructions yet."), h("div", { class: "meta" }, [HARNESS[person.harness], person.role, `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")), person.repository ? h("a", { class: "tiny mono", href: person.repository, target: "_blank", rel: "noopener noreferrer" }, person.repository.replace("https://github.com/", "")) : null), canEdit ? button("Edit", { size: "sm", icon: "edit", onClick: () => editTeammate(person) }) : null),
-      h("div", { class: "row wrap" }, canEdit ? button(person.enabled ? "Pause teammate" : "Resume teammate", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }) : null, canEdit ? button("Working notes", { size: "sm", icon: "memory", onClick: () => editMemory(person) }) : null, canEdit ? button("Room budget", { size: "sm", icon: "settings", onClick: () => room && editRoom(room) }) : null),
+      h("div", { class: "row wrap" }, canEdit ? button(person.enabled ? "Pause teammate" : "Resume teammate", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }) : null, canEdit ? button("Working notes", { size: "sm", icon: "memory", onClick: () => editMemory(person) }) : null, canEdit ? button("Room budget", { size: "sm", icon: "settings", onClick: () => room && editRoom(room) }) : null, canEdit ? button("Remove teammate", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeTeammate(person) }) : null),
       known?.error ? callout("warn", known.error, { title: "Workspace status unavailable", actions: button("Check again", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }) }) : null,
       workspace ? h("div", { class: "card" }, h("div", { class: "card-body stack" },
         h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, workspace.name), badge(workspace.status), badge(workspace.isolation === "vm" ? "MicroVM" : "Container", workspace.isolation === "vm" ? "ok" : "warn")),

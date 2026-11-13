@@ -5,7 +5,7 @@ import { Color, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMateri
 import { auditGeometry } from "../../../../bench/models/audit.ts";
 import { Solids } from "./collide.ts";
 import { KEEP_COLLIDERS } from "./keep-plan.ts";
-import { KEEP_DOOR, MAX, PartnerFigures, Partners, SQUIRE } from "./partners.ts";
+import { figureInWords, KEEP_DOOR, MAX, PartnerFigures, Partners, SQUIRE } from "./partners.ts";
 
 /*
  * The agents working with him, as figures: one appears at the keep when its first call
@@ -117,6 +117,55 @@ describe("a partner", () => {
     expect(Math.hypot(s.x - leader.x, s.y - leader.y)).toBeLessThan(2.5);
   });
 
+  test("the page opens with him already at the library, the keep in the way and no footsteps to follow: a worker still ends beside him, and is never left walking on the spot", () => {
+    const solids = new Solids();
+    solids.add(KEEP_COLLIDERS);
+    const f = new PartnerFigures();
+    f.join(solids, { height: () => 0, blocked: () => false });
+    // Where he stood when a real browser showed two knights stuck at the foot of the keep's stairs (13 November 2026).
+    const leader = { x: -14.253, y: 6.335, heading: Math.PI / 2, moving: false };
+    f.sync([worker("team.0a1b2c3d4e.ada", "Galahad · Ada"), worker("team.0a1b2c3d4e.bors", "Galahad · Bors"), partner("claude-code")]);
+    const far = (s: { x: number; y: number }) => Math.hypot(s.x - leader.x, s.y - leader.y);
+    for (let k = 0; k < 30 * 30; k++) f.step(1 / 30, leader, true);
+    const figures = f.squires.filter((s) => s.name);
+    expect(figures).toHaveLength(3);
+    for (const s of figures) expect([s.name, far(s) < 3.5, s.shown]).toEqual([s.name, true, 1]);
+    // Once there it stays there: nothing moves it again while he stands still.
+    const before = figures.map((s) => [s.x, s.y]);
+    for (let k = 0; k < 30 * 20; k++) f.step(1 / 30, leader, true);
+    for (const [i, s] of figures.entries()) expect(Math.hypot(s.x - before[i]![0]!, s.y - before[i]![1]!)).toBeLessThan(0.3);
+  });
+
+  test("a figure that is making its way is left to it: one walking his footsteps round the keep is never moved for it", () => {
+    const solids = new Solids();
+    solids.add(KEEP_COLLIDERS);
+    const f = new PartnerFigures();
+    f.join(solids, { height: () => 0, blocked: () => false });
+    f.sync([worker("team.0a1b2c3d4e.ada", "Galahad · Ada")]);
+    const leader = { x: KEEP_DOOR.x, y: KEEP_DOOR.y - 1, heading: Math.PI, moving: true };
+    const s = f.squires.find((q) => q.id === "team.0a1b2c3d4e.ada")!;
+    let jumped = 0;
+    const stride = (to: [number, number]) => {
+      for (let k = 0; k < 400; k++) {
+        const d = Math.hypot(to[0] - leader.x, to[1] - leader.y);
+        if (d < 0.05) break;
+        leader.heading = Math.atan2(to[1] - leader.y, to[0] - leader.x);
+        const step = Math.min(d, 2 / 30);
+        leader.x += Math.cos(leader.heading) * step;
+        leader.y += Math.sin(leader.heading) * step;
+        const [x, y] = [s.x, s.y];
+        f.step(1 / 30, leader, true);
+        // (Walking covers at most a few centimetres a step: more than half a metre is a figure that was put somewhere.)
+        if (Math.hypot(s.x - x, s.y - y) > 0.5) jumped++;
+      }
+    };
+    for (const to of [[-10, -9], [-14, -2], [-15, 6]] as [number, number][]) stride(to);
+    leader.moving = false;
+    for (let k = 0; k < 600; k++) { const [x, y] = [s.x, s.y]; f.step(1 / 30, leader, true); if (Math.hypot(s.x - x, s.y - y) > 0.5) jumped++; }
+    expect(jumped).toBe(0);
+    expect(Math.hypot(s.x - leader.x, s.y - leader.y)).toBeLessThan(2.5);
+  });
+
   test("two never stand in one place", () => {
     const f = new PartnerFigures();
     f.sync([partner("claude-code"), partner("opencode")]);
@@ -174,6 +223,19 @@ describe("a partner", () => {
     still.sync([]);
     run(still, 1 / 30, false);
     expect(still.count).toBe(0);
+  });
+
+  test("said in words, a worker is his own and an agent over MCP is an agent: under the pointer and in what he sees", () => {
+    const view = new Partners(new Group(), false);
+    view.figures.sync([worker("team.0a1b2c3d4e.ada", "Galahad · Ada"), partner("claude-code")]);
+    run(view.figures, 1 / 30, false);
+    const out: [number, number, number] = [0, 0, 0];
+    const figure = (who: string) => view.figures.squires.find((q) => (q.id ?? q.name) === who)!;
+    const under = (who: string) => view.hover(figure(who).x, figure(who).y, out);
+    expect(under("team.0a1b2c3d4e.ada")).toBe("Galahad · Ada: one of his workers");
+    expect(under("claude-code")).toBe("claude-code: an agent working with Galahad");
+    expect(figureInWords(figure("team.0a1b2c3d4e.ada"))).toBe("his worker Galahad · Ada");
+    expect(figureInWords(figure("claude-code"))).toBe("the agent claude-code");
   });
 });
 

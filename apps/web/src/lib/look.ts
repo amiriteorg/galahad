@@ -165,7 +165,9 @@ export function lookOptions(model: WorldModel, query = "", life = "", now = Date
     });
   }
   for (const p of model.partners) {
-    out.push({ key: `partner:${p.name}`, target: { kind: "partner", name: p.name }, group: "Partners", label: p.name, meta: p.doing || `At ${stationLabel(p.station).toLowerCase()}`, icon: "code", tone: "ok", live: true, here: g.station === p.station });
+    // One of his workers is told from another by its id: two may share the name they show.
+    const who = p.id ?? p.name;
+    out.push({ key: `partner:${who}`, target: { kind: "partner", name: who }, group: "Partners", label: p.name, meta: p.doing || `At ${stationLabel(p.station).toLowerCase()}`, icon: "code", tone: "ok", live: true, here: g.station === p.station });
   }
   // His helpers: the attempts a quest runs at once when there's compute for more than one (each at the station its work is at).
   for (const a of model.compute?.attempts ?? []) {

@@ -50,6 +50,8 @@ const selected = (job: TeamJob, select: TeamSelection): boolean => (!select.room
  * this service owns identity, delivery, persistence, budgets, dependencies and exclusive access. */
 export class TeamService {
   private readonly active = new Map<string, Active>();
+  /** Workers on their way out: between the pause and the record's retirement nothing may bring one back. */
+  private readonly removing = new Set<string>();
   private readonly concurrency: number;
   private readonly timeoutMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -72,6 +74,7 @@ export class TeamService {
   messages(room: string, limit?: number): TeamMessage[] { return this.store.messages(room, limit); }
   saveTeammate(input: TeammateInput): Teammate {
     this.accepting();
+    this.steady((input as { id?: unknown } | null)?.id);
     const saved = this.store.saveTeammate(input);
     if (!saved.enabled) this.cancel({ teammate: saved.id }, "interrupted", "Paused by you.");
     this.changed(); this.kick();
@@ -79,6 +82,7 @@ export class TeamService {
   }
   setWorkspace(id: string, binding: TeamWorkspace | null): Teammate {
     this.accepting();
+    this.steady(id);
     if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this teammate's work before changing its workspace.");
     const saved = this.store.setWorkspace(id, binding);
     this.changed();
@@ -87,6 +91,7 @@ export class TeamService {
   remember(id: string, text: string): Teammate { this.accepting(); const saved = this.store.remember(id, text); this.changed(); return saved; }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
+    this.steady(id);
     if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this teammate's work before provisioning its workspace.");
     const saved = this.store.planWorkspace(id, node); this.changed(); return saved;
   }
@@ -150,7 +155,7 @@ export class TeamService {
     const input = teamInput(TeamControlInput, raw);
     const select: TeamSelection = { ...(input.room ? { room: input.room } : {}), ...(input.teammate ? { teammate: input.teammate } : {}), ...(input.task ? { task: input.task } : {}) };
     if (input.room) this.store.requireRoom(input.room);
-    if (input.teammate) this.store.requireTeammate(input.teammate);
+    if (input.teammate) { this.store.requireTeammate(input.teammate); this.steady(input.teammate); }
     if (input.task && !this.store.task(input.task)) throw new TeamError(404, "No such team task.");
     if (input.action === "resume") {
       // A callback may still be winding down its VM command. It cannot be overlapped by a retry.
@@ -169,6 +174,44 @@ export class TeamService {
     return this.snapshot();
   }
 
+  /**
+   * Take a worker out for good, which is yours alone to ask. It is paused and its running work stopped first; if
+   * that work is still winding down when the wait is over, the removal is refused and the worker stays, paused.
+   * A workspace goes only through `release`, which the caller gives to destroy whatever VM the worker has (bound
+   * here or not): with none given, a bound worker's removal is refused before anything is touched, and if the
+   * release fails the worker stays too, paused and still bound. Only then is its record retired
+   * (TeamStore.remove), so neither running work nor a workspace is ever left behind by it.
+   */
+  async remove(id: string, options: { release?(member: Teammate): Promise<void>; waitMs?: number } = {}): Promise<Teammate> {
+    this.accepting();
+    const member = this.store.requireTeammate(id);
+    this.steady(id);
+    if (member.workspace && !options.release) throw new TeamError(409, `${member.name} has a persistent workspace. Removing ${member.name} destroys it and everything in it: say so, or pause ${member.name} instead.`);
+    this.removing.add(id);
+    try {
+      this.store.enable(id, false);
+      this.cancel({ teammate: id }, "stopped", "Stopped to remove its worker.");
+      const winding = this.active.get(id);
+      if (winding) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([winding.done, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.waitMs ?? 10_000); })]);
+        if (timer) clearTimeout(timer);
+        this.accepting();
+      }
+      // A callback may still be winding down its VM command: its teammate's record and workspace must outlast it.
+      if (this.active.has(id)) throw new TeamError(409, "This teammate's work is still stopping. It is paused now: remove it once its current command has finished.");
+      const bound = this.store.requireTeammate(id);
+      if (options.release) await options.release(bound);
+      else if (bound.workspace) throw new TeamError(409, "This teammate has a workspace and nothing was given to release it.");
+      // What was released is gone: the record follows it at once, even if the controller has begun to stop meanwhile.
+      if (bound.workspace) this.store.setWorkspace(id, null);
+      return this.store.remove(id);
+    } finally {
+      this.removing.delete(id);
+      if (!this.stopping) { this.changed(); this.kick(); }
+    }
+  }
+
   /** Useful to tests and shutdown callers: waits for currently runnable work, not blocked dependencies. */
   async settled(): Promise<void> {
     for (;;) {
@@ -181,6 +224,7 @@ export class TeamService {
   }
 
   private accepting(): void { if (this.stopping) throw new TeamError(409, "This team controller has stopped."); }
+  private steady(id: unknown): void { if (typeof id === "string" && this.removing.has(id)) throw new TeamError(409, "This teammate is being removed."); }
   private changed(): void { try { this.options.onChange?.(); } catch { /* an observer cannot stop the scheduler */ } }
   private recruited(made: Teammate): void {
     try { this.options.onRecruit?.(made); } catch { /* nor undo what was made */ }

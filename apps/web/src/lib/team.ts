@@ -22,6 +22,14 @@ export function teamHash(location: TeamLocation): string {
   return `#/team${params.size ? `?${params}` : ""}`;
 }
 
+/** The address the app settles on when it opens at a page: the page's own, and for Team its room and tab as well
+ * (in teamHash's own form), so a reload or a link comes back to the same conversation. */
+export const landingHash = (route: string, hash: string): string => (route === "team" ? teamHash(teamLocation(hash)) : `#/${route}`);
+
+/** A handle as its form field checks it. A browser compiles a field's pattern with the v flag, where a hyphen
+ * inside a class must be escaped: unescaped, the field is never checked at all. */
+export const HANDLE_PATTERN = "[a-z][a-z0-9\\-]{0,31}";
+
 export function teammateInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return words.slice(0, 2).map((word) => [...word][0] ?? "").join("").toLocaleUpperCase() || "G";
@@ -49,10 +57,30 @@ export function teammateState(person: Teammate, snapshot: Pick<TeamSnapshot, "ta
   return { text: "Ready", tone: "neutral", live: false };
 }
 
-/** Who made a worker, when it wasn't you: Galahad himself in your conversation with him, or one of his workers. */
-export function teammateMaker(person: Pick<Teammate, "createdBy">, teammates: Teammate[]): string | null {
+/** Who made a worker, when it wasn't you: Galahad himself in your conversation with him, or one of his workers
+ * (named still when you have since removed that one). */
+export function teammateMaker(person: Pick<Teammate, "createdBy">, teammates: Teammate[], removed: NonNullable<TeamSnapshot["removed"]> = []): string | null {
   if (!person.createdBy || person.createdBy === "owner") return null;
-  return person.createdBy === "galahad" ? "Galahad" : (teammates.find((other) => other.id === person.createdBy)?.name ?? person.createdBy);
+  const maker = [...teammates, ...removed].find((other) => other.id === person.createdBy);
+  return person.createdBy === "galahad" ? "Galahad" : (maker?.name ?? person.createdBy);
+}
+
+/** Every handle that is spoken for: the workers here, and the ones you removed, whose handles are never used again. */
+export const takenHandles = (snapshot: Pick<TeamSnapshot, "teammates" | "removed"> | null): string[] =>
+  [...(snapshot?.teammates ?? []), ...(snapshot?.removed ?? [])].map((person) => person.id);
+
+/** What removing a worker means, said before it is done: what goes, what stays, and whether this device may do it
+ * (`blocked` says why not). A worker's VM goes with it, which takes a device that may manage sandboxes. */
+export function removalPlan(person: Pick<Teammate, "id" | "name" | "workspace" | "workspaceNode">, may: { sandbox: boolean }): { blocked: string | null; lines: string[]; destroyWorkspace: boolean } {
+  const lines = [
+    `${person.name} leaves every room and does no more work. What ${person.name} said stays where it was said, and its direct conversations are kept.`,
+    `The handle ${person.id} is never used again, so nothing new inherits its history.`,
+  ];
+  // A VM that was being made when the node last stopped may exist without ever having been bound: the node looks for itself.
+  if (!person.workspace && !person.workspaceNode) return { blocked: null, lines: [...lines, "This can't be undone."], destroyWorkspace: false };
+  if (!may.sandbox) return { blocked: `${person.name} has a VM, and removing ${person.name} destroys it. That takes a device that may manage sandboxes; this one may not.`, lines, destroyWorkspace: true };
+  const vm = person.workspace ? `${person.name}'s VM is destroyed with it, and everything in its /work.` : `A VM was being made for ${person.name}: if there is one, it is destroyed with it, and everything in its /work.`;
+  return { blocked: null, lines: [...lines, `${vm} This can't be undone.`], destroyWorkspace: true };
 }
 
 /** Historical attribution survives a profile rename or removal. */

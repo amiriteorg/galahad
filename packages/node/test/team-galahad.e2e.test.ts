@@ -208,6 +208,12 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect(offered().filter((name) => OWN.includes(name))).toEqual([]);
   expect((await asNode("teamOverview", {})).status).toBe(403);
   expect((await asNode("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." })).status).toBe(403);
+  // Removing a worker is yours and nobody else's: a node that holds every scope is refused, as an agent is, and he has no tool for it.
+  expect((await asNode("removeTeammate", { id: "ada" })).status).toBe(403);
+  expect((await request("removeTeammate", { id: "ada" }, token)).status).toBe(403);
+  expect(TOOLS.filter((t) => /remove/i.test(t.name) && /team|worker|mate/i.test(t.name)).map((t) => t.name)).toEqual([]);
+  expect(TOOLS.flatMap((t) => (t as { routes?: string[] }).routes ?? [])).not.toContain("removeTeammate");
+  expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toContain("ada");
   expect((await asNode("sayToTeam", { teammate: "ada", text: "Dig." })).status).toBe(403);
   // You have Team's own routes: his are not another way in, to make, to write as him, or to read.
   const refused = await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." });

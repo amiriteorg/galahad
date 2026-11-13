@@ -10,6 +10,8 @@ export * from "./quests.ts";
 export * from "./turns.ts";
 export * from "./companion.ts";
 export * from "./journal.ts";
+export * from "./lookalike.ts";
+export * from "./plain.ts";
 export * from "./skills.ts";
 export * from "./skills-input.ts";
 export * from "./life.ts";

@@ -2,12 +2,15 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, ceilingThreads, KERNEL, REFERENCE_SINGLE, routes, teamArmLabel, type RouteName, type SandboxView, type TeamSnapshot, type TeamTask } from "@galahad/core";
+import { bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
+import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import type { Capabilities } from "../src/capabilities.ts";
+import { Database } from "bun:sqlite";
 import { fakeDocker } from "./fake-docker.ts";
+import { readWorldEvent } from "../../../apps/web/src/lib/world.ts";
 
 // Real HTTP/controller/host/quest code, with stand-ins only for Docker and models.
 const root = mkdtempSync(join(tmpdir(), "galahad-team-vm-"));
@@ -26,9 +29,11 @@ let alphaEntered = false;
 let releaseAlpha: (() => void) | undefined;
 let alphaHold: Promise<void> | undefined;
 let cleanupFailure = false;
+let dockerSilent = false;
+// The worker as the SANDBOX would show it: the node's hello as it goes over the wire, read by the page's own reader.
 function worldWorker(id: string) {
-  const hello = daemon.world.hello();
-  if (hello.type !== "hello") throw new Error("Expected world hello");
+  const hello = readWorldEvent(JSON.parse(JSON.stringify(daemon.world.hello())));
+  if (hello?.type !== "hello") throw new Error("Expected world hello");
   return hello.partners?.find((partner) => partner.id === teamArmLabel(daemon.identity.id, id));
 }
 const summaries: Record<string, string> = { ALPHA: "Verified predecessor contract: packet-v1.", BETA: "Verified independent follow-up.", GAMMA: "Verified consumer of packet-v1." };
@@ -63,13 +68,34 @@ async function until(condition: () => boolean | Promise<boolean>) {
   const state = await api<TeamSnapshot>("team");
   throw new Error(`team VM condition was not reached: ${JSON.stringify(state.tasks.map(({ title, status, error }) => ({ title, status, error })))}`);
 }
+/** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
+async function pairDevice(name: string, scopes: Scope[]) {
+  const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
+  const id = clientIdFromKey(new Uint8Array(await crypto.subtle.exportKey("raw", keys.publicKey)));
+  const { invite } = await api<{ invite: string }>("createInvite", { kind: "client", scopes });
+  const joining = await requestPairing(invite, { device: id, name, kind: "client" });
+  const mine = (await api<{ pairings: { invite: string; device: string }[] }>("pairings")).pairings.find((pairing) => pairing.device === id)!;
+  await api("approvePairing", { invite: mine.invite, device: mine.device });
+  await waitForApproval(joining, { intervalMs: 20 });
+  return async (name: RouteName, input?: unknown): Promise<Response> => {
+    const route = routes[name];
+    const bytes = route.method === "POST" ? utf8(JSON.stringify(input ?? {})) : new Uint8Array();
+    const headers = await signRequest(id, async (m) => new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keys.privateKey, m)), route.method, route.path, bytes);
+    return fetch(`http://127.0.0.1:${port}${route.path}`, { method: route.method, headers: { ...headers, "content-type": "application/json" }, body: route.method === "POST" ? bytes : undefined });
+  };
+}
 const snapshot = () => api<TeamSnapshot>("team");
 const task = async (id: string) => (await snapshot()).tasks.find((item) => item.id === id)!;
 const create = (assignee: string, tag: string, dependsOn: string[] = []) => api<{ task: TeamTask }>("createTeamTask", {
   room: "vm-forge", assignee, title: tag, goal: `TASK_${tag}: Build and verify this bounded change.`, dependsOn, gates: [`test -f result.txt # gate-${tag.toLowerCase()}`],
 });
 const start = () => startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {},
-  docker: (args, timeout) => { if (args[0] === "run") runs.push(args); return docker.runner(args, timeout); },
+  docker: (args, timeout) => {
+    if (args[0] === "run") runs.push(args);
+    // Docker that cannot say what is there (its daemon is busy or restarting): never the same as "nothing is there".
+    if (dockerSilent && args[0] === "ps") return Promise.resolve({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" });
+    return docker.runner(args, timeout);
+  },
   measure: async (reason, body, limit) => {
     const threads = ceilingThreads(body, limit);
     return { at: Date.now(), tookMs: 1, reason, body: bodyFingerprint(body, limit), cpu: { single: REFERENCE_SINGLE, multi: REFERENCE_SINGLE * threads, threads, kernel: KERNEL } };
@@ -183,3 +209,86 @@ test("controller restart keeps the exact VM; failed old-worker cleanup blocks ne
     expect(runs).toHaveLength(existingVMs);
   } finally { cleanupFailure = false; }
 }, 10000);
+
+test("removing a worker that has a VM: refused until you say its workspace goes, and only from a device that may destroy one; then both go and the others carry on", async () => {
+  const bound = (await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!;
+  const vms = docker.running();
+  const listed = async () => (await api<{ sandboxes: SandboxView[] }>("sandboxes", {})).sandboxes.map((s) => s.id);
+  expect(await listed()).toContain(bound.id);
+  // Not without saying so, and then nothing has changed: not even a pause.
+  await expect(api("removeTeammate", { id: "ada" })).rejects.toThrow(/409 .*workspace/);
+  // A device that may command Team but not destroy a sandbox cannot do it either.
+  const commander = await pairDevice("commander", ["chat", "fleet:admin"]);
+  const refused = await commander("removeTeammate", { id: "ada", destroyWorkspace: true });
+  expect(refused.status).toBe(403);
+  expect(((await refused.json()) as { error: string }).error).toContain("sandbox");
+  expect((await snapshot()).teammates.find((member) => member.id === "ada")).toMatchObject({ enabled: true, workspace: bound });
+  expect(docker.running()).toBe(vms);
+
+  expect(await api("removeTeammate", { id: "ada", destroyWorkspace: true })).toEqual({ removed: { id: "ada", name: "ADA" }, workspace: "destroyed" });
+  expect(docker.running()).toBe(vms - 1);
+  expect(await listed()).not.toContain(bound.id);
+  const after = await snapshot();
+  expect(after.teammates.map((member) => member.id)).toEqual(["lin"]);
+  expect(after.removed).toEqual([{ id: "ada", name: "ADA", removedAt: expect.any(Number) }]);
+  expect(after.rooms.find((room) => room.id === "vm-forge")!.members).toEqual(["lin"]);
+  const { entries } = await api<{ entries: LedgerEntry[] }>("ledger");
+  expect(entries.find((e) => e.resource === "team" && e.class === "delete")).toMatchObject({ target: "worker:ada", verdict: "approved", detail: "its VM workspace was destroyed with it" });
+  // It has left the SANDBOX at once, and the others are still shown there and still work.
+  expect(worldWorker("ada")).toBeUndefined();
+  const next = (await create("lin", "BETA")).task;
+  await until(async () => !["queued", "running"].includes((await task(next.id)).status));
+  expect(await task(next.id)).toMatchObject({ status: "done", verified: true });
+  expect(worldWorker("lin")?.expression).toBe("pleased");
+  expect(worldWorker("ada")).toBeUndefined();
+}, 15000);
+
+test("what became of its VM is asked of the host and said as it was: Docker that cannot say stops the removal, a VM already gone is called gone, and one that was made but never bound is found and destroyed", async () => {
+  const ledgered = async (id: string) => (await api<{ entries: LedgerEntry[] }>("ledger")).entries.find((e) => e.resource === "team" && e.class === "delete" && e.target === `worker:${id}`);
+  const lin = (await snapshot()).teammates.find((member) => member.id === "lin")!;
+  const vms = docker.running();
+  // Docker on its host cannot list just now. That is not "it has none": nothing is removed, paused or unbound.
+  dockerSilent = true;
+  try { await expect(api("removeTeammate", { id: "lin", destroyWorkspace: true })).rejects.toThrow(/503 .*could not list/); } finally { dockerSilent = false; }
+  expect((await snapshot()).teammates.find((member) => member.id === "lin")).toMatchObject({ enabled: true, workspace: lin.workspace });
+  expect(docker.running()).toBe(vms);
+  expect(await ledgered("lin")).toBeUndefined();
+
+  // Its VM was destroyed from Sandboxes beforehand: there is nothing to confirm, and the record says gone, not destroyed.
+  await api("destroySandbox", { id: lin.workspace!.id });
+  expect(docker.running()).toBe(vms - 1);
+  expect(await api("removeTeammate", { id: "lin" })).toEqual({ removed: { id: "lin", name: "LIN" }, workspace: "gone" });
+  expect(await ledgered("lin")).toMatchObject({ verdict: "approved", detail: "its VM was already gone from its host" });
+
+  // A VM made just before a crash, its binding never written: the worker looks unbound, and its VM is still there.
+  await api("saveTeammate", { id: "sam", name: "SAM", role: "engineer" });
+  const made = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "sam" })).workspace;
+  await daemon.stop();
+  const raw = new Database(join(home.dir, "team.db"));
+  const stored = JSON.parse(raw.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("sam")!.value);
+  raw.query("UPDATE team_teammates SET value=? WHERE id=?").run(JSON.stringify({ ...stored, workspace: null }), "sam");
+  raw.close();
+  daemon = await start();
+  expect((await snapshot()).teammates.find((member) => member.id === "sam")).toMatchObject({ workspace: null, workspaceNode: made.node === "keep" ? daemon.identity.id : expect.any(String) });
+  const before = docker.running();
+  await expect(api("removeTeammate", { id: "sam" })).rejects.toThrow(/409 .*persistent workspace/);
+  expect((await snapshot()).teammates.find((member) => member.id === "sam")).toMatchObject({ enabled: true });
+  expect(await api("removeTeammate", { id: "sam", destroyWorkspace: true })).toEqual({ removed: { id: "sam", name: "SAM" }, workspace: "destroyed" });
+  expect(docker.running()).toBe(before - 1);
+  expect((await api<{ sandboxes: SandboxView[] }>("sandboxes", {})).sandboxes.some((s) => s.id === made.id)).toBe(false);
+  expect(await ledgered("sam")).toMatchObject({ detail: "its VM workspace was destroyed with it" });
+
+  // Its VM was on a node that is no longer part of the fleet: nothing there can be asked or touched, and the record says so.
+  await api("saveTeammate", { id: "tom", name: "TOM", role: "engineer" });
+  await daemon.stop();
+  const again = new Database(join(home.dir, "team.db"));
+  const toms = JSON.parse(again.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("tom")!.value);
+  again.query("UPDATE team_teammates SET value=? WHERE id=?").run(JSON.stringify({ ...toms, workspaceNode: "n_departed", workspace: { node: "n_departed", id: "0123456789" } }), "tom");
+  again.close();
+  daemon = await start();
+  const stillThere = docker.running();
+  expect(await api("removeTeammate", { id: "tom" })).toEqual({ removed: { id: "tom", name: "TOM" }, workspace: "left" });
+  expect(docker.running()).toBe(stillThere);
+  expect(await ledgered("tom")).toMatchObject({ detail: "its VM was on a node that has left the fleet; nothing there was touched" });
+  expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "lin", "sam", "tom"]);
+}, 20000);

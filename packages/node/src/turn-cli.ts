@@ -1,4 +1,4 @@
-import { type ChatStreamEvent, chatStateWords, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
+import { type ChatStreamEvent, chatStateWords, plainLine, plainStream, plainText, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
 
 /*
@@ -24,7 +24,7 @@ const minutes = (ms: number): string => {
   return m < 1 ? "under a minute" : `${m} min`;
 };
 const oneLine = (text: string, max = 100): string => {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = plainLine(text);
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 
@@ -32,14 +32,15 @@ const STOPPED: Record<string, string> = { you: "stopped by you", limit: "stopped
 
 /** One running turn in a line: which chat, what he's doing, what it has cost so far, who's watching, when it stops by itself. */
 export function turnLine(t: TurnView, now: number): string {
-  const where = t.conversation ? `${t.title ?? "a chat"} (${t.conversation})` : "a temporary chat";
+  // (A chat's title and the step he is on are a model's words: plain, like everything of his a terminal is shown.)
+  const where = t.conversation ? `${plainLine(t.title ?? "a chat")} (${t.conversation})` : "a temporary chat";
   const watching = t.watchers === 0 ? "nobody watching" : t.watchers === 1 ? "1 watching" : `${t.watchers} watching`;
   const parts = [
     t.id,
     where,
     t.role,
     `${minutes(now - t.startedAt)} so far`,
-    t.watchable ? (t.step ?? "starting") : "may read the bank: not shown to this device",
+    t.watchable ? plainLine(t.step ?? "starting") : "may read the bank: not shown to this device",
     t.tools ? `${t.tools} tool${t.tools === 1 ? "" : "s"}` : null,
     t.steering ? `${t.steering} of your messages waiting to reach him` : null,
     watching,
@@ -72,11 +73,11 @@ const QUEST_STATE: Record<QuestView["state"], string> = {
 export function questLines(q: QuestView, opts: { plan?: boolean } = {}): string[] {
   const attempt = q.attempt ? ` · attempt ${q.attempt.index} of ${q.attempt.attempts}` : "";
   const lines = [
-    `${q.goal}  (${q.quest}${attempt} · run by ${q.by})`,
+    `${plainLine(q.goal)}  (${q.quest}${attempt} · run by ${plainLine(q.by)})`,
     `  ${QUEST_STATE[q.state]}${q.silent ? " (no word from its runner for a while: it may have been closed)" : ""} · command ${q.step} of ${q.maxSteps}${q.revisions ? ` · sent back ${q.revisions} time${q.revisions === 1 ? "" : "s"}` : ""}`,
   ];
-  if (q.doing && questInHand(q.state)) lines.push(`  now: ${q.doing}`);
-  if (opts.plan !== false && q.plan) lines.push(...q.plan.split("\n").map((l) => `    ${l}`));
+  if (q.doing && questInHand(q.state)) lines.push(`  now: ${plainLine(q.doing)}`);
+  if (opts.plan !== false && q.plan) lines.push(...plainText(q.plan).split("\n").map((l) => `    ${l}`));
   for (const [i, g] of q.gates.entries()) lines.push(`  gate ${i + 1}: ${GATE(g.exitCode)}  $ ${oneLine(g.command, 120)}  (${g.by === "owner" ? "yours" : "proposed by the planner"})`);
   if (q.summary && !questInHand(q.state)) lines.push(`  ${oneLine(q.summary, 300)}`);
   return lines;
@@ -88,6 +89,7 @@ export function questLines(q: QuestView, opts: { plan?: boolean } = {}): string[
  */
 export async function printTurn(events: AsyncGenerator<ChatStreamEvent>, io: Io = terminal, onTurn?: (turn: Extract<ChatStreamEvent, { type: "turn" }>) => void): Promise<{ how: "done" | "error" | "stopped"; error?: string }> {
   const dim = dimIn(io);
+  const plain = plainStream();
   let how: "done" | "error" | "stopped" = "done";
   let error: string | undefined;
   for await (const event of events) {
@@ -95,13 +97,13 @@ export async function printTurn(events: AsyncGenerator<ChatStreamEvent>, io: Io 
       onTurn?.(event);
       io.err(dim(`[turn ${event.id}${event.replay ? " · from its start" : ""} · he goes on working if this terminal goes away; Ctrl-C stops him]\n`));
     } else if (event.type === "conversation") io.err(dim(`[chat ${event.id}${event.project ? ` · project ${event.project}` : ""}]\n`));
-    else if (event.type === "text") io.out(event.text);
+    else if (event.type === "text") io.out(plain(event.text));
     else if (event.type === "model") io.err(dim(`[${event.ref}]\n`));
-    else if (event.type === "archive") io.err(dim(`[${event.entries.length && event.entries.every((e) => e.kind === "skill") ? "skills at hand" : "from the archive"}: ${event.entries.map((e) => `${e.id} ${e.title}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
-    else if (event.type === "tool") io.err(dim(`→ ${event.title}${event.input ? ` ${event.input}` : ""}\n`));
-    else if (event.type === "tool_result") io.err(dim(`  ${event.ok ? "✓" : "✗"} ${event.summary}\n`));
-    else if (event.type === "fallback") io.err(dim(`[skipped ${event.from}: ${event.error}]\n`));
-    else if (event.type === "steer") io.err(`\n${dim("↳ your message reached him:")} ${event.text}\n`);
+    else if (event.type === "archive") io.err(dim(`[${event.entries.length && event.entries.every((e) => e.kind === "skill") ? "skills at hand" : "from the archive"}: ${event.entries.map((e) => `${e.id} ${plainLine(e.title)}${e.trust === "untrusted" ? " (untrusted)" : ""}`).join(" · ")}]\n`));
+    else if (event.type === "tool") io.err(dim(`→ ${plainLine(event.title)}${event.input ? ` ${plainLine(event.input)}` : ""}\n`));
+    else if (event.type === "tool_result") io.err(dim(`  ${event.ok ? "✓" : "✗"} ${plainLine(event.summary)}\n`));
+    else if (event.type === "fallback") io.err(dim(`[skipped ${plainLine(event.from)}: ${plainLine(event.error)}]\n`));
+    else if (event.type === "steer") io.err(`\n${dim("↳ your message reached him:")} ${plainText(event.text)}\n`);
     else if (event.type === "stopped") {
       how = "stopped";
       io.err(dim(`\n[${STOPPED[event.reason] ?? "stopped"}]\n`));
@@ -146,10 +148,11 @@ export async function askCommand(node: NodeClient, text: string, o: AskOptions, 
   if (o.aside) {
     let aside = "";
     let failed: string | undefined;
+    const plain = plainStream();
     for await (const event of node.stream("askAside", { conversation: o.chat, question: text })) {
       if (event.type === "aside") aside = event.id;
       else if (event.type === "model") io.err(dim(`[a side question · ${event.ref} · no tools, added to nothing]\n`));
-      else if (event.type === "text") io.out(event.text);
+      else if (event.type === "text") io.out(plain(event.text));
       else if (event.type === "error") failed = event.error;
     }
     io.out("\n");

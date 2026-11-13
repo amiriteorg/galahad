@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, closeSync, existsSync, openSync } from "node:fs";
-import { findSecrets, randomId, redact } from "@galahad/core";
+import { findSecrets, randomId, readAlike, redact } from "@galahad/core";
 import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
@@ -44,6 +44,9 @@ const DAY = 24 * 3_600_000;
 /** What Galahad is told of a room when he asks: its latest messages, each clipped; and of a worker's job, its start. */
 const OVERVIEW = { messages: 20, message: 1200, job: 300 } as const;
 const clipped = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}… (${text.length - max} more characters)` : text);
+/** Why work stopped when its worker is gone, and why a direct conversation with a removed worker takes nothing new. */
+const REMOVED = "Its worker was removed.";
+const CLOSED = "This conversation is kept to read: its teammate was removed.";
 const matches = (job: TeamJob, select: TeamSelection) => (!select.room || job.room === select.room) && (!select.teammate || job.teammate === select.teammate) && (!select.task || job.id === select.task);
 
 /** Additive, private, node-local state. Opening the store never touches chat history or the mind. */
@@ -78,13 +81,22 @@ export class TeamStore {
   close(): void { this.db.close(); }
   private day(): string { return new Date(this.now()).toISOString().slice(0, 10); }
   private turns(teammate: string): number { return this.db.query<{ turns: number }, [string, string]>("SELECT turns FROM team_usage WHERE teammate = ? AND day = ?").get(teammate, this.day())?.turns ?? 0; }
-  teammate(id: string): Teammate | null {
+  /** A worker's record as it is kept, whether or not it was removed. */
+  private record(id: string): Teammate | null {
     const row = this.db.query<DocRow, [string]>("SELECT value FROM team_teammates WHERE id = ?").get(id);
     if (!row) return null;
     const value = JSON.parse(row.value) as Teammate;
     return { ...value, avatar: resolveAvatar(id, value.avatar), repository: value.repository ?? null, workspaceNode: value.workspaceNode ?? value.workspace?.node ?? null, createdBy: value.createdBy ?? TEAM_OWNER, instructionsBy: value.instructionsBy ?? TEAM_OWNER, turnsToday: this.turns(id) };
   }
-  teammates(): Teammate[] { return this.db.query<{ id: string }, []>("SELECT id FROM team_teammates ORDER BY id").all().map((r) => this.teammate(r.id)!); }
+  private records(): Teammate[] { return this.db.query<{ id: string }, []>("SELECT id FROM team_teammates ORDER BY id").all().map((r) => this.record(r.id)!); }
+  /** A worker that is here. One that was removed is nobody's to work with, write to or change (null), though its record is kept. */
+  teammate(id: string): Teammate | null {
+    const kept = this.record(id);
+    return kept && kept.removedAt === undefined ? kept : null;
+  }
+  teammates(): Teammate[] { return this.records().filter((t) => t.removedAt === undefined); }
+  /** The workers you removed. Their handles stay taken and their names stay beside what they said. */
+  removed(): Teammate[] { return this.records().filter((t) => t.removedAt !== undefined); }
   private putTeammate(value: Teammate): Teammate {
     this.db.query("INSERT INTO team_teammates(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value").run(value.id, JSON.stringify(value));
     return this.teammate(value.id)!;
@@ -92,6 +104,7 @@ export class TeamStore {
   saveTeammate(raw: TeammateInput): Teammate {
     const input = teamInput(TeammateInput, raw);
     teamText([input.name, input.instructions, input.role, input.repository].filter(Boolean).join("\n"));
+    if (this.record(input.id)?.removedAt !== undefined) throw new TeamError(409, "That handle belonged to a teammate that was removed. Its history stays its own: choose another handle.");
     const previous = this.teammate(input.id);
     if (previous?.workspace && input.repository !== undefined && input.repository !== previous.repository) throw new TeamError(409, "This teammate's workspace is already bound to its repository. Keep that repository to preserve its work.");
     if (!previous && this.teammates().length >= TEAM_LIMITS.teammates) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} teammates can live on this node.`);
@@ -103,7 +116,8 @@ export class TeamStore {
   /** How many more workers Galahad may make for himself: on this node in all, and in the day now ending. */
   private spare(all: Teammate[] = this.teammates()): TeamOverview["spare"] {
     const since = this.now() - DAY;
-    const today = all.filter((t) => t.createdBy !== TEAM_OWNER && t.createdAt > since).length;
+    // One you removed still counts as made today: removing a worker gives him no more to make. It no longer takes a place on the node.
+    const today = [...all, ...this.removed()].filter((t) => t.createdBy !== TEAM_OWNER && t.createdAt > since).length;
     return { workers: Math.max(0, TEAM_LIMITS.teammates - all.length), today: Math.max(0, TEAM_LIMITS.recruitsPerDay - today) };
   }
   /**
@@ -116,7 +130,12 @@ export class TeamStore {
     teamText([input.name, input.instructions, input.role].filter(Boolean).join("\n"));
     return this.db.transaction(() => {
       if (by !== TEAM_GALAHAD) this.requireTeammate(by);
-      if (this.teammate(input.id)) throw new TeamError(409, `A worker with the handle ${input.id} already exists. Work with them, or choose another handle.`);
+      const taken = this.record(input.id);
+      if (taken?.removedAt !== undefined) throw new TeamError(409, `The handle ${input.id} belonged to a worker that was removed. Its history stays its own: choose another handle.`);
+      if (taken) throw new TeamError(409, `A worker with the handle ${input.id} already exists. Work with them, or choose another handle.`);
+      // A name a model chose must not be taken for another worker's, however it is spelled: one that was removed too, whose name is still beside what it said.
+      const twin = this.records().find((other) => readAlike(other.name, input.name));
+      if (twin) throw new TeamError(409, `The name ${input.name} reads like ${twin.name}'s (${twin.id}). Choose a name nobody could take for another worker's.`);
       const spare = this.spare();
       if (!spare.workers) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} teammates can live on this node.`);
       if (!spare.today) throw new TeamError(429, `Galahad has made ${TEAM_LIMITS.recruitsPerDay} workers in the last day, which is his allowance. The owner can add more in Team.`);
@@ -151,15 +170,43 @@ export class TeamStore {
     return this.putTeammate({ ...this.requireTeammate(teammate), memory, updatedAt: this.now() });
   }
   requireTeammate(id: string): Teammate {
-    const teammate = this.teammate(id);
+    const teammate = this.record(id);
     if (!teammate) throw new TeamError(404, "No such teammate.");
+    if (teammate.removedAt !== undefined) throw new TeamError(410, "That teammate was removed.");
     return teammate;
+  }
+  /**
+   * Retire a worker for good. Nothing of it is erased: its record is kept (so its handle is never anyone else's and
+   * nothing new inherits its history), its words stay where it said them, and its direct conversations stay to read.
+   * It leaves every shared room, and what it had not started is stopped. A bound workspace and running work are
+   * the caller's to deal with first: neither is ever left behind.
+   */
+  remove(id: string): Teammate {
+    return this.db.transaction(() => {
+      const current = this.requireTeammate(id);
+      if (current.workspace) throw new TeamError(409, "This teammate still has a workspace. Destroy it with the teammate, or keep the teammate paused instead.");
+      if (this.db.query("SELECT id FROM team_jobs WHERE teammate=? AND status='running'").get(id)) throw new TeamError(409, "Stop this teammate's work before removing it.");
+      const at = this.now();
+      // Its direct conversations are closed with it: what its peers had still to say there is stopped too.
+      const closing = new Set(this.rooms().filter((room) => room.direct && room.members.includes(id)).map((room) => room.id));
+      for (const job of this.queued()) {
+        if (job.teammate === id) this.finish(job.id, "stopped", REMOVED);
+        else if (closing.has(job.room)) this.finish(job.id, "stopped", CLOSED);
+      }
+      for (const room of this.rooms()) if (!room.direct && room.members.includes(id)) this.putRoom({ ...room, members: room.members.filter((member) => member !== id), updatedAt: at });
+      this.db.query("UPDATE team_teammates SET value=? WHERE id=?").run(JSON.stringify({ ...current, enabled: false, removedAt: at, updatedAt: at }), id);
+      return this.record(id)!;
+    })();
   }
   room(id: string): TeamRoom | null {
     const row = this.db.query<DocRow, [string]>("SELECT value FROM team_rooms WHERE id = ?").get(id);
     return row ? JSON.parse(row.value) as TeamRoom : null;
   }
   rooms(): TeamRoom[] { return this.db.query<DocRow, []>("SELECT value FROM team_rooms ORDER BY id").all().map((r) => JSON.parse(r.value) as TeamRoom); }
+  /** A direct conversation with a worker that was removed: kept to read (by its id), and taking no new words or work. */
+  private closed(room: TeamRoom): boolean { return room.direct && room.members.some((member) => !this.teammate(member)); }
+  /** The rooms that are still in use. */
+  private openRooms(): TeamRoom[] { return this.rooms().filter((room) => !this.closed(room)); }
   requireRoom(id: string): TeamRoom {
     const room = this.room(id);
     if (!room) throw new TeamError(404, "No such team room.");
@@ -213,6 +260,8 @@ export class TeamStore {
         throw new TeamError(429, `Galahad has sent ${TEAM_LIMITS.saysPerDay} messages into Team in the last day, which is his allowance. The owner can message the workers in Team.`);
       }
       if (by.teammate) this.roomMember(room, by.teammate);
+      // (Only a direct conversation can still name a worker that was removed: it is kept to read, and takes no new words.)
+      for (const member of room.members) this.requireTeammate(member);
       if (by.teammate && !by.chainId) throw new TeamError(403, "A teammate message must belong to its current conversation.");
       if (by.chainId && !this.db.query("SELECT id FROM team_chains WHERE id = ?").get(by.chainId)) throw new TeamError(404, "No such conversation chain.");
       const recipients = room.members.filter((member) => member !== by.teammate);
@@ -250,6 +299,7 @@ export class TeamStore {
     teamText([input.title, input.goal, ...(input.gates ?? [])].join("\n"));
     return this.db.transaction(() => {
       const room = this.requireRoom(input.room);
+      if (this.closed(room)) throw new TeamError(410, CLOSED);
       this.roomMember(room, input.assignee);
       if (by.teammate) this.roomMember(room, by.teammate);
       if (by.teammate && !by.chainId) throw new TeamError(403, "A delegated task must belong to the current conversation.");
@@ -311,7 +361,12 @@ export class TeamStore {
     }
     return { tasks, deliveries };
   }
-  snapshot(): TeamSnapshot { return { teammates: this.teammates(), rooms: this.rooms(), tasks: this.tasks(), deliveries: this.deliveries() }; }
+  snapshot(): TeamSnapshot {
+    // Its kept conversations, yours with it first: they are in no other list.
+    const direct = this.rooms().filter((room) => room.direct).sort((a, b) => a.members.length - b.members.length);
+    const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
+    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: this.deliveries(), ...(removed.length ? { removed } : {}) };
+  }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {
     const all = this.teammates();
@@ -321,7 +376,7 @@ export class TeamStore {
     const asked = room === undefined ? null : this.requireRoom(room);
     return {
       workers: all.map((t) => ({ id: t.id, name: t.name, role: t.role, harness: t.harness, job: clipped(t.instructions, OVERVIEW.job), madeBy: t.createdBy ?? TEAM_OWNER, state: state(t), turnsToday: t.turnsToday, dailyTurns: t.dailyTurns, repository: t.repository, workspace: Boolean(t.workspace) })),
-      rooms: this.rooms().map(({ id, name, members, direct, paused, turnBudget }) => ({ id, name, members, direct, paused, turnBudget })),
+      rooms: this.openRooms().map(({ id, name, members, direct, paused, turnBudget }) => ({ id, name, members, direct, paused, turnBudget })),
       ...(asked ? { room: {
         id: asked.id, name: asked.name, members: asked.members, direct: asked.direct, paused: asked.paused,
         messages: this.messages(asked.id, OVERVIEW.messages).map(({ speaker, speakerName, text, createdAt }) => ({ speaker, speakerName, text: clipped(text, OVERVIEW.message), createdAt })),
@@ -337,8 +392,11 @@ export class TeamStore {
     return this.db.transaction(() => {
       const row = this.jobRow(key);
       if (!row || row.status !== "queued") return false;
-      const teammate = this.requireTeammate(row.teammate);
+      // (Never a throw here: one job that cannot run must not hold up everyone else's.)
+      const teammate = this.teammate(row.teammate);
+      if (!teammate) { this.finish(key, "stopped", REMOVED); return false; }
       const room = this.requireRoom(row.room);
+      if (this.closed(room)) { this.finish(key, "stopped", CLOSED); return false; }
       if (!room.members.includes(teammate.id)) { this.finish(key, "stopped", "The teammate is no longer in this room."); return false; }
       if (!teammate.enabled || room.paused) return false;
       if (this.db.query("SELECT id FROM team_jobs WHERE teammate=? AND status='running'").get(teammate.id)) return false;
@@ -390,7 +448,10 @@ export class TeamStore {
   /** Explicit owner resume is the only way interrupted or stopped work becomes runnable again. */
   resume(select: TeamSelection): void {
     this.db.transaction(() => {
-      const rows = this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status IN ('interrupted','stopped','failed') ORDER BY seq").all().filter((r) => matches(jobOf(r), select) && (select.task || r.status === "interrupted"));
+      const found = this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status IN ('interrupted','stopped','failed') ORDER BY seq").all().filter((r) => matches(jobOf(r), select) && (select.task || r.status === "interrupted"));
+      // What a removed worker left unfinished is never started again: asked for by name it says so, otherwise it is passed over.
+      const rows = found.filter((r) => this.teammate(r.teammate));
+      if (select.task && found.length && !rows.length) throw new TeamError(410, "That task's teammate was removed. Revise the task for another teammate.");
       if (this.pending() + rows.length > TEAM_LIMITS.pending) throw new TeamError(429, "Too much work to resume at once.");
       const chains = new Map<string, string>();
       for (const row of rows) {

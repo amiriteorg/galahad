@@ -3,6 +3,7 @@ import { TEAM_LIMITS } from "./team-limits.ts";
 import { sha256Bytes } from "./crypto.ts";
 import { utf8 } from "./bytes.ts";
 import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, type AvatarProfile } from "./avatar.ts";
+import { hasUndrawn, oneScript, readAlike } from "./lookalike.ts";
 export { TEAM_LIMITS } from "./team-limits.ts";
 
 /* Named teammates and their conversations live on one controller node. Their VM
@@ -47,10 +48,15 @@ export const TeammateInput = z.strictObject({
 export type TeammateInput = z.infer<typeof TeammateInput>;
 
 /** The name of a worker Galahad makes: a model chose it and every briefing that worker is given reads it, so it is
- * one plain word (letters, digits, hyphens and apostrophes, in their ordinary forms) and nobody else's name. */
+ * one plain word (letters, digits, hyphens and apostrophes, in their ordinary forms), written in one script, and
+ * nobody else's name: not yours, his or the system's, however it is spelled (lookalike.ts). That it isn't another
+ * worker's either is for the store to say, which knows them. */
+const RESERVED_NAMES = ["you", "owner", "system", "galahad"];
 const RecruitName = z.string().trim().transform((name) => name.normalize("NFKC")).pipe(
   z.string().max(24).regex(/^[\p{L}\p{N}][\p{L}\p{N}'’-]*$/u, "one plain word: letters, digits, hyphens and apostrophes")
-    .refine((name) => !["you", "owner", "system", "galahad"].includes(name.toLowerCase()), "that name is reserved"),
+    .refine((name) => !hasUndrawn(name), "one plain word: nothing in it that isn't drawn")
+    .refine(oneScript, "one plain word, written in one script")
+    .refine((name) => !RESERVED_NAMES.some((reserved) => readAlike(name, reserved)), "that name is reserved"),
 );
 
 /** What Galahad himself (or a worker of his, for its own room) may say of a worker he makes: its handle, its name,
@@ -101,6 +107,11 @@ export const TeamControlInput = z.strictObject({
 }).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, teammate or task");
 export type TeamControlInput = z.infer<typeof TeamControlInput>;
 
+/** Removing a worker, which is yours alone. A worker that has a VM is removed only together with it, and only
+ * when you say so here: everything in its workspace goes with the VM. */
+export const TeamRemoveInput = z.strictObject({ id: z.string().min(1).max(32), destroyWorkspace: z.boolean().optional() });
+export type TeamRemoveInput = z.infer<typeof TeamRemoveInput>;
+
 export interface Teammate {
   id: string;
   name: string;
@@ -124,6 +135,9 @@ export interface Teammate {
   instructionsBy?: string;
   createdAt: number;
   updatedAt: number;
+  /** When you removed it. A removed worker is in no list and does no work; its record is kept, so what it said
+   * stays its own and its handle is never anyone else's. */
+  removedAt?: number;
 }
 
 export interface TeamRoom {
@@ -185,6 +199,9 @@ export interface TeamSnapshot {
   rooms: TeamRoom[];
   tasks: TeamTask[];
   deliveries: TeamDelivery[];
+  /** Workers you removed: their handles stay taken, and their names stay beside what they said. `conversations`:
+   * the direct conversations it had (yours with it first), kept to read though no longer among the rooms. */
+  removed?: (Pick<Teammate, "id" | "name" | "removedAt"> & { conversations?: string[] })[];
 }
 
 export interface TeamRoomView extends TeamRoom {

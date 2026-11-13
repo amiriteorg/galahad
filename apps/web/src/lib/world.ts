@@ -27,6 +27,8 @@ import { EYES, EYES_PLACES, type EyesPlace } from "@galahad/core/eyes";
 import type { WorldCompute } from "@galahad/core/world-compute";
 import { readWorldQuests, type WorldQuest, worldQuestInHand, worldQuestLine } from "@galahad/core/world-quest";
 import { readWorldSkills, type WorldSkills } from "@galahad/core/skills";
+import { plainLine } from "@galahad/core/plain";
+import { AVATAR_EXPRESSIONS, type AvatarExpression, resolveAvatar } from "@galahad/core/avatar";
 import { helpersLine, readCompute } from "./world-compute.ts";
 
 /*
@@ -267,11 +269,28 @@ function readHeartbeat(v: unknown): WorldHeartbeat | null {
   };
 }
 
-/** A partner, checked: its name is an agent's label (lowercase letters, digits, . _ -). */
+/** An agent's label: lowercase letters, digits, . _ - */
+const LABEL = /^[a-z0-9][a-z0-9._-]{0,47}$/;
+
+/**
+ * A partner, checked. An agent over MCP is known by its name, which is its arm's label. One of his
+ * own workers is known by its id (that label) and carries a name to show ("Galahad · Ada"): words in
+ * any script, kept to one line with nothing hidden in them, and never what tells it from another.
+ * Its look is made safe (a default when it doesn't read); an expression this page doesn't know is left out.
+ */
 function readPartner(v: unknown): WorldPartner | null {
-  if (!isObj(v) || typeof v.name !== "string" || !/^[a-z0-9][a-z0-9._-]{0,47}$/.test(v.name) || !str(v.station, 32) || !str(v.doing) || !num(v.since) || !num(v.last)) return null;
+  if (!isObj(v) || !str(v.name) || !str(v.station, 32) || !str(v.doing) || !num(v.since) || !num(v.last)) return null;
   const station = (STATION_NAMES.has(v.station) ? v.station : "keep") as Station;
-  return { name: v.name, station, doing: v.doing, since: v.since, last: v.last };
+  // What it is doing is a line of words from an agent or a model: one line, nothing hidden in it.
+  const doing = plainLine(v.doing);
+  if (v.id === undefined) return LABEL.test(v.name) ? { name: v.name, station, doing, since: v.since, last: v.last } : null;
+  if (typeof v.id !== "string" || !LABEL.test(v.id)) return null;
+  // Cut to the contract's 48 after cleaning; a character the cut split in two goes with it.
+  const name = plainLine(v.name).slice(0, 48).replace(/\p{Cs}/gu, "").trim() || v.id;
+  const partner: WorldPartner = { name, id: v.id, station, doing, since: v.since, last: v.last };
+  if (v.avatar !== undefined) partner.avatar = resolveAvatar(v.id, v.avatar);
+  if ((AVATAR_EXPRESSIONS as readonly unknown[]).includes(v.expression)) partner.expression = v.expression as AvatarExpression;
+  return partner;
 }
 
 function readNode(v: unknown): WorldNode | null {

@@ -11,7 +11,7 @@ import { emptySoundStats, Sound, type SoundStats } from "./sound.ts";
 import { chance, emptyMix, emptySoundWorld, hear, mixFor, type SoundKind, surfaceFor, thunderFor } from "./soundscape.ts";
 import type { EcoSummary } from "./eco/summary.ts";
 import { ACTIVITIES, type Activity, danishDate, withDog } from "@galahad/core/life";
-import { Partners } from "./partners.ts";
+import { figureInWords, Partners } from "./partners.ts";
 import { setWindHeading } from "./air.ts";
 import { Atmosphere, HAZE } from "./atmosphere.ts";
 import { attachInput, CAMERA_PAD, CameraRig, DEFAULT_DISTANCE, pitchFor, type Point3, SpringArm, STATION_DISTANCE } from "./camera.ts";
@@ -1264,7 +1264,7 @@ export async function mountWorld(container: HTMLElement, options: WorldOptions):
       wild.push({ name: line.name, count: line.count, doing: line.doing, x: wildSpot.x, y: wildSpot.y, tall: spec?.tall ?? 0.6, air: spec?.realm === AIR });
     }
     const figures: SightInput["figures"][number][] = [];
-    for (const s of partners.figures.squires) if (s.name && s.shown > 0.5) figures.push({ what: `the agent ${s.name}`, doing: "working with him", x: s.x, y: s.y });
+    for (const s of partners.figures.squires) if (s.name && s.shown > 0.5) figures.push({ what: figureInWords(s), doing: "working with him", x: s.x, y: s.y });
     for (const s of helperLook.figures.squires) if (s.name && s.shown > 0.5) figures.push({ what: "one of his helpers", doing: "at an attempt of a quest", x: s.x, y: s.y });
     return sightInWords(
       buildSight({

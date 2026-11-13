@@ -12,7 +12,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamRecruitInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
@@ -186,6 +186,8 @@ export const routes = {
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
   createTeamTask: { method: "POST", path: "/api/team/tasks", scope: "fleet:admin", input: TeamTaskInput },
   controlTeam: { method: "POST", path: "/api/team/control", scope: "fleet:admin", input: TeamControlInput },
+  /** Yours alone, and for good. A worker with a VM goes only with `destroyWorkspace`, from a device that also holds `sandbox`. */
+  removeTeammate: { method: "POST", path: "/api/team/remove", scope: "fleet:admin", input: TeamRemoveInput },
   teamMemory: { method: "POST", path: "/api/team/memory", scope: "fleet:admin", input: z.strictObject({ id: z.string().min(1).max(32), text: z.string().max(20000) }) },
   /* Galahad's own way to his workers, from your conversation with him (his tools: team, team_recruit, team_message).
    * Refused to everyone else whatever their scopes, you included: the routes above are yours. */

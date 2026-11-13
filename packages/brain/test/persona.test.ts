@@ -37,6 +37,8 @@ describe("what he knows about his own work", () => {
     expect(TOOL_GUIDE).toMatch(/before making another/);
     expect(TOOL_GUIDE).toMatch(/only a few in a day/);
     expect(TOOL_GUIDE).toMatch(/only when the tool says so/);
+    // He only adds: what he cannot do to a worker he says is his liege's, rather than claiming it done.
+    expect(TOOL_GUIDE).toMatch(/You only add: pausing, changing or removing a worker is your liege's to do in Team/);
   });
 
   test("it stays small: the guide and the persona are sent with every answer", () => {

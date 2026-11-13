@@ -40,7 +40,7 @@ import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
 import { trialsView } from "./views/trials.ts";
 import { teamView } from "./views/team.ts";
-import { teamHash, teamLocation } from "./lib/team.ts";
+import { landingHash, teamHash, teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
 interface RouteSpec {
@@ -504,7 +504,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   // ---------- go ----------
   chatFromAddress();
   const initial = routeFromHash() ?? (visible.find((r) => r.id === lastRoute())?.id ?? "overview");
-  if (location.hash !== `#/${initial}`) history.replaceState(null, "", `#/${initial}`);
+  // (Tidied to its page; Team's address keeps its room and tab, which is what a reload comes back to.)
+  const landing = landingHash(initial, location.hash);
+  if (location.hash !== landing) history.replaceState(null, "", landing);
   render();
   return {
     dispose() {

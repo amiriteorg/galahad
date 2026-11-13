@@ -245,6 +245,29 @@ describe("the workers Galahad makes for himself", () => {
     expect(store.saveTeammate({ id: "scout", name: "Scout", instructions: "Watch them weekly." })).toMatchObject({ createdBy: "galahad", instructionsBy: "owner" });
   });
 
+  test("he cannot give a worker a name that reads as another worker's; yours stay yours to name", () => {
+    const store = make(); setup(store);
+    store.saveTeammate({ id: "ilya", name: "Ilya" });
+    store.saveTeammate({ id: "mona", name: "Mona Lisa" });
+    // The same name, its capitals, a hyphen in it, l for I, rn for m: each would be taken for the worker that has it.
+    for (const name of ["Ada", "ADA", "A-da", "llya", "ILYA", "RnonaLisa"]) {
+      expect(() => store.recruit({ ...job("double"), name }, "galahad")).toThrow(/reads like/);
+    }
+    // (Letters of two scripts in one name never get this far: the boundary refuses them.)
+    expect(() => store.recruit({ ...job("double"), name: "\u0410d\u0430" }, "galahad")).toThrow(TeamError);
+    expect(store.teammate("double")).toBeFalsy();
+    // Hardly drawn or not at all: a raised apostrophe, a long-vowel mark, a tatweel after the same letters.
+    for (const name of ["Ada\u02bc", "Ada\u30fc", "Ada\ua78c"]) expect(() => store.recruit({ ...job("double"), name }, "galahad")).toThrow(/reads like Ada/);
+    // A capital L is not a capital I: Lan may stand beside Ian, and a small l may not.
+    store.saveTeammate({ id: "ian", name: "Ian" });
+    expect(() => store.recruit({ ...job("double"), name: "lan" }, "galahad")).toThrow(/reads like Ian/);
+    expect(store.recruit({ ...job("lan"), name: "Lan" }, "galahad").name).toBe("Lan");
+    expect(store.recruit({ ...job("double"), name: "Adah" }, "galahad")).toMatchObject({ id: "double", name: "Adah" });
+    // One he made is protected the same way, from him and from a worker that makes one.
+    expect(() => store.recruit({ ...job("third"), name: "ADAH" }, "ada")).toThrow(/reads like Adah/);
+    expect(store.saveTeammate({ id: "twin", name: "Ada" }).name).toBe("Ada");
+  });
+
   test("provenance survives a reopen, and an older record without it is yours", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-made-")); dirs.push(dir); const path = join(dir, "team.db");
     const store = make(path); setup(store);
@@ -371,5 +394,192 @@ describe("the workers Galahad makes for himself", () => {
     expect(latest).toHaveLength(20);
     expect(latest.at(-1)!.text.startsWith("39: ")).toBe(true);
     expect(latest.every((message) => message.text.length <= 1300)).toBe(true);
+  });
+});
+
+describe("removing a worker", () => {
+  const DAY = 24 * 3_600_000;
+  const job = (id: string) => ({ id, name: id[0]!.toUpperCase() + id.slice(1), instructions: "A lasting job." });
+  /** One reply of a worker's in a room, as the service would record it: claimed, said, done. */
+  const reply = (store: TeamStore, teammate: string, room: string, text: string) => {
+    const delivery = store.queued().find((j) => j.teammate === teammate && j.room === room)!;
+    expect(store.claim(delivery.id)).toBe(true);
+    store.post({ room, text }, { teammate, chainId: delivery.chainId, output: true });
+    store.finish(delivery.id, "done");
+  };
+
+  test("it is retired, not erased: gone from the team and from work, with its words and its record kept", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-remove-")); dirs.push(dir); const path = join(dir, "team.db");
+    let now = 1_000_000;
+    const store = make(path, () => now);
+    setup(store);
+    const dm = store.direct("ada");
+    const peers = store.direct("lin", "ada");
+    store.post({ room: "workshop", text: "Start." });
+    reply(store, "ada", "workshop", "On it.");
+    store.post({ room: dm.id, text: "Only you." });
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Fix it", goal: "Fix the parser." });
+    now += 5_000;
+    expect(store.remove("ada")).toMatchObject({ id: "ada", name: "Ada", enabled: false, removedAt: now });
+
+    // Gone from the team, and said so wherever it is asked for.
+    expect(store.teammate("ada")).toBeNull();
+    expect(store.teammates().map((t) => t.id)).toEqual(["lin"]);
+    expect(() => store.requireTeammate("ada")).toThrow(/was removed/);
+    expect(store.snapshot().teammates.map((t) => t.id)).toEqual(["lin"]);
+    // (With where to read its direct conversations, yours with it first, since they are in no other list.)
+    expect(store.snapshot().removed).toEqual([{ id: "ada", name: "Ada", removedAt: now, conversations: [dm.id, peers.id] }]);
+    expect(store.overview().workers.map((w) => w.id)).toEqual(["lin"]);
+    // What it had not started is stopped, and says why.
+    expect(store.queued().filter((j) => j.teammate === "ada")).toEqual([]);
+    expect(store.task(task.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+    // The shared room goes on without it; what it said there is still its own.
+    expect(store.room("workshop")!.members).toEqual(["lin"]);
+    expect(store.messages("workshop").map((m) => [m.speaker, m.speakerName, m.text])).toContainEqual(["ada", "Ada", "On it."]);
+    expect(store.post({ room: "workshop", text: "Carry on." }).text).toBe("Carry on.");
+    expect(store.queued().map((j) => j.teammate)).toEqual(expect.arrayContaining(["lin"]));
+    // Its direct conversations are kept to read, are no longer listed, and take no new words.
+    expect(store.snapshot().rooms.map((r) => r.id)).toEqual(["workshop"]);
+    expect(store.overview().rooms.map((r) => r.id)).toEqual(["workshop"]);
+    expect(store.roomView(dm.id).messages.map((m) => m.text)).toEqual(["Only you."]);
+    expect(store.roomView(peers.id).members).toEqual(["ada", "lin"]);
+    expect(() => store.post({ room: dm.id, text: "Still there?" })).toThrow(/was removed/);
+    expect(() => store.direct("ada")).toThrow(/was removed/);
+    expect(() => store.direct("ada", "lin")).toThrow(/was removed/);
+
+    close(store);
+    const reopened = make(path, () => now);
+    expect(reopened.teammate("ada")).toBeNull();
+    expect(reopened.snapshot().removed).toEqual([{ id: "ada", name: "Ada", removedAt: now, conversations: [dm.id, peers.id] }]);
+    expect(reopened.room("workshop")!.members).toEqual(["lin"]);
+  });
+
+  test("its handle is never anyone else's, so nothing new inherits its history; and it takes no further change", () => {
+    const store = make(); setup(store);
+    store.remove("ada");
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada" })).toThrow(/was removed/);
+    expect(() => store.recruit({ id: "ada", name: "Nova", instructions: "A job." }, "galahad")).toThrow(/was removed/);
+    // Its name is still in the record, where people read it.
+    expect(() => store.recruit({ id: "nova", name: "Ada", instructions: "A job." }, "galahad")).toThrow(/reads like Ada/);
+    expect(() => store.saveRoom({ name: "New room", members: ["ada", "lin"] })).toThrow(/was removed/);
+    for (const change of [() => store.remove("ada"), () => store.remember("ada", "notes"), () => store.enable("ada", true), () => store.planWorkspace("ada", "host"), () => store.setWorkspace("ada", { node: "host", id: "0123456789" })]) {
+      expect(change).toThrow(/was removed/);
+    }
+    expect(() => store.remove("nobody")).toThrow(/No such teammate/);
+    expect(store.teammates().map((t) => t.id)).toEqual(["lin"]);
+  });
+
+  test("a workspace or running work is never left behind: each refuses the removal, and nothing changes", () => {
+    const store = make(); setup(store);
+    store.setWorkspace("ada", { node: "host", id: "0123456789" });
+    expect(() => store.remove("ada")).toThrow(/workspace/);
+    store.setWorkspace("ada", null);
+    store.post({ room: "workshop", text: "Go." });
+    const running = store.queued().find((j) => j.teammate === "ada")!;
+    expect(store.claim(running.id)).toBe(true);
+    expect(() => store.remove("ada")).toThrow(/Stop this teammate's work/);
+    expect(store.teammate("ada")).toMatchObject({ enabled: true });
+    expect(store.room("workshop")!.members).toEqual(["ada", "lin"]);
+    store.finish(running.id, "stopped", "Stopped by you.");
+    expect(store.remove("ada").removedAt).toBeGreaterThan(0);
+  });
+
+  test("what it left unfinished can't be started again, and never stalls the others", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-remove-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path); setup(store);
+    const hers = store.createTask({ room: "workshop", assignee: "ada", title: "Hers", goal: "Do it." });
+    const his = store.createTask({ room: "workshop", assignee: "lin", title: "His", goal: "Do it." });
+    expect(store.claim(hers.id)).toBe(true);
+    store.finish(hers.id, "interrupted", "Paused by you.");
+    store.remove("ada");
+    // Resuming the room brings back nothing of hers; resuming her task by name says why not.
+    store.resume({ room: "workshop" });
+    expect(store.task(hers.id)!.status).toBe("interrupted");
+    expect(() => store.resume({ task: hers.id })).toThrow(/was removed/);
+    expect(store.task(hers.id)!.status).toBe("interrupted");
+    // A job of hers that is somehow still queued (an older database) is stopped when its turn comes, and the queue moves on.
+    close(store);
+    const raw = new Database(path);
+    raw.query("UPDATE team_jobs SET status='queued' WHERE id=?").run(hers.id);
+    raw.close();
+    const reopened = make(path);
+    expect(reopened.queued().map((j) => j.id)).toEqual([hers.id, his.id]);
+    expect(reopened.claim(hers.id)).toBe(false);
+    expect(reopened.task(hers.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+    expect(reopened.claim(his.id)).toBe(true);
+  });
+
+  test("the day's allowance for making workers isn't given back; the node's limit counts those still here", () => {
+    let now = 5 * DAY;
+    const store = make(":memory:", () => now);
+    store.saveTeammate({ id: "ada", name: "Ada" });
+    for (let n = 0; n < TEAM_LIMITS.recruitsPerDay; n++) store.recruit(job(`made-${n}`), "galahad");
+    for (let n = 0; n < 3; n++) store.remove(`made-${n}`);
+    expect(store.overview().spare.today).toBe(0);
+    expect(() => store.recruit(job("one-more"), "galahad")).toThrow(/allowance/);
+    now += DAY + 1;
+    expect(store.recruit(job("one-more"), "galahad").id).toBe("one-more");
+    // Yours fill the node; removing one makes room for one.
+    const full = make();
+    for (let n = 0; n < TEAM_LIMITS.teammates; n++) full.saveTeammate({ id: `yours-${n}`, name: `Yours ${n}` });
+    expect(() => full.saveTeammate({ id: "extra", name: "Extra" })).toThrow(new RegExp(`At most ${TEAM_LIMITS.teammates}`));
+    full.remove("yours-0");
+    expect(full.overview().spare.workers).toBe(1);
+    expect(full.saveTeammate({ id: "extra", name: "Extra" }).id).toBe("extra");
+  });
+
+  test("a conversation it had with another worker is closed for that worker too: no words, no work, and no turn spent on it", () => {
+    const store = make(); setup(store);
+    const peers = store.direct("lin", "ada");
+    // Ada had written to Lin there, and Lin's reply was still waiting when Ada was removed.
+    const opened = store.post({ room: "workshop", text: "Talk it over." });
+    const adas = store.queued().find((j) => j.teammate === "ada")!;
+    expect(store.claim(adas.id)).toBe(true);
+    store.post({ room: peers.id, text: "Between us." }, { teammate: "ada", chainId: opened.chainId });
+    store.finish(adas.id, "done");
+    const waiting = store.queued().find((j) => j.teammate === "lin" && j.room === peers.id)!;
+    const before = store.teammate("lin")!.turnsToday;
+    store.remove("ada");
+    expect(store.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its teammate was removed." });
+    expect(store.claim(waiting.id)).toBe(false);
+    expect(store.teammate("lin")!.turnsToday).toBe(before);
+    // Nothing new is taken there, from you or from the worker that is still here.
+    expect(() => store.post({ room: peers.id, text: "Still there?" })).toThrow(/was removed/);
+    expect(() => store.post({ room: peers.id, text: "Hello?" }, { teammate: "lin", chainId: opened.chainId })).toThrow(/was removed/);
+    expect(() => store.createTask({ room: peers.id, assignee: "lin", title: "Alone", goal: "Do it." })).toThrow(/was removed/);
+    expect(store.snapshot().tasks.filter((t) => t.room === peers.id)).toEqual([]);
+    // What was said there stays, and Lin's own work elsewhere goes on.
+    expect(store.roomView(peers.id).messages.map((m) => m.text)).toEqual(["Between us."]);
+    const elsewhere = store.queued().find((j) => j.teammate === "lin" && j.room === "workshop")!;
+    expect(store.claim(elsewhere.id)).toBe(true);
+  });
+
+  test("an older database's job in such a conversation is stopped when its turn comes, without a turn spent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-remove-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path); setup(store);
+    const peers = store.direct("lin", "ada");
+    const opened = store.post({ room: "workshop", text: "Talk." });
+    const adas = store.queued().find((j) => j.teammate === "ada")!;
+    store.claim(adas.id);
+    store.post({ room: peers.id, text: "Between us." }, { teammate: "ada", chainId: opened.chainId });
+    store.finish(adas.id, "done");
+    const waiting = store.queued().find((j) => j.teammate === "lin" && j.room === peers.id)!;
+    store.remove("ada");
+    close(store);
+    const raw = new Database(path);
+    raw.query("UPDATE team_jobs SET status='queued',error=NULL WHERE id=?").run(waiting.id);
+    raw.close();
+    const reopened = make(path);
+    expect(reopened.claim(waiting.id)).toBe(false);
+    expect(reopened.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its teammate was removed." });
+    expect(reopened.teammate("lin")!.turnsToday).toBe(0);
+  });
+
+  test("who made a worker stays on record after its maker is removed", () => {
+    const store = make(); setup(store);
+    store.recruit(job("rev"), "ada", "workshop");
+    store.remove("ada");
+    expect(store.teammate("rev")).toMatchObject({ createdBy: "ada", instructionsBy: "ada" });
+    expect(store.room("workshop")!.members).toEqual(["lin", "rev"]);
   });
 });

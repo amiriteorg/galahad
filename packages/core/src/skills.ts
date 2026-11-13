@@ -1,3 +1,4 @@
+import { plainLine } from "./plain.ts";
 import { findSecrets } from "./secret-scan.ts";
 
 /*
@@ -29,11 +30,8 @@ export const SKILL_VERSION = /^[A-Za-z0-9_-]{43}$/;
 /** Every bound on a skill's text. */
 export const SKILL_LIMITS = { title: 120, when: 400, steps: 12, step: 400, proofs: 6, command: 300, expect: 200, pitfalls: 8, pitfall: 300 } as const;
 
-/** Characters that can hide or reorder text: controls, bidirectional overrides, zero-width. */
-const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
-
-/** A skill's text as it's kept: one line, nothing hidden in it. */
-export const cleanSkillText = (text: string): string => text.replace(HIDDEN, "").replace(/\s+/g, " ").trim();
+/** A skill's text as it's kept: one line, nothing hidden in it (plain.ts). */
+export const cleanSkillText = plainLine;
 
 /** What proves it worked: a command, and what to expect of it. */
 export interface SkillProof {

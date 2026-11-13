@@ -34,6 +34,10 @@ const FADE = 0.8;
 const SPOT = (i: number): [number, number] => [-(1.25 + 0.15 * (i % 2)), 0.6 + 0.85 * i];
 /** His footsteps they remember (every half metre), to follow him round what stands between. */
 const TRAIL = 64;
+/** A figure that has gone less than HEADWAY metres in PATIENCE seconds, and is still more than NEAR from its place, cannot get there. */
+const HEADWAY = 0.75;
+const PATIENCE = 3;
+const NEAR = 3;
 
 export interface Squire {
   /** The agent it is (empty while the slot's free). */
@@ -60,6 +64,10 @@ export interface Squire {
   walk: number;
   /** Busy with its hands where it stands (0..1): his helpers at a station (helpers.ts). */
   work?: number;
+  /** Where it last made headway towards its place, and for how long it has made none since (s). */
+  heldX?: number;
+  heldY?: number;
+  held?: number;
 }
 
 export interface Leader {
@@ -68,6 +76,9 @@ export interface Leader {
   heading: number;
   moving: boolean;
 }
+
+/** A figure in a few words, for what he sees: one of his own workers has an id, an agent over MCP only its name. */
+export const figureInWords = (s: Pick<Squire, "name" | "id">): string => (s.id ? `his worker ${s.name}` : `the agent ${s.name}`);
 
 function avatarPhase(id: string): number {
   let hash = 2166136261;
@@ -144,7 +155,7 @@ export class PartnerFigures {
       }
       const free = this.squires.find((s) => !s.name) ?? this.squires.find((s) => !s.here);
       if (!free) continue;
-      Object.assign(free, metadata, { name: p.name, x: KEEP_DOOR.x, y: KEEP_DOOR.y, vx: 0, vy: 0, heading: Math.PI / 2, shown: 0, here: true, walk: 0, phase: 0 });
+      Object.assign(free, metadata, { name: p.name, x: KEEP_DOOR.x, y: KEEP_DOOR.y, vx: 0, vy: 0, heading: Math.PI / 2, shown: 0, here: true, walk: 0, phase: 0, held: undefined });
     }
   }
 
@@ -201,6 +212,8 @@ export class PartnerFigures {
         s.shown = Math.max(0, s.shown - dt / FADE);
       }
       s.r = s.shown > 0.3 ? SQUIRE.r : 0;
+      const spotX = tx;
+      const spotY = ty;
       const mover0 = this.movers[i];
       // Round what stands in the way: in his footsteps (going home, straight for the door: he came from there).
       if (mover0 && s.here && this.followFootsteps(mover0, s.x, s.y, tx, ty)) {
@@ -221,6 +234,26 @@ export class PartnerFigures {
         s.y = this.scratch.y;
         if (taken === null) s.vx = s.vy = 0;
       }
+      // Something solid in the way and none of his footsteps to follow (the page opened with him already somewhere,
+      // so nobody saw him walk there): it would walk on the spot for good. One that has made no headway for a while
+      // and is still far from its place is put there, fading in.
+      if (s.here) {
+        if (s.held === undefined || Math.hypot(s.x - s.heldX!, s.y - s.heldY!) > HEADWAY) {
+          s.heldX = s.x;
+          s.heldY = s.y;
+          s.held = 0;
+        } else s.held = Math.hypot(spotX - s.x, spotY - s.y) > NEAR ? s.held + dt : 0;
+        if (s.held > PATIENCE) {
+          s.x = s.heldX = spotX;
+          s.y = s.heldY = spotY;
+          s.vx = s.vy = 0;
+          s.shown = 0;
+          s.walk = 0;
+          s.held = 0;
+          s.heading = galahad.heading;
+          continue;
+        }
+      } else s.held = undefined;
       const speed = dt > 0 ? Math.hypot(s.x - sx, s.y - sy) / dt : 0;
       if (speed > 0.2) s.heading = turnTowards(s.heading, Math.atan2(s.y - sy, s.x - sx), 7 * dt);
       else if (s.here) s.heading = turnTowards(s.heading, galahad.heading, 2 * dt);
@@ -756,7 +789,7 @@ export class Partners {
     out[0] = s.x;
     out[1] = s.y;
     out[2] = 1.25;
-    return `${s.name}: an agent working with Galahad`;
+    return s.id ? `${s.name}: one of his workers` : `${s.name}: an agent working with Galahad`;
   }
 
   /** How far the nearest squire that's about is from a point (−1: none), for the page's trace. */

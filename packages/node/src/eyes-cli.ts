@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { EYES_PLACE_LABEL, EYES_PLACES, type EyesPlace, eyesExtension, type LookView, type ReviewStatus, type RouteName } from "@galahad/core";
+import { EYES_PLACE_LABEL, EYES_PLACES, type EyesPlace, eyesExtension, type LookView, plainLine, type ReviewStatus, type RouteName } from "@galahad/core";
 import type { ReviewResult } from "./world-review.ts";
 
 /*
@@ -90,7 +90,8 @@ export async function worldReviewCommand(api: Api, flags: Flags): Promise<void> 
   for (const p of places ?? []) if (!(EYES_PLACES as readonly string[]).includes(p)) throw new Error(`--places takes any of: ${EYES_PLACES.join(", ")}`);
   console.log(dim("He's looking at his world (a page with the SANDBOX open renders each view; this takes a minute or two)…"));
   const result = await api.call<ReviewResult>("worldReview", places ? { places } : {});
-  console.log(`${result.status === "ok" ? "✓" : "△"} ${result.summary}`);
-  for (const f of result.findings) console.log(`  - ${f.view === "self" ? "where he stood" : EYES_PLACE_LABEL[f.view]}, ${f.where}: ${f.what} ${dim(`(${f.sure}) ${f.why}`)}`);
+  // What he saw is a model's words: plain lines, every one (plain.ts).
+  console.log(`${result.status === "ok" ? "✓" : "△"} ${plainLine(result.summary)}`);
+  for (const f of result.findings) console.log(`  - ${f.view === "self" ? "where he stood" : EYES_PLACE_LABEL[f.view]}, ${plainLine(f.where)}: ${plainLine(f.what)} ${dim(`(${plainLine(String(f.sure))}) ${plainLine(f.why)}`)}`);
   if (result.findings.length) console.log(dim("Suggestions only: each is in your inbox (galahad inbox) and among his ideas (galahad archive search). He changes nothing himself."));
 }

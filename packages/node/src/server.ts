@@ -56,6 +56,7 @@ import {
   type SandboxView,
   type Teammate,
   TEAM_GALAHAD,
+  TeammateId,
   teamArmLabel,
   avatarExpression,
   resolveAvatar,
@@ -251,7 +252,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
 
 const statusOf = (error: unknown): number =>
-  error instanceof HttpError || error instanceof SandboxError || error instanceof PairingError ? error.status : 500;
+  error instanceof HttpError || error instanceof SandboxError || error instanceof PairingError || error instanceof TeamError ? error.status : 500;
 
 /**
  * For work that may outlast every idle timer between here and the caller (Bun's
@@ -1454,6 +1455,47 @@ export function createApp(ctx: AppContext) {
     const result = await inProcess(teammatePrincipal(member.id), new AbortController().signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: bound.node, id: bound.id, cmd: ["bash", "-lc", agentCleanupCommand()], timeoutSec: 15 });
     if (result.exitCode !== 0) throw new HttpError(424, "the previous worker could not be safely stopped; inspect its VM before resuming");
   }
+  /* Whether a worker has a VM is asked of its host, never assumed: one made just before a crash may never have been
+   * bound, and a host whose Docker cannot say just now has not said "none". If the host cannot be asked, nothing is
+   * removed. What became of the VM is said as it was: in the answer and in the ledger. */
+  async function removeTeam(member: Teammate, destroyWorkspace: boolean, p: Principal, signal: AbortSignal) {
+    // (A reserved handle from an older database never had a label, so it never had a VM or a figure in the world.)
+    const label = TeammateId.safeParse(member.id).success ? teammateLabel(member.id) : null;
+    const node = member.workspace?.node ?? member.workspaceNode;
+    /** Its VMs where one was made or planned, as that host lists them now. `left`: the node is no longer part of the fleet, and whatever was on it went with it. */
+    const vms = async (): Promise<{ where: "none" | "left" } | { where: "host"; ids: string[] }> => {
+      if (!node || !label) return { where: "none" };
+      if (!ctx.store.devices().some((d) => d.kind === "node" && d.id === node)) return { where: "left" };
+      const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[]; unknown?: boolean }>("sandboxes", { on: node });
+      if (view.unknown) throw new HttpError(503, "this teammate's VM host could not list its sandboxes just now; nothing was removed, try again");
+      const quest = armQuest(label);
+      const bound = member.workspace ? view.sandboxes.find((s) => s.id === member.workspace!.id) : undefined;
+      if (bound && (bound.quest !== quest || bound.ephemeral || bound.isolation !== "vm")) throw new HttpError(403, "the workspace is not this teammate's persistent VM");
+      const ids = view.sandboxes.filter((s) => s.quest === quest && !s.ephemeral).map((s) => s.id);
+      return ids.length ? { where: "host", ids } : { where: "none" };
+    };
+    const mayDestroy = () => {
+      if (!destroyWorkspace) throw new HttpError(409, `${member.name} has a persistent workspace (a VM on ${ctx.store.device(node!)?.name ?? node}). Removing ${member.name} destroys that VM and everything in /work: confirm that, or pause ${member.name} instead.`);
+      if (!p.scopes.includes("sandbox")) throw new HttpError(403, "destroying a teammate's workspace requires scope sandbox");
+    };
+    // Before anything is paused or stopped: is there a VM, and may this request destroy it?
+    if ((await vms()).where === "host") mayDestroy();
+    let workspace: "none" | "destroyed" | "gone" | "left" = "none";
+    const release = async () => {
+      // Asked again now that its work has stopped: this is what is acted on.
+      const found = await vms();
+      if (found.where === "host") {
+        mayDestroy();
+        for (const id of found.ids) await inProcess(p, signal).call("destroySandbox", { on: node!, id });
+        workspace = "destroyed";
+      } else workspace = found.where === "left" ? "left" : member.workspace ? "gone" : "none";
+    };
+    const removed = await teamOf().remove(member.id, { release });
+    if (label) ctx.world.partnerLeft(label);
+    const detail = { none: "it had no workspace", destroyed: "its VM workspace was destroyed with it", gone: "its VM was already gone from its host", left: "its VM was on a node that has left the fleet; nothing there was touched" }[workspace];
+    ctx.ledger?.({ class: "delete", resource: "team", target: `worker:${removed.id}`, verdict: "approved", reason: `removed by you (${p.device.slice(0, 12)})`, detail });
+    return { removed: { id: removed.id, name: removed.name }, workspace };
+  }
   if (ctx.team) {
     const runtime = teamRuntime({
       brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }),
@@ -1488,7 +1530,9 @@ export function createApp(ctx: AppContext) {
       const ids = [...new Set([...active.map((work) => work.teammate), ...[...latest].sort((a, b) => b[1] - a[1]).map(([id]) => id)])].slice(0, MAX_PARTNERS);
       const labels = { idle: "Ready for the next task", thinking: "Coordinating within the hivemind", working: "Working in his persistent VM", waiting: "Waiting for queued work", pleased: "Task completed and verified", concerned: "Work needs attention", resting: "Worker paused" };
       for (const id of ids.reverse()) {
-        const member = teamMember(id);
+        // One that was removed still has its last work on record for a while: it is shown no more, and never stops the others being shown.
+        const member = ctx.team!.store.teammate(id);
+        if (!member) continue;
         const expression = avatarExpression(member, activity, now);
         ctx.world.partner(`Galahad · ${member.name}`, expression === "working" || expression === "pleased" ? "forge" : "council", labels[expression], { id: teammateLabel(id), avatar: resolveAvatar(id, member.avatar), expression });
       }
@@ -1506,6 +1550,18 @@ export function createApp(ctx: AppContext) {
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
     controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
+    /* Removing a worker is yours alone (never his: he only adds), and for good. One that has a VM goes only together
+     * with it, when you say so and from a device that may destroy a sandbox: the destroy is your own request, approved
+     * as that device's. Whether it has one is asked of its host, never assumed: a VM made just before a crash may
+     * never have been bound, and a host whose Docker cannot say just now has not said "none". If the host cannot
+     * be asked, nothing is removed. */
+    removeTeammate: (input, p, req) => {
+      ownerOnly(p);
+      const member = teamMember(input.id);
+      if (vmProvisioning.has(member.id)) throw new HttpError(409, "this teammate's VM is being provisioned; remove it when that has finished");
+      return longRunning(removeTeam(member, input.destroyWorkspace === true, p, req.signal));
+    },
+
     /* His own way to his workers. Making one and writing to them are his alone: you have the routes above, and
      * no other agent, loop or node has either. */
     teamOverview: (input, p) => {
@@ -2107,7 +2163,8 @@ export function createApp(ctx: AppContext) {
       })),
     }),
     sandboxes: (input, p) =>
-      onNode(p, input.on, routes.sandboxes.path, {}, async () => ({ node: ctx.nodeName, sandboxes: await ctx.sandbox!.list() })),
+      // `unknown`: Docker couldn't say just now. The list is then empty, and must not be read as "there are none".
+      onNode(p, input.on, routes.sandboxes.path, {}, async () => { const listed = await ctx.sandbox!.listed(); return { node: ctx.nodeName, sandboxes: listed ?? [], ...(listed === null ? { unknown: true } : {}) }; }),
     createSandbox: (input, p, req) => {
       const { on, attempt, ...request } = input;
       // Model providers only, and only ones this fleet has: the gateway's own scopes were refused by the contract.

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultAvatar, routes, teamArmLabel, type RouteName, type TeamSnapshot, type TeamRoomView } from "@galahad/core";
+import { defaultAvatar, routes, teamArmLabel, type LedgerEntry, type RouteName, type TeamSnapshot, type TeamRoomView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -81,4 +81,33 @@ test("teammates, notes, rooms and messages survive a controller restart", async 
   const persisted = (await api<TeamSnapshot>("team")).teammates.find((m) => m.id === "ada");
   expect(persisted?.memory).toContain("ongoing build");
   expect(persisted?.avatar).toEqual(avatar);
+});
+
+test("real API: you remove a worker, nobody else can; it is gone from the team and what it said stays its own", async () => {
+  await api("saveTeammate", { id: "temp", name: "Temp", role: "planner" });
+  const { token } = await api("mintArm", { label: "remover", scopes: ["chat", "mind:read", "mind:write", "sandbox"] });
+  expect((await request("removeTeammate", { id: "temp" }, token)).status).toBe(403);
+  expect((await request("removeTeammate", { id: "temp", keepWorkspace: true })).status).toBe(400);
+  expect((await request("removeTeammate", { id: "nobody" })).status).toBe(404);
+  expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toEqual(["ada", "lin", "temp"]);
+
+  expect(await api("removeTeammate", { id: "lin" })).toEqual({ removed: { id: "lin", name: "LIN" }, workspace: "none" });
+  const state = await api<TeamSnapshot>("team");
+  expect(state.teammates.map((m) => m.id)).toEqual(["ada", "temp"]);
+  expect(state.removed).toEqual([{ id: "lin", name: "LIN", removedAt: expect.any(Number) }]);
+  expect(state.rooms.find((r) => r.id === "forge")!.members).toEqual(["ada"]);
+  const room = await api<TeamRoomView>("teamRoom", { id: "forge" });
+  expect(room.messages.some((m) => m.speaker === "lin" && m.speakerName === "LIN")).toBe(true);
+  // Removed is for good: not again, not written to, and its handle is nobody else's.
+  expect((await request("removeTeammate", { id: "lin" })).status).toBe(410);
+  expect((await request("directTeammate", { id: "lin" })).status).toBe(410);
+  expect((await request("saveTeammate", { id: "lin", name: "Lin again" })).status).toBe(409);
+  // It is on record that you did it.
+  const { entries } = await api<{ entries: LedgerEntry[] }>("ledger");
+  expect(entries.find((e) => e.resource === "team" && e.class === "delete")).toMatchObject({ target: "worker:lin", verdict: "approved", detail: "it had no workspace" });
+  // And it stays so across a restart.
+  await daemon.stop(); daemon = await start();
+  const again = await api<TeamSnapshot>("team");
+  expect(again.teammates.map((m) => m.id)).toEqual(["ada", "temp"]);
+  expect(again.removed?.map((m) => m.id)).toEqual(["lin"]);
 });

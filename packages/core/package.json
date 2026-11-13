@@ -19,6 +19,7 @@
     "./notify": "./src/notify.ts",
     "./notify-payload": "./src/notify-payload.ts",
     "./pairing": "./src/pairing.ts",
+    "./plain": "./src/plain.ts",
     "./qr": "./src/qr.ts",
     "./request-auth": "./src/request-auth.ts",
     "./secret-scan": "./src/secret-scan.ts",

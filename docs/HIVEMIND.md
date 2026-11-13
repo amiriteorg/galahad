@@ -41,14 +41,14 @@ You do not have to make every worker yourself. Ask in your main conversation ("g
 
 What he makes is bounded, marked and yours to change:
 
-- **Only new workers.** A handle that exists is refused. He cannot edit, pause, re-brief or replace a worker, yours or his own. He does not choose a worker's daily allowance, its look, its harness, its repository or its VM: a new one starts enabled with the standard 40 jobs a day, Galahad's native harness, a seeded avatar, no repository and no VM until its first shell work. A repository is cloned into the worker's VM with your GitHub access, so it stays yours to give in **Edit teammate**.
+- **Only new workers.** A handle that exists is refused, and so is one that belonged to a worker you removed. He cannot edit, pause, re-brief or replace a worker, yours or his own. He does not choose a worker's daily allowance, its look, its harness, its repository or its VM: a new one starts enabled with the standard 40 jobs a day, Galahad's native harness, a seeded avatar, no repository and no VM until its first shell work. A repository is cloned into the worker's VM with your GitHub access, so it stays yours to give in **Edit teammate**.
 - **An allowance of his own.** At most 8 workers a day across Galahad and all his workers together, inside the node's limit of 32; and at most 40 of his own messages into Team a day. Past either, he is told so and says so. Yours are never counted against him, and his messages never take more than half the team queue, so yours always go through.
 - **The same budgets as ever.** A message of his starts a chain with the room's reply allowance, exactly as one of yours does. A worker made in a room spends that room's current chain; nothing it does opens a budget of its own. Every job still draws on its worker's daily allowance.
 - **Honest about whose words they are.** Team shows "made by Galahad" (or by the worker that asked) on the worker, and the CLI listing says the same. Its job is told to it as Galahad's brief, fenced, and never as your instructions. Changing its instructions in **Edit teammate** makes them yours from then on; saving something else about it leaves them his. Who made it stays on record. What he reads back from Team comes to him as data, so a worker's message cannot pass for a line of yours.
-- **No new powers.** A worker he makes has exactly what yours have. The three tools are Galahad's alone: no other agent is offered them over MCP, their routes refuse every other caller whatever scopes it holds, and a loop does not have them. He has them only when the device you are talking to him from may command Team itself (`fleet:admin`): from a device that can only read Team, he cannot change it for you either, and such a device can watch or stop a turn that has these tools but not steer it. A new worker's name is one plain word, never yours or his. Each worker made is a line in the ledger with its handle and role.
+- **No new powers.** A worker he makes has exactly what yours have. The three tools are Galahad's alone: no other agent is offered them over MCP, their routes refuse every other caller whatever scopes it holds, and a loop does not have them. He has them only when the device you are talking to him from may command Team itself (`fleet:admin`): from a device that can only read Team, he cannot change it for you either, and such a device can watch or stop a turn that has these tools but not steer it. A new worker's name is one plain word in one script, never yours or his, and never one that reads like another worker's, however it is spelled. Each worker made is a line in the ledger with its handle and role.
 - **Bank data stays put.** Once bank data is in an answer, he makes and briefs nobody for the rest of it.
 
-Workers answer in Team, in their own time, not inside the answer that briefed them. Ask Galahad later what came of it and he reads the conversation. A worker cannot be removed yet: pause one you do not want, or give it another job.
+Workers answer in Team, in their own time, not inside the answer that briefed them. Ask Galahad later what came of it and he reads the conversation. He cannot remove a worker: that is yours, described under [Removing a worker](#removing-a-worker).
 
 ## Rooms, DMs and bounded coordination
 
@@ -170,17 +170,40 @@ In Team, **Stop and revise** stops the original task and opens an editable copy 
 
 If a job reaches its 15-minute controller limit, or the node stops during it, the work becomes interrupted and its room is held for review. Restarting the controller does not replay interrupted side effects automatically.
 
+### Removing a worker
+
+Pause a worker you may want back. Remove one you do not: removal is for good, and it is yours alone. Galahad has no tool for it, and no agent or node is let through the route, whatever its scopes.
+
+```sh
+bun galahad team remove ada
+bun galahad team remove lin --destroy-workspace
+```
+
+In Team, open the worker's conversation, then **Workspace → Remove teammate**. Both ways ask first; the app has you type the handle. It needs `fleet:admin`.
+
+What removal does:
+
+- **Stops its work first.** The worker is paused, its running job is stopped and its queued jobs are stopped, each saying why. If a running command has not wound down within ten seconds, nothing is removed: the worker stays, paused, and you remove it once that command has ended. A removal that fails later, at its VM, leaves it the same way: here, paused, and still bound.
+- **Takes it out of the team.** It is in no list, takes no message or task, and leaves every shared room. Those rooms go on with their other members.
+- **Keeps what it said.** Its messages stay in their rooms under its name, and its direct conversations are kept, yours with it and any it had with another worker; they are no longer listed and take no new words or tasks, and a reply that was still waiting in one is stopped. `galahad team` names each removed worker with the commands that read them. Its working notes and its record stay in `team.db`. Nothing is erased.
+- **Retires its handle.** `ada` is never used again, by you or by Galahad, so no later worker inherits its conversations, its usage or its provenance in the shared mind. Who made a worker stays on record after its maker is removed.
+- **Destroys its VM, only if you say so.** A worker with a VM is removed only together with it: `--destroy-workspace` at the CLI, or the confirmation in the app, which says so. That is the same owner-approved destruction as **Sandboxes → Destroy**, recorded as the request of the device that asked, and it also needs `sandbox`. Everything in `/work` goes with the VM. Whether there is a VM is asked of its host each time, never assumed from the record: that also finds one that was made just before a crash and never bound. If the host is offline, or its Docker cannot say what is there just now, nothing is removed. A VM that its host says is already gone, or whose node has left the fleet, does not hold the removal up, and the answer says which it was.
+
+Each removal is a line in the ledger that says what became of its VM: destroyed with it, already gone, on a node that had left the fleet, or none. (If the host destroys the VM but cannot remove its retained disk, that is the host's own ledger line, as for any sandbox.) Tasks that were waiting on a removed worker's unfinished task keep waiting: stop or revise them. Removing a worker Galahad made does not give him another to make that day.
+
 ## Persistence and present limits
 
 The shared mind still uses the replicated signed event log. Team's profiles, room history, jobs, allowances, working notes and VM bindings live in **`team.db` in the controller's Galahad home** (`~/.galahad/team.db` by default). That database is not replicated through the mind and is not reconstructed by replaying it. Keep using the same controller; another node has its own Team state. A remote VM host does not become a second team controller for those workers.
 
 Active worker presence is projected into SANDBOX under `Galahad · <name>` at the council or forge. Conversation and task contents stay in Team; presence is a view of work, not another store of it.
 
-This implementation provides persistent workers, workers Galahad makes for himself, bounded coordination, task dependencies, parallel progress, VM workspaces and verified task results. Removing a worker, automatic cross-VM file integration, live steering of Team tasks and a complete pull-request/CI-repair loop are not implemented. Browser checks with a mock API, deterministic runtime tests and a credential-free Hermes handshake do not establish a model-backed task running successfully in a live VM. That deployment validation remains separate.
+This implementation provides persistent workers, workers Galahad makes for himself, bounded coordination, task dependencies, parallel progress, VM workspaces and verified task results. Automatic cross-VM file integration, live steering of Team tasks, erasing a removed worker's history and a complete pull-request/CI-repair loop are not implemented. Browser checks with a mock API, deterministic runtime tests and a credential-free Hermes handshake do not establish a model-backed task running successfully in a live VM. That deployment validation remains separate.
 
 ## Rollback without losing work
 
 Pause rooms and workers, let active operations settle, and stop the controller before taking a consistent backup of its team database and workspace disk images or named volumes. The runtime, API/CLI routes and Team UI are additive and can be removed together without changing the replicated mind's event format. Keep `team.db`, VM bindings and workspace data so a compatible controller can recover them later.
+
+A build from before worker removal does not know a removed worker's record: after a rollback to one, removed workers are listed again as paused teammates, and saving one there erases the mark. Leave them paused and unedited until the newer build is back.
 
 **Keep the workspace helper with retention support installed. Do not downgrade it during rollback.** Older cleanup behavior does not understand retained image-backed worker disks. Preserve named volumes separately on hosts without the helper. Do not substitute normal orphan cleanup for an owner-approved workspace deletion.
 
@@ -207,3 +230,29 @@ Coordinated palettes, the redrawn SANDBOX knights and the workers Galahad makes 
 - `bun run typecheck` and `git diff --check` passed.
 
 Not verified: a model-backed worker made by Galahad running in a live VM; real models choosing when to make a worker (the stand-in is scripted); the WebGPU backend; the PWA in a paired browser against a live node. Known limits: a worker cannot be removed; look-alike letters in a made worker's name are not detected; terminal output of `galahad team chat` prints message text as written. No commit, PR or deployment was made.
+
+## Verification — 13 November 2026, later
+
+What LAB-32 left unverified was taken up, and what that found was fixed; then a worker can be removed. Plane LAB-34 to LAB-39.
+
+- Baseline: `GALAHAD_KEYSTORE=file bun run check` passed 2,564 tests with 11 skipped on this Mac, and CI on the Linux runners passed 2,565 with 10 skipped (the 13 November commit).
+- After: `GALAHAD_KEYSTORE=file bun run check` passed 2,625 tests, with 11 skipped and no failures. The skips are the same real Docker/workspace and live Linux process-group tests. `GALAHAD_KEYSTORE=file bun run bench --ci` passed all 356 metrics in 7 suites with no quality metric regressed and none slower; no baseline was updated.
+- **Workers never appeared in the SANDBOX.** The page's reader of the node's stream took only an agent's label for a partner's name, so a worker ("Galahad · Ada") was refused, and one unreadable partner drops the whole list: no knight was ever drawn, and other agents' figures went while a worker was present. The renderer's tests fed it directly and the daemon's tests read the hub directly; nothing crossed between them. The daemon test now reads the node's hello through the page's own reader, and failed until the reader was fixed (LAB-34). A partner with an id carries a name to show, cleaned; without one its name is still a label.
+- **Terminal text** (LAB-36): tests first. What a model writes is printed plain in `galahad team`, `ask`, `turn watch`, `turns`, `quests`, `world`, `world review` and `world --logs`; a message's later lines are indented, and at a terminal lines are folded inside its width. The other CLI commands were not audited.
+- **Look-alike names** (LAB-37): tests first. One script from a fixed list, nothing undrawn, and no name that would be taken for a reserved one or another worker's. The table is 140 letters, not Unicode's whole list.
+- **Removing a worker** (LAB-38): tests first at each layer: the contract, the store, the service, a real daemon without a VM, a real daemon with a stand-in Docker (a device without `sandbox`, a fleet node, Docker that cannot say, a VM already gone, a VM made but never bound, a node that left the fleet), the CLI and the page's helpers.
+- **The browser benchmark** (LAB-39): its result was not a scorecard (`at` and `seed` were strings, and a metric could carry `n: 0`), shown by a probe against the schema, and its runner assumed Windows. `bench/browser/card.ts` now builds and checks the scorecard, with tests. One quick load ran here on macOS with Chrome over WebGL2: exit 0, 16 metrics, readable by the scorecard. That shows the runner works there, and nothing about speed.
+- An independent read-only review of all of the above raised eleven points: one high, four medium, six low. Fixed, each with a test: a host whose Docker could not answer was read as "its VM is gone" (the removal went through and said "destroyed" while the VM stayed); the answer and ledger said "destroyed" whenever a binding had existed; a VM made but never bound survived its worker; look-alikes in the other case, Latin letters with hooks and bars, hardly-drawn letters, scripts drawn like Latin capitals and three scripts in one name; `quests`, `turns`, `world review` and `world --logs` still printing raw text; a reserved handle from an older database throwing after it was retired; a controller that began to stop after the VM was destroyed leaving the worker bound; a removed worker's conversation with another worker still taking replies and tasks; a line padded to the terminal's edge reaching the margin; a line break split between two pieces of a streamed answer. Left as they were: one unreadable partner still drops the page's whole list (as before this work); joiners are removed from plain text, which costs joined emoji and Persian their joining; a build from before removal shows removed workers as paused (noted under Rollback).
+
+- **The app in a real browser against a live node** (LAB-35): a harness, kept outside the repository, starts a throwaway node on loopback with a temporary home and a scripted stand-in model, and drives headless Chrome 156 over the DevTools protocol. Its last run on this tree: 45 checks, all passed. What it does:
+  - Pairs through the real invite, and approves only after the six-digit code on the page equals the node's.
+  - In Team, through the page's own controls: makes two workers, writes to one and reads its reply, makes a room and reads a reply from each, edits an avatar (the accent follows the armor), and removes a worker (the confirmation stays locked until its handle is typed; the node then lists it as removed).
+  - Opens the SANDBOX with both workers at work, on WebGL2 and on WebGPU (an Apple Metal adapter, not a fallback): the page's model has them with id, avatar and expression, their knights are drawn (counted by draw calls and looked at in screenshots), the look selector goes to them, and an agent over MCP shows beside them as a squire.
+- That check's first run failed four checks, for three defects of the app, each then fixed with a test that failed first:
+  - A Team conversation's address lost its room on reload (the shell tidied `#/team?room=…` to `#/team`).
+  - The handle field's `pattern` was not valid as a browser compiles it (with the `v` flag), so the field was never checked and the console said so on every save; `apps/web/src/patterns.test.ts` now holds every field's pattern to that.
+  - Knights walked on the spot at the foot of the keep's stairs when the page opened with Galahad already somewhere the keep stood in the way of, since there were no footsteps of his to follow; a figure that makes no headway for three seconds and is still far from its place is now put there.
+
+Seen in that browser and not changed: the "Teammate created" notice lies over the composer's Send button for about four seconds (Enter still sends); a partner standing among the Microducks is not named under the pointer, since the robots are asked first; the look selector's foot line is cut short; while workers think their figures are sent to the council table but Galahad keeps to his own day.
+
+Not verified: the removal's VM path against real Docker, Kata or a second host (a stand-in Docker on one node; a host that is offline was not exercised by a test); removing a worker that has a VM through the page; worker tasks and their faces in a browser ("working", "pleased", "concerned" need a VM host; only "thinking" was seen); a phone's layout, the dark scheme and reduced motion in that browser; how any of the look-alikes are drawn by real fonts; a real terminal emulator; a model-backed worker in a live VM; real models choosing when to make a worker; six knights measured in the browser benchmark. No commit or deployment was made for this work.
