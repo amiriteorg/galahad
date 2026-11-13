@@ -12,8 +12,9 @@
  *   --profile-load=<file>   a sampled CPU profile of each load's first seconds, every function's own time with its callers
  *   --out=<file>     where the scorecard's JSON goes (default bench/out/world-scale.json; the raw results beside it)
  *
- * It starts a throwaway node on a temp home (never ~/.galahad, never a service), opens the SANDBOX in headless
- * Edge over CDP, paired as a client, and loads the world once per configuration (`?trace=1&tier=…&webgl=…&animals=…
+ * It starts a throwaway node on a temp home (never ~/.galahad, never a service), opens the SANDBOX in a headless
+ * browser over CDP (the one EDGE or GALAHAD_BROWSER names, else Edge or Chrome where the platform keeps them),
+ * paired as a client, and loads the world once per configuration (`?trace=1&tier=…&webgl=…&animals=…
  * &reach=…&plants=…`: apps/web/src/world/bench.ts), then measures each scene of that load in windows of a few
  * seconds, several times, and keeps the median and the spread (the machine is shared: one window proves little).
  *
@@ -44,7 +45,7 @@
  * No phone is measured: "phone" is the phone's size and pixel ratio (and touch) in this desktop browser, on the
  * low and medium tiers, with the CPU slowed four times where it says so. The GPU here is a desktop's.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { routes } from "../../packages/core/src/index.ts";
@@ -52,11 +53,16 @@ import { foundFleet, MindStore } from "../../packages/mind/src/index.ts";
 import { kernel } from "../../packages/node/src/compute/bench.ts";
 import { startDaemon } from "../../packages/node/src/daemon.ts";
 import { Home } from "../../packages/node/src/home.ts";
+import type { ScoreMetric } from "../../packages/core/src/scorecard.ts";
+import { browserCandidates, metricOf, SEEDS, worldScaleCard } from "./card.ts";
 
 const REPO = resolve(import.meta.dir, "../..");
-const EDGE = process.env.EDGE ?? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
-/** The world's own seed (terrain.ts' SEED) and the ecosystem's (fauna.ts): every run sees the same land and the same animals' dice. */
-const SEED = "land 0x6a1a4ad (relief.ts' SEED), ecosystem 0x5eed (fauna.ts)";
+/** The browser it drives: the one you name (EDGE, or GALAHAD_BROWSER), else Edge or Chrome where this platform keeps them (card.ts). */
+const EDGE = process.env.EDGE ?? process.env.GALAHAD_BROWSER ?? browserCandidates(process.platform, {}).find((path) => existsSync(path)) ?? "";
+if (!EDGE) {
+  console.error("world-scale: no browser to drive. Set EDGE (or GALAHAD_BROWSER) to Edge's or Chrome's executable.");
+  process.exit(2);
+}
 
 /**
  * A sampled profile's functions, by the kind of work they do: each sample goes to the nearest function up its
@@ -1012,8 +1018,8 @@ try {
       b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
       await Bun.sleep(1500);
     } catch {}
-    // The whole tree, by its own pid: killing only the launcher leaves Edge's children running.
-    Bun.spawnSync(["taskkill", "/PID", String(browserPid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
+    // The whole tree, by its own pid: on Windows, killing only the launcher leaves Edge's children running.
+    if (process.platform === "win32") Bun.spawnSync(["taskkill", "/PID", String(browserPid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
     browser.kill();
     await browser.exited;
   }
@@ -1029,25 +1035,18 @@ try {
     }
   }
 }
-writeOut();
+const written = writeOut();
 const loud = results.filter((r) => r.quiet < QUIET);
 console.log(`world-scale: ${results.length} scenes measured in ${Math.round((Date.now() - startedAt) / 60000)} min; ${problems.length} problem(s); ${loud.length} measured on a busy machine and scaled${loud.length ? ` (${loud.slice(0, 6).map((r) => `${r.id} at ${r.quiet}`).join(", ")}${loud.length > 6 ? ", …" : ""})` : ""}`);
 for (const p of problems.slice(0, 20)) console.log(`  ! ${p}`);
 console.log(`  ${OUT}`);
-process.exit(0);
+// A result the scorecard cannot read is a failed run, said here and not left for `bun run bench` to find.
+if (!written) console.error("world-scale: the scorecard was not written (see above); only the raw results were.");
+process.exit(written ? 0 : 1);
 
 // ---------- what's written ----------
 
-interface Metric {
-  id: string;
-  value: number;
-  unit: string;
-  kind: "quality" | "speed";
-  better: "higher" | "lower";
-  spread?: number;
-  n?: number;
-  note?: string;
-}
+type Metric = ScoreMetric;
 
 /** Where along a curve (x rising) a value first passes `limit`: between two measured points, in proportion (on a log scale of x); null if it never does, the first x if it already has. */
 function crossing(points: { x: number; y: number }[], limit: number): { x: number; beyond: boolean } | null {
@@ -1064,11 +1063,15 @@ function crossing(points: { x: number; y: number }[], limit: number): { x: numbe
   return { x: p[p.length - 1]!.x, beyond: true };
 }
 
-function writeOut(): void {
+/** Writes the scorecard and the raw results beside it; false when the scorecard could not be made (the raw results are written all the same). */
+function writeOut(): boolean {
   // (Built again each time: the best the page's loop has done may have risen since a scene was measured.)
   results = taken.map(build);
   const metrics: Metric[] = [];
-  const add = (id: string, value: number, unit: string, better: Metric["better"], extra: Partial<Metric> = {}): void => void (Number.isFinite(value) && metrics.push({ id, value: round(value), unit, kind: "speed", better, ...extra }));
+  const add = (id: string, value: number, unit: string, better: Metric["better"], extra: Partial<Pick<Metric, "n" | "note" | "spread">> = {}): void => {
+    const metric = metricOf(id, value, unit, better, extra);
+    if (metric) metrics.push(metric);
+  };
   for (const r of results) {
     const n = r.windows;
     add(`${r.id}.cpu.p50`, r.work.p50, "ms", "lower", { n });
@@ -1117,11 +1120,19 @@ function writeOut(): void {
     add("bundle.world.gzip", bundle.gzip, "bytes", "lower");
     add("bundle.world.brotli", bundle.brotli, "bytes", "lower");
   }
-  const head = { suite: "world-scale", commit: commit(), at: new Date().toISOString(), seed: SEED, machine: { name: os.hostname(), calibration: Math.round(calibration), cores: os.cpus().length } };
+  const head = { suite: "world-scale", commit: commit(), at: Date.now(), machine: { name: os.hostname(), calibration: Math.round(calibration), cores: os.cpus().length } };
   const noisy = results.filter((r) => r.quiet < QUIET).map((r) => r.id);
   mkdirSync(dirname(OUT), { recursive: true });
-  writeFileSync(OUT, `${JSON.stringify({ ...head, metrics }, null, 1)}\n`);
-  writeFileSync(OUT.replace(/\.json$/, ".raw.json"), `${JSON.stringify({ ...head, mode: FULL ? "full" : "quick", capped: CAPPED, windows: WINDOWS, seconds: SECONDS, bundle, curves, problems, best: Math.round(best), noisy, results }, null, 1)}\n`);
+  // Checked against the scorecard's contract before it is written (card.ts): what `bun run bench` reads, it can read.
+  let ok = true;
+  try {
+    writeFileSync(OUT, `${JSON.stringify(worldScaleCard(head, metrics), null, 1)}\n`);
+  } catch (error) {
+    ok = false;
+    console.error(`world-scale: this result is not a scorecard: ${String((error as Error).message ?? error).slice(0, 400)}`);
+  }
+  writeFileSync(OUT.replace(/\.json$/, ".raw.json"), `${JSON.stringify({ ...head, seeds: SEEDS, mode: FULL ? "full" : "quick", capped: CAPPED, windows: WINDOWS, seconds: SECONDS, bundle, curves, problems, best: Math.round(best), noisy, results }, null, 1)}\n`);
+  return ok;
 }
 
 function commit(): string {
