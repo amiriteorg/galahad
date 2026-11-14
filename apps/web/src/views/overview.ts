@@ -76,7 +76,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
           const load = presence && caps?.cores ? Math.min(1, presence.load / (presence.cores || caps.cores)) : null;
           return h(
             "a",
-            { class: "item center", href: "#/fleet", style: "text-decoration:none;color:inherit" },
+            { class: "item center", href: "#/fleet" },
             h("span", { class: "avatar" }, icon(caps?.hasBattery ? "laptop" : "server", { size: 16 })),
             h(
               "div",

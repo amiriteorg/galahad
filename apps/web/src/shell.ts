@@ -4,13 +4,13 @@ import type { Ctx, NavigateOptions, Route, View } from "./context.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import { startLive } from "./live.ts";
 import { shortId } from "./lib/text.ts";
-import { lastRoute, rememberRoute, setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
+import { setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
-import { button, count, dot, kbd, retryFailed } from "./ui/controls.ts";
+import { button, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
-import { cx, h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
+import { h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { emblem } from "./ui/emblem.ts";
-import { icon, type IconName } from "./ui/icons.ts";
+import { icon } from "./ui/icons.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
@@ -20,6 +20,7 @@ import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
 import { chatActivityPill, chatsForPalette, chatView, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
+import { homeOf, type Place, placesFor, primaryOf, tabOf } from "./lib/nav.ts";
 import { keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
@@ -32,6 +33,7 @@ import { loopsView, openLoopSheet } from "./views/loops.ts";
 import { memoryView, openRemember } from "./views/memory.ts";
 import { skillsView } from "./views/skills.ts";
 import { modelsView } from "./views/models.ts";
+import { moreView } from "./views/more.ts";
 import { overviewView } from "./views/overview.ts";
 import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
@@ -40,46 +42,30 @@ import { teamView } from "./views/team.ts";
 import { landingHash, teamHash, teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
-interface RouteSpec {
-  id: Route;
-  label: string;
-  icon: IconName;
-  group: "main" | "mind" | "bodies" | "keys";
-  scope: AnyScope | null;
-  /** Also listed (read-only) for devices holding this scope. */
-  alsoFor?: AnyScope;
-  key: string;
-  keywords: string[];
-  view: View;
-}
-
-const ROUTES: RouteSpec[] = [
-  { id: "overview", label: "Overview", icon: "overview", group: "main", scope: null, key: "o", keywords: ["home", "dashboard", "health"], view: overviewView },
-  { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
-  { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
-  { id: "team", label: "Squires", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["squires", "team", "teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
-  { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
-  { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
-  { id: "skills", label: "Skills", icon: "scroll", group: "mind", scope: "mind:read", key: "u", keywords: ["learn", "learned", "how", "notes", "playbook", "procedures", "know-how", "approve", "proposed", "library"], view: skillsView },
-  { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
-  { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
-  { id: "artifacts", label: "Artifacts", icon: "archive", group: "mind", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], view: artifactsView },
-  { id: "archive", label: "Archive", icon: "library", group: "mind", scope: "mind:read", key: "k", keywords: ["kept", "forever", "ideas", "lessons", "models", "teachings", "semantic", "search", "vector", "history"], view: archiveView },
-  { id: "findings", label: "Findings", icon: "flask", group: "mind", scope: "mind:read", key: "e", keywords: ["investigations", "experiments", "hypotheses", "science", "conclusions", "predictions"], view: findingsView },
-  { id: "trials", label: "Trials", icon: "gauge", group: "mind", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], view: trialsView },
-  { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
-  // Owner devices see Sandboxes even before they hold the new scope, so the feature can be found;
-  // the page explains what's missing instead of offering actions that would be refused.
-  { id: "sandboxes", label: "Sandboxes", icon: "sandbox", group: "bodies", scope: "sandbox", alsoFor: "fleet:admin", key: "s", keywords: ["containers", "vm", "console"], view: sandboxesView },
-  { id: "vault", label: "Vault", icon: "vault", group: "keys", scope: "vault:read", key: "v", keywords: ["keys", "secrets", "api key"], view: vaultView },
-  { id: "models", label: "Models", icon: "models", group: "keys", scope: "mind:read", key: "l", keywords: ["providers", "roster", "llm"], view: modelsView },
-  { id: "bank", label: "Bank", icon: "bank", group: "keys", scope: "bank:read", key: "b", keywords: ["lunar", "accounts", "balances", "transactions", "enable banking", "money", "finance"], view: bankView },
-  { id: "connectors", label: "Connectors", icon: "plug", group: "keys", scope: "mind:read", key: "n", keywords: ["github", "cloudflare", "home assistant", "integrations", "services", "tools"], view: connectorsView },
-  { id: "settings", label: "Settings", icon: "settings", group: "keys", scope: null, key: ",", keywords: ["preferences", "theme", "device"], view: settingsView },
-];
-
-const GROUP_LABEL: Record<RouteSpec["group"], string | null> = { main: null, mind: "Mind", bodies: "Bodies", keys: "Keys & models" };
-const MOBILE_PRIMARY: Route[] = ["chat", "team", "inbox", "overview", "fleet", "activity", "memory"];
+/** Each place's page (the places themselves, and where each is reached from, are lib/nav.ts). */
+const VIEWS: Record<Route, View> = {
+  chat: chatView,
+  team: teamView,
+  inbox: inboxView,
+  more: moreView,
+  overview: overviewView,
+  projects: projectsView,
+  loops: loopsView,
+  activity: activityView,
+  artifacts: artifactsView,
+  trials: trialsView,
+  memory: memoryView,
+  skills: skillsView,
+  archive: archiveView,
+  findings: findingsView,
+  fleet: fleetView,
+  sandboxes: sandboxesView,
+  vault: vaultView,
+  models: modelsView,
+  connectors: connectorsView,
+  bank: bankView,
+  settings: settingsView,
+};
 
 export interface ShellBase {
   api: Api;
@@ -91,8 +77,10 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const lifetime = new AbortController();
   const scopes = new Set<AnyScope>(base.whoami.scopes);
   const can = (scope: AnyScope) => scopes.has(scope);
-  const visible = ROUTES.filter((r) => r.scope === null || can(r.scope) || (r.alsoFor && can(r.alsoFor)));
-  const mobileTabs = MOBILE_PRIMARY.filter((id) => visible.some((r) => r.id === id)).slice(0, 4);
+  const visible = placesFor(can);
+  // Three places and More, on the tab bar and in the sidebar alike; the app opens on the first.
+  const tabs = [...primaryOf(visible), visible.find((r) => r.id === "more")!];
+  const home = homeOf(visible);
 
   let current: Route | null = null;
   let viewScope: Scope | null = null;
@@ -124,7 +112,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     can,
     live,
     navigate(route, opts = {}) {
-      const target = visible.find((r) => r.id === route) ? route : "overview";
+      const target = visible.find((r) => r.id === route) ? route : home;
       pending = { route: target, opts };
       const hash = target === "team" ? teamHash(opts) : `#/${target}`;
       if (location.hash === hash) render();
@@ -143,7 +131,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topTitle = h("span", { class: "title" });
   const navLinks = new Map<Route, HTMLAnchorElement[]>();
 
-  const link = (spec: RouteSpec, className: string, content: (HTMLElement | SVGElement | string | null)[]): HTMLAnchorElement => {
+  const link = (spec: Place, className: string, content: (HTMLElement | SVGElement | string | null)[]): HTMLAnchorElement => {
     const a = h("a", { class: className, href: `#/${spec.id}`, title: className === "nav-item" ? `${spec.label}  (G then ${spec.key.toUpperCase()})` : null }, ...content);
     navLinks.set(spec.id, [...(navLinks.get(spec.id) ?? []), a]);
     return a;
@@ -157,17 +145,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   };
 
   // Sidebar (desktop)
-  const navChildren: HTMLElement[] = [];
-  let lastGroup: RouteSpec["group"] | null = null;
-  for (const spec of visible.filter((r) => r.id !== "settings")) {
-    if (spec.group !== lastGroup) {
-      const label = GROUP_LABEL[spec.group];
-      if (label) navChildren.push(h("div", { class: "nav-sep", "aria-hidden": "true" }), h("div", { class: "nav-label" }, label));
-      lastGroup = spec.group;
-    }
-    navChildren.push(link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
-  }
-  const settingsSpec = ROUTES.find((r) => r.id === "settings")!;
+  const navChildren = tabs.map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
   const collapse = button(sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar", {
     variant: "ghost",
     size: "sm",
@@ -184,7 +162,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, h("a", { class: "wordmark grow", href: "#/overview", "aria-label": "Galahad, overview" }, emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
+    h("div", { class: "sidebar-head" }, h("a", { class: "wordmark grow", href: `#/${home}`, "aria-label": "Galahad" }, emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
     h(
       "button",
       { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
@@ -193,7 +171,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
     ),
     h("nav", { class: "nav", "aria-label": "Sections" }, ...navChildren),
-    h("div", { class: "sidebar-foot" }, link(settingsSpec, "nav-item", [icon("settings"), h("span", { class: "label" }, "Settings")]), deviceChip),
+    h("div", { class: "sidebar-foot" }, deviceChip),
   );
 
   // Top bar
@@ -201,7 +179,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topbar = h(
     "header",
     { class: "topbar" },
-    h("a", { class: "brand-mini", href: "#/overview", "aria-label": "Galahad, overview" }, emblem({ size: 24 })),
+    h("a", { class: "brand-mini", href: `#/${home}`, "aria-label": "Galahad" }, emblem({ size: 24 })),
     topTitle,
     h(
       "div",
@@ -213,17 +191,11 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   );
 
   // Tab bar (phones)
-  const moreTab = h("button", { class: "tab", type: "button", "aria-haspopup": "dialog" }, icon("more"), h("span", {}, "More"));
   const tabbar = h(
     "nav",
     { class: "tabbar", "aria-label": "Sections" },
-    ...mobileTabs.map((id) => {
-      const spec = visible.find((r) => r.id === id)!;
-      return link(spec, "tab", [icon(spec.icon), h("span", {}, spec.id === "overview" ? "Home" : spec.label), spec.id === "inbox" ? inboxBadge() : null]);
-    }),
-    moreTab,
+    ...tabs.map((spec) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), spec.id === "inbox" ? inboxBadge() : null])),
   );
-  moreTab.addEventListener("click", () => openMore());
 
   const shell = h("div", { class: "shell" }, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar);
   replace(root, shell);
@@ -298,7 +270,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   }
 
   function render(): void {
-    const route = routeFromHash() ?? "overview";
+    const route = routeFromHash() ?? home;
     const spec = visible.find((r) => r.id === route)!;
     const opts = pending?.route === route ? pending.opts : route === "team" ? teamLocation(location.hash) : {};
     pending = null;
@@ -307,15 +279,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     const changed = current !== route;
     current = route;
     shell.dataset.route = route;
-    rememberRoute(route);
-    for (const [id, els] of navLinks) for (const el of els) id === route ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
-    if (mobileTabs.includes(route)) moreTab.removeAttribute("aria-current");
-    else moreTab.setAttribute("aria-current", "page");
+    // A place reached from More keeps More marked.
+    for (const [id, els] of navLinks) for (const el of els) id === tabOf(route) ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
     topTitle.textContent = spec.label;
     const n = live.inboxCount.value;
     document.title = `${n ? `(${n}) ` : ""}${spec.label} · Galahad`;
     replace(main);
-    spec.view(main, ctx, { scope: viewScope, opts });
+    VIEWS[route](main, ctx, { scope: viewScope, opts });
     // The top bar names the page only once the page's own heading has scrolled away.
     titleObserver?.disconnect();
     const heading = main.querySelector<HTMLElement>(".page-head h1");
@@ -351,42 +321,6 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     );
   }
 
-  // ---------- More sheet (phones) ----------
-  function openMore(): void {
-    const items = visible.filter((r) => !mobileTabs.includes(r.id));
-    const sheet = openSheet({
-      title: "More",
-      body: h(
-        "nav",
-        { class: "stack tight", "aria-label": "More sections" },
-        ...items.map((spec) =>
-          h(
-            "a",
-            { class: cx("nav-item"), href: `#/${spec.id}`, style: "height:48px", "aria-current": spec.id === current ? "page" : null, onclick: () => sheet.close() },
-            icon(spec.icon),
-            h("span", {}, spec.label),
-            spec.id === "inbox" && live.inboxCount.value ? count(live.inboxCount.value) : null,
-          ),
-        ),
-        h("hr", { class: "divider" }),
-        h(
-          "button",
-          {
-            class: "nav-item",
-            type: "button",
-            style: "height:48px;border:0;background:none;width:100%",
-            onclick: () => {
-              sheet.close();
-              setTimeout(() => ctx.palette(), 50);
-            },
-          },
-          icon("search"),
-          h("span", {}, "Search and commands"),
-        ),
-      ),
-    });
-  }
-
   // ---------- command palette ----------
   const paletteSource = {
     commands(): Command[] {
@@ -395,7 +329,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         label: spec.label,
         group: "Go to",
         icon: spec.icon,
-        keywords: spec.keywords,
+        keywords: [...spec.keywords],
         hint: `G ${spec.key.toUpperCase()}`,
         run: () => ctx.navigate(spec.id),
       }));
@@ -497,7 +431,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
 
   // ---------- go ----------
   chatFromAddress();
-  const initial = routeFromHash() ?? (visible.find((r) => r.id === lastRoute())?.id ?? "overview");
+  const initial = routeFromHash() ?? home;
   // (Tidied to its page; Team's address keeps its room and tab, which is what a reload comes back to.)
   const landing = landingHash(initial, location.hash);
   if (location.hash !== landing) history.replaceState(null, "", landing);

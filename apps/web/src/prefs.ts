@@ -1,9 +1,8 @@
 /*
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
- * last page, sidebar state, the last chat role, what Enter does while Galahad is
- * working, and which kept chat you had open (its id only). Never secrets, never a
- * word of a chat, never anything else from the server. boot.ts reads the same keys
- * before paint.
+ * sidebar state, the last chat role, what Enter does while Galahad is working, and
+ * which kept chat you had open (its id only). Never secrets, never a word of a chat,
+ * never anything else from the server. boot.ts reads the same keys before paint.
  */
 
 export type ThemePref = "system" | "light" | "dark";
@@ -12,7 +11,6 @@ export type MotionPref = "system" | "reduce" | "full";
 const KEYS = {
   theme: "galahad:theme",
   motion: "galahad:motion",
-  route: "galahad:last-route",
   sidebar: "galahad:sidebar",
   role: "galahad:chat-role",
   enter: "galahad:chat-enter",
@@ -39,6 +37,13 @@ function write(key: PrefKey, value: string | null): void {
 }
 
 const root = () => document.documentElement;
+
+// The app opens on Chat, so the page you were last on is no longer kept: what an earlier version wrote goes.
+try {
+  localStorage.removeItem("galahad:last-route");
+} catch {
+  /* storage unavailable: there is nothing to remove */
+}
 
 export function themePref(): ThemePref {
   const value = read("theme");
@@ -85,8 +90,6 @@ export function setSidebarCollapsed(collapsed: boolean): void {
   else delete root().dataset.sidebar;
 }
 
-export const lastRoute = (): string | null => read("route");
-export const rememberRoute = (route: string): void => write("route", route);
 export const lastRole = (): string | null => read("role");
 export const rememberRole = (role: string): void => write("role", role);
 
