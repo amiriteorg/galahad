@@ -29,7 +29,14 @@ const afterScript = async (path: string, times = 1): Promise<string> => {
 };
 
 test("the image puts tools on the PATH (or there is nothing here to hold together)", () => {
-  expect(imagePath("BASE").split(":")).toEqual(["/opt/engram/bin", "/opt/opencode/bin", "/opt/bun/bin", "BASE"]);
+  expect(imagePath("BASE").split(":")).toEqual(["/opt/engram/bin", "/opt/opencode/bin", "/opt/bun/bin", "BASE", "/work/.local/bin"]);
+});
+
+test("what a squire's VM has installed for itself (~/.local/bin, kept with its workspace) is found, and last: it can't stand in for a tool the image or the system has", async () => {
+  // HIVEMIND.md tells the owner to install a vendor's coding tool there; Claude Code's installer puts it there.
+  expect(dockerfile).toContain("ENV HOME=/work\n");
+  expect(imagePath("BASE").split(":").at(-1)).toBe("/work/.local/bin");
+  expect((await afterScript(PROFILE_PATH)).split(":").at(-1)).toBe("/work/.local/bin");
 });
 
 test("a login shell in the squires' image has every tool a plain shell there has, in the same order", async () => {

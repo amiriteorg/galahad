@@ -52,4 +52,6 @@ RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash s
 USER 1000:1000
 WORKDIR /work
 ENV HOME=/work
+# What is installed in a VM for itself (a vendor's coding tool) is found, after everything above.
+ENV PATH=$PATH:/work/.local/bin
 CMD ["sleep", "infinity"]

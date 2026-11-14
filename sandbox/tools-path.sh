@@ -10,4 +10,10 @@ for dir in /opt/bun/bin /opt/opencode/bin /opt/engram/bin; do
   esac
 done
 unset dir
+# What was installed in this VM for itself (a vendor's coding tool, as its vendor documents), kept with the
+# workspace. Last: nothing put there can stand in for a tool the image or the system has.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) PATH="$PATH:$HOME/.local/bin" ;;
+esac
 export PATH
