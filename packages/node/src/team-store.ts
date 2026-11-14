@@ -114,7 +114,8 @@ export class TeamStore {
     teamText([input.name, input.instructions, input.role, input.repository].filter(Boolean).join("\n"));
     if (this.record(input.id)?.removedAt !== undefined) throw new TeamError(409, "That handle belonged to a squire that was removed. Its history stays its own: choose another handle.");
     const previous = this.teammate(input.id);
-    if (previous?.workspace && input.repository !== undefined && input.repository !== previous.repository) throw new TeamError(409, "This squire's workspace is already bound to its repository. Keep that repository to preserve its work.");
+    // A VM's repository is not changed or taken away under the work that is in it. One that has none may be given its first: nothing there to orphan.
+    if (previous?.workspace && previous.repository && input.repository !== undefined && input.repository !== previous.repository) throw new TeamError(409, "This squire's workspace is already bound to its repository. Keep that repository to preserve its work.");
     if (!previous && this.teammates().length >= TEAM_LIMITS.teammates) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} squires can live on this node.`);
     const at = this.now();
     // This is your own way in: instructions you change here are yours from then on, whoever wrote the ones before.

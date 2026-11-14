@@ -160,7 +160,7 @@ For repository work, set an owner-selected HTTPS GitHub URL on the squire and co
 bun galahad squires add ada --name Ada --repo https://github.com/you/project
 ```
 
-The controller prepares a lease scoped to that repository, then clones it through the read-only GitHub gateway into `/work/repo`. Without a repository a task gets an ordinary directory under `/work/tasks/<task-id>`. With one:
+A squire that has none may be given its first repository at any time, with or without a VM; once its VM is bound to one, that repository is not changed or taken away under the work that is in it. The controller prepares a lease scoped to that repository, then clones it through the read-only GitHub gateway into `/work/repo`. Without a repository a task gets an ordinary directory under `/work/tasks/<task-id>`. With one:
 
 - **It starts from the repository as it is now.** As the task starts, the VM fetches through the same read-only gateway and the task gets a detached worktree of its own from the default branch as fetched. The commit it started from is kept for the task. If the fetch does not come through, the task starts from the clone as it was and its result says so.
 - **Its reviewer is shown the work itself:** the diff of everything since that commit, new files and anything the squire committed included, beside what was run and what the gates printed.

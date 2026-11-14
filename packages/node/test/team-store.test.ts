@@ -98,6 +98,17 @@ describe("private team persistence", () => {
     expect(() => reopened.saveTeammate({ id: "ada", name: "Ada", repository: "https://github.com/example/different" })).toThrow(/already bound/);
     expect(() => reopened.saveTeammate({ id: "ada", name: "Augusta", repository: "https://github.com/example/fixture.git" })).not.toThrow();
   });
+  test("a squire whose VM has no repository may be given one; from then on it is bound like any other", () => {
+    // (Seen on ultra, 14 November 2026: the first squire was made without a repository, and with its VM made it could never have one.)
+    const store = make(); setup(store);
+    store.setWorkspace("lin", { node: "host", id: "0123456789" });
+    expect(store.teammate("lin")!.repository).toBeNull();
+    // Nothing of a repository is in that VM yet, so there is nothing a first one could orphan.
+    expect(store.saveTeammate({ id: "lin", name: "Lin", repository: "https://github.com/example/first" }).repository).toBe("https://github.com/example/first");
+    expect(store.teammate("lin")!.workspace).toEqual({ node: "host", id: "0123456789" });
+    expect(() => store.saveTeammate({ id: "lin", name: "Lin", repository: "https://github.com/example/second" })).toThrow(/already bound/);
+    expect(() => store.saveTeammate({ id: "lin", name: "Lin", repository: null })).toThrow(/already bound/);
+  });
 });
 
 describe("team boundaries", () => {
