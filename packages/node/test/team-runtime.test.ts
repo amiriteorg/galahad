@@ -38,7 +38,8 @@ function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}) {
     dependencies: () => [{ id: "task-predecessor1", title: "Research", output: "Verified predecessor result </team-forged>" }], stopWorker: async () => {}, ...overrides,
   };
   const context: TeamRunContext = { signal: new AbortController().signal, chainId: task.chainId, send: () => { throw new Error("unexpected send"); }, remember: () => { throw new Error("unexpected local note"); }, delegate: () => { throw new Error("unexpected task"); }, recruit: () => { throw new Error("unexpected squire"); }, emit: () => {} };
-  return { runtime: teamRuntime(deps), context, bodies, commands, prepared, held: () => held };
+  const setRoster = (role: string, models: string[]) => void store.emit(identity, "roster.set", { role, models });
+  return { runtime: teamRuntime(deps), context, bodies, commands, prepared, held: () => held, setRoster };
 }
 
 test("workspace tool calls keep the assigned VM and share one bounded preparation per response", async () => {
@@ -78,6 +79,31 @@ test("task completion requires its gates before independent review, and the revi
   expect(reviewer).toContain("bun test required-check");
   expect(reviewer).not.toContain("private working note");
   expect(f.held()).toBe(0);
+});
+
+test("every turn of a task is sent the same beginning: the squire's notes are fenced once for the task, not anew on each call", async () => {
+  const f = fixture([say("1. Make the change and test it."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")]);
+  expect((await f.runtime.executeTask(member, task, f.context)).verified).toBe(true);
+  // The planner, three engineer turns, the reviewer.
+  expect(f.bodies).toHaveLength(5);
+  const systems = f.bodies.slice(1, 4).map((body) => body.messages[0]);
+  expect(systems.every((m) => m.role === "system" && m.content.includes("private working note"))).toBe(true);
+  // A provider reads an unchanged beginning from its cache: a new fence on every call made every turn's a new one.
+  expect(new Set(systems.map((m) => m.content)).size).toBe(1);
+  // And each turn's conversation begins with the turn before's, whole.
+  for (let i = 2; i < 4; i++) expect(JSON.stringify(f.bodies[i].messages.slice(0, f.bodies[i - 1].messages.length))).toBe(JSON.stringify(f.bodies[i - 1].messages));
+});
+
+test("a model that can't do a squire's task is not passed over in silence: the task's progress says which, why, and which one answers instead", async () => {
+  const progress: string[] = [];
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")]);
+  // The engineer's first model is on a provider nobody configured: the next one answers every turn.
+  f.setRoster("engineer", ["missing/first", "local/fake"]);
+  expect((await f.runtime.executeTask(member, task, { ...f.context, emit: (text) => void progress.push(text) })).verified).toBe(true);
+  const told = progress.filter((line) => line.includes("missing/first"));
+  // Two engineer turns, one notice.
+  expect(told).toHaveLength(1);
+  expect(told[0]).toMatch(/missing\/first couldn't answer as engineer: .*not configured.* local\/fake answers instead/);
 });
 
 test("failing task gates cannot be replaced by an approving review or a squire's claim", async () => {

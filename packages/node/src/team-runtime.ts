@@ -97,6 +97,7 @@ function progress(event: QuestEvent): string {
     case "review": return `Review · ${event.verdict}\n${event.notes}`;
     case "thought": return event.text;
     case "submitted": return `Submitted for review · ${event.summary}`;
+    case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     default: return event.type;
   }
 }
@@ -122,14 +123,17 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     const leave = await deps.enter(signal);
     try {
       let text = "", model = "";
+      // The role's models that couldn't answer before one did: the task says so (once each), never passes it over.
+      const skipped: { model: string; error: string }[] = [];
       // (A squire's task is coding work: a coding plan on the role may do it.)
       for await (const event of chat(deps.brain(teammate), { role, messages, signal, context, coding: true })) {
         if (event.type === "text") text += event.text;
         else if (event.type === "model") model = event.ref;
+        else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
         else if (event.type === "error") throw new Error(event.error);
       }
       if (signal.aborted) throw new Error("Stopped");
-      return { text, model };
+      return { text, model, ...(skipped.length ? { skipped } : {}) };
     } finally { leave(); }
   };
 
@@ -246,9 +250,12 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         agent = { driver, models: ready.models, minutes: 12, workdir: root, ...(/^[A-Za-z0-9_.:-]{1,160}$/.test(saved) ? { session: saved } : {}) };
       }
       const inherited = data("Verified predecessor results (file paths belong to their original VM)", deps.dependencies(task));
+      // Fenced once for the task: every turn of its planner and engineer is then sent the same beginning, which a
+      // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
+      const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", "git diff --no-ext-diff --no-textconv HEAD"] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
-        ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : data("Your notes", teammate.memory)),
+        ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
         agentSession: async (id) => {
