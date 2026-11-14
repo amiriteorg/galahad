@@ -632,3 +632,23 @@ test("a squire whose VM has a desktop is told so, and how to operate it; one wit
   expect(await told(true)).toContain("This VM has a desktop: a display (1280 by 800) and a browser, which you operate with the `desktop` command (open an address, read the page as text, take a screenshot, click, type, press keys). `desktop help` lists it.");
   expect(await told(false)).not.toContain("desktop");
 });
+
+test("a squire with a desktop and a model that can see is given its eyes: each command knows which model looks, and the squire is told how to ask it", async () => {
+  const run = async (eyes: string | null) => {
+    const commands: string[] = [];
+    const f = fixture([say("1. Make the change."), say("```sh\ndesktop look \"Where is Sign in?\"\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], {
+      exec: async (_m, command) => { commands.push(command); return command === "command -v desktop" ? result({ stdout: "/usr/local/bin/desktop\n" }) : result(); },
+      eyes: () => eyes,
+    });
+    await f.runtime.executeTask(member, task, f.context);
+    return { told: String(f.bodies[1].messages.find((m: any) => m.role === "user").content), ran: plain(plain(commands.find((c) => c.includes("desktop look"))!)) };
+  };
+  const seeing = await run("opencode-go/gpt-6-luna");
+  expect(seeing.ran).toContain("export GALAHAD_EYES='opencode-go/gpt-6-luna' && ");
+  expect(seeing.told).toContain('`desktop look "<question>"` asks a model that can see the screen what is on it, or where something is (it answers a place as x,y, to click).');
+  // No model that sees on the roster: the desktop is still there to read as text, and nothing is promised of looking.
+  const blind = await run(null);
+  expect(blind.ran).not.toContain("GALAHAD_EYES");
+  expect(blind.told).toContain("This VM has a desktop");
+  expect(blind.told).not.toContain("desktop look");
+});

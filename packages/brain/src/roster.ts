@@ -37,6 +37,14 @@ export const ROLES: Record<string, RoleSpec> = {
     defaults: [],
     effort: "low",
   },
+  // A squire's eyes (Computer Use): the model its desktop's `look` puts a screenshot and a question to, through the
+  // gateway, from the squire's own VM. None until you name one: it must take images, and to be clicked on it must
+  // answer a place in the screenshot's own pixels (measured, not assumed: TRIALS.md).
+  eyes: {
+    description: "looks at a squire's screen: says what is on it, and where, in pixels (Computer Use)",
+    defaults: [],
+    effort: "low",
+  },
   // The archive's search by meaning. None until you hire one: a local model (deploy --embedder) keeps
   // the archive on your machines. Its first model is the archive's model (vectors can't be mixed).
   embedder: {

@@ -20,7 +20,7 @@ const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 /** A machine with stand-ins for the display's tools: each writes its name and arguments to `trace`, one line a call. */
-function machine(options: { running?: boolean } = {}) {
+function machine(options: { running?: boolean; env?: Record<string, string> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "galahad-desktop-")); dirs.push(dir);
   const bin = join(dir, "bin"), home = join(dir, "home"), run = join(dir, "run"), trace = join(dir, "trace");
   mkdirSync(bin); mkdirSync(home); mkdirSync(run);
@@ -33,7 +33,7 @@ function machine(options: { running?: boolean } = {}) {
   tool("pgrep", options.running ? "exit 0" : 'grep -q "^chromium" "$TRACE" && exit 0 || exit 1');
   tool("python3", 'echo "Example Domain"; echo "https://example.com/"; echo "This domain is for use in documentation examples."');
   const ask = (...args: string[]) => {
-    const proc = Bun.spawnSync(["sh", script, ...args], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TRACE: trace, GALAHAD_DESKTOP_RUN: run, TMPDIR: run, GALAHAD_DESKTOP_WAIT: "3" } });
+    const proc = Bun.spawnSync(["sh", script, ...args], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TRACE: trace, GALAHAD_DESKTOP_RUN: run, TMPDIR: run, GALAHAD_DESKTOP_WAIT: "3", ...options.env } });
     return { code: proc.exitCode, out: proc.stdout.toString().trim(), err: proc.stderr.toString().trim() };
   };
   const traced = () => (existsSync(trace) ? readFileSync(trace, "utf8").trim().split("\n").filter(Boolean) : []);
@@ -101,6 +101,30 @@ describe("the desktop command", () => {
     expect(refused("dance")).toContain("desktop start");
     // With nothing asked, it says what it can do.
     expect(m.ask("help").out).toContain("desktop click <x> <y>");
+  });
+});
+
+describe("looking at the screen", () => {
+  test("look takes a screenshot and puts the question to the model that was named for this VM, through the gateway it was given", () => {
+    const m = machine({ running: true, env: { GALAHAD_EYES: "opencode-go/gpt-6-luna", GALAHAD_GATEWAY: "http://gateway.test/gw", GALAHAD_TOKEN: "gw_test-only" } });
+    expect(m.ask("look", "Where is the Sign in button?")).toMatchObject({ code: 0 });
+    const asked = m.traced().filter((line) => /^(scrot|python3) /.test(line));
+    // A fresh picture of the screen (a JPEG: a tenth of the size), then the question with it.
+    expect(asked[0]).toMatch(/^scrot \[-o\] \[.*\/look-\d+\.jpg\]$/);
+    expect(asked[1]).toMatch(/^python3 \[-\] \[look\] \[.*\/look-\d+\.jpg\] \[Where is the Sign in button\?\]$/);
+    // Nothing of the token is ever an argument (the script reads it from its environment).
+    expect(m.traced().join("\n")).not.toContain("gw_test-only");
+  });
+
+  test("with no model that can see named for this VM, or no question, look says so and touches nothing", () => {
+    const blind = machine({ running: true });
+    const none = blind.ask("look", "What is on the screen?");
+    expect(none.code).toBe(3);
+    expect(none.err).toContain("no model that can see is set for this VM");
+    expect(blind.traced().filter((line) => /^(scrot|python3) /.test(line))).toEqual([]);
+    const m = machine({ running: true, env: { GALAHAD_EYES: "opencode-go/gpt-6-luna", GALAHAD_GATEWAY: "http://gateway.test/gw", GALAHAD_TOKEN: "gw_test-only" } });
+    expect(m.ask("look").code).toBe(2);
+    expect(m.ask("help").out).toContain('desktop look "<question>"');
   });
 });
 

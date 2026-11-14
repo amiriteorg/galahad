@@ -417,6 +417,23 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   // Made again with a desktop: the same VM, from the desktop image.
   const desked = (await api<{ workspace: SandboxView }>("remakeTeammate", { id: "una", desktop: true })).workspace;
   expect(desked).toMatchObject({ id: kept.id, image: "galahad/desktop:1" });
+  // You look at her desktop from the app and click on it: a picture comes back, and the click is in the ledger.
+  const answered = docker.onExec;
+  docker.onExec = (container, command) => (command.join(" ").includes("base64 -w0") ? { code: 0, stdout: "/9j/4AAQ" } : (answered?.(container, command) ?? { code: 0, stdout: "" }));
+  try {
+    const seen = await api<{ shot: { mediaType: string; data: string }; width: number; height: number }>("teamDesktop", { id: "una" });
+    expect(seen).toEqual({ shot: { mediaType: "image/jpeg", data: "/9j/4AAQ" }, width: 1280, height: 800 });
+    const asked = docker.execs.length;
+    await api("teamDesktop", { id: "una", action: { do: "type", text: "a secret you typed" } });
+    await api("teamDesktop", { id: "una", action: { do: "click", x: 10, y: 20 } });
+    expect(docker.execs.slice(asked).map((e) => e.cmd.slice(0, 2).join(" "))).toEqual(["python3 -c", "sh -c", "desktop click", "sh -c"]);
+    const lines = (await api<{ entries: LedgerEntry[] }>("ledger")).entries.filter((e) => e.resource === "sandbox.desktop").map((e) => e.detail);
+    expect(lines).toContain("click 10 20 left");
+    expect(lines).toContain("type (18 characters, not recorded)");
+    expect(JSON.stringify(lines)).not.toContain("a secret you typed");
+    await expect(api("teamDesktop", { id: "una", action: { do: "open", address: "javascript:alert(1)" } })).rejects.toThrow(/400/);
+    await expect(api("teamDesktop", { id: "vmless-not-yet" })).rejects.toThrow(/404/);
+  } finally { docker.onExec = answered; }
   // A squire with no VM has none to make again, and a squire that isn't there is not found.
   await api("saveTeammate", { id: "vmless", name: "VMLESS", role: "engineer" });
   await expect(api("remakeTeammate", { id: "vmless" })).rejects.toThrow(/424 .*no VM yet/);

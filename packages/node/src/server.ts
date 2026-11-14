@@ -1462,6 +1462,16 @@ export function createApp(ctx: AppContext) {
       exec: execTeam, prepare: prepareTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
+      // A squire's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a VM's token
+      // covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
+      eyes: (member) => {
+        const covered = leased.get(member.id) ?? [];
+        for (const ref of roster(ctx.store).eyes?.models ?? []) {
+          const at = ref.indexOf("/");
+          if (at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at))) return ref;
+        }
+        return null;
+      },
       // What a task changed in its repository, kept on the VM's host as any sandbox's work is (the controller asks; a squire can't).
       keep: async (member, path, label) => {
         const bound = teamMember(member.id).workspace;
@@ -1495,6 +1505,18 @@ export function createApp(ctx: AppContext) {
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
+    teamDesktop: (input, p, req) => {
+      ownerOnly(p);
+      const bound = teamMember(input.id).workspace;
+      if (!bound) throw new HttpError(424, `this squire has no VM yet: galahad squires provision ${input.id} --desktop makes one with a desktop`);
+      return inProcess(p, req.signal).call("teamDesktopOn", { on: bound.node, id: bound.id, quest: armQuest(teammateLabel(input.id)), action: input.action });
+    },
+    teamDesktopOn: (input, p) => {
+      // Yours alone: a squire operates its own desktop from inside its VM, and never another's from outside.
+      if (p.kind === "arm") throw new HttpError(403, "a squire's desktop is watched and taken over by you alone");
+      const { on, ...asked } = input;
+      return onNode(p, on, routes.teamDesktopOn.path, asked, () => ctx.sandbox!.desktop(input.id, input.quest, input.action), { sandbox: input.id });
+    },
     postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
     controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },

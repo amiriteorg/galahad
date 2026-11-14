@@ -152,6 +152,20 @@ export const RETIRED_LOOP_TASKS: Readonly<Record<string, string>> = {
   reflect: "his journal, removed on 14 November 2026; what he wrote is still in his memory",
 };
 
+/** A place on a squire's screen, in its pixels. */
+const ScreenPx = z.number().int().min(0).max(10_000);
+/** One thing done on a squire's desktop from outside its VM (`look`: nothing, only the picture). */
+export const DesktopAction = z.discriminatedUnion("do", [
+  z.strictObject({ do: z.literal("look") }),
+  z.strictObject({ do: z.literal("click"), x: ScreenPx, y: ScreenPx, button: z.enum(["left", "right", "middle", "double"]).optional() }),
+  z.strictObject({ do: z.literal("move"), x: ScreenPx, y: ScreenPx }),
+  z.strictObject({ do: z.literal("scroll"), direction: z.enum(["up", "down"]), times: z.number().int().min(1).max(50).optional() }),
+  z.strictObject({ do: z.literal("type"), text: z.string().min(1).max(2000) }),
+  z.strictObject({ do: z.literal("key"), keys: z.array(z.string().regex(/^[A-Za-z0-9_+]{1,40}$/)).min(1).max(8) }),
+  z.strictObject({ do: z.literal("open"), address: z.string().max(2000).regex(/^(https?:\/\/|file:\/\/|about:)/) }),
+]);
+export type DesktopAction = z.infer<typeof DesktopAction>;
+
 export const routes = {
   team: { method: "GET", path: "/api/team", scope: "chat", input: null },
   saveTeammate: { method: "POST", path: "/api/team/teammates", scope: "fleet:admin", input: TeammateInput },
@@ -206,6 +220,14 @@ export const routes = {
       onBehalfOf: z.string().max(100).optional(),
     }),
   },
+  /**
+   * A squire's desktop, for you to watch and to take over (to sign in for it, to get it past something): one
+   * thing done there, or nothing (`look`), and a picture of the screen back. Yours alone. What you type is carried
+   * to the VM and never written to the ledger.
+   */
+  teamDesktop: { method: "POST", path: "/api/team/desktop", scope: "sandbox", input: z.strictObject({ id: z.string().min(1).max(32), action: DesktopAction.default({ do: "look" }) }) },
+  /** The same, asked of the node that hosts the VM by the team's controller. */
+  teamDesktopOn: { method: "POST", path: "/api/team/desktop-workspace", scope: "sandbox", input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, action: DesktopAction }) },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
     input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional() }),

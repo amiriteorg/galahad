@@ -109,6 +109,23 @@ export interface CreateInput {
   search?: boolean;
 }
 
+/** One thing done on a squire's desktop from outside its VM (`look`: nothing, only the picture). */
+export type DesktopAction =
+  | { do: "look" }
+  | { do: "click"; x: number; y: number; button?: "left" | "right" | "middle" | "double" }
+  | { do: "move"; x: number; y: number }
+  | { do: "scroll"; direction: "up" | "down"; times?: number }
+  | { do: "type"; text: string }
+  | { do: "key"; keys: string[] }
+  | { do: "open"; address: string };
+
+/** The screen as it is now: a JPEG, and the display's size in the pixels a click is given in. */
+export interface DesktopView {
+  shot: { mediaType: "image/jpeg"; data: string };
+  width: number;
+  height: number;
+}
+
 export class SandboxError extends Error {
   constructor(
     message: string,
@@ -592,6 +609,65 @@ export class SandboxHost {
       detail: `made again from ${image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
     });
     return (await this.get(id))!;
+  }
+
+  /**
+   * A squire's desktop, from outside its VM (the owner watching, or taking over to sign in): do one thing there
+   * with the VM's own `desktop` command, then bring back a picture of the screen. No port is opened into the VM.
+   * Each thing done is a line in the ledger; looking is not (whoever watches asks again every second or two);
+   * what is typed is carried to the VM as one argument no shell reads, and the ledger says only how much.
+   */
+  async desktop(id: string, quest: string, action: DesktopAction): Promise<DesktopView> {
+    const whole = (n: number, max: number) => Number.isInteger(n) && n >= 0 && n <= max;
+    const refuse = (why: string): never => { throw new SandboxError(why, 400); };
+    let argv: string[] | null = null;
+    let did = "";
+    switch (action.do) {
+      case "look": break;
+      case "click":
+        if (!whole(action.x, 10_000) || !whole(action.y, 10_000)) refuse("a place on the screen is two whole numbers");
+        argv = ["desktop", "click", String(action.x), String(action.y), action.button ?? "left"];
+        break;
+      case "move":
+        if (!whole(action.x, 10_000) || !whole(action.y, 10_000)) refuse("a place on the screen is two whole numbers");
+        argv = ["desktop", "move", String(action.x), String(action.y)];
+        break;
+      case "scroll":
+        if (!whole(action.times ?? 1, 50) || (action.times ?? 1) < 1) refuse("scroll takes a whole number of times, from 1 to 50");
+        argv = ["desktop", "scroll", action.direction, String(action.times ?? 1)];
+        break;
+      case "key":
+        if (!action.keys.length || action.keys.length > 8 || action.keys.some((k) => !/^[A-Za-z0-9_+]{1,40}$/.test(k))) refuse("keys are names like Return, Tab, Escape, ctrl+l");
+        argv = ["desktop", "key", ...action.keys];
+        break;
+      case "open":
+        if (action.address.length > 2000 || !/^(https?:\/\/|file:\/\/|about:)/.test(action.address)) refuse("an address begins with http, https, file or about");
+        argv = ["desktop", "open", action.address];
+        break;
+      case "type":
+        if (!action.text.length || action.text.length > 2000) refuse("type takes some text, at most 2,000 characters");
+        // (As base64 to a line of Python there, which hands it to the command as one argument.)
+        argv = ["python3", "-c", "import base64,subprocess,sys; sys.exit(subprocess.run(['desktop','type',base64.b64decode(sys.argv[1]).decode()]).returncode)", Buffer.from(action.text, "utf8").toString("base64")];
+        did = `type (${action.text.length} characters, not recorded)`;
+        break;
+    }
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("the teammate's VM is missing", 404);
+    if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") throw new SandboxError("that is not this teammate's persistent VM", 403);
+    if (sandbox.status !== "running") throw new SandboxError(`the teammate's VM is ${sandbox.status}`, 409);
+    /** Why the VM's command failed, as the owner should read it. */
+    const failed = (run: Run): never => {
+      if (run.code === 127 || /desktop: (command )?not found/.test(run.stderr)) throw new SandboxError("this teammate's VM has no desktop: have it made again with one (galahad squires provision <id> --remake --desktop)", 424);
+      throw new SandboxError(`the desktop could not do that: ${redact(run.stderr.trim().split("\n").at(-1) ?? "").slice(0, 300) || `exit ${run.code}`}`, 424);
+    };
+    if (argv) {
+      const ran = await this.docker(execArgs(id, argv, 60), 75_000);
+      if (ran.code !== 0) failed(ran);
+      this.opts.ledger({ class: "modify", resource: "sandbox.desktop", target: sandbox.name, verdict: "allow", quest, detail: did || redact(argv.slice(1).join(" ")).slice(0, 300) });
+    }
+    const shot = await this.docker(execArgs(id, ["sh", "-c", 'f="${TMPDIR:-/tmp}/watch-$$.jpg"; desktop shot "$f" >/dev/null && base64 -w0 "$f"; code=$?; rm -f "$f"; exit $code'], 60), 75_000);
+    if (shot.code !== 0 || !shot.stdout.trim()) failed(shot);
+    return { shot: { mediaType: "image/jpeg", data: shot.stdout.trim() }, width: 1280, height: 800 };
   }
 
   async exec(id: string, cmd: string[], timeoutSec = 600): Promise<ExecResult> {
