@@ -1,6 +1,10 @@
 import {
   type ActionView,
   canonical,
+  chooseKnight,
+  type KnightFacts,
+  TEAM_OWNER,
+  type TeamGiveInput,
   type Json,
   CLIENT_DEFAULT_SCOPES,
   SELF_ACTION_KINDS,
@@ -1401,6 +1405,32 @@ export function createApp(ctx: AppContext) {
     vmProvisioning.set(member.id, work);
     try { return await work; } finally { vmProvisioning.delete(member.id); }
   }
+  /* A task given to the Roundtable (by you, or by Galahad from your conversation): the knight best suited to it
+   * takes it, in that knight's own conversation with you (roundtable.ts says who and why). Each knight's VM is asked
+   * of its host, once a host; one whose host can't say has no desktop known. */
+  async function giveTask(input: TeamGiveInput, by: string, signal: AbortSignal) {
+    const state = teamOf().snapshot();
+    const hosts = new Map<string, Promise<SandboxView[] | null>>();
+    const listed = (node: string) => {
+      if (!hosts.has(node)) hosts.set(node, inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[] }>("sandboxes", { on: node }).then((v) => v.sandboxes, () => null));
+      return hosts.get(node)!;
+    };
+    const facts: KnightFacts[] = await Promise.all(
+      state.teammates.map(async (m) => {
+        const vm = m.workspace ? ((await listed(m.workspace.node))?.find((s) => s.id === m.workspace!.id) ?? null) : null;
+        return {
+          id: m.id, name: m.name, instructions: m.instructions, role: m.role, enabled: m.enabled, dailyTurns: m.dailyTurns, turnsToday: m.turnsToday, repository: m.repository,
+          vm: m.workspace ? { image: vm?.image ?? "", status: vm?.status ?? "unknown" } : null,
+          tasks: state.tasks.filter((t) => t.assignee === m.id).map((t) => ({ status: t.status, verified: t.verified })),
+        };
+      }),
+    );
+    const { choice, considered } = chooseKnight(input.goal, input.needs ?? {}, facts);
+    if (!choice) throw new HttpError(409, `No knight can take this task now${considered.length ? `: ${considered.map((c) => `${c.name}: ${c.why.join("; ")}`).join(" · ")}` : ": there are no knights"}`);
+    const room = teamOf().direct(choice.id);
+    const task = teamOf().createTask({ room: room.id, assignee: choice.id, title: input.title ?? input.goal.slice(0, 200), goal: input.goal, gates: input.gates ?? [] }, by);
+    return { task, choice, considered };
+  }
   async function stopTeamWorker(member: Teammate): Promise<void> {
     const bound = teamMember(member.id).workspace;
     if (!bound) return;
@@ -1519,6 +1549,11 @@ export function createApp(ctx: AppContext) {
     },
     postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
+    giveTeamTask: (input, p, req) => { ownerOnly(p); return giveTask(input, TEAM_OWNER, req.signal); },
+    giveToTeam: (input, p, req) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself gives the Roundtable work this way; you give one at the Roundtable");
+      return giveTask(input, TEAM_GALAHAD, req.signal);
+    },
     controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
     teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },

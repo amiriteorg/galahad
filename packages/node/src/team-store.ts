@@ -307,7 +307,7 @@ export class TeamStore {
     this.db.query("INSERT INTO team_jobs(id,kind,room,teammate,chain_id,status,data,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,?,?)").run(key, kind, room, teammate, chain, JSON.stringify(data), at, at);
     return key;
   }
-  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string } = {}): TeamTask {
+  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string } = {}): TeamTask {
     const input = teamInput(TeamTaskInput, raw);
     teamText([input.title, input.goal, ...(input.gates ?? [])].join("\n"));
     return this.db.transaction(() => {
@@ -321,15 +321,19 @@ export class TeamStore {
         if (!task || task.room !== room.id) throw new TeamError(400, "Every dependency must already exist in this room.");
       }
       if (this.pending() >= TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
+      // Galahad's own giving is within his allowance for the day; yours is not counted.
+      if (by.givenBy === TEAM_GALAHAD && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
+        throw new TeamError(429, `Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day, which is his allowance. The owner can give more at the Roundtable.`);
+      }
       const chain = by.chainId ?? this.chain(room);
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], verified: false, progress: "", output: "" });
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}) });
       return this.task(key)!;
     })();
   }
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output" | "record">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output" | "record" | "givenBy">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }

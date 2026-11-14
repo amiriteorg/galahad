@@ -262,6 +262,34 @@ Thinking and working follow active conversations and tasks; queued work waits; a
 
 Profiles are versioned, validated cosmetic data saved in `team.db`. Colors are six-digit hex values; forms and details come from fixed options. No remote image, user-supplied SVG, script, upload or additional runtime dependency is required. Nothing in a profile changes the knight's permissions, instructions or budgets.
 
+## The best-suited knight takes the task
+
+The Roundtable is a technocracy, and giving work is where that is kept: a task can be given to the Roundtable instead of to a knight by name, and the knight best suited to it takes it.
+
+```sh
+bun galahad roundtable give "Fix the importer's date parsing and add a test for it" --gate "bun test" --repo https://github.com/you/project
+bun galahad roundtable give "Open the dashboard and download this month's export" --desktop --gate "test -s export.csv"
+```
+
+What decides, in this order:
+
+- **What can't be bent.** A paused knight, one whose turns for the day are spent, one without a desktop when the task needs a screen (`--desktop`), and one on another repository (`--repo`) can't take it.
+- **What is known of each knight that can.** Whether it is free now, or how much it already has running or queued; how much of its finished work was verified (each new verified task counts, and so does each failure); whether its job, in the words it was given, speaks of the task's work; whether it has a desktop when the task speaks of a browser or a screen; whether its VM is ready.
+- **A tie** goes to the knight that has done less today, then by name: the same facts always give the same knight.
+
+The answer says who took it and why, then how each of the others stood, and the task is queued in that knight's own conversation with you, with its gates and the independent reviewer as for any task:
+
+```
+Bedivere takes it: free now; 3 of 3 tasks verified; has a desktop.
+  Gawain: busy: 1 task running; 1 of 1 task verified; has a desktop
+  Gareth (can't take it): its VM has no desktop
+task-… queued in Bedivere's own conversation; completion requires its gates and independent review.
+```
+
+A task none can take is refused with each knight's reason. Galahad gives work the same way from your conversation with him (his `team_give` tool, when you ask for work to be done by the Roundtable or the work is better done by a knight in its own VM), within an allowance of twelve tasks a day; the task says it was given by him. The route is `POST /api/team/give` (yours, `fleet:admin`).
+
+What it does not know yet: a job is matched to a task by its words (reviews matches review), not by meaning; what a knight's work cost is not weighed; and Galahad himself is not among those weighed: he takes work in your conversation with him, and the Roundtable's tasks go to knights with VMs of their own.
+
 ## Tasks, dependencies and verification
 
 Create a task in a room, assign one of its members, and state both its goal and the commands that prove completion. Tasks queue immediately; there is no separate draft or Start step.

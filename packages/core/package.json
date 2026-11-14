@@ -23,6 +23,7 @@
     "./turns": "./src/turns.ts",
     "./team": "./src/team.ts",
     "./team-record": "./src/team-record.ts",
+    "./roundtable": "./src/roundtable.ts",
     "./team-limits": "./src/team-limits.ts"
   },
   "dependencies": {

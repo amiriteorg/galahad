@@ -46,6 +46,10 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable room <name> <member…>   create a shared room (--limit bounds its coordination chain)
   roundtable chat <room> [message]   read a room, or send a message; work continues on the node
   roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
+  roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo url]
+                                    a task for the Roundtable: the knight best suited to it takes it (free, its work
+                                    verified before, its job about this, a desktop or the repository it needs) and
+                                    says why; the others' standing is shown beneath
   roundtable trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
                                     the gates, the review; --follow keeps reading until the task has ended
   roundtable provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway] [--desktop]

@@ -319,3 +319,33 @@ test("knights trail prints what a task did as it happened, and --follow keeps re
   expect(asked.slice(1).map((a) => a.input.after)).toEqual([0, 3]);
   expect(lines).toEqual([`${at(13, 5, 20)}  Exit 0 · exit 0 · 3 ms`, "(ended: failed)"]);
 });
+
+test("roundtable give puts a task to the Roundtable: it says who takes it and why, then how the others stood", async () => {
+  const lines: string[] = [];
+  const asked: { name: RouteName; input: unknown }[] = [];
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name !== "giveTeamTask") throw new Error(`unexpected call: ${name}`);
+      return {
+        task: { id: "task-abcdefghijkl" },
+        choice: { id: "bedivere", name: "Bedivere", reasons: ["free now", "3 of 3 tasks verified", "has a desktop"] },
+        considered: [
+          { id: "bedivere", name: "Bedivere", eligible: true, score: 3.6, why: ["free now", "3 of 3 tasks verified", "has a desktop"] },
+          { id: "gawain", name: "Gawain", eligible: true, score: 1.6, why: ["busy: 1 task running", "1 of 1 task verified", "has a desktop"] },
+          { id: "gareth", name: "Gareth", eligible: false, score: 0, why: ["its VM has no desktop"] },
+        ],
+      } as T;
+    },
+  };
+  await teamCommand(api, "give", ["Open", "the", "dashboard", "and", "click", "Export."], { gate: ["test -s export.csv"], desktop: true }, (line) => lines.push(line));
+  expect(asked).toEqual([{ name: "giveTeamTask", input: { goal: "Open the dashboard and click Export.", gates: ["test -s export.csv"], needs: { desktop: true } } }]);
+  expect(lines).toEqual([
+    "Bedivere takes it: free now; 3 of 3 tasks verified; has a desktop.",
+    "  Gawain: busy: 1 task running; 1 of 1 task verified; has a desktop",
+    "  Gareth (can't take it): its VM has no desktop",
+    "task-abcdefghijkl queued in Bedivere's own conversation; completion requires its gates and independent review.",
+  ]);
+  await expect(teamCommand(api, "give", [], {}, () => {})).rejects.toThrow(/usage: galahad roundtable give/);
+});
+

@@ -32,8 +32,10 @@ describe("what he knows about his own work", () => {
   });
 
   test("he may seat another knight at his liege's Roundtable: look first, make one when asked or needed, brief it as a fellow, and claim nothing the tool didn't say", () => {
-    for (const tool of ["team", "team_recruit", "team_message"]) expect(TOOL_GUIDE).toContain(tool);
-    expect(TOOL_GUIDE).toMatch(/When your liege asks for another, or the work needs a lasting job none of them fits/);
+    for (const tool of ["team", "team_give", "team_recruit", "team_message"]) expect(TOOL_GUIDE).toContain(tool);
+    expect(TOOL_GUIDE).toMatch(/When your liege asks for another knight, or the work needs a lasting job none of them fits/);
+    // Work for the Roundtable goes to the knight best suited, with gates that prove it done.
+    expect(TOOL_GUIDE).toMatch(/give it \(team_give\) with gates that prove it done: the knight best suited takes it/);
     expect(TOOL_GUIDE).toMatch(/before making another/);
     expect(TOOL_GUIDE).toMatch(/only a few in a day/);
     expect(TOOL_GUIDE).toMatch(/only when the tool says so/);

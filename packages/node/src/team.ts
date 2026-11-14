@@ -126,7 +126,7 @@ export class TeamService {
     this.changed(); this.kick();
     return message;
   }
-  createTask(input: TeamTaskInput): TeamTask { this.accepting(); const task = this.store.createTask(input); this.changed(); this.kick(); return task; }
+  createTask(input: TeamTaskInput, givenBy?: string): TeamTask { this.accepting(); const task = this.store.createTask(input, givenBy ? { givenBy } : {}); this.changed(); this.kick(); return task; }
 
   start(): void {
     if (this.running) return;

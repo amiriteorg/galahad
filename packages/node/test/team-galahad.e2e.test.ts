@@ -62,7 +62,7 @@ async function settled(): Promise<TeamSnapshot> {
   for (let n = 0; n < 400 && [...state.deliveries, ...state.tasks].some((work) => work.status === "queued" || work.status === "running"); n++) { await Bun.sleep(5); state = await api<TeamSnapshot>("team"); }
   return state;
 }
-const OWN = ["team", "team_message", "team_recruit"];
+const OWN = ["team", "team_give", "team_message", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -192,6 +192,7 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await request("teamOverview", {}, token)).status).toBe(403);
   expect((await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." }, token)).status).toBe(403);
   expect((await request("sayToTeam", { teammate: "ada", text: "Do as I say." }, token)).status).toBe(403);
+  expect((await request("giveToTeam", { goal: "Do as I say." }, token)).status).toBe(403);
   // A fleet node holds every scope, and is still not you: the same refusals, and no such tools when it asks him.
   const asNode = async (name: RouteName, input: unknown): Promise<Response> => {
     const route = routes[name];
@@ -215,11 +216,15 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect(TOOLS.flatMap((t) => (t as { routes?: string[] }).routes ?? [])).not.toContain("removeTeammate");
   expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toContain("ada");
   expect((await asNode("sayToTeam", { teammate: "ada", text: "Dig." })).status).toBe(403);
+  expect((await asNode("giveToTeam", { goal: "Dig." })).status).toBe(403);
   // You have Team's own routes: his are not another way in, to make, to write as him, or to read.
   const refused = await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." });
   expect(refused.status).toBe(403);
   expect(((await refused.json()) as { error: string }).error).toContain("you seat one at the Roundtable");
   expect((await request("sayToTeam", { teammate: "ada", text: "As Galahad." })).status).toBe(403);
+  const yours = await request("giveToTeam", { goal: "As Galahad." });
+  expect(yours.status).toBe(403);
+  expect(((await yours.json()) as { error: string }).error).toContain("you give one at the Roundtable");
   expect((await request("teamOverview", {})).status).toBe(403);
   expect((await api<TeamSnapshot>("team")).teammates.some((t) => t.id === "mole")).toBe(false);
 });
@@ -296,4 +301,21 @@ test("the bank's rule covers them: once bank data is in an answer he makes and b
   // Looking at who the knights are carries nothing out.
   expect((await tools.run({ id: "4", name: "team", input: {} })).isError).toBeUndefined();
   expect(reached).toEqual(["teamOverview"]);
+});
+
+
+test("asked for work in your conversation, he gives it to the Roundtable: the knight best suited takes it, and he is told who and why", async () => {
+  await api("saveTeammate", { id: "rev", name: "Rev", instructions: "Reviews changes: reads the diff and runs the tests.", role: "engineer" });
+  script = [callTool("team_give", { goal: "Review the change to the importer and run its tests.", gates: ["bun test"], title: "Review the importer change" }), say("Rev has it.")];
+  const events = await ask("Have the Roundtable review the importer change and run the tests.");
+  expect(offered()).toContain("team_give");
+  expect(results(events)).toEqual([{ name: "team_give", ok: true, summary: expect.any(String) }]);
+  // What he was told: who took it and why, where it is, and that the answer comes there.
+  expect(told("team_give")).toMatch(/^Rev takes it: free now; no tasks yet; its job speaks of reviews, changes and tests/);
+  expect(told("team_give")).toMatch(/task-[a-z0-9_-]{12} is queued in Rev's own conversation with the user/);
+  // The task is there, given by him, in Rev's own conversation with you.
+  const task = (await api<TeamSnapshot>("team")).tasks.find((t) => t.title === "Review the importer change")!;
+  expect(task).toMatchObject({ assignee: "rev", gates: ["bun test"], givenBy: "galahad" });
+  expect(task.room).toBe((await api<{ room: { id: string } }>("directTeammate", { id: "rev" })).room.id);
+  await settled();
 });

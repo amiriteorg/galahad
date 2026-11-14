@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -93,6 +93,20 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? flags.gate : [];
     const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}) });
     print(`${task.id} queued; completion requires its gates and independent review.`); return;
+  }
+  if (sub === "give") {
+    // To the Roundtable, not to a knight by name: the one best suited takes it, and says why.
+    const goal = args.join(" ").trim();
+    if (!goal) throw new Error('usage: galahad roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo https://github.com/owner/repo]');
+    const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? (flags.gate as string[]) : [];
+    const needs = { ...(flags.desktop ? { desktop: true } : {}), ...(string("repo") ? { repository: string("repo") } : {}) };
+    const given = await api.call<{ task: { id: string }; choice: { id: string; name: string; reasons: string[] }; considered: { id: string; name: string; eligible: boolean; why: string[] }[] }>("giveTeamTask", {
+      goal, ...(string("title") ? { title: string("title") } : {}), ...(gates.length ? { gates } : {}), ...(Object.keys(needs).length ? { needs } : {}),
+    });
+    print(`${plainLine(given.choice.name)} takes it: ${given.choice.reasons.join("; ")}.`);
+    for (const other of given.considered.filter((c) => c.id !== given.choice.id)) print(`  ${plainLine(other.name)}${other.eligible ? "" : " (can't take it)"}: ${other.why.join("; ")}`);
+    print(`${given.task.id} queued in ${plainLine(given.choice.name)}'s own conversation; completion requires its gates and independent review.`);
+    return;
   }
   if (sub === "trail") {
     // What a task did, as it happened: once, or with --follow until the task has ended.

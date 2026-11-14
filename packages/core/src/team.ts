@@ -101,6 +101,18 @@ export const TeamTaskInput = z.strictObject({
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
+/**
+ * A task given to the Roundtable rather than to a knight: the knight best suited to it takes it (roundtable.ts says
+ * who and why), in that knight's direct conversation with you. `needs`: what it requires of that knight.
+ */
+export const TeamGiveInput = z.strictObject({
+  goal: z.string().trim().min(1).max(8000),
+  title: z.string().trim().min(1).max(200).optional(),
+  gates: z.array(z.string().trim().min(1).max(1000)).max(16).optional(),
+  needs: z.strictObject({ desktop: z.boolean().optional(), repository: z.string().trim().min(1).max(300).optional() }).optional(),
+});
+export type TeamGiveInput = z.infer<typeof TeamGiveInput>;
+
 export const TeamControlInput = z.strictObject({
   room: TeamRoomId.optional(),
   teammate: TeammateId.optional(),
@@ -243,6 +255,8 @@ export interface TeamTask {
   record?: TeamTaskRecord;
   /** What it changed in its repository, where that was kept (absent: no repository, nothing changed, or it could not be kept). */
   changes?: TeamTaskChanges;
+  /** Who gave it to the Roundtable rather than to a knight by name (TEAM_OWNER or TEAM_GALAHAD); absent: given to a knight by name. */
+  givenBy?: string;
 }
 
 /** One line of what a task did, as it happened: its number in order (from 1), when, and the line (redacted, cut if long). */

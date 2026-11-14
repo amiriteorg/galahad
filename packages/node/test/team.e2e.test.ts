@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultAvatar, routes, teamArmLabel, type LedgerEntry, type RouteName, type TeamSnapshot, type TeamRoomView } from "@galahad/core";
+import { defaultAvatar, routes, teamArmLabel, type LedgerEntry, type RouteName, type TeamSnapshot, type TeamRoomView, type TeamTask } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -119,3 +119,26 @@ test("real API: you remove a knight, nobody else can; it is gone from the team a
   expect(again.teammates.map((m) => m.id)).toEqual(["ada", "temp"]);
   expect(again.removed?.map((m) => m.id)).toEqual(["lin"]);
 });
+
+test("real API: given to the Roundtable, a task goes to the knight best suited to it, in its own conversation, and says why", async () => {
+  await api("saveTeammate", { id: "kay", name: "KAY", role: "engineer", instructions: "Reviews changes: reads the diff and runs the tests." });
+  await api("saveTeammate", { id: "tor", name: "TOR", role: "engineer" });
+  const goal = "Review the change to the importer and run its tests.";
+  const given = await api<{ task: TeamTask; choice: { id: string; name: string; reasons: string[] }; considered: { id: string; eligible: boolean; why: string[] }[] }>("giveTeamTask", { goal, gates: ["true"] });
+  // The one whose job is this work takes it, and the answer says why.
+  expect(given.choice.id).toBe("kay");
+  expect(given.choice.reasons).toContain("its job speaks of reviews, changes and tests");
+  expect(given.task).toMatchObject({ assignee: "kay", goal, title: goal, gates: ["true"] });
+  // In that knight's own conversation with you.
+  expect(given.task.room).toBe((await api<{ room: { id: string } }>("directTeammate", { id: "kay" })).room.id);
+  // Every knight was weighed.
+  expect(given.considered.map((c) => c.id)).toEqual(expect.arrayContaining(["kay", "tor", "ada"]));
+  // A task none can take is refused, with each knight's reason: here, none has a desktop.
+  const refused = await request("giveTeamTask", { goal: "Open the dashboard and click Export.", needs: { desktop: true } });
+  expect(refused.status).toBe(409);
+  expect(((await refused.json()) as { error: string }).error).toMatch(/^No knight can take this task now: .*KAY: it has no VM with a desktop/);
+  // And it is yours alone, like giving a knight a task by name.
+  const { token } = await api("mintArm", { label: "giver", scopes: ["chat", "mind:read", "mind:write", "sandbox"] });
+  expect((await request("giveTeamTask", { goal }, token)).status).toBe(403);
+});
+
