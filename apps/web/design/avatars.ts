@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /*
- * Draws apps/web/design/avatars.html: the knights (src/ui/avatar.ts), every body, eyes and headwear, the presets, every
- * state moving as the app moves it, at 24, 40 and 96 px, on a dark page and a light one. One file with nothing to
- * fetch. It is not part of the app: the node serves only what assets.ts names.
+ * Draws apps/web/design/avatars.html: the knights (src/ui/avatar.ts), every helmet, eyes and headwear, the presets,
+ * every state moving as the app moves it, at 24, 40 and 96 px, on a dark page and a light one, and Galahad in beast
+ * mode. One file with nothing to fetch. It is not part of the app: the node serves only what assets.ts names.
  *
  *   bun apps/web/design/avatars.ts     writes it again; a test fails when the committed file has drifted
  *
@@ -47,15 +47,15 @@ function draw(options: WorkerAvatarOptions): string {
 
 /** The rule is avatarExpression's, in packages/core/src/avatar.ts (the roster adds asking): the first of these that holds. */
 const MEANS: Record<AvatarExpression, string> = {
-  thinking: "it is planning (its task's latest line starts “Plan ·” or “Thinking ·”), or writing you an answer: eyes up, thought bubbles",
-  working: "a command of its task is running (“Running ·”), or a step the others don't name: at the keys",
+  thinking: "it is planning (its task's latest line starts “Plan ·” or “Thinking ·”), or writing you an answer: eyes up, a chip of three dots",
+  working: "a command of its task is running (“Running ·”), or a step the others don't name: at the keys, its status light blinking",
   reading: "it is reading what the command printed (“Exit N ·”): behind a page, its eyes along the lines",
   browsing: "it is using its desktop (“Running · desktop …”): at the screen, its eyes on the pointer",
-  checking: "its gates are running, or its work is under review (“Gate i/n ·”, “Review ·”): a lens over it",
-  asking: "it asks your leave for something (an approval waiting in the Inbox): a hand up, an oxblood mark",
+  checking: "its gates are running, or its work is under review (“Gate i/n ·”, “Review ·”): a lens over it, its eyes narrowed",
+  asking: "it asks your leave for something (an approval waiting in the Inbox): a hand up, wide eyes, the one chip in oxblood",
   resting: "it is paused: shut eyes, dimmed",
-  waiting: "it has work queued: an hourglass",
-  concerned: "something of its failed or was interrupted in the last 30 seconds: a worried brow",
+  waiting: "it has work queued: an hourglass chip, its eyes up",
+  concerned: "something of its failed or was interrupted in the last 30 seconds: worried eyes",
   pleased: "a task of its passed its checks in the last 30 seconds: happy eyes, a hop",
   idle: "none of these: it blinks, and a curious or lively one glances about or hops",
 };
@@ -110,8 +110,8 @@ export function avatarSheet(): string {
   <body>
     <main>
       <h1>The knights</h1>
-      <p>Each knight is a little creature built of merged dots, in its colour on a deep tile of the same hue, so it reads the same on any page: from <code>apps/web/src/ui/avatar.ts</code>. Its body, eyes, headwear, colours and how lively it is at rest are its own (Edit knight, or <code>galahad roundtable avatar</code>); Galahad is off-white on navy, with an oxblood plume. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier, where it stays still.</p>
-      <h2>Every body, eyes and headwear</h2>
+      <p>Each knight is a small knight in lit dots on a dark panel, the same grammar as Galahad's mark: an angular helmet with a visor of dark glass, eyes that glow in its own colour, a status light, cream armour and one accent; from <code>apps/web/src/ui/avatar.ts</code>. Its helmet, eyes, headwear, colour and how lively it is at rest are its own (Edit knight, or <code>galahad roundtable avatar</code>). Galahad wears a Templar's helm, its brow band and nasal strip the oxblood cross, on navy; in beast mode he is the Black Knight. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier, where it stays still.</p>
+      <h2>Every helmet, eyes and headwear</h2>
       <div class="looks">${looks.map(([caption, profile], i) => `<figure>${draw({ id: `look-${i}`, name: caption, profile, size: 64, still: true })}<figcaption>${escape(caption)}</figcaption></figure>`).join("")}</div>
       <h2>The eight presets</h2>
       <div class="looks">${presets}</div>
@@ -119,6 +119,8 @@ export function avatarSheet(): string {
       <p>A state is never a mood. It is what the node says of the knight's work, by this rule, the first that holds. Only the mark that starts a task's latest line is read, never the words after it. Nothing moves when the device asks for reduced motion; what it holds still says what it is doing.</p>
       <dl>${ORDER.map((expression) => `<dt>${expression}</dt><dd>${escape(MEANS[expression])}</dd>`).join("")}</dl>
       <div class="galahad">${ORDER.map((expression) => `<figure>${draw({ id: "galahad", name: "Galahad", expression, size: 72 })}<figcaption>${expression}</figcaption></figure>`).join("")}</div>
+      <h2>Galahad in beast mode: the Black Knight</h2>
+      <div class="galahad">${ORDER.map((expression) => `<figure>${draw({ id: "galahad", name: "Galahad", expression, size: 72, beast: true })}<figcaption>${expression}</figcaption></figure>`).join("")}</div>
       <div class="panels" style="margin-top:16px">${page("dark")}${page("light")}
       </div>
     </main>
