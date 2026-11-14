@@ -52,4 +52,8 @@ bun galahad ask "Good morning, Galahad."
 | [DOCTRINE](docs/DOCTRINE.md) | The ideas Galahad is built on, and whose they are |
 | [AGENTS.md](AGENTS.md) | Rules for agents (and Galahad) working on this repo |
 
+## License
+
+Galahad is open source under the [Apache License 2.0](LICENSE). Found a security problem? Please report it privately: see [SECURITY](SECURITY.md).
+
 Created in [T3 Code](https://t3.codes).

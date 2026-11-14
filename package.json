@@ -1,8 +1,12 @@
 {
   "name": "galahad",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "galahad": "bun packages/node/src/cli.ts",
     "test": "bun test",
