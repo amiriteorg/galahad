@@ -160,7 +160,17 @@ For repository work, set an owner-selected HTTPS GitHub URL on the squire and co
 bun galahad squires add ada --name Ada --repo https://github.com/you/project
 ```
 
-The controller prepares a lease scoped to that repository, then clones it through the read-only GitHub gateway into `/work/repo`. Each task gets a detached worktree under `/work/tasks/<task-id>`. Without a repository it gets an ordinary directory there. Provider keys and connector credentials stay in the vault; the VM uses scoped gateway tokens. A task cannot assume that another squire's files exist in its VM, or that a dependency's changes have been merged into its worktree.
+The controller prepares a lease scoped to that repository, then clones it through the read-only GitHub gateway into `/work/repo`. Without a repository a task gets an ordinary directory under `/work/tasks/<task-id>`. With one:
+
+- **It starts from the repository as it is now.** As the task starts, the VM fetches through the same read-only gateway and the task gets a detached worktree of its own from the default branch as fetched. The commit it started from is kept for the task. If the fetch does not come through, the task starts from the clone as it was and its result says so.
+- **Its reviewer is shown the work itself:** the diff of everything since that commit, new files and anything the squire committed included, beside what was run and what the gates printed.
+- **What it changed is kept to read and to ship.** When the task ends, verified or not, a patch (`changes.patch`) and a shipment of every changed file since the start are kept as an artifact on the VM's host. The task's result names it, `galahad squires` shows it on the task's line, and the task's card links to it:
+
+  ```
+  task-… · done (verified) · ada · Fix the importer · 4m10s · 9 commands · 88k tokens · $0.07 · 3 files changed, kept as art_…
+  ```
+
+- **A pull request is one command, on your word.** `galahad ship art_… --title "Fix the importer"` (or Artifacts, in the app) commits those files on a new branch with the connector's key and opens the pull request, through the same approval as a quest's ([ARCHITECTURE](ARCHITECTURE.md)). The VM never holds a key that can write to GitHub, and nothing is pushed from it. Work that was not verified is kept too, and its result says to read it before shipping. Provider keys and connector credentials stay in the vault; the VM uses scoped gateway tokens. A task cannot assume that another squire's files exist in its VM, or that a dependency's changes have been merged into its worktree.
 
 ### Models and engineering harnesses
 

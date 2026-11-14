@@ -359,7 +359,8 @@ function notesTask(squire: Teammate, options: { on?: boolean; version?: Partial<
   const f = fixture(NATIVE_SCRIPT(), {
     teammate: () => squire,
     ...(options.on === undefined ? {} : { engram: () => options.on! }),
-    exec: async (_m, command) => { commands.push(command); return command === "/opt/engram/bin/engram version" ? result({ stdout: "engram 3.7.2\n", ...options.version }) : result(); },
+    // (A VM with a repository says where the task's worktree starts: REPO_TASK_START.)
+    exec: async (_m, command) => { commands.push(command); return command === "/opt/engram/bin/engram version" ? result({ stdout: "engram 3.7.2\n", ...options.version }) : command.includes("worktree") ? result({ stdout: `${BASE} fetched` }) : result(); },
   });
   const run = () => f.runtime.executeTask(squire, task, { ...f.context, emit: (text) => { progress.push(text); } });
   return { run, commands, progress, engineer: () => String(f.bodies[1].messages.find((m: any) => m.role === "user").content) };
@@ -437,6 +438,7 @@ test("on, a squire's harness is written the store's entry in its own way and tol
       exec: async (_m, command) => {
         commands.push(command);
         if (command === "/opt/engram/bin/engram version") return result({ stdout: "engram 3.7.2\n" });
+        if (command.includes("worktree")) return result({ stdout: `${BASE} fetched` });
         if (command.includes("--status")) return result({ stdout: status({ installed: true, signedIn: true, method: "claude.ai" }) });
         if (command.includes('"next": nxt')) return result({ stdout: JSON.stringify({ alive: false, exit: 0, next: 42, lines: [JSON.stringify({ type: "session", id: "00000000-0000-4000-8000-000000000001" }), JSON.stringify({ type: "text", text: "Built and checked." })] }) });
         return result({ stdout: command.includes("cat ") ? "" : "0" });
@@ -462,4 +464,105 @@ test("on, a squire's harness is written the store's entry in its own way and tol
     expect(plain.files).toEqual([Object.values(AGENTS[harness]!.files([opus]))[0]!]);
     expect(plain.message).not.toMatch(/Notes store|engram/i);
   }
+});
+
+/* A squire's task in a repository: where it starts, what its reviewer is shown, and what it leaves to read and ship. */
+const BASE = "0123456789abcdef0123456789abcdef01234567";
+const KEPT = "art_AAAAAAAAAAAAAAAAAAAAAA";
+/** A command as the shell reads it once its outer quoting is undone (each quote inside a quoted argument is written '\\''). */
+const plain = (command: string): string => command.replaceAll("'\\''", "'");
+function repoTask(options: { start?: string; changed?: number; reviewer?: string; keepFails?: boolean } = {}) {
+  const squire: Teammate = { ...member, repository: "https://github.com/you/project" };
+  const kept: { path: string; label: string }[] = [];
+  const commands: string[] = [];
+  const f = fixture([say("1. Make the change."), say("```sh\necho one > a.txt && git commit -qam work\n```"), say("DONE\nBuilt."), say(options.reviewer ?? "PASS\nFine.")], {
+    teammate: () => squire,
+    exec: async (_m, command) => {
+      commands.push(command);
+      if (command.includes("worktree")) return result({ stdout: `${options.start ?? `${BASE} fetched`}\n` });
+      if (command.includes("changes.patch")) return result({ stdout: `${options.changed ?? 2}\n` });
+      return result();
+    },
+    keep: async (m, path, label) => {
+      expect(m.id).toBe("ada");
+      if (options.keepFails) throw new Error("the host could not copy it out");
+      kept.push({ path, label });
+      return KEPT;
+    },
+  });
+  return { squire, kept, commands, run: () => f.runtime.executeTask(squire, task, f.context), bodies: f.bodies };
+}
+
+test("a squire's task in a repository starts from the repository as it is now, in a worktree of its own, and the start is kept for the task", async () => {
+  const t = repoTask();
+  await t.run();
+  const start = plain(t.commands[0]!);
+  // One script, in the VM: it fetches through the read-only gateway with the lease that is there (never a token in
+  // the command), makes the task's worktree from what it fetched, and writes down the commit it started from.
+  expect(start).toStartWith("python3 -c '");
+  expect(start).toEndWith(` '/work/tasks/${task.id}' '/work/.agent/base/${task.id}'`);
+  for (const part of ["'fetch'", "GALAHAD_REPO_URL", "/work/.galahad-gateway.json", "'worktree','add','--detach'", "origin/HEAD"]) expect(start).toContain(part);
+  expect(start).not.toMatch(/gw_[A-Za-z0-9]/);
+});
+
+test("its reviewer is shown the work itself: everything since the start, new files and what the squire committed included", async () => {
+  const t = repoTask();
+  await t.run();
+  // (New files show only once git is told of them; the squire's own commits only against where it began.)
+  expect(t.commands.some((c) => c.includes(`git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${BASE} | head -c 24000`))).toBe(true);
+  expect(t.commands.some((c) => c.includes("git diff --no-ext-diff --no-textconv HEAD"))).toBe(false);
+});
+
+test("what it changed is kept to read and to ship: a patch and a shipment from where it began, as an artifact its result names", async () => {
+  const t = repoTask();
+  const outcome = await t.run();
+  expect(outcome.verified).toBe(true);
+  const keep = plain(plain(t.commands.find((c) => c.includes("changes.patch"))!));
+  const out = `/work/out/tasks/${task.id}`;
+  expect(keep).toContain(`git diff --cached --binary ${BASE} > '${out}'/changes.patch`);
+  expect(keep).toContain(`'${out}'/ship ${BASE}`);
+  expect(t.kept).toEqual([{ path: out, label: "Build · ada · verified" }]);
+  expect(outcome.changes).toEqual({ artifact: KEPT, files: 2, base: BASE });
+  expect(outcome.output).toContain(`Base: ${BASE.slice(0, 12)}`);
+  expect(outcome.output).toContain(`Changes: 2 files, kept as ${KEPT}. A pull request, on your word: galahad ship ${KEPT} --title "Build"`);
+});
+
+test("work that was not verified is kept too, and says so where it says how to ship; nothing changed keeps nothing", async () => {
+  const sentBack = repoTask({ reviewer: "REVISE\nNot shown to work." });
+  const unverified = await sentBack.run();
+  expect(unverified.verified).toBe(false);
+  expect(sentBack.kept).toEqual([{ path: `/work/out/tasks/${task.id}`, label: "Build · ada · not verified" }]);
+  expect(unverified.output).toContain(`Changes: 2 files, kept as ${KEPT}. Not verified: read them before you ship them.`);
+  expect(unverified.output).not.toContain("galahad ship");
+  const none = repoTask({ changed: 0 });
+  const nothing = await none.run();
+  expect(none.kept).toEqual([]);
+  expect(nothing.changes).toBeUndefined();
+  expect(nothing.output).toContain("Changes: none");
+  // One file is one file.
+  expect((await repoTask({ changed: 1 }).run()).output).toContain("Changes: 1 file, kept as");
+});
+
+test("a repository that could not be fetched is said, and changes that could not be kept are said: neither passes in silence", async () => {
+  const stale = await repoTask({ start: `${BASE} stale` }).run();
+  expect(stale.output).toContain(`Base: ${BASE.slice(0, 12)} (the repository could not be fetched: this is the clone as it was)`);
+  const lost = repoTask({ keepFails: true });
+  const outcome = await lost.run();
+  expect(outcome.changes).toBeUndefined();
+  expect(outcome.output).toContain("Changes: 2 files, but they could not be kept: the host could not copy it out");
+  // A start that can't be read stops the task before any model is asked.
+  const unread = repoTask({ start: "not a commit" });
+  await expect(unread.run()).rejects.toThrow(/starting commit/);
+  expect(unread.bodies).toHaveLength(0);
+});
+
+test("a squire with no repository has none of this: no worktree, no diff, nothing kept", async () => {
+  const commands: string[] = [];
+  let kept = 0;
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { exec: async (_m, command) => { commands.push(command); return result(); }, keep: async () => { kept++; return KEPT; } });
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(commands.some((c) => /worktree|changes\.patch|git diff/.test(c))).toBe(false);
+  expect(kept).toBe(0);
+  expect(outcome.output).not.toMatch(/Base:|Changes:/);
+  expect(outcome.changes).toBeUndefined();
 });

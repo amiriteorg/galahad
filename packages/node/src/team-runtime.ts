@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
+import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
 import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
 
 export interface TeamRuntimeDeps {
@@ -20,6 +21,8 @@ export interface TeamRuntimeDeps {
   teammate(id: string): Teammate;
   dependencies(task: TeamTask): { id: string; title: string; output: string }[];
   stopWorker(teammate: Teammate): Promise<void>;
+  /** Keep a directory of the squire's VM (under /work) as an artifact on its host; gives the artifact's id. Absent: nothing is kept. */
+  keep?(teammate: Teammate, path: string, label: string): Promise<string>;
 }
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -56,6 +59,31 @@ const withGateway = (command: string): string => {
   const script = "import json,os,sys; p='/work/.galahad-gateway.json'; d=json.load(open(p)); allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL'}; os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)}); os.execvp('bash',['bash','-lc',sys.argv[1]])";
   return `python3 -c ${quote(script)} ${quote(command)}`;
 };
+
+/**
+ * Where a task in a repository starts, run in the squire's VM as `python3 -c SCRIPT <worktree> <kept>`: the
+ * repository as it is now, fetched through the read-only gateway with the lease that is in the VM (never a token
+ * in a command), in a worktree of the task's own. The commit it started from is written down, with whether the
+ * fetch came through (`fetched`) or the clone had to do as it was (`stale`), and printed. A task taken up again
+ * finds its worktree and what was written; one from before this was written says `unknown`.
+ */
+const REPO_TASK_START = `import json,os,subprocess,sys
+root, kept, repo = sys.argv[1], sys.argv[2], '/work/repo'
+git = lambda *a: subprocess.run(['git','-C',repo,*a],capture_output=True)
+if not os.path.isdir(root):
+    how = 'fetched'
+    try:
+        d = json.load(open('/work/.galahad-gateway.json'))
+        got = subprocess.run(['git','-C',repo,'-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'fetch','--quiet','--prune',d['GALAHAD_REPO_URL'],'+refs/heads/*:refs/remotes/origin/*'],capture_output=True,timeout=300)
+        if got.returncode: how = 'stale'
+    except Exception:
+        how = 'stale'
+    start = 'origin/HEAD' if git('rev-parse','--verify','--quiet','origin/HEAD').returncode == 0 else 'HEAD'
+    made = git('worktree','add','--detach',root,start)
+    if made.returncode: sys.exit('could not make the worktree: '+made.stderr.decode()[-300:])
+    os.makedirs(os.path.dirname(kept),exist_ok=True)
+    open(kept,'w').write(subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' '+how)
+print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' unknown')`;
 
 /** What a harness would run on in a squire's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
@@ -212,7 +240,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       } finally { leave(); }
     },
 
-    async executeTask(teammate: Teammate, task: TeamTask, ctx: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record: TeamTaskRecord }> {
+    async executeTask(teammate: Teammate, task: TeamTask, ctx: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record: TeamTaskRecord; changes?: TeamTaskChanges }> {
       // What the run comes to is counted here, by the runner: when it began, and every model call as its provider reports it.
       const startedAt = Date.now();
       const spent: UsageLine[] = [];
@@ -221,10 +249,13 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const root = `/work/tasks/${task.id}`;
       const sessionFile = `/work/.agent/sessions/${task.id}.${teammate.harness}`;
       const setup = teammate.repository
-        ? `mkdir -p /work/tasks && if [ ! -d ${quote(root)} ]; then git -C /work/repo worktree add --detach ${quote(root)} HEAD; fi`
+        ? `python3 -c ${quote(REPO_TASK_START)} ${quote(root)} ${quote(`/work/.agent/base/${task.id}`)}`
         : `mkdir -p ${quote(root)}`;
-      const ready = await deps.exec(teammate, setup, 120, ctx.signal);
+      const ready = await deps.exec(teammate, setup, teammate.repository ? 420 : 120, ctx.signal);
       if (ready.exitCode !== 0) throw new Error(`Workspace not ready: ${redact(ready.stderr || ready.stdout)}`);
+      // In a repository: the commit the work starts from, and whether the repository could be fetched for it.
+      const [base = "", fetched = ""] = teammate.repository ? ready.stdout.trim().split(/\s+/) : [];
+      if (teammate.repository && !/^[0-9a-f]{40}$/.test(base)) throw new Error("Workspace not ready: the task's starting commit could not be read");
       // The VM's notes store (Engram), when the node's switch is on: kept under the squire's repository, or with none
       // its own handle, so every task of its finds them. Whether this VM has the pinned binary is asked as the task
       // starts: one that doesn't does the task without the store, and the task says which it was, never nothing.
@@ -259,7 +290,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", "git diff --no-ext-diff --no-textconv HEAD"] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage)),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
@@ -271,7 +302,31 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       });
       // (A reply with no command to run spent a turn and ran nothing: it is not one of the commands.)
       const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent };
-      return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${notes ? `\nNotes: ${notes}` : ""}`, ...(outcome.status === "done" ? {} : { error: outcome.status }), record };
+      const verified = outcome.status === "done";
+      // In a repository, the work itself is kept to read and to ship: a patch and a shipment of everything since the
+      // start (what the squire committed included), as an artifact on the VM's host. Whatever happens is said.
+      let changes: TeamTaskChanges | undefined;
+      let changed = "";
+      if (teammate.repository) {
+        const out = `/work/out/tasks/${task.id}`;
+        const made = await exec(`rm -rf ${quote(out)} && mkdir -p ${quote(out)} && git add -A && git diff --cached --binary ${base} > ${quote(out)}/changes.patch; git reset -q; python3 -c ${quote(SHIPMENT_SCRIPT)} . ${quote(out)}/ship ${base}`, 300).catch((error: Error) => ({ exitCode: -1, stdout: "", stderr: error.message }));
+        const files = made.exitCode === 0 ? Number(made.stdout.trim().split("\n").at(-1)) : NaN;
+        const count = `${files} file${files === 1 ? "" : "s"}`;
+        if (!Number.isInteger(files)) changed = `Changes: could not be read (${redact(made.stderr || made.stdout).trim().split("\n").at(-1)?.slice(0, 200) ?? "no reason given"})`;
+        else if (files === 0) changed = "Changes: none";
+        else if (!deps.keep) changed = `Changes: ${count}, in ${out} in the squire's VM (not kept outside it)`;
+        else {
+          try {
+            const artifact = await deps.keep(teammate, out, `${task.title} · ${teammate.id} · ${verified ? "verified" : "not verified"}`);
+            changes = { artifact, files, base };
+            changed = `Changes: ${count}, kept as ${artifact}. ${verified ? `A pull request, on your word: galahad ship ${artifact} --title ${JSON.stringify(task.title)}` : "Not verified: read them before you ship them."}`;
+          } catch (error) {
+            changed = `Changes: ${count}, but they could not be kept: ${redact(String((error as Error).message ?? error)).slice(0, 200)}`;
+          }
+        }
+        changed = `\nBase: ${base.slice(0, 12)}${fetched === "stale" ? " (the repository could not be fetched: this is the clone as it was)" : ""}\n${changed}`;
+      }
+      return { verified, output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${changed}${notes ? `\nNotes: ${notes}` : ""}`, ...(verified ? {} : { error: outcome.status }), record, ...(changes ? { changes } : {}) };
     },
   };
 }

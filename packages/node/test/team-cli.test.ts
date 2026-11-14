@@ -275,3 +275,19 @@ test("squires provision --remake has a squire's VM made again from its image as 
   }
   expect(asked).toHaveLength(2);
 });
+
+test("a task that changed its repository says how many files and where they are kept, on its line", async () => {
+  const lines: string[] = [];
+  const changed = { id: "task-abcdefghijkl", room: "forge", assignee: "ada", title: "Fix the importer", goal: "g", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, changes: { artifact: "art_AAAAAAAAAAAAAAAAAAAAAA", files: 3, base: "0123456789abcdef0123456789abcdef01234567" } };
+  const api = {
+    async call<T>(name: RouteName): Promise<T> {
+      if (name === "team") return { teammates: [member("ada")], rooms: [], tasks: [changed, { ...changed, id: "task-bbbbbbbbbbbb", title: "One line", changes: { ...changed.changes, files: 1 } }, { ...changed, id: "task-cccccccccccc", title: "No repository", changes: undefined }], deliveries: [] } as T;
+      if (name === "prices") return { prices: {} } as T;
+      throw new Error(`unexpected call: ${name}`);
+    },
+  };
+  await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
+  expect(lines.find((line) => line.includes("Fix the importer"))).toBe("task-abcdefghijkl · done (verified) · ada · Fix the importer · 3 files changed, kept as art_AAAAAAAAAAAAAAAAAAAAAA");
+  expect(lines.find((line) => line.includes("One line"))).toEndWith(" · 1 file changed, kept as art_AAAAAAAAAAAAAAAAAAAAAA");
+  expect(lines.find((line) => line.includes("No repository"))).toBe("task-cccccccccccc · done (verified) · ada · No repository");
+});

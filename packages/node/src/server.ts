@@ -1460,6 +1460,12 @@ export function createApp(ctx: AppContext) {
       exec: execTeam, prepare: prepareTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
+      // What a task changed in its repository, kept on the VM's host as any sandbox's work is (the controller asks; a squire can't).
+      keep: async (member, path, label) => {
+        const bound = teamMember(member.id).workspace;
+        if (!bound) throw new HttpError(424, "this squire has no VM");
+        return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
+      },
       models: (member) => harnessModels(member.harness, leased.get(member.id)).models,
       modelsOutside: (member) => harnessModels(member.harness, leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),

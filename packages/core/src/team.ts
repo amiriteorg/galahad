@@ -211,6 +211,18 @@ export const TeamTaskRecord = z.strictObject({
 });
 export type TeamTaskRecord = z.infer<typeof TeamTaskRecord>;
 
+/**
+ * What a task in a repository changed, kept on the node that hosts the squire's VM: the artifact that holds the
+ * patch and the shipment (`galahad ship` turns it into a pull request, on your word), how many files, and the
+ * commit the work began from.
+ */
+export const TeamTaskChanges = z.strictObject({
+  artifact: z.string().regex(/^art_[A-Za-z0-9_-]{22}$/),
+  files: z.number().int().min(1).max(1_000_000),
+  base: z.string().regex(/^[0-9a-f]{40}$/),
+});
+export type TeamTaskChanges = z.infer<typeof TeamTaskChanges>;
+
 export interface TeamTask {
   id: string;
   room: string;
@@ -229,6 +241,8 @@ export interface TeamTask {
   updatedAt: number;
   /** What its run came to, once it has ended in the squire's hands (absent: not run yet, stopped before it began, or from before records were kept). */
   record?: TeamTaskRecord;
+  /** What it changed in its repository, where that was kept (absent: no repository, nothing changed, or it could not be kept). */
+  changes?: TeamTaskChanges;
 }
 
 export interface TeamSnapshot {

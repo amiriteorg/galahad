@@ -4,7 +4,7 @@ import { findSecrets, randomId, readAlike, redact } from "@galahad/core";
 import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
-  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamTaskRecord, TeamWorkspace,
+  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
 } from "../../core/src/team.ts";
 
@@ -427,7 +427,7 @@ export class TeamStore {
     const data = { ...JSON.parse(row.data), progress: teamOutput(text, TEAM_LIMITS.progress) };
     this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), this.now(), key);
   }
-  finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string; record?: TeamTaskRecord }): void {
+  finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string; record?: TeamTaskRecord; changes?: TeamTaskChanges }): void {
     const row = this.jobRow(key);
     if (!row || (row.status !== "queued" && row.status !== "running")) return;
     const data = JSON.parse(row.data);
@@ -437,6 +437,9 @@ export class TeamStore {
       // What the run came to, as its runner counted it: counts and times, kept only if it is exactly that.
       const record = TeamTaskRecord.safeParse(result?.record);
       if (record.success) data.record = record.data;
+      // What it changed and where that was kept: an artifact's id, a count and a commit, or nothing.
+      const changes = TeamTaskChanges.safeParse(result?.changes);
+      if (changes.success) data.changes = changes.data;
       if (status === "done" && !data.verified) { status = "failed"; error = error ?? "The work was not independently verified."; }
     }
     this.db.query("UPDATE team_jobs SET status=?,data=?,error=?,updated_at=? WHERE id=?").run(status, JSON.stringify(data), error ? teamOutput(error, 2000) : null, this.now(), key);

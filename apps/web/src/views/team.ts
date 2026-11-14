@@ -386,6 +386,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       task.status === "running" && task.progress ? h("p", { class: "small muted clamp-2 pre-wrap" }, task.progress.slice(-500)) : null,
       // What its run came to, as the runner counted it: its time, commands, tokens, and money at your prices.
       task.record ? h("p", { class: "tiny subtle tnum", title: "Counted by the runner as the task ran" }, taskRecordFacts(task.record, prices ?? {}).join(" · ")) : null,
+      // What it changed in its repository, kept to read and to ship (Artifacts opens a pull request from it, on your word).
+      task.changes ? h("p", { class: "tiny subtle" }, `${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed · kept as `, h("a", { href: "#/artifacts", onclick: (e: Event) => { e.preventDefault(); ctx.navigate("artifacts", { intent: task.changes!.artifact }); } }, task.changes.artifact)) : null,
       details,
       h("div", { class: "row wrap" }, h("span", { class: "tiny subtle grow" }, `Updated ${relativeTime(task.updatedAt)}`),
         canChat && activeTeamWork(task) ? button("Stop", { variant: "ghost", size: "sm", icon: "stop", onClick: () => void control({ task: task.id, action: "stop" }) }) : null,

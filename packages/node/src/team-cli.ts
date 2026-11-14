@@ -34,6 +34,8 @@ export function foldLine(line: string, width: number): string[] {
 }
 /** What a task's run came to, for its line in the listing (taskRecordFacts). Empty for a task with no record (not run, or from before them). */
 export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): string => (task.record ? taskRecordFacts(task.record, prices).map((fact) => ` · ${fact}`).join("") : "");
+/** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
+export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
 const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
@@ -51,7 +53,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
     // (Money is at your prices, asked for only when a task here has a record to price.)
     const prices: Prices = state.tasks.some((t) => t.record) ? (await api.call<{ prices: Prices }>("prices").catch(() => ({ prices: {} }))).prices : {};
-    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}`);
+    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}${taskChangesLine(t)}`);
     if (!state.teammates.length) print("Create a squire with galahad squires add <id> --name <name>, or open Squires in the app.");
     return;
   }
