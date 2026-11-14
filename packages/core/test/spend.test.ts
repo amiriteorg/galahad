@@ -13,6 +13,7 @@ import {
   PricedModel,
   PriceSchema,
   ratioIndex,
+  routes,
   spendLabel,
   spendTotal,
   tokensLabel,
@@ -167,13 +168,38 @@ describe("a run's settings, and variants of the harness", () => {
     expect(describeVariant(VARIANTS["no-gates"]!)).toBe("gates off");
     expect(describeVariant(VARIANTS.baseline!)).toBe("as the baseline");
     const mine = parseVariant("mine:gates=off,skills=on,effort=2,planner-gates=on,revisions=1,archive=no");
-    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1 } });
+    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1, engram: false } });
     expect(describeVariant(mine.options)).toBe("gates off, the planner's own gates, effort 2, skills offered, no archive context, 1 revision");
     expect(() => parseVariant("warp")).toThrow(/no variant "warp"/);
     expect(() => parseVariant("mine:warp=on")).toThrow(/no harness switch "warp"/);
     expect(() => parseVariant("mine:gates=maybe")).toThrow(/gates is on or off/);
     expect(() => parseVariant("mine:effort=9")).toThrow();
     expect(() => parseVariant("baseline:gates=off")).toThrow(/comes built in/);
+  });
+
+  test("the notes store is a switch of its own: off in the baseline and in every variant but the one named for it, and yours to spell", () => {
+    expect(VARIANTS.baseline!.engram).toBe(false);
+    expect(parseVariant("engram")).toEqual({ name: "engram", options: { ...VARIANTS.baseline!, engram: true } });
+    expect(describeVariant(VARIANTS.engram!)).toBe("the notes store (Engram)");
+    for (const [name, options] of Object.entries(VARIANTS)) expect([name, options.engram]).toEqual([name, name === "engram"]);
+    expect(parseVariant("mine:engram=on,gates=off").options).toEqual({ ...VARIANTS["no-gates"]!, engram: true });
+    expect(parseVariant("mine:engram=off").options).toEqual(VARIANTS.baseline!);
+    expect(() => parseVariant("mine:engram=3.7.2")).toThrow(/engram is on or off/);
+    expect(() => parseVariant("mine:warp=on")).toThrow(/there is: gates, planner-gates, effort, skills, archive, revisions, engram/);
+  });
+
+  test("a run recorded before a switch existed still reads, with that switch off: nothing recorded is refused or changed by a new one", () => {
+    // A run's settings as the log holds them from before 14 November 2026: six switches, no notes store.
+    const old = { effort: 1, parallel: 2, variant: { name: "no-gates", options: { gates: false, plannerGates: false, effort: 1 as const, skills: false, archive: true, revisions: 2 } }, seed: 9, group: "g-old1" };
+    const read = TrialRunSettings.parse(old);
+    expect(read.variant).toEqual({ name: "no-gates", options: { ...old.variant.options, engram: false } });
+    expect(read.variant!.options).toEqual(VARIANTS["no-gates"]!);
+    expect(describeVariant(read.variant!.options)).toBe("gates off");
+    // An older terminal's request to start a run names six switches too: taken, with the store off.
+    const asked = routes.startTrialRun.input.parse({ run: "r-old1", suite: "agentic", effort: 1, variant: old.variant });
+    expect(asked.variant!.options.engram).toBe(false);
+    // Still strict about what it doesn't know.
+    expect(routes.startTrialRun.input.safeParse({ run: "r-old1", suite: "agentic", effort: 1, variant: { name: "x", options: { ...old.variant.options, warp: true } } }).success).toBe(false);
   });
 
   test("settings are read leniently: what a newer node adds is left out, never refused", () => {

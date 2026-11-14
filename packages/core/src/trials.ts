@@ -63,7 +63,9 @@ export type TrialPins = z.infer<typeof TrialPins>;
  * The harness, as switches: what a variant turns on or off around the same models and the same tasks.
  * `gates`: a task's own gates run before the review · `plannerGates`: the planner may add its own ·
  * `effort`: attempts per trial · `skills`: his skills are offered to the planner and the engineer ·
- * `archive`: the archive's context goes with the plan · `revisions`: how many times work may be sent back.
+ * `archive`: the archive's context goes with the plan · `revisions`: how many times work may be sent back ·
+ * `engram`: the engineer is given the sandbox's notes store (Engram: its two commands, and how far to trust a
+ * note). A run recorded before a switch existed lacks it and reads as off, which is what it was run with.
  */
 export const HarnessOptions = z.object({
   gates: z.boolean(),
@@ -72,11 +74,12 @@ export const HarnessOptions = z.object({
   skills: z.boolean(),
   archive: z.boolean(),
   revisions: z.number().int().min(0).max(4),
+  engram: z.boolean().default(false),
 });
 export type HarnessOptions = z.infer<typeof HarnessOptions>;
 
 /** How trials are run when nothing says otherwise: what `galahad trial run` has always done, with a task's gates on. */
-export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2 };
+export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false };
 
 export const VariantName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "a variant's name is lowercase letters, digits and - (max 40)");
 export const TrialVariant = z.object({ name: VariantName, options: HarnessOptions });
@@ -113,7 +116,8 @@ export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   skills: { ...BASELINE, skills: true },
   "no-archive": { ...BASELINE, archive: false },
   "no-revisions": { ...BASELINE, revisions: 0 },
-  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0 },
+  engram: { ...BASELINE, engram: true },
+  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false },
 };
 
 const ON = new Set(["on", "yes", "true", "1"]);
@@ -141,10 +145,10 @@ export function parseVariant(spelling: string): TrialVariant {
       if (OFF.has(value)) return false;
       throw new Error(`${key} is on or off, not "${value}"`);
     };
-    if (key === "gates" || key === "skills" || key === "archive") options[key] = flag();
+    if (key === "gates" || key === "skills" || key === "archive" || key === "engram") options[key] = flag();
     else if (key === "planner-gates" || key === "plannerGates") options.plannerGates = flag();
     else if (key === "effort" || key === "revisions") options[key] = Number(value);
-    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions)`);
+    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram)`);
   }
   return { name, options: z.strictObject(HarnessOptions.shape).parse(options) };
 }
@@ -158,6 +162,7 @@ export function describeVariant(options: HarnessOptions): string {
   if (options.skills !== BASELINE.skills) said.push(options.skills ? "skills offered" : "no skills");
   if (options.archive !== BASELINE.archive) said.push(options.archive ? "the archive's context" : "no archive context");
   if (options.revisions !== BASELINE.revisions) said.push(options.revisions ? `${options.revisions} revision${options.revisions === 1 ? "" : "s"}` : "no revisions");
+  if (options.engram !== BASELINE.engram) said.push(options.engram ? "the notes store (Engram)" : "no notes store");
   return said.join(", ") || "as the baseline";
 }
 

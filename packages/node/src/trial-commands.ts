@@ -276,7 +276,7 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     return made.length === 2 && made.every((m) => m.result.trials.length) ? 0 : 1;
   }
   if (command === "trial" && sub === "variants" && !rest.length && !str(flags, "suite")) {
-    console.log(dim("Named sets of harness switches. Each differs from the baseline by one (bare: by all); your own: <name>:gates=off,skills=on,effort=2,planner-gates=on,archive=off,revisions=1"));
+    console.log(dim("Named sets of harness switches. Each differs from the baseline by one (bare: by all); your own: <name>:gates=off,skills=on,effort=2,planner-gates=on,archive=off,revisions=1,engram=on"));
     for (const [name, options] of Object.entries(VARIANTS)) console.log(`  ${name.padEnd(15)} ${describeVariant(options)}`);
     return 0;
   }

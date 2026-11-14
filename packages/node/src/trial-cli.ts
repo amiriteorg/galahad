@@ -207,6 +207,7 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     ...(job.effort !== undefined ? { effort: job.effort } : {}),
     ...(job.pins && Object.keys(job.pins).length ? { pins: job.pins } : {}),
     ...(h ? { proposeGates: h.plannerGates, offerSkills: h.skills, archive: h.archive, maxRevisions: h.revisions } : {}),
+    ...(h?.engram ? { engram: true } : {}),
   };
 }
 

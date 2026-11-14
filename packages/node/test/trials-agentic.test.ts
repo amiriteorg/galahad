@@ -333,4 +333,57 @@ describe("a run of the agentic suite", () => {
     expect(trials[0]!.score).toBe(1);
     expect(bare.runs[0]).toMatchObject({ suite: "agentic", variant: { name: "no-gates" }, seed: 9 });
   });
+
+  test("the engram variant gives the engineer the sandbox's notes store, on the same task; a sandbox without it is a crash, never a score", async () => {
+    const perf = suiteNamed("agentic").choose(["slow-rollup-l1"]);
+    const posed = poseTask(task("slow-rollup"), 9, 1);
+    const EXPORTS = `export PATH=/opt/engram/bin:"$PATH" ENGRAM_DATA_DIR=/work/.memory/engram ENGRAM_NO_UPDATE_CHECK=1 ENGRAM_PROJECT='trial' && `;
+    /** A node whose sandboxes answer the store's version question as told, and run a command given the store as they run it without. */
+    const nodeWith = (version: { exitCode: number; stdout: string }) => {
+      const fake = fakeNode({ leaves: () => posed.reference });
+      const plain = fake.sandboxes.onCommand!;
+      fake.sandboxes.onCommand = (box, command) => {
+        if (command === "/opt/engram/bin/engram version") return version;
+        return command.startsWith(EXPORTS) ? fake.sandboxes.exec(box.id, command.slice(EXPORTS.length)) : plain(box, command);
+      };
+      return fake;
+    };
+    const run = (fake: ReturnType<typeof fakeNode>, name: string) => runTrials(fake.node, { suite: "agentic", problems: perf, repeat: 1, parallel: 1, network: "isolated", seed: 9, variant: { name, options: VARIANTS[name]! } });
+    const told = (fake: ReturnType<typeof fakeNode>, role: string) => fake.chats.filter((chat) => chat.role === role).map((chat) => String(chat.messages[0].content)).join("\n");
+
+    const given = nodeWith({ exitCode: 0, stdout: "engram 3.7.2\n" });
+    const { trials } = await run(given, "engram");
+    expect(trials[0]).toMatchObject({ status: "scored", score: 1, seed: 9 });
+    expect(given.runs[0]).toMatchObject({ suite: "agentic", variant: { name: "engram", options: { ...VARIANTS.baseline!, engram: true } }, seed: 9 });
+    // The engineer is told how far to trust a note and the store's two commands; the reviewer nothing of it.
+    expect(told(given, "engineer")).toContain("Notes store. This VM keeps notes from your earlier tasks on this repository (project `trial`).");
+    expect(told(given, "engineer")).toContain("`engram search <words> --limit 5`");
+    expect(told(given, "reviewer")).not.toContain("Notes store");
+    // Its own command, and the task's gate, ran with the store's place and project said; the gate really ran.
+    const [engineer] = given.engineers();
+    expect(engineer!.commands).toContain(`${EXPORTS}leave-the-work 1`);
+    expect(engineer!.commands).toContain(`${EXPORTS}cd /work/repo && bun bench.mjs`);
+    expect(engineer!.commands.filter((c) => c === "cd /work/repo && bun bench.mjs")).toHaveLength(1);
+    // What the trial itself does in the sandbox (putting the repository in, taking the work out) is as it was.
+    expect(engineer!.commands.filter((c) => c.includes("galahad-trial:")).some((c) => c.includes("ENGRAM"))).toBe(false);
+    // The hidden tests' sandbox is asked nothing about a store and given none.
+    expect(given.graders()[0]!.box.commands.some((c) => /engram/i.test(c))).toBe(false);
+
+    // The same task and seed under the baseline: no question, no paragraph, no exports.
+    const base = nodeWith({ exitCode: 0, stdout: "engram 3.7.2\n" });
+    expect((await run(base, "baseline")).trials[0]).toMatchObject({ status: "scored", score: 1, seed: 9 });
+    expect(told(base, "engineer")).not.toMatch(/Notes store|engram/i);
+    expect(base.engineers()[0]!.commands.some((c) => /engram/i.test(c))).toBe(false);
+    expect(told(given, "engineer").replace(/\n\nNotes store\..*?go on without it\./gs, "")).toBe(told(base, "engineer"));
+
+    // A sandbox whose image has no Engram (or another one) can't measure the variant: said, and recorded as a crash.
+    for (const version of [{ exitCode: 127, stdout: "" }, { exitCode: 0, stdout: "engram 3.6.0\n" }]) {
+      const without = nodeWith(version);
+      const crashed = (await run(without, "engram")).trials[0]!;
+      expect(crashed).toMatchObject({ status: "crashed", score: 0 });
+      expect(crashed.note).toContain("no Engram 3.7.2");
+      expect(crashed.note).toContain("galahad sandbox build");
+      expect(without.chats.filter((chat) => chat.role === "engineer")).toEqual([]);
+    }
+  });
 });

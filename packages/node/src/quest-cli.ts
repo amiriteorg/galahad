@@ -33,6 +33,10 @@ import {
   type EffortEvent,
   type EffortPick,
   type EffortResult,
+  ENGRAM_PROBE,
+  ENGRAM_VERSION,
+  engramFound,
+  engramShell,
   evidenceCollector,
   gateBy,
   type GateResult,
@@ -111,6 +115,12 @@ export interface DoOptions {
   maxRevisions?: number;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
+  /**
+   * The engineer is given the sandbox's notes store (Engram: packages/brain/src/engram.ts). A trial's variant
+   * sets it, to measure what the store costs a task: its sandbox is fresh, so the store starts empty. A sandbox
+   * whose image has no pinned Engram ends the quest with that as its error; it is never run without and counted as with.
+   */
+  engram?: boolean;
 }
 
 /** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
@@ -459,6 +469,14 @@ async function workIn(
       if (cloned.exitCode !== 0) throw new Error(`couldn't clone ${options.agent.repo}: ${cloned.stdout.trim() || cloned.stderr.trim()}`);
     }
   }
+  // The sandbox's notes store, when the quest is given it: asked for by the binary's own path, and kept under one
+  // project (the sandbox is this quest's alone). What the trial itself does in the sandbox is not given it.
+  let engram: string | undefined;
+  if (options.engram) {
+    if (!engramFound(await exec(ENGRAM_PROBE, 30)).present) throw new Error(`the notes store was asked for, but this sandbox's image has no Engram ${ENGRAM_VERSION}: the workshop image holds it once rebuilt (galahad sandbox build); the Lab's does not`);
+    engram = options.trial ? "trial" : "quest";
+  }
+  const store = engram;
   const evidence = options.evidence ?? (agent ? agentEvidence(agent.workdir) : undefined);
   const instructions = [options.instructions, run.instructions].filter(Boolean).join("\n\n");
   const outcome = await runQuest(
@@ -475,6 +493,7 @@ async function workIn(
       // The gates run in this workshop's own sandbox (with effort: each attempt's own).
       ...(options.gates?.length ? { gates: options.gates } : {}),
       ...(options.proposeGates ? { proposeGates: true } : {}),
+      ...(store ? { engram: store } : {}),
     },
     {
       ask: async (role, messages) => {
@@ -507,7 +526,8 @@ async function workIn(
         }
         return { text, model, ...(skipped.length ? { skipped } : {}) };
       },
-      exec,
+      // (With the store, each of the quest's commands is told where it is and which project: the engineer has only a shell.)
+      exec: store ? (command, timeoutSec) => exec(`${engramShell(store)}${command}`, timeoutSec) : exec,
       emit: (event) => (shop.trail.on(event), run.emit?.(event)),
       signal: run.signal,
     },
