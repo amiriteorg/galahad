@@ -16,8 +16,11 @@ import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./a
 export type QuestRole = "planner" | "engineer" | "reviewer";
 
 export interface QuestDeps {
-  /** One complete reply from a role (the transport collects the stream). */
-  ask(role: QuestRole, messages: ChatMessage[]): Promise<{ text: string; model: string }>;
+  /**
+   * One complete reply from a role (the transport collects the stream). `skipped`: the role's models that
+   * couldn't answer before this one did, each with why (the loop says so once: see the "skipped" event).
+   */
+  ask(role: QuestRole, messages: ChatMessage[]): Promise<{ text: string; model: string; skipped?: { model: string; error: string }[] }>;
   /** Run one shell command in the quest's workspace. */
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
   /** Fixed cleanup for this worker, available even after ordinary execution is cancelled. */
@@ -125,6 +128,8 @@ export type QuestEvent =
   | { type: "submitted"; summary: string }
   | { type: "review"; verdict: "pass" | "revise"; notes: string; model: string }
   | { type: "retry"; role: QuestRole; attempt: number; error: string; waitMs: number }
+  /** A model of the role's couldn't answer and another did (`answered`): said once for each, never passed over in silence. */
+  | { type: "skipped"; role: QuestRole; model: string; error: string; answered: string }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
@@ -367,6 +372,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const timer = setTimeout(resolve, ms);
         deps.signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
       }));
+  /** The models already said to have been passed over, by role: each is said once a quest. */
+  const toldSkipped = new Set<string>();
   // Every message is redacted before it goes to a model: command output can contain anything.
   const ask = async (role: QuestRole, messages: ChatMessage[]) => {
     const redacted = messages.map((m) => ({ role: m.role, content: redact(m.content) }));
@@ -375,6 +382,13 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       try {
         const reply = await deps.ask(role, redacted);
         check();
+        // Another model answering in a failed one's place costs what that one costs and measures that one: say so.
+        for (const passed of reply.skipped ?? []) {
+          const key = `${role}\u0000${passed.model}`;
+          if (toldSkipped.has(key)) continue;
+          toldSkipped.add(key);
+          emit({ type: "skipped", role, model: passed.model, error: redact(passed.error).slice(0, 300), answered: reply.model });
+        }
         return reply;
       } catch (error) {
         if (error instanceof Stopped || deps.signal?.aborted || attempt >= ASK_RETRY_DELAYS_MS.length) throw error;

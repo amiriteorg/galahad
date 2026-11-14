@@ -53,6 +53,8 @@ export function standingAfter(s: QuestStanding, event: QuestEvent): QuestStandin
       return event.verdict === "pass" ? { ...s, doing: "The reviewer passed it" } : { ...s, state: "working", revisions: s.revisions + 1, doing: "Sent back by the reviewer" };
     case "retry":
       return { ...s, doing: `The ${event.role} couldn't answer: asking again in ${Math.round(event.waitMs / 1000)} s` };
+    case "skipped":
+      return { ...s, doing: line(`${event.model} couldn't answer as ${event.role}: ${event.answered} answers instead`, 300) };
     case "finished":
       return {
         ...s,

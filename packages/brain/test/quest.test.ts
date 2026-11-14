@@ -224,3 +224,34 @@ describe("the protocol", () => {
     expect(observation({ exitCode: 137, stdout: "", stderr: "", durationMs: 1, truncated: false })).toContain("time limit");
   });
 });
+
+describe("a model that couldn't answer is never passed over in silence", () => {
+  test("when a role's first model fails and another answers, whoever watches is told once, with why and who answered instead", async () => {
+    const events: QuestEvent[] = [];
+    const replies: Record<QuestRole, string[]> = { planner: ["1. Do it.\nDone when: it is done."], engineer: [sh("echo hi"), sh("cat a.txt"), "DONE\nIt is there."], reviewer: ["PASS\nFine."] };
+    const outcome = await runQuest(
+      { goal: "make it so", environment: "a test sandbox" },
+      {
+        // The engineer's first model is refused every time; the reviewer's answers at once.
+        ask: async (role) => ({
+          text: replies[role].shift()!,
+          model: `second/${role}`,
+          ...(role === "engineer" ? { skipped: [{ model: "plan/first", error: `400 MissingSessionID ${FAKE_KEY}` }] } : {}),
+        }),
+        exec: async () => ({ exitCode: 0, stdout: "ok\n", stderr: "", durationMs: 5, truncated: false }),
+        emit: (event) => events.push(event),
+      },
+    );
+    expect(outcome.status).toBe("done");
+    const told = events.filter((e) => e.type === "skipped");
+    // Three engineer turns were each answered by the second model: said once, not three times.
+    expect(told).toHaveLength(1);
+    expect(told[0]).toMatchObject({ type: "skipped", role: "engineer", model: "plan/first", answered: "second/engineer" });
+    // What the provider said is shown, and nothing secret it echoed.
+    expect((told[0] as { error: string }).error).toContain("400 MissingSessionID");
+    expect(findSecrets(JSON.stringify(told))).toEqual([]);
+    // It comes before that turn's own events.
+    expect(events.findIndex((e) => e.type === "skipped")).toBeLessThan(events.findIndex((e) => e.type === "command"));
+  });
+});
+

@@ -99,4 +99,9 @@ describe("where a quest stands, from its events", () => {
     }
     expect(standing.state).toBe("gave-up");
   });
+
+  test("a model passed over is what he is doing until the next thing happens: which one, and who answers instead", () => {
+    const standing = standingAfter(questStanding(30), { type: "skipped", role: "engineer", model: "plan/first", error: "400 MissingSessionID", answered: "router/second" });
+    expect(standing.doing).toBe("plan/first couldn't answer as engineer: router/second answers instead");
+  });
 });

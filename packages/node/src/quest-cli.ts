@@ -330,6 +330,9 @@ function print(event: QuestEvent): void {
     case "retry":
       console.log(dim(`  (the ${event.role} couldn't answer: ${event.error.split("\n")[0]}; asking again in ${Math.round(event.waitMs / 1000)} s)`));
       return;
+    case "skipped":
+      console.log(`  ${bold(`${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead.`);
+      return;
     case "finished":
       return;
   }
@@ -356,6 +359,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "retry":
       console.log(`${tag} ${dim(`the ${event.role} couldn't answer; asking again in ${Math.round(event.waitMs / 1000)} s`)}`);
+      return;
+    case "skipped":
+      console.log(`${tag} ${bold(`${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead.`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${event.outcome.steps} commands`)}`);
@@ -490,13 +496,16 @@ async function workIn(
           // reviewer is the same independent reviewer for all), and the node shows the call as a helper's.
           ...(run.tag ? { attempt: run.tag, ...(role !== "reviewer" && run.tag.index > 1 ? { rotate: run.tag.index - 1 } : {}) } : {}),
         };
+        // The role's models that couldn't answer before one did: the quest says so (once each), never passes it over.
+        const skipped: { model: string; error: string }[] = [];
         for await (const event of node.stream("chat", input)) {
           if (event.type === "text") text += event.text;
           else if (event.type === "model") model = event.ref;
+          else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
           else if (event.type === "usage") run.spent?.({ role, model: event.ref, usage: event.usage });
           else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
         }
-        return { text, model };
+        return { text, model, ...(skipped.length ? { skipped } : {}) };
       },
       exec,
       emit: (event) => (shop.trail.on(event), run.emit?.(event)),

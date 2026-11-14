@@ -20,6 +20,8 @@ interface FakeOptions {
   /** What each role's call reports (null: the provider says nothing). */
   usage?: (role: string, model: string) => Usage | null;
   past?: { trials: TrialView[]; runs?: TrialRunsView };
+  /** A role's first model that can't answer (the next one does): the role, the model and why. */
+  refused?: { role: string; model: string; error: string };
 }
 
 function fakeNode(options: FakeOptions = {}) {
@@ -69,6 +71,7 @@ function fakeNode(options: FakeOptions = {}) {
       chats.push(input);
       const role: string = input.role;
       const ref: string = input.model ?? `fake/${role}`;
+      if (options.refused?.role === role && !input.model) yield { type: "fallback", from: options.refused.model, error: options.refused.error };
       yield { type: "model", ref };
       const first: string = input.messages[0].content;
       let text: string;
@@ -124,6 +127,18 @@ describe("what his \"done\" was worth", () => {
     expect(describeDone(trials)).toMatch(/done.* called done 2 times, 1 of them false \(50%, \d+%–\d+%\) · solved outright once, and called done$/);
     // A reviewer's case has no quest to end: nothing is said.
     expect(describeDone(trials.map(({ quest: _quest, ...t }) => t))).toBe("");
+  });
+});
+
+describe("a model that couldn't answer is never passed over in silence", () => {
+  test("a run says once, as it happens, that a role's first model couldn't answer, why, and which one answers instead", async () => {
+    const { node } = fakeNode({ refused: { role: "engineer", model: "plan/first", error: "plan → 400 MissingSessionID" } });
+    const said: any[] = [];
+    const { trials } = await runTrials(node, { suite: "engineering", problems: [cantilever, rlc], repeat: 1, parallel: 1, network: "gateway", seed: 11, progress: (event) => void said.push(event) });
+    // The work was done by the model that answered: the record says which.
+    expect(trials.map((t) => t.models.includes("fake/engineer"))).toEqual([true, true]);
+    // Four engineer turns over two trials: one notice.
+    expect(said.filter((e) => e.type === "fallback")).toEqual([{ type: "fallback", role: "engineer", model: "plan/first", error: "plan → 400 MissingSessionID", answered: "fake/engineer" }]);
   });
 });
 

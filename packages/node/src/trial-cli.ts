@@ -66,7 +66,24 @@ export interface TrialJob {
   pins?: TrialPins;
   /** Every model call as it ends (the run's budget counts them as they come). */
   spent?(call: { role: string; model: string; usage: Usage | null }): void;
+  /** A role's model that couldn't answer, and the one that answered in its place (a trial's quest says it once). */
+  passedOver?(call: PassedOver): void;
 }
+
+/** A model of a role's that couldn't answer, why, and which one answered instead. */
+export interface PassedOver {
+  role: string;
+  model: string;
+  error: string;
+  answered: string;
+}
+
+/** A trial's quest tells its run which models were passed over (the run says each once). */
+export const tellPassedOver =
+  (job: Pick<TrialJob, "passedOver">) =>
+  (event: { type: string; role?: string; model?: string; error?: string; answered?: string }): void => {
+    if (event.type === "skipped" && event.role && event.model && event.answered) job.passedOver?.({ role: event.role, model: event.model, error: event.error ?? "", answered: event.answered });
+  };
 
 /**
  * Something a run can try: a problem of a suite that isn't the engineering one (an agentic task with hidden
@@ -123,6 +140,8 @@ export interface TrialRunOptions {
       | { type: "start"; problem: Tryable; seed: number }
       | { type: "done"; trial: TrialView }
       | { type: "skipped"; problem: Tryable; why: string }
+      /** A role's model couldn't answer and another did: what is measured, and paid for, is the one that answered. Once for each. */
+      | ({ type: "fallback" } & PassedOver)
       /** How the run will go: trials at once, and why (the slots there are). */
       | { type: "plan"; parallel: number; effort: EffortLevel | null; why: string }
       /** Before the first trial: the budget, and roughly what the run will cost going by past runs of the same problems. */
@@ -232,6 +251,7 @@ async function solveProblem(node: NodeClient, problem: TrialProblem, job: TrialJ
         ...(job.spent ? { spent: job.spent } : {}),
         emit: (event) => {
           if ((event.type === "plan" || event.type === "thought" || event.type === "review") && event.model) models.add(event.model);
+          tellPassedOver(job)(event);
         },
         finished: async (exec) => {
           const read = await exec("cat /work/out/answer.json 2>/dev/null | head -c 100000", 60).catch(() => null);
@@ -414,6 +434,8 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
   let ended: string | null = null;
   let stopped = 0;
   let next = 0;
+  /** The models said to have been passed over so far: each once a run, by role. */
+  const passedOver = new Set<string>();
   const worker = async (): Promise<void> => {
     while (next < jobs.length && !signal.aborted) {
       ended ??= over();
@@ -436,6 +458,12 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
           addUsage(spent, call.role, call.model, call.usage);
           // Spent with trials still running: they stop after their current step, so the overrun is a step's worth each.
           if (!ended && (ended = over())) stop.abort();
+        },
+        passedOver: (call) => {
+          const key = `${call.role}\u0000${call.model}`;
+          if (passedOver.has(key)) return;
+          passedOver.add(key);
+          options.progress?.({ type: "fallback", ...call });
         },
       });
       if (trial) {
@@ -578,6 +606,7 @@ export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOp
         } else if (event.type === "budget") {
           console.log(dim(`[budget ${budgetLabel(event.budget)}${event.byDefault ? " (the default: --budget to set your own)" : ""} · ${estimateLabel(event.estimate)}]\n`));
         } else if (event.type === "start") console.log(dim(`… ${event.problem.id} (seed ${event.seed})`));
+        else if (event.type === "fallback") console.log(`${bold(`! ${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead: what this run measures and pays for is that model.`);
         else if (event.type === "done") console.log(describeTrial(event.trial));
         else if (event.type === "spent") {
           console.log(`\n${bold("■ Stopped at the budget:")} ${event.why}. ${event.finished} trial(s) finished and recorded${event.stopped ? `, ${event.stopped} stopped mid-way (not recorded)` : ""}${event.notStarted ? `, ${event.notStarted} not started` : ""}.`);

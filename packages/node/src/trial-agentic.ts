@@ -17,7 +17,7 @@ import {
   treeCommand,
 } from "@galahad/brain";
 import { type NodeClient, questId, runNodeQuest } from "./quest-cli.ts";
-import { harnessOptions, heldToEffort, type TrialJob, type TrialUnit } from "./trial-cli.ts";
+import { harnessOptions, heldToEffort, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
 
 /*
  * One agentic trial: a small repository and a task, posed from a seed, put in a fresh
@@ -124,6 +124,7 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
         ...(job.spent ? { spent: job.spent } : {}),
         emit: (event) => {
           if ((event.type === "plan" || event.type === "thought" || event.type === "review") && event.model) models.add(event.model);
+          tellPassedOver(job)(event);
         },
         // Every attempt starts from the same repository, as given.
         prepare: (exec) => seed(exec, posed),
