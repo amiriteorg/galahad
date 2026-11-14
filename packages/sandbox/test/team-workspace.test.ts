@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { containerName, LABEL, SandboxHost, type LedgerEntryInput, type TokenMinter, type Workspaces } from "../src/index.ts";
+import { containerName, LABEL, NETWORKS, SandboxHost, type LedgerEntryInput, type TokenMinter, type Workspaces } from "../src/index.ts";
 
 const ID = "0123456789";
 const QUEST = "arm.team.abcdef0123.builder";
 const OLD_LEASE = "test-only-old-lease-hash";
 const lease = (n: number) => `test-only-gateway-lease-${n}`;
+/** Where the helper mounted the VM's disk on the host. */
+const DISK = `/var/lib/galahad-workspaces/${ID}/mnt`;
+const REMADE = { providers: ["openai"], approvedBy: "test-owner" };
 
 /** Docker/helper stand-ins: no containers, mounts, host files, or real credentials. */
 function teammateHost(opts: {
@@ -12,24 +15,31 @@ function teammateHost(opts: {
   labels?: Record<string, string>;
   missing?: boolean;
   legacyHelper?: boolean;
-  failure?: "mount" | "start" | "write" | "throw-write";
+  failure?: "mount" | "start" | "write" | "throw-write" | "run";
+  /** A remake that was cut short: the container is only there under the name it was set aside as. */
+  setAside?: boolean;
 } = {}) {
   const commands: string[][] = [];
   const events: string[] = [];
+  /** `events`, and with them everything else asked of Docker (stop, rename, run, rm), in the order it happened. */
+  const all: string[] = [];
+  const note = (event: string) => { events.push(event); all.push(event); };
   const ledger: LedgerEntryInput[] = [];
   const minted: Parameters<TokenMinter["mint"]>[0][] = [];
   const revoked: string[] = [];
   const stored = new Map([[ID, OLD_LEASE]]);
+  /** The containers Docker has by name. */
+  const named = new Set([opts.setAside ? `${containerName(ID)}-replaced` : containerName(ID)]);
   const workspaces: Workspaces = {
     available: async () => true,
     create: async () => { throw new Error("resume must not create a workspace"); },
-    retain: async (id) => { events.push(`retain:${id}`); },
+    retain: async (id) => { note(`retain:${id}`); },
     mount: async (id) => {
-      events.push(`mount:${id}`);
+      note(`mount:${id}`);
       if (opts.failure === "mount") throw new Error("existing workspace is missing");
     },
-    remove: async (id) => { events.push(`remove:${id}`); },
-    removeRetained: async (id) => { events.push(`remove-owned:${id}`); },
+    remove: async (id) => { note(`remove:${id}`); },
+    removeRetained: async (id) => { note(`remove-owned:${id}`); },
     stats: async () => ({ totalBytes: 100, freeBytes: 90, images: [
       { id: ID, sizeBytes: 10, usedBytes: 1, mounted: false, createdAt: 0, retained: true },
     ] }),
@@ -49,31 +59,44 @@ function teammateHost(opts: {
     },
     tokens: {
       mint: (scope) => {
-        minted.push(scope); events.push("mint");
+        minted.push(scope); note("mint");
         return { token: lease(minted.length), info: { hash: `test-only-hash-${minted.length}` } };
       },
-      revoke: (hash) => { revoked.push(hash); events.push(`revoke:${hash}`); return true; },
+      revoke: (hash) => { revoked.push(hash); note(`revoke:${hash}`); return true; },
     },
     ledger: (entry) => { ledger.push(entry); },
     runner: async (args) => {
       commands.push(args);
       if (args[0] === "ps") return { code: 0, stdout: opts.missing ? "" : ID, stderr: "" };
+      // (Asked of one container by name: whether it is there, and where its /work comes from.)
+      if (args[0] === "inspect" && args[1] === "--format") {
+        if (args[2] === "{{.Name}}") return named.has(args[3]!) ? { code: 0, stdout: `/${args[3]}`, stderr: "" } : { code: 1, stdout: "", stderr: "No such object" };
+        return { code: 0, stdout: JSON.stringify([{ Type: "bind", Source: DISK, Destination: "/work" }, { Type: "bind", Source: "/etc/galahad/resolv.conf", Destination: "/etc/resolv.conf" }]), stderr: "" };
+      }
+      if (args[0] === "stop") all.push("stop");
+      if (args[0] === "rename") { all.push(`rename:${args[1]}>${args[2]}`); named.delete(args[1]!); named.add(args[2]!); }
+      if (args[0] === "rm") { all.push(`rm:${args.at(-1)}`); named.delete(args.at(-1)!); }
+      if (args[0] === "run") {
+        all.push("run");
+        if (opts.failure === "run") return { code: 125, stdout: "", stderr: `kata: could not start the VM (${lease(1)})` };
+        named.add(args[args.indexOf("--name") + 1]!);
+      }
       if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify([
         { Config: { Labels: labels, Image: "galahad/sandbox:1" }, State: { Status: opts.status ?? "exited" } },
       ]), stderr: "" };
       if (args[0] === "start") {
-        events.push("start");
+        note("start");
         if (opts.failure === "start") return { code: 1, stdout: "", stderr: "failed to start" };
       }
       if (args[0] === "exec") {
-        events.push("write");
+        note("write");
         if (opts.failure === "throw-write") throw new Error(`transport failed with ${lease(1)}`);
         if (opts.failure === "write") return { code: 1, stdout: lease(1), stderr: lease(1) };
       }
       return { code: 0, stdout: "", stderr: "" };
     },
   });
-  return { host, commands, events, ledger, minted, revoked, stored };
+  return { host, commands, events, all, ledger, minted, revoked, stored };
 }
 
 describe("persistent teammate workspaces", () => {
@@ -172,6 +195,80 @@ describe("persistent teammate workspaces", () => {
     expect(f.events).toEqual([`remove-owned:${ID}`, `revoke:${OLD_LEASE}`]);
     expect(f.commands.find((args) => args[0] === "rm")).toEqual(["rm", "--force", "--volumes", containerName(ID)]);
     expect(f.ledger.at(-1)?.verdict).toBe("approved");
+  });
+
+  test("a squire's VM is made again from its image as it is now: the same VM and disk, a new lease, and the old container goes only once the new one runs", async () => {
+    const f = teammateHost({ status: "running", labels: { [`${LABEL}.cpus`]: "2", [`${LABEL}.memory`]: "4", [`${LABEL}.created`]: "1000", [`${LABEL}.expires`]: "604801000" } });
+    const remade = await f.host.remakeTeam(ID, QUEST, REMADE);
+    expect(remade).toMatchObject({ id: ID, quest: QUEST, ephemeral: false, isolation: "vm" });
+    const name = containerName(ID);
+    expect(f.all).toEqual([`retain:${ID}`, "stop", `rename:${name}>${name}-replaced`, `mount:${ID}`, "mint", "run", `rm:${name}-replaced`, `revoke:${OLD_LEASE}`]);
+    const run = f.commands.find((args) => args[0] === "run")!;
+    const after = (flag: string) => run[run.indexOf(flag) + 1];
+    // The same VM: its name, its disk where the helper has it, what it was given, and who it is.
+    expect(after("--name")).toBe(name);
+    expect(run).toContain(`type=bind,src=${DISK},dst=/work`);
+    expect([after("--cpus"), after("--memory"), after("--runtime"), after("--network")]).toEqual(["2", "4096m", "io.containerd.kata.v2", NETWORKS.gateway.name]);
+    for (const label of [`${LABEL}.id=${ID}`, `${LABEL}.quest=${QUEST}`, `${LABEL}.ephemeral=false`, `${LABEL}.created=1000`, `${LABEL}.expires=604801000`, `${LABEL}.disk=20`, `${LABEL}.isolation=vm`, `${LABEL}.providers=openai`]) expect(run).toContain(label);
+    // From the image by its name, which is the image as it is built now.
+    expect(run.slice(-3)).toEqual(["galahad/sandbox:1", "sleep", "infinity"]);
+    // The container that was is removed, and nothing of its disk: no volumes flag, no word to the helper to remove.
+    expect(f.commands.filter((args) => args[0] === "rm")).toEqual([["rm", "--force", `${name}-replaced`]]);
+    expect(f.all.some((event) => event.startsWith("remove"))).toBe(false);
+    // A new lease in its environment; the one before is revoked only after the new VM runs.
+    expect(run).toContain(`GALAHAD_TOKEN=${lease(1)}`);
+    expect(f.stored.get(ID)).toBe("test-only-hash-1");
+    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["openai"], ttlMinutes: 7 * 24 * 60, maxRequests: 100_000 }]);
+    expect(f.ledger).toEqual([expect.objectContaining({ class: "modify", resource: "docker.container", target: name, verdict: "approved", quest: QUEST, detail: expect.stringContaining("made again from galahad/sandbox:1") })]);
+    expect(JSON.stringify({ remade, ledger: f.ledger })).not.toContain(lease(1));
+  });
+
+  test("a VM that will not start again is put back as it was, and the lease it had still holds", async () => {
+    const f = teammateHost({ status: "running", failure: "run" });
+    const name = containerName(ID);
+    let thrown: unknown;
+    try { await f.host.remakeTeam(ID, QUEST, REMADE); } catch (error) { thrown = error; }
+    expect(thrown).toMatchObject({ status: 424 });
+    expect(String(thrown)).toContain("as it was");
+    expect(String(thrown)).not.toContain(lease(1));
+    // The new one is cleared away, the old one gets its name back and is started, as it was running before.
+    expect(f.all).toEqual([`retain:${ID}`, "stop", `rename:${name}>${name}-replaced`, `mount:${ID}`, "mint", "run", `rm:${name}`, `rename:${name}-replaced>${name}`, "start", "revoke:test-only-hash-1"]);
+    expect(f.stored.get(ID)).toBe(OLD_LEASE);
+    expect(f.ledger).toEqual([]);
+    // One that was not running is left stopped.
+    const stopped = teammateHost({ status: "exited", failure: "run" });
+    await expect(stopped.host.remakeTeam(ID, QUEST, REMADE)).rejects.toMatchObject({ status: 424 });
+    expect(stopped.all).not.toContain("start");
+  });
+
+  test("its network can change with it, which nothing else can do to a microVM", async () => {
+    const f = teammateHost({ status: "running" });
+    await f.host.remakeTeam(ID, QUEST, { ...REMADE, network: "online" });
+    const run = f.commands.find((args) => args[0] === "run")!;
+    expect(run.filter((_, i) => run[i - 1] === "--network")).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
+    expect(run).toContain(`${LABEL}.network=online`);
+  });
+
+  test("a remake that was cut short is taken up again: the container that was set aside gets its name back first", async () => {
+    const f = teammateHost({ status: "exited", setAside: true });
+    const name = containerName(ID);
+    await f.host.remakeTeam(ID, QUEST, REMADE);
+    expect(f.all.slice(0, 2)).toEqual([`rename:${name}-replaced>${name}`, `retain:${ID}`]);
+    expect(f.all.at(-2)).toBe(`rm:${name}-replaced`);
+  });
+
+  test.each(refusedResumes)("making again refuses $name before anything is touched", async ({ id, quest, labels, status }) => {
+    const f = teammateHost({ labels });
+    await expect(f.host.remakeTeam(id, quest, REMADE)).rejects.toMatchObject({ status });
+    expect(f.all).toEqual([]);
+    expect(f.stored.get(ID)).toBe(OLD_LEASE);
+  });
+
+  test("an old helper, or a disk whose place can't be told, refuses before anything is touched", async () => {
+    const f = teammateHost({ legacyHelper: true });
+    await expect(f.host.remakeTeam(ID, QUEST, REMADE)).rejects.toMatchObject({ status: 424 });
+    expect(f.commands.some((args) => ["stop", "rename", "run", "rm"].includes(args[0]!))).toBe(false);
+    expect(f.minted).toEqual([]);
   });
 
   test("a retained disk is not reaped when its container is missing", async () => {

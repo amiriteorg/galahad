@@ -475,6 +475,120 @@ export class SandboxHost {
     return { ...sandbox, status: "running" };
   }
 
+  /**
+   * Owner only. Make a squire's VM again from its image as it is now: the same VM (its id, its `/work`, what it
+   * was given), a new container. A VM is made from the image as it was that day, so a fix to the image, or a
+   * newer tool in it, reaches an existing squire only this way. The container that was is set aside under
+   * another name and removed only once the new one runs; one that won't start is cleared away and the old one
+   * is put back as it was. Its network may change with it (a microVM's can't be changed any other way), and its
+   * gateway token covers `providers`, as for a VM made today. Everything outside `/work` is the image's again.
+   */
+  async remakeTeam(id: string, quest: string, opts: { providers: string[]; network?: "online" | "gateway"; approvedBy: string }): Promise<SandboxView> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
+    if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
+      throw new SandboxError("that is not this teammate's persistent VM", 403);
+    }
+    const name = containerName(id);
+    const aside = `${name}-replaced`;
+    const network = opts.network ?? (sandbox.network === "isolated" ? "gateway" : sandbox.network);
+    const providers = sandboxScopes({ network, providers: opts.providers, search: sandbox.providers.includes(SEARCH_SCOPE) });
+    if (!(await this.hasImage(sandbox.image))) throw new SandboxError(`${sandbox.image} is not built on this node: run \`galahad sandbox build\` first`, 424);
+    const ws = this.opts.workspaces;
+    if (sandbox.disk && (!ws?.mount || !ws.retain)) throw new SandboxError("update the workspace helper before making this teammate's VM again", 424);
+    // A remake that was cut short after the old container was set aside left it there: it gets its name back first.
+    if ((await this.docker(["inspect", "--format", "{{.Name}}", name])).code !== 0) {
+      const back = await this.docker(["rename", aside, name]);
+      if (back.code !== 0) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
+    }
+    let workspace: string | undefined;
+    if (sandbox.disk) {
+      // Where its disk is on this host, as the container that has it says: never worked out from its id.
+      const mounts = await this.docker(["inspect", "--format", "{{json .Mounts}}", name]);
+      let found: { Type?: string; Source?: string; Destination?: string }[] = [];
+      try {
+        found = mounts.code === 0 ? (JSON.parse(mounts.stdout) as typeof found) : [];
+      } catch {
+        // (Not JSON: the same as not told.)
+      }
+      workspace = found.find((m) => m.Destination === "/work" && m.Type === "bind")?.Source;
+      if (!workspace?.startsWith("/")) throw new SandboxError("could not tell where this teammate's workspace disk is; nothing was changed", 424);
+      // Kept, whatever becomes of its container.
+      await ws!.retain!(id);
+    }
+    await this.ensureNetworks();
+
+    await this.docker(["stop", "-t", "10", name], 60_000);
+    let moved = await this.docker(["rename", name, aside]);
+    if (moved.code !== 0) {
+      // (A remake before this one may have ended with its new VM running and the old container still set aside: that one goes.)
+      await this.docker(["rm", "--force", aside]);
+      moved = await this.docker(["rename", name, aside]);
+    }
+    if (moved.code !== 0) {
+      if (sandbox.status === "running") await this.docker(["start", name], 120_000);
+      throw new SandboxError(`could not set the teammate's VM aside, so it is as it was: ${redact(moved.stderr).split("\n")[0]!.slice(0, 300)}`, 424);
+    }
+    /** The old container under its own name again, running if it was. */
+    const putBack = async (): Promise<void> => {
+      await this.docker(["rm", "--force", name]);
+      await this.docker(["rename", aside, name]);
+      if (sandbox.status === "running") await this.docker(["start", name], 120_000);
+    };
+    let minted: { token: string; hash: string } | undefined;
+    try {
+      if (sandbox.disk) await ws!.mount!(id);
+      let env: Record<string, string> = {};
+      if (providers.length) {
+        const lease = this.opts.tokens.mint({ label: `sandbox:${id}`, providers, ttlMinutes: 7 * 24 * 60, maxRequests: 100_000 });
+        env = gatewayEnv(lease.token, providers);
+        minted = { token: lease.token, hash: lease.info.hash };
+      }
+      const spec: SandboxSpec = {
+        id,
+        quest,
+        node: this.opts.node,
+        image: sandbox.image,
+        network,
+        cpus: sandbox.cpus,
+        memoryGb: sandbox.memoryGb,
+        pidsLimit: 1024,
+        ttlMinutes: Math.max(0, Math.round((sandbox.expiresAt - sandbox.createdAt) / 60_000)),
+        ephemeral: false,
+        providers,
+        createdAt: sandbox.createdAt,
+        env,
+        isolation: "vm",
+        ...(this.opts.resolvConf ? { resolvConf: this.opts.resolvConf } : {}),
+        ...(minted ? { tokenHash: minted.hash } : {}),
+        ...(workspace && sandbox.disk ? { workspace, diskGb: sandbox.disk.limitGb } : {}),
+      };
+      const run = await this.docker(runArgs(spec), 10 * 60_000);
+      if (run.code !== 0) throw new Error(run.stderr.trim() || `docker run exited ${run.code}`);
+    } catch (error) {
+      await putBack();
+      if (minted) this.opts.tokens.revoke(minted.hash);
+      // (Docker may say the new container's arguments back, and its token is among them.)
+      let why = redact(String((error as Error).message ?? error)).split("\n")[0]!.slice(0, 300);
+      if (minted) why = why.replaceAll(minted.token, "[its token]");
+      throw new SandboxError(`could not make the teammate's VM again, so it is as it was: ${why}`, 424);
+    }
+    await this.docker(["rm", "--force", aside]);
+    const previous = this.tokenStore.take(id);
+    if (previous) this.opts.tokens.revoke(previous);
+    if (minted) this.tokenStore.put(id, minted.hash);
+    this.opts.ledger({
+      class: "modify",
+      resource: "docker.container",
+      target: name,
+      verdict: "approved",
+      reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
+      quest,
+      detail: `made again from ${sandbox.image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
+    });
+    return (await this.get(id))!;
+  }
+
   async exec(id: string, cmd: string[], timeoutSec = 600): Promise<ExecResult> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
