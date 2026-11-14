@@ -124,7 +124,7 @@ describe("what his \"done\" was worth", () => {
     const { node } = fakeNode();
     const { trials } = await runTrials(node, { suite: "engineering", problems: [cantilever, rlc], repeat: 1, parallel: 1, network: "gateway", seed: 11 });
     expect(trials.map((t) => [t.problem, t.quest?.status, t.score === 1])).toEqual([["cantilever-beam", "done", true], ["rlc-step", "done", false]]);
-    expect(describeDone(trials)).toMatch(/done.* called done 2 times, 1 of them false \(50%, \d+%–\d+%\) · solved outright once, and called done$/);
+    expect(describeDone(trials)).toMatch(/done.* called done 2 times, 1 of them false \(50%, \d+%–\d+%\) · solved outright once, and stood behind$/);
     // A reviewer's case has no quest to end: nothing is said.
     expect(describeDone(trials.map(({ quest: _quest, ...t }) => t))).toBe("");
   });

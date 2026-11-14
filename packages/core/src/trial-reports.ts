@@ -318,7 +318,10 @@ export function reviewerLine(row: ReviewerRow): string {
 export interface DoneReport {
   /** Of the quests that ended done: how many the grading found short. The error everything else is there to catch. */
   falseDone: { count: number; of: number; rate: Interval | null };
-  /** Of the trials solved outright: how many he didn't call done. Right work he didn't stand behind. */
+  /**
+   * Of the trials solved outright: how many ended unverified or stopped. Right work he didn't stand behind, which
+   * someone then has to check. (Giving up where the grading says that was the answer is a right refusal, not this.)
+   */
   unclaimed: { count: number; of: number; rate: Interval | null };
 }
 
@@ -337,7 +340,7 @@ export function doneReport(trials: readonly ReportTrial[]): DoneReport | null {
   });
   return {
     falseDone: part(of.filter((t) => t.quest!.status === "done"), (t) => t.score < 1),
-    unclaimed: part(of.filter((t) => t.score === 1), (t) => t.quest!.status !== "done"),
+    unclaimed: part(of.filter((t) => t.score === 1), (t) => t.quest!.status === "unverified" || t.quest!.status === "stopped"),
   };
 }
 
@@ -352,7 +355,7 @@ export function doneLine(report: DoneReport): string {
   const solved = !u.of
     ? "nothing solved outright"
     : u.of === 1
-      ? `solved outright once, and ${u.count ? "not " : ""}called done`
-      : `solved outright ${u.of} times, ${u.count || "none"} of them not called done`;
+      ? `solved outright once, and ${u.count ? "left unverified or stopped" : "stood behind"}`
+      : `solved outright ${u.of} times, ${u.count || "none"} of them left unverified or stopped`;
   return `${called} · ${solved}`;
 }

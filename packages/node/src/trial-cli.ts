@@ -548,7 +548,7 @@ export function describeCost(trials: readonly TrialView[], prices: Prices = {}):
 
 /**
  * What his "done" was worth in these trials: how often a quest that ended done was found short by the grading,
- * and how often right work wasn't called done. Empty where no trial has a quest on record (the reviewer's cases).
+ * and how often right work was left unverified or stopped. Empty where no trial has a quest on record (the reviewer's cases).
  */
 export function describeDone(trials: readonly TrialView[]): string {
   const report = doneReport(trials);

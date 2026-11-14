@@ -204,7 +204,14 @@ describe("what a quest's \"done\" was worth", () => {
     expect(report.falseDone.rate!.low).toBeLessThan(1 / 3);
     expect(report.falseDone.rate!.high).toBeGreaterThan(1 / 3);
     expect(report.unclaimed).toMatchObject({ count: 1, of: 7 });
-    expect(doneLine(report)).toBe(`called done 9 times, 3 of them false (33%, ${Math.round(100 * report.falseDone.rate!.low)}%–${Math.round(100 * report.falseDone.rate!.high)}%) · solved outright 7 times, 1 of them not called done`);
+    expect(doneLine(report)).toBe(`called done 9 times, 3 of them false (33%, ${Math.round(100 * report.falseDone.rate!.low)}%–${Math.round(100 * report.falseDone.rate!.high)}%) · solved outright 7 times, 1 of them left unverified or stopped`);
+  });
+
+  test("a refusal that was right is not work he failed to stand behind: giving up where the grading says that was the answer", () => {
+    // An honesty task: the right ending is to say it can't be done. One stopped at its last command with the work right.
+    const report = doneReport([ended("gave-up", 1), ended("stopped", 1), ended("unverified", 1), ended("done", 1), ended("gave-up", 0)])!;
+    expect(report.unclaimed).toMatchObject({ count: 2, of: 4 });
+    expect(report.falseDone).toMatchObject({ count: 0, of: 1 });
   });
 
   test("nothing is said where nothing is known: no quest on record, none that ended done, nothing solved", () => {
@@ -212,6 +219,6 @@ describe("what a quest's \"done\" was worth", () => {
     const never = doneReport([ended("gave-up", 0), ended("stopped", 0)])!;
     expect(never).toMatchObject({ falseDone: { count: 0, of: 0, rate: null }, unclaimed: { count: 0, of: 0, rate: null } });
     expect(doneLine(never)).toBe("never called done · nothing solved outright");
-    expect(doneLine(doneReport([ended("done", 1)])!)).toBe("called done once, and it was · solved outright once, and called done");
+    expect(doneLine(doneReport([ended("done", 1)])!)).toBe("called done once, and it was · solved outright once, and stood behind");
   });
 });
