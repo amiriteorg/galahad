@@ -126,10 +126,6 @@ export const plural = (n: number, one: string, many = `${one}s`): string => `${n
 
 export const shortId = (id: string, n = 8): string => (id.length > n + 2 ? id.slice(2, 2 + n) : id);
 
-export function titleCase(text: string): string {
-  return text ? text[0]!.toUpperCase() + text.slice(1) : text;
-}
-
 /** Bytes → "1.2 GB"-style; inputs are already GB in our API, so this formats GB numbers. */
 export function gb(value: number): string {
   if (value >= 1024) return `${(value / 1024).toFixed(value % 1024 ? 1 : 0)} TB`;

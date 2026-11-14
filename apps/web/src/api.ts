@@ -24,9 +24,6 @@ export class ApiError extends Error {
 /** True when the node doesn't have this feature (yet): unknown route, or a capability it lacks. */
 export const isUnavailable = (error: unknown): boolean => error instanceof ApiError && (error.status === 404 || error.status === 424 || error.status === 501);
 
-/** True when the request never reached the node (offline, DNS, refused). */
-export const isNetworkError = (error: unknown): boolean => error instanceof TypeError || (error instanceof ApiError && error.status === 0);
-
 export const isAbort = (error: unknown): boolean => error instanceof DOMException && error.name === "AbortError";
 
 type Handler = (error: ApiError) => void;

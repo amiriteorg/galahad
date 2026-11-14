@@ -49,7 +49,6 @@
         --text: light-dark(#0a0a0b, #ededef);
         --text-2: light-dark(#52525a, #a1a1a9);
         --text-3: light-dark(#696971, #8b8b94);
-        --text-inverse: light-dark(#fafafa, #0a0a0b);
 
         /* Accent: ink. White on dark, black on light; reserved for the owner, focus and the one primary action */
         --accent: light-dark(#0a0a0b, #ffffff);
@@ -85,8 +84,6 @@
         --info-soft: light-dark(#f1f1f3, #16161a);
         --agent: light-dark(#27272a, #e4e4e8);
         --agent-soft: light-dark(#ececee, #1b1b1f);
-        --neutral: var(--text-2);
-        --neutral-soft: var(--surface-2);
 
         /* Elevation */
         --shadow-1: 0 1px 2px light-dark(rgb(16 16 24 / 0.05), rgb(0 0 0 / 0.35));
@@ -327,7 +324,6 @@
         min-width: 0;
       }
       .card.pad { padding: var(--sp-4); }
-      .card.pad-lg { padding: var(--sp-6); }
       .card.flat { box-shadow: none; }
       .card.accent { border-color: var(--accent-border); box-shadow: var(--shadow-1), 0 0 0 3px color-mix(in srgb, var(--accent-fill) 8%, transparent); }
       .card.warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
@@ -456,7 +452,6 @@
       .input-wrap { position: relative; display: flex; align-items: center; }
       .input-wrap > svg { position: absolute; left: 10px; color: var(--text-3); pointer-events: none; }
       .input-wrap > .input { padding-left: 34px; }
-      .input-wrap > .trail { position: absolute; right: 6px; display: flex; gap: 4px; align-items: center; }
       .secret-field { position: relative; }
       .secret-field .input { padding-left: 34px; letter-spacing: 0.08em; font-family: var(--font-mono); }
       .secret-field .input::placeholder { font-family: var(--font-sans); letter-spacing: normal; }
@@ -901,7 +896,6 @@
       .step[data-state="error"] .step-mark { color: var(--danger); }
       .step .step-text { line-height: 16px; min-width: 0; }
       .step .step-detail { color: var(--text-3); overflow-wrap: anywhere; }
-      .live-line { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-13); }
       /* The composer sticks to the bottom; on the chat page main drops its extra bottom space so the
          composer's resting place and its sticky place coincide (nothing hides behind it). */
       .composer-wrap { position: sticky; bottom: calc(var(--tabbar-h) + var(--safe-bottom)); padding: var(--sp-2) 0 var(--sp-3); background: linear-gradient(to top, var(--bg) 70%, transparent); z-index: 5; }
@@ -996,7 +990,6 @@
       .doctor-row { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: var(--fs-13); color: var(--text-2); }
       .doctor-row[data-state="skipped"] { color: var(--text-3); }
       .doctor-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-      .doctor-row-fix { color: var(--text-3); font-size: var(--fs-12); }
       .doctor-foot { display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
       .doctor-foot p { margin: 0; min-width: 200px; }
       .doctor-note.error { color: var(--danger); font-size: var(--fs-13); }
@@ -1140,12 +1133,10 @@
       .reorder .r-item .r-index { font: 600 11px var(--font-mono); color: var(--text-3); width: 16px; }
       .reorder .r-item:first-child { border-color: var(--accent-border); }
       .reorder .r-item:first-child .r-index { color: var(--accent); }
-      .reveal-in { animation: page-in var(--d-2) var(--ease-out); }
       /* Words Galahad (or an agent) wrote, shown as a quotation: data, never instructions. */
       .quote { padding: 2px 0 2px 12px; border-left: 2px solid var(--border-strong); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
       /* A tool's answer or a receipt: verbatim, scrollable, never parsed. */
       .result { margin: 0; padding: 10px 12px; max-height: 50vh; overflow: auto; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--r-md); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--font-mono); color: var(--text); }
-      .scroll-x { overflow-x: auto; }
       .notice-strip { display: flex; gap: var(--sp-2); align-items: center; font-size: var(--fs-12); color: var(--text-3); }
       .notice-strip svg { width: 14px; height: 14px; }
       .flow { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-2); }

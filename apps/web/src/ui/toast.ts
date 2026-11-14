@@ -149,11 +149,3 @@ export function toast(title: string, options: ToastOptions = {}): () => void {
   while (live.length > 8) dismiss(live[0]!);
   return () => dismiss(item);
 }
-
-export const toastError = (title: string, error?: unknown): (() => void) =>
-  toast(title, { tone: "error", description: error === undefined ? undefined : errorText(error) });
-
-export function errorText(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
