@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AnyScope } from "../types.ts";
 import { homeOf, moreIndex, PLACES, placesFor, primaryOf, routeOf, tabOf, tabsOf } from "./nav.ts";
 
@@ -68,6 +70,13 @@ describe("the app's places", () => {
       expect(homeOf(device("mind:read"), { narrow })).toBe("inbox");
       expect(homeOf(device(), { narrow })).toBe("inbox");
     }
+  });
+
+  test("an app installed on a Home Screen starts where the app opens: at no address of its own, so the shell takes it home", () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "../manifest.webmanifest"), "utf8")) as { start_url: string; shortcuts: { url: string }[] };
+    expect(manifest.start_url).toBe("/");
+    // Its shortcuts are addresses the app still has.
+    for (const shortcut of manifest.shortcuts) expect([shortcut.url, routeOf(shortcut.url.replace(/^\//, ""), device(...OWNER))]).not.toEqual([shortcut.url, null]);
   });
 
   test("a phone's bar is the roster and More; a device with no roster has its Inbox there", () => {

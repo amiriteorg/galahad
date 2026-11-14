@@ -2,7 +2,7 @@
   "name": "Galahad",
   "short_name": "Galahad",
   "description": "One mind, many bodies. Your autonomous knight and engineer.",
-  "start_url": "/#/overview",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#08080a",
