@@ -205,6 +205,46 @@ describe("the shipment the sandbox leaves", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test.skipIf(!python)("told where the work began, it ships what was committed since as well as what wasn't: a squire in its own worktree may commit", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-ship-"));
+    try {
+      const repo = join(dir, "repo");
+      const git = (...a: string[]) => Bun.spawnSync(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
+      mkdirSync(repo);
+      git("init", "-q");
+      git("config", "core.autocrlf", "false");
+      writeFileSync(join(repo, "calc.py"), "a - b\n");
+      git("add", "-A");
+      git("commit", "-qm", "init");
+      git("remote", "add", "origin", REMOTE);
+      const base = git("rev-parse", "HEAD").stdout.toString().trim();
+      // The engineer fixed one file and committed it, then wrote another and did not.
+      writeFileSync(join(repo, "calc.py"), "a + b\n");
+      git("commit", "-qam", "fix the sum");
+      const tip = git("rev-parse", "HEAD").stdout.toString().trim();
+      writeFileSync(join(repo, "notes.md"), "why\n");
+      const read = (out: string) => JSON.parse(require("node:fs").readFileSync(join(out, "manifest.json"), "utf8"));
+      // From its own HEAD the script sees only what was not committed, and names the engineer's commit as the start:
+      // a commit GitHub has never seen.
+      const alone = join(dir, "alone", "ship");
+      expect(Bun.spawnSync(["python3", "-c", SHIPMENT_SCRIPT, repo, alone]).stdout.toString().trim()).toBe("1");
+      expect(read(alone).base).toBe(tip);
+      // Told the commit the work began from, it ships everything since, from that commit.
+      const out = join(dir, "out", "ship");
+      const run = Bun.spawnSync(["python3", "-c", SHIPMENT_SCRIPT, repo, out, base]);
+      expect({ exit: run.exitCode, stderr: run.exitCode ? run.stderr.toString() : "" }).toEqual({ exit: 0, stderr: "" });
+      expect(run.stdout.toString().trim()).toBe("2");
+      expect(read(out)).toMatchObject({ v: 1, base, remote: REMOTE });
+      expect(read(out).files.map((f: { path: string }) => f.path).sort()).toEqual(["calc.py", "notes.md"]);
+      expect(require("node:fs").readFileSync(join(out, "files", "calc.py"), "utf8")).toBe("a + b\n");
+      // The worktree is as the engineer left it: its commit, and nothing staged.
+      expect(git("rev-parse", "HEAD").stdout.toString().trim()).toBe(tip);
+      expect(git("diff", "--cached", "--name-only").stdout.toString()).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the gate, end to end", () => {
