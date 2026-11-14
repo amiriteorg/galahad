@@ -37,7 +37,7 @@ const LIST = [
   { id: "activity", label: "Activity", icon: "activity", under: "work", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], about: "Everything he did, and why it was allowed" },
   { id: "artifacts", label: "Artifacts", icon: "archive", under: "work", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], about: "Files his work kept" },
   { id: "trials", label: "Trials", icon: "gauge", under: "work", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], about: "Whether he is getting better" },
-  { id: "memory", label: "Memory", icon: "memory", under: "knowledge", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], about: "What the fleet remembers" },
+  { id: "memory", label: "Memory", icon: "memory", under: "knowledge", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind", "search", "find"], about: "What the fleet remembers" },
   { id: "skills", label: "Skills", icon: "scroll", under: "knowledge", scope: "mind:read", key: "u", keywords: ["learn", "learned", "how", "notes", "playbook", "procedures", "know-how", "approve", "proposed", "library"], about: "What he learned to do, for you to approve" },
   { id: "archive", label: "Archive", icon: "library", under: "knowledge", scope: "mind:read", key: "k", keywords: ["kept", "forever", "ideas", "lessons", "models", "teachings", "semantic", "search", "vector", "history"], about: "Everything kept for good, searchable" },
   { id: "findings", label: "Findings", icon: "flask", under: "knowledge", scope: "mind:read", key: "e", keywords: ["investigations", "experiments", "hypotheses", "science", "conclusions", "predictions"], about: "What his investigations concluded" },
@@ -47,7 +47,7 @@ const LIST = [
   { id: "sandboxes", label: "Sandboxes", icon: "sandbox", under: "machines", scope: "sandbox", alsoFor: "fleet:admin", key: "s", keywords: ["containers", "vm", "console"], about: "Isolated places where work runs" },
   { id: "vault", label: "Vault", icon: "vault", under: "keys", scope: "vault:read", key: "v", keywords: ["keys", "secrets", "api key"], about: "Sealed keys; no model ever sees one" },
   { id: "models", label: "Models", icon: "models", under: "keys", scope: "mind:read", key: "l", keywords: ["providers", "roster", "llm"], about: "Who answers: roles, models, providers" },
-  { id: "connectors", label: "Connectors", icon: "plug", under: "keys", scope: "mind:read", key: "n", keywords: ["github", "cloudflare", "home assistant", "integrations", "services", "tools", "mcp", "standing orders"], about: "Services and MCP servers he may call" },
+  { id: "connectors", label: "Connectors", icon: "plug", under: "keys", scope: "mind:read", key: "n", keywords: ["github", "cloudflare", "home assistant", "integrations", "services", "tools", "mcp", "standing orders", "install"], about: "Services and MCP servers he may call" },
   { id: "bank", label: "Bank", icon: "bank", under: "keys", scope: "bank:read", key: "b", keywords: ["lunar", "accounts", "balances", "transactions", "enable banking", "money", "finance"], about: "The bank connection, and who may read it" },
   { id: "settings", label: "Settings", icon: "settings", under: "device", scope: null, key: ",", keywords: ["preferences", "theme", "device", "notifications"], about: "Theme, notifications, this device" },
 ] as const satisfies readonly PlaceSpec[];

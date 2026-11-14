@@ -340,14 +340,12 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         actions.push({ id: "invite-client", label: "Pair a phone or browser", group: "Actions", icon: "phone", keywords: ["invite", "device", "add"], run: () => openInvite(ctx, "client") });
         actions.push({ id: "invite-node", label: "Add a machine to the fleet", group: "Actions", icon: "server", keywords: ["invite", "node", "join"], run: () => openInvite(ctx, "node") });
       }
-      if (can("mind:read")) actions.push({ id: "search-memory", label: "Search memory", group: "Actions", icon: "search", keywords: ["recall", "find"], run: () => ctx.navigate("memory") });
       if (can("mind:write")) actions.push({ id: "remember", label: "Remember something", group: "Actions", icon: "memory", keywords: ["note", "add memory"], run: () => openRemember(ctx) });
       if (can("mind:write")) actions.push({ id: "new-idea", label: "New idea", group: "Actions", icon: "lightbulb", keywords: ["archive", "note", "keep", "thought"], run: () => openNewIdea(ctx) });
       if (can("sandbox")) actions.push({ id: "create-sandbox", label: "Create a sandbox", group: "Actions", icon: "sandbox", keywords: ["container", "vm", "new"], run: () => openCreateSandbox(ctx) });
       if (can("mind:read")) actions.push({ id: "place", label: "Where would this run?", group: "Actions", icon: "compass", keywords: ["placement", "playground", "schedule"], run: () => ctx.navigate("fleet", { intent: "place" }) });
       if (can("brain:write")) actions.push({ id: "add-loop", label: "Add a loop", group: "Actions", icon: "repeat", keywords: ["schedule", "cron", "every", "routine"], run: () => openLoopSheet(ctx) });
       if (can("mind:read")) actions.push({ id: "heartbeat", label: "Run the heartbeat's checks now", group: "Actions", icon: "review", keywords: ["health", "check", "notices"], run: () => ctx.navigate("loops", { intent: "check" }) });
-      if (can("brain:write")) actions.push({ id: "add-connector", label: "Install a connector", group: "Actions", icon: "plug", keywords: ["github", "cloudflare", "home assistant", "integration"], run: () => ctx.navigate("connectors") });
       const appearance: Command[] = [
         { id: "theme-system", label: "Theme: match system", group: "Appearance", icon: "monitor", keywords: ["auto"], run: () => setTheme("system") },
         { id: "theme-light", label: "Theme: light", group: "Appearance", icon: "sun", run: () => setTheme("light") },
