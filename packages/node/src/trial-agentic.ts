@@ -1,5 +1,6 @@
 import type { ExecResult, SandboxView, TrialRecord } from "@galahad/core";
 import {
+  AGENTIC_DIFF,
   AGENTIC_EVIDENCE,
   AGENTIC_INSTRUCTIONS,
   type AgenticTask,
@@ -111,7 +112,7 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
         ...(job.on ? { on: job.on } : {}),
         maxSteps: posed.maxSteps,
         instructions: AGENTIC_INSTRUCTIONS,
-        evidence: AGENTIC_EVIDENCE,
+        evidence: job.harness?.diff ? [...AGENTIC_EVIDENCE, AGENTIC_DIFF] : AGENTIC_EVIDENCE,
         label: `Trial ${id} (seed ${job.seed})`,
         remember: false,
         trial: true,

@@ -334,6 +334,27 @@ describe("a run of the agentic suite", () => {
     expect(bare.runs[0]).toMatchObject({ suite: "agentic", variant: { name: "no-gates" }, seed: 9 });
   });
 
+  test("the shown-diff variant puts the work itself before the reviewer: the repository's diff, new files too, within a bound; the baseline's evidence is what it was", async () => {
+    const perf = suiteNamed("agentic").choose(["slow-rollup-l1"]);
+    const posed = poseTask(task("slow-rollup"), 9, 1);
+    const DIFF = "cd /work/repo && git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv HEAD | head -c 24000";
+    const reviewed = (fake: ReturnType<typeof fakeNode>): string => fake.chats.find((c) => c.role === "reviewer")!.messages[0].content;
+    const shown = fakeNode({ leaves: () => posed.reference });
+    const { trials } = await runTrials(shown.node, { suite: "agentic", problems: perf, repeat: 1, parallel: 1, network: "isolated", seed: 9, variant: { name: "shown-diff", options: VARIANTS["shown-diff"]! } });
+    expect(trials[0]!.score).toBe(1);
+    expect(shown.runs[0]).toMatchObject({ suite: "agentic", variant: { name: "shown-diff", options: { ...VARIANTS.baseline!, diff: true } }, seed: 9 });
+    // The diff is asked of the sandbox as the review is made, and the reviewer's question carries the command.
+    expect(shown.engineers()[0]!.commands).toContain(DIFF);
+    expect(reviewed(shown)).toContain(`$ ${DIFF}`);
+    // Under the baseline nothing asks for it, and the reviewer is asked what it always was.
+    const base = fakeNode({ leaves: () => posed.reference });
+    await runTrials(base.node, { suite: "agentic", problems: perf, repeat: 1, parallel: 1, network: "isolated", seed: 9, variant: { name: "baseline", options: VARIANTS.baseline! } });
+    expect(base.engineers()[0]!.commands.some((c) => c.includes("git diff --no-ext-diff"))).toBe(false);
+    expect(reviewed(base)).not.toContain("git diff --no-ext-diff");
+    // The hidden tests' sandbox is never asked for a diff: nothing of the grading is in what the reviewer sees.
+    expect(shown.graders()[0]!.box.commands.some((c) => c.includes("git diff"))).toBe(false);
+  });
+
   test("the engram variant gives the engineer the sandbox's notes store, on the same task; a sandbox without it is a crash, never a score", async () => {
     const perf = suiteNamed("agentic").choose(["slow-rollup-l1"]);
     const posed = poseTask(task("slow-rollup"), 9, 1);

@@ -133,6 +133,14 @@ export const AGENTIC_EVIDENCE = [
 ];
 
 /**
+ * The work itself, for the reviewer (a run's `diff` switch): what changed in the repository since the task was
+ * posed, files he added among it (told to git as intended, so the diff shows them), within a bound. Without it
+ * the reviewer reads the engineer's commands, a list of the files that changed and what the tests print: it can
+ * pass work whose fault is in code nobody printed.
+ */
+export const AGENTIC_DIFF = `cd ${REPO} && git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv HEAD | head -c 24000`;
+
+/**
  * A file's fingerprint, the same in the generator and in the check script: FNV-1a over its UTF-16 code units,
  * with what a trip through a sandbox may change and no reader of the file would notice folded away (a
  * byte-order mark at the start, CRLF line endings).
