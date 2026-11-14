@@ -322,7 +322,7 @@ bun galahad do "Write the report" --gate "test -s /work/out/report.md" --gate "g
 bun galahad quests                       # the quests in hand: plan, the command he's on, each gate's last result
 ```
 
-The planner may add gates of its own from its "Done when:" line (they're marked as its proposal; `--no-planner-gates` runs yours only). The app's Overview shows the same under **In hand**.
+The planner may add gates of its own from its "Done when:" line (they're marked as its proposal; `--no-planner-gates` runs yours only). The app shows the same under **In hand**: a tap on Galahad at the top of Chat, or on the Overview.
 
 The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
 
