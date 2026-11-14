@@ -129,7 +129,7 @@ Each tool starts the server itself, as a child, for the length of its run: `engr
 
 **What Galahad never does with it.** He never runs Engram's own setup (it fetches plugin code nobody pinned and edits the files a vendor's tool keeps its own state in), never starts its server or opens a port, never sets a cloud variable or runs its sync or its export, and its update check is off (that check calls GitHub and would send a GitHub token found in the environment). No store is copied between knights, into the shared mind or into the archive. A knight that should share a lesson with the whole mind uses `remember` in its room conversation, where it is scanned and marked.
 
-**Wiping it** is `rm -rf /work/.memory/engram` in the knight's console (**Workspace → Open console**). Turning the switch off leaves the store where it is, unused. Removing a knight with its VM destroys it with everything else in `/work`.
+**Wiping it** is `rm -rf /work/.memory/engram` in a terminal in the knight's VM (**Workspace → Open terminal**, or `bun galahad terminal <knight>`). Turning the switch off leaves the store where it is, unused. Removing a knight with its VM destroys it with everything else in `/work`.
 
 What to know before turning it on: anything the harness reads (a repository file, a web page in an online VM, a tool's output) can talk it into saving a note, and Engram accepts any note from any writer. A false note then stands for every later task of that knight until it is wiped; the briefing's rule and the gates and independent reviewer, which never see the store, are what limit the harm. Engram redacts only what is wrapped in `<private>` tags, so a note that quotes a token keeps it in plain text for as long as the store lives. It never prunes. And it costs context: the four tool definitions are about 2,200 tokens in every model request of a run on a harness that loads them whole (OpenCode, Hermes and Codex were seen to offer them through a tool search or a catalogue instead), plus the briefing's paragraph. Whether the notes repay that is not known: [TRIALS](TRIALS.md#does-the-harness-help-) has an `engram` variant that measures the cost on the engineer's own loop, and nothing yet measures a second visit to the same repository.
 
@@ -163,7 +163,7 @@ bun galahad roundtable provision ada --desktop
 bun galahad roundtable provision ada --remake --desktop      # --no-desktop takes it away again
 ```
 
-Inside the VM, `desktop help` lists what there is: `desktop open <address>`, `desktop text` (the page in front as text: its title, its address, what it says), `desktop shot` (a screenshot, as a file), `desktop click <x> <y>`, `desktop move`, `desktop scroll`, `desktop type <text>` and `desktop key <key>…`. Each brings the desktop up first if it isn't. A knight whose VM has one is told so as each task starts, and uses these as it uses any command; you can use them from **Workspace → Open console**.
+Inside the VM, `desktop help` lists what there is: `desktop open <address>`, `desktop text` (the page in front as text: its title, its address, what it says), `desktop shot` (a screenshot, as a file), `desktop click <x> <y>`, `desktop move`, `desktop scroll`, `desktop type <text>` and `desktop key <key>…`. Each brings the desktop up first if it isn't. A knight whose VM has one is told so as each task starts, and uses these as it uses any command; you can use them from a terminal in its VM (**Workspace → Open terminal**).
 
 What to know about it:
 
@@ -218,8 +218,8 @@ A Claude plan or a ChatGPT plan may be used only by its vendor's own tool, unmod
 To try it:
 
 1. Give the knight an online VM (the default; a VM made before 13 November 2026 reaches only the gateway and cannot sign in): `bun galahad roundtable provision ada`.
-2. Open a terminal in its VM: `bun galahad terminal ada` (a login shell on a real terminal; Ctrl-] leaves). There, install the tool as its vendor documents, so that it is on the VM's `PATH` or in `~/.local/bin` (`/work/.local/bin`, which is kept with the workspace).
-3. Still in the terminal, sign it in through the vendor's own flow: `claude auth login` for Claude Code; `codex login --device-auth` for Codex (OpenAI's device-code sign-in, which must be allowed in your ChatGPT security settings). Follow what the tool prints. The sign-in stays in that VM. (The app's **Workspace → Open console** runs one command at a time and shows its output only when it ends, so a sign-in that waits for you can't be done there.)
+2. Open a terminal in its VM: **Workspace → Open terminal** in the app, or `bun galahad terminal ada` (a login shell on a real terminal; Ctrl-] leaves). On a phone the terminal has the keys its keyboard lacks (Esc, Tab, Ctrl-C, Ctrl-D, the arrows), and if you leave the app to finish a sign-in in your browser, opening the terminal again takes up the same shell for fifteen minutes. There, install the tool as its vendor documents, so that it is on the VM's `PATH` or in `~/.local/bin` (`/work/.local/bin`, which is kept with the workspace).
+3. Still in the terminal, sign it in through the vendor's own flow: `claude auth login` for Claude Code; `codex login --device-auth` for Codex (OpenAI's device-code sign-in, which must be allowed in your ChatGPT security settings). Follow what the tool prints. The sign-in stays in that VM.
 4. Choose the harness in **Edit knight → Coding harness**, or `bun galahad roundtable add ada --name Ada --agent claude` (or `codex`).
 5. **Workspace → Harness readiness** then says what it would run on, for example "Runs on its own sign-in in this VM (claude.ai)".
 

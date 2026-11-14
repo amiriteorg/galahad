@@ -18,6 +18,7 @@ import { renderMarkdown } from "../ui/markdown.ts";
 import { avatarEditor, workerAvatar } from "../ui/avatar.ts";
 import { toast } from "../ui/toast.ts";
 import { openConsole } from "./sandboxes.ts";
+import { openTerminal } from "./terminal.ts";
 
 /* Team conversations and work belong to the node. Polling only observes them;
  * leaving a room never stops a teammate. Unsaved drafts stay in memory, never storage. */
@@ -433,7 +434,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       workspace ? h("div", { class: "card" }, h("div", { class: "card-body stack" },
         h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, workspace.name), badge(workspace.status), badge(workspace.isolation === "vm" ? "MicroVM" : "Container", workspace.isolation === "vm" ? "ok" : "warn")),
         h("p", { class: "small muted" }, `On ${workspace.node} · ${workspace.cpus} CPUs · ${workspace.memoryGb} GB memory · ${workspace.disk ? `${workspace.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${workspace.network}`),
-        h("div", { class: "row wrap" }, ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, workspace, person.workspace?.node ?? null) }) : null, button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }), canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remake(person, workspace) }) : null),
+        h("div", { class: "row wrap" }, ctx.can("sandbox") ? (person.workspace?.node === ctx.whoami.node ? button("Open terminal", { size: "sm", icon: "terminal", onClick: () => void openTerminal(ctx, { id: workspace.id, name: `${person.name}'s VM` }) }) : button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, workspace, person.workspace?.node ?? null) })) : null, button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }), canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remake(person, workspace) }) : null),
       )) : h("div", { class: "team-workspace-empty" }, icon("sandbox", { size: 30 }), h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
         h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this squire a persistent VM for code, files, and tools. Its job and working notes remain part of Galahad's hivemind."),
         canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provision(person) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device.")),

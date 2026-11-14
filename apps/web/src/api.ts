@@ -89,6 +89,8 @@ export interface Api {
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
   /** A POST that answers with a turn's events (watching a turn the node runs, a side question). Aborting the signal ends the watching, never the turn. */
   events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
+  /** A POST that answers with events of another kind (a terminal's screen). Aborting the signal ends the watching. */
+  stream<T>(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<T>;
 }
 
 /**
@@ -102,17 +104,18 @@ function lateError(payload: unknown): ApiError | null {
 }
 
 export function apiFor(identity: BrowserIdentity): Api {
-  async function* events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent> {
+  async function* stream<T>(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<T> {
     const response = await signedFetch(identity, "POST", path, body, signal);
     if (!response.body) return;
     for await (const data of sseData(response.body)) {
       try {
-        yield JSON.parse(data) as ChatStreamEvent;
+        yield JSON.parse(data) as T;
       } catch {
         /* ignore malformed frames */
       }
     }
   }
+  const events = (path: string, body: unknown, signal: AbortSignal) => stream<ChatStreamEvent>(path, body, signal);
   return {
     async get<T>(path: string, signal?: AbortSignal) {
       return (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
@@ -129,6 +132,7 @@ export function apiFor(identity: BrowserIdentity): Api {
     },
     chat: (body: unknown, signal: AbortSignal) => events("/api/chat", body, signal),
     events,
+    stream,
   };
 }
 
