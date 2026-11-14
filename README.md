@@ -4,6 +4,8 @@
 
 **A lean, highly capable agent for tasks, above all for coding and for managing large projects.** Galahad creates and orchestrates persistent squires: named workers with lasting jobs, each working in a VM of its own on machines you own. He is one mind across your devices (laptops, servers, desktops, phones): one identity and one memory, the same on each. You can keep adding compute, models, keys and tools, and he grows more capable with each one. He stays courteous, candid and bound by [his oath](docs/OATH.md).
 
+What he is built towards is [the mandate](docs/MANDATE.md): the best coding agent that has ever existed, one that finishes a real task in a real repository correctly, cheaply, and without a human watching every step.
+
 ## Status: M0 built
 
 Working and tested today (`bun run check` runs the whole suite, including property tests and a two-node end-to-end test over HTTP):

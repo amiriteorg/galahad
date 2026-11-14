@@ -2,6 +2,8 @@
 
 These are instructions for any coding agent working on this repo, Galahad himself included. They're good defaults, and the owner's explicit preferences override them.
 
+**The mandate comes first: [docs/MANDATE.md](docs/MANDATE.md).** Build the best coding agent that has ever existed, judged by correctness, horizon, cost and reversibility, with human interventions per completed task as the north star. Every change here is held to it: say which of those it moves and how that was measured.
+
 ## Commands
 
 ```sh
@@ -27,7 +29,7 @@ A change that should make something better (or might make something worse) is sh
 | `packages/node` | Daemon, HTTP server, CLI, capabilities, placement, the archive (`src/archive/`) |
 | `apps/web` | The PWA (bundled by the daemon at start) |
 | `bench/` | The scorecard: the runner, the suites, their simulations, the recorded baselines (`bench/baseline/`) |
-| `docs/` | Architecture, oath, trials, doctrine |
+| `docs/` | The mandate, architecture, oath, trials, doctrine |
 
 ## Rules
 
