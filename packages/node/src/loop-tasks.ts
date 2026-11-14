@@ -1,6 +1,6 @@
 import { type ChatStreamEvent, type NodeIdentity, redact, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
-import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
+import { chat, commandsRun, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
@@ -361,7 +361,7 @@ export function loopExecutor(deps: LoopTaskDeps) {
             status: outcome.status === "done" ? "ok" : "attention",
             // The skills it used, and one it learned, by title (skills.ts): only what the node said is in the mind.
             // What its model calls came to goes first, so it survives the summary's cut: tokens as the providers reported them.
-            summary: `${outcome.status} after ${outcome.steps} commands${usage.length ? ` (${spendLabel(usage)})` : ""}: ${outcome.summary.trim()}${review}${learnedLines(learned ?? null).map((line) => ` ${line}.`).join("")}`,
+            summary: `${outcome.status} after ${commandsRun(outcome)} commands${usage.length ? ` (${spendLabel(usage)})` : ""}: ${outcome.summary.trim()}${review}${learnedLines(learned ?? null).map((line) => ` ${line}.`).join("")}`,
           };
         } finally {
           deps.arms.revoke(label);

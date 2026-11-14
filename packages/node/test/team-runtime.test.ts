@@ -132,6 +132,26 @@ test("a task comes back with what it came to, as the runner counted it: its time
   expect(gave.record!.spent.every((line) => line.unknown === line.calls && line.input === 0)).toBe(true);
 });
 
+test("a squire's reply with no command to run is shown as it happens, is not counted as a command, and three in a row end the task saying what was sent", async () => {
+  const odd = "Listing first.\n```console\n$ ls -la\n```";
+  const progress: string[] = [];
+  const f = fixture([say("1. Make the change."), say(odd), say(odd), say(odd), say("```sh\necho never\n```")]);
+  const outcome = await f.runtime.executeTask(member, task, { ...f.context, emit: (text) => void progress.push(text) });
+  expect(outcome.verified).toBe(false);
+  expect(outcome.error).toBe("stopped");
+  // Whoever watches reads what was wrong and what he sent, not the bare word "format".
+  const shown = progress.filter((line) => line.includes("no command block"));
+  expect(shown).toHaveLength(3);
+  expect(shown[0]).toContain("```console");
+  expect(progress).not.toContain("format");
+  // What the task came to: no command ran, and its result says why it ended and how the last reply began.
+  expect(outcome.record).toMatchObject({ ended: "stopped", commands: 0 });
+  expect(outcome.output).toContain("3 replies in a row had no command to run");
+  expect(outcome.output).toContain("$ ls -la");
+  // (The plan and three engineer turns were asked: the fifth reply never was.)
+  expect(f.bodies).toHaveLength(4);
+});
+
 test("failing task gates cannot be replaced by an approving review or a squire's claim", async () => {
   let gates = 0;
   const f = fixture([say("1. Build."), say("DONE\nWorks."), say("DONE\nWorks now."), say("DONE\nTrust me.")], {

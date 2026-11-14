@@ -96,6 +96,49 @@ describe("quests", () => {
     expect(h.events.filter((e) => e.type === "format")).toHaveLength(2);
   });
 
+  test("replies with no command to run are not commands: three in a row end the quest, and it says what the last one was", async () => {
+    // Seen on ultra on 14 November 2026: a squire's engineer sent 16 such replies in a row. Sixteen model calls were
+    // paid for, nothing ran, the task said "Stopped after 16 commands", and nothing of the replies was kept.
+    const odd = "Listing first.\n```console\n$ ls -la\n```";
+    const h = harness({ engineer: [odd, odd, odd, sh("ls"), "DONE\nok"] }, { maxSteps: 16 });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("stopped");
+    expect(h.commands).toEqual([]);
+    // Three calls, not sixteen.
+    expect(h.seen.filter((s) => s.role === "engineer")).toHaveLength(3);
+    expect(outcome.malformed).toBe(3);
+    expect(outcome.summary).toContain("3 replies in a row had no command to run");
+    expect(outcome.summary).toContain("Your reply had no command block.");
+    // What he sent is there to read: the quest's ending, and each reply's event as it happened.
+    expect(outcome.summary).toContain("```console\n$ ls -la");
+    const formats = h.events.filter((e) => e.type === "format");
+    expect(formats).toHaveLength(3);
+    expect(formats[0]).toMatchObject({ step: 1, problem: expect.stringContaining("no command block"), reply: odd });
+  });
+
+  test("a reply he gets right in between starts the count again, and the ending tells commands from replies without one", async () => {
+    const odd = "```console\n$ ls\n```";
+    const h = harness({ engineer: [odd, odd, sh("a"), odd, odd, sh("b"), sh("c")] }, { maxSteps: 7 });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("stopped");
+    expect(h.commands).toEqual(["a", "b", "c"]);
+    // Each still spent one of his turns: seven in all.
+    expect(outcome.steps).toBe(7);
+    expect(outcome.malformed).toBe(4);
+    expect(outcome.summary).toBe("Stopped after 7 turns without finishing: 3 commands ran, and 4 replies had no command to run.");
+    // A quest with none says what it always said, and carries no count.
+    const plain = await harness({ engineer: [sh("a"), sh("b")] }, { maxSteps: 2 }).run;
+    expect(plain.summary).toBe("Stopped after 2 commands without finishing.");
+    expect("malformed" in plain).toBe(false);
+  });
+
+  test("a secret in a reply with no command is not kept with it", async () => {
+    const h = harness({ engineer: [`The key is ${FAKE_KEY}, I think.`, sh("ls"), "DONE\nok"] });
+    await h.run;
+    const format = h.events.find((e) => e.type === "format")!;
+    expect(findSecrets(JSON.stringify(format))).toEqual([]);
+  });
+
   test("the step budget is a hard limit", async () => {
     const h = harness({ engineer: [sh("a"), sh("b"), sh("c"), sh("d")] }, { maxSteps: 3 });
     const outcome = await h.run;

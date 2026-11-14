@@ -119,7 +119,15 @@ export interface QuestOutcome {
   conclusion?: string;
   /** Each gate's last run (absent: the quest has no gates, or it ended before they ran). */
   gates?: GateResult[];
+  /**
+   * How many of `steps` were replies with no command to run (each spent a turn and ran nothing); absent: none.
+   * The commands that ran are `steps` less these.
+   */
+  malformed?: number;
 }
+
+/** The commands a quest ran: its turns, less the replies that had no command to run. */
+export const commandsRun = (outcome: Pick<QuestOutcome, "steps" | "malformed">): number => outcome.steps - (outcome.malformed ?? 0);
 
 export type QuestEvent =
   | { type: "plan"; text: string; model: string }
@@ -132,7 +140,8 @@ export type QuestEvent =
   | { type: "thought"; step: number; text: string; model: string }
   | { type: "command"; step: number; command: string }
   | { type: "observation"; step: number; exitCode: number; durationMs: number; output: string }
-  | { type: "format"; step: number; problem: string }
+  /** A reply with no command to run: what was wrong with it, and how it began (redacted), so it can be read afterwards. */
+  | { type: "format"; step: number; problem: string; reply: string }
   | { type: "submitted"; summary: string }
   | { type: "review"; verdict: "pass" | "revise"; notes: string; model: string }
   | { type: "retry"; role: QuestRole; attempt: number; error: string; waitMs: number }
@@ -148,6 +157,13 @@ export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec
  * again is safe: a reply is used only once it's complete.
  */
 export const ASK_RETRY_DELAYS_MS = [15_000, 60_000, 180_000] as const;
+
+/**
+ * This many replies in a row with no command to run end the quest: a model that is told what was wrong three
+ * times and sends the same again is not going to stop, and each further reply is paid for. (A squire's engineer
+ * sent sixteen in a row on 14 November 2026: its whole budget, with nothing run.)
+ */
+export const MALFORMED_RUN = 3;
 
 /* ---------- the protocol ---------- */
 
@@ -442,13 +458,15 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   let plan = "";
   let steps = 0;
   let revisions = 0;
+  /** Replies that had no command to run: each spent a turn (it is one of `steps`) and ran nothing. */
+  let malformed = 0;
   // The gates: yours as you gave them, then the planner's proposals (once the plan is known).
   let gates: Gate[] = o.gates.map((command) => ({ command, by: "owner" }));
   /** Every submission's run of the gates, in order. */
   const gateRounds: GateResult[][] = [];
   const finish = (outcome: Omit<QuestOutcome, "steps" | "revisions" | "plan" | "gates">): QuestOutcome => {
     const last = gateRounds.at(-1);
-    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}) };
+    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}), ...(malformed ? { malformed } : {}) };
     emit({ type: "finished", outcome: done });
     return done;
   };
@@ -600,6 +618,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     const trail: Step[] = [];
     /** How many of the oldest observations are sent as excerpts (it only grows, a batch at a time: compact). */
     let excerpted = 0;
+    /** How many replies in a row, up to now, had no command to run. */
+    let malformedRun = 0;
 
     while (steps < o.maxSteps) {
       steps += 1;
@@ -612,10 +632,17 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const action = parseAction(reply.text, o.parallelCommands);
 
       if (action.kind === "invalid") {
-        emit({ type: "format", step: steps, problem: action.problem });
+        malformed += 1;
+        malformedRun += 1;
+        const said = clip(redact(reply.text.trim()) || "(empty reply)", 400, 100);
+        emit({ type: "format", step: steps, problem: action.problem, reply: said });
+        if (malformedRun >= MALFORMED_RUN) {
+          return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
+        }
         messages.push({ role: "user", content: `${action.problem}${cut}` });
         continue;
       }
+      malformedRun = 0;
       if (action.kind === "give-up") {
         // (Like DONE, a turn and not a command: it isn't counted as one.)
         steps -= 1;
@@ -677,7 +704,13 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       revisions += 1;
       messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${cut}` });
     }
-    return finish({ status: "stopped", summary: `Stopped after ${o.maxSteps} commands without finishing.` });
+    const ran = steps - malformed;
+    return finish({
+      status: "stopped",
+      summary: malformed
+        ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
+        : `Stopped after ${o.maxSteps} commands without finishing.`,
+    });
   } catch (error) {
     if (error instanceof Stopped) return finish({ status: "stopped", summary: "Stopped at your request." });
     throw error;

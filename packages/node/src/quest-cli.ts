@@ -30,6 +30,7 @@ import {
   AGENTS,
   attemptInstructions,
   chooseAgentModels,
+  commandsRun,
   type EffortEvent,
   type EffortPick,
   type EffortResult,
@@ -374,7 +375,7 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       console.log(`${tag} ${bold(`${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead.`);
       return;
     case "finished":
-      console.log(`${tag} ${event.outcome.status} ${dim(`· ${event.outcome.steps} commands`)}`);
+      console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);
       return;
     default:
       return;
@@ -829,7 +830,7 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
     process.off("SIGINT", onInterrupt);
   }
 
-  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${outcome.steps} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
+  console.log(`${bold(VERDICT[outcome.status])} ${dim(`${commandsRun(outcome)} commands · ${outcome.revisions} revisions${effort ? ` · attempt ${effort.pick.index} of ${effort.attempts.length + effort.failed.length} (${effort.attempts.map((a) => `${a.index}: ${a.status}`).join(", ")})` : ""}`)}`);
   console.log(indent(outcome.summary.trim()));
   // A gate that never passed is why, not a reviewer: the reviewer was never asked.
   const gatesFailed = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;

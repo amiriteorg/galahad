@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
-import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import type { TeamRunContext } from "./team.ts";
 
 export interface TeamRuntimeDeps {
@@ -96,6 +96,7 @@ function progress(event: QuestEvent): string {
     case "gate": return `Gate ${event.index}/${event.of} · exit ${event.exitCode} · ${event.command}\n${event.output}`;
     case "review": return `Review · ${event.verdict}\n${event.notes}`;
     case "thought": return event.text;
+    case "format": return `No command to run · ${event.problem}\n${event.reply}`;
     case "submitted": return `Submitted for review · ${event.summary}`;
     case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     default: return event.type;
@@ -268,7 +269,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
           if (saved.exitCode !== 0) throw new Error("Could not retain the harness session");
         },
       });
-      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: outcome.steps, revisions: outcome.revisions, spent };
+      // (A reply with no command to run spent a turn and ran nothing: it is not one of the commands.)
+      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent };
       return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${notes ? `\nNotes: ${notes}` : ""}`, ...(outcome.status === "done" ? {} : { error: outcome.status }), record };
     },
   };
