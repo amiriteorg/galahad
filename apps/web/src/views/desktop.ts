@@ -88,7 +88,8 @@ export function desktopViewer(ctx: Ctx, person: Pick<Teammate, "id" | "name">, v
     if (point) void ask({ do: "click", ...point });
   });
 
-  const address = h("input", { class: "input", name: "address", type: "url", inputmode: "url", maxlength: 2000, placeholder: "An address to open", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "aria-label": `An address for ${person.name}'s browser` });
+  // (Text with a URL keyboard, not type=url: the browser would refuse a bare host, which desktopAddress takes as https.)
+  const address = h("input", { class: "input", name: "address", type: "text", inputmode: "url", maxlength: 2000, placeholder: "An address to open", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "aria-label": `An address for ${person.name}'s browser` });
   const addressProblem = h("p", { class: "tiny", role: "status" });
   const open = h(
     "form",
