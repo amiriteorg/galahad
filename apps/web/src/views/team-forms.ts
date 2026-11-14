@@ -1,6 +1,6 @@
 import type { SandboxView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
-import type { TeamControlInput, TeamRoom, TeamTask, Teammate } from "@galahad/core/team";
+import type { TeamControlInput, TeamRoom, TeamTaskInput, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
@@ -150,14 +150,17 @@ export async function removeKnight(ctx: Ctx, person: Teammate): Promise<void> {
   } catch (error) { if (!isAbort(error)) toast("Couldn't remove it", { tone: "error", description: errorMessage(error) }); }
 }
 
-/** A task for one of a conversation's knights: its goal and the commands that prove it. `copy`: one to give again, revised. */
-export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTask): void {
+/**
+ * A task for one of a conversation's knights: its goal and the commands that prove it. `copy`: what was asked of one
+ * before (lib/timeline.ts' giveAgain), to give again as it was or revised.
+ */
+export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
   const snapshot = ctx.live.team.value;
   const members = room.members.flatMap((id) => snapshot?.teammates.find((person) => person.id === id) ?? []);
   const title = h("input", { class: "input", required: true, maxlength: 200, value: copy?.title ?? "", placeholder: "A concrete result" });
   const goal = h("textarea", { class: "input", required: true, rows: 6, maxlength: 8000, placeholder: "What should be built or investigated, and what proves it is complete?" }, copy?.goal ?? "");
   const assignee = h("select", { class: "select", required: true }, ...members.map((person) => h("option", { value: person.id, selected: person.id === copy?.assignee }, `${person.name} · ${HARNESS[person.harness]}`)));
-  const gates = h("textarea", { class: "input mono", rows: 3, placeholder: "bun run check\nbun test path/to/test.ts" }, copy?.gates.join("\n") ?? "");
+  const gates = h("textarea", { class: "input mono", rows: 3, placeholder: "bun run check\nbun test path/to/test.ts" }, copy?.gates?.join("\n") ?? "");
   const dependencies = new Set(copy?.dependsOn ?? []);
   const candidates = snapshot?.tasks.filter((task) => task.room === room.id) ?? [];
   const choices = h("div", { class: "team-dependency-choices" }, ...candidates.map((task) => {
@@ -165,14 +168,15 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTask): void {
     box.addEventListener("change", () => box.checked ? dependencies.add(task.id) : dependencies.delete(task.id));
     return h("label", { class: "row" }, box, h("span", {}, task.title), badge(task.status, WORK_TONE[task.status]));
   }));
-  editor(ctx, copy ? "Give this task again" : "New task", "A knight works in its own workspace. Independent tasks can run in parallel.", [
+  const knight = room.direct && members.length === 1 ? members[0]!.name : null;
+  editor(ctx, copy ? "Give this task again" : knight ? `Give ${knight} a task` : "Give a task", "Its goal, and the commands that prove it is done. A knight works in its own workspace; the commands and an independent reviewer decide whether the work is verified.", [
     field("Title", title), members.length > 1 ? field("Assigned to", assignee) : null, field("Goal", goal),
     candidates.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Wait for these tasks"), choices) : null,
-    field("Verification commands", gates, { hint: "One shell command per line, up to 16. These run inside the workspace to check the result." }),
-  ], "Start task", async () => {
+    field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace." }),
+  ], "Give task", async () => {
     if (findSecrets(goal.value).length) throw new Error("The goal contains something that looks like a secret.");
     const checks = gates.value.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (checks.length > 16 || checks.some((line) => line.length > 1000)) throw new Error("Use at most 16 verification commands, each at most 1,000 characters.");
+    if (checks.length > 16 || checks.some((line) => line.length > 1000)) throw new Error("Use at most 16 commands, each at most 1,000 characters.");
     await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks });
   });
 }

@@ -7,15 +7,17 @@ const person: Teammate = { id: "ada", name: "Ada", instructions: "", role: "engi
 const task: TeamTask = { id: "task-abcdefghijkl", room: "work", assignee: "ada", title: "Check inputs", goal: "Check", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "chain", createdAt: 1, updatedAt: 1 };
 
 describe("team navigation and identity", () => {
-  test("a room and work tab survive reload and history navigation", () => {
-    expect(teamLocation(teamHash({ room: "room-a_1", teamTab: "work" }))).toEqual({ room: "room-a_1", teamTab: "work" });
+  test("a conversation and its Workspace panel survive reload and history navigation; the Work tab's old address opens the timeline, where the work now is", () => {
+    expect(teamLocation(teamHash({ room: "room-a_1", teamTab: "workspace" }))).toEqual({ room: "room-a_1", teamTab: "workspace" });
+    expect(teamLocation("#/team?room=room-a_1&tab=work")).toEqual({ room: "room-a_1" });
     expect(teamLocation("#/team?room=room-a_1&tab=chat")).toEqual({ room: "room-a_1" });
     expect(teamLocation("#/chat?room=room-a_1")).toEqual({});
     expect(teamLocation("#/team?room=../secret&tab=unknown")).toEqual({});
   });
   test("the address the app opens on is its page's own, and Team's keeps its room and tab: a reload comes back to the same conversation", () => {
     expect(landingHash("team", "#/team?room=room-dhvmdz1bdolx")).toBe("#/team?room=room-dhvmdz1bdolx");
-    expect(landingHash("team", "#/team?room=room-a_1&tab=work")).toBe("#/team?room=room-a_1&tab=work");
+    expect(landingHash("team", "#/team?room=room-a_1&tab=workspace")).toBe("#/team?room=room-a_1&tab=workspace");
+    expect(landingHash("team", "#/team?room=room-a_1&tab=work")).toBe("#/team?room=room-a_1");
     expect(landingHash("team", "#/team?room=room-a_1&tab=chat&x=1")).toBe("#/team?room=room-a_1");
     expect(landingHash("team", "#/team?room=../secret")).toBe("#/team");
     expect(landingHash("team", "")).toBe("#/team");

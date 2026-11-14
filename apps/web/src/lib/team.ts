@@ -1,6 +1,7 @@
 import type { TeamDelivery, TeamEngramStatus, TeamHarness, TeamMessage, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 
-export type TeamTab = "chat" | "work" | "workspace";
+/** What a knight's page shows: its timeline, or its Workspace panel. (A room has only its timeline.) */
+export type TeamTab = "chat" | "workspace";
 export interface TeamLocation { room?: string; teamTab?: TeamTab }
 
 /** A squire's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
@@ -37,7 +38,8 @@ export function teamLocation(hash: string): TeamLocation {
   const tab = params.get("tab");
   return {
     ...(room && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(room) ? { room } : {}),
-    ...(tab === "work" || tab === "workspace" ? { teamTab: tab } : {}),
+    // (The Work tab's address, tab=work, opens the timeline: a task is a card in it now.)
+    ...(tab === "workspace" ? { teamTab: tab } : {}),
   };
 }
 

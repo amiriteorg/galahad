@@ -786,18 +786,14 @@
       .md thead th { border-top: 0; background: var(--surface-2); font-weight: 600; }
       .md mark, mark.hl { background: color-mix(in srgb, var(--warn) 22%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 
-      /* ---------- Team workspace: persistent people, rooms and work ---------- */
+      /* ---------- The Roundtable: a knight's (or a room's) timeline, its task cards, a knight's Workspace ---------- */
       .shell[data-route="team"] main.view { padding: 0; }
       .team-layout { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - var(--safe-bottom)); min-height: 320px; }
-      .team-assignee { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-size: var(--fs-12); }
       .team-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
       .team-head { display: flex; align-items: center; gap: var(--sp-3); padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) var(--sp-4); min-height: 78px; border-bottom: 1px solid var(--border); }
-      .team-head:empty, .team-tabs:empty { display: none; }
+      .team-head:empty { display: none; }
       .team-head h2 { font-size: var(--fs-16); font-weight: 650; letter-spacing: -0.015em; }
       .team-head > .btn { flex: none; }
-      .team-tabs { display: flex; gap: var(--sp-5); padding: 0 var(--sp-6); border-bottom: 1px solid var(--border); flex: none; }
-      .team-tab { padding: 12px 0; color: var(--text-3); background: none; border: 0; border-bottom: 2px solid transparent; font-size: var(--fs-13); }
-      .team-tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
       .team-content { min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1; }
       .team-panel { padding: var(--sp-6); max-width: 980px; margin: 0 auto; }
       .team-panel h3 { font-size: var(--fs-15); }
@@ -830,11 +826,22 @@
       .team-member-choices, .team-dependency-choices { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 240px; overflow: auto; }
       .team-member-choice { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-md); }
       .team-member-choice .meta { display: block; }
-      .team-task { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+      /* A task is a card in the timeline: where it stands; while it runs, its latest lines; once it has ended, how. */
+      .team-task { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); }
+      .task-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+      .task-head strong { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+      .task-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--text-3); font-size: var(--fs-12); }
+      .task-trail { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3); background: var(--bg-sunken); border-radius: var(--r-md); font: var(--fs-12)/1.55 var(--font-mono); color: var(--text-2); }
+      .task-trail-line { display: flex; gap: 1ch; min-width: 0; white-space: nowrap; }
+      .task-trail-line > .ellipsis { min-width: 0; }
+      .task-trail-line:last-child { color: var(--text); }
+      .task-said { color: var(--text-2); font-size: var(--fs-13); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+      .task-kept { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-2); }
+      .task-kept a { color: var(--accent); }
+      .task-foot { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; margin-top: 2px; }
       .team-task-details > summary { color: var(--text-2); font-size: var(--fs-12); cursor: pointer; padding: 3px 0; }
       .team-task-details[open] > summary { margin-bottom: var(--sp-3); }
       .team-output { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; padding: var(--sp-3); background: var(--bg-sunken); border-radius: var(--r-md); font: var(--fs-12)/1.6 var(--font-mono); }
-      .team-dependencies { display: flex; flex-wrap: wrap; gap: var(--sp-3); color: var(--text-3); }
       .team-person-summary { display: flex; align-items: flex-start; gap: var(--sp-3); }
       .team-workspace-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
       @media (min-width: 960px) { .team-layout { height: calc(100dvh - var(--topbar-h)); } }
@@ -842,15 +849,16 @@
         .team-head { padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-3) var(--sp-3); gap: var(--sp-2); min-height: 70px; }
         .team-head > .badge { display: none; }
         .team-head > .avatar { display: none; }
-        .team-tabs { padding: 0 var(--sp-4); }
         .team-thread, .team-panel { padding: var(--sp-4); }
         .team-composer { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
         .team-composer .hint { font-size: var(--fs-11); }
         .team-message.owner { margin-left: 30px; }
-        .team-task > .row:first-child { align-items: flex-start; }
+        .team-head .workspace-toggle { width: var(--control-h-sm); padding: 0; }
+        .team-head .workspace-toggle > span { display: none; }
       }
+      .team-head .workspace-toggle[aria-pressed="true"] { --btn-bg: var(--surface-3); }
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
-      @media (pointer: coarse) { .team-tab, .team-member-choice, .team-task-details > summary { min-height: 44px; } }
+      @media (pointer: coarse) { .team-member-choice, .team-task-details > summary { min-height: 44px; } }
       /* The knights' faces (ui/avatar.ts): drawn whole in SVG and never moving. Galahad's own is in ink, whatever the theme. */
       .worker-avatar { display: block; flex: none; }
       .worker-avatar[data-galahad] { color: var(--accent); }

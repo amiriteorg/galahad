@@ -68,6 +68,25 @@ export function replace(node: Element, ...children: Child[]): void {
   append(node, ...children);
 }
 
+/**
+ * Puts `next` in `parent`, in that order, moving as little as it can: children not in it are taken out, those already
+ * in their place are left alone, the rest go in where they belong. A list that refreshes in the background keeps what
+ * hasn't changed (focus, opened details, a live child's own state) by handing back the same elements.
+ */
+export function syncChildren(parent: Element, next: readonly Node[]): void {
+  const keep = new Set(next);
+  for (let child = parent.firstChild; child; ) {
+    const after = child.nextSibling;
+    if (!keep.has(child)) parent.removeChild(child);
+    child = after;
+  }
+  let at = parent.firstChild;
+  for (const node of next) {
+    if (node === at) at = at.nextSibling;
+    else parent.insertBefore(node, at);
+  }
+}
+
 const placeKey = (el: Element): string => el.getAttribute("data-key") ?? el.getAttribute("aria-label") ?? (el.id || el.textContent?.trim().slice(0, 80) || "");
 
 /**
