@@ -138,6 +138,40 @@ describe("what a task is told about its notes", () => {
   });
 });
 
+describe("the squires' image", () => {
+  const dockerfile = readFileSync(new URL("../../../sandbox/Dockerfile", import.meta.url), "utf8");
+  /** The one RUN that fetches it, as a single line. */
+  const fetched = dockerfile.replace(/\\\n/g, " ").split("\n").find((line) => line.startsWith("RUN") && line.includes("engram")) ?? "";
+
+  test("holds the release this code pins, checked against its SHA-256 before anything of it is kept", () => {
+    expect(dockerfile).toContain(`ARG ENGRAM_VERSION=${ENGRAM_VERSION}\n`);
+    // (The Linux x86_64 asset of v3.7.2, as its release's checksums.txt and GitHub's own digest give it.)
+    expect(dockerfile).toContain("ARG ENGRAM_SHA256=8db9d5db1c1574b8b830aac4ffbe86c024014aed6b9a3f0406ac3361a152cdf0\n");
+    expect(fetched).toContain('"https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_amd64.tar.gz"');
+    const steps = fetched.split("&&").map((step) => step.trim());
+    const checked = steps.findIndex((step) => step === 'echo "${ENGRAM_SHA256}  /tmp/engram.tgz" | sha256sum -c -');
+    const unpacked = steps.findIndex((step) => step.includes("tar -xzf /tmp/engram.tgz"));
+    expect(checked).toBeGreaterThan(0);
+    expect(unpacked).toBeGreaterThan(checked);
+    // Only the binary: the archive's helper scripts (for its cloud sync) are left in it.
+    expect(steps[unpacked]).toBe("tar -xzf /tmp/engram.tgz -C /opt/engram/bin engram");
+    expect(fetched).toContain("chmod 0755 /opt/engram/bin/engram");
+    // A named release, never "latest", and nothing fetched is run as a script.
+    expect(fetched).not.toMatch(/latest|\| *(ba)?sh\b/);
+  });
+
+  test("puts it where the drivers look, with its store on the squire's disk and its update check off, as root's files (read-only to the squire)", () => {
+    expect(ENGRAM_BIN).toBe("/opt/engram/bin/engram");
+    expect(dockerfile).toContain("ENV PATH=/opt/engram/bin:$PATH\n");
+    expect(dockerfile).toContain(`ENV ENGRAM_DATA_DIR=${ENGRAM_DATA_DIR}\n`);
+    expect(dockerfile).toContain("ENV ENGRAM_NO_UPDATE_CHECK=1\n");
+    expect(dockerfile.indexOf("ENGRAM_SHA256")).toBeLessThan(dockerfile.indexOf("USER 1000:1000"));
+    // Nothing in the image starts it: a harness does, for the length of a run.
+    expect(dockerfile).toContain('CMD ["sleep", "infinity"]');
+    expect(dockerfile).not.toMatch(/ENTRYPOINT/);
+  });
+});
+
 describe("what is never said to it", () => {
   /** Every shipped source: the packages, the PWA, the images and the integrations (never the tests). */
   const sources = (): string[] => {

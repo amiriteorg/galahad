@@ -23,6 +23,20 @@ RUN curl -fsSL -o /tmp/opencode.tgz "https://github.com/anomalyco/opencode/relea
  && chmod 0755 /opt/opencode/bin/opencode && rm /tmp/opencode.tgz
 ENV PATH=/opt/opencode/bin:$PATH
 
+# Engram, the notes store a squire's harness may be given (galahad squires engram on). Pinned, and
+# checked against its SHA-256. A newer one migrates a store when it first opens it, so a bump says what
+# becomes of the stores there are. Its store is on the squire's own disk and its update check is off;
+# nothing here starts it (a harness does, for the length of a run: packages/brain/src/engram.ts).
+ARG ENGRAM_VERSION=3.7.2
+ARG ENGRAM_SHA256=8db9d5db1c1574b8b830aac4ffbe86c024014aed6b9a3f0406ac3361a152cdf0
+RUN curl -fsSL -o /tmp/engram.tgz "https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_amd64.tar.gz" \
+ && echo "${ENGRAM_SHA256}  /tmp/engram.tgz" | sha256sum -c - \
+ && mkdir -p /opt/engram/bin && tar -xzf /tmp/engram.tgz -C /opt/engram/bin engram \
+ && chmod 0755 /opt/engram/bin/engram && rm /tmp/engram.tgz
+ENV PATH=/opt/engram/bin:$PATH
+ENV ENGRAM_DATA_DIR=/work/.memory/engram
+ENV ENGRAM_NO_UPDATE_CHECK=1
+
 # Web search through Galahad's own SearXNG, via the gateway (no internet needed).
 COPY websearch /usr/local/bin/websearch
 RUN chmod 0755 /usr/local/bin/websearch
