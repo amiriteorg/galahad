@@ -239,13 +239,13 @@ Every gate is a shell command run in the task's workspace. All gates must pass b
 
 ### What a task came to
 
-When a task ends in a squire's hands, the runner keeps what its run came to beside it, counted by the runner and never taken from the squire's own account: when it began and ended, how its quest ended (done, unverified, gave up, stopped), its commands, how often the gates or the reviewer sent the work back, and its model calls by role and model as the providers reported them (counts only: never a prompt or an answer). `galahad squires` shows it on the task's line, with money at the prices you stated (`galahad price`) where every model that answered has one:
+When a task ends in a squire's hands, the runner keeps what its run came to beside it, counted by the runner and never taken from the squire's own account: when it began and ended, how its quest ended (done, unverified, gave up, stopped), its commands, how often the gates or the reviewer sent the work back, and its model calls by role and model as the providers reported them (counts only: never a prompt or an answer). `galahad squires` shows it on the task's line and the app on the task's card, in the same words, with money at the prices you stated (`galahad price`) where every model that answered has one:
 
 ```
 task-… · done (verified) · ada · Fix the importer · 12m04s · 8 commands, sent back once · 101k tokens · $0.05
 ```
 
-This is the first of the numbers the [mandate](MANDATE.md) asks for per task (cost and time). Not in it yet: a coding harness's own model calls (with OpenCode, Hermes, Claude Code or Codex the record holds the planner's and the reviewer's calls, and the harness's are missing), and how often the task needed you. A task from before records were kept, or one that never ran, has none. The app's task card does not show it yet.
+This is the first of the numbers the [mandate](MANDATE.md) asks for per task (cost and time). Not in it yet: a coding harness's own model calls (with OpenCode, Hermes, Claude Code or Codex the record holds the planner's and the reviewer's calls, and the harness's are missing), and how often the task needed you. A task from before records were kept, or one that never ran, has none.
 
 ### Pause, stop, resume and revise
 

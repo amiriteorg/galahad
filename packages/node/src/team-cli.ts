@@ -1,4 +1,4 @@
-import { costOf, plainLine, plainText, type Prices, type RouteName, spendTotal, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, tokensLabel, usdLabel } from "@galahad/core";
+import { plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
 import { resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -32,29 +32,8 @@ export function foldLine(line: string, width: number): string[] {
   out.push(`${out.length ? "  " : ""}${rest}`);
   return out;
 }
-const took = (ms: number): string => { const s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s` : `${s}s`; };
-
-/**
- * What a task's run came to, for its line in the listing: how it ended when that isn't "done", how long it took,
- * its commands and how often it was sent back, its tokens as the providers reported them, and money at your
- * prices where every model that answered has one. Empty for a task with no record (not run, or from before them).
- */
-export function taskRecordLine(task: Pick<TeamTask, "record">, prices: Prices): string {
-  const r = task.record;
-  if (!r) return "";
-  const total = spendTotal(r.spent);
-  const cost = costOf(r.spent, prices);
-  const tokens = !total.calls ? "no model calls" : total.unknown === total.calls ? "tokens unknown" : `${tokensLabel(total.tokens)}${total.complete ? "" : "+"} tokens`;
-  const money = !total.calls ? "" : cost.complete ? usdLabel(cost.usd) : "no price";
-  return [
-    "",
-    r.ended === "done" ? "" : `ended ${r.ended}`,
-    took(r.endedAt - r.startedAt),
-    `${r.commands} command${r.commands === 1 ? "" : "s"}${r.revisions ? `, sent back ${r.revisions === 1 ? "once" : `${r.revisions} times`}` : ""}`,
-    tokens,
-    money,
-  ].filter((part, i) => i === 0 || part).join(" · ");
-}
+/** What a task's run came to, for its line in the listing (taskRecordFacts). Empty for a task with no record (not run, or from before them). */
+export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): string => (task.record ? taskRecordFacts(task.record, prices).map((fact) => ` · ${fact}`).join("") : "");
 
 const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 

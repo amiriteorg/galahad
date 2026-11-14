@@ -2,6 +2,8 @@ import type { SandboxView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { TeamControlInput, TeamEngramStatus, TeamHarness, TeamRoom, TeamRoomView, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
+import { taskRecordFacts } from "@galahad/core/team-record";
+import type { Price } from "@galahad/core/spend";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
@@ -35,6 +37,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   const roomId = opts.room;
   const tab: TeamTab = opts.teamTab ?? "chat";
   let snapshot: TeamSnapshot | null = null;
+  /** Your prices, for what a finished task cost (asked for once; without them a task still says its tokens). */
+  let prices: Record<string, Price> | null = null;
   let room: TeamRoomView | null = null;
   let loading = false;
   let sending = false;
@@ -366,6 +370,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       dependencies.length ? h("div", { class: "team-dependencies" }, ...dependencies.map((dependency) => h("span", { class: "row tiny", title: dependency.satisfied ? "Completed and verified" : "Waiting for completion and verification" }, icon(dependency.satisfied ? "check" : "clock", { size: 12 }), dependency.title))) : null,
       task.error ? callout("danger", task.error) : null,
       task.status === "running" && task.progress ? h("p", { class: "small muted clamp-2 pre-wrap" }, task.progress.slice(-500)) : null,
+      // What its run came to, as the runner counted it: its time, commands, tokens, and money at your prices.
+      task.record ? h("p", { class: "tiny subtle tnum", title: "Counted by the runner as the task ran" }, taskRecordFacts(task.record, prices ?? {}).join(" · ")) : null,
       details,
       h("div", { class: "row wrap" }, h("span", { class: "tiny subtle grow" }, `Updated ${relativeTime(task.updatedAt)}`),
         canChat && activeTeamWork(task) ? button("Stop", { variant: "ghost", size: "sm", icon: "stop", onClick: () => void control({ task: task.id, action: "stop" }) }) : null,
@@ -462,6 +468,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         ctx.api.get<TeamSnapshot>("/api/team", scope.signal),
         roomId ? ctx.api.post<TeamRoomView>("/api/team/room", { id: roomId }, scope.signal) : Promise.resolve(null),
       ]);
+      if (scope.disposed) return;
+      if (!prices && next.tasks.some((task) => task.record)) prices = (await ctx.api.get<{ prices: Record<string, Price> }>("/api/prices", scope.signal).catch(() => ({ prices: {} }))).prices;
       if (scope.disposed) return;
       snapshot = next; room = detail;
       notice.hidden = true;

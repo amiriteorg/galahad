@@ -4,6 +4,7 @@ export * from "./archive.ts";
 export * from "./bank.ts";
 export * from "./chats.ts";
 export * from "./team.ts";
+export * from "./team-record.ts";
 export * from "./quests.ts";
 export * from "./turns.ts";
 export * from "./lookalike.ts";
