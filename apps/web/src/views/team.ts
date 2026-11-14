@@ -103,7 +103,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   /** The knight whose own conversation this is (none: a room). */
   const knight = (): Teammate | undefined => (room?.direct && room.members.length === 1 ? personOf(room.members[0]!) : undefined);
   const panelOpen = (): boolean => panelAsked && Boolean(knight());
-  const avatar = (person: Teammate, live = true, size = 40): SVGSVGElement =>
+  const avatar = (person: Teammate, live = true, size = 40): HTMLElement =>
     workerAvatar({ id: person.id, name: person.name, profile: person.avatar, size, still: !live, expression: live && snapshot ? avatarExpression(person, snapshot, Date.now()) : "idle" });
   const control = (change: Parameters<typeof controlTeam>[1]) => controlTeam(ctx, change);
   const showPanel = (open: boolean) => roomId && ctx.navigate("team", { room: roomId, ...(open ? { teamTab: "workspace" as const } : {}) });

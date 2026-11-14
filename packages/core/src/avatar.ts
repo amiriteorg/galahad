@@ -1,7 +1,9 @@
 import type { Teammate, TeamTask, TeamDelivery } from "./team.ts";
 
-/** Cosmetic identity only. This module stays schema-free for the PWA and world. A knight is drawn as a little
- * creature: its body's shape, its eyes, what it wears on its head, and how lively it is at rest. */
+/** Cosmetic identity only. This module stays schema-free for the PWA and world. A knight is drawn as one of the
+ * owner's ten drawings (AVATAR_LOOKS; the PWA has the pictures), which a saved profile names by that drawing's colour.
+ * The profile's other fields are older than the drawings and still kept: its shape, eyes and headwear name no look,
+ * and how lively it is at rest still moves it. */
 export const AVATAR_FORMS = ["round", "armored", "hooded"] as const;
 export const AVATAR_EYES = ["oval", "round", "visor"] as const;
 export const AVATAR_ACCESSORIES = ["none", "plume", "ears", "crown"] as const;
@@ -78,15 +80,68 @@ export function withBodyColor(profile: AvatarProfile, color: string): AvatarProf
   return { ...profile, color: next, accent: profile.accent === matchingAccent(profile.color) ? matchingAccent(next) : profile.accent };
 }
 
+/** A profile as it is saved: exactly its seven fields, each one valid. Anything else is old or malformed. */
+export function isAvatarProfile(profile: unknown): profile is AvatarProfile {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return false;
+  const p = profile as Record<string, unknown>;
+  return Object.keys(p).length === PROFILE_KEYS.length && Object.keys(p).every((key) => PROFILE_KEYS.includes(key))
+    && p.v === 1 && memberOf(AVATAR_FORMS, p.form) && hexColor(p.color) && hexColor(p.accent)
+    && memberOf(AVATAR_EYES, p.eyes) && memberOf(AVATAR_ACCESSORIES, p.accessory) && memberOf(AVATAR_TEMPERAMENTS, p.temperament);
+}
+
 /** Old or malformed snapshots get a safe deterministic appearance. Never pass
  * arbitrary CSS, URLs or extra properties through to an SVG/world renderer. */
 export function resolveAvatar(id: string, profile?: unknown): AvatarProfile {
-  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return defaultAvatar(id);
-  const p = profile as Record<string, unknown>;
-  if (Object.keys(p).length !== PROFILE_KEYS.length || !Object.keys(p).every((key) => PROFILE_KEYS.includes(key))
-    || p.v !== 1 || !memberOf(AVATAR_FORMS, p.form) || !hexColor(p.color) || !hexColor(p.accent)
-    || !memberOf(AVATAR_EYES, p.eyes) || !memberOf(AVATAR_ACCESSORIES, p.accessory) || !memberOf(AVATAR_TEMPERAMENTS, p.temperament)) return defaultAvatar(id);
-  return { v: 1, form: p.form, color: p.color.toLowerCase(), accent: p.accent.toLowerCase(), eyes: p.eyes, accessory: p.accessory, temperament: p.temperament };
+  if (!isAvatarProfile(profile)) return defaultAvatar(id);
+  return { v: 1, form: profile.form, color: profile.color.toLowerCase(), accent: profile.accent.toLowerCase(), eyes: profile.eyes, accessory: profile.accessory, temperament: profile.temperament };
+}
+
+/** The owner's ten drawings of knights, each by the name it was drawn as, its helm's colour, and its helmet's shape.
+ * (Galahad's own drawing, and the Black Knight's he becomes in beast mode, are his alone: not among these.) */
+export const AVATAR_LOOKS = [
+  { id: "kay", name: "Kay", color: "#f9e9d9", form: "hooded" },
+  { id: "gaheris", name: "Gaheris", color: "#9c494f", form: "armored" },
+  { id: "percival", name: "Percival", color: "#d5adc7", form: "armored" },
+  { id: "palamedes", name: "Palamedes", color: "#945764", form: "armored" },
+  { id: "gawain", name: "Gawain", color: "#84845e", form: "round" },
+  { id: "tristan", name: "Tristan", color: "#999aab", form: "armored" },
+  { id: "lancelot", name: "Lancelot", color: "#93a2c0", form: "armored" },
+  { id: "bedivere", name: "Bedivere", color: "#9dac9e", form: "armored" },
+  { id: "bors", name: "Bors", color: "#be7153", form: "round" },
+  { id: "gareth", name: "Gareth", color: "#fbc866", form: "round" },
+] as const satisfies readonly { id: string; name: string; color: string; form: AvatarProfile["form"] }[];
+export type AvatarLook = (typeof AVATAR_LOOKS)[number]["id"];
+
+/** The profile saved for a look: the drawing's own colour names it. */
+export function lookProfile(look: AvatarLook, temperament: AvatarProfile["temperament"] = "calm"): AvatarProfile {
+  const { color, form } = AVATAR_LOOKS.find((each) => each.id === look) ?? AVATAR_LOOKS[0];
+  return { v: 1, form, color, accent: matchingAccent(color), eyes: "oval", accessory: "none", temperament };
+}
+
+/** How far apart two colours look: RGB weighted by how much red there is ("redmean"), plenty for picking a nearest. */
+function apart(a: string, b: string): number {
+  const [r1, g1, b1] = [1, 3, 5].map((at) => parseInt(a.slice(at, at + 2), 16));
+  const [r2, g2, b2] = [1, 3, 5].map((at) => parseInt(b.slice(at, at + 2), 16));
+  const red = (r1! + r2!) / 2;
+  return Math.sqrt((2 + red / 256) * (r1! - r2!) ** 2 + 4 * (g1! - g2!) ** 2 + (2 + (255 - red) / 256) * (b1! - b2!) ** 2);
+}
+
+/**
+ * Which drawing a knight wears. A look chosen for it (its profile has one of the drawings' colours) is the one; else
+ * the drawing its first name is (a knight called Gareth is drawn as Gareth); else, for an older profile, the drawing
+ * nearest its colour; else one of the ten from its handle alone, the same on every device.
+ */
+export function avatarLook(id: string, name: string, profile?: unknown): AvatarLook {
+  const saved = isAvatarProfile(profile) ? profile.color.toLowerCase() : null;
+  const chosen = AVATAR_LOOKS.find((look) => look.color === saved);
+  if (chosen) return chosen.id;
+  const first = String(name ?? "").trim().toLowerCase().split(/\s+/)[0];
+  const named = AVATAR_LOOKS.find((look) => look.id === first);
+  if (named) return named.id;
+  if (saved) return AVATAR_LOOKS.reduce((best, look) => (apart(look.color, saved) < apart(best.color, saved) ? look : best)).id;
+  let seed = 2166136261;
+  for (let n = 0; n < id.length; n++) seed = Math.imul(seed ^ id.charCodeAt(n), 16777619) >>> 0;
+  return AVATAR_LOOKS[seed % AVATAR_LOOKS.length]!.id;
 }
 
 export interface AvatarActivity {

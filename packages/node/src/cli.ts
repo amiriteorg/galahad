@@ -65,9 +65,12 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a knight's harness can search and keep notes in its own VM, where the
                                     VM's image has the pinned Engram; off (the default), nothing is given
-  roundtable avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
-                  [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
-                                    customize that knight's look, or read its saved appearance
+  roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]
+                  [--temperament calm|curious|lively] [--reset]
+                                    choose which of the drawings that knight is, or read its saved appearance
+                                    (one called by a drawing's name is that drawing until another is chosen);
+                                    the older --form, --color, --accent, --eyes and --accessory still save, and
+                                    a colour no look has is drawn as the look nearest it
   roundtable pause|resume|stop <room|knight|task> <id>
   roundtable remove <id> [--destroy-workspace] [--yes]
                                     remove a knight for good: it leaves its rooms and does no more work; what it

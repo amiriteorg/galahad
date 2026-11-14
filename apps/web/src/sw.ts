@@ -8,11 +8,14 @@ import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, 
  * from cache and refreshed in the background (stale-while-revalidate).
  * Anything under /api, /link or /gw is never cached: those are signed,
  * live requests and always go to the network. The pairing bundle (/pair.js)
- * is not cached either: pairing needs the network anyway.
+ * is not cached either: pairing needs the network anyway. The knights' drawings
+ * are kept the first time a page shows them, so the roster has its faces offline.
  */
 
 const VERSION = "galahad-shell-v8";
-const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
+const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png", "/knights/galahad.webp"];
+/** Kept the first time they are fetched, then served like the shell: the knights' drawings (Galahad's is in the shell). */
+const KEPT_ONCE_FETCHED = ["/knights/"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 
 interface ExtendableEventLike extends Event {
@@ -132,7 +135,7 @@ sw.addEventListener("fetch", (event) => {
     event.respondWith(page(event));
     return;
   }
-  if (SHELL.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
+  if (SHELL.includes(url.pathname) || KEPT_ONCE_FETCHED.some((prefix) => url.pathname.startsWith(prefix))) event.respondWith(fromShell(event, url.pathname));
 });
 
 /*

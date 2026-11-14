@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type TeamRoom, type TeamRoomView, type TeamSnapshot } from "@galahad/core";
-import { defaultAvatar, matchingAccent } from "@galahad/core/avatar";
+import { defaultAvatar, lookProfile, matchingAccent } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
 
 /* `galahad roundtable` at a terminal, against what the node would answer. */
@@ -153,6 +153,20 @@ test("a new body color brings its matching accent; an accent you name, or chose 
   // Reading it changes nothing.
   const before = saved.length;
   await teamCommand(api, "avatar", ["ada"], {}, quiet);
+  expect(saved).toHaveLength(before);
+});
+
+test("a look is one of the owner's drawings by name: it keeps how lively the knight is, and a name that is none is refused", async () => {
+  const lively = { ...defaultAvatar("ada"), temperament: "lively" as const };
+  const { api, saved } = node([member("ada", { avatar: lively })]);
+  const quiet = () => {};
+  await teamCommand(api, "avatar", ["ada"], { look: "Percival" }, quiet);
+  expect(saved.at(-1)!.input.avatar).toEqual(lookProfile("percival", "lively"));
+  await teamCommand(api, "avatar", ["ada"], { look: "gareth", temperament: "calm" }, quiet);
+  expect(saved.at(-1)!.input.avatar).toEqual(lookProfile("gareth", "calm"));
+  const before = saved.length;
+  await expect(teamCommand(api, "avatar", ["ada"], { look: "merlin" }, quiet)).rejects.toThrow(/kay, gaheris, percival/);
+  await expect(teamCommand(api, "avatar", ["ada"], { look: "bors", color: "#112233" }, quiet)).rejects.toThrow(/not both/);
   expect(saved).toHaveLength(before);
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AVATAR_ACCESSORIES, AVATAR_EYES, AVATAR_FORMS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, avatarExpression, defaultAvatar, matchingAccent, resolveAvatar, taskStep, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
+import { AVATAR_ACCESSORIES, AVATAR_EYES, AVATAR_FORMS, AVATAR_LOOKS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, avatarExpression, avatarLook, defaultAvatar, isAvatarProfile, lookProfile, matchingAccent, resolveAvatar, taskStep, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
 import { AvatarProfileSchema } from "../src/team.ts";
 
 const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
@@ -92,6 +92,46 @@ describe("knight appearance", () => {
       { ...valid, color: "url(https://example.invalid/paint)" }, { ...valid, accent: "#fff;opacity:0" },
       { ...valid, src: "https://example.invalid/image.svg" }]) expect(resolveAvatar("ada", value)).toEqual(defaultAvatar("ada"));
     expect(resolveAvatar("ada", valid)).not.toBe(valid);
+  });
+
+  test("the ten looks are the owner's ten drawings, each named by a colour of its own that a saved profile keeps", () => {
+    expect(AVATAR_LOOKS.map((look) => look.id)).toEqual(["kay", "gaheris", "percival", "palamedes", "gawain", "tristan", "lancelot", "bedivere", "bors", "gareth"]);
+    expect(new Set(AVATAR_LOOKS.map((look) => look.color)).size).toBe(AVATAR_LOOKS.length);
+    for (const look of AVATAR_LOOKS) {
+      const profile = lookProfile(look.id, "lively");
+      expect(AvatarProfileSchema.safeParse(profile).success).toBe(true);
+      expect(isAvatarProfile(profile)).toBe(true);
+      expect(profile).toMatchObject({ color: look.color, form: look.form, temperament: "lively" });
+      // A profile saved for a look is that look, whatever the knight is called.
+      expect(avatarLook("ada", "Ada", profile)).toBe(look.id);
+      expect(avatarLook("gareth", "Gareth", profile)).toBe(look.id);
+    }
+  });
+
+  test("a knight nobody chose a look for wears the drawing named for it, else one of the ten, the same on every read", () => {
+    // Named for a drawing: that one, from its first name, whatever profile the node seeded.
+    expect(avatarLook("gareth", "Gareth", defaultAvatar("gareth"))).toBe("gareth");
+    expect(avatarLook("k-1", "kay the seneschal", undefined)).toBe("kay");
+    expect(avatarLook("percy", "PERCIVAL", null)).toBe("percival");
+    // An older profile that names no look: the drawing nearest its colour.
+    expect(avatarLook("ada", "Ada", { ...defaultAvatar("ada"), color: "#d9a43c" })).toBe("gareth");
+    expect(avatarLook("ada", "Ada", { ...defaultAvatar("ada"), color: "#c9713b" })).toBe("bors");
+    expect(avatarLook("ada", "Ada", { ...defaultAvatar("ada"), color: "#4f8fe0" })).toBe("lancelot");
+    // Nothing at all: one of the ten from the handle alone, stable and spread across all ten.
+    expect(avatarLook("worker-7", "Worker", undefined)).toBe(avatarLook("worker-7", "Someone else", "not a profile"));
+    expect(new Set(Array.from({ length: 300 }, (_, n) => avatarLook(`worker-${n}`, "Worker", undefined)))).toEqual(new Set(AVATAR_LOOKS.map((look) => look.id)));
+    // Galahad's own drawing, and the Black Knight's, are no knight's to wear.
+    expect(AVATAR_LOOKS.map((look) => look.id)).not.toContain("galahad");
+    expect(avatarLook("ada", "Galahad", undefined)).not.toBe("galahad");
+  });
+
+  test("whether a profile is one as saved is the same test resolveAvatar trusts", () => {
+    const valid = defaultAvatar("lin");
+    expect(isAvatarProfile(valid)).toBe(true);
+    for (const value of [undefined, null, "x", [], {}, { ...valid, v: 2 }, { ...valid, form: "orb" }, { ...valid, color: "red" }, { ...valid, extra: 1 }]) {
+      expect(isAvatarProfile(value)).toBe(false);
+      expect(resolveAvatar("ada", value)).toEqual(defaultAvatar("ada"));
+    }
   });
 
   test("the browser helper bundles without schemas or server code", async () => {

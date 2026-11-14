@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotli, gzip, pickEncoding } from "./compress.ts";
@@ -91,6 +91,10 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     // Rendered from the one emblem definition by `bun scripts/brand.ts --png`.
     for (const name of ["apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
       files.set(`/${name}`, { body: new Uint8Array(readFileSync(join(src, name))), type: "image/png" });
+    }
+    // The knights as the owner drew them (ui/avatar.ts shows them): every drawing in the folder, by its own name.
+    for (const name of readdirSync(join(src, "knights")).filter((file) => /^[a-z-]+(@2x)?\.webp$/.test(file))) {
+      files.set(`/knights/${name}`, { body: new Uint8Array(readFileSync(join(src, "knights", name))), type: "image/webp" });
     }
   } catch (error) {
     const message = String((error as Error).message ?? error).replace(/[<>&]/g, "");

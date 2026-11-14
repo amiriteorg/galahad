@@ -53,6 +53,19 @@ describe("the PWA bundle", () => {
     }
   });
 
+  test("the knights' drawings are served as WebP, every one the app can show, and nothing beside them", async () => {
+    const assets = await buildAssets();
+    for (const name of ["galahad", "galahad@2x", "black-knight", "black-knight@2x", "kay", "gaheris", "percival", "palamedes", "gawain", "tristan", "lancelot", "bedivere", "bors", "gareth"]) {
+      expect(assets.has(`/knights/${name}.webp`)).toBe(true);
+      const response = assets.serve(`/knights/${name}.webp`);
+      expect(response.headers.get("content-type")).toBe("image/webp");
+      expect(response.headers.get("content-encoding")).toBeNull();
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      expect(new TextDecoder("latin1").decode(bytes.slice(0, 4)) + new TextDecoder("latin1").decode(bytes.slice(8, 12))).toBe("RIFFWEBP");
+    }
+    for (const path of ["/knights/", "/knights/merlin.webp", "/knights/../index.html", "/knights/galahad.png"]) expect(assets.has(path)).toBe(false);
+  });
+
   test("every entry is self-contained, so the service worker can cache the shell by name", async () => {
     const assets = await buildAssets();
     for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js", "/term.js"]) {
