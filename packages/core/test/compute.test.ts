@@ -287,6 +287,20 @@ describe("what more compute would buy, and what he suggests (never does)", () =>
     expect(lines.some((l) => /another machine/i.test(l))).toBe(true);
   });
 
+  test("a raised ceiling is said as the most it could carry, never as what it will: threads that share a core add less than a core each", () => {
+    // What ultra measured on 14 November 2026 (16 cores, two threads each): 13.2 cores' worth on its default 16 threads.
+    const half = deriveCapacity(ultra, measured(ultra, 16, 13.2), null);
+    expect(half.sandboxes).toBe(3);
+    const line = whatMoreBuys([{ name: "ultra", body: ultra, capacity: half, limit: null }], { effort: 3 } as ComputePlan).find((l) => l.includes("galahad compute limit ultra --cores 24"))!;
+    // A straight line from that is 5 slots on 24 threads: the most there could be, and said as that…
+    expect(line).toMatch(/could carry up to 5 sandbox slots instead of 3/);
+    expect(line).not.toMatch(/would carry|about 5/);
+    expect(line).toMatch(/he measures again on the new ceiling/);
+    // …because what it then measured there was 16.2 cores' worth: 4.
+    const yours = { cores: 24 };
+    expect(deriveCapacity(ultra, measured(ultra, 24, 16.2, { body: bodyFingerprint(ultra, yours) }), yours).sandboxes).toBe(4);
+  });
+
   test("it doesn't promise what model calls won't carry: past the asked node's ceiling, more slots wait on model calls", () => {
     // Two machines of four slots each, eight model calls at once on the node asked (the default): a third would make twelve slots.
     const fleet = [

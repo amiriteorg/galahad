@@ -497,12 +497,18 @@ export function whatMoreBuys(nodes: readonly { name: string; body: ComputeBody; 
     }
     if (n.limit?.cores !== undefined) continue;
     // Three quarters of the machine instead of half, at the share of its threads it delivered when measured.
+    // That share is the most the added threads could give, and no more is known until they are measured: where
+    // two threads share a core, half the machine's threads can be every core it has, and the rest add far less
+    // (ultra, 16 cores: 13.2 cores' worth on 16 threads, 16.2 on 24). So it is said as a most, never as a count.
     const now = ceilingThreads(n.body, n.limit);
     const more = Math.floor(n.body.cores * 0.75);
     const delivered = Math.min(1, n.capacity.cores / now);
     const slots = Math.min(Math.floor(Math.round(delivered * more) / SLOT_CPUS), Math.floor(n.capacity.memoryGb / SLOT_MEMORY_GB));
     if (more > now && slots > n.capacity.sandboxes) {
-      lines.push(`${n.name}: a ceiling of ${more} threads instead of ${now} would carry about ${plural(slots, "sandbox slot")} instead of ${n.capacity.sandboxes}, if nothing else there needs them: galahad compute limit ${n.name} --cores ${more}.`);
+      lines.push(
+        `${n.name}: a ceiling of ${more} threads instead of ${now} could carry up to ${plural(slots, "sandbox slot")} instead of ${n.capacity.sandboxes}, if nothing else there needs them: galahad compute limit ${n.name} --cores ${more}. ` +
+          "Up to, because threads that share a core add less than a core each: he measures again on the new ceiling and counts what that shows.",
+      );
     }
   }
   const slots = hosts.reduce((sum, n) => sum + n.capacity.sandboxes, 0);
