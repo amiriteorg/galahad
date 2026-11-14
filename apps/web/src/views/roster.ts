@@ -20,6 +20,11 @@ import { editKnight, editRoom, giveToRoundtable, openDirect } from "./team-forms
  * the Inbox and his work as the app has them.
  */
 
+/** What a knight's card says of it in a word, on a phone (its line says the rest; a row on a wide screen has its mark). */
+interface Badge { text: string; tone: "needs" | "quiet" | "ok" }
+const badgeOf = (item: RosterRow): Badge | null =>
+  item.needs ? { text: "Needs you", tone: "needs" } : item.expression === "resting" ? { text: "Paused", tone: "quiet" } : item.expression === "pleased" ? { text: "Verified", tone: "ok" } : null;
+
 /** The last thing said in each conversation the app has read (it reads one only when it is opened). */
 const said = new Map<string, Said>();
 export const noteSaid = (room: string, message: Said | undefined): void => {
@@ -39,16 +44,27 @@ export function rosterNav(ctx: Ctx): Roster {
   let where: { route: Route | null; room?: string } = { route: null };
   let shown = "";
 
-  const row = (opts: { key: string; href: string; current: boolean; face: Child; name: string; line: string; needs: boolean; onclick?: (event: Event) => void; after?: Child }): HTMLElement =>
+  const row = (opts: { key: string; href: string; current: boolean; face: Child; name: string; line: string; needs: boolean; badge?: Badge | null; galahad?: boolean; onclick?: (event: Event) => void; after?: Child }): HTMLElement =>
     h(
       "a",
-      { class: "roster-row", href: opts.href, "data-key": opts.key, "aria-current": opts.current ? "page" : null, "data-needs": opts.needs ? "" : null, title: `${opts.name}: ${opts.line}`, onclick: opts.onclick },
+      { class: opts.galahad ? "roster-row roster-galahad" : "roster-row", href: opts.href, "data-key": opts.key, "aria-current": opts.current ? "page" : null, "data-needs": opts.needs ? "" : null, title: `${opts.name}: ${opts.line}`, onclick: opts.onclick },
       h("span", { class: "roster-face" }, opts.face, opts.needs ? h("span", { class: "roster-mark", role: "img", "aria-label": "Needs you" }) : null),
-      h("span", { class: "roster-text" }, h("span", { class: "roster-name ellipsis" }, opts.name), h("span", { class: "roster-line ellipsis" }, opts.line)),
+      h(
+        "span",
+        { class: "roster-text" },
+        h("span", { class: "roster-head" }, h("span", { class: "roster-name ellipsis" }, opts.name), opts.badge ? h("span", { class: "roster-badge", "data-tone": opts.badge.tone, "aria-hidden": "true" }, opts.badge.text) : null),
+        h("span", { class: "roster-line ellipsis" }, opts.line),
+      ),
       opts.after,
     );
 
   const label = (text: string, ...actions: Child[]): HTMLElement => h("div", { class: "roster-label" }, h("span", { class: "grow" }, text), ...actions);
+  // (On a phone the last card seats a knight, so this one is the wide screen's.)
+  const newKnight = (): HTMLElement => {
+    const el = button("New knight", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => void editKnight(ctx) });
+    el.dataset.newKnight = "";
+    return el;
+  };
   const give = (): HTMLElement => {
     const el = button("Give a task", { variant: "ghost", size: "sm", icon: "layers", title: "Give a task to the knight best suited to it, or to one by name", onClick: () => giveToRoundtable(ctx) });
     el.dataset.give = "";
@@ -58,6 +74,7 @@ export function rosterNav(ctx: Ctx): Roster {
   function knightOrRoom(item: RosterRow): HTMLElement {
     const knight = item.kind === "knight";
     return row({
+      badge: knight ? badgeOf(item) : null,
       key: item.key,
       href: item.room ? teamHash({ room: item.room }) : "#/team",
       current: where.route === "team" && item.room !== null && item.room === where.room,
@@ -87,19 +104,22 @@ export function rosterNav(ctx: Ctx): Roster {
       replace(
         el,
         // Giving a task to the Roundtable (the knight best suited takes it), or to one knight by name: one sheet.
-        label("Roundtable", canEdit && knights.length ? give() : null, canEdit ? button("New knight", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => void editKnight(ctx) }) : null),
+        label("Roundtable", canEdit && knights.length ? give() : null, canEdit ? newKnight() : null),
         row({
           key: "galahad",
+          galahad: true,
           href: "#/chat",
           current: where.route === "chat",
           face: workerAvatar({ id: "galahad", name: "Galahad", expression: galahad.expression, size: 32 }),
           name: "Galahad",
           line: galahad.text,
           needs: galahad.tone === "warn",
+          badge: galahad.tone === "warn" ? { text: "Needs you", tone: "needs" } : null,
           // Stop is one click away from every page: said to the node, like the composer's.
           after: answering ? button("Stop", { variant: "ghost", size: "sm", iconOnly: true, icon: "stop", label: "Stop Galahad answering", onClick: (event) => (event.preventDefault(), stopChat()) }) : null,
         }),
-        ...knights.map(knightOrRoom),
+        // On a phone the knights are cards, two to a row, and the last card seats a new one.
+        knights.length || canEdit ? h("div", { class: "roster-knights" }, ...knights.map(knightOrRoom), canEdit && snapshot ? h("button", { type: "button", class: "roster-add", onclick: () => void editKnight(ctx) }, h("span", { class: "roster-add-plus" }, icon("plus", { size: 18 })), "Add a knight") : null) : null,
         !snapshot && !problem ? skeletonRows(3, { avatar: true }) : null,
         problem ? h("p", { class: "roster-note" }, isUnavailable(problem) ? "This node seats no other knights yet." : "Couldn't reach the Roundtable just now. ", isUnavailable(problem) ? null : button("Try again", { variant: "ghost", size: "sm", onClick: () => void ctx.live.refreshTeam() })) : null,
         snapshot && !knights.length ? h("p", { class: "roster-note" }, canEdit ? "Seat a knight beside Galahad: a name, a lasting job and a workspace of its own." : "No other knights yet. Seating one needs fleet:admin access on an owner device.") : null,
