@@ -4,7 +4,17 @@ Two claims need evidence, always. First, **quality holds**: nothing regresses. S
 
 > **Status:** L0 exists today (typecheck and the test suite, including property and two-node end-to-end tests, the deterministic multi-node simulation, and the scorecard of [BENCHMARKS](BENCHMARKS.md)). Three suites run with `galahad trial run` and score into the Galahad Index: **engineering** ✅ (L1: fourteen problems with exact answers), **agentic** ✅ (L2: real work in a small repository, graded by hidden tests) and **reviewer** ✅ (L1 for the reviewer's role: a quest's evidence with a known answer). Every model call is counted ✅, so the Index has its cost beside it; a run can hold a role to one model ✅ and run under a named variant of the harness ✅, and keeps to a budget ✅. Judges, held-out sets, L3 and the Scout are planned for M4 🔜.
 >
-> **Not yet measured with real models:** the agentic and reviewer suites were built and verified against stand-in models and stand-in sandboxes (the hidden tests themselves really run). Where the roster scores on them, and so which level each task should usually be posed at, is the first thing to run: see [Calibrating the agentic suite](#calibrating-the-agentic-suite).
+> **First measured with real models on 14 November 2026** (on `ultra`, every role held to a model on a coding plan; the records are on that node, `galahad trials`). The agentic suite at level 2, engineer and planner `opencode-go/glm-5.3`, reviewer `opencode-go/qwen3.8-max`, the same eight seeded tasks twice:
+>
+> | | Revision `6bbab45` | Revision `4c89fc0` |
+> |---|---|---|
+> | Solved outright | 7 of 7 scored (1 crashed) | 6 of 8 |
+> | Galahad Index | 100 % | 94 % (88 %–100 %) |
+> | Input read from a cache | 2 % | 73 % |
+> | A task, at list prices | $1.05 · 442k tokens · 24.5 min | $0.54 · 258k tokens · 17 min |
+> | Called done and wasn't | 0 of 5 | 1 of 7 |
+>
+> Between the two: a quest recalls once and under a steady fence, its conversation is cut in batches, and a reply that runs away no longer ends it ([ARCHITECTURE](ARCHITECTURE.md) §6, §8). By this page's own rule there is no measurable difference in quality between the runs (−6 points on the tasks both ran, an interval across zero), so the cost is about halved and a small loss of quality is not excluded: eight tasks can't say. **Level 2 is too easy for this model to show quality moving**: the calibration below (levels 1 to 3) is still to run. The reviewer suite's first run is under [The reviewer suite](#the-reviewer-suite-).
 
 ## Layers
 
