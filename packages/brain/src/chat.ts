@@ -4,6 +4,7 @@ import { anthropicConversation, openAIConversation, RefusalError, type ToolCall,
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
+import { windowsOf } from "./windows.ts";
 import { listModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
 
@@ -206,6 +207,12 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield passOver(ref, (error as Error).message);
       continue;
     }
+    // Its allowance spent until a time its provider gave (windows.ts): not asked again until then.
+    const spentWindow = windowsOf(ctx.store).spent(parsed.provider);
+    if (spentWindow) {
+      yield passOver(ref, windowsOf(ctx.store).why(spentWindow));
+      continue;
+    }
     const provider = resolveProvider(ctx.store, ctx.vault, parsed.provider, req.coding ? "coding" : "own");
     if (!provider) {
       yield passOver(ref, `provider "${parsed.provider}" is not configured`);
@@ -363,6 +370,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         declined = message;
         apart = wrote;
       }
+      // A refusal that says its allowance is spent, and until when, is remembered: the next ask passes it over.
+      windowsOf(ctx.store).note(parsed.provider, message);
       yield passOver(ref, message);
     }
   }

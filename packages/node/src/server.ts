@@ -104,6 +104,7 @@ import {
   roster,
   SIGN_INS,
   signIn,
+  windowsOf,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -1748,7 +1749,8 @@ export function createApp(ctx: AppContext) {
       const plan = planOf(input.id);
       return { models: plan ? [...plan.models] : await listModels(provider) };
     },
-    roster: () => ({ roster: roster(ctx.store) }),
+    // (With the plans whose allowance is spent just now, and until when: their models are passed over until then.)
+    roster: () => ({ roster: roster(ctx.store), spent: windowsOf(ctx.store).list() }),
     setRoster: (input) => {
       for (const ref of input.models) parseRef(ref);
       ctx.store.emit(ctx.identity, "roster.set", { role: input.role, models: input.models });

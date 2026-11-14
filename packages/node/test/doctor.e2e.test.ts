@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bodyFingerprint, type Calibration, ceilingThreads, clientIdFromKey, type DoctorCheck, type DoctorReport, type FindingView, KERNEL, type LedgerEntry, type NoticeView, REFERENCE_SINGLE, type RouteName, routes, type Scope, signRequest, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
+import { windowsOf } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { DockerRunner } from "@galahad/sandbox";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -314,6 +315,22 @@ describe("faults the owner's server has had, each with its own line and advice",
     await until(() => !daemon.loops.isRunning("heartbeat"));
     await json(admin("runLoop", { name: "heartbeat" }));
     await until(async () => !(await json<{ notices: NoticeView[] }>(admin("notices"))).notices.some((n) => n.key.startsWith("doctor:role.planner.first")));
+  });
+
+  test("a plan whose allowance is spent: its models are skipped until it resets, the doctor says until when, and so does the roster", async () => {
+    await json(admin("setProvider", { id: "spentplan", kind: "openai", baseUrl: "http://127.0.0.1:9/v1" }));
+    await json(admin("setRoster", { role: "planner", models: ["spentplan/big", "stand-in/worker"] }));
+    // What its provider said on the node's last call to it.
+    windowsOf(daemon.store).note("spentplan", 'spentplan → 429 {"error":{"type":"GoUsageLimitError","message":"usage limit reached (5-hour, resets in 1h 37m)"}}');
+    try {
+      const first = check(await doctor({ offline: true }), "role.planner.first");
+      expect(first.state).toBe("needs-you");
+      expect(first.line).toMatch(/^planner's first model, spentplan\/big, is skipped on every answer \(its allowance is spent until \d\d:\d\d UTC \(1h 37m from now\), as its provider said: passed over without asking\); stand-in\/worker answers instead$/);
+      const { spent } = await json<{ spent: { provider: string; until: number }[] }>(admin("roster"));
+      expect(spent.map((w) => w.provider)).toEqual(["spentplan"]);
+    } finally {
+      await json(admin("setRoster", { role: "planner", models: ["stand-in/worker"] }));
+    }
   });
 
   test("a reply ended by the provider's content filter, and a key the provider refuses (never printed)", async () => {

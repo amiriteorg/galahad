@@ -1,7 +1,7 @@
 import { readdirSync, statSync, statfsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
-import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, resolveProvider, roster } from "@galahad/brain";
+import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, resolveProvider, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
@@ -214,7 +214,10 @@ function modelProblem(deps: DoctorDeps, ref: string): string | null {
   } catch {
     return "not a <provider>/<model> reference";
   }
-  // (A coding plan's model is his workers' tools' to use: what is asked of it is whether a tool would get its key.)
+  // Its allowance spent until a time its provider gave: passed over until then (brain/windows.ts), and said so.
+  const spent = windowsOf(deps.store).spent(parsed.provider);
+  if (spent) return windowsOf(deps.store).why(spent);
+  // (A coding plan's model is the knights' tools' to use: what is asked of it is whether a tool would get its key.)
   const provider = resolveProvider(deps.store, deps.vault, parsed.provider, onPlan(ref) ? "tool" : "own");
   if (!provider) return `provider "${parsed.provider}" is not configured`;
   if (provider.local) {

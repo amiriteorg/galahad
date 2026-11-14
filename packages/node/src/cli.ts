@@ -872,11 +872,17 @@ Next:
         if (!rest[0] || rest.length < 2) fail("usage: galahad roster set <role> <provider/model>...");
         await admin.call("setRoster", { role: rest[0], models: rest.slice(1) });
       }
-      const { roster } = await admin.call("roster");
-      for (const [role, spec] of Object.entries(roster as Record<string, { models: string[]; configured: boolean }>)) {
+      const { roster, spent = [] } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean }>; spent?: { provider: string; until: number }[] }>("roster");
+      const spentUntilOf = (ref: string) => spent.find((w) => ref.startsWith(`${w.provider}/`));
+      for (const [role, spec] of Object.entries(roster)) {
         // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
-        console.log(`  ${role.padEnd(10)} ${spec.models.map((ref) => (onPlan(ref) ? `${ref} ${dim("(coding only)")}` : ref)).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
+        const shown = (ref: string) => {
+          const window = spentUntilOf(ref);
+          return [ref, onPlan(ref) ? dim("(coding only)") : "", window ? dim(`(spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC)`) : ""].filter(Boolean).join(" ");
+        };
+        console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
       }
+      for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; its models are passed over until then, and the next on each role answers.`));
       return;
     }
 
