@@ -306,6 +306,13 @@ describe("stopping, interruption and resource bounds", () => {
     finish.resolve({ verified: true, output: "Too late" }); await service.settled();
     expect(store.task(a.id)).toMatchObject({ status: "interrupted", verified: false, output: "" });
   });
+  test("a task may be given a longer limit than a reply: work in a repository takes longer than an answer", async () => {
+    const { store, service } = setup({ timeoutMs: 10, taskTimeoutMs: 5_000, executeTask: async () => { await Bun.sleep(60); return { verified: true, output: "Checked" }; } });
+    const task = service.createTask({ room: "workshop", assignee: "ada", title: "Long", goal: "Long" });
+    service.start(); await until(() => !["queued", "running"].includes(store.task(task.id)?.status ?? ""));
+    // (At the reply's limit of 10 ms it would have been interrupted, and its room held.)
+    expect(store.task(task.id)).toMatchObject({ status: "done", verified: true });
+  });
   test("restart resumes untouched queues but does not replay interrupted side effects", async () => {
     let calls = 0;
     const { store, service } = setup({ executeTask: async () => { calls++; return { verified: true, output: "Checked" }; } });

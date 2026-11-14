@@ -132,7 +132,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamStore } from "./team-store.ts";
-import { harnessReadiness, teamRuntime } from "./team-runtime.ts";
+import { harnessReadiness, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
 import { githubRepo } from "./quest-cli.ts";
 
 /**
@@ -1482,7 +1482,7 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad made a squire of his own, in your conversation with him" : `his squire ${made.createdBy} made another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, onRecruit });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, onRecruit });
     ctx.team.service.start();
   }
 

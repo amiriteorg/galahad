@@ -29,6 +29,8 @@ export interface TeamServiceOptions {
   executeTask(teammate: Teammate, task: TeamTask, context: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record?: TeamTaskRecord; changes?: TeamTaskChanges }>;
   concurrency?: number;
   timeoutMs?: number;
+  /** A task's own limit (work in a repository takes longer than a reply); absent: the same as `timeoutMs`. */
+  taskTimeoutMs?: number;
   /** Shutdown waits this long for callbacks to settle, then leaves their persisted state interrupted. */
   shutdownGraceMs?: number;
   onChange?(): void;
@@ -54,6 +56,7 @@ export class TeamService {
   private readonly removing = new Set<string>();
   private readonly concurrency: number;
   private readonly timeoutMs: number;
+  private readonly taskTimeoutMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private scheduled = false;
@@ -62,6 +65,7 @@ export class TeamService {
   constructor(private readonly options: TeamServiceOptions) {
     this.concurrency = Math.max(1, Math.min(16, Math.trunc(options.concurrency ?? 4)));
     this.timeoutMs = Math.max(1, Math.min(2 * 60 * 60_000, options.timeoutMs ?? 30 * 60_000));
+    this.taskTimeoutMs = Math.max(1, Math.min(2 * 60 * 60_000, options.taskTimeoutMs ?? this.timeoutMs));
   }
 
   get store(): TeamStore { return this.options.store; }
@@ -265,7 +269,7 @@ export class TeamService {
       this.store.pauseRoom(job.room, true);
       controller.abort(new Error("Team work timed out"));
       this.changed();
-    }, this.timeoutMs);
+    }, job.kind === "task" ? this.taskTimeoutMs : this.timeoutMs);
     active.done = Promise.resolve().then(() => this.run(job, controller.signal)).catch((error) => {
       if (this.running) this.store.finish(job.id, "failed", String((error as Error).message ?? error));
     }).finally(() => {

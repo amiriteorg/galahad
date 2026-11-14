@@ -290,10 +290,16 @@ const gatesBefore = (before: readonly GateResult[]): string =>
         ? `it could not run here${said ? ` (${said})` : ""}. If nothing in your workspace can make it run, reply GIVE UP and say so before you do the work.`
         : g.exitCode === 0
           ? "it passes already. Its passing will show nothing about your work: show the reviewer evidence of its own."
-          : "it fails now, and must pass when you are done.";
+          : `it fails now, and must pass when you are done.${printed(g)}`;
       return `${i + 1}. exit ${g.exitCode}: ${what}`;
     })
-    .join("\n")}`;
+    .join("\n")}${before.some((g) => g.exitCode !== 0 && !couldNotRun(g)) ? "\nIf a gate fails now for a reason this quest is not about and you cannot put right in your workspace, reply GIVE UP and say which: that is worth more than work it would never pass." : ""}`;
+
+/** The end of what a failing gate printed before the work (where a test run names what failed), indented under its line. */
+const printed = (g: GateResult): string => {
+  const lines = g.excerpt.split("\n").filter((line) => line.trim() && line.trim() !== "stderr:" && line.trim() !== "(no output)").slice(-8);
+  return lines.length ? ` It printed:\n${lines.map((line) => `   ${line.slice(0, 200)}`).join("\n")}` : "";
+};
 
 /** What the engineer (or the coding agent) is told about the gates before it starts. */
 const gatesBriefing = (gates: readonly Gate[], before?: readonly GateResult[]): string =>

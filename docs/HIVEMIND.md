@@ -162,6 +162,7 @@ bun galahad squires add ada --name Ada --repo https://github.com/you/project
 
 A squire that has none may be given its first repository at any time, with or without a VM; once its VM is bound to one, that repository is not changed or taken away under the work that is in it. The controller prepares a lease scoped to that repository, then clones it through the read-only GitHub gateway into `/work/repo`. Without a repository a task gets an ordinary directory under `/work/tasks/<task-id>`. With one:
 
+- **A temporary directory that can run files.** A sandbox's `/tmp` is mounted `noexec`, so a test that writes a script to the temporary directory and runs it fails there. Every task (with a repository or without) is given `$TMPDIR` on its workspace instead, cleared when the task ends.
 - **It starts from the repository as it is now.** As the task starts, the VM fetches through the same read-only gateway and the task gets a detached worktree of its own from the default branch as fetched. The commit it started from is kept for the task. If the fetch does not come through, the task starts from the clone as it was and its result says so.
 - **Its reviewer is shown the work itself:** the diff of everything since that commit, new files and anything the squire committed included, beside what was run and what the gates printed.
 - **What it changed is kept to read and to ship.** When the task ends, verified or not, a patch (`changes.patch`) and a shipment of every changed file since the start are kept as an artifact on the VM's host. The task's result names it, `galahad squires` shows it on the task's line, and the task's card links to it:
@@ -254,7 +255,7 @@ bun galahad squires task ROOM_ID lin "Review the predecessor's evidence and rema
 
 Use verification commands that actually exist in your repository. A dependency must already exist in the same room. The dependent task waits until every predecessor is **done and independently verified**. It receives their titles and result text; this is evidence transfer, not automatic file transfer, branch merging or repository integration across VMs.
 
-Every gate is a shell command run in the task's workspace. Each is tried once before the work begins, as the workspace stands: the squire is told which fail now, which pass already and which cannot run there at all (and to give up at once, with the reason, if nothing in its workspace can make one run), and the reviewer is told that a gate which passed before any work proves nothing by passing after it. All gates must pass before the independent reviewer can accept the result. Gates are not approval prompts. The runner allows bounded revisions within the job; failed gates, a failed review or a missing harness cannot produce a verified completion. Squires shows the saved progress, output and error as it polls the controller.
+Every gate is a shell command run in the task's workspace. Each is tried once before the work begins, as the workspace stands: the squire is told which fail now, which pass already and which cannot run there at all (and to give up at once, with the reason, if nothing in its workspace can make one run), and the reviewer is told that a gate which passed before any work proves nothing by passing after it. A gate that fails before the work is shown to the squire with what it printed, so a failure the task is not about (a test that fails in the VM whatever is done) is seen for what it is and said, not worked around. All gates must pass before the independent reviewer can accept the result. Gates are not approval prompts. The runner allows bounded revisions within the job; failed gates, a failed review or a missing harness cannot produce a verified completion. Squires shows the saved progress, output and error as it polls the controller.
 
 ### What a task came to
 
@@ -281,7 +282,7 @@ Pausing a room holds its queue and interrupts active work there. Pausing a squir
 
 In Squires, **Stop and revise** stops the original task and opens an editable copy of its goal, gates and dependencies. Saving creates a successor task; the original remains in the record. It does not change the original task in place or automatically rewire its dependents. Squires messages do not provide live task steering. The main Chat page's existing steer/queue/aside controls are a separate flow.
 
-If a job reaches its 15-minute controller limit, or the node stops during it, the work becomes interrupted and its room is held for review. Restarting the controller does not replay interrupted side effects automatically.
+A task may run forty commands and forty-five minutes (a reply, fifteen minutes). If a job reaches its controller limit, or the node stops during it, the work becomes interrupted and its room is held for review. Restarting the controller does not replay interrupted side effects automatically.
 
 ### Removing a squire
 

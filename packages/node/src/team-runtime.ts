@@ -85,6 +85,14 @@ if not os.path.isdir(root):
     open(kept,'w').write(subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' '+how)
 print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' unknown')`;
 
+/**
+ * What a squire's task may spend. Sixteen commands and fifteen minutes were enough for a file in an empty
+ * directory and not for work in a repository: the first such task (ultra, 14 November 2026) read code for
+ * eleven commands and ran out before it had changed anything. The controller's limit is the minutes.
+ */
+export const TEAM_TASK_COMMANDS = 40;
+export const TEAM_TASK_MINUTES = 45;
+
 /** What a harness would run on in a squire's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
   ready: boolean;
@@ -270,7 +278,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         ctx.emit(`Notes · ${notes}`);
       }
       // (With the store, every command is told where it is and which project: the engineer's own loop has only a shell.)
-      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, 900), ctx.signal);
+      // A temporary directory of the task's own, on the workspace: a sandbox's /tmp is mounted noexec, so a test that
+      // writes a script there and runs it fails with exit 126 (and with it a gate that passes everywhere else).
+      const temp = `/work/.tmp/${task.id}`;
+      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, 900), ctx.signal);
       let agent;
       if (teammate.harness !== "native") {
         const driver = AGENTS[teammate.harness];
@@ -291,7 +302,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage)),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
@@ -327,6 +338,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         }
         changed = `\nBase: ${base.slice(0, 12)}${fetched === "stale" ? " (the repository could not be fetched: this is the clone as it was)" : ""}\n${changed}`;
       }
+      // (Whatever the task left in its temporary directory goes with it.)
+      await deps.exec(teammate, `rm -rf ${quote(temp)}`, 60, ctx.signal).catch(() => {});
       return { verified, output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${changed}${notes ? `\nNotes: ${notes}` : ""}`, ...(verified ? {} : { error: outcome.status }), record, ...(changes ? { changes } : {}) };
     },
   };

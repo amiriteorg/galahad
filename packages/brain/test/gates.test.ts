@@ -203,7 +203,9 @@ describe("gates tried before the work (gatesFirst)", () => {
     expect(h.order.slice(0, 5)).toEqual(["planner", "$ bun test", "$ test -f calc.txt", "$ lint", "engineer"]);
     const briefing = h.seen[1]!.messages[0]!.content;
     expect(briefing).toContain("Each was run once before you began, as the workspace stood");
-    expect(briefing).toMatch(/1\. exit 1: it fails now, and must pass when you are done\./);
+    expect(briefing).toMatch(/1\. exit 1: it fails now, and must pass when you are done\. It printed:\n {3}1 fail\n/);
+    // What fails before the work is shown, so a failure that is not this quest's is seen for what it is.
+    expect(briefing).toContain("If a gate fails now for a reason this quest is not about and you cannot put right in your workspace, reply GIVE UP and say which: that is worth more than work it would never pass.");
     expect(briefing).toMatch(/2\. exit 0: it passes already\. Its passing will show nothing about your work/);
     expect(briefing).toMatch(/3\. exit 127: it could not run here \(bash: lint: command not found\)\. If nothing in your workspace can make it run, reply GIVE UP and say so before you do the work\./);
     // It is an event of its own, never a submission's round of the gates.

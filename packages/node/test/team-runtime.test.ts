@@ -69,7 +69,9 @@ test("task completion requires its gates before independent review, and the revi
   expect(outcome.verified).toBe(true);
   expect(f.prepared).toEqual(["ada"]);
   expect(f.commands.some((c) => c.includes("/work/tasks/task-abcdefghijkl"))).toBe(true);
-  expect(f.commands.at(-1)).toContain("bun test required-check");
+  // The gate is the last thing run for the task (after it only the task's temporary directory is cleared away).
+  expect(f.commands.at(-1)).toBe("rm -rf '/work/.tmp/task-abcdefghijkl'");
+  expect(f.commands.at(-2)).toContain("bun test required-check");
   const engineer = JSON.stringify(f.bodies[1]);
   expect(engineer).toContain("squire Ada (ada) within Galahad's hivemind");
   expect(engineer).toContain("Shared knowledge:");
@@ -582,4 +584,28 @@ test("a squire's gates are tried once before the work: one that cannot run in it
   const told = String(f.bodies[1].messages.find((m: any) => m.role === "user").content);
   expect(told).toContain("1. exit 127: it could not run here (bash: bun: command not found). If nothing in your workspace can make it run, reply GIVE UP");
   expect(progress).toContain("Gates before the work · 1. exit 127 · bun test required-check");
+});
+
+test("a task's commands have a temporary directory of their own on the workspace, where a file can be run, and it goes when the task ends", async () => {
+  // Seen on ultra, 14 November 2026: /tmp in a sandbox is mounted noexec, so a test that writes a script to the
+  // temporary directory and runs it failed there (exit 126), and with it a gate that passes everywhere else.
+  const commands: string[] = [];
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { exec: async (_m, command) => { commands.push(command); return result(); } });
+  await f.runtime.executeTask(member, task, f.context);
+  const temp = `/work/.tmp/${task.id}`;
+  const ran = commands.map((c) => plain(plain(c))).filter((c) => c.includes("echo one") || c.includes("bun test required-check"));
+  // The engineer's command and the gate (before the work, and at the submission) alike.
+  expect(ran).toHaveLength(3);
+  for (const command of ran) expect(command).toContain(`mkdir -p '${temp}' && export TMPDIR='${temp}' && cd '/work/tasks/${task.id}' && `);
+  // He is told, so a failure there is not a riddle.
+  expect(String(f.bodies[1].messages.find((m: any) => m.role === "user").content)).toContain("Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.");
+  // The last thing asked of the VM: the task's temporary directory is removed.
+  expect(plain(commands.at(-1)!)).toBe(`rm -rf '${temp}'`);
+});
+
+test("a task has room for real work: forty commands", async () => {
+  const replies = Array.from({ length: 41 }, (_, i) => say(`\`\`\`sh\necho ${i}\n\`\`\``));
+  const f = fixture([say("1. Make the change."), ...replies]);
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.record).toMatchObject({ ended: "stopped", commands: 40 });
 });
