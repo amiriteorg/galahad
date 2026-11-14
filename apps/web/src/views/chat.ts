@@ -736,14 +736,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
                 {
                   class: "suggestion",
                   type: "button",
+                  title: text,
                   onclick: () => {
                     input.value = text;
                     grow();
                     input.focus();
                   },
                 },
-                h("strong", {}, title),
-                text,
+                title,
               ),
             ),
           )
