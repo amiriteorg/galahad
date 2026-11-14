@@ -4,6 +4,7 @@ import type { TeamControlInput, TeamRoom, TeamTaskInput, Teammate } from "@galah
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
+import { hasDesktop } from "../lib/desktop.ts";
 import { gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
 import { HANDLE_PATTERN, HARNESS, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
@@ -278,28 +279,41 @@ export function provisionVm(ctx: Ctx, person: Teammate, done: (workspace: Sandbo
   const memory = h("input", { class: "input", type: "number", min: 1, max: 256, step: 1, value: 4, required: true });
   const disk = h("input", { class: "input", type: "number", min: 1, max: 2048, step: 1, value: 20, required: true });
   const network = networkChoice(true);
+  const desktop = desktopChoice(false);
   editor(ctx, `Workspace for ${person.name}`, "Provision a persistent microVM on a capable fleet node. Provisioning fails if a VM isn't available.", [
     field("Machine", host), h("div", { class: "team-form-grid" }, field("CPUs", cpus), field("Memory (GB)", memory), field("Disk (GB)", disk, { hint: "Requires the host's workspace helper. Otherwise disk is unlimited." })),
     field("It can reach", network, { hint: "Set when the VM is made. Online, it can fetch packages and sign a coding tool in to its own account; whatever is kept in the VM can then leave it." }),
+    desktop.el,
     callout("info", "The workspace keeps its files between tasks. Model access goes through the gateway; keys stay outside the VM."),
   ], person.workspace ? "Check / provision VM" : "Provision VM", async () => {
-    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView | null }>("/api/team/provision", { id: person.id, ...(host.value ? { on: host.value } : {}), cpus: Number(cpus.value), memoryGb: Number(memory.value), diskGb: Number(disk.value), network: network.value });
+    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView | null }>("/api/team/provision", { id: person.id, ...(host.value ? { on: host.value } : {}), cpus: Number(cpus.value), memoryGb: Number(memory.value), diskGb: Number(disk.value), network: network.value, ...(desktop.box.checked ? { desktop: true } : {}) });
     toast(result.workspace ? "Workspace ready" : "Workspace saved; checking status");
     done(result.workspace);
   });
 }
 
-/** Its VM made again from its image as it is now: the same VM and /work, a new container. */
-export function remakeVm(ctx: Ctx, person: Teammate, workspace: SandboxView, done: (workspace: SandboxView) => void): void {
+/** Its VM made again from its image as it is now: the same VM and /work, a new container. `want`: a desktop chosen already. */
+export function remakeVm(ctx: Ctx, person: Teammate, workspace: SandboxView, done: (workspace: SandboxView) => void, want: { desktop?: boolean } = {}): void {
   const network = networkChoice(workspace.network === "online");
+  const desktop = desktopChoice(want.desktop ?? hasDesktop(workspace));
   editor(ctx, `Make ${person.name}'s VM again`, "The same VM, made again from its image as it is now. A fix to the image, or a newer tool in it, reaches a knight only this way.", [
     field("It can reach", network, { hint: "May be chosen again here: nothing else changes it once a VM is made." }),
+    desktop.el,
     callout("info", "Everything in /work is kept: its repository, its files, a coding tool's own sign-in. Whatever is running in the VM ends, so this is refused while the knight is working."),
   ], "Make VM again", async () => {
-    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView }>("/api/team/remake", { id: person.id, network: network.value });
-    toast("VM made again");
+    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView }>("/api/team/remake", { id: person.id, network: network.value, desktop: desktop.box.checked });
+    toast(desktop.box.checked ? "VM made again, with a desktop" : "VM made again");
     done(result.workspace);
   });
+}
+
+/** Whether a knight's VM has a desktop: chosen when it is made, or made again (from the desktop image, or the workshop's). */
+function desktopChoice(checked: boolean): { el: HTMLElement; box: HTMLInputElement } {
+  const box = h("input", { type: "checkbox", name: "desktop", checked });
+  return {
+    box,
+    el: h("div", { class: "stack", style: "gap:2px" }, h("label", { class: "row" }, box, h("span", {}, "A desktop: a screen, a window manager and a browser, for work that needs a screen")), h("p", { class: "tiny subtle" }, "Made from the desktop image (about 1.1 GB more), with at least 4 GB of memory. You can watch it, and take it over, from the Workspace.")),
+  };
 }
 
 /** The notes store is one switch for every knight of this node. Turning it on says first what a note is. Resolves to whether it changed. */

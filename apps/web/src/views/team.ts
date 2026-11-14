@@ -6,6 +6,7 @@ import type { Price } from "@galahad/core/spend";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
+import { hasDesktop } from "../lib/desktop.ts";
 import type { TaskAction } from "../lib/task-card.ts";
 import { activeTeamWork, engramLine, HARNESS, harnessNote, taskDependencies, teamSpeaker, teammateMaker, teammateState, type HarnessStatus } from "../lib/team.ts";
 import { giveAgain, timeline, timelineTasks } from "../lib/timeline.ts";
@@ -296,7 +297,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
                 h(
                   "div",
                   { class: "card-body stack" },
-                  h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, vm.name), badge(vm.status), badge(vm.isolation === "vm" ? "MicroVM" : "Container", vm.isolation === "vm" ? "ok" : "warn")),
+                  h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, vm.name), badge(vm.status), badge(vm.isolation === "vm" ? "MicroVM" : "Container", vm.isolation === "vm" ? "ok" : "warn"), hasDesktop(vm) ? badge("Desktop", "neutral", "monitor") : badge("No desktop")),
                   h("p", { class: "small muted" }, `On ${vm.node} · ${vm.cpus} CPUs · ${vm.memoryGb} GB memory · ${vm.disk ? `${vm.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${vm.network}`),
                   h(
                     "div",
