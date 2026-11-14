@@ -388,6 +388,23 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   const kept = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "una", network: "gateway" })).workspace;
   expect(kept.network).toBe("gateway");
   expect(ran(kept.id).filter((arg, i, all) => all[i - 1] === "--network")).toEqual([NETWORKS.gateway.name]);
+  // Her VM is made again from its image as it is now, on your word: the same VM, and this time it may use the
+  // internet, which nothing else can change about a microVM.
+  const vmsBefore = docker.running();
+  const remade = (await api<{ teammate: { id: string }; workspace: SandboxView }>("remakeTeammate", { id: "una", network: "online" }));
+  expect(remade.teammate.id).toBe("una");
+  expect(remade.workspace).toMatchObject({ id: kept.id, network: "online", status: "running", ephemeral: false, isolation: "vm" });
+  expect(docker.running()).toBe(vmsBefore);
+  const twice = runs.filter((args) => args[0] === "run" && args.some((arg) => arg.includes(kept.id)));
+  expect(twice).toHaveLength(2);
+  expect(twice[1]!.filter((arg, i, all) => all[i - 1] === "--network")).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
+  // She is still bound to that VM, and what was done is in the ledger as yours.
+  expect((await snapshot()).teammates.find((member) => member.id === "una")!.workspace).toMatchObject({ id: kept.id });
+  expect((await api<{ entries: LedgerEntry[] }>("ledger")).entries.find((e) => e.resource === "docker.container" && e.class === "modify" && e.target.includes(kept.id))).toMatchObject({ verdict: "approved", detail: expect.stringContaining("made again from") });
+  // A squire with no VM has none to make again, and a squire that isn't there is not found.
+  await api("saveTeammate", { id: "vmless", name: "VMLESS", role: "engineer" });
+  await expect(api("remakeTeammate", { id: "vmless" })).rejects.toThrow(/424 .*no VM yet/);
+  await expect(api("remakeTeammate", { id: "nobody" })).rejects.toThrow(/404/);
   expect(await api("removeTeammate", { id: "una", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
   await daemon.stop();
   const raw = new Database(join(home.dir, "team.db"));

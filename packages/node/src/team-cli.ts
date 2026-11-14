@@ -92,6 +92,13 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}) });
     print(`${task.id} queued; completion requires its gates and independent review.`); return;
   }
+  if (sub === "provision" && flags.remake) {
+    // Its VM made again from the image as it is now: the same VM and /work, a new container. Its own route.
+    const kept = ["on", "cpus", "mem", "disk"].filter((flag) => flags[flag] !== undefined);
+    if (kept.length) throw new Error(`a VM is made again where and as large as it is: leave out --${kept.join(", --")} (only --network can be chosen again)`);
+    const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("remakeTeammate", { id: args[0], ...(string("network") ? { network: string("network") } : {}) });
+    print(`VM ${result.workspace.id} on ${result.workspace.node} made again from its image as it is now · /work kept${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
+  }
   if (sub === "provision") {
     // (Online unless you say `--network gateway`: what its VM can reach is set when it is made.)
     const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("provisionTeammate", { id: args[0], ...(string("on") ? { on: string("on") } : {}), ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}), ...(string("network") ? { network: string("network") } : {}) });

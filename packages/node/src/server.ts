@@ -1379,6 +1379,26 @@ export function createApp(ctx: AppContext) {
       if (cloned.exitCode !== 0) throw new HttpError(424, "could not clone the squire's repository through its GitHub connector");
     }
   }
+  /* A squire's VM made again from its image as it is now, on the owner's word (`p`: the device that asked, which the
+   * VM's host records). Not while the squire is working: whatever runs in a VM ends with its container. A task that
+   * starts meanwhile waits for it, as it would for a VM being made. Its token covers the providers with a key now. */
+  async function remakeTeamVm(member: Teammate, network: "online" | "gateway" | undefined, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+    const existing = await teamWorkspace(member, signal);
+    if (!existing) throw new HttpError(424, `this squire has no VM yet: galahad squires provision ${member.id} makes one`);
+    const state = teamOf().snapshot();
+    if (state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running")) {
+      throw new HttpError(409, "this squire is working: stop its task or wait for it, then have its VM made again");
+    }
+    if (vmProvisioning.has(member.id)) throw new HttpError(409, "this squire's VM is being made; have it made again when that has finished");
+    const work = (async () => {
+      const providers = providerViews(ctx.store, ctx.vault).filter((v) => v.hasKey).map((v) => v.id).slice(0, 16);
+      const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("remakeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), providers, ...(network ? { network } : {}) });
+      leased.set(member.id, sandbox.providers);
+      return sandbox;
+    })();
+    vmProvisioning.set(member.id, work);
+    try { return await work; } finally { vmProvisioning.delete(member.id); }
+  }
   async function stopTeamWorker(member: Teammate): Promise<void> {
     const bound = teamMember(member.id).workspace;
     if (!bound) return;
@@ -1498,6 +1518,20 @@ export function createApp(ctx: AppContext) {
       return { message: teamOf().say(input) };
     },
     provisionTeammate: (input, p, req) => { ownerOnly(p); return longRunning(provisionTeam(input.id, input, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace }))); },
+    remakeTeammate: (input, p, req) => {
+      ownerOnly(p);
+      const member = teamMember(input.id);
+      return longRunning(remakeTeamVm(member, input.network, p, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace })));
+    },
+    remakeTeamWorkspace: (input, p) => {
+      // Yours alone, like a removal: an arm (a squire among them) is never let through, whatever its scopes.
+      const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.kind === "arm" ? undefined : p.device;
+      if (!approver) throw new HttpError(403, "a squire's VM is made again only on your word");
+      const { on, ...asked } = input;
+      return longRunning(onNode(p, on, routes.remakeTeamWorkspace.path, { ...asked, onBehalfOf: approver }, async () => ({
+        sandbox: await ctx.sandbox!.remakeTeam(input.id, input.quest, { providers: input.providers, ...(input.network ? { network: input.network } : {}), approvedBy: approver }),
+      }), { sandbox: input.id }));
+    },
     teamWorkspace: async (input, p, req) => {
       ownerOnly(p);
       const member = teamMember(input.id);

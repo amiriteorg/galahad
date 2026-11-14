@@ -2,7 +2,7 @@ import type { DockerRunner } from "@galahad/sandbox";
 
 /*
  * A stand-in for Docker, for tests on machines without one: it answers the commands
- * the sandbox host runs (info, inspect, run, ps, exec, rm, volumes, networks) from
+ * the sandbox host runs (info, inspect, run, ps, exec, stop, start, rename, rm, volumes, networks) from
  * memory, so the real host's own logic (labels, the ledger, the oath gate, reaping)
  * runs unchanged above it. Nothing is spawned.
  */
@@ -93,6 +93,21 @@ export function fakeDocker(): FakeDocker {
           fake.execs.push({ container, cmd });
           const answer = (await fake.onExec?.(container, cmd)) ?? { code: 0, stdout: "" };
           return { code: answer.code, stdout: answer.stdout, stderr: answer.stderr ?? "" };
+        }
+        case "stop":
+        case "start": {
+          const container = containers.get(rest.at(-1)!);
+          if (!container) return no(`No such container: ${rest.at(-1)}`);
+          container.status = command === "stop" ? "exited" : "running";
+          return ok(container.name);
+        }
+        case "rename": {
+          const [from, to] = rest as [string, string];
+          const container = containers.get(from);
+          if (!container || containers.has(to)) return no(container ? `the name ${to} is in use` : `No such container: ${from}`);
+          containers.delete(from);
+          containers.set(to, { ...container, name: to });
+          return ok();
         }
         case "rm": {
           const name = rest.at(-1)!;

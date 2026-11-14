@@ -182,6 +182,24 @@ export const routes = {
       network: z.enum(["online", "gateway"]).default("online"),
     }),
   },
+  /**
+   * A squire's VM made again from its image as it is now, on your word: the same VM and `/work`, a new
+   * container, so a fix to the image (or a newer tool in it) reaches a squire that was made before it. Its
+   * network may be chosen again with it. Refused while the squire is working. Yours alone, like its removal.
+   */
+  remakeTeammate: {
+    method: "POST", path: "/api/team/remake", scope: "fleet:admin",
+    input: z.strictObject({ id: z.string().min(1).max(32), network: z.enum(["online", "gateway"]).optional() }),
+  },
+  /** The same, asked of the node that hosts the VM by the team's controller (never by a squire). */
+  remakeTeamWorkspace: {
+    method: "POST", path: "/api/team/remake-workspace", scope: "fleet:admin",
+    input: z.strictObject({
+      id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, providers: z.array(z.string().min(1).max(64)).max(16), network: z.enum(["online", "gateway"]).optional(),
+      /** The device whose word it was, when a node passes the request on to the VM's host. */
+      onBehalfOf: z.string().max(100).optional(),
+    }),
+  },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
     input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional() }),

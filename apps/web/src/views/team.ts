@@ -263,6 +263,20 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     });
   }
 
+  /** Its VM made again from its image as it is now: the same VM and /work, a new container. */
+  function remake(person: Teammate, workspace: SandboxView): void {
+    const network = h("select", { class: "select" }, h("option", { value: "online", selected: workspace.network === "online" }, "The internet, and Galahad's model gateway"), h("option", { value: "gateway", selected: workspace.network !== "online" }, "Galahad's model gateway only"));
+    editor(`Make ${person.name}'s VM again`, "The same VM, made again from its image as it is now. A fix to the image, or a newer tool in it, reaches a squire only this way.", [
+      field("It can reach", network, { hint: "May be chosen again here: nothing else changes it once a VM is made." }),
+      callout("info", "Everything in /work is kept: its repository, its files, a coding tool's own sign-in. Whatever is running in the VM ends, so this is refused while the squire is working."),
+    ], "Make VM again", async () => {
+      const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView }>("/api/team/remake", { id: person.id, network: network.value });
+      workspaces.set(person.id, { workspace: result.workspace });
+      toast("VM made again");
+      void refreshWorkspace(person.id);
+    });
+  }
+
   function renderNav(): void {
     if (!snapshot) return;
     const data = snapshot;
@@ -417,7 +431,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       workspace ? h("div", { class: "card" }, h("div", { class: "card-body stack" },
         h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, workspace.name), badge(workspace.status), badge(workspace.isolation === "vm" ? "MicroVM" : "Container", workspace.isolation === "vm" ? "ok" : "warn")),
         h("p", { class: "small muted" }, `On ${workspace.node} · ${workspace.cpus} CPUs · ${workspace.memoryGb} GB memory · ${workspace.disk ? `${workspace.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${workspace.network}`),
-        h("div", { class: "row wrap" }, ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, workspace, person.workspace?.node ?? null) }) : null, button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) })),
+        h("div", { class: "row wrap" }, ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, workspace, person.workspace?.node ?? null) }) : null, button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }), canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remake(person, workspace) }) : null),
       )) : h("div", { class: "team-workspace-empty" }, icon("sandbox", { size: 30 }), h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
         h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this squire a persistent VM for code, files, and tools. Its job and working notes remain part of Galahad's hivemind."),
         canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provision(person) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device.")),

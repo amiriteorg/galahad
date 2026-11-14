@@ -87,6 +87,11 @@ test("real API: you remove a squire, nobody else can; it is gone from the team a
   await api("saveTeammate", { id: "temp", name: "Temp", role: "planner" });
   const { token } = await api("mintArm", { label: "remover", scopes: ["chat", "mind:read", "mind:write", "sandbox"] });
   expect((await request("removeTeammate", { id: "temp" }, token)).status).toBe(403);
+  // Nor has anyone else a squire's VM made again: an agent is refused on your route and on its host's, and no
+  // agent can be given the scope that both need.
+  expect((await request("remakeTeammate", { id: "temp" }, token)).status).toBe(403);
+  expect((await request("remakeTeamWorkspace", { id: "0123456789", quest: "arm.team.abcdef0123.temp", providers: [] }, token)).status).toBe(403);
+  expect((await request("mintArm", { label: "overreach", scopes: ["fleet:admin", "sandbox"] })).status).toBe(400);
   expect((await request("removeTeammate", { id: "temp", keepWorkspace: true })).status).toBe(400);
   expect((await request("removeTeammate", { id: "nobody" })).status).toBe(404);
   expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toEqual(["ada", "lin", "temp"]);

@@ -250,3 +250,28 @@ test("squires engram says whether the notes store is on, and turns it on or off 
   await expect(teamCommand(api, "engram", ["on", "--tools=agent"], {}, say)).rejects.toThrow(/galahad squires engram \[on\|off\]/);
   expect(asked).toHaveLength(before);
 });
+
+test("squires provision --remake has a squire's VM made again from its image as it is now, by its own route, and says what was kept", async () => {
+  const lines: string[] = [];
+  const asked: { name: RouteName; input: unknown }[] = [];
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name === "remakeTeammate") return { workspace: { id: "6f4c603eb4", node: "ultra", network: (input as { network?: string }).network ?? "online" } } as T;
+      throw new Error(`unexpected call: ${name}`);
+    },
+  };
+  const say = (line: string) => lines.push(line);
+  await teamCommand(api, "provision", ["gareth"], { remake: true }, say);
+  expect(asked).toEqual([{ name: "remakeTeammate", input: { id: "gareth" } }]);
+  expect(lines).toEqual(["VM 6f4c603eb4 on ultra made again from its image as it is now · /work kept · it can reach the internet"]);
+  // What it can reach may be chosen again with it.
+  await teamCommand(api, "provision", ["gareth"], { remake: true, network: "gateway" }, say);
+  expect(asked.at(-1)).toEqual({ name: "remakeTeammate", input: { id: "gareth", network: "gateway" } });
+  expect(lines.at(-1)).toBe("VM 6f4c603eb4 on ultra made again from its image as it is now · /work kept · it reaches the model gateway only");
+  // Its host and its sizes are kept as they were made: asking for others is refused, never quietly ignored.
+  for (const flag of ["on", "cpus", "mem", "disk"]) {
+    await expect(teamCommand(api, "provision", ["gareth"], { remake: true, [flag]: "4" }, say)).rejects.toThrow(/made again where and as large as it is/);
+  }
+  expect(asked).toHaveLength(2);
+});
