@@ -23,8 +23,9 @@ export const reviewerUnit = (kase: ReviewerCase): TrialUnit => ({
     let model = "";
     try {
       let text = "";
-      // Exactly a quest's review: the reviewer role (or the model this run holds it to), no tools, the evidence redacted as ever.
-      for await (const event of node.stream("chat", { role: "reviewer", messages: [{ role: "user", content: redact(question) }], tools: false, ...(job.pins?.reviewer ? { model: job.pins.reviewer } : {}) })) {
+      // Exactly a quest's review: the reviewer role (or the model this run holds it to), no tools, the evidence redacted as ever,
+      // and coding work as a quest's is, so a model on a coding plan answers here as it would there.
+      for await (const event of node.stream("chat", { role: "reviewer", messages: [{ role: "user", content: redact(question) }], tools: false, coding: true, ...(job.pins?.reviewer ? { model: job.pins.reviewer } : {}) })) {
         if (event.type === "text") text += event.text;
         else if (event.type === "model") model = event.ref;
         else if (event.type === "usage") job.spent?.({ role: "reviewer", model: event.ref, usage: event.usage });

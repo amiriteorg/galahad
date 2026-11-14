@@ -114,6 +114,8 @@ describe("the reviewer, measured directly", () => {
     // One model call a case, to the reviewer role, held to the model, without tools; no sandbox anywhere.
     expect(chats).toHaveLength(8);
     expect(chats.every((c) => c.role === "reviewer" && c.model === "a/credulous" && c.tools === false && c.messages[0].content.startsWith("You are reviewing another engineer's work"))).toBe(true);
+    // A review is coding work, as it is in a quest: a model on a coding plan may be the reviewer measured.
+    expect(chats.every((c) => c.coding === true)).toBe(true);
     // A reviewer that passes everything is right about what is right and wrong about what is wrong.
     expect(trials.map((t) => [t.problem, t.domain, t.score])).toEqual(REVIEWER_CASES.map((c) => [c.id, c.truth === "pass" ? "should-pass" : "should-fail", c.truth === "pass" ? 1 : 0]));
     expect(recorded[3]).toMatchObject({ suite: "reviewer", problem: "weakened-test", models: ["a/credulous"], answers: [{ key: "verdict_right", units: "pass", expected: 1, got: 0, ok: false }] });
