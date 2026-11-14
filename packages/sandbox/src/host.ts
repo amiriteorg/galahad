@@ -601,7 +601,7 @@ export class SandboxHost {
       target: sandbox.name,
       verdict: "allow",
       quest: sandbox.quest,
-      detail: `${redact(cmd.join(" ")).slice(0, 400)} → exit ${result.code}`,
+      detail: `${truncateLedgerDetail(redact(cmd.join(" ")))} → exit ${result.code}`,
     });
     return {
       exitCode: result.code,
@@ -717,6 +717,21 @@ export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; ne
     check(["network", "inspect", NETWORKS.gateway.name, "--format", "{{.Id}}"]),
   ]);
   return { image, networks: gw, vm: microVMsAvailable() };
+}
+
+const LEDGER_DETAIL_LIMIT = 400;
+
+/** Keep a long command's start and end for the ledger, with a note of how many characters were omitted. */
+function truncateLedgerDetail(command: string): string {
+  if (command.length <= LEDGER_DETAIL_LIMIT) return command;
+  const note = (omitted: number) => `…[${omitted} characters omitted]…`;
+  // The note's size depends on the omitted count's digit count: settle it in a couple of passes.
+  let omitted = command.length - LEDGER_DETAIL_LIMIT;
+  for (let i = 0; i < 3; i++) omitted = command.length - (LEDGER_DETAIL_LIMIT - note(omitted).length);
+  const kept = LEDGER_DETAIL_LIMIT - note(omitted).length;
+  const head = Math.floor(kept / 2);
+  const tail = kept - head;
+  return command.slice(0, head) + note(omitted) + command.slice(command.length - tail);
 }
 
 function toView(labels: Record<string, string>, image: string, status: string, usage: WorkspaceStats | null): SandboxView | null {
