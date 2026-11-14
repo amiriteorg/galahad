@@ -192,7 +192,9 @@ export type Action =
   | { kind: "give-up"; reason: string }
   | { kind: "invalid"; problem: string };
 
-const FENCE = /```[ \t]*(?:sh|bash|shell|zsh)?[ \t]*\r?\n([\s\S]*?)```/g;
+// (A fence wrapped in stray angle brackets, `<```sh>` … `` ```> ``, is read as the fence it plainly is: a model
+// sent that three times running on 14 November 2026, and a task ended with nothing run.)
+const FENCE = /<?```[ \t]*(?:sh|bash|shell|zsh)?[ \t]*>?[ \t]*\r?\n([\s\S]*?)```>?/g;
 
 /**
  * Read the engineer's reply: one fenced shell command, or DONE / GIVE UP on the first line. With

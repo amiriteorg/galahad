@@ -645,7 +645,9 @@ test("a squire with a desktop and a model that can see is given its eyes: each c
   };
   const seeing = await run("opencode-go/gpt-6-luna");
   expect(seeing.ran).toContain("export GALAHAD_EYES='opencode-go/gpt-6-luna' && ");
-  expect(seeing.told).toContain('`desktop look "<question>"` asks a model that can see the screen what is on it, or where something is (it answers a place as x,y, to click).');
+  expect(seeing.told).toContain('`desktop look "your question"` asks a model that can see the screen what is on it, or where something is (it answers a place as x,y, to click).');
+  // (No angle brackets in what a squire is told: a model copied them onto its own command fence, and nothing ran.)
+  expect(seeing.told.slice(seeing.told.indexOf("This VM has a desktop"), seeing.told.indexOf("to click).") + 10)).not.toMatch(/[<>]/);
   // No model that sees on the roster: the desktop is still there to read as text, and nothing is promised of looking.
   const blind = await run(null);
   expect(blind.ran).not.toContain("GALAHAD_EYES");

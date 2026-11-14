@@ -286,7 +286,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // Its eyes: the model `desktop look` asks, named to every command of the task (the VM's own gateway token does the asking).
       const named = desktop ? (deps.eyes?.(teammate) ?? null) : null;
       const sees = named && /^[A-Za-z0-9._:-]+\/[A-Za-z0-9._:\/-]+$/.test(named) ? named : null;
-      const looking = sees ? ' `desktop look "<question>"` asks a model that can see the screen what is on it, or where something is (it answers a place as x,y, to click).' : "";
+      const looking = sees ? ' `desktop look "your question"` asks a model that can see the screen what is on it, or where something is (it answers a place as x,y, to click).' : "";
       const screen = desktop ? " This VM has a desktop: a display (1280 by 800) and a browser, which you operate with the `desktop` command (open an address, read the page as text, take a screenshot, click, type, press keys). `desktop help` lists it." + looking : "";
       // A temporary directory of the task's own, on the workspace: a sandbox's /tmp is mounted noexec, so a test that
       // writes a script there and runs it fails with exit 126 (and with it a gate that passes everywhere else).

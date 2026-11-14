@@ -184,6 +184,18 @@ describe("quests", () => {
     expect(plain.seen.some((s) => s.role === "reviewer")).toBe(false);
   });
 
+  test("a command block whose fence is wrapped in stray angle brackets is still a command", () => {
+    // Seen on ultra, 14 November 2026: deepseek-v4-pro sent this three times in a row and the task ended with
+    // nothing run. The command is plain to read; only the fence's decoration is off.
+    expect(parseAction("I'll confirm the syntax first.\n\n<```sh>\ndesktop help\n```>")).toEqual({ kind: "command", command: "desktop help", thought: "I'll confirm the syntax first." });
+    expect(parseAction("<```bash>\nls -la\n```>")).toMatchObject({ kind: "command", command: "ls -la" });
+    // The ordinary forms are what they were, and two blocks are still two.
+    expect(parseAction("Next.\n```sh\nls\n```")).toEqual({ kind: "command", command: "ls", thought: "Next." });
+    expect(parseAction("<```sh>\na\n```>\n<```sh>\nb\n```>").kind).toBe("invalid");
+    // A comparison inside a command is not a fence's decoration.
+    expect(parseAction("```sh\ntest 1 -lt 2 && echo \"a > b\"\n```")).toMatchObject({ kind: "command", command: 'test 1 -lt 2 && echo "a > b"' });
+  });
+
   test("the step budget is a hard limit", async () => {
     const h = harness({ engineer: [sh("a"), sh("b"), sh("c"), sh("d")] }, { maxSteps: 3 });
     const outcome = await h.run;
