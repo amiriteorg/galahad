@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, TeamTaskInput, randomId, redact } from "@galahad/core";
-import { AGENTS, OWN_SIGN_IN, agentModelName, chat, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import type { TeamRunContext } from "./team.ts";
 
 export interface TeamRuntimeDeps {
@@ -14,6 +14,8 @@ export interface TeamRuntimeDeps {
   models(teammate: Teammate): AgentModel[];
   /** When there are none: roster models it could speak to, on providers its VM's gateway token doesn't cover. */
   modelsOutside?(teammate: Teammate): AgentModel[];
+  /** The node's switch for the VMs' notes store (Engram): on, a task is given the store when its VM has the pinned binary. Absent: off. */
+  engram?(): boolean;
   memories(query: string): string;
   teammate(id: string): Teammate;
   dependencies(task: TeamTask): { id: string; title: string; output: string }[];
@@ -209,12 +211,25 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       teammate = deps.teammate(teammate.id);
       const root = `/work/tasks/${task.id}`;
       const sessionFile = `/work/.agent/sessions/${task.id}.${teammate.harness}`;
-      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`cd ${quote(root)} && ${command}`), Math.min(timeout, 900), ctx.signal);
       const setup = teammate.repository
         ? `mkdir -p /work/tasks && if [ ! -d ${quote(root)} ]; then git -C /work/repo worktree add --detach ${quote(root)} HEAD; fi`
         : `mkdir -p ${quote(root)}`;
       const ready = await deps.exec(teammate, setup, 120, ctx.signal);
       if (ready.exitCode !== 0) throw new Error(`Workspace not ready: ${redact(ready.stderr || ready.stdout)}`);
+      // The VM's notes store (Engram), when the node's switch is on: kept under the squire's repository, or with none
+      // its own handle, so every task of its finds them. Whether this VM has the pinned binary is asked as the task
+      // starts: one that doesn't does the task without the store, and the task says which it was, never nothing.
+      let engram: string | undefined;
+      let notes = "";
+      if (deps.engram?.()) {
+        const project = engramProjectFor(teammate.repository, teammate.id);
+        const found = engramFound(await deps.exec(teammate, ENGRAM_PROBE, 30, ctx.signal));
+        if (found.present) engram = project;
+        notes = found.present ? `Engram ${ENGRAM_VERSION}, project ${project}` : `none: ${found.reason}`;
+        ctx.emit(`Notes · ${notes}`);
+      }
+      // (With the store, every command is told where it is and which project: the engineer's own loop has only a shell.)
+      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, 900), ctx.signal);
       let agent;
       if (teammate.harness !== "native") {
         const driver = AGENTS[teammate.harness];
@@ -232,7 +247,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       }
       const inherited = data("Verified predecessor results (file paths belong to their original VM)", deps.dependencies(task));
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", "git diff --no-ext-diff --no-textconv HEAD"] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", "git diff --no-ext-diff --no-textconv HEAD"] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : data("Your notes", teammate.memory)),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
@@ -242,7 +257,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
           if (saved.exitCode !== 0) throw new Error("Could not retain the harness session");
         },
       });
-      return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}`, ...(outcome.status === "done" ? {} : { error: outcome.status }) };
+      return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${notes ? `\nNotes: ${notes}` : ""}`, ...(outcome.status === "done" ? {} : { error: outcome.status }) };
     },
   };
 }
