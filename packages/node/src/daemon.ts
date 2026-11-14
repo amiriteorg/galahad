@@ -264,8 +264,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
       // Size-limited workspaces when the root helper is installed (scripts/remote-setup.sh); otherwise
-      // unlimited Docker volumes, and the heartbeat says so.
-      workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET),
+      // unlimited Docker volumes, and the heartbeat says so. Never beside a stand-in for Docker: the
+      // helper is root on its host, and would make real images there for containers that don't exist.
+      ...(opts.docker ? {} : { workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET) }),
       imageContext: sandboxContext,
       // Online sandboxes run in KVM microVMs where Kata is installed (scripts/remote-setup.sh).
       microVMs,
