@@ -1,8 +1,8 @@
-import { cleanCompanionName, companionNameProblem, type CompanionView, JOURNAL_DAY, journalDate, type JournalEntry, journalParts, type JournalView, type RouteName } from "@galahad/core";
+import { JOURNAL_DAY, journalDate, type JournalEntry, journalParts, type JournalView, type RouteName } from "@galahad/core";
 
 /*
- * `galahad journal` and `galahad dog`: his journal read at a terminal, and his dog's
- * name. Thin: the node keeps both; this shapes input and prints.
+ * `galahad journal`: his journal read at a terminal. Thin: the node keeps it; this
+ * shapes input and prints.
  */
 
 interface Api {
@@ -48,25 +48,4 @@ export async function journalCommand(api: Api, sub: string | undefined, flags: F
   const { entries } = await api.call<JournalView>("journal", sub ? { day: sub } : { limit: 1 });
   if (!entries.length) console.log(sub ? `No journal entry for ${sub}. \`galahad journal --list\` shows the days he wrote.` : NONE_YET);
   else console.log(entryLines(entries[0]!).join("\n"));
-}
-
-const describeDog = (view: CompanionView) => (view.name ? `His dog is ${bold(view.name)}.` : `His dog has no name yet. \`galahad dog name <name>\` gives it one.`);
-
-export async function dogCommand(api: Api, sub: string | undefined, rest: string[]): Promise<void> {
-  if (sub === undefined) {
-    console.log(describeDog(await api.call<CompanionView>("companion")));
-    return;
-  }
-  if (sub === "unname" && !rest.length) {
-    await api.call<CompanionView>("setCompanion", { name: null });
-    console.log("His dog has no name now: it's the dog again, in the world and in his journal.");
-    return;
-  }
-  if (sub !== "name" || !rest.length) throw new Error("usage: galahad dog | galahad dog name <name> | galahad dog unname");
-  const name = cleanCompanionName(rest.join(" "));
-  // The node checks it again; here it's said in words before anything is sent.
-  const problem = companionNameProblem(name);
-  if (problem) throw new Error(problem);
-  const view = await api.call<CompanionView>("setCompanion", { name });
-  console.log(`${describeDog(view)} Every device's world and his journal call it that from now on.`);
 }

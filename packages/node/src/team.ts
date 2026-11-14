@@ -65,7 +65,7 @@ export class TeamService {
   }
 
   get store(): TeamStore { return this.options.store; }
-  /** Cheap presence for the SANDBOX: a fresh projection, with no database or output payloads. */
+  /** Who is at work now: a fresh projection, with no database or output payloads. */
   activeWork(): readonly { teammate: string; room: string; kind: "delivery" | "task" }[] {
     return [...this.active.values()].map(({ job }) => ({ teammate: job.teammate, room: job.room, kind: job.kind }));
   }

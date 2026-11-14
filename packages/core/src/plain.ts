@@ -32,11 +32,3 @@ export function plainStream(): (piece: string) => string {
     return plainText(rest);
   };
 }
-
-/** A record that is only going to be shown, with every string in it (at any depth) made one plain line. Keys are left as they are. */
-export function plainDeep<T>(value: T): T {
-  if (typeof value === "string") return plainLine(value) as T;
-  if (Array.isArray(value)) return value.map(plainDeep) as T;
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, plainDeep(inner)])) as T;
-  return value;
-}

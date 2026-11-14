@@ -26,8 +26,6 @@ export const SelfAction = z.discriminatedUnion("kind", [
    * A second bad run in a row is left to you.
    */
   z.strictObject({ kind: z.literal("retry-loop"), loop: LoopName, after: z.string().min(1).max(64) }),
-  /** Denmark's weather for the world isn't known though someone has it open: ask again (one fixed request, rate-limited by the weather service). */
-  z.strictObject({ kind: z.literal("refresh-weather") }),
   /**
    * This node measures itself (a calibration): it never has, or its body, its ceiling or the benchmark isn't what it measured with.
    * A few seconds at low priority, within its ceiling; nothing leaves the machine, nothing is installed.
@@ -47,7 +45,6 @@ export type SelfActionKind = SelfAction["kind"];
 export const SELF_ACTIONS: Record<SelfActionKind, { class: "read" | "create" | "modify" | "delete"; why: string }> = {
   "reap-sandbox": { class: "delete", why: "an ephemeral sandbox past its expiry: the reaper's own rule, through the oath gate" },
   "retry-loop": { class: "read", why: "a read-only loop that went wrong once: running it again only reads" },
-  "refresh-weather": { class: "read", why: "the world's weather: one fixed request, no key, nothing about you" },
   calibrate: { class: "create", why: "this node measuring itself for a few seconds at low priority, within its ceiling: nothing leaves it and nothing is installed" },
   "adapt-compute": { class: "modify", why: "his own defaults (slots, effort, which host first), derived from what the fleet measured and your ceilings: internal, and a ceiling of yours overrides them" },
 };
@@ -58,15 +55,13 @@ export const SELF_ACTION_KINDS = Object.keys(SELF_ACTIONS) as SelfActionKind[];
 export const SELF_ACTION_RESOURCE = "self-action";
 export const SELF_ACTION_QUEST = "galahad.self";
 
-/** One line for the ledger, the inbox's history and the world ("Galahad fixed: …"). */
+/** One line for the ledger and the inbox's history ("Galahad fixed: …"). */
 export function selfActionTitle(action: SelfAction): string {
   switch (action.kind) {
     case "reap-sandbox":
       return `Removed sandbox ${action.sandbox}, which had outlived its time`;
     case "retry-loop":
       return `Ran loop ${action.loop} again after one bad run`;
-    case "refresh-weather":
-      return "Asked again for Denmark's weather";
     case "calibrate":
       return action.why === "joined" ? "Measured this node for the first time" : "Measured this node again (its body, its ceiling or the benchmark had changed)";
     case "adapt-compute":
@@ -81,8 +76,6 @@ export function selfActionTarget(action: SelfAction): string {
       return `reap-sandbox:${action.sandbox}`;
     case "retry-loop":
       return `retry-loop:${action.loop}:${action.after}`;
-    case "refresh-weather":
-      return "refresh-weather:copenhagen";
     case "calibrate":
       return `calibrate:${action.why}`;
     case "adapt-compute":

@@ -45,7 +45,7 @@ export interface IncomingEntry {
   tags?: string[];
   meta?: Record<string, unknown>;
   files?: IncomingFile[];
-  /** Explicit links: an experiment and the code and models it used, an investigation and its evidence. */
+  /** Explicit links: a record and the kept work it used, an investigation and its evidence. */
   links?: { rel: string; to: string }[];
 }
 

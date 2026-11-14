@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, padAt, phaseOf, qrToTerminal, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -16,23 +16,20 @@ import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
-import { dogCommand, journalCommand } from "./journal-cli.ts";
+import { journalCommand } from "./journal-cli.ts";
 import { keyAddCommand } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { chatStateWords, plainDeep, worldQuestLine } from "@galahad/core";
+import { chatStateWords } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import { boardLines } from "./board-cli.ts";
-import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, Examination, ExperimentRunResult, ExperimentView, ProjectView, SavedExperiment, SavedSummary, WorldEvent, WorldHeartbeat, WorldPartner, WorldQuest, WorldReport, WorldWeather } from "@galahad/core";
-type WorldReportInput = import("zod").infer<typeof WorldReport>;
+import type { BankStatusView, BoardVersionInfo, BoardView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
-import { describeExamination, describeRun, describeSaved } from "./tools.ts";
-import { lookCommand, worldReviewCommand } from "./eyes-cli.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
 import { notifyCommand } from "./notify-cli.ts";
 import { teamCommand } from "./team-cli.ts";
@@ -106,17 +103,9 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   they're held until you resume
   quests [--all]                  the quests in hand on this node: plan, the step he's on, each gate's last result
   chats [--project id] | chat <id> | chat rm <id>
-  world [--follow] | world --logs   what Galahad is doing in the SANDBOX (his heartbeat, the agents with him);
-                                  how it ran on your devices
-  look [--place hearth|bench|council|forge|meadow] [--out view.jpg]
-                                  what he sees through his own eyes: the words, and the picture saved where you say
-                                  (a picture needs the SANDBOX open on one of your devices)
-  world review [--places hearth,forge] | world review --status | world review --budget 40000
-                                  he looks at his world and suggests what to mend (inbox and ideas; he changes nothing)
   journal [<YYYY-MM-DD>] | journal --list [--limit 30]
                                   his journal: every evening (21:30, Denmark) he recollects his day in his own
                                   words; the latest entry, one day's, or the days he wrote
-  dog | dog name <name> | dog unname   his dog's name, in the world and in his journal on every device
   skills [--all] | skills show <id> | skills approve <id> [-y]
                                   his skills: how he did work that passed review, kept as notes he's given again
                                   (data, never run). One that read the outside world waits for your approval
@@ -128,12 +117,6 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   board | board clear [-y]        the chalkboard you share with Galahad, in words (what he wrote, your drawing); clear it
   board history [--limit 20] | board restore <version> | board history forget [-y]
                                   every version is kept (clearing destroys nothing): list them, put one back, forget them
-  experiments [--all] | experiments show <id> [--code] | experiments pin|unpin <id> | experiments rm <id>
-                                  the experiments this node's SANDBOX showed, every one archived: how each
-                                  ended, its examination (each readout's range, trend, what's notable), its
-                                  code; pin marks a favourite; rm deletes one for good (only you)
-  experiments run <script.py> --title "…" [--engine mujoco|jsbsim|rocketpy|gazebo|custom] [--site field|hall|open]
-                  [--minutes 10] [--on ultra]   build, test and examine one, as Galahad's experiment_run does
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
@@ -222,7 +205,6 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
      | --reflect [--budget 4000]                       his journal: the day recollected, as his own memory; tokens a day
-     | --review                                        he reviews his world through his eyes: suggestions only
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
   heartbeat                       run the heartbeat's checks now and print what they find
   self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
@@ -485,8 +467,6 @@ async function main(): Promise<void> {
       title: { type: "string" },
       body: { type: "string" },
       temp: { type: "boolean" },
-      follow: { type: "boolean" },
-      logs: { type: "boolean" },
       chat: { type: "string" },
       project: { type: "string" },
       instructions: { type: "string" },
@@ -501,9 +481,6 @@ async function main(): Promise<void> {
       base: { type: "string" },
       branch: { type: "string" },
       draft: { type: "boolean" },
-      engine: { type: "string" },
-      site: { type: "string" },
-      code: { type: "boolean" },
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
@@ -532,11 +509,6 @@ async function main(): Promise<void> {
       summaries: { type: "boolean" },
       // The journal's list of days.
       list: { type: "boolean" },
-      // His eyes: `look --place hearth --out view.jpg`, `world review --places hearth,forge | --status`, `loop add … --review`.
-      place: { type: "string" },
-      places: { type: "string" },
-      status: { type: "boolean" },
-      review: { type: "boolean" },
       // His skills: `skills write --title … --when … --step … --proof "cmd => expect" --pitfall … | --file skill.json`.
       when: { type: "string" },
       step: { type: "string", multiple: true },
@@ -623,7 +595,7 @@ Next:
 
     case "serve":
     case "start": {
-      const daemon = await startDaemon(home, { weather: process.env.GALAHAD_WEATHER !== "off" });
+      const daemon = await startDaemon(home);
       const shutdown = async () => {
         await daemon.stop();
         process.exit(0);
@@ -931,87 +903,6 @@ Next:
       await questsCommand(new Admin(home), Boolean(flags.all));
       return;
 
-    case "look":
-      // What he sees through his own eyes in the SANDBOX: the words, and the picture saved where you say.
-      await lookCommand(new Admin(home), flags);
-      return;
-    case "world": {
-      if (sub === "review") {
-        await worldReviewCommand(new Admin(home), flags);
-        return;
-      }
-      if (flags.logs) {
-        // How the world ran on each device that opened it lately (newest first).
-        // (What a device reports of itself is its words, not this node's: plain lines.)
-        const { reports } = plainDeep(await new Admin(home).call<{ reports: (WorldReportInput & { device: string; at: number })[] }>("worldReports"));
-        if (!reports.length) console.log("No reports yet: open the SANDBOX in the app, and its device reports here every 30 s.");
-        for (const r of reports) {
-          console.log(`${bold(r.device)} ${dim(`${new Date(r.at).toLocaleString()} · session ${r.session.slice(0, 8)} · ${r.mode}`)}`);
-          console.log(`  ${r.backend} · ${r.tier} · ${r.fps.now} fps (avg ${r.fps.avg}, min ${r.fps.min}) · ${r.frameMs} ms · dpr ${r.dpr} · ${r.drawCalls} draws · shadows ${r.shadows ? "on" : "off"} · restarts ${r.restarts}`);
-          console.log(dim(`  ${r.viewport[0]}×${r.viewport[1]} @${r.viewport[2]}x · ${r.adapter ?? "adapter unknown"}`));
-          console.log(dim(`  ${r.userAgent}`));
-          for (const e of r.events.slice(-15)) console.log(`  ${dim(new Date(e.at).toLocaleTimeString())} ${e.kind.padEnd(8)} ${e.text}`);
-        }
-        return;
-      }
-      // The SANDBOX in words: where Galahad is, what's running on the plots; --follow keeps watching.
-      /** A bearing (degrees clockwise from north) as one of sixteen compass points: 250 → "WSW". */
-      const compassPoint = (deg: number) => ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
-      const weatherLine = (w: WorldWeather | null | undefined) =>
-        w
-          ? `${w.kind} in ${w.place}, ${Math.round(w.temperature)} °C, wind ${Math.round(w.wind)} m/s${typeof w.windFrom === "number" ? ` from the ${compassPoint(w.windFrom)}` : ""}${w.precipitation ? `, ${w.precipitation} mm/h` : ""} ${dim(`(${w.source}, ${new Date(w.observed).toLocaleTimeString()})`)}`
-          : dim("weather unknown (or GALAHAD_WEATHER=off on the node)");
-      /** "the proving ground (flight)", "the workshop (cell-2)", or its plot on open land. */
-      const whereLine = (x: ExperimentView) => {
-        const pad = padAt(x.plot);
-        return pad ? `${SITES[pad.site].label.toLowerCase()} (${pad.id})` : `plot ${x.plot.x},${x.plot.y}`;
-      };
-      /** His heartbeat in a line: "♥ 12:30 ✓ all quiet", or what needs you and where he'll go; what he fixed himself. */
-      const heartLine = (h: WorldHeartbeat | null | undefined) => {
-        if (!h) return dim("♥ no heartbeat yet");
-        const time = h.ran ? new Date(h.ran).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "not yet";
-        const open = h.counts.alert + h.counts.warn + h.counts.info;
-        const what = open ? `${open} need${open === 1 ? "s" : ""} you: ${h.findings.map((f) => `${f.title} ${dim(`(${f.place})`)}`).join("; ")}` : "✓ all quiet";
-        const fixed = h.fixed.length ? `\n    fixed himself: ${h.fixed.join("; ")}` : "";
-        return `♥ ${time} ${what}${h.selfAction ? "" : dim(" · self-action off")}${fixed}`;
-      };
-      /** A quest on his slate, in fixed words and its goal's first words ("a quest" when its words are withheld). */
-      const questLine = (q: WorldQuest) => `${bold("quest")} ${q.veiled || !q.title ? dim("(its words are withheld)") : `“${q.title}”`} ${dim(`${worldQuestLine(q)} · by ${q.by}`)}`;
-      const partnersLine = (ps: WorldPartner[] | undefined) => (ps?.length ? ps.map((p) => `${bold(p.name)} ${dim(`${p.doing} (${p.station})`)}`).join(", ") : dim("no agents with him"));
-      const say = (e: WorldEvent) => {
-        const at = dim(new Date(e.at).toLocaleTimeString());
-        if (e.type === "hello") {
-          console.log(`${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station}${e.galahad.model ? ` · ${e.galahad.model}` : ""})`)}`);
-          console.log(`  ${heartLine(e.heartbeat)}`);
-          console.log(`  partners: ${partnersLine(e.partners)}`);
-          console.log(`  his dog: ${e.companion ? bold(e.companion.name) : dim("no name yet (galahad dog name <name>)")}`);
-          console.log(`  ${weatherLine(e.weather)}`);
-          for (const t of e.thoughts.slice(-3)) console.log(dim(`  “${t}”`));
-          if (!e.experiments.length) console.log(dim("No experiments on the plots. In a sandbox: python3 -m galahad_world arm|plane|rocket"));
-          for (const x of e.experiments) console.log(`  ${phaseOf(x).padEnd(9)} ${x.title} ${dim(`${x.engine} · ${whereLine(x)} · ${x.nodeName}${x.summary ? ` · ${x.summary}` : ""}`)}`);
-          if (e.saved?.length) console.log(dim(`  ${e.saved.length} saved to replay or examine: galahad experiments`));
-          for (const q of e.quests ?? []) console.log(`  ${questLine(q)}`);
-        } else if (e.type === "galahad") console.log(`${at} ${bold("Galahad")} ${e.galahad.doing} ${dim(`(${e.galahad.station})`)}`);
-        else if (e.type === "thought") console.log(`${at} ${dim(`“${e.text}”`)}`);
-        else if (e.type === "experiment") console.log(`${at} ${phaseOf(e.experiment)} ${e.experiment.title} ${dim(`${phaseOf(e.experiment) === "building" ? "at the workshop's bench" : whereLine(e.experiment)}${e.experiment.summary ? ` · ${e.experiment.summary}` : ""}`)}`);
-        else if (e.type === "saved") console.log(`${at} ${dim(`saved experiments: ${e.saved.length} to replay (newest: ${e.saved[0]?.title ?? "none"})`)}`);
-        else if (e.type === "cleared") console.log(`${at} ${dim(`cleared from its pad: ${e.experiment}`)}`);
-        else if (e.type === "notice") console.log(`${at} ${e.severity}: ${e.title}`);
-        else if (e.type === "weather") console.log(`${at} ${weatherLine(e.weather)}`);
-        else if (e.type === "board") console.log(`${at} ${dim(`the chalkboard: ${e.change === "write" ? "written on" : e.change === "draw" ? "drawn on" : e.change === "erase" ? "erased from" : e.change === "restore" ? "restored from its history" : "cleared"} by ${e.by === "owner" ? "you" : "an agent"} (version ${e.version})`)}`);
-        else if (e.type === "heartbeat") console.log(`${at} ${heartLine(e.heartbeat)}`);
-        else if (e.type === "partners") console.log(`${at} partners: ${partnersLine(e.partners)}`);
-        else if (e.type === "quests") console.log(e.quests.length ? e.quests.map((q) => `${at} ${questLine(q)}`).join("\n") : `${at} ${dim("his slate is wiped: no quest in hand")}`);
-        else if (e.type === "companion") console.log(`${at} ${e.companion ? `his dog is named ${bold(e.companion.name)}` : dim("his dog has no name now")}`);
-      };
-      for await (const event of new Admin(home).stream("world", undefined) as AsyncGenerator<unknown>) {
-        // What he thinks and does, an experiment's title, a partner's name are a model's or an agent's words: plain lines, every one.
-        say(plainDeep(event as WorldEvent));
-        if (!flags.follow) return;
-      }
-      return;
-    }
-
     case "board": {
       // The chalkboard in words: what Galahad and your agents wrote, and your drawing. `board clear` takes it all off.
       const admin = new Admin(home);
@@ -1053,70 +944,8 @@ Next:
         for (const line of item.lines) console.log(`  ${line}`);
       }
       console.log(`\n${drawing}`);
-      console.log(dim("\nDraw on it in the app: Chalkboard (G then D), or tap the board at the observatory in the SANDBOX."));
+      console.log(dim("\nDraw on it in the app: Chalkboard (G then D)."));
       return;
-    }
-
-    // ---------- saved experiments: what this node's world showed, built, tested and examined ----------
-    case "experiment":
-    case "experiments": {
-      const admin = new Admin(home);
-      const kb = (b: number) => (b < 2 ** 20 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 2 ** 20).toFixed(1)} MB`);
-      const id = rest[0];
-      const needId = () => {
-        if (!id || !/^ex_[A-Za-z0-9_-]{12}$/.test(id)) fail(`usage: galahad experiments ${sub} <ex_…>`);
-        return id!;
-      };
-      if (!sub || sub === "ls" || sub === "list") {
-        const list = await admin.call<{ node: string; experiments: SavedSummary[]; total: number; bytes: number }>("experiments");
-        if (!list.experiments.length) {
-          console.log(`No experiments saved on ${list.node} yet. Galahad builds, tests and examines one with experiment_run; or \`galahad experiments run <script.py> …\`.`);
-          return;
-        }
-        const shown = flags.all ? list.experiments : list.experiments.slice(0, 20);
-        for (const e of shown) console.log(describeSaved(e).replace(/^- (ex_\S+)/, (_, x: string) => `- ${bold(x)}`));
-        console.log(dim(`\n${list.total} saved on ${list.node} (every one kept) · ${kb(list.bytes)}${list.total > shown.length ? ` · --all lists every one` : ""} · galahad experiments show <id>`));
-        return;
-      }
-      if (sub === "show") {
-        const { experiment, examination, code } = await admin.call<{ experiment: SavedExperiment; examination: Examination | null; code?: { name: string; source: string } | null }>("experiment", { id: needId(), ...(flags.code ? { code: true } : {}) });
-        const [head, ...body] = describeExamination(experiment, examination).split("\n");
-        console.log(bold(head!));
-        for (const line of body) console.log(line.startsWith("- ") ? `  ${line}` : line);
-        console.log(dim(`${kb(experiment.bytes)} on ${experiment.nodeName} · replay it in the app's SANDBOX (the selector's Saved experiments)`));
-        if (flags.code) console.log(code ? `\n${dim(`--- ${code.name} ---`)}\n${code.source}` : dim("\nNo code was kept with it."));
-        return;
-      }
-      if (sub === "pin" || sub === "unpin") {
-        const { experiment } = await admin.call<{ experiment: SavedSummary }>("pinExperiment", { id: needId(), pinned: sub === "pin" });
-        console.log(experiment.pinned ? `A favourite: ${experiment.title} is offered first to replay.` : `No longer a favourite: ${experiment.title} (it's kept all the same).`);
-        return;
-      }
-      if (sub === "rm" || sub === "delete") {
-        const target = needId();
-        if (!flags.yes && !confirm(`Delete saved experiment ${target} (its recording, readouts and code) for good?`)) return;
-        await admin.call("deleteExperiment", { id: target });
-        console.log(`Deleted ${target}.`);
-        return;
-      }
-      if (sub === "run") {
-        const file = rest[0];
-        const engine = str("engine") ?? "custom";
-        if (!file || !str("title")) fail('usage: galahad experiments run <script.py> --title "…" [--engine mujoco|jsbsim|rocketpy|gazebo|custom] [--site field|hall|open] [--minutes 10] [--on ultra]');
-        const script = readFileSync(file!, "utf8");
-        console.log(dim(`Building "${str("title")}" in a fresh sandbox (${engine === "gazebo" ? "Gazebo" : "the Lab"}); watch it in the app's SANDBOX…`));
-        const out = await admin.call<ExperimentRunResult>("runExperiment", {
-          title: str("title"),
-          engine,
-          script,
-          ...(str("site") ? { site: str("site") } : {}),
-          ...(str("minutes") ? { minutes: Number(str("minutes")) } : {}),
-          ...(str("on") ? { on: str("on") } : {}),
-        });
-        console.log(describeRun(out));
-        return;
-      }
-      fail("usage: galahad experiments [ls] | show <id> [--code] | pin <id> | unpin <id> | rm <id> | run <script.py> --title … — see `galahad help`");
     }
 
     case "chats": {
@@ -1724,9 +1553,6 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "journal":
       await journalCommand(new Admin(home), sub, flags);
-      return;
-    case "dog":
-      await dogCommand(new Admin(home), sub, rest);
       return;
     case "skill":
     case "skills":

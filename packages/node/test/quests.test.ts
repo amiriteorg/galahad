@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type QuestProgressInput, WORLD_QUESTS } from "@galahad/core";
+import type { QuestProgressInput } from "@galahad/core";
 import { QUEST_SILENT_MS, QuestBoard } from "../src/quests.ts";
 
 const progress = (over: Partial<QuestProgressInput> = {}): QuestProgressInput => ({ quest: "q-1", goal: "write hi", state: "working", plan: "1. Write it.", step: 2, maxSteps: 30, doing: "$ echo hi", revisions: 0, gates: [], ...over });
@@ -57,46 +57,18 @@ describe("the quests in hand, as a node shows them", () => {
     expect(noisy.filter((q) => q.state === "working")).toHaveLength(30);
     expect(board.list().some((q) => q.by === "you")).toBe(true);
   });
-});
 
-describe("the quests his slate shows, in the SANDBOX", () => {
-  test("the plan, the stage and the gates' marks; nothing a command printed; wiped ten minutes after it ended", () => {
+  test("whoever listens hears of every report, and stops hearing when it says so", () => {
     let now = 1000;
     const board = new QuestBoard(() => now);
     const heard: number[] = [];
-    board.onChange(() => heard.push(now));
-    board.report("you", progress({ plan: "1. Write it.\n2. Check it.\nDone when: it says hi.", gates: [{ command: "bun test", by: "owner", exitCode: 1, excerpt: "FAILED-OUTPUT" }], summary: "It printed something." }));
-    expect(heard).toEqual([1000]);
-    expect(board.world()).toMatchObject([{ id: "q-1", by: "you", state: "working", title: "write hi", plan: ["Write it.", "Check it."], doneWhen: "it says hi.", step: 2, gates: [{ label: "bun test", passed: false }], endedAt: null, veiled: false }]);
-    expect(JSON.stringify(board.world())).not.toContain("FAILED-OUTPUT");
-    expect(JSON.stringify(board.world())).not.toContain("printed something");
-    expect(JSON.stringify(board.world())).not.toContain("echo hi");
+    const stop = board.onChange(() => heard.push(now));
+    board.report("you", progress());
     now += 60_000;
     board.report("you", progress({ state: "done", step: 4 }));
-    expect(board.world()).toMatchObject([{ state: "done", endedAt: now }]);
-    now += WORLD_QUESTS.wipeMs + 1;
-    expect(board.world()).toEqual([]);
-    // (It's still on the node's own list for a day: only the slate is wiped.)
-    expect(board.list()).toHaveLength(1);
-  });
-
-  test("nothing about the bank is drawn: an agent that may read the bank, or a quest that mentions it, is its shape alone", () => {
-    let now = 1000;
-    const board = new QuestBoard(() => now);
-    board.report("ledger-agent", progress({ goal: "Tidy the notes", plan: "1. Read them." }), { bank: true });
-    now += 10;
-    board.report("you", progress({ quest: "q-2", goal: "Chart my bank spending" }));
-    now += 10;
-    board.report("you", progress({ quest: "q-3", goal: "Chart the wind" }));
-    const world = board.world();
-    expect(world.map((q) => [q.by, q.veiled, q.title, q.plan.length])).toEqual([
-      ["you", false, "Chart the wind", 1],
-      ["you", true, "", 0],
-      ["ledger-agent", true, "", 0],
-    ]);
-    // Once its reporter could read the bank, a quest stays wordless (a later report without the grant doesn't bring its words back).
-    now += 10;
-    board.report("ledger-agent", progress({ goal: "Tidy the notes", step: 5 }));
-    expect(board.world().find((q) => q.by === "ledger-agent")).toMatchObject({ veiled: true, title: "", step: 5 });
+    expect(heard).toEqual([1000, 61_000]);
+    stop();
+    board.report("you", progress({ quest: "q-2" }));
+    expect(heard).toEqual([1000, 61_000]);
   });
 });

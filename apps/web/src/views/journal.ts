@@ -6,7 +6,7 @@ import { busy, button, empty, errorState, pageHead, skeletonBlock } from "../ui/
 import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
 
 /*
- * His journal (#/journal; the book on his desk in the SANDBOX opens it). Every
+ * His journal (#/journal). Every
  * evening at 21:30, Denmark's time, he recollects the day in his own words; here
  * each day is a page, newest first: the date written out, his recollection as prose,
  * then what he learned and what he'd like to do next, set apart. Read-only: the
@@ -115,7 +115,7 @@ export const journalView: View = (root, ctx, { scope }) => {
     h(
       "div",
       { class: "page narrow" },
-      pageHead("Journal", "Each evening Galahad sits down at his desk and recollects the day in his own words: his work, what he built and tested, who worked with him, and his day in the SANDBOX with his dog."),
+      pageHead("Journal", "Each evening Galahad recollects the day in his own words: his work, what he built and tested, and who worked with him."),
       list,
       olderSlot,
     ),

@@ -16,7 +16,6 @@ import {
   routes,
   type RouteName,
   type SandboxView,
-  type WorldCompute,
 } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -268,7 +267,7 @@ describe("effort that scales", () => {
   test("effort 3: three attempts in parallel sandboxes within the ceiling, each reviewed, and the reviewer's pick is the outcome", async () => {
     asked.length = 0;
     peakThinking = 0;
-    const seen: WorldCompute[] = [];
+    const seen: ComputeView[] = [];
     const grants: EffortGrant[] = [];
     const started: number[] = [];
     let running = 0;
@@ -280,8 +279,8 @@ describe("effort that scales", () => {
         started: ({ attempt }) => void started.push(attempt!),
         emit: (event) => {
           if (event.type !== "command") return;
-          // What the world shows while they work.
-          seen.push(daemon.compute.worldView());
+          // What the census shows while they work.
+          seen.push(daemon.compute.view());
           running = Math.max(running, docker.running());
         },
       },
@@ -301,16 +300,17 @@ describe("effort that scales", () => {
     expect(effort!.pick).toMatchObject({ index: 2, by: "reviewer", model: "stand-in/judge" });
     expect(effort!.attempts).toEqual([1, 2, 3].map((index) => ({ index, status: "done" })));
     expect(outcome).toMatchObject({ status: "done", summary: "Done by attempt 2." });
-    // The world showed his helpers at work, each at a station, on the node.
-    const helpers = seen.flatMap((s) => s.attempts);
-    expect(new Set(helpers.map((h) => h.index))).toEqual(new Set([1, 2, 3]));
-    expect(helpers.every((h) => h.of === 3 && h.node === "ultra" && ["council", "forge", "observatory"].includes(h.station))).toBe(true);
-    expect(helpers[0]!.label).toMatch(/^Attempt \d of 3: write hi to a file$/);
-    expect(seen.some((s) => s.nodes[0]!.inUse === 3 && s.nodes[0]!.slots === 3)).toBe(true);
+    // The census showed the quest's three attempts at work, each where its work was, on the node.
+    const work = seen.flatMap((s) => s.work);
+    expect(work.every((q) => q.effort === 3 && q.label === "write hi to a file")).toBe(true);
+    const attempts = work.flatMap((q) => q.attempts);
+    expect(new Set(attempts.map((a) => a.index))).toEqual(new Set([1, 2, 3]));
+    expect(attempts.every((a) => ["council", "forge", "observatory"].includes(a.station))).toBe(true);
+    expect(seen.some((s) => s.nodes[0]!.name === "ultra" && s.nodes[0]!.use?.sandboxes === 3 && s.nodes[0]!.capacity?.sandboxes === 3)).toBe(true);
     // Afterwards: every sandbox gone, every slot free, no helpers; the two extra attempts are in the ledger and the budget.
     expect(docker.running()).toBe(0);
     expect((await self()).use).toMatchObject({ sandboxes: 0, queued: 0 });
-    expect(daemon.compute.worldView().attempts).toEqual([]);
+    expect(daemon.compute.work()).toEqual([]);
     const { entries } = await call<{ entries: LedgerEntry[] }>("ledger");
     expect(entries.filter((e) => e.resource === ATTEMPT_RESOURCE).map((e) => e.target).sort()).toEqual([`${quest}#2`, `${quest}#3`]);
     expect((await census()).budget).toEqual({ perDay: 12, usedToday: 2 });

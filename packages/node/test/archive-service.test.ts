@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { archiveId, newNodeIdentity, type NodeIdentity, registrationDigest, type Preregistration, TRIAL_ARCHIVE_KIND } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, type ExternalSource, investigationsAdapter, memoriesAdapter, trialsAdapter } from "../src/archive/adapters.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, type ExternalSource, investigationsAdapter, memoriesAdapter, trialsAdapter } from "../src/archive/adapters.ts";
 import { LocalDiskBackend, sha256Hex } from "../src/archive/blobs.ts";
 import { fence } from "../src/archive/retrieval.ts";
 import { ArchiveService, defaultSummarise } from "../src/archive/service.ts";
@@ -35,7 +35,6 @@ interface World {
   chats: ChatStore;
   artifacts: ArtifactStore;
   clock: { now: number };
-  experiments: { id: string; title: string; at: number; description: string }[];
   open(opts?: { busy?: () => boolean; budget?: number; summarise?: ArchiveService["o"]["summarise"]; embedFails?: boolean }): { service: ArchiveService; store: ArchiveStore; embedded: string[][] };
 }
 
@@ -48,7 +47,6 @@ function world(): World {
   const clock = { now: Date.parse("2026-11-11T10:00:00Z") };
   const chats = new ChatStore(join(dir, "chats.db"), () => clock.now);
   const artifacts = new ArtifactStore({ store: mind, identity, dir: join(dir, "artifacts"), ledger: () => {}, now: () => clock.now });
-  const experiments: World["experiments"] = [];
   const stores: ArchiveStore[] = [];
   const services: ArchiveService[] = [];
   cleanup.push(async () => {
@@ -60,16 +58,6 @@ function world(): World {
     // Windows may hold a just-written file a moment longer (an antivirus scan): rm waits for it.
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
-  const external: ExternalSource = {
-    async listSince(cursor, limit) {
-      const after = experiments.filter((e) => cursor === null || e.id > cursor).sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, limit);
-      return { records: after.map(({ id, title, at }) => ({ id, title, at })), cursor: after.at(-1)?.id ?? cursor };
-    },
-    async describe(id) {
-      const e = experiments.find((x) => x.id === id)!;
-      return { description: e.description, files: [{ path: "sim.py", bytes: new TextEncoder().encode("import mujoco\nmodel = mujoco.MjModel.from_xml_path('arm.xml')\n") }] };
-    },
-  };
   return {
     dir,
     identity,
@@ -78,7 +66,6 @@ function world(): World {
     chats,
     artifacts,
     clock,
-    experiments,
     open(opts = {}) {
       const store = new ArchiveStore(join(dir, "archive.db"), new LocalDiskBackend(join(dir, "archive")), { now: () => clock.now });
       stores.push(store);
@@ -90,7 +77,7 @@ function world(): World {
         mind,
         identity,
         nodeName: "ultra",
-        adapters: [memoriesAdapter(mind), investigationsAdapter(mind), trialsAdapter(mind), artifactsAdapter(artifacts), chatsAdapter(chats, lookup, { now: () => clock.now }), experimentsAdapter(external), boardsAdapter(null)],
+        adapters: [memoriesAdapter(mind), investigationsAdapter(mind), trialsAdapter(mind), artifactsAdapter(artifacts), chatsAdapter(chats, lookup, { now: () => clock.now }), boardsAdapter(null)],
         log: () => {},
         now: () => clock.now,
         load: () => 0,
@@ -167,7 +154,7 @@ const REG: Preregistration = {
 };
 
 describe("sources: each by its cursor, idempotent, catching up after downtime", () => {
-  test("memories, investigations, trials, artifacts (with models), chats and experiments all arrive, once", async () => {
+  test("memories, investigations, trials, artifacts (with models) and chats all arrive, once", async () => {
     const w = world();
     w.mind.remember(w.identity, "The owner prefers SI units in every report.", { tags: ["preference"], prov: { trust: "owner" } });
     w.mind.remember(w.identity, "Quest q-ab12: the bracket held at 2 kN.", { tags: ["quest"], prov: { trust: "untrusted", source: "arm:loop.x" } });
@@ -176,25 +163,23 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     w.mind.emit(w.identity, "investigation.registered", { id: inv, question: REG.question, registration: REG as unknown as Record<string, unknown>, digest: registrationDigest(REG) });
     w.mind.emit(w.identity, "investigation.concluded", { id: inv, status: "done", conclusion: "supported", summary: "Within 0.5 %.", artifact: art.id, predictions: [{ id: "P1", verdict: "consistent", value: 2.01, units: "mm" }] });
     keptChat(w, "Bridge loads", [["What load can the footbridge take?", "About 5 kN/m² by Eurocode 1."]]);
-    w.experiments.push({ id: "exp-1", title: "SO-101 pick and place", at: w.clock.now, description: `Examination: 9 of 10 picks succeeded. Code from ${art.id}.` });
     w.clock.now += 2 * 3_600_000; // the chat has been quiet for two hours
 
     const { service, store } = w.open();
     await service.drain();
     const kinds = store.counts().byKind;
-    expect(kinds).toMatchObject({ teaching: 3, artifact: 1, model: 2, chat: 1, experiment: 1 });
+    expect(kinds).toMatchObject({ teaching: 3, artifact: 1, model: 2, chat: 1 });
     const prefers = store.get(archiveId("memories", w.mind.recall("SI units", 1)[0]!.id))!;
     expect(prefers).toMatchObject({ kind: "teaching", trust: "owner" });
     expect(store.get(archiveId("memories", w.mind.recall("bracket", 1)[0]!.id))!.trust).toBe("untrusted");
-    // The investigation is linked to its evidence, the models to their artifact, the experiment to what it used.
+    // The investigation is linked to its evidence, the models to their artifact.
     expect(store.get(archiveId("investigations", inv))!.links).toContainEqual(expect.objectContaining({ id: archiveId("artifacts", art.id), rel: "evidence" }));
     const stl = store.get(archiveId("artifacts", `${art.id}/out/beam.stl`))!;
     expect(stl.description).toContain("1 triangles (ASCII)");
     expect(stl.links).toContainEqual(expect.objectContaining({ id: archiveId("artifacts", art.id), rel: "part-of" }));
     expect(store.get(archiveId("artifacts", `${art.id}/out/make_beam.py`))!.title).toBe("make_beam.py (script that builds a model (build123d))");
-    expect(store.get(archiveId("experiments", "exp-1"))!.links).toContainEqual(expect.objectContaining({ id: archiveId("artifacts", art.id), rel: "uses" }));
     // Files are stored once by SHA-256 even though the artifact and its model entries both hold them.
-    expect(store.counts().blobs).toBe(4);
+    expect(store.counts().blobs).toBe(3);
     // The whiteboard isn't hooked up on this branch yet: it says so, and waits.
     expect(service.status().sources.find((s) => s.name === "boards")).toMatchObject({ waiting: true, pulled: 0 });
 
@@ -266,7 +251,7 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
   });
 });
 
-describe("the shapes the experiments and whiteboard branches will plug into", () => {
+describe("the shape the whiteboard plugs into", () => {
   test("a board's versions, each by its description, after a cursor; not hooked up, it waits", async () => {
     const versions = [
       { id: "board-1@1", title: "Keep gate, v1", at: 1, description: "A drawbridge sketch: leaf 2.4 m, one hinge." },
@@ -289,9 +274,9 @@ describe("the shapes the experiments and whiteboard branches will plug into", ()
     // The whiteboard's own lister answers null when nothing is new: the cursor stays where it was.
     const quiet: ExternalSource = { listSince: async () => ({ records: [], cursor: null }), describe: source.describe };
     expect((await boardsAdapter(quiet).pull(second.cursor, 10)).cursor).toBe(second.cursor);
-    // A recording comes as a path on this node, streamed in, never read whole into memory here.
+    // A file may come as a path on this node, streamed in, never read whole into memory here.
     const streamed: ExternalSource = { listSince: source.listSince, describe: async () => ({ description: "x", files: [{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }] }) };
-    expect((await experimentsAdapter(streamed).pull(null, 1)).entries[0]!.files).toEqual([{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }]);
+    expect((await boardsAdapter(streamed).pull(null, 1)).entries[0]!.files).toEqual([{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }]);
     expect(boardsAdapter(null).waiting).toBe(true);
     expect(await boardsAdapter(null).pull(null, 10)).toEqual({ entries: [], cursor: null, more: false });
   });

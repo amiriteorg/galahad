@@ -1,8 +1,8 @@
-import { type Companion, type CompanionView, JOURNAL_SOURCE, JOURNAL_TAG, journalDate, type JournalEntry, journalEntry, journalParts, type JournalView, readCompanion, REFLECTION_TAG } from "@galahad/core";
+import { JOURNAL_SOURCE, JOURNAL_TAG, journalDate, type JournalEntry, journalEntry, journalParts, type JournalView, REFLECTION_TAG } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 
 /*
- * His journal, read back from the mind, and his dog's name. The entries are the
+ * His journal, read back from the mind. The entries are the
  * memories the reflect loop kept (reflect.ts): tagged `journal` or `reflection`, and
  * written with the loop's own provenance, which no route gives anyone else. So a
  * memory an agent tagged to look like his journal isn't shown as his, and doesn't
@@ -39,14 +39,4 @@ export function entryInWords(entry: JournalEntry): string {
     ...(parts.learned.length ? ["", "Learned:", ...parts.learned.map((l) => `- ${l}`)] : []),
     ...(parts.next.length ? ["", "Next (suggestions he made; he does none of them on his own):", ...parts.next.map((l) => `- ${l}`)] : []),
   ].join("\n");
-}
-
-/** His dog, as the mind holds it: the name the owner gave, read strictly; null while it has none. */
-export function companionOf(store: Pick<MindStore, "lww">): Companion | null {
-  return readCompanion(store.lww("companion")?.value);
-}
-
-export function companionView(store: Pick<MindStore, "lww">): CompanionView {
-  const entry = store.lww("companion");
-  return { name: readCompanion(entry?.value)?.name ?? null, updatedAt: entry ? Number(entry.hlc.split(".")[0]) : null };
 }

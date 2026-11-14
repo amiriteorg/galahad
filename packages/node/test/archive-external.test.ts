@@ -3,15 +3,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoardWriteInput } from "@galahad/core";
-import { boardsAdapter, experimentsAdapter } from "../src/archive/adapters.ts";
-import { boardSource, boardTrust, experimentSource, STROKE_RUN_MS } from "../src/archive/external.ts";
+import { boardsAdapter } from "../src/archive/adapters.ts";
+import { boardSource, boardTrust, STROKE_RUN_MS } from "../src/archive/external.ts";
 import { BoardStore } from "../src/board.ts";
 
 /*
- * The experiments and the chalkboard, as the archive takes them in: every finished
- * experiment with its recording (streamed from disk), and the board's versions with
- * a run of strokes kept as one (its last version shows them all; the board's own
- * history keeps every one), each version as trusted as the least trusted hand on it.
+ * The chalkboard, as the archive takes it in: the board's versions with a run of
+ * strokes kept as one (its last version shows them all; the board's own history
+ * keeps every one), each version as trusted as the least trusted hand on it.
  */
 
 const root = mkdtempSync(join(tmpdir(), "galahad-archive-external-"));
@@ -90,36 +89,5 @@ describe("the chalkboard, in the archive", () => {
     const page = await boardsAdapter(boardSource(board)).pull(null, 50);
     // (The history's start, a blank board, isn't kept.) The version with another agent's words on it is untrusted.
     expect(page.entries.map((e) => e.trust)).toEqual(["untrusted"]);
-  });
-});
-
-describe("saved experiments, in the archive", () => {
-  const summary = (id: string, seq: number) => ({ id, seq, title: `Arm ${seq}`, engine: "mujoco", status: "done", startedAt: 1000 * seq, endedAt: 1000 * seq + 500 });
-  const store = {
-    archiveSince: (cursor: string | null) => {
-      const after = cursor === null ? 0 : Number(cursor);
-      const items = [summary("ex_aaaaaaaaaaaa", 1), summary("ex_bbbbbbbbbbbb", 2)].filter((s) => s.seq > after);
-      return { experiments: items, cursor: items.length ? String(items.at(-1)!.seq) : cursor } as never;
-    },
-    archiveEntry: (id: string) =>
-      id === "ex_aaaaaaaaaaaa"
-        ? ({ id, seq: 1, summary: summary(id, 1), text: "Arm 1 (MuJoCo) finished.", files: [{ role: "frames", name: "frames/000000.jsonl.gz", path: "/node/experiments/ex_a/frames/000000.jsonl.gz", bytes: 9, type: "application/gzip", sha256: "x" }] } as never)
-        : null,
-  };
-
-  test("each finished one, with its files streamed from where they lie, titled and dated by when it ended", async () => {
-    const source = experimentSource(store);
-    const { records, cursor } = await source.listSince(null, 50);
-    expect(records).toEqual([
-      { id: "ex_aaaaaaaaaaaa", title: "Arm 1", at: 1500 },
-      { id: "ex_bbbbbbbbbbbb", title: "Arm 2", at: 2500 },
-    ]);
-    expect(cursor).toBe("2");
-    expect(await source.describe("ex_aaaaaaaaaaaa")).toEqual({ description: "Arm 1 (MuJoCo) finished.", files: [{ path: "frames/000000.jsonl.gz", fromPath: "/node/experiments/ex_a/frames/000000.jsonl.gz" }] });
-  });
-
-  test("one you deleted after it was listed fails this pull, never archived half; the next listing goes without it", async () => {
-    await expect(experimentSource(store).describe("ex_bbbbbbbbbbbb")).rejects.toThrow(/no longer kept/);
-    await expect(experimentsAdapter(experimentSource(store)).pull("1", 50)).rejects.toThrow(/no longer kept/);
   });
 });

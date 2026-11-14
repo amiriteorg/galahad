@@ -15,22 +15,14 @@ import { BASELINE_DIR, type Comparison, compare, nextBaseline, OUT_DIR, readScor
 const SUITES: Record<string, () => Promise<{ suite: Suite }>> = {
   fleet: () => import("./suites/fleet.ts"),
   compute: () => import("./suites/compute.ts"),
-  "world-algorithms": () => import("./suites/world-algorithms.ts"),
-  "procedural-models": () => import("./suites/procedural-models.ts"),
   mind: () => import("./suites/mind.ts"),
   archive: () => import("./suites/archive.ts"),
   "harness-overhead": () => import("./suites/harness-overhead.ts"),
 };
 
-/** Suites measured elsewhere, whose last result is shown when there is one (the SANDBOX in a real browser: bench/browser/world-scale.ts). */
-const EXTERNAL: Record<string, string> = {
-  "world-scale": "the SANDBOX drawn in a real browser, at scale (run by bench/browser/world-scale.ts)",
-};
-
 const USAGE = `bun run bench [suite…] [--full] [--json] [--all] [--ci] [--seed n] [--update-baseline]
 
   suite…             only these (default: all): ${Object.keys(SUITES).join(", ")}
-                     (${Object.keys(EXTERNAL).join(", ")}: shown from bench/out when its own runner has left a result)
   --full             the long sizes too (their metrics start "full.")
   --all              print every metric, not just the headline ones and those that changed
   --json             the scorecards and verdicts as JSON on stdout (the report goes to stderr)
@@ -59,7 +51,7 @@ interface Result {
   comparison: Comparison | null;
   error: string | null;
   tookMs: number | null;
-  /** Whether it ran now (false: an external suite's last result, read from bench/out). */
+  /** Whether it ran now (always, since every suite runs here; kept in the JSON for whatever reads it). */
   ran: boolean;
   baselineWritten: boolean;
 }
@@ -85,7 +77,6 @@ async function main(): Promise<number> {
   }
   if (values.list) {
     for (const name of Object.keys(SUITES)) console.log(`${name.padEnd(18)} ${(await SUITES[name]!()).suite.about}`);
-    for (const [name, about] of Object.entries(EXTERNAL)) console.log(`${name.padEnd(18)} ${about}`);
     return 0;
   }
   const seed = values.seed === undefined ? DEFAULT_SEED : Number(values.seed);
@@ -93,14 +84,13 @@ async function main(): Promise<number> {
     console.error(`--seed takes a whole number from 0 to ${0xffff_ffff}`);
     return 2;
   }
-  const unknown = positionals.filter((name) => !SUITES[name] && !EXTERNAL[name]);
+  const unknown = positionals.filter((name) => !SUITES[name]);
   if (unknown.length) {
     console.error(`no such suite: ${unknown.join(", ")}\n\n${USAGE}`);
     return 2;
   }
   const named = positionals.length > 0;
   const toRun = Object.keys(SUITES).filter((name) => !named || positionals.includes(name));
-  const external = Object.keys(EXTERNAL).filter((name) => !named || positionals.includes(name));
   const full = values.full;
   const say = (line: string): void => void (values.json ? process.stderr : process.stdout).write(`${line}\n`);
   const progress = (line: string): void => void process.stderr.write(`  · ${line}\n`);
@@ -149,34 +139,6 @@ async function main(): Promise<number> {
     if (result.scorecard && result.comparison) say(renderSuite(result.scorecard, result.comparison, { all: values.all, headline: suite?.headline ?? [], about: suite?.about ?? "", tookMs: result.tookMs }));
     else say(`${name}: BROKE\n  ${(result.error ?? "").split("\n").slice(0, 6).join("\n  ")}`);
     if (result.baselineWritten) say(`  baseline recorded: bench/baseline/${name}.json`);
-    say("");
-  }
-
-  for (const name of external) {
-    const result: Result = { suite: name, scorecard: null, comparison: null, error: null, tookMs: null, ran: false, baselineWritten: false };
-    try {
-      const card = readScorecard(OUT_DIR, name);
-      if (!card) {
-        // Its own runner hasn't left a result here: nothing to show, and nothing wrong.
-        say(`${name}: no result in bench/out (${EXTERNAL[name]})`);
-        say("");
-        continue;
-      }
-      result.scorecard = card;
-      const baseline = readScorecard(BASELINE_DIR, name);
-      result.comparison = compare(card, baseline, { ...options, full: true });
-      // Its baseline is recorded only when it's asked for by name: this run didn't measure it.
-      if (values["update-baseline"] && named) {
-        writeScorecard(BASELINE_DIR, card);
-        result.baselineWritten = true;
-      }
-      say(renderSuite(card, result.comparison, { all: values.all, headline: [], about: EXTERNAL[name]!, tookMs: null, origin: `measured ${new Date(card.at).toISOString().slice(0, 16).replace("T", " ")} UTC at ${card.commit}, not run now` }));
-      if (result.baselineWritten) say(`  baseline recorded: bench/baseline/${name}.json`);
-    } catch (error) {
-      result.error = String((error as Error)?.message ?? error);
-      say(`${name}: BROKE\n  ${result.error}`);
-    }
-    results.push(result);
     say("");
   }
 

@@ -60,8 +60,7 @@ describe("sandbox disks", () => {
 });
 
 describe("what a sandbox may reach through its gateway", () => {
-  test("the SANDBOX world and web search are named for what they are, not shown as models", () => {
-    expect(gatewayUse("world")).toEqual({ kind: "world", label: "SANDBOX world", title: "May show its experiments in the SANDBOX" });
+  test("web search is named for what it is, not shown as models", () => {
     expect(gatewayUse("search")).toEqual({ kind: "search", label: "web search", title: "May search the web through Galahad's own search engine" });
     expect(gatewayUse("anthropic")).toEqual({ kind: "models", label: "anthropic", title: "May use anthropic's models (your key stays in the vault)" });
   });

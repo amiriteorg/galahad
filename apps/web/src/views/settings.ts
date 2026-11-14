@@ -1,18 +1,15 @@
-import type { CompanionView } from "@galahad/core";
-import { cleanCompanionName, companionNameProblem } from "@galahad/core/companion";
-import { isUnavailable } from "../api.ts";
-import { type Ctx, errorMessage, type View } from "../context.ts";
+import type { View } from "../context.ts";
 import { forgetIdentity } from "../identity.ts";
 import { shortId } from "../lib/text.ts";
 import { chatEnter, type ChatEnterPref, type MotionPref, motionPref, setChatEnter, setMotion, setTheme, type ThemePref, themePref } from "../prefs.ts";
 import { button, callout, copyText, pageHead, section, segmented } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
-import { h, replace, type Scope } from "../ui/dom.ts";
+import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { SCOPE_INFO } from "./fleet.ts";
 import { dropBrowserSubscription, notificationsSection } from "./notifications.ts";
 
-/* Appearance, his dog's name, this device's identity and permissions, what's kept here, and the way out. */
+/* Appearance, this device's identity and permissions, what's kept here, and the way out. */
 
 export const APP_VERSION = "0.1.0";
 
@@ -31,106 +28,6 @@ export async function forgetThisBrowser(): Promise<void> {
   await forgetIdentity();
   location.hash = "";
   location.reload();
-}
-
-/**
- * His dog's name: one field, saved when you leave it (or press Enter), on every device at once (it's the owner's
- * setting in the mind). What a name may be is said under the field, in the node's own words, before anything is sent.
- */
-function dogSection(ctx: Ctx, scope: Scope): HTMLElement | null {
-  if (!ctx.can("mind:read")) return null;
-  const mayName = ctx.can("brain:write");
-  const RESTING = mayName ? "Up to 24 letters, digits, spaces, hyphens or apostrophes. Clear it to take the name back." : "This device can't change it: it was paired without the brain:write scope.";
-  const input = h("input", { class: "input", id: "dog-name", type: "text", autocomplete: "off", autocapitalize: "words", spellcheck: "false", enterkeyhint: "done", maxlength: 80, placeholder: "No name yet", disabled: true, "aria-describedby": "dog-name-note" });
-  const note = h("div", { class: "hint", id: "dog-name-note", role: "status" }, RESTING);
-  /** The name the node holds ("" while it has none). */
-  let kept = "";
-  let saving = false;
-
-  const say = (text: string, wrong = false): void => {
-    note.textContent = text;
-    note.className = wrong ? "error" : "hint";
-    if (wrong) input.setAttribute("aria-invalid", "true");
-    else input.removeAttribute("aria-invalid");
-  };
-
-  async function save(): Promise<void> {
-    const name = cleanCompanionName(input.value);
-    if (saving) return;
-    if (name === kept) {
-      input.value = kept;
-      say(RESTING);
-      return;
-    }
-    const problem = name ? companionNameProblem(name) : null;
-    if (problem) return say(problem, true);
-    saving = true;
-    say("Saving…");
-    try {
-      const view = await ctx.api.post<CompanionView>("/api/companion", { name: name || null }, scope.signal);
-      kept = view.name ?? "";
-      input.value = kept;
-      say(kept ? `Saved. His dog is ${kept}, in the SANDBOX and in his journal, on every device.` : "Saved. It's the dog again, until you name it.");
-    } catch (error) {
-      if (!scope.disposed) say(errorMessage(error), true);
-    } finally {
-      saving = false;
-    }
-  }
-
-  input.addEventListener("change", () => void save());
-  input.addEventListener("keydown", (event: KeyboardEvent) => {
-    if (event.key === "Enter") void save();
-    else if (event.key === "Escape" && input.value !== kept) {
-      event.stopPropagation();
-      input.value = kept;
-      say(RESTING);
-    }
-  });
-  // Once a name is wrong, the message follows what you type until it's right.
-  input.addEventListener("input", () => {
-    if (note.className !== "error") return;
-    const name = cleanCompanionName(input.value);
-    const problem = name ? companionNameProblem(name) : null;
-    if (problem) say(problem, true);
-    else say(RESTING);
-  });
-
-  const el = section(
-    "His dog",
-    {},
-    h(
-      "div",
-      { class: "card rows" },
-      h(
-        "div",
-        { class: "item", style: "flex-wrap:wrap" },
-        h(
-          "div",
-          { class: "grow", style: "min-width:200px" },
-          h("label", { class: "strong small", for: "dog-name", style: "display:block" }, "Name"),
-          h("div", { class: "tiny subtle" }, "What his dog answers to, in the SANDBOX and in his journal, on every device."),
-        ),
-        h("div", { class: "field dog-field" }, input, note),
-      ),
-    ),
-  );
-
-  void (async () => {
-    try {
-      const view = await ctx.api.get<CompanionView>("/api/companion", scope.signal);
-      if (scope.disposed) return;
-      kept = view.name ?? "";
-      input.value = kept;
-      input.disabled = !mayName;
-    } catch (error) {
-      if (scope.disposed) return;
-      // A node from before his dog could be named: nothing to set here yet.
-      if (isUnavailable(error)) el.hidden = true;
-      else say(`Couldn't read his dog's name: ${errorMessage(error)}`, true);
-    }
-  })();
-  return el;
 }
 
 export const settingsView: View = (root, ctx, { scope }) => {
@@ -203,7 +100,6 @@ export const settingsView: View = (root, ctx, { scope }) => {
         : null,
       // He comes to you: notifications on this device, what he tells you and when he stays silent.
       notificationsSection(ctx, scope),
-      dogSection(ctx, scope),
       section(
         "This device",
         {},

@@ -7,6 +7,7 @@ import {
   nextRun,
   parseSchedule,
   redact,
+  RETIRED_LOOP_TASKS,
   type Schedule,
   ScheduleError,
 } from "@galahad/core";
@@ -62,7 +63,12 @@ export function loopRecords(store: MindStore): LoopRecord[] {
       problems.push(`schedule: ${(error as Error).message}`);
     }
     const task = LoopTask.safeParse(stored.task);
-    if (!task.success) problems.push("this node doesn't understand the task (written by a newer version?)");
+    if (!task.success) {
+      // A task this version no longer has says so; any other is taken for a newer version's.
+      const kind = (stored.task as { kind?: unknown } | null)?.kind;
+      const retired = typeof kind === "string" && Object.hasOwn(RETIRED_LOOP_TASKS, kind) ? RETIRED_LOOP_TASKS[kind]! : null;
+      problems.push(retired ? `its task no longer exists (${retired}), so it never runs. Remove it: galahad loop rm ${stored.name}` : "this node doesn't understand the task (written by a newer version?)");
+    }
     return {
       name: stored.name,
       scheduleText: stored.schedule,
@@ -77,6 +83,12 @@ export function loopRecords(store: MindStore): LoopRecord[] {
       updatedAt: hlcMs(entry.hlc),
     };
   });
+}
+
+/** Whether every heartbeat loop lets him fix what's safe himself (on unless one says `selfAction: false`). */
+export function selfActionOn(store: MindStore): { on: boolean; heartbeats: string[] } {
+  const beats = loopRecords(store).filter((l) => l.task?.kind === "heartbeat");
+  return { on: beats.every((l) => l.task?.kind !== "heartbeat" || l.task.selfAction !== false), heartbeats: beats.map((l) => l.name) };
 }
 
 export function runView(event: {

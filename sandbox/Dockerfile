@@ -27,10 +27,6 @@ ENV PATH=/opt/opencode/bin:$PATH
 COPY websearch /usr/local/bin/websearch
 RUN chmod 0755 /usr/local/bin/websearch
 
-# Simulations shown live in Galahad's SANDBOX world, via the gateway (python3 -m galahad_world).
-COPY galahad_world.py /usr/lib/python3/dist-packages/galahad_world.py
-RUN chmod 0644 /usr/lib/python3/dist-packages/galahad_world.py
-
 RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
  && mkdir -p /work && chown 1000:1000 /work
 

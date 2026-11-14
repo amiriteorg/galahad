@@ -490,34 +490,3 @@ export interface SkillsView {
   budget: { tokensPerDay: number; usedToday: number };
 }
 
-/* ---------- the world: books on his library's shelves ---------- */
-
-/** How many of the last skills learned or used the world is told of. */
-export const WORLD_SKILLS_RECENT = 6;
-
-/** His skills as the SANDBOX may draw them: how many stand where, and the last few learned or used (titles and times only). */
-export interface WorldSkills {
-  inUse: number;
-  proposed: number;
-  retired: number;
-  /** Newest first. `what`: learned (a version was written) or used (offered to a quest or an answer). */
-  recent: { title: string; at: number; what: "learned" | "used" }[];
-}
-
-const count = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1_000_000;
-
-/** The world's skills, read at the page's boundary: checked and bounded again; null when it isn't one. */
-export function readWorldSkills(v: unknown): WorldSkills | null {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
-  const o = v as Record<string, unknown>;
-  if (!count(o.inUse) || !count(o.proposed) || !count(o.retired) || !Array.isArray(o.recent)) return null;
-  const recent: WorldSkills["recent"] = [];
-  for (const r of o.recent.slice(0, WORLD_SKILLS_RECENT)) {
-    if (typeof r !== "object" || r === null) continue;
-    const { title, at, what } = r as Record<string, unknown>;
-    if (typeof title !== "string" || typeof at !== "number" || !Number.isFinite(at) || (what !== "learned" && what !== "used")) continue;
-    const clean = cleanSkillText(title).slice(0, SKILL_LIMITS.title);
-    if (clean) recent.push({ title: clean, at, what });
-  }
-  return { inUse: o.inUse, proposed: o.proposed, retired: o.retired, recent };
-}

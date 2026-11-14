@@ -25,7 +25,7 @@ export * from "./notify-payload.ts";
 export const NOTIFY_KIND_INFO: Record<NotifyKind, { label: string; hint: string; on: boolean }> = {
   "needs-you": { label: "Something needs you", hint: "A warning or an alert from his heartbeat: once per finding, not again while it stands.", on: true },
   approval: { label: "An approval is waiting", hint: "Something he or an agent wants to send or delete, filed for your answer.", on: true },
-  finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest or experiment you started: done, unverified, gave up or failed, said as it is.", on: true },
+  finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed, said as it is.", on: true },
   question: { label: "He has a question", hint: "An answer that ends by asking you, or a key he needs.", on: true },
   journal: { label: "His journal is written", hint: "Once each evening.", on: false },
 };
@@ -100,7 +100,7 @@ export function notifyDay(now: number, tz: string): string {
 /* ---------- what he may say: one item per thing worth telling ---------- */
 
 export interface NotifyItem {
-  /** Told once: "notice:<key>", "action:<id>", "secret:<name>", "turn:<id>", "quest:<id>", "experiment:<id>", "journal:<day>". */
+  /** Told once: "notice:<key>", "action:<id>", "secret:<name>", "turn:<id>", "quest:<id>", "journal:<day>". */
   key: string;
   kind: NotifyKind;
   /** An alert isn't held by quiet hours. */
@@ -200,12 +200,6 @@ export function questItem(q: { quest: string; goal: string; state: string }): No
   if (!title || !/^[A-Za-z0-9._:-]{1,64}$/.test(q.quest)) return null;
   const goal = yourWords(q.goal, 110);
   return { key: `quest:${q.quest}`, kind: "finished", alert: false, title, body: goal ? `“${goal}”` : "A quest you started has ended.", open: "overview", needs: ["mind:read"] };
-}
-
-/** An experiment you started that has ended. Its title is a script's, so it isn't shown. */
-export function experimentItem(e: { id: string; status: "done" | "failed" }): NotifyItem | null {
-  if (!/^[A-Za-z0-9._:-]{1,64}$/.test(e.id)) return null;
-  return { key: `experiment:${e.id}`, kind: "finished", alert: false, title: e.status === "done" ? "Experiment done" : "Experiment failed", body: "An experiment you started has ended. It's saved in the SANDBOX.", open: "overview", needs: ["mind:read"] };
 }
 
 /** His journal for a day is written. The day, never a word of the entry. */

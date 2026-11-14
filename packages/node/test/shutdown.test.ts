@@ -108,16 +108,4 @@ describe("a node stopping", () => {
       await daemon.stop();
     }
   });
-
-  test("a world stream left open (the SANDBOX in a browser) ends at once instead of holding the node up", async () => {
-    const daemon = await start();
-    const world = await call("world");
-    expect(world.status).toBe(200);
-    const reader = world.body!.getReader();
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('"type":"hello"');
-    const started = performance.now();
-    await daemon.stop();
-    expect(performance.now() - started).toBeLessThan(5_000); // well inside the grace period
-    expect((await reader.read()).done).toBe(true);
-  });
 });

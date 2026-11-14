@@ -3,7 +3,7 @@ import type { ArchiveStatusView } from "@galahad/core";
 /*
  * The Archive page's logic: what each kind is called, the smart selector's summary in
  * plain words, the search request it makes, and the status in words. Pure functions
- * (no DOM), unit-tested. Kinds a newer node knows are shown as they are.
+ * (no DOM), unit-tested. Any other kind (a newer node's, or one no longer archived) is shown as it is.
  */
 
 export interface KindInfo {
@@ -13,7 +13,6 @@ export interface KindInfo {
 }
 
 export const KIND_INFO: Record<string, KindInfo> = {
-  experiment: { label: "Experiment", plural: "Experiments", icon: "flask" },
   model: { label: "Model", plural: "Models", icon: "layers" },
   teaching: { label: "Teaching", plural: "Teachings", icon: "memory" },
   idea: { label: "Idea", plural: "Ideas", icon: "lightbulb" },

@@ -11,7 +11,7 @@ describe("a sheet and the page under it", () => {
   test("the page is the address's first part", () => {
     expect(pageOf("#/skills")).toBe("skills");
     expect(pageOf("#/chat/cv_abc123")).toBe("chat");
-    expect(pageOf("#/world?trace=1")).toBe("world");
+    expect(pageOf("#/loops?trace=1")).toBe("loops");
     expect(pageOf("")).toBe("");
     expect(pageOf("#")).toBe("");
   });

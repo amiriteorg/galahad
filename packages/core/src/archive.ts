@@ -14,9 +14,9 @@ import { Trust } from "./events.ts";
  * trust, `untrusted`, everywhere it goes: search results, Galahad's context, summaries.
  */
 
-/** Kinds Galahad archives today; more may come (a newer node's kind is kept and shown as it is). */
+/** Kinds Galahad archives today; an entry of any other kind (a newer node's, or one this version no longer archives) is kept and shown as it is. */
 /** (`trial`: a trial's record and what it kept. Searchable by you; never offered to a model as context: trials.ts.) */
-export const ARCHIVE_KINDS = ["experiment", "model", "teaching", "idea", "artifact", "chat", "board", "lesson", "trial"] as const;
+export const ARCHIVE_KINDS = ["model", "teaching", "idea", "artifact", "chat", "board", "lesson", "trial"] as const;
 export type KnownArchiveKind = (typeof ARCHIVE_KINDS)[number];
 
 export const ArchiveKind = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/, "a lowercase kind, e.g. idea");

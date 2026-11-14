@@ -341,7 +341,7 @@ export class TeamStore {
   }
   queued(): TeamJob[] { return this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='queued' ORDER BY seq").all().map(jobOf); }
   /** A bounded public activity projection: no titles, messages, errors or task JSON
-   * enter world telemetry. Keep old live jobs and only a minute of terminal states. */
+   * leave the store with it. Keep old live jobs and only a minute of terminal states. */
   avatarActivity(): AvatarActivity {
     const rows = this.db.query<{ kind: JobRow["kind"]; teammate: string; status: TeamWorkStatus; updatedAt: number }, [number, number]>(`
       SELECT kind,teammate,status,MAX(updated_at) AS updatedAt FROM (

@@ -1,14 +1,10 @@
 import type { BoardItem, Trust } from "@galahad/core";
 import { boardCursor, type BoardHistory, boardVersionForArchive, boardVersionsSince } from "../board-history.ts";
-import type { ExperimentStore } from "../experiment-store.ts";
 import type { ExternalSource } from "./adapters.ts";
 
 /*
- * The saved experiments and the chalkboard, as the archive takes them in (the
- * daemon passes these to experimentsAdapter and boardsAdapter).
- *
- * Experiments: every finished one, its files streamed from where they lie on
- * this node (a recording can be large), with its plain-text description.
+ * The chalkboard, as the archive takes it in (the daemon passes this to
+ * boardsAdapter).
  *
  * The chalkboard: its versions. Each pen-up is a version, so a run of strokes
  * by the same hand is kept as one entry, its last version (which shows them
@@ -20,21 +16,6 @@ import type { ExternalSource } from "./adapters.ts";
 
 /** Strokes drawn within this of each other, by the same hand, are one run. */
 export const STROKE_RUN_MS = 10 * 60_000;
-
-export function experimentSource(store: Pick<ExperimentStore, "archiveSince" | "archiveEntry">): ExternalSource {
-  return {
-    listSince: async (cursor, limit) => {
-      const r = store.archiveSince(cursor, limit);
-      return { records: r.experiments.map((e) => ({ id: e.id, title: e.title, at: e.endedAt ?? e.startedAt })), cursor: r.cursor };
-    },
-    describe: async (id) => {
-      const entry = store.archiveEntry(id);
-      // Deleted (only the owner deletes) since it was listed: this pull fails whole, and the next listing goes without it.
-      if (!entry) throw new Error(`experiment ${id} is no longer kept`);
-      return { description: entry.text, files: entry.files.map((f) => ({ path: f.name, fromPath: f.path })) };
-    },
-  };
-}
 
 /** The least trusted hand on the board: another agent's words make it untrusted, his make it his; otherwise it's yours. */
 export function boardTrust(items: readonly Pick<BoardItem, "by">[]): Trust {
@@ -64,7 +45,7 @@ export function boardSource(board: { readonly history: BoardHistory }): External
     },
     describe: async (id) => {
       const version = boardVersionForArchive(board, Number(id));
-      // Forgotten by the owner since it was listed: as above.
+      // Forgotten by the owner since it was listed: this pull fails whole, and the next listing goes without it.
       if (!version) throw new Error(`chalkboard version ${id} is no longer in its history`);
       return {
         description: version.text,

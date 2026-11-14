@@ -92,8 +92,6 @@ export interface Api {
   chat(body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
   /** A POST that answers with a turn's events (watching a turn the node runs, a side question). Aborting the signal ends the watching, never the turn. */
   events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
-  /** A signed GET that answers with server-sent events (the world): each `data:` frame, parsed as JSON. Unchecked: callers read it at their boundary. */
-  stream(path: string, signal: AbortSignal): AsyncGenerator<unknown>;
 }
 
 /**
@@ -134,17 +132,6 @@ export function apiFor(identity: BrowserIdentity): Api {
     },
     chat: (body: unknown, signal: AbortSignal) => events("/api/chat", body, signal),
     events,
-    async *stream(path: string, signal: AbortSignal) {
-      const response = await signedFetch(identity, "GET", path, undefined, signal);
-      if (!response.body) return;
-      for await (const data of sseData(response.body)) {
-        try {
-          yield JSON.parse(data) as unknown;
-        } catch {
-          /* ignore malformed frames */
-        }
-      }
-    },
   };
 }
 

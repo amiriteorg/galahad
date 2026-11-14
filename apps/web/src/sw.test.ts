@@ -156,7 +156,7 @@ describe("a tap opens the app at the right place", () => {
   test("in the window that's already open: it's told where to go and brought forward, and no second window opens", async () => {
     shown.length = 0;
     opened.length = 0;
-    windows = [windowAt(`${ORIGIN}/#/overview`, "hidden"), windowAt(`${ORIGIN}/#/world`, "visible")];
+    windows = [windowAt(`${ORIGIN}/#/overview`, "hidden"), windowAt(`${ORIGIN}/#/chat`, "visible")];
     await push(finished);
     const { closed } = await tap();
     expect(closed).toBe(true);

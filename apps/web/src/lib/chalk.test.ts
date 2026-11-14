@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BOARD_H, BOARD_W, type BoardItem, type BoardStroke, emptyBoard } from "@galahad/core/board";
 import { chartGeometry, clampView, drawOrder, ease, finishStroke, fitView, Outbox, pinchView, pressed, readBoard, simplify, StrokeHistory, strokeId, toBoard, toScreen, withPending, zoomAt } from "./chalk.ts";
-import { readWorldEvent } from "./world.ts";
 
 /*
  * The chalkboard page's pure parts: the view (fit, zoom, two-finger pinch), a
@@ -188,15 +187,5 @@ describe("the board, read at the boundary", () => {
     expect(read.strokes.map((s) => s.id)).toEqual(["s_ok"]);
     expect(readBoard({ items: "x" })).toBeNull();
     expect(readBoard(null)).toBeNull();
-  });
-
-  test("the world's stream: a board event read and bounded; a region off the board refused; the hello's version kept", () => {
-    expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "write", by: "agent", region: { x: 10, y: 20, w: 300, h: 80 } })).toEqual({ type: "board", at: 1, version: 4, change: "write", by: "agent", region: { x: 10, y: 20, w: 300, h: 80 } });
-    expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "draw", by: "owner", region: null })).toMatchObject({ change: "draw", region: null });
-    expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "write", by: "agent", region: { x: 1500, y: 0, w: 300, h: 80 } })).toBeNull();
-    expect(readWorldEvent({ type: "board", at: 1, version: 4, change: "explode", by: "agent", region: null })).toBeNull();
-    expect(readWorldEvent({ type: "board", at: 1, version: 5, change: "restore", by: "owner", region: null })).toMatchObject({ change: "restore" });
-    const hello = readWorldEvent({ type: "hello", at: 1, galahad: { station: "keep", doing: "", experiment: null, model: null, since: 0 }, nodes: [], experiments: [], thoughts: [], board: { version: 9 } });
-    expect(hello).toMatchObject({ type: "hello", board: { version: 9 } });
   });
 });

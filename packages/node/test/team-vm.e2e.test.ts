@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
+import { avatarExpression, bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { NETWORKS } from "@galahad/sandbox";
@@ -11,7 +11,6 @@ import { Home } from "../src/home.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { Database } from "bun:sqlite";
 import { fakeDocker } from "./fake-docker.ts";
-import { readWorldEvent } from "../../../apps/web/src/lib/world.ts";
 
 // Real HTTP/controller/host/quest code, with stand-ins only for Docker and models.
 const root = mkdtempSync(join(tmpdir(), "galahad-team-vm-"));
@@ -33,12 +32,8 @@ let cleanupFailure = false;
 let dockerSilent = false;
 /** What a vendor's tool says of itself in a VM, when its bridge is asked (`--status`): by tool. */
 const toolStatus = new Map<"claude" | "codex", { code: number; stdout: string }>();
-// The worker as the SANDBOX would show it: the node's hello as it goes over the wire, read by the page's own reader.
-function worldWorker(id: string) {
-  const hello = readWorldEvent(JSON.parse(JSON.stringify(daemon.world.hello())));
-  if (hello?.type !== "hello") throw new Error("Expected world hello");
-  return hello.partners?.find((partner) => partner.id === teamArmLabel(daemon.identity.id, id));
-}
+// A squire's face as the Squires page draws it: from the snapshot the node serves, by the page's own rule.
+const faceOf = (id: string, team: TeamSnapshot) => avatarExpression(team.teammates.find((member) => member.id === id)!, team, Date.now());
 const summaries: Record<string, string> = { ALPHA: "Verified predecessor contract: packet-v1.", BETA: "Verified independent follow-up.", GAMMA: "Verified consumer of packet-v1." };
 const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request) => {
   const body = await request.json() as (typeof prompts)[number];
@@ -149,7 +144,7 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
     expect(held.tasks.find((item) => item.id === gamma.id)?.status).toBe("queued");
     expect(held.teammates.find((member) => member.id === "lin")?.workspace).toBeNull();
     const bound = held.teammates.find((member) => member.id === "ada")!.workspace!;
-    expect(worldWorker("ada")).toMatchObject({ expression: "working", avatar: held.teammates.find((member) => member.id === "ada")!.avatar });
+    expect(faceOf("ada", held)).toBe("working");
     expect(bound.id).toMatch(/^[0-9a-f]{10}$/);
     expect(runs).toHaveLength(1);
     expect(runs[0]).toContain(`dev.galahad.quest=arm.${teamArmLabel(daemon.identity.id, "ada")}`);
@@ -164,9 +159,8 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
     releaseAlpha!();
     await until(async () => (await snapshot()).tasks.every((item) => !["queued", "running"].includes(item.status)));
     const finished = await snapshot();
-    expect(worldWorker("ada")?.expression).toBe("pleased");
-    expect(worldWorker("lin")?.expression).toBe("pleased");
-    expect(JSON.stringify(worldWorker("ada"))).not.toContain(summaries.ALPHA!);
+    expect(faceOf("ada", finished)).toBe("pleased");
+    expect(faceOf("lin", finished)).toBe("pleased");
     for (const id of [alpha.id, beta.id, gamma.id]) expect(finished.tasks.find((item) => item.id === id)).toMatchObject({ status: "done", verified: true, error: null });
     expect(finished.teammates.find((member) => member.id === "ada")!.workspace).toEqual(bound);
     const other = finished.teammates.find((member) => member.id === "lin")!.workspace!;
@@ -253,7 +247,7 @@ test("controller restart keeps the exact VM; failed old-worker cleanup blocks ne
     const finished = await task(created.id);
     expect(finished.status).toBe("failed");
     expect(finished.verified).toBe(false);
-    expect(worldWorker("ada")?.expression).toBe("concerned");
+    expect(faceOf("ada", await snapshot())).toBe("concerned");
     const attempted = events.slice(before);
     expect(attempted.map((event) => event.kind)).toEqual(["cleanup"]);
     expect(attempted[0]?.target).toBe(`galahad-sbx-${(await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!.id}`);
@@ -285,13 +279,11 @@ test("removing a squire that has a VM: refused until you say its workspace goes,
   expect(after.rooms.find((room) => room.id === "vm-forge")!.members).toEqual(["lin"]);
   const { entries } = await api<{ entries: LedgerEntry[] }>("ledger");
   expect(entries.find((e) => e.resource === "team" && e.class === "delete")).toMatchObject({ target: "worker:ada", verdict: "approved", detail: "its VM workspace was destroyed with it" });
-  // It has left the SANDBOX at once, and the others are still shown there and still work.
-  expect(worldWorker("ada")).toBeUndefined();
+  // The others still work.
   const next = (await create("lin", "BETA")).task;
   await until(async () => !["queued", "running"].includes((await task(next.id)).status));
   expect(await task(next.id)).toMatchObject({ status: "done", verified: true });
-  expect(worldWorker("lin")?.expression).toBe("pleased");
-  expect(worldWorker("ada")).toBeUndefined();
+  expect(faceOf("lin", await snapshot())).toBe("pleased");
 }, 15000);
 
 test("what became of its VM is asked of the host and said as it was: Docker that cannot say stops the removal, a VM already gone is called gone, and one that was made but never bound is found and destroyed", async () => {

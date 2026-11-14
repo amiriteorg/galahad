@@ -8,21 +8,12 @@ import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, 
  * from cache and refreshed in the background (stale-while-revalidate).
  * Anything under /api, /link or /gw is never cached: those are signed,
  * live requests and always go to the network. The pairing bundle (/pair.js)
- * is not cached either: pairing needs the network anyway. The SANDBOX bundle
- * (/world.js, three.js and the world, the biggest file) is cached the first time
- * that page is opened, not on install, and refreshed like the shell. The world's
- * robot models (/world-assets/robots/…) are cached the same way, on first use;
- * their URLs carry their content's version, so a cached copy is served as is, and
- * caching a new version drops the old one.
+ * is not cached either: pairing needs the network anyway.
  */
 
-const VERSION = "galahad-shell-v7";
+const VERSION = "galahad-shell-v8";
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
-/** Cached on first use rather than on install. */
-const LAZY = ["/world.js"];
-/** Versioned by content (in the name or the query): cached on first use, then served from the cache. */
-const VERSIONED = "/world-assets/robots/";
 
 interface ExtendableEventLike extends Event {
   waitUntil(promise: Promise<unknown>): void;
@@ -89,7 +80,7 @@ async function announceUpdate(): Promise<void> {
 async function fromShell(event: FetchEventLike, key: string): Promise<Response> {
   const cache = await caches.open(VERSION);
   const cached = await cache.match(key);
-  const before = key === "/app.js" || key === "/world.js" ? cached?.clone() : undefined;
+  const before = key === "/app.js" ? cached?.clone() : undefined;
   const refresh = fetch(event.request)
     .then(async (response) => {
       if (response.ok) {
@@ -141,34 +132,8 @@ sw.addEventListener("fetch", (event) => {
     event.respondWith(page(event));
     return;
   }
-  if (SHELL.includes(url.pathname) || LAZY.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
-  else if (url.pathname.startsWith(VERSIONED)) event.respondWith(versioned(event, url));
+  if (SHELL.includes(url.pathname)) event.respondWith(fromShell(event, url.pathname));
 });
-
-/** A content-versioned file: from the cache if it's there, else fetched and kept (dropping other versions of the same file). */
-async function versioned(event: FetchEventLike, url: URL): Promise<Response> {
-  const cache = await caches.open(VERSION);
-  const key = url.pathname + url.search;
-  const cached = await cache.match(key);
-  if (cached) return cached;
-  const response = await fetch(event.request);
-  if (response.ok) {
-    const copy = response.clone();
-    event.waitUntil(
-      (async () => {
-        for (const old of await cache.keys()) {
-          const u = new URL(old.url);
-          if (u.pathname.startsWith(VERSIONED) && sameFile(u.pathname, url.pathname) && u.pathname + u.search !== key) await cache.delete(old);
-        }
-        await cache.put(key, copy);
-      })(),
-    );
-  }
-  return response;
-}
-
-/** Two versions of one file: the same path once a content hash in the name ("so-101.1a2b3c4d.bin") is set aside. */
-const sameFile = (a: string, b: string): boolean => a.replace(/\.[0-9a-f]{8}(?=\.[a-z]+$)/, "") === b.replace(/\.[0-9a-f]{8}(?=\.[a-z]+$)/, "");
 
 /*
  * He comes to you. The node pushes a small JSON payload, encrypted to this browser (the push

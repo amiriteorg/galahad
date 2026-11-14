@@ -1,4 +1,4 @@
-import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, type Examination, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, type SavedSummary, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
+import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
@@ -8,10 +8,9 @@ import type { ArmTokens } from "./arms.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import type { ComputeService } from "./compute/service.ts";
 import type { ConnectorService } from "./connectors.ts";
-import { selfActionOn } from "./heartbeat-world.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
-import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult } from "./loops.ts";
-import { companionOf, journalEntries } from "./journal.ts";
+import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "./loops.ts";
+import { journalEntries } from "./journal.ts";
 import { type JournalInputs, ledgerAgent, REFLECT_ROLES, reflectOnce } from "./reflect.ts";
 import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
@@ -47,18 +46,12 @@ export interface LoopTaskDeps {
   runLoop?: (name: string) => void;
   /** Whether one of this node's loops is running now. */
   isRunning?: (name: string) => boolean;
-  /** The world's weather, for self-action's refresh: fetched here at all, someone watching, known now. */
-  weather?: { enabled: boolean; watched(): boolean; known(): boolean; refresh(): Promise<void> };
   /** Your kept chats (their titles are what his journal reads of them). */
   chats?: { list(): ConversationSummary[] };
-  /** The experiments this node saved (his journal reads the ones that finished today, and each one's examination). */
-  experiments?: { listing(limit?: number): { experiments: SavedSummary[] }; examination(id: string): Examination | null };
   /** The chalkboard's history (his journal reads today's versions: who changed it, and how, in a line). */
   board?: { history: { before(before: number | null, limit: number): { versions: BoardVersionInfo[] } } };
   /** This node's compute: its calibration and the fleet's plan (self-action), what he'd suggest (the heartbeat). */
   compute?: ComputeService;
-  /** His review of his own world through his eyes (world-review.ts; set by the daemon). */
-  review?: (places?: undefined, signal?: AbortSignal) => Promise<{ status: "ok" | "attention"; summary: string }>;
   /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat, and what his journal reads of them. */
   skills?: { tidy(mark?: boolean): { stale: number; merges: number }; journal(since: number): { at: number; line: string }[] };
   /** What a quick look by the doctor finds that the heartbeat doesn't check itself (doctor.ts; set by the daemon). */
@@ -289,7 +282,6 @@ export async function selfSnapshot(deps: LoopTaskDeps): Promise<SelfSnapshot> {
         recent: deps.store.loopRuns(l.name, 2).map((r) => ({ run: r.body.run, status: r.body.status, finished: r.body.finished })),
       })),
     retried: retriedRuns(deps.store.ledger(300).filter((e) => e.body.resource === SELF_ACTION_RESOURCE).map((e) => e.body.target)),
-    weather: deps.weather ? { enabled: deps.weather.enabled, watched: deps.weather.watched(), known: deps.weather.known() } : null,
     // The node that runs a heartbeat keeps the fleet's plan; every node measures itself.
     compute: computeSnapshot(deps, true),
   };
@@ -311,7 +303,7 @@ function computeSnapshot(deps: LoopTaskDeps, adapts: boolean): SelfSnapshot["com
  */
 export async function computeUpkeep(deps: LoopTaskDeps): Promise<SelfActionOutcome[]> {
   if (!deps.compute || !selfActionOn(deps.store).on) return [];
-  const snapshot = (): SelfSnapshot => ({ now: (deps.now ?? Date.now)(), sandboxes: null, loops: [], retried: [], weather: null, compute: computeSnapshot(deps, false) });
+  const snapshot = (): SelfSnapshot => ({ now: (deps.now ?? Date.now)(), sandboxes: null, loops: [], retried: [], compute: computeSnapshot(deps, false) });
   return selfAct(snapshot(), async () => snapshot(), selfHands(deps), (entry) => void deps.store.emit(deps.identity, "ledger.recorded", entry));
 }
 
@@ -324,10 +316,6 @@ function selfHands(deps: LoopTaskDeps) {
     retry: (loop: string) => {
       if (!deps.runLoop) throw new Error("loops can't be run from here");
       deps.runLoop(loop);
-    },
-    refreshWeather: async () => {
-      if (!deps.weather) throw new Error("no weather here");
-      await deps.weather.refresh();
     },
     calibrate: async (why: "joined" | "changed") => {
       if (!deps.compute) throw new Error("no compute here");
@@ -342,14 +330,8 @@ function selfHands(deps: LoopTaskDeps) {
 
 /* ---------- his journal (the reflect loop) ---------- */
 
-/** At most this many of the day's finished experiments are read (each one's examination is read from its recording). */
-const JOURNAL_EXPERIMENTS = 20;
-
-/** An examination's opening sentence: what ran and how it ended. */
-const openingSentence = (words: string | undefined): string | null => words?.match(/^.*?[.!?](?=\s|$)/s)?.[0]?.trim() || words?.trim() || null;
-
 /** What his journal reads (reflect.ts cuts it to the last day and the budget, and keeps the bank and secrets out). */
-export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "experiments" | "board" | "log" | "skills">, now: number): JournalInputs {
+export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "board" | "log" | "skills">, now: number): JournalInputs {
   const store = deps.store;
   const since = now - 24 * 60 * 60_000;
   /** A source that can't be read today is left out, and the log says so: the journal is still written. */
@@ -369,16 +351,9 @@ export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "expe
       .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
     runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
     chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
-    experiments: read("the experiments", () =>
-      (deps.experiments?.listing(200).experiments ?? [])
-        .filter((e) => e.endedAt !== null && e.endedAt >= since && e.endedAt <= now)
-        .slice(0, JOURNAL_EXPERIMENTS)
-        .map((e) => ({ endedAt: e.endedAt!, title: e.title, engine: e.engine, status: e.status, examination: openingSentence(deps.experiments!.examination(e.id)?.words) })),
-    ),
     board: read("the chalkboard", () =>
       (deps.board?.history.before(null, 200).versions ?? []).filter((v) => v.at >= since && v.change !== "start").map((v) => ({ at: v.at, by: v.by, summary: v.summary })),
     ),
-    dog: companionOf(store)?.name ?? null,
     skills: read("his skills", () => (deps.skills?.journal(since) ?? []).filter((s) => s.at <= now)),
   };
 }
@@ -449,11 +424,6 @@ export function loopExecutor(deps: LoopTaskDeps) {
       }
       case "reflect":
         return reflect(deps, task.budget ?? REFLECT_BUDGET, ctx.signal);
-      case "review": {
-        if (!deps.review) return { status: "attention", summary: "This node can't review his world." };
-        const { status, summary } = await deps.review(undefined, ctx.signal);
-        return { status, summary };
-      }
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

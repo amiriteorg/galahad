@@ -44,8 +44,6 @@ import {
   type SkillView,
   tidyPlan,
   versionUsable,
-  WORLD_SKILLS_RECENT,
-  type WorldSkills,
 } from "@galahad/core";
 import { type BrainContext, chat } from "@galahad/brain";
 import type { MindStore, SkillRecord, Vault } from "@galahad/mind";
@@ -221,8 +219,6 @@ export interface SkillsDeps {
   /** One answer from that role, stopped once it's `maxChars` long. */
   ask(role: string, prompt: string, maxChars: number, signal?: AbortSignal): Promise<{ text: string; model: string }>;
   now?: () => number;
-  /** Something about his skills changed (the world's shelves follow). */
-  onChange?: () => void;
 }
 
 export class SkillsService {
@@ -253,7 +249,6 @@ export class SkillsService {
   private changed(): void {
     try {
       this.notices();
-      this.deps.onChange?.();
     } catch (error) {
       this.deps.log(`skills: ${(error as Error).message}`);
     }
@@ -411,7 +406,6 @@ export class SkillsService {
       }
     }
     if (!given.length) return null;
-    this.deps.onChange?.();
     return { text: fenceLines(SKILLS_FENCE_WHAT, SKILLS_FENCE, given.map(skillLine), nonce), skills: given.map((s) => ({ id: s.id, title: s.doc.title, trust: s.trust })) };
   }
 
@@ -475,7 +469,6 @@ export class SkillsService {
     this.others.delete(about.ref);
     // Only what the mind now holds is said to have been recorded.
     const used = store.skillsUsedBy(about.ref).map((u) => ({ id: u.skill, title: titles.get(u.skill) ?? u.skill }));
-    if (uses.length) this.deps.onChange?.();
     const nothing = (why: string): SkillLearned => ({ skill: null, revised: false, why, used });
 
     if (evidence.status !== "done") return nothing("only a quest whose review passed teaches a skill");
@@ -572,7 +565,6 @@ export class SkillsService {
       }
     }
     this.notices();
-    if (stale) this.deps.onChange?.();
     return { stale, merges: plan.merges.length };
   }
 
@@ -616,24 +608,7 @@ export class SkillsService {
     reconcile(store, identity, findings, now, "skills");
   }
 
-  // ---- for the world, and his journal -----------------------------------------------------
-
-  /** His skills as the SANDBOX may draw them: how many stand where, and the last few learned or used, by title. */
-  world(): WorldSkills {
-    const { store } = this.deps;
-    const records = store.skills();
-    const views = records.map(skillView);
-    const titles = new Map(views.map((s) => [s.id, s.title]));
-    const recent: WorldSkills["recent"] = [
-      // Only versions he may use: a title that waits for you is drawn nowhere (the world is described to a model when he looks).
-      ...records.flatMap((r) => skillVersions(r).flatMap((v) => (v.doc && versionUsable(v) ? [{ title: v.doc.title, at: v.approvedAt ?? v.at, what: "learned" as const }] : []))),
-      ...store.recentSkillUses(WORLD_SKILLS_RECENT * 2).map((u) => ({ title: titles.get(u.skill) ?? "", at: ms(u.hlc), what: "used" as const })),
-    ]
-      .filter((r) => r.title && !findSecrets(r.title, this.scan).length)
-      .sort((a, b) => b.at - a.at)
-      .slice(0, WORLD_SKILLS_RECENT);
-    return { inUse: views.filter((s) => s.state === "in-use" || s.state === "stale").length, proposed: views.filter((s) => s.state === "proposed").length, retired: views.filter((s) => s.state === "retired").length, recent };
-  }
+  // ---- for his journal ----------------------------------------------------------------------
 
   /** What his journal reads of the last day: each skill written and each one used, by title, with how its quest ended. */
   journal(since: number): { at: number; line: string }[] {

@@ -524,7 +524,7 @@ export function whatMoreBuys(nodes: readonly { name: string; body: ComputeBody; 
     if (after > calls) {
       lines.push(`A quest's model calls go through the node that's asked, ${calls} at once on ${asked.name}: with ${plural(after, "slot")}, model calls ${slots > calls ? "are already" : "would be"} what limits him, not sandboxes. galahad compute limit ${asked.name} --model-calls n raises it.`);
     }
-  } else lines.push("A machine with Docker would give him sandboxes: quests, trials and experiments need one. Enroll it with galahad invite.");
+  } else lines.push("A machine with Docker would give him sandboxes: quests and trials need one. Enroll it with galahad invite.");
   if (!nodes.some((n) => n.body.gpu.length)) lines.push("A node with a GPU would let a local model answer for the swift role (and the Lab's GPU work run), with nothing leaving the fleet.");
   return lines;
 }
@@ -615,6 +615,11 @@ export interface ComputeNodeView {
 }
 
 /** A quest in hand that asked for effort: its attempts, and where each is. */
+/** Where an attempt's work is, in the census's words: at the council (planning), the forge (working in its sandbox), the observatory (being reviewed). */
+export type AttemptStation = "council" | "forge" | "observatory";
+/** An attempt that's made no call for this long, with none under way, has finished (or was abandoned). */
+export const ATTEMPT_IDLE_MS = 3 * 60_000;
+
 export interface EffortWork {
   quest: string;
   label: string;

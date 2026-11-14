@@ -125,7 +125,7 @@ function openCeiling(ctx: Ctx, node: ComputeNodeView, changed: () => void): void
       ),
       cores.el,
       memory.el,
-      body.sandboxHost ? switchControl("Sandboxes on this node", sandboxesOn, (on) => (sandboxesOn = on), { hint: "Off: quests, trials and experiments go to other nodes." }) : null,
+      body.sandboxHost ? switchControl("Sandboxes on this node", sandboxesOn, (on) => (sandboxesOn = on), { hint: "Off: quests and trials go to other nodes." }) : null,
       note,
     ),
     footer: h("div", { class: "row", style: "justify-content:space-between;width:100%" }, reset, save),

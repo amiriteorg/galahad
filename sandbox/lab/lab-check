@@ -167,20 +167,6 @@ def _():
     return close(env.pressure(0), 101325, 1e-6)
 
 
-@check("galahad_world", "a MuJoCo sphere becomes a world body, its pose a unit quaternion")
-def _():
-    import mujoco
-    import galahad_world as gw
-    model = mujoco.MjModel.from_xml_string('<mujoco><worldbody><body pos="0 0 1"><freejoint/><geom name="ball" size=".1"/></body></worldbody></mujoco>')
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
-    scene, poses = gw.mujoco_scene(model), gw.mujoco_poses(model, data)
-    assert scene[0]["shape"] == {"kind": "sphere", "radius": 0.1}, scene
-    pose = poses["ball"]
-    assert abs(sum(c * c for c in pose[3:]) - 1) < 1e-9, pose
-    return close(pose[2], 1.0, 1e-9)
-
-
 @check("CoolProp", "water at 25 °C, 1 atm: ρ ≈ 997.05 kg/m³")
 def _():
     from CoolProp.CoolProp import PropsSI

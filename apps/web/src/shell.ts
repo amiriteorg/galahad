@@ -18,7 +18,6 @@ import { artifactsView } from "./views/artifacts.ts";
 import { archiveView, openNewIdea } from "./views/archive.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
-import { worldView } from "./views/world.ts";
 import { boardView } from "./views/board.ts";
 import { chatActivityPill, chatsForPalette, chatView, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
@@ -60,17 +59,16 @@ const ROUTES: RouteSpec[] = [
   { id: "overview", label: "Overview", icon: "overview", group: "main", scope: null, key: "o", keywords: ["home", "dashboard", "health"], view: overviewView },
   { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
-  { id: "world", label: "SANDBOX", icon: "landscape", group: "main", scope: "mind:read", key: "x", keywords: ["sandbox", "world", "3d", "experiments", "simulation", "galahad", "playground"], view: worldView },
   { id: "team", label: "Squires", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["squires", "team", "teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
   { id: "board", label: "Chalkboard", icon: "board", group: "main", scope: "mind:read", key: "d", keywords: ["whiteboard", "chalk", "draw", "sketch", "board", "notes", "equations", "charts"], view: boardView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
-  { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "dog", "learned", "log"], view: journalView },
+  { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "learned", "log"], view: journalView },
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "skills", label: "Skills", icon: "scroll", group: "mind", scope: "mind:read", key: "u", keywords: ["learn", "learned", "how", "notes", "playbook", "procedures", "know-how", "approve", "proposed", "library"], view: skillsView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },
   { id: "loops", label: "Loops", icon: "repeat", group: "mind", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], view: loopsView },
   { id: "artifacts", label: "Artifacts", icon: "archive", group: "mind", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], view: artifactsView },
-  { id: "archive", label: "Archive", icon: "library", group: "mind", scope: "mind:read", key: "k", keywords: ["kept", "forever", "ideas", "lessons", "experiments", "models", "teachings", "semantic", "search", "vector", "history"], view: archiveView },
+  { id: "archive", label: "Archive", icon: "library", group: "mind", scope: "mind:read", key: "k", keywords: ["kept", "forever", "ideas", "lessons", "models", "teachings", "semantic", "search", "vector", "history"], view: archiveView },
   { id: "findings", label: "Findings", icon: "flask", group: "mind", scope: "mind:read", key: "e", keywords: ["investigations", "experiments", "hypotheses", "science", "conclusions", "predictions"], view: findingsView },
   { id: "trials", label: "Trials", icon: "gauge", group: "mind", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], view: trialsView },
   { id: "fleet", label: "Fleet", icon: "fleet", group: "bodies", scope: "mind:read", key: "f", keywords: ["devices", "nodes", "machines"], view: fleetView },
@@ -85,7 +83,7 @@ const ROUTES: RouteSpec[] = [
 ];
 
 const GROUP_LABEL: Record<RouteSpec["group"], string | null> = { main: null, mind: "Mind", bodies: "Bodies", keys: "Keys & models" };
-const MOBILE_PRIMARY: Route[] = ["world", "team", "chat", "inbox", "overview", "fleet", "activity", "memory"];
+const MOBILE_PRIMARY: Route[] = ["chat", "team", "inbox", "overview", "fleet", "activity", "memory"];
 
 export interface ShellBase {
   api: Api;

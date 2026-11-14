@@ -15,7 +15,6 @@ import {
   layoutItem,
   niceScale,
   noteLines,
-  stationForTool,
   strokeShape,
   tickLabel,
   wrap,
@@ -89,10 +88,6 @@ describe("what the node takes", () => {
     expect(BoardEraseInput.safeParse({}).success).toBe(false);
     expect(BoardEraseInput.safeParse({ items: ["i_abcdefghij"] }).success).toBe(true);
     expect(BoardEraseInput.safeParse({ strokes: ["../../etc"] }).success).toBe(false);
-  });
-
-  test("the board's tools send him to the observatory", () => {
-    for (const name of ["board_write", "board_read", "board_erase"]) expect(stationForTool(name)).toBe("observatory");
   });
 });
 

@@ -17,7 +17,7 @@ import { OFFLINE_AFTER_MS } from "./heartbeat.ts";
  * anything that needs fleet:admin: the hands below are all it has.
  */
 
-/** What the plan reads: this node's own sandboxes, loops and weather. */
+/** What the plan reads: this node's own sandboxes, loops and compute. */
 export interface SelfSnapshot {
   now: number;
   /** This node's sandboxes (null: not a sandbox host, or Docker didn't answer). */
@@ -26,8 +26,6 @@ export interface SelfSnapshot {
   loops: { name: string; readOnly: boolean; running: boolean; recent: { run: string; status: string; finished: number }[] }[];
   /** Failed runs he has already run again (from the ledger), so none is retried twice. */
   retried: string[];
-  /** The world's weather: fetched at all here, someone has the world open, and it's known now. */
-  weather: { enabled: boolean; watched: boolean; known: boolean } | null;
   /** This node's compute (absent: nothing about it is his to fix here). */
   compute?: {
     /** It can measure itself here. */
@@ -49,7 +47,7 @@ export const MAX_SELF_ACTIONS = 8;
 /** A failed run older than this isn't retried (the next scheduled run is near, or it's old news). */
 export const RETRY_WITHIN_MS = 6 * 60 * 60_000;
 
-/** The fixes a snapshot calls for, in order: sandboxes, then loops, then the weather. Pure. */
+/** The fixes a snapshot calls for, in order: sandboxes, then loops, then compute. Pure. */
 export function planSelfActions(s: SelfSnapshot): SelfAction[] {
   const out: SelfAction[] = [];
   for (const box of s.sandboxes ?? []) {
@@ -66,7 +64,6 @@ export function planSelfActions(s: SelfSnapshot): SelfAction[] {
     if (bad(before?.status) || retried.has(last.run) || s.now - last.finished > RETRY_WITHIN_MS) continue;
     out.push({ kind: "retry-loop", loop: loop.name, after: last.run });
   }
-  if (s.weather?.enabled && s.weather.watched && !s.weather.known) out.push({ kind: "refresh-weather" });
   const c = s.compute;
   if (c) {
     // Measured for the first time at once; again when its body, its ceiling or the benchmark changed, but not in a loop: at most once
@@ -84,8 +81,6 @@ export interface SelfActionHands {
   reap(sandbox: string, quest: string): Promise<{ verdict: string; reason: string }>;
   /** Start one run of a loop now (it doesn't count as its scheduled run). */
   retry(loop: string): void;
-  /** Ask for Denmark's weather again (the weather service keeps its own pace). */
-  refreshWeather(): Promise<void>;
   /** Measure this node (a few seconds, low priority, within its ceiling) and record it. */
   calibrate?(why: "joined" | "changed"): Promise<void>;
   /** Record his compute defaults as the mind gives them now; returns what changed, a line each. */
@@ -138,9 +133,6 @@ export async function runSelfAction(raw: unknown, fresh: SelfSnapshot, hands: Se
       }
       case "retry-loop":
         hands.retry(action.loop);
-        break;
-      case "refresh-weather":
-        await hands.refreshWeather();
         break;
       case "calibrate":
         if (!hands.calibrate) throw new Error("this node can't measure itself here");

@@ -14,7 +14,7 @@ import { skillVersions } from "../skills.ts";
  * what arrived late (a memory synced from a node that was offline).
  *
  * Adapters read only through public APIs: the mind's (recall, lww), the chat store's,
- * the artifact store's. Experiments and the chalkboard plug in through `ExternalSource` (archive/external.ts).
+ * the artifact store's. The chalkboard plugs in through `ExternalSource` (archive/external.ts).
  */
 
 export interface Pull {
@@ -344,7 +344,7 @@ export function chatsAdapter(chats: ChatSource, archive: ArchiveLookup, opts: { 
   };
 }
 
-// ---- Experiments and the chalkboard (their sources: archive/external.ts) ------
+// ---- The chalkboard (its source: archive/external.ts) ------
 
 /**
  * What a source outside this module exposes: records since a cursor, and one record's
@@ -390,9 +390,6 @@ function externalAdapter(name: string, kind: string, source: ExternalSource | nu
     },
   };
 }
-
-/** Saved experiments: the recording, the examination and the code, chunked by examination and code. */
-export const experimentsAdapter = (source: ExternalSource | null | undefined): ArchiveAdapter => externalAdapter("experiments", "experiment", source, { trust: "agent", tags: ["experiment"] });
 
 /** The whiteboard: each version of a board, by its description. */
 export const boardsAdapter = (source: ExternalSource | null | undefined): ArchiveAdapter => externalAdapter("boards", "board", source, { trust: "agent", tags: ["board"] });

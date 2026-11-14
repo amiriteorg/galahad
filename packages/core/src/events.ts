@@ -233,11 +233,12 @@ export const Bodies = {
   /** A trial's score, recorded once by the node that ran it; every replica checks it follows from the numbers (trials.ts). */
   "trial.scored": TrialRecord.extend({ id: TrialId }),
   /**
-   * His dog's name, as the owner gave it (LWW; companion.ts). Loose in the log, so a name a newer node allows
-   * never makes an older one refuse the event; the API checks it strictly, and so does whoever reads it.
+   * Retired kinds: the name of the dog he had in the 3D world, which was removed on 14 November 2026. Nothing
+   * writes or reads them any more, but a fleet's log may hold them, and every replica must fold that log to the
+   * same state: so they are still known and still folded exactly as they were (the mind's store.ts), never
+   * dropped to "unknown". A replica upgraded in place, one rebuilt and one on the older version then agree.
    */
   "companion.named": z.strictObject({ name: z.string().min(1).max(64) }),
-  /** The owner took the name back: it's "the dog" again. */
   "companion.unnamed": z.strictObject({}),
   /**
    * A trial run's settings (its effort: attempts per trial), recorded once when it starts by the node that

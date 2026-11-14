@@ -50,7 +50,6 @@ interface Rig {
   answer: { text: string; model?: string } | Error;
   role: string | null;
   now: number;
-  changes: number;
   log: string[];
   /** As the sandbox host would: the ledger's line for a quest's sandbox. */
   sandbox(quest: string, network: string): void;
@@ -76,7 +75,6 @@ function rig(): Rig {
     set now(value: number) {
       now = value;
     },
-    changes: 0,
     log: [],
     sandbox: (quest, network) => ledger({ class: "create", resource: "docker.container", target: `galahad-sbx-${quest}`, verdict: "allow", quest, detail: `container · ${network} · 4 cpu · 8 GB · 20 GB disk · galahad/workshop:1` }),
     ledger: () => store.ledger(200).map((e) => ({ resource: e.body.resource, target: e.body.target, detail: e.body.detail })),
@@ -94,7 +92,6 @@ function rig(): Rig {
       return { text: r.answer.text, model: r.answer.model ?? "stand-in/swift" };
     },
     now: () => now,
-    onChange: () => void (r.changes += 1),
   };
   r.skills = new SkillsService(deps);
   return r;
@@ -737,34 +734,7 @@ describe("the tidy-up, with the heartbeat", () => {
   });
 });
 
-describe("for the world and his journal", () => {
-  test("the world gets counts and the last few titles learned or used, nothing of a skill's steps", async () => {
-    const r = rig();
-    expect(r.skills.world()).toEqual({ inUse: 0, proposed: 0, retired: 0, recent: [] });
-    const skill = (await learn(r)).skill!;
-    const learnedAt = r.now;
-    r.now += 60_000;
-    r.answer = { text: reply({ title: "Found online" }) };
-    await learn(r, evidence({ quest: "q-online", network: "online", goal: "something else" }), "online");
-    r.now += 60_000;
-    r.skills.forQuest("q-2", "fix the failing parser test");
-    r.now += 60_000;
-    const retired = r.skills.write({ doc: doc("An old way") }, { kind: "owner" }).skill;
-    r.skills.mark(retired.id, "retired", true);
-    const world = r.skills.world();
-    expect(world).toMatchObject({ inUse: 1, proposed: 1, retired: 1 });
-    // The proposed one is counted, and its title is nowhere: the world is described to a model when he looks.
-    expect(world.recent).toEqual([
-      { title: "An old way", at: learnedAt + 180_000, what: "learned" },
-      { title: "Fix a failing parser test", at: learnedAt + 120_000, what: "used" },
-      { title: "Fix a failing parser test", at: learnedAt, what: "learned" },
-    ]);
-    expect(JSON.stringify(world)).not.toContain("Found online");
-    expect(JSON.stringify(world)).not.toContain("run the parser tests");
-    expect(skill.id.startsWith("sk_")).toBe(true);
-    expect(r.changes).toBeGreaterThan(3);
-  });
-
+describe("for his journal", () => {
   test("his journal reads each skill learned, proposed and used in the day, by title", async () => {
     const r = rig();
     const start = r.now;
@@ -787,7 +757,7 @@ describe("for the world and his journal", () => {
     expect(lines.join("\n")).not.toContain("Found online");
     expect(r.skills.journal(r.now + 1)).toEqual([]);
     // And they're in what he reads, under their own heading, in the order the day went.
-    const { sections } = journalLines({ now: r.now, ledger: [], notices: [], runs: [], chats: [], experiments: [], board: [], dog: null, skills: r.skills.journal(start - 1) });
+    const { sections } = journalLines({ now: r.now, ledger: [], notices: [], runs: [], chats: [], board: [], skills: r.skills.journal(start - 1) });
     const section = sections["Your skills, learned and used"]!;
     expect(section).toHaveLength(4);
     expect(section[0]).toMatch(/^\d\d:\d\d you learned the skill "Fix a failing parser test" from quest q-1$/);

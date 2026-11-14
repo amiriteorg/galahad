@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { bodyFingerprint, type Calibration, ceilingThreads, type ChatStreamEvent, type LedgerEntry, type LoopRunView, REFERENCE_SINGLE, routes, type RouteName, SKILL_DISTIL_RESOURCE, type SkillDetail, type SkillsView, type SkillView, type WorldEvent } from "@galahad/core";
+import { bodyFingerprint, type Calibration, ceilingThreads, type ChatStreamEvent, type LedgerEntry, type LoopRunView, REFERENCE_SINGLE, routes, type RouteName, SKILL_DISTIL_RESOURCE, type SkillDetail, type SkillsView, type SkillView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import type { Measure } from "../src/compute/service.ts";
@@ -454,17 +454,11 @@ describe("his learning loop, on a real node", () => {
     expect(archived).not.toContain('"kind":"skill"');
   }, 60_000);
 
-  test("the world is told how many skills stand where and the last few titles; his journal reads the day's", async () => {
-    const hello = daemon.world.hello() as Extract<WorldEvent, { type: "hello" }>;
-    expect(hello.skills!.inUse).toBe(1);
-    expect(hello.skills!.proposed).toBe(0);
-    expect(hello.skills!.retired).toBeGreaterThanOrEqual(5);
-    expect(hello.skills!.recent.length).toBeGreaterThan(0);
-    expect(hello.skills!.recent.length).toBeLessThanOrEqual(6);
-    expect(hello.skills!.recent.every((r) => Object.keys(r).join() === "title,at,what")).toBe(true);
-    expect(JSON.stringify(hello.skills)).not.toContain("write the greeting into the file");
+  test("after all that: one skill in use (the one he learned), none waiting, the rest retired", async () => {
     const reads = (await call<SkillsView>("skills")).skills;
     expect(reads.filter((s) => s.state === "in-use").map((s) => s.id)).toEqual([learnedId]);
+    expect(reads.filter((s) => s.state === "proposed")).toEqual([]);
+    expect(reads.filter((s) => s.state === "retired").length).toBeGreaterThanOrEqual(5);
   });
 });
 

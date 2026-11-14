@@ -26,7 +26,7 @@ const SHARED = String.raw`import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-# Every variable a gateway lease puts in a sandbox's environment.
+# Every variable a gateway lease puts in a sandbox's environment (GALAHAD_WORLD: only in sandboxes made before 14 November 2026).
 GATEWAY_VARS = ("GALAHAD_GATEWAY", "GALAHAD_TOKEN", "GALAHAD_REPO_URL", "GALAHAD_SEARCH", "GALAHAD_WORLD",
                 "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
 # These tools print a whole tool result on one line. A line past this is dropped whole, never cut.

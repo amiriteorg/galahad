@@ -28,8 +28,7 @@ import { toast } from "../ui/toast.ts";
 /*
  * The chalkboard you share with Galahad: you draw (a finger, a pen with its
  * pressure, the mouse), he writes (text, notes, equations, charts), live, on
- * the same board. Its own page (#/board) and a sheet over the SANDBOX (full
- * screen on a phone). One finger (or the pen, or the mouse) draws; two fingers
+ * the same board, on its own page (#/board). One finger (or the pen, or the mouse) draws; two fingers
  * move and zoom the view and never draw; once a pen has touched it, a finger
  * only moves the view (a resting palm draws nothing). Strokes are smoothed as
  * they come and sent on pen-up, a few at a time; one that can't reach the node
@@ -39,8 +38,8 @@ import { toast } from "../ui/toast.ts";
  * description.
  */
 
-/** Board versions as they're announced (the world's stream says when the board changes). */
-export interface BoardFeed {
+/** Board versions as they're announced. */
+interface BoardFeed {
   subscribe(fn: (version: number) => void): () => void;
 }
 
@@ -55,7 +54,7 @@ const SNAPSHOT_AFTER_MS = 1500;
 
 /** The board's own page. */
 export const boardView: View = (root, ctx, { scope }) => {
-  const board = createBoard(ctx, scope, { feed: worldFeed(ctx, scope) });
+  const board = createBoard(ctx, scope, { feed: versionFeed(ctx, scope) });
   replace(
     root,
     h(
@@ -71,36 +70,24 @@ export const boardView: View = (root, ctx, { scope }) => {
   );
 };
 
-/** Over the SANDBOX: a sheet, full screen on a phone; the world's own stream says when the board changes. */
-export function openBoardSheet(ctx: Ctx, feed: BoardFeed): void {
-  const sheet = openSheet({ title: "Chalkboard", description: "Yours and Galahad's. Two fingers move the view.", size: "full" });
-  const board = createBoard(ctx, sheet.scope, { feed });
-  sheet.body.classList.add("board-sheet-body");
-  sheet.body.append(board.el);
-  board.focus();
-}
+/** How often the page asks the node for the board's latest version. */
+const FEED_MS = 3000;
 
-/** The world's stream, for the board's changes only (the page's own, when the SANDBOX isn't open). Reconnects. */
-function worldFeed(ctx: Ctx, scope: Scope): BoardFeed {
+/** The board's latest version, asked for every few seconds while the page is open (the latest line of its history: a few bytes). */
+function versionFeed(ctx: Ctx, scope: Scope): BoardFeed {
   const subs = new Set<(version: number) => void>();
-  void (async () => {
-    let wait = 2000;
-    while (!scope.disposed) {
-      try {
-        for await (const raw of ctx.api.stream("/api/world", scope.signal)) {
-          wait = 2000;
-          const e = raw as { type?: unknown; version?: unknown; board?: { version?: unknown } };
-          const version = e.type === "board" ? e.version : e.type === "hello" ? e.board?.version : undefined;
-          if (typeof version === "number" && Number.isFinite(version)) for (const fn of subs) fn(version);
-        }
-      } catch {
-        /* the node is away: try again */
-      }
-      if (scope.disposed) return;
-      await new Promise((resolve) => setTimeout(resolve, wait));
-      wait = Math.min(30_000, wait * 2);
-    }
-  })();
+  const timer = setInterval(() => {
+    void ctx.api
+      .post<{ versions: BoardVersionInfo[] }>("/api/board/history", { limit: 1 }, scope.signal)
+      .then(({ versions }) => {
+        const version = versions[0]?.version;
+        if (typeof version === "number" && Number.isFinite(version)) for (const fn of subs) fn(version);
+      })
+      .catch(() => {
+        /* the node is away: the next tick asks again */
+      });
+  }, FEED_MS);
+  scope.add(() => clearInterval(timer));
   return {
     subscribe(fn) {
       subs.add(fn);
@@ -771,23 +758,3 @@ function openHistory(ctx: Ctx, opts: { canRestore: boolean; onRestored: () => vo
 
   void page();
 }
-
-/** For the world page: a feed it fills from its own stream. */
-export function boardFeed(): BoardFeed & { announce(version: number): void } {
-  const subs = new Set<(version: number) => void>();
-  return {
-    subscribe(fn) {
-      subs.add(fn);
-      return () => subs.delete(fn);
-    },
-    announce(version) {
-      for (const fn of subs) fn(version);
-    },
-  };
-}
-
-/** What the world shows on its board's face: the node's board, read at the boundary (null: none to show). */
-export async function fetchBoard(ctx: Ctx, signal?: AbortSignal): Promise<BoardView | null> {
-  return readBoard(await ctx.api.get("/api/board", signal));
-}
-

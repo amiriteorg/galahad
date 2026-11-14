@@ -11,7 +11,7 @@ export interface CompletionInput {
   effort: Effort;
   signal?: AbortSignal;
   fetch?: typeof fetch;
-  /** Pictures that go with the last user message, for a model that sees (a review of his world through his eyes): data, never instructions. */
+  /** Pictures that go with the last user message, for a model that sees: data, never instructions. */
   images?: ToolImage[];
 }
 
@@ -35,8 +35,8 @@ export interface ToolCall {
 }
 
 /**
- * A picture a tool hands back (the chalkboard as the owner sees it, a frame from
- * his eyes), and what to say instead to a model that can't see it.
+ * A picture a tool hands back (the chalkboard as the owner sees it), and what to
+ * say instead to a model that can't see it.
  */
 export interface ToolImage {
   mediaType: "image/png" | "image/jpeg" | "image/webp";

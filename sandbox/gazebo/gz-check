@@ -3,7 +3,7 @@
 
 A box dropped in vacuum, stepped 1000 times at 1 ms by DART: it falls
 g·dt²·n(n+1)/2 = 4.9099 m (the integrator's exact answer; g/2 = 4.905 in the
-limit). Then galahad_world turns a world's visuals into bodies.
+limit).
 
     gz-check           a table, exit 1 if anything failed
 """
@@ -44,15 +44,7 @@ def free_fall():
     return f"fell {fell:.4f} m"
 
 
-def scene():
-    import galahad_world as gw
-
-    bodies, attach = gw.gazebo_scene(WORLD)
-    assert bodies == [{"id": "box::link::v", "shape": {"kind": "box", "size": [0.1, 0.1, 0.1]}}], bodies
-    return "1 body"
-
-
-CHECKS = [("Gazebo free fall", "1000 steps of 1 ms: 4.9099 m", free_fall), ("galahad_world", "an SDF visual becomes a world body", scene)]
+CHECKS = [("Gazebo free fall", "1000 steps of 1 ms: 4.9099 m", free_fall)]
 
 
 def main():

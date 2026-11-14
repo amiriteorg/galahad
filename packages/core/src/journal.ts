@@ -1,9 +1,8 @@
 import { isHlc } from "./hlc.ts";
 
 /*
- * His journal. Every evening (21:30 in Denmark) Galahad sits down at his desk in the
- * SANDBOX and recollects the day: a short piece of prose in his own voice, then what
- * he learned and what he'd like to do next. The node's `reflect` loop writes it
+ * His journal. Every evening (21:30 in Denmark) Galahad recollects the day: a short
+ * piece of prose in his own voice, then what he learned and what he'd like to do next. The node's `reflect` loop writes it
  * (packages/node/src/reflect.ts) and keeps it as one memory a Danish day: its text
  * starts "Journal, <day>:", its tags are `journal`, `reflection` and `day:<day>`.
  * Before the journal he kept a daily reflection ("Reflection on <day>:", tagged
@@ -36,6 +35,20 @@ export const REFLECTION_TAG = "reflection";
 /** The provenance source of a memory the loop kept: nothing else writes with it, so nothing else passes for his journal. */
 export const JOURNAL_SOURCE = "reflection";
 export const JOURNAL_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const PARTS = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+const MIN = 60_000;
+
+/** Denmark's wall clock at an instant: the date (what an entry is about), and when its midnight was (ms). */
+export function danishDate(now: number): { day: string; midnight: number } {
+  const p: Record<string, number> = {};
+  for (const part of PARTS.formatToParts(now)) if (part.type !== "literal") p[part.type] = Number(part.value);
+  const wall = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!);
+  // The zone's offset now (whole minutes), and so its midnight on this day.
+  const offset = Math.round((wall - Math.floor(now / 1000) * 1000) / MIN) * MIN;
+  const day = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+  return { day, midnight: Date.UTC(p.year!, p.month! - 1, p.day!) - offset };
+}
 
 export const journalHeading = (day: string): string => `Journal, ${day}:`;
 export const journalTags = (day: string): string[] => [JOURNAL_TAG, REFLECTION_TAG, `day:${day}`];

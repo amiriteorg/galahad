@@ -3,7 +3,6 @@ import {
   actionItem,
   alertReserve,
   conversationFromHash,
-  experimentItem,
   GENERIC_NOTIFICATION,
   inQuietHours,
   journalItem,
@@ -126,7 +125,7 @@ describe("what a notification may say", () => {
     expect(turnItem({ ...base, conversation: "not-a-chat" })).toBeNull();
   });
 
-  test("a quest you started, said as it ended; one you stopped isn't news; an experiment without its script's title; the journal's day", () => {
+  test("a quest you started, said as it ended; one you stopped isn't news; the journal's day", () => {
     expect(questItem({ quest: "q-abc", goal: "Tidy the repo's README", state: "done" })).toMatchObject({ key: "quest:q-abc", kind: "finished", title: "Quest done", body: "“Tidy the repo's README”", open: "overview" });
     expect(questItem({ quest: "q-abc", goal: "x", state: "unverified" })!.title).toBe("Quest ended unverified");
     expect(questItem({ quest: "q-abc", goal: "x", state: "gave-up" })!.title).toBe("Quest gave up");
@@ -134,7 +133,6 @@ describe("what a notification may say", () => {
     expect(questItem({ quest: "q-abc", goal: "x", state: "stopped" })).toBeNull();
     expect(questItem({ quest: "q-abc", goal: "x", state: "working" })).toBeNull();
     expect(questItem({ quest: "q-abc", goal: "Reconcile the bank transactions with the ledger", state: "done" })!.body).toBe("A quest you started has ended.");
-    expect(experimentItem({ id: "x-1", status: "failed" })).toMatchObject({ kind: "finished", title: "Experiment failed" });
     expect(journalItem("2026-11-12")).toMatchObject({ key: "journal:2026-11-12", kind: "journal", title: "His journal is written", body: "Thursday 12 November 2026", open: "journal" });
     expect(journalItem("yesterday")).toBeNull();
   });

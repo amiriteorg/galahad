@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cleanSkillText, plainDeep, plainLine, plainStream, plainText } from "../src/index.ts";
+import { cleanSkillText, plainLine, plainStream, plainText } from "../src/index.ts";
 
 /* Words as written, with nothing in them that hides, reorders or steers (plain.ts). */
 
@@ -50,13 +50,6 @@ describe("plain text", () => {
       expect(plainText(words)).toBe(words);
       expect(plainLine(words)).toBe(words);
     }
-  });
-
-  test("a record that is only shown: every string in it, at any depth, is one plain line; numbers, flags and keys are untouched", () => {
-    const event = { type: "hello", at: 5, galahad: { doing: "At the\u001b[2J keep\nnow", idle: true, model: null }, thoughts: ["one\rtwo", "\u202ethree"], partners: [{ name: "Galahad · Ada\u0007", since: 1 }] };
-    expect(plainDeep(event)).toEqual({ type: "hello", at: 5, galahad: { doing: "At the[2J keep now", idle: true, model: null }, thoughts: ["one two", "three"], partners: [{ name: "Galahad · Ada", since: 1 }] });
-    expect(plainDeep(null)).toBeNull();
-    expect(plainDeep(undefined)).toBeUndefined();
   });
 
   test("a skill's text is kept by the same rule", () => {

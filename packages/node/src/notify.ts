@@ -1,6 +1,5 @@
 import {
   actionItem,
-  experimentItem,
   inQuietHours,
   isP256Point,
   fromB64u,
@@ -39,7 +38,7 @@ import type { LiveTurn } from "./turns.ts";
  * He comes to you. The node's own events become notifications on the owner's paired
  * devices, through one door: `tick()`. It looks at what stands (findings that need you,
  * approvals waiting, keys he asked for, today's journal) and at what happened (a turn
- * that ended unwatched, a quest or experiment you started), asks the pure rules in
+ * that ended unwatched, a quest you started), asks the pure rules in
  * core's notify.ts what may be told now, and delivers that as one message a device.
  *
  * Nothing else raises one. There is no route, tool or event that carries a title or a
@@ -160,7 +159,7 @@ export class NotifyService {
     return (this.tagSalt = salt);
   }
 
-  /* ---------- what happened: turns that end unwatched, quests and experiments you started ---------- */
+  /* ---------- what happened: turns that end unwatched, quests you started ---------- */
 
   /** Called every second: follows each running turn to its end, remembering whether anyone was watching. */
   lookAtTurns(): void {
@@ -221,14 +220,6 @@ export class NotifyService {
       this.o.db.addPending(item);
       this.nudge();
     }
-  }
-
-  /** An experiment you started yourself has ended (the route that ran it says so). */
-  experimentEnded(id: string, status: "done" | "failed"): void {
-    const item = experimentItem({ id, status });
-    if (!item || this.stopped) return;
-    this.o.db.addPending(item);
-    this.nudge();
   }
 
   /* ---------- the one door ---------- */

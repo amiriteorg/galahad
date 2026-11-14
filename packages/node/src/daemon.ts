@@ -16,42 +16,34 @@ import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, experimentsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
-import { boardSource, experimentSource } from "./archive/external.ts";
+import { artifactsAdapter, boardsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
+import { boardSource } from "./archive/external.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
 import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
-import { BoardStore, writeOnBoard } from "./board.ts";
-import { writeUpExaminations } from "./board-examination.ts";
+import { BoardStore } from "./board.ts";
 import { ChatStore } from "./chats.ts";
 import { TeamStore } from "./team-store.ts";
 import type { TeamService } from "./team.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
 import { QuestBoard } from "./quests.ts";
 import { skillAsker, SkillsService } from "./skills.ts";
-import { WorldHub } from "./world-hub.ts";
-import { ExperimentStore } from "./experiment-store.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { ConnectorService } from "./connectors.ts";
 import { loopNotice } from "./heartbeat.ts";
-import { heartbeatView } from "./heartbeat-world.ts";
-import { companionOf } from "./journal.ts";
 import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
 import { shipNative } from "./ship.ts";
-import { WeatherService } from "./weather.ts";
-import { Eyes, EyesStore } from "./eyes.ts";
 import { type DoctorDeps, type DoctorOptions, type DoctorRun, type DoctorSystem, heartbeatFromDoctor, noSystem, realSystem, runDoctor, TroubleLog } from "./doctor-facts.ts";
 import { NotifyService } from "./notify.ts";
 import { NotifyStore } from "./notify-store.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
 import { journalEntries } from "./journal.ts";
-import { ReviewState, worldReviewer } from "./world-review.ts";
 
 export interface Daemon {
   port: number;
@@ -63,9 +55,7 @@ export interface Daemon {
   connectors: ConnectorService;
   artifacts: ArtifactStore;
   bank: BankService;
-  /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
-  world: WorldHub;
-  /** The chalkboard you and Galahad share (writeOnBoard in board.ts writes on it from the node). */
+  /** The chalkboard you and Galahad share. */
   board: BoardStore;
   /** The archive: everything kept for good, and searched by words and meaning. */
   archive: ArchiveService;
@@ -93,8 +83,6 @@ export interface DaemonOptions {
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
-  /** Fetch Denmark's weather for the SANDBOX while someone watches it (default off; `galahad serve` turns it on unless GALAHAD_WEATHER=off). */
-  weather?: boolean;
   /** How often the archive's background work runs (default 20 s); false: never by itself (tests drive it). */
   archiveIntervalMs?: number | false;
   /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
@@ -145,7 +133,7 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
 }
 
 /**
- * And his journal, once, the same way: every evening in Denmark (21:30, as he sits down to it in the SANDBOX), on
+ * And his journal, once, the same way: every evening in Denmark (21:30), on
  * the node that runs the heartbeat (an always-on one). Never again after that, so a journal you removed stays
  * removed. The loop and its task are still named `reflect`: it was his daily reflection first, and fleets that
  * have that loop keep it as it is.
@@ -280,7 +268,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     capacity: () => computeService!.selfCapacity(),
     host: opts.hostLoad ?? (opts.capabilities ? () => null : liveHost),
     ...(opts.slotWaitMs ? { maxWaitMs: opts.slotWaitMs } : {}),
-    onChange: () => computeService?.changed(),
   });
 
   // Sandbox host: only when Docker is reachable on this machine.
@@ -360,33 +347,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ...opts.turnLimits,
     },
   });
-  // Every experiment the world shows is saved here, node-local (its view, readouts, recording, code).
-  const experiments = new ExperimentStore({ dir: home.experimentsDir, log });
-  const world = new WorldHub({ store: experiments });
-  const weather = new WeatherService({
-    enabled: opts.weather ?? false,
-    wanted: () => world.watching > 0,
-    onChange: () => world.weatherChanged(),
-    log,
-  });
-  world.setWeather(
-    () => weather.current(),
-    () => void weather.refresh(),
-  );
-  const board = new BoardStore({ dir: join(home.dir, "boards"), log, onChange: (change) => world.boardChanged(change) });
-  world.setBoard(() => board.version);
-  // His eyes (eyes.ts): the last few frames a page rendered, node-local in the home, never the mind's log.
-  const eyes = new Eyes({ store: new EyesStore({ dir: join(home.dir, "eyes"), log }), world, weather: () => weather.current(), dog: () => companionOf(store)?.name ?? null });
-  const reviewState = new ReviewState(join(home.dir, "eyes"));
-  // An experiment's examination, written up on the chalkboard at the observatory where it's examined: each in place
-  // of the last write-up (the board's history keeps every one), so the board doesn't fill with them.
-  world.onExamine(
-    writeUpExaminations(
-      (input) => writeOnBoard({ board, world }, input),
-      () => board.view().items,
-      log,
-    ),
-  );
+  const board = new BoardStore({ dir: join(home.dir, "boards"), log });
   // ---- The archive: node-local, its own database and blob store in the home, never the mind's log.
   const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
   const archive = new ArchiveService({
@@ -403,9 +364,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       trialsAdapter(store),
       artifactsAdapter(artifacts),
       chatsAdapter(chats, { has: (s, id) => archiveStore.has(s, id), sourceIds: (s, prefix) => archiveStore.sourceIds(s, prefix) }),
-      // Every finished experiment (its recording streamed from disk), and the chalkboard's versions (a run of
-      // strokes as one; each as trusted as the least trusted hand on it): archive/external.ts.
-      experimentsAdapter(experimentSource(experiments)),
+      // The chalkboard's versions (a run of strokes as one; each as trusted as the least trusted hand on it):
+      // archive/external.ts.
       boardsAdapter(boardSource(board)),
       // His skills (skills.ts): each version, once it's his to use.
       skillsAdapter(store),
@@ -467,34 +427,17 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     execute: loopExecutor(taskDeps),
     onFinished: (loop, result) => {
       if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
-      // His heartbeat in the world: it beat, and what still needs you.
-      if (loop.task.kind === "heartbeat" || loop.task.kind === "reflect") world.heartbeatChanged();
     },
   });
   // Self-action's hands, and what his journal reads.
   taskDeps.runLoop = (name) => void loops.runNow(name);
   taskDeps.isRunning = (name) => loops.isRunning(name);
-  taskDeps.weather = { enabled: opts.weather ?? false, watched: () => world.watching > 0, known: () => weather.current() !== null, refresh: () => weather.refresh() };
   taskDeps.chats = chats;
-  taskDeps.experiments = experiments;
   taskDeps.board = board;
-  // His review of his own world (world-review.ts): the owner's to start, or a loop's the owner set up.
-  const reviewWorld = worldReviewer({ store, vault, identity, eyes, state: reviewState, noteIdea: (input) => archive.noteIdea(input, { trust: "agent", who: "arm:galahad" }), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
-  taskDeps.review = reviewWorld;
-  world.setHeartbeat(() => heartbeatView(store));
-  // His dog's name, from the mind: every node's world shows the same one.
-  world.setCompanion(() => companionOf(store));
-  // The world shows each node's slots and his helpers at work.
-  world.setCompute(() => compute.worldView());
-  compute.onChange(() => world.computeChanged());
-  // The quests in hand, on his slate at the council table (world-quest.ts): the world hears of every report.
+  // The quests in hand on this node, as whoever runs each reports them (quests.ts).
   const quests = new QuestBoard();
-  world.setQuests(() => quests.world());
-  quests.onChange(() => world.questsChanged());
-  // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat;
-  // the world hears of each one learned or used (the books on his library's shelves).
-  const skills = new SkillsService({ store, identity, log, ledger, role: () => cheapestRole(taskDeps), ask: skillAsker({ store, vault, governor, fetch: opts.fetch, spent: upkeepSpent }), onChange: () => world.skillsChanged() });
-  world.setSkills(() => skills.world());
+  // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat.
+  const skills = new SkillsService({ store, identity, log, ledger, role: () => cheapestRole(taskDeps), ask: skillAsker({ store, vault, governor, fetch: opts.fetch, spent: upkeepSpent }) });
   taskDeps.skills = skills;
 
   // ---- Notifications: he comes to you, on your own paired devices. Node-local: its own private database in the
@@ -596,10 +539,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     turns,
     team,
     quests,
-    world,
     board,
-    eyes,
-    review: { run: reviewWorld, state: reviewState },
     archive,
     skills,
     usage,
@@ -685,7 +625,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectors,
     artifacts,
     bank,
-    world,
     board,
     archive,
     compute,
@@ -715,9 +654,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await notify.stop();
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
       await archive.stop();
-      world.close();
-      eyes.close();
-      weather.close();
       await loops.stop();
       await connectors.drain();
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);
@@ -730,7 +666,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       chats.close();
       team.store.close();
       archiveStore.close(); // requests may still have been searching it
-      experiments.close(); // flushes what requests wrote, so after them
       local.close();
       store.close();
     },

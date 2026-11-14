@@ -13,7 +13,7 @@ import { type LedgerWrite, MAX_SELF_ACTIONS, planSelfActions, RETRY_WITHIN_MS, r
 const NOW = Date.parse("2026-11-11T12:00:00Z");
 const MIN = 60_000;
 
-const calm = (over: Partial<SelfSnapshot> = {}): SelfSnapshot => ({ now: NOW, sandboxes: [], loops: [], retried: [], weather: null, ...over });
+const calm = (over: Partial<SelfSnapshot> = {}): SelfSnapshot => ({ now: NOW, sandboxes: [], loops: [], retried: [], ...over });
 const overdue = (id: string, extra: Partial<{ ephemeral: boolean; expiresAt: number; quest: string }> = {}) => ({ id, expiresAt: NOW - OFFLINE_AFTER_MS - MIN, ephemeral: true, quest: "q-abc", ...extra });
 const failedOnce = (name = "site", extra: Partial<SelfSnapshot["loops"][number]> = {}) => ({
   name,
@@ -35,7 +35,6 @@ function hands() {
       return decide({ class: "delete", resource: "docker.container", target: sandbox, createdBy: { quest, ephemeral: true }, quest });
     },
     retry: (loop) => void did.push(`retry ${loop}`),
-    refreshWeather: async () => void did.push("weather"),
   };
   return { did, h };
 }
@@ -78,14 +77,6 @@ describe("what the plan calls for", () => {
     expect(planSelfActions(calm({ loops: [failedOnce("site", { recent: [{ run: "s1", status: "interrupted", finished: NOW - MIN }] })] }))).toEqual([]);
   });
 
-  test("the world's weather, only while someone has the world open and it isn't known", () => {
-    expect(planSelfActions(calm({ weather: { enabled: true, watched: true, known: false } }))).toEqual([{ kind: "refresh-weather" }]);
-    expect(planSelfActions(calm({ weather: { enabled: true, watched: false, known: false } }))).toEqual([]);
-    expect(planSelfActions(calm({ weather: { enabled: true, watched: true, known: true } }))).toEqual([]);
-    // GALAHAD_WEATHER=off: never asked.
-    expect(planSelfActions(calm({ weather: { enabled: false, watched: true, known: false } }))).toEqual([]);
-  });
-
   test("at most a handful after one heartbeat", () => {
     const many = Array.from({ length: 20 }, (_, i) => overdue(`b${String(i).padStart(9, "0")}`));
     expect(planSelfActions(calm({ sandboxes: many }))).toHaveLength(MAX_SELF_ACTIONS);
@@ -93,8 +84,8 @@ describe("what the plan calls for", () => {
 });
 
 describe("the allowlist", () => {
-  test("is exactly five kinds, none outward, none needing you", () => {
-    expect(SELF_ACTION_KINDS.sort()).toEqual(["adapt-compute", "calibrate", "reap-sandbox", "refresh-weather", "retry-loop"]);
+  test("is exactly four kinds, none outward, none needing you", () => {
+    expect(SELF_ACTION_KINDS.sort()).toEqual(["adapt-compute", "calibrate", "reap-sandbox", "retry-loop"]);
     for (const kind of SELF_ACTION_KINDS) expect(["read", "create", "modify", "delete"]).toContain(SELF_ACTIONS[kind].class);
     // The only delete is the oath's own exception: an ephemeral sandbox, on behalf of its quest.
     expect(SELF_ACTION_KINDS.filter((k) => SELF_ACTIONS[k].class === "delete")).toEqual(["reap-sandbox"]);
@@ -103,7 +94,7 @@ describe("the allowlist", () => {
   test("refuses everything else: other kinds, extra fields, other targets", async () => {
     const { did, h } = hands();
     const ledger: LedgerWrite[] = [];
-    const fresh = calm({ sandboxes: [overdue("a000000001")], loops: [failedOnce()], weather: { enabled: true, watched: true, known: false } });
+    const fresh = calm({ sandboxes: [overdue("a000000001")], loops: [failedOnce()] });
     const outside = [
       { kind: "dismiss-notice", key: "node-offline:n_x" },
       { kind: "revoke-device", device: "n_x" },
@@ -115,7 +106,8 @@ describe("the allowlist", () => {
       { kind: "reap-sandbox", sandbox: "a000000001", approvedBy: "owner" },
       { kind: "reap-sandbox", sandbox: "../../etc" },
       { kind: "retry-loop", loop: "site", after: "s1", task: { kind: "quest" } },
-      { kind: "refresh-weather", url: "https://example.org" },
+      // A kind the allowlist once had (the removed world's weather) is refused like any other.
+      { kind: "refresh-weather" },
       // Compute: he measures and re-derives; he never acquires, installs, downloads, hires or raises his own ceiling.
       { kind: "rent-gpu", provider: "anywhere", hours: 1 },
       { kind: "provision-node", cloud: "any" },
@@ -146,7 +138,6 @@ describe("the allowlist", () => {
       { kind: "reap-sandbox", sandbox: "a00000000f" },
       { kind: "retry-loop", loop: "quest", after: "s1" },
       { kind: "retry-loop", loop: "site", after: "s0" },
-      { kind: "refresh-weather" },
     ]) {
       await expect(runSelfAction(action, fresh, h, (e) => void ledger.push(e))).rejects.toBeInstanceOf(SelfActionRefused);
     }
@@ -159,15 +150,14 @@ describe("each fix", () => {
   test("is carried out by one hand, through the node's own gate, and recorded in the ledger as his own", async () => {
     const { did, h } = hands();
     const ledger: LedgerWrite[] = [];
-    const fresh = calm({ sandboxes: [overdue("a000000001")], loops: [failedOnce()], weather: { enabled: true, watched: true, known: false } });
+    const fresh = calm({ sandboxes: [overdue("a000000001")], loops: [failedOnce()] });
     const outcomes = await selfAct(fresh, async () => fresh, h, (e) => void ledger.push(e));
-    expect(did).toEqual(["reap a000000001 for q-abc", "retry site", "weather"]);
-    expect(outcomes.map((o) => o.ok)).toEqual([true, true, true]);
-    expect(outcomes.map((o) => o.title)).toEqual(["Removed sandbox a000000001, which had outlived its time", "Ran loop site again after one bad run", "Asked again for Denmark's weather"]);
+    expect(did).toEqual(["reap a000000001 for q-abc", "retry site"]);
+    expect(outcomes.map((o) => o.ok)).toEqual([true, true]);
+    expect(outcomes.map((o) => o.title)).toEqual(["Removed sandbox a000000001, which had outlived its time", "Ran loop site again after one bad run"]);
     expect(ledger.map((e) => [e.class, e.resource, e.target, e.verdict, e.quest])).toEqual([
       ["delete", SELF_ACTION_RESOURCE, "reap-sandbox:a000000001", "allow", SELF_ACTION_QUEST],
       ["read", SELF_ACTION_RESOURCE, "retry-loop:site:s1", "allow", SELF_ACTION_QUEST],
-      ["read", SELF_ACTION_RESOURCE, "refresh-weather:copenhagen", "allow", SELF_ACTION_QUEST],
     ]);
     // The retried run is read back from the ledger, so the next heartbeat leaves it alone.
     expect(retriedRuns(ledger.map((e) => e.target))).toEqual(["s1"]);
@@ -191,7 +181,6 @@ describe("each fix", () => {
       // The host's gate as if the sandbox were persistent after all.
       reap: async (sandbox, quest) => decide({ class: "delete", resource: "docker.container", target: sandbox, createdBy: { quest, ephemeral: false }, quest }),
       retry: () => {},
-      refreshWeather: async () => {},
     };
     const fresh = calm({ sandboxes: [overdue("a000000001")] });
     const [outcome] = await selfAct(fresh, async () => fresh, strict, (e) => void ledger.push(e));
@@ -207,7 +196,6 @@ describe("each fix", () => {
       retry: () => {
         throw new Error("loop site is already running");
       },
-      refreshWeather: async () => {},
     };
     const fresh = calm({ loops: [failedOnce()] });
     const [outcome] = await selfAct(fresh, async () => fresh, broken, (e) => void ledger.push(e));
@@ -255,6 +243,7 @@ describe("each fix", () => {
   test("its ledger target names what it was about, and a retry names the run", () => {
     expect(selfActionTarget({ kind: "reap-sandbox", sandbox: "0123456789" })).toBe("reap-sandbox:0123456789");
     expect(selfActionTarget({ kind: "retry-loop", loop: "site", after: "s1a2b" })).toBe("retry-loop:site:s1a2b");
-    expect(retriedRuns(["retry-loop:site:s1a2b", "reap-sandbox:0123456789", "retry-loop:x"])).toEqual(["s1a2b"]);
+    // A target an older version wrote (the removed world's weather) is in the ledger still: it's read past.
+    expect(retriedRuns(["retry-loop:site:s1a2b", "reap-sandbox:0123456789", "retry-loop:x", "refresh-weather:copenhagen"])).toEqual(["s1a2b"]);
   });
 });

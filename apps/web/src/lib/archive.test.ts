@@ -41,10 +41,10 @@ describe("the Archive page's logic", () => {
   test("the search it asks for", () => {
     const f = emptyFilter();
     expect(searchBody("  bridge  ", f, 20, 1000)).toEqual({ q: "bridge", limit: 20 });
-    f.kinds.add("experiment");
+    f.kinds.add("artifact");
     f.trust.add("untrusted");
     f.span = "day";
-    expect(searchBody("", f, 20, 100_000_000)).toEqual({ q: "", limit: 20, kinds: ["experiment"], trust: ["untrusted"], since: 100_000_000 - 86_400_000 });
+    expect(searchBody("", f, 20, 100_000_000)).toEqual({ q: "", limit: 20, kinds: ["artifact"], trust: ["untrusted"], since: 100_000_000 - 86_400_000 });
   });
 
   test("kinds a newer node knows are shown as they are", () => {

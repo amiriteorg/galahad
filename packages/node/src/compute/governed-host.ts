@@ -4,7 +4,7 @@ import { CapacityError, type Governor } from "./governor.ts";
 
 /*
  * This node's sandbox host, behind its governor: every sandbox it creates, whoever
- * asks (a quest, an agent, an experiment, the owner, a calibration), first takes a
+ * asks (a quest, an agent, the owner, a calibration), first takes a
  * slot, and waits for one when the node is full. There is no other door: the node
  * holds only this host. A request for more than the ceiling gets the ceiling (a
  * sandbox's CPUs and memory are limits, not promises), and the ledger says so.

@@ -402,7 +402,7 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
         h("span", { class: "chip mono" }, icon("layers"), sandbox.image),
         ...sandbox.providers.map((p) => {
           const use = gatewayUse(p);
-          return h("span", { class: "chip", title: use.title }, icon(use.kind === "world" ? "landscape" : use.kind === "search" ? "globe" : "models"), use.label);
+          return h("span", { class: "chip", title: use.title }, icon(use.kind === "search" ? "globe" : "models"), use.label);
         }),
       ),
       diskLine(sandbox),

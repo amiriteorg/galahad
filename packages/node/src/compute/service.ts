@@ -3,6 +3,7 @@ import os from "node:os";
 import {
   ATTEMPT_IDLE_MS,
   ATTEMPT_RESOURCE,
+  type AttemptStation,
   type AttemptTag,
   Calibration,
   calibrationDue,
@@ -25,7 +26,6 @@ import {
   type EffortWork,
   freeSlots,
   type HostLoad,
-  MAX_WORLD_ATTEMPTS,
   MODEL_CALLS_DEFAULT,
   type NodeCapacity,
   type NodeIdentity,
@@ -36,9 +36,7 @@ import {
   policyOf,
   redact,
   SELF_ACTION_QUEST,
-  type Station,
   whatMoreBuys,
-  type WorldCompute,
 } from "@galahad/core";
 import { roster } from "@galahad/brain";
 import type { Device, MindStore } from "@galahad/mind";
@@ -50,7 +48,7 @@ import type { Governor } from "./governor.ts";
  * Compute on this node: the census (every node's body, what it measured, its
  * ceiling, what its work holds now), this node's own calibration, the plan he
  * derives and records when the fleet's compute changes, how much effort a quest may
- * spend, and the helpers at work as the world shows them.
+ * spend, and the attempts at work.
  *
  * Everything he does here is internal and reversible: he measures the machine he's
  * on, counts, and records what he derived. He never provisions, rents, installs or
@@ -91,7 +89,7 @@ export function liveHost(): Omit<HostLoad, "oursRecently"> {
 interface AttemptState {
   index: number;
   of: number;
-  station: Station;
+  station: AttemptStation;
   doing: string;
   model: string | null;
   sandbox: string | null;
@@ -130,29 +128,12 @@ const NO_BODY: NodeCapacity = { cores: 1, memoryGb: 1, sandboxes: 0, modelCalls:
 
 export class ComputeService {
   private readonly tracked = new Map<string, Tracked>();
-  private readonly watchers = new Set<() => void>();
   private calibrating: Promise<Calibration> | null = null;
 
   constructor(private readonly deps: ComputeDeps) {}
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
-  }
-
-  /** Something the world or the census shows changed (a slot, a helper). */
-  onChange(fn: () => void): () => void {
-    this.watchers.add(fn);
-    return () => this.watchers.delete(fn);
-  }
-
-  changed(): void {
-    for (const fn of this.watchers) {
-      try {
-        fn();
-      } catch {
-        /* a watcher never stops the node */
-      }
-    }
   }
 
   /* ---------- reading the mind ---------- */
@@ -298,7 +279,6 @@ export class ComputeService {
         quest: SELF_ACTION_QUEST,
         detail: `${calibration.cpu.threads} thread(s) did ${(calibration.cpu.multi / calibration.cpu.single).toFixed(1)} cores' worth in ${calibration.tookMs} ms · he counts ${capacity.cores} threads, ${capacity.memoryGb} GB, ${capacity.sandboxes} sandbox slot(s)`,
       });
-      this.changed();
       return calibration;
     })().finally(() => {
       this.calibrating = null;
@@ -335,7 +315,6 @@ export class ComputeService {
         at,
       });
     }
-    this.changed();
     return changes;
   }
 
@@ -390,27 +369,24 @@ export class ComputeService {
     const grant: EffortGrant = { quest: input.quest, attempts: decision.attempts, asked: input.effort, host: room.slots ? room.name : null, reasons: decision.reasons, budget: { perDay: policy.attemptsPerDay, usedToday: usedToday + decision.attempts - 1 } };
     this.tracked.set(input.quest, { quest: input.quest, label, effort: decision.attempts, asked: input.effort, by: who.by, since: this.now(), reasons: decision.reasons, grant, attempts: new Map() });
     while (this.tracked.size > MAX_TRACKED) this.tracked.delete(this.tracked.keys().next().value!);
-    this.changed();
     return grant;
   }
 
   /* ---------- helpers at work: the attempts of quests in hand ---------- */
 
   /** An attempt's call starts (a model thinking, a command running). Returns how to say it ended. Unknown quests are ignored. */
-  attemptBegin(tag: AttemptTag, what: { station: Station; doing: string; model?: string | null }): () => void {
+  attemptBegin(tag: AttemptTag, what: { station: AttemptStation; doing: string; model?: string | null }): () => void {
     const quest = this.tracked.get(tag.quest);
     if (!quest || tag.index > quest.effort) return () => {};
     const now = this.now();
     const was = quest.attempts.get(tag.index);
     const state: AttemptState = was ?? { index: tag.index, of: quest.effort, station: what.station, doing: "", model: null, sandbox: null, node: null, active: 0, since: now, last: now };
-    const moved = !was || was.station !== what.station;
     state.station = what.station;
     state.doing = clean(what.doing, 120);
     if (what.model !== undefined) state.model = what.model;
     state.active += 1;
     state.last = now;
     quest.attempts.set(tag.index, state);
-    if (moved) this.changed();
     let ended = false;
     return () => {
       if (ended) return;
@@ -437,12 +413,11 @@ export class ComputeService {
     const quest = this.tracked.get(tag.quest);
     if (!quest || tag.index > quest.effort) return;
     const now = this.now();
-    const state = quest.attempts.get(tag.index) ?? { index: tag.index, of: quest.effort, station: "forge" as Station, doing: "Setting up its sandbox", model: null, sandbox: null, node: null, active: 0, since: now, last: now };
+    const state = quest.attempts.get(tag.index) ?? { index: tag.index, of: quest.effort, station: "forge" as AttemptStation, doing: "Setting up its sandbox", model: null, sandbox: null, node: null, active: 0, since: now, last: now };
     state.sandbox = sandbox;
     state.node = node.slice(0, 64);
     state.last = now;
     quest.attempts.set(tag.index, state);
-    this.changed();
   }
 
   /** Which attempt a sandbox is, if any. */
@@ -459,7 +434,6 @@ export class ComputeService {
       for (const [index, a] of quest.attempts) {
         if (a.sandbox !== sandbox) continue;
         quest.attempts.delete(index);
-        this.changed();
       }
     }
   }
@@ -467,17 +441,14 @@ export class ComputeService {
   /** Attempts that went quiet have finished; quests nobody has spoken for in a long while are forgotten. */
   sweep(): void {
     const now = this.now();
-    let gone = false;
     for (const [id, quest] of this.tracked) {
       for (const [index, a] of quest.attempts) {
         if (a.active > 0 || now - a.last < ATTEMPT_IDLE_MS) continue;
         quest.attempts.delete(index);
-        gone = true;
       }
       const last = Math.max(quest.since, ...[...quest.attempts.values()].map((a) => a.last));
       if (!quest.attempts.size && now - last > QUEST_KEPT_MS) this.tracked.delete(id);
     }
-    if (gone) this.changed();
   }
 
   /** Quests in hand whose attempts are at work now. */
@@ -494,37 +465,5 @@ export class ComputeService {
         reasons: q.reasons,
         attempts: [...q.attempts.values()].sort((a, b) => a.index - b.index).map((a) => ({ index: a.index, doing: a.doing, station: a.station, model: a.model, sandbox: a.sandbox, active: a.active > 0, last: a.last })),
       }));
-  }
-
-  /** Compute as the world shows it: each node's slots and strength, and the helpers (attempts of quests that run several). */
-  worldView(): WorldCompute {
-    this.sweep();
-    const attempts = [...this.tracked.values()]
-      .filter((q) => q.effort > 1)
-      .flatMap((q) =>
-        [...q.attempts.values()].map((a) => ({
-          id: `${q.quest}#${a.index}`,
-          quest: q.quest,
-          index: a.index,
-          of: a.of,
-          label: `Attempt ${a.index} of ${a.of}${q.label ? `: ${q.label}` : ""}`.slice(0, 96),
-          station: a.station,
-          node: a.node,
-          since: a.since,
-        })),
-      )
-      .sort((a, b) => a.since - b.since || a.id.localeCompare(b.id))
-      .slice(0, MAX_WORLD_ATTEMPTS);
-    return {
-      nodes: this.nodes().map((n) => ({
-        id: n.id,
-        name: n.name,
-        slots: n.capacity?.sandboxes ?? 0,
-        inUse: n.use?.sandboxes ?? 0,
-        queued: n.use?.queued ?? 0,
-        strength: n.capacity?.strength === null || n.capacity?.strength === undefined ? null : Math.round(n.capacity.strength * 10) / 10,
-      })),
-      attempts,
-    };
   }
 }

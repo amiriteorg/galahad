@@ -15,13 +15,10 @@ import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
-import { ExperimentId, ExperimentRunInput, WorldReport } from "./world-input.ts";
 import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
-import { cleanCompanionName, companionNameProblem } from "./companion.ts";
 import { JOURNAL_DAY } from "./journal.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
-import { EyesFrameInput, LookInput, ReviewBudgetInput, WorldReviewInput } from "./eyes-input.ts";
 import { NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
 /*
@@ -34,9 +31,10 @@ const Name = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/);
 
 /**
  * Gateway scopes that aren't model providers. The node gives them itself, on its own typed
- * paths: `search` through a sandbox's search flag, `world` to every sandbox with a network,
- * `git:<connector>:<owner>:<repo>` in a token minted through gateway:mint. Never a provider's
- * id, so nobody can ask for one by name.
+ * paths: `search` through a sandbox's search flag, `git:<connector>:<owner>:<repo>` in a token
+ * minted through gateway:mint. Never a provider's id, so nobody can ask for one by name.
+ * `world` is retired (the SANDBOX it served was removed on 14 November 2026): tokens and sandboxes
+ * from before still carry it, so it stays reserved and no provider is ever reached under that name.
  */
 export const isReservedGatewayScope = (name: string): boolean => name === "search" || name === "world" || name.startsWith("git:");
 
@@ -132,16 +130,6 @@ export const REFLECT_BUDGET_MAX = 50_000;
 /** A Danish day, YYYY-MM-DD: what a journal entry is about. */
 const JournalDay = z.string().regex(JOURNAL_DAY, "a day, YYYY-MM-DD");
 
-/** His dog's name as it's kept (companion.ts): cleaned, then checked; the message says why a name won't do. */
-export const CompanionName = z
-  .string()
-  .max(200)
-  .transform(cleanCompanionName)
-  .superRefine((name, ctx) => {
-    const problem = companionNameProblem(name);
-    if (problem) ctx.addIssue({ code: "custom", message: problem });
-  });
-
 /** What a loop does each time it runs. */
 export const LoopTask = z.discriminatedUnion("kind", [
   /**
@@ -152,8 +140,8 @@ export const LoopTask = z.discriminatedUnion("kind", [
   /**
    * His journal, once a day: a recollection of the day in his own words, what he learned and what he'd like
    * to do next, kept as his own memory (journal.ts): by the cheapest usable role, within `budget` tokens a
-   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs, the titles of kept chats, the
-   * experiments that finished, the chalkboard and his day in the SANDBOX (never the bank, never secrets).
+   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs, the titles of kept chats and
+   * the chalkboard (never the bank, never secrets).
    * The kind is still `reflect`: it was his daily reflection first, and loops on running fleets go on as they are.
    */
   z.strictObject({ kind: z.literal("reflect"), budget: z.number().int().min(REFLECT_BUDGET_MIN).max(REFLECT_BUDGET_MAX).optional() }),
@@ -168,14 +156,16 @@ export const LoopTask = z.discriminatedUnion("kind", [
   }),
   /** One connector tool; outward and delete tools file an approval request instead. */
   z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),
-  /**
-   * He looks at his own world through his eyes and says what looks wrong or unfinished (world-review.ts):
-   * suggestions in your inbox and ideas in the archive, never a change. Within the review's own daily budget
-   * (`setReviewBudget`); a picture needs a page with the SANDBOX open, and a model that sees.
-   */
-  z.strictObject({ kind: z.literal("review") }),
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
+
+/**
+ * Kinds of task this version no longer has, and what each was. A fleet's mind may still hold a loop with one:
+ * it never runs, and every surface that lists it says its task no longer exists (loops.ts' loopRecords).
+ */
+export const RETIRED_LOOP_TASKS: Readonly<Record<string, string>> = {
+  review: "his review of the 3D world, removed with it on 14 November 2026",
+};
 
 export const routes = {
   team: { method: "GET", path: "/api/team", scope: "chat", input: null },
@@ -308,7 +298,7 @@ export const routes = {
       archive: z.boolean().optional(),
       /** Start the role's models at this position: each parallel attempt takes another one first (the rest stay its fallbacks). */
       rotate: z.number().int().min(0).max(15).optional(),
-      /** This call is one attempt's (effort): the world shows it as a helper's, not his own. */
+      /** This call is one attempt's (effort): the census counts it as that attempt's, not his own. */
       attempt: AttemptTag.optional(),
       /**
        * This call is a quest of his own (its planner's or its engineer's): the skills that bear on its goal go
@@ -377,23 +367,6 @@ export const routes = {
   /** Whoever runs a quest says where it stands (whoever may run its sandbox may: the sandbox scope). */
   questProgress: { method: "POST", path: "/api/quests/progress", scope: "sandbox", input: QuestProgressInput },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
-  /** The SANDBOX, live: what Galahad is doing and the experiments on their plots (server-sent events; yours alone). */
-  world: { method: "GET", path: "/api/world", scope: "mind:read", input: null },
-  /** How the world ran on a device (yours alone), and the latest reports, for `galahad world --logs`. */
-  worldReport: { method: "POST", path: "/api/world/report", scope: "mind:read", input: WorldReport },
-  worldReports: { method: "GET", path: "/api/world/reports", scope: "mind:read", input: null },
-  /**
-   * His eyes (eyes.ts). `look`: what he sees, in words always, and a picture when a page with the SANDBOX open
-   * can render one (the node asks over the world's stream and waits a few seconds; else the last kept frame
-   * with its age). `worldEyes`: a page's answer to that request, yours alone (a paired device or a terminal),
-   * refused unless it names a request that's waiting. The review looks at his world and suggests what to mend:
-   * reading where it stands is the world's scope; running it and setting its daily budget are yours.
-   */
-  look: { method: "POST", path: "/api/world/look", scope: "mind:read", input: LookInput },
-  worldEyes: { method: "POST", path: "/api/world/eyes", scope: "chat", input: EyesFrameInput },
-  worldReviewStatus: { method: "GET", path: "/api/world/review", scope: "mind:read", input: null },
-  worldReview: { method: "POST", path: "/api/world/review", scope: "brain:write", input: WorldReviewInput },
-  setReviewBudget: { method: "POST", path: "/api/world/review/budget", scope: "brain:write", input: ReviewBudgetInput },
   /*
    * The chalkboard you and Galahad share (node-local, a file in the home). Reading is mind:read. Drawing,
    * writing and erasing are part of your conversation with him (chat): what you draw reaches his models as
@@ -413,24 +386,6 @@ export const routes = {
   boardVersionPicture: { method: "POST", path: "/api/board/version/picture", scope: "mind:read", input: BoardVersionInput },
   boardRestore: { method: "POST", path: "/api/board/restore", scope: "chat", input: BoardVersionInput },
   boardForget: { method: "POST", path: "/api/board/history/forget", scope: "fleet:admin", input: z.strictObject({}) },
-  /**
-   * Saved experiments: every experiment the world showed, archived for good on the node that ran it
-   * (node-local, never in the mind). Reading them is the world's scope; a favourite is yours (mind:write,
-   * and only you), deleting too (fleet:admin, as with kept work: nothing else ever deletes one). Running
-   * one creates a sandbox: the sandbox scope.
-   */
-  experiments: { method: "GET", path: "/api/experiments", scope: "mind:read", input: null },
-  experiment: { method: "POST", path: "/api/experiments/get", scope: "mind:read", input: z.strictObject({ id: ExperimentId, code: z.boolean().optional() }) },
-  experimentRecording: {
-    method: "POST",
-    path: "/api/experiments/recording",
-    scope: "mind:read",
-    /** hz: a replay's view of it, at most that many frames a second of simulation (the archive keeps every frame). */
-    input: z.strictObject({ id: ExperimentId, from: z.number().int().min(0).max(1_000_000_000).optional(), limit: z.number().int().min(1).max(5000).optional(), hz: z.number().min(1).max(120).optional() }),
-  },
-  pinExperiment: { method: "POST", path: "/api/experiments/pin", scope: "mind:write", input: z.strictObject({ id: ExperimentId, pinned: z.boolean() }) },
-  deleteExperiment: { method: "POST", path: "/api/experiments/delete", scope: "fleet:admin", input: z.strictObject({ id: ExperimentId }) },
-  runExperiment: { method: "POST", path: "/api/experiments/run", scope: "sandbox", input: ExperimentRunInput },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },
@@ -577,10 +532,6 @@ export const routes = {
     scope: "mind:read",
     input: z.strictObject({ limit: z.number().int().min(1).max(100).optional(), before: JournalDay.optional(), day: JournalDay.optional() }),
   },
-  /** His dog (companion.ts): the name the owner gave it, or none. */
-  companion: { method: "GET", path: "/api/companion", scope: "mind:read", input: null },
-  /** Name his dog, or take the name back (null). The owner's setting, like the roster: brain:write, never an agent's. */
-  setCompanion: { method: "POST", path: "/api/companion", scope: "brain:write", input: z.strictObject({ name: CompanionName.nullable() }) },
   connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },
   setConnector: {
     method: "POST",
@@ -1079,12 +1030,6 @@ export interface FindingView {
   title: string;
   body: string;
   node?: string;
-}
-
-/** His dog as the owner sees it: its name (null: not named yet), and when that was set (ms; null: never). */
-export interface CompanionView {
-  name: string | null;
-  updatedAt: number | null;
 }
 
 export interface SelfActionView {

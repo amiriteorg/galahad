@@ -8,14 +8,10 @@
     "./avatar": "./src/avatar.ts",
     "./board": "./src/board.ts",
     "./bytes": "./src/bytes.ts",
-    "./companion": "./src/companion.ts",
     "./doctor": "./src/doctor.ts",
-    "./experiments": "./src/experiments.ts",
-    "./eyes": "./src/eyes.ts",
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",
     "./journal": "./src/journal.ts",
-    "./life": "./src/life.ts",
     "./notify": "./src/notify.ts",
     "./notify-payload": "./src/notify-payload.ts",
     "./pairing": "./src/pairing.ts",
@@ -28,10 +24,7 @@
     "./trial-reports": "./src/trial-reports.ts",
     "./turns": "./src/turns.ts",
     "./team": "./src/team.ts",
-    "./team-limits": "./src/team-limits.ts",
-    "./world": "./src/world.ts",
-    "./world-compute": "./src/world-compute.ts",
-    "./world-quest": "./src/world-quest.ts"
+    "./team-limits": "./src/team-limits.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

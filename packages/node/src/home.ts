@@ -12,7 +12,6 @@ import { loadEnv } from "./env.ts";
  *   local.db      node-local state that never replicates (gateway tokens)
  *   boards/       the chalkboard: main.json and the picture you last saw (main.png), node-local
  *   admin.token   local CLI credential (0600)
- *   experiments/  the experiments this node's world showed, saved (node-local; see experiment-store.ts)
  *   keys.json     device private keys, only when the OS keychain is unavailable (0600)
  *   push-key.json this node's notification key (VAPID), only when the OS keychain is unavailable (0600)
  *   push.db       who gets notifications and what was sent (node-local, 0600; see notify-store.ts)
@@ -37,7 +36,6 @@ export class Home {
   readonly localPath: string;
   readonly adminTokenPath: string;
   readonly keyFilePath: string;
-  readonly experimentsDir: string;
   readonly pushKeyPath: string;
 
   constructor(readonly dir: string) {
@@ -47,7 +45,6 @@ export class Home {
     this.localPath = join(dir, "local.db");
     this.adminTokenPath = join(dir, "admin.token");
     this.keyFilePath = join(dir, "keys.json");
-    this.experimentsDir = join(dir, "experiments");
   }
 
   static resolve(dir?: string): Home {

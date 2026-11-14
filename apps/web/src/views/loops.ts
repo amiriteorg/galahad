@@ -50,7 +50,6 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
   reflect: { label: "Journal", icon: "journal" },
-  review: { label: "World review", icon: "visor" },
 };
 
 /** His journal's daily budget (the reflect loop's), as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
@@ -67,7 +66,7 @@ const clip = (text: string, n: number) => (text.length > n ? `${text.slice(0, n 
 const firstLine = (text: string) => clip(text.split("\n")[0]?.trim() ?? "", 200);
 
 export function describeTask(task: LoopTask | null): string {
-  if (!task) return "A task this node can't read (written by a newer version).";
+  if (!task) return "A task this node can't read.";
   if (task.kind === "heartbeat") {
     const what = task.checklist ? "Heartbeat: checks the fleet, then reads your checklist." : "Heartbeat: checks the fleet and the machine it runs on.";
     return `${what}${task.selfAction === false ? " Only reports: self-action is off." : " Then fixes what's safe himself."}`;
@@ -77,7 +76,6 @@ export function describeTask(task: LoopTask | null): string {
     const gates = task.gates?.length ? ` Done means ${task.gates.length === 1 ? "this passes" : `these ${task.gates.length} pass`}: ${clip(task.gates.join(" · "), 160)}` : "";
     return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
   }
-  if (task.kind === "review") return "World review: he looks at the SANDBOX through his own eyes and suggests what to mend. Suggestions only, within its own daily budget.";
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
 }
@@ -201,7 +199,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     h(
       "p",
       { class: "small muted" },
-      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs, the titles of the chats you kept, the experiments that finished, the chalkboard and his day in the SANDBOX (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
+      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs, the titles of the chats you kept and the chalkboard (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
     ),
     field("Daily budget (tokens)", budget, { hint: `What he reads and writes together, on the cheapest role that can answer. ${REFLECT.min.toLocaleString("en-US")} to ${REFLECT.max.toLocaleString("en-US")}.` }),
   );
@@ -266,16 +264,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   connectorSelect.addEventListener("change", () => syncTools());
   toolSelect.addEventListener("change", () => syncArgs());
 
-  const reviewPanel = h(
-    "div",
-    { class: "stack" },
-    h(
-      "p",
-      { class: "small muted" },
-      "He looks at his own world through his eyes (from where he is, and from his hearth, the lake bench, the council table, the forge and the north meadow) and a model that sees says what looks wrong, broken or unfinished. Each finding is kept as one of his ideas and becomes a suggestion in your Inbox; he changes nothing. A picture needs the SANDBOX open on one of your devices when it runs, and a role with a model that sees. Its daily budget is its own: the eyes panel in the SANDBOX shows it, and `galahad world review --budget` sets it.",
-    ),
-  );
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel, review: reviewPanel };
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -302,7 +291,6 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       if (!Number.isInteger(n) || n < REFLECT.min || n > REFLECT.max) return { problem: `A daily budget is a whole number of tokens from ${REFLECT.min} to ${REFLECT.max}.`, focus: budget };
       return { task: { kind: "reflect", ...(n !== REFLECT.budget ? { budget: n } : {}) } };
     }
-    if (kind === "review") return { task: { kind: "review" } };
     if (kind === "quest") {
       const text = goal.value.trim();
       if (!text) return { problem: "Give the quest a goal.", focus: goal };
@@ -382,12 +370,11 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     h("div", { class: "fields" }, field("Time zone", tz, { hint: "The clock a cron line is read in." }), field("Runs on", where, { hint: "Exactly one full node runs it." })),
     zones,
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "What it does"), kindControl.el),
-    existing && !task0 ? callout("warn", "This node can't read the loop's current task (a newer version wrote it). Saving replaces it with what you choose here.") : null,
+    existing && !task0 ? callout("warn", "This node can't read the loop's current task. Saving replaces it with what you choose here.") : null,
     heartbeatPanel,
     questPanel,
     callPanel,
     reflectPanel,
-    reviewPanel,
     status,
     h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
   );

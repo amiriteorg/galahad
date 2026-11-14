@@ -51,7 +51,7 @@ export interface BoardStoreOptions {
   id?: string;
   now?: () => number;
   log?: (message: string) => void;
-  /** Told after every change (the world's stream says it). */
+  /** Told after every change. */
   onChange?: (change: BoardChange) => void;
   /** The history's own bounds, when not a node's defaults (a test fills a small segment instead of two megabytes). */
   history?: { segmentBytes?: number; checkpointEvery?: number };
@@ -133,7 +133,7 @@ export class BoardStore {
 
   /**
    * One change: its version, appended to the history first (with what it added and
-   * took away), then the board's file, then the world told.
+   * took away), then the board's file, then whoever listens told.
    */
   private changed(change: Omit<BoardChange, "version">, record: { who: Who; summary: string; add?: Change["add"]; remove?: Change["remove"] }): void {
     this.state.version++;
@@ -432,24 +432,4 @@ export function checkPng(bytes: Uint8Array): { bytes: Uint8Array; width: number;
   for (let row = 0; row < height; row++) if (raw[row * (1 + width * channels)]! > 4) fail("a row has an unknown filter");
   const kept = Buffer.concat([SIGNATURE, chunk("IHDR", header!), chunk("IDAT", compressed), chunk("IEND", new Uint8Array())]);
   return { bytes: new Uint8Array(kept), width, height };
-}
-
-/* ---------------- for the node itself ---------------- */
-
-/** What a world shows of a write: just enough to say where he's going and what for. */
-interface Shown {
-  doing(station: "observatory", doing: string): void;
-}
-
-/**
- * Galahad writes on the board from the node itself (an experiment's
- * examination, say): the same checks as the route, the item his ("galahad", or
- * the agent named), and the world shows him at the board writing it.
- *
- *   writeOnBoard({ board: ctx.board, world: ctx.world }, { item: { kind: "note", title: "Examination", text: "…" } });
- */
-export function writeOnBoard(deps: { board: BoardStore; world?: Shown }, input: z.input<typeof BoardWriteInput>, by = "galahad"): BoardItem {
-  const item = deps.board.write(BoardWriteInput.parse(input), by);
-  deps.world?.doing("observatory", `Writing on the chalkboard: ${itemSummary(item).slice(0, 80)}`);
-  return item;
 }

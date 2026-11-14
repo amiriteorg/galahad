@@ -10,7 +10,6 @@ import {
   type OfferedSkill,
   type QuestEvidence,
   questReadOutside,
-  readWorldSkills,
   relevantSkills,
   SKILL_LIMITS,
   SKILL_STALE_AFTER_MS,
@@ -439,18 +438,5 @@ describe("the tidy-up", () => {
     const plan = tidyPlan(old, at, 5);
     expect(plan.stale.length).toBe(5);
     expect(plan.merges.length).toBe(5);
-  });
-});
-
-describe("the world's view of his skills", () => {
-  test("counts and the last few titles, read again at the page's boundary", () => {
-    const view = { inUse: 3, proposed: 1, retired: 0, recent: [{ title: "Fix a test​", at: 5, what: "learned" }, { title: "Deploy", at: 4, what: "used" }] };
-    expect(readWorldSkills(view)).toEqual({ inUse: 3, proposed: 1, retired: 0, recent: [{ title: "Fix a test", at: 5, what: "learned" }, { title: "Deploy", at: 4, what: "used" }] });
-    // What it can't read of the recent ones is left out; more than the bound is cut.
-    const many = { ...view, recent: [{ title: 7, at: 1, what: "learned" }, { title: "x", at: 1, what: "stolen" }, ...Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, at: i, what: "used", steps: ["never sent"] }))] };
-    const read = readWorldSkills(many)!;
-    expect(read.recent.length).toBeLessThanOrEqual(6);
-    expect(read.recent.every((r) => Object.keys(r).join() === "title,at,what")).toBe(true);
-    for (const bad of [null, 3, [], {}, { inUse: -1, proposed: 0, retired: 0, recent: [] }, { inUse: 1.5, proposed: 0, retired: 0, recent: [] }, { inUse: 1, proposed: 0, retired: 0 }]) expect(readWorldSkills(bad)).toBeNull();
   });
 });

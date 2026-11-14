@@ -247,7 +247,6 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind"), canEdit ? button("New squire", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => editTeammate() }) : null),
       !canEdit ? h("p", { class: "team-nav-note" }, "Read-only on this device. Sending work and changing his squires need fleet:admin access on an owner device.") : null,
       h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("chat") }, h("span", { class: "avatar agent" }, icon("mark", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Galahad"), h("span", { class: "meta" }, "One mind · your main conversation"))),
-      ctx.can("mind:read") ? h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("world") }, h("span", { class: "avatar" }, icon("landscape", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Open SANDBOX"), h("span", { class: "meta" }, "His home, projects and builds"))) : null,
       ctx.can("mind:read") ? h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("memory") }, h("span", { class: "avatar" }, icon("memory", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Shared Memory"), h("span", { class: "meta" }, "Galahad's knowledge"))) : null,
       h("div", { class: "team-nav-label" }, "Direct messages", h("span", { class: "spacer" }), h("span", { class: "tiny subtle" }, data.teammates.length)),
       ...data.teammates.map((person) => {
@@ -398,9 +397,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   function renderWelcome(): void {
     replace(head); replace(tabs); composerWrap.hidden = true;
     replace(content, h("div", { class: "team-welcome" }, icon("fleet", { size: 36 }), h("h2", {}, snapshot?.teammates.length ? "Galahad's hivemind" : "Galahad's first squire"),
-      h("p", {}, snapshot?.teammates.length ? "One shared mind, with persistent squires. Talk directly, bring them into rooms, and follow the work. The SANDBOX is Galahad's home." : "Galahad is a hivemind. Give his squires names and lasting jobs, bring them together in rooms, and give each a workspace."),
+      h("p", {}, snapshot?.teammates.length ? "One shared mind, with persistent squires. Talk directly, bring them into rooms, and follow the work." : "Galahad is a hivemind. Give his squires names and lasting jobs, bring them together in rooms, and give each a workspace."),
       canEdit ? h("div", { class: "row wrap" }, button("New squire", { variant: "primary", icon: "plus", onClick: () => editTeammate() }), snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom() }) : null) : null,
-      ctx.can("mind:read") ? button("Open SANDBOX", { variant: "ghost", icon: "landscape", onClick: () => ctx.navigate("world") }) : null,
     ));
   }
 

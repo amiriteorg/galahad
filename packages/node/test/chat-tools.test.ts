@@ -321,54 +321,11 @@ describe("projects", () => {
   });
 });
 
-describe("the SANDBOX, live", () => {
-  /** Reads the world's stream until `until` holds (or 5 s pass). */
-  async function watchWorld(token: string, during: () => Promise<unknown>, until: (events: any[]) => boolean): Promise<any[]> {
-    const controller = new AbortController();
-    const response = await fetch(`http://127.0.0.1:${port}/api/world`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
-    expect(response.status).toBe(200);
-    const reader = response.body!.getReader();
-    const events: any[] = [];
-    let buffer = "";
-    const reading = (async () => {
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && !until(events)) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += new TextDecoder().decode(value);
-        for (let i = buffer.indexOf("\n\n"); i >= 0; i = buffer.indexOf("\n\n")) {
-          const chunk = buffer.slice(0, i);
-          buffer = buffer.slice(i + 2);
-          if (chunk.startsWith("data: ")) events.push(JSON.parse(chunk.slice(6)));
-        }
-      }
-    })();
-    await during();
-    await reading;
-    controller.abort();
-    return events;
-  }
-
-  test("yours: the whole world first, then Galahad walking to the library when a chat recalls", async () => {
-    script = [callTool("recall", { query: "the round table" }), say("Nothing yet.")];
-    const events = await watchWorld(
-      home.adminToken(),
-      () => ask(home.adminToken(), "What do we remember about the round table?", { tools: true }),
-      (seen) => seen.some((e) => e.type === "galahad" && e.galahad.station === "library"),
-    );
-    expect(events[0]).toMatchObject({ type: "hello", galahad: { station: expect.any(String) }, nodes: [expect.objectContaining({ name: "chat-node", self: true })] });
-    expect(events.find((e) => e.type === "galahad" && e.galahad.station === "library")!.galahad.doing).toBe("Recall from the shared mind: the round table");
-  });
-
-  test("the chalkboard: he walks to the observatory and writes there; he reads your drawing back (in words, for a model that can't see)", async () => {
+describe("the chalkboard, from a chat", () => {
+  test("he writes on it, and reads your drawing back (in words, for a model that can't see)", async () => {
     script = [callTool("board_write", { kind: "note", title: "Plan", text: "- measure\n- fit" }), say("Written up.")];
-    const events = await watchWorld(
-      home.adminToken(),
-      () => ask(home.adminToken(), "Write the plan on the board.", { tools: true }),
-      (seen) => seen.some((e) => e.type === "board"),
-    );
-    expect(events.find((e) => e.type === "galahad" && e.galahad.station === "observatory")!.galahad.doing).toBe("Write on the chalkboard: Plan");
-    expect(events.find((e) => e.type === "board")).toMatchObject({ change: "write", by: "agent", region: { x: expect.any(Number), w: expect.any(Number) } });
+    const written = await ask(home.adminToken(), "Write the plan on the board.", { tools: true });
+    expect(written.find((e) => e.type === "tool_result")).toMatchObject({ name: "board_write", ok: true });
     const board = (await (await call("board", undefined, home.adminToken())).json()) as { items: { by: string; kind: string }[] };
     expect(board.items.at(-1)).toMatchObject({ by: "galahad", kind: "note" });
 
@@ -380,70 +337,6 @@ describe("the SANDBOX, live", () => {
     const seen = bodies[1].messages.at(-1).content as string;
     expect(seen).toContain("1 stroke of the user's");
     expect(seen).toContain("a pink line in the bottom left");
-  });
-
-  test("once he read the bank, what he tries next reaches the world by name only", async () => {
-    script = [callTool("bank_status", {}), callTool("remember", { text: "balance 55555.55 DKK" }), say("I won't keep that.")];
-    const events = await watchWorld(
-      home.adminToken(),
-      () => ask(home.adminToken(), "What's my balance? Remember it."),
-      (seen) => seen.some((e) => e.type === "galahad" && e.galahad.doing?.startsWith("Remember")),
-    );
-    const doing = events.filter((e) => e.type === "galahad").map((e) => e.galahad.doing as string);
-    expect(doing).toContain("Remember in the shared mind");
-    expect(JSON.stringify(events)).not.toContain("55555");
-  });
-
-  test("he looks through his own eyes: the words, an honest 'no picture' with no page open; looking takes him nowhere, and it's still his after the bank", async () => {
-    const seen: any[] = [];
-    const stop = daemon.world.watch((e) => seen.push(e));
-    script = [callTool("bank_status", {}), callTool("look", {}), say("I can't see just now: no page has my world open.")];
-    const answer = await ask(home.adminToken(), "What's my balance, and what do you see?");
-    stop();
-    // After the bank it isn't refused: it only reads.
-    expect(answer.find((e) => e.type === "tool_result" && e.name === "look")).toMatchObject({ ok: true });
-    const told = bodies.at(-1).messages.at(-1).content as string;
-    expect(told).toContain("What the node itself knows");
-    expect(told).toContain("Through Galahad's eyes");
-    expect(told).toContain("No page with the SANDBOX open is connected");
-    expect(told).toContain("don't describe a picture");
-    // The world heard of the bank's tool by name, and nothing of the look: he wasn't sent anywhere for it.
-    const doing = seen.filter((e) => e.type === "galahad").map((e) => e.galahad.doing as string);
-    expect(doing.some((d) => d.startsWith("Bank connection status"))).toBe(true);
-    expect(doing.some((d) => /look/i.test(d))).toBe(false);
-    expect(seen.some((e) => e.type === "eyes")).toBe(false);
-  });
-
-  test("how it ran on a device comes back to the node, for galahad world --logs", async () => {
-    const report = {
-      session: "a1b2c3d4e5f6a7b8c9d0e1f2",
-      mode: "live",
-      backend: "webgpu",
-      tier: "medium",
-      dpr: 1.5,
-      fps: { now: 58, avg: 52, min: 31 },
-      frameMs: 17.2,
-      drawCalls: 88,
-      shadows: false,
-      viewport: [390, 844, 3],
-      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X)",
-      adapter: "apple · common-3",
-      restarts: 1,
-      experiments: 2,
-      events: [{ at: 1, kind: "lost", text: "device lost (webgpu · high)" }],
-    };
-    expect((await call("worldReport", report, home.adminToken())).status).toBe(200);
-    expect((await call("worldReport", { ...report, session: "x" }, home.adminToken())).status).toBe(400);
-    const { reports } = (await (await call("worldReports", undefined, home.adminToken())).json()) as { reports: { device: string; events: unknown[] }[] };
-    // A terminal's requests are the node's own: the report carries the node's name.
-    expect(reports[0]).toMatchObject({ device: "chat-node", backend: "webgpu", events: [{ kind: "lost" }] });
-    const { token } = (await (await call("mintArm", { label: "snoop" }, home.adminToken())).json()) as { token: string };
-    expect((await call("worldReports", undefined, token)).status).toBe(403);
-  });
-
-  test("never an agent's: it carries what Galahad thinks about in your chats", async () => {
-    const { token } = (await (await call("mintArm", { label: "watcher" }, home.adminToken())).json()) as { token: string };
-    expect((await call("world", undefined, token)).status).toBe(403);
   });
 });
 
@@ -517,7 +410,7 @@ describe("one answer's tools", () => {
   test("he says which of his tools only look: those may be run again by a model that takes an answer over, the rest never", () => {
     const tools = chatTools(TOOLS, api, explain);
     const only = (name: string) => tools.readOnly?.({ id: "x", name, input: {} });
-    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search", "board_read", "look"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
+    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search", "board_read"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
     for (const name of ["remember", "sandbox_run", "connector_call", "board_write", "note_idea", "request_secret", "experiment_run"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
     // A tool that isn't his is nothing he may run twice.
     expect(only("vault_read")).toBe(false);

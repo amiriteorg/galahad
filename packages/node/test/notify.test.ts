@@ -7,7 +7,7 @@ import type { PushSender, PushTarget } from "../src/push-send.ts";
 
 /*
  * The notifier with stand-ins for everything around it: what happened on the node (a
- * quest you started, an experiment, his journal) becomes at most one message, said as
+ * quest you started, his journal) becomes at most one message, said as
  * it ended. The whole path over HTTP, with a stand-in push service, is notify.e2e.test.ts.
  */
 
@@ -121,14 +121,7 @@ describe("a quest you started", () => {
   });
 });
 
-describe("an experiment, and his journal", () => {
-  test("an experiment you started: done or failed, never its script's title", async () => {
-    const h = harness();
-    h.service.experimentEnded("x-42", "failed");
-    await h.look();
-    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "finished", title: "Experiment failed", body: "An experiment you started has ended. It's saved in the SANDBOX.", open: "overview" }]);
-  });
-
+describe("his journal, and what couldn't be told in time", () => {
   test("his journal: told while it's fresh, once, with the day and not a word of it; an old entry isn't news", async () => {
     const h = harness();
     h.setJournal({ day: "2026-11-11", at: h.now() - 14 * 3600_000 });
@@ -142,7 +135,8 @@ describe("an experiment, and his journal", () => {
 
   test("something that happened and couldn't be told in time is dropped, not told a day late", async () => {
     const h = harness();
-    h.service.experimentEnded("x-1", "done");
+    h.quest({ quest: "q-1", state: "working" });
+    h.quest({ quest: "q-1", state: "done" });
     h.advance(19 * 3600_000);
     await h.look();
     expect(h.sent).toEqual([]);

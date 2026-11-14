@@ -13,11 +13,11 @@ import {
   NETWORKS,
   networkCreateArgs,
   OWN_IMAGES,
+  RETIRED_SCOPE,
   runArgs,
   type SandboxSpec,
   SEARCH_SCOPE,
   volumeName,
-  WORLD_SCOPE,
 } from "./spec.ts";
 import { type ExtractLimits, type ExtractResult, extractTar } from "./tar.ts";
 import { budgetProblem, DEFAULT_DISK_GB, type Workspaces, type WorkspaceStats } from "./workspaces.ts";
@@ -116,15 +116,15 @@ export class SandboxError extends Error {
 }
 
 /**
- * The gateway scopes a sandbox's token carries: the model providers asked for, web search
- * by its own flag, and the world wherever there's a network. An internal scope (search,
- * world, git:…) asked for by name is refused, however the request got here.
+ * The gateway scopes a sandbox's token carries: the model providers asked for, and web search
+ * by its own flag. An internal scope (search, git:…, the retired world) asked for by name is
+ * refused, however the request got here.
  */
 export function sandboxScopes(input: { network: CreateInput["network"]; providers?: string[]; search?: boolean }): string[] {
   const reserved = (input.providers ?? []).filter(isReservedGatewayScope);
   if (reserved.length) throw new SandboxError(`${reserved.join(", ")}: not a model provider (search is the request's own flag; repositories come from the node)`);
   if (input.network === "isolated") return [];
-  return [...(input.providers ?? []), ...(input.search ? [SEARCH_SCOPE] : []), WORLD_SCOPE];
+  return [...(input.providers ?? []), ...(input.search ? [SEARCH_SCOPE] : [])];
 }
 
 interface Run {
@@ -263,7 +263,6 @@ export class SandboxHost {
   }
 
   async create(input: CreateInput): Promise<SandboxView> {
-    // Wherever there's a network, a sandbox may show its experiments in the world.
     const providers = sandboxScopes(input);
     if (!(await this.available())) throw new SandboxError("docker is not available on this node", 424);
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);
@@ -354,7 +353,7 @@ export class SandboxHost {
       this.creating.delete(id);
     }
     if (tokenHash) this.tokenStore.put(id, tokenHash);
-    const models = providers.filter((p) => p !== SEARCH_SCOPE && p !== WORLD_SCOPE);
+    const models = providers.filter((p) => p !== SEARCH_SCOPE);
     this.opts.ledger({
       class: "create",
       resource: "docker.container",
@@ -624,7 +623,7 @@ function toView(labels: Record<string, string>, image: string, status: string, u
     expiresAt: Number(labels[`${LABEL}.expires`] ?? 0),
     status,
     ephemeral: labels[`${LABEL}.ephemeral`] !== "false",
-    providers: (labels[`${LABEL}.providers`] ?? "").split(",").filter(Boolean),
+    providers: (labels[`${LABEL}.providers`] ?? "").split(",").filter((p) => p && p !== RETIRED_SCOPE),
     disk: limit > 0 ? { limitGb: limit, usedGb: used === undefined ? null : Math.round((used / 2 ** 30) * 10) / 10 } : null,
     isolation: labels[`${LABEL}.isolation`] === "vm" ? "vm" : "container",
   };

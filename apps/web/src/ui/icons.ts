@@ -51,10 +51,6 @@ const ICONS = {
   more: [`!${circle(5.5, 12, 1.6)}`, `!${circle(12, 12, 1.6)}`, `!${circle(18.5, 12, 1.6)}`],
   sun: [circle(12, 12, 3.75), "M12 3v1.75M12 19.25V21M3 12h1.75M19.25 12H21M5.65 5.65l1.25 1.25M17.1 17.1l1.25 1.25M5.65 18.35l1.25-1.25M17.1 6.9l1.25-1.25"],
   moon: ["M19.5 14.25A7.75 7.75 0 0 1 9.75 4.5a7.75 7.75 0 1 0 9.75 9.75z"],
-  rain: ["M7 15h10a3.25 3.25 0 0 0 .5-6.46 5 5 0 0 0-9.67 1.33A2.6 2.6 0 0 0 7 15z", "M8.5 18l-1 2.5M12.5 18l-1 2.5M16.5 18l-1 2.5"],
-  mist: ["M7 13h10a3.25 3.25 0 0 0 .5-6.46 5 5 0 0 0-9.67 1.33A2.6 2.6 0 0 0 7 13z", "M4.5 16.75h15M7.5 20.25h9"],
-  snow: ["M7 13h10a3.25 3.25 0 0 0 .5-6.46 5 5 0 0 0-9.67 1.33A2.6 2.6 0 0 0 7 13z", "M8 16.75h.01M12 16.75h.01M16 16.75h.01M10 20.25h.01M14 20.25h.01"],
-  storm: ["M7 14h10a3.25 3.25 0 0 0 .5-6.46 5 5 0 0 0-9.67 1.33A2.6 2.6 0 0 0 7 14z", "M12.75 14.5l-2.5 3.5h3.25l-2 3.25"],
   monitor: [rect(3, 4.5, 18, 12, 2), "M9 20h6M12 16.5V20"],
   offline: ["M8.2 6.6A6 6 0 0 1 17.6 11 3.75 3.75 0 0 1 19.4 18M15 18.5H7a4.25 4.25 0 0 1-1.6-8.2", "M3.5 3.5l17 17"],
   alert: ["M10.3 4.6a2 2 0 0 1 3.4 0l7.1 12.4a2 2 0 0 1-1.7 3H4.9a2 2 0 0 1-1.7-3z", "M12 9.5v4", `!${circle(12, 16.75, 1)}`],
@@ -99,8 +95,6 @@ const ICONS = {
   repeat: ["M16.5 3.5l3 3-3 3", "M4.5 11.25V10a3.5 3.5 0 0 1 3.5-3.5h11.5", "M7.5 20.5l-3-3 3-3", "M19.5 12.75V14a3.5 3.5 0 0 1-3.5 3.5H4.5"],
   /** Connectors: how Galahad plugs into the services you use. */
   plug: ["M9.25 3.5v4M14.75 3.5v4", "M6.5 7.5h11v3.75a5.5 5.5 0 0 1-5.5 5.5 5.5 5.5 0 0 1-5.5-5.5z", "M12 16.75v3.75"],
-  /** The SANDBOX: hills under a sun, the world where Galahad and his experiments are seen. */
-  landscape: ["M3.5 19h17", "M3.5 19l5-6.5 3.75 4.25 2.75-3.25 5.5 5.5", circle(16.5, 7.5, 2.25)],
   /** Artifacts: a sandbox's work, kept in a box after it's gone. */
   archive: [rect(3.5, 4.5, 17, 4.5, 1.25), "M5 9v9a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V9", "M10 12.75h4"],
   // The Archive (everything kept): books on a shelf, one leaning.
@@ -119,18 +113,8 @@ const ICONS = {
   redo: ["M15 5.5l4.5 4.5L15 14.5", "M19.5 10H9a4.5 4.5 0 0 0 0 9h3"],
   expand: ["M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"],
   flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
-  /** His dog: a paw. */
-  paw: [circle(6.25, 10.5, 1.5), circle(9.75, 6.75, 1.5), circle(14.25, 6.75, 1.5), circle(17.75, 10.5, 1.5), "M12 12.25c-2.6 0-4.75 2.2-4.75 4.35 0 1.5 1.15 2.4 2.55 2.4.9 0 1.45-.45 2.2-.45s1.3.45 2.2.45c1.4 0 2.55-.9 2.55-2.4 0-2.15-2.15-4.35-4.75-4.35z"],
-  /** His hearth: a flame. */
-  flame: ["M12 3.5c.5 2.9 4.25 4.9 4.25 9.1a4.25 4.25 0 0 1-8.5 0c0-1.6.7-2.7 1.6-3.6.3 1.3.95 2.05 1.85 2.3-.55-2.85-.2-5.35.8-7.8z", "M12 20.5v-3"],
   /** His journal: a bound book, its spine and a few lines on the cover. */
   journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
-  /** The SANDBOX's sound: a speaker, sounding and silent. */
-  volume: ["M4.5 9.75h3l4-3.5v11.5l-4-3.5h-3z", "M14.75 9.5a3.6 3.6 0 0 1 0 5", "M17.25 7a7.1 7.1 0 0 1 0 10"],
-  "volume-off": ["M4.5 9.75h3l4-3.5v11.5l-4-3.5h-3z", "M15.25 9.75l4.5 4.5M19.75 9.75l-4.5 4.5"],
-  /** His eyes: his visor, a rounded slit with its two eyes; and swapping two views. */
-  visor: [rect(3.5, 7.5, 17, 9, 4.5), circle(9, 12, 1.25), circle(15, 12, 1.25)],
-  swap: ["M4.5 8.5h13M14 5l3.5 3.5L14 12", "M19.5 15.5h-13M10 12l-3.5 3.5L10 19"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

@@ -143,16 +143,17 @@ describe("sandbox hardening", () => {
     expect(() => SandboxRequest.parse({ image: "Evil Image; rm -rf /" })).toThrow();
   });
 
-  test("a request names model providers only: search, the world and repositories are the node's to give", () => {
+  test("a request names model providers only: search and repositories are the node's to give, and the retired world scope stays refused", () => {
     expect(SandboxRequest.parse({ providers: ["deepseek", "cloudflare-ai"] }).providers).toEqual(["deepseek", "cloudflare-ai"]);
     for (const name of ["search", "world", "git:github:someone:private-repo", "git:x"]) {
       expect(SandboxRequest.safeParse({ providers: [name] }).success).toBe(false);
     }
   });
 
-  test("the token's scopes: the providers asked for, search by its own flag, the world wherever there's a network", () => {
-    expect(sandboxScopes({ network: "gateway", providers: ["deepseek"] })).toEqual(["deepseek", "world"]);
-    expect(sandboxScopes({ network: "online", search: true })).toEqual(["search", "world"]);
+  test("the token's scopes: the providers asked for and search by its own flag, and nothing else", () => {
+    expect(sandboxScopes({ network: "gateway", providers: ["deepseek"] })).toEqual(["deepseek"]);
+    expect(sandboxScopes({ network: "online", search: true })).toEqual(["search"]);
+    expect(sandboxScopes({ network: "gateway" })).toEqual([]);
     expect(sandboxScopes({ network: "isolated", providers: ["deepseek"], search: true })).toEqual([]);
     // Whatever reached the host by another way, it never mints an internal scope by name.
     for (const name of ["search", "world", "git:github:someone:private-repo"]) {

@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { b64u, newNodeIdentity, type NodeIdentity } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore } from "@galahad/mind";
-import { LoopRunner, type RunContext, type RunnableLoop, type RunResult } from "../src/loops.ts";
+import { LoopError, loopRecords, LoopRunner, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "../src/loops.ts";
 
 /*
  * The loop runner on a fake clock: due slots run once, missed slots once, a crash
@@ -172,5 +172,56 @@ describe("the loop runner", () => {
     expect(w.calls).toHaveLength(3);
     for (const release of releases.splice(0)) release();
     await r.settled();
+  });
+});
+
+describe("a loop whose task this version no longer has", () => {
+  /** As a fleet's mind holds it from before: his review of the 3D world, removed on 14 November 2026. */
+  const retired = (w: ReturnType<typeof world>, name = "look-over") =>
+    w.store.emit(w.a, "loop.set", { name, schedule: "every 30m", tz: "UTC", on: w.a.id, enabled: true, task: { kind: "review" }, label: "His review" });
+
+  test("is still listed, with its schedule, and says its task no longer exists and how to remove it", () => {
+    const w = world();
+    retired(w);
+    w.define("beat", w.a.id);
+    const [loop] = loopRecords(w.store).filter((l) => l.name === "look-over");
+    expect(loop).toMatchObject({ name: "look-over", scheduleText: "every 30m", enabled: true, task: null, label: "His review" });
+    expect(loop!.schedule).not.toBeNull();
+    expect(loop!.problem).toContain("its task no longer exists");
+    expect(loop!.problem).toContain("galahad loop rm look-over");
+    // A task nobody has ever known is still taken for a newer version's.
+    w.store.emit(w.a, "loop.set", { name: "odd", schedule: "every 30m", tz: "UTC", on: w.a.id, enabled: true, task: { kind: "teleport" } });
+    expect(loopRecords(w.store).find((l) => l.name === "odd")!.problem).toBe("this node doesn't understand the task (written by a newer version?)");
+    expect(loopRecords(w.store).find((l) => l.name === "beat")!.problem).toBeNull();
+  });
+
+  test("never runs, never stops the others running, and says why when run by hand", async () => {
+    const w = world();
+    w.clock.set(T0 - 5 * MIN);
+    retired(w);
+    w.define("beat", w.a.id);
+    const r = w.runner();
+    w.clock.set(Date.now() + 31 * MIN);
+    r.tick();
+    await r.settled();
+    expect(w.calls.map((c) => c.loop)).toEqual(["beat"]);
+    expect(w.store.loopRuns("look-over")).toEqual([]);
+    expect(() => r.runNow("look-over")).toThrow(LoopError);
+    expect(() => r.runNow("look-over")).toThrow("its task no longer exists");
+    // Started and stopped with it there: nothing is recorded for it, nothing breaks.
+    r.start(60_000);
+    await r.stop();
+    expect(w.store.loopRuns("look-over")).toEqual([]);
+  });
+});
+
+describe("the owner's self-action switch, as the loops say it", () => {
+  test("on unless a heartbeat loop says it's off", () => {
+    const w = world();
+    expect(selfActionOn(w.store)).toEqual({ on: true, heartbeats: [] });
+    w.define("heartbeat", w.a.id);
+    expect(selfActionOn(w.store)).toEqual({ on: true, heartbeats: ["heartbeat"] });
+    w.define("heartbeat", w.a.id, "every 30m", { task: { kind: "heartbeat", selfAction: false } });
+    expect(selfActionOn(w.store)).toEqual({ on: false, heartbeats: ["heartbeat"] });
   });
 });

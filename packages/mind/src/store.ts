@@ -59,8 +59,8 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
 /**
  * PRAGMA user_version. 0: a replica from before versions (events, views, pending).
  * 1: log_devices, v_slots and the kind, loop and (device, hlc, id) indexes.
- * 2: his dog's name (companion.named, companion.unnamed). The tables are the same; a replica that
- *    held such events before it knew the kinds applies them once, by a replay.
+ * 2: companion.named and companion.unnamed (kinds since retired, still folded: core's events.ts). The tables
+ *    are the same; a replica that held such events before it knew the kinds applies them once, by a replay.
  * 3: skills (skill.written and the rest; v_skills, v_skill_versions, v_skill_uses), applied the same way
  *    by a replica that held such events before it knew them.
  */
@@ -257,7 +257,7 @@ export class MindStore {
         this.recountLog();
         this.replay();
       } else if (from < 2 && this.db.query("SELECT 1 FROM events WHERE kind IN ('companion.named', 'companion.unnamed') LIMIT 1").get()) {
-        // Kept while this replica didn't know the kinds (a newer node named his dog): applied now, as a rebuild would.
+        // Kept while this replica didn't know the kinds (a newer node wrote them): applied now, as a rebuild would.
         this.replay();
       } else if (from < 3 && this.db.query("SELECT 1 FROM events WHERE kind LIKE 'skill.%' LIMIT 1").get()) {
         // Skills a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
@@ -1053,8 +1053,9 @@ export class MindStore {
         this.putLww(`action-decision:${body.action}`, event, { id: body.action, verdict: "approved", order: body.order, note: `standing order: ${order.label}` });
         return null;
       }
+      // The two retired kinds (core's events.ts): folded as they always were, their refusals worded as they always
+      // were (a refusal's reason is part of the digest), so a log that holds them gives every replica the same mind.
       case "companion.named": {
-        // The owner's setting, like the roster. What a name may be is the reader's to check (companion.ts).
         if (!isFullNode(signer)) return "only full nodes may name his dog";
         this.putLww("companion", event, { name: bodyOf(event, "companion.named").name });
         return null;

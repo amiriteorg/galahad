@@ -38,6 +38,7 @@ function teammateHost(opts: {
   const labels = {
     [LABEL]: "1", [`${LABEL}.id`]: ID, [`${LABEL}.node`]: "test", [`${LABEL}.quest`]: QUEST,
     [`${LABEL}.network`]: "gateway", [`${LABEL}.ephemeral`]: "false", [`${LABEL}.isolation`]: "vm",
+    // A VM made before the world was removed: its label still names that scope, and it is read as nothing.
     [`${LABEL}.providers`]: "openai,world", [`${LABEL}.disk`]: "20", ...opts.labels,
   };
   const host = new SandboxHost({
@@ -83,10 +84,12 @@ describe("persistent teammate workspaces", () => {
     expect(f.events).toEqual([`retain:${ID}`, `mount:${ID}`, "start", `revoke:${OLD_LEASE}`, "mint", "write"]);
     expect(f.commands.find((args) => args[0] === "start")).toEqual(["start", containerName(ID)]);
     expect(f.commands.some((args) => ["run", "create", "volume"].includes(args[0]!))).toBe(false);
-    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["openai", "world", "git:github:example:project"], ttlMinutes: 30, maxRequests: 500 }]);
+    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["openai", "git:github:example:project"], ttlMinutes: 30, maxRequests: 500 }]);
     const payload = f.commands.find((args) => args[0] === "exec")!.at(-1)!;
     const env = JSON.parse(Buffer.from(payload, "base64").toString());
     expect(env.OPENAI_API_KEY).toBe(lease(1));
+    expect(env.OPENAI_BASE_URL).toBe("http://172.31.250.1:7779/gw/openai");
+    expect(env).not.toHaveProperty("GALAHAD_WORLD");
     expect(env.GALAHAD_TOKEN).toBe(lease(1));
     expect(env.GALAHAD_REPO_URL).toBe("http://172.31.250.1:7779/git/github/example/project.git");
     const visible = JSON.stringify({ resumed, ledger: f.ledger });

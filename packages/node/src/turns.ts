@@ -109,7 +109,7 @@ export interface TurnSpec {
   messages: ChatMessage[];
   /** What it leaves waiting on the owner, noted as its tools run: approvals it filed, keys it asked for. */
   waits: { actions: string[]; secrets: string[] };
-  /** The answer itself: chat()'s events (its slot, its tools, the archive and the world inside). */
+  /** The answer itself: chat()'s events (its slot, its tools and the archive inside). */
   run(steering: Steering, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
 }
 

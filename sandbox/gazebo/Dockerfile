@@ -1,6 +1,6 @@
-# Gazebo: robotics simulation (Gazebo Harmonic: gz-sim 8, headless, DART physics),
-# for experiments shown live in Galahad's SANDBOX world. Same rules as the workshop
-# image (../Dockerfile): unprivileged uid 1000, read-only at runtime, no capabilities.
+# Gazebo: robotics simulation (Gazebo Harmonic: gz-sim 8, headless, DART physics).
+# Same rules as the workshop image (../Dockerfile): unprivileged uid 1000, read-only
+# at runtime, no capabilities.
 # Ubuntu 24.04, because Open Robotics publishes Gazebo for Ubuntu (Debian doesn't
 # package gz-sim). No GUI and no rendering: physics only, which needs no GPU.
 FROM ubuntu:24.04
@@ -22,8 +22,7 @@ RUN apt-get update \
 
 COPY gz-check /usr/local/bin/gz-check
 COPY websearch /usr/local/bin/websearch
-COPY galahad_world.py /usr/lib/python3/dist-packages/galahad_world.py
-RUN chmod 0755 /usr/local/bin/gz-check /usr/local/bin/websearch && chmod 0644 /usr/lib/python3/dist-packages/galahad_world.py
+RUN chmod 0755 /usr/local/bin/gz-check /usr/local/bin/websearch
 
 # Ubuntu's image already has uid 1000 ("ubuntu"); the squire takes its place.
 RUN userdel --remove ubuntu 2>/dev/null; useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \

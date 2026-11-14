@@ -423,46 +423,8 @@ function retry(api: Api, turn: Turn): void {
   send(api, text, true);
 }
 
-// ---- the same conversation, for other surfaces (the SANDBOX talks to Galahad here too) ----
-
-/** A turn of the conversation as another surface shows it. */
-export type ChatTurn = Readonly<Pick<Turn, "id" | "role" | "content" | "status" | "error" | "model" | "as">> & { readonly step: string | null };
-
-/** The conversation as it stands (the one the Chat page shows): its turns, the step the answer is at, what's queued, and its title. */
-export function chatState(): {
-  turns: ChatTurn[];
-  busy: boolean;
-  title: string | null;
-  queue: QueuedMessage[];
-  held: QueueHold | null;
-  /** Your steers that haven't reached him yet. */
-  steering: string[];
-  /** A message can be queued here (a kept chat: there's somewhere on the node to keep it). */
-  canQueue: boolean;
-  /** When the node stops the turn by itself. */
-  deadline: number | null;
-} {
-  return {
-    turns: thread.turns.map((t) => ({ id: t.id, role: t.role, content: t.content, status: t.status, error: t.error, model: t.model, as: t.as, step: t.steps.at(-1)?.text ?? null })),
-    busy: live !== null,
-    title: current?.title ?? null,
-    queue,
-    held,
-    steering,
-    canQueue: current !== null,
-    deadline: live?.deadline ?? null,
-  };
-}
-
-/** Told whenever the conversation changes (a turn added, an answer streaming in). Returns the way to stop listening. */
-export function onChatChange(fn: () => void): () => void {
-  const listener = () => fn();
-  changed.add(listener);
-  return () => changed.delete(listener);
-}
-
 /**
- * Your message, from either composer. With nothing running it's sent. While he works, `modifier` says
+ * Your message, from the composer. With nothing running it's sent. While he works, `modifier` says
  * whether the other of steer and queue was asked for (this device's Enter does one, the modifier the other).
  * Resolves to what became of it, or why it wasn't taken.
  */
@@ -503,7 +465,7 @@ export async function sendMessage(api: Api, raw: string, opts: { modifier?: bool
   }
 }
 
-/** What you can do with your queue, from either composer. Each resolves to a problem in words, or null. */
+/** What you can do with your queue. Each resolves to a problem in words, or null. */
 export const queueActions = (api: Api) => {
   const run = async (path: string, body: object): Promise<string | null> => {
     if (!current) return "This chat isn't kept, so nothing is queued behind it.";
@@ -573,7 +535,7 @@ function asideTarget(): { conversation: string } | { turn: string } | null {
   return live?.id ? { turn: live.id } : null;
 }
 
-/** Ask on the side, from either composer: answered apart, and part of nothing unless brought back. */
+/** Ask on the side: answered apart, and part of nothing unless brought back. */
 export function openChatAside(api: Api, question = ""): void {
   const about = asideTarget();
   if (!about) return void toast("Nothing to ask on the side yet", { description: "A side question is about a chat: ask something first.", tone: "warn" });

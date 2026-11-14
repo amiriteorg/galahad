@@ -8,8 +8,8 @@ import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 
 /*
- * What's waiting while Galahad works, above either composer (the Chat page's and the
- * SANDBOX's): the messages you sent to steer him that haven't reached him yet, and the
+ * What's waiting while Galahad works, above the composer: the messages you sent to
+ * steer him that haven't reached him yet, and the
  * ones you queued on the node, each editable and removable, with Send now. After a
  * stop, a failure or a restart the queue is held: nothing is sent until you resume
  * or discard it. And one line that says what unattended work may and may not do.

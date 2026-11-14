@@ -10,11 +10,6 @@ import {
   type ChatStreamEvent,
   type ChatMessage,
   type DoctorReport,
-  stationForTool,
-  staysPut,
-  type EyesPlace,
-  type WorldEvent,
-  type WorldNode,
   type ConversationSummary,
   type ConversationView,
   type ChatNeeds,
@@ -58,9 +53,6 @@ import {
   TEAM_GALAHAD,
   TeammateId,
   teamArmLabel,
-  avatarExpression,
-  resolveAvatar,
-  MAX_PARTNERS,
   type SecretView,
   type TrialRecord,
   trialProblem,
@@ -73,7 +65,7 @@ import {
   type UsageView,
   ComputeLimit,
   COMPUTE_RESOURCE,
-  type Station,
+  type AttemptStation,
   utf8,
   verifyRequestSignature,
 } from "@galahad/core";
@@ -112,21 +104,16 @@ import type { Governor } from "./compute/governor.ts";
 import type { ComputeService } from "./compute/service.ts";
 import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
-import { chatTools, type ToolApi, TOOLS, toolsFor } from "./tools.ts";
+import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
 import type { ChatStore, KeptSummary, QueuedBy, Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
-import { handleSandboxWorld, type WorldHub } from "./world-hub.ts";
-import { ExperimentError } from "./experiment-store.ts";
-import { RunError, runExperiment } from "./experiment-run.ts";
 import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import { fenceMemories } from "./archive/retrieval.ts";
 import type { ArchiveService } from "./archive/service.ts";
 import { ArchiveError } from "./archive/store.ts";
 import { type GivenSkills, SkillError, type SkillsService, type SkillWriter } from "./skills.ts";
-import { type Eyes, EyesError } from "./eyes.ts";
-import type { ReviewResult, ReviewState } from "./world-review.ts";
 import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
@@ -136,9 +123,8 @@ import { BoardError, type BoardStore } from "./board.ts";
 import { boardVersionForArchive } from "./board-history.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
-import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView } from "./loops.ts";
-import { selfActionOn } from "./heartbeat-world.ts";
-import { companionOf, companionView, journalEntries } from "./journal.ts";
+import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
+import { journalEntries } from "./journal.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
@@ -199,14 +185,8 @@ export interface AppContext {
   turns: TurnHub;
   /** The quests in hand, as whoever runs each one reports it. */
   quests: QuestBoard;
-  /** The SANDBOX: what Galahad is doing, and the experiments on their plots. */
-  world: WorldHub;
   /** The chalkboard you and Galahad share. */
   board: BoardStore;
-  /** His eyes: frames a page rendered from his point of view, and the words for what he sees (eyes.ts). */
-  eyes: Eyes;
-  /** His review of his own world through them (world-review.ts): yours to start. */
-  review: { run(places?: readonly EyesPlace[], signal?: AbortSignal): Promise<ReviewResult>; state: ReviewState };
   /** The archive: what this node keeps for good, and searches by words and meaning. */
   archive: ArchiveService;
   /** His skills: learned from quests that passed review, offered as data, kept in order by you. */
@@ -215,9 +195,9 @@ export interface AppContext {
   usage: UsageStore;
   /** What the node did, for the ledger (the git gateway's reads). */
   ledger?: (entry: LedgerEntryInput) => void;
-  /** How the node reaches the world (tests pass a stand-in). */
+  /** How the node reaches other machines and services (tests pass a stand-in). */
   fetch?: typeof fetch;
-  /** Aborted when the node stops: streams that would never end on their own (the world) end. */
+  /** Aborted when the node stops: what would otherwise hold it up (a doctor's full check under way) ends. */
   shutdown?: AbortSignal;
 }
 
@@ -250,7 +230,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
-const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "experiment", "experimentRecording", "archiveSearch", "archiveEntry", "skill"]);
+const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "archiveSearch", "archiveEntry", "skill"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -529,21 +509,6 @@ export function createApp(ctx: AppContext) {
     };
   }
 
-  // The world's banners: the fleet's nodes and paired devices, with who's online (no state digest).
-  ctx.world.setNodes((): WorldNode[] => {
-    const online = new Map(ctx.sync.status().map((p) => [p.device, p.online]));
-    return deviceViews()
-      .filter((d) => !d.revokedAt)
-      .map((d) => ({
-        id: d.id,
-        name: d.name,
-        kind: d.kind,
-        self: d.id === ctx.identity.id,
-        online: d.id === ctx.identity.id || (online.get(d.id) ?? false),
-        sandboxHost: Boolean((d.caps as { sandbox?: { image?: unknown } } | null)?.sandbox?.image),
-      }));
-  });
-
   /** Recalled memories become context for chat, labelled with their trust level. */
   function memoryContext(query: string): string | undefined {
     const memories = ctx.store.recall(query, 8);
@@ -595,58 +560,6 @@ export function createApp(ctx: AppContext) {
         return { bytes: new Uint8Array(await result.arrayBuffer()), type: result.headers.get("content-type") ?? "" };
       },
     };
-  }
-
-  /**
-   * What the world shows of an answer: where Galahad goes for each step, and a line of
-   * what he's saying now and then. Once the bank is in the answer, no more lines from it.
-   */
-  function worldWatcher(role: string, quest: boolean, answer: { content: string; bank: boolean }) {
-    let model: string | null = null;
-    let spoken = 0;
-    let lastLine = 0;
-    const thinking = () => ctx.world.doing("council", quest ? `The ${role} is thinking` : "Thinking it over", { model });
-    return (event: ChatStreamEvent) => {
-      if (event.type === "model") {
-        model = event.ref;
-        thinking();
-      } else if (event.type === "tool" && staysPut(event.name)) {
-        // Looking through his own eyes takes him nowhere: he looks from where he stands.
-      } else if (event.type === "tool") {
-        const tool = TOOLS.find((t) => t.name === event.name);
-        // Once the bank is in the answer, a tool's input may carry it: the world gets only its name.
-        // On the board, what he writes (its title or its first words), not its JSON.
-        const said = event.name.startsWith("board_") ? event.input.match(/"(?:title|text)":"((?:[^"\\]|\\.){1,80})/)?.[1] : undefined;
-        const detail = answer.bank || tool?.flow === "private" || !event.input ? "" : `: ${said ?? event.input.replace(/^\{"?(?:query|q|command|text)"?:"?/, "").replace(/"?\}$/, "")}`;
-        ctx.world.doing(stationForTool(event.name), `${event.title}${detail}`, { model });
-      } else if (event.type === "tool_result") {
-        thinking();
-      } else if (event.type === "text" && !answer.bank && Date.now() - lastLine > 2_500 && answer.content.length - spoken > 40) {
-        // The latest complete sentence he's written, now and then.
-        const fresh = answer.content.slice(spoken);
-        const sentence = fresh.match(/[^.!?\n]{12,}[.!?](?=\s|$)(?![^]*[^.!?\n]{12,}[.!?](?=\s|$))/)?.[0];
-        if (sentence) {
-          ctx.world.think(sentence.replace(/[*_`#>]/g, ""));
-          spoken = answer.content.length;
-          lastLine = Date.now();
-        }
-      }
-    };
-  }
-
-  /**
-   * What an agent (an arm, Galahad's own tools included) does through the API, as the world shows it. A coding
-   * agent (not Galahad's own chat, not a loop: those are him) walks there beside him, as his partner.
-   */
-  function armActivity(name: RouteName, input: unknown, label?: string): void {
-    const tool = TOOLS.find((t) => t.routes[0] === name);
-    if (!tool || (name === "connectors" || name === "fleet")) return;
-    if (staysPut(tool.name)) return;
-    const q = input && typeof input === "object" ? ((input as Record<string, unknown>).q ?? (input as Record<string, unknown>).query) : undefined;
-    const station = stationForTool(tool.name);
-    const line = `${tool.title}${typeof q === "string" && tool.flow !== "private" ? `: ${q.slice(0, 80)}` : ""}`;
-    ctx.world.doing(station, line);
-    if (label && label !== GALAHAD_ARM && !label.startsWith("loop.")) ctx.world.partner(label, station, line);
   }
 
   /** Self-action as the owner sees it: on or off, the heartbeats it follows, the allowlist, his latest fixes. */
@@ -998,8 +911,8 @@ export function createApp(ctx: AppContext) {
     return runs;
   }
 
-  /** Where an attempt's call takes its helper: planning at the council, working at the forge, reviewed at the observatory. */
-  const attemptStation = (role: string): Station => (role === "planner" ? "council" : role === "reviewer" ? "observatory" : "forge");
+  /** Where an attempt's call is, for the census: planning at the council, working at the forge, reviewed at the observatory. */
+  const attemptStation = (role: string): AttemptStation => (role === "planner" ? "council" : role === "reviewer" ? "observatory" : "forge");
 
   function trialViews(): TrialView[] {
     // What each trial's model calls came to, where it was recorded (read leniently: a shape this node can't read is left out).
@@ -1130,7 +1043,7 @@ export function createApp(ctx: AppContext) {
 
   /**
    * A turn of yours, ready for the hub to run: the same answer as ever (his tools within what you may do, as
-   * the agent he is, the bank's rules in them, his slot, the archive, the world), on the turn's own signal
+   * the agent he is, the bank's rules in them, his slot, the archive), on the turn's own signal
    * instead of a request's, so nothing about it depends on a connection.
    */
   function turnSpec(ready: ReturnType<typeof prepareAnswer>, p: Principal): TurnSpec {
@@ -1153,7 +1066,6 @@ export function createApp(ctx: AppContext) {
         // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
         const tools = chatTools(toolsIn(agent, kept), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
         const shown: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
-        const seen = worldWatcher(role, false, shown);
         let leave: (() => void) | null = null;
         let answered: (() => void) | null = null;
         try {
@@ -1183,13 +1095,11 @@ export function createApp(ctx: AppContext) {
           }
           for await (const event of chat(brainFor(p), { ...request, messages, tools, context, signal, steering })) {
             keepStep(shown, event);
-            seen(event);
             yield event;
           }
         } finally {
           leave?.();
           answered?.();
-          ctx.world.rest();
         }
       },
     };
@@ -1467,7 +1377,7 @@ export function createApp(ctx: AppContext) {
    * bound, and a host whose Docker cannot say just now has not said "none". If the host cannot be asked, nothing is
    * removed. What became of the VM is said as it was: in the answer and in the ledger. */
   async function removeTeam(member: Teammate, destroyWorkspace: boolean, p: Principal, signal: AbortSignal) {
-    // (A reserved handle from an older database never had a label, so it never had a VM or a figure in the world.)
+    // (A reserved handle from an older database never had a label, so it never had a VM.)
     const label = TeammateId.safeParse(member.id).success ? teammateLabel(member.id) : null;
     const node = member.workspace?.node ?? member.workspaceNode;
     /** Its VMs where one was made or planned, as that host lists them now. `left`: the node is no longer part of the fleet, and whatever was on it went with it. */
@@ -1499,7 +1409,6 @@ export function createApp(ctx: AppContext) {
       } else workspace = found.where === "left" ? "left" : member.workspace ? "gone" : "none";
     };
     const removed = await teamOf().remove(member.id, { release });
-    if (label) ctx.world.partnerLeft(label);
     const detail = { none: "it had no workspace", destroyed: "its VM workspace was destroyed with it", gone: "its VM was already gone from its host", left: "its VM was on a node that has left the fleet; nothing there was touched" }[workspace];
     ctx.ledger?.({ class: "delete", resource: "team", target: `worker:${removed.id}`, verdict: "approved", reason: `removed by you (${p.device.slice(0, 12)})`, detail });
     return { removed: { id: removed.id, name: removed.name }, workspace };
@@ -1534,26 +1443,7 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad made a squire of his own, in your conversation with him" : `his squire ${made.createdBy} made another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, onRecruit, onChange: () => {
-      const active = ctx.team!.service?.activeWork() ?? [];
-      const activity = ctx.team!.store.avatarActivity();
-      const now = Date.now();
-      const latest = new Map<string, number>();
-      for (const job of [...activity.tasks.map((t) => ({ id: t.assignee, at: t.updatedAt })), ...activity.deliveries.map((d) => ({ id: d.teammate, at: d.updatedAt }))]) {
-        if (now - job.at < 30_000) latest.set(job.id, Math.max(latest.get(job.id) ?? 0, job.at));
-      }
-      // The world's existing six-figure bound stays intact. Active workers take
-      // precedence over recent outcomes, and terminal states replace stale work faces.
-      const ids = [...new Set([...active.map((work) => work.teammate), ...[...latest].sort((a, b) => b[1] - a[1]).map(([id]) => id)])].slice(0, MAX_PARTNERS);
-      const labels = { idle: "Ready for the next task", thinking: "Coordinating within the hivemind", working: "Working in his persistent VM", waiting: "Waiting for queued work", pleased: "Task completed and verified", concerned: "Work needs attention", resting: "Squire paused" };
-      for (const id of ids.reverse()) {
-        // One that was removed still has its last work on record for a while: it is shown no more, and never stops the others being shown.
-        const member = ctx.team!.store.teammate(id);
-        if (!member) continue;
-        const expression = avatarExpression(member, activity, now);
-        ctx.world.partner(`Galahad · ${member.name}`, expression === "working" || expression === "pleased" ? "forge" : "council", labels[expression], { id: teammateLabel(id), avatar: resolveAvatar(id, member.avatar), expression });
-      }
-    } });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, onRecruit });
     ctx.team.service.start();
   }
 
@@ -1786,7 +1676,8 @@ export function createApp(ctx: AppContext) {
             answerId = ctx.chats.startAnswer(kept.id);
             send({ type: "conversation", id: kept.id, title: kept.title, project: kept.project });
           }
-          const seen = helper ? (event: ChatStreamEvent) => void (event.type === "model" && ctx.compute.attemptModel(helper, event.ref)) : worldWatcher(request.role ?? "planner", wantTools === false, answer);
+          // The census names the model an attempt's call is answered by.
+          const seen = (event: ChatStreamEvent): void => void (helper && event.type === "model" && ctx.compute.attemptModel(helper, event.ref));
           let context = known;
           // A model call takes a slot. Yours, with his tools, never waits; a quest's or an agent's waits its turn.
           let leave: (() => void) | null = null;
@@ -1830,7 +1721,6 @@ export function createApp(ctx: AppContext) {
             leave?.();
             attemptEnded?.();
             answered?.();
-            if (!helper) ctx.world.rest();
             clearInterval(heartbeat);
             if (kept && answerId !== null) {
               const status = answer.error ? "error" : req.signal.aborted ? "stopped" : "done";
@@ -1939,126 +1829,10 @@ export function createApp(ctx: AppContext) {
     quests: () => ({ quests: ctx.quests.list() }),
     questProgress: (input, p) => {
       // Each reporter's quests are its own: an agent's or a loop's report never writes over yours.
-      // (An agent that may read the bank: the world draws its quest's shape, never its words. world-quest.ts.)
-      ctx.quests.report(p.kind === "arm" ? p.label! : p.kind === "node" ? (ctx.store.device(p.device)?.name ?? "a node") : "you", input, { bank: p.kind === "arm" && p.scopes.includes("bank:read") });
+      ctx.quests.report(p.kind === "arm" ? p.label! : p.kind === "node" ? (ctx.store.device(p.device)?.name ?? "a node") : "you", input);
       return { ok: true };
     },
     projects: () => ({ projects: projectsView() }),
-    worldReport: (input, p) => {
-      ownerOnly(p);
-      ctx.world.report(input, ctx.store.device(p.device)?.name ?? (p.kind === "admin" ? "a terminal" : p.device));
-      return { ok: true };
-    },
-    worldReports: (_input, p) => {
-      ownerOnly(p);
-      return { reports: ctx.world.reportsView() };
-    },
-    // ---------- saved experiments (node-local: what this node's world showed) ----------
-    experiments: () => {
-      if (!ctx.world.store) throw new HttpError(424, "this node doesn't keep experiments");
-      return { node: ctx.nodeName, ...ctx.world.store.listing() };
-    },
-    experiment: (input) => {
-      const store = ctx.world.store;
-      const experiment = store?.get(input.id);
-      if (!store || !experiment) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
-      return { experiment, examination: store.examination(input.id), ...(input.code ? { code: store.code(input.id) } : {}) };
-    },
-    experimentRecording: (input) => {
-      const page = ctx.world.store?.recording(input.id, input.from ?? 0, input.limit ?? 2000, input.hz);
-      if (!page) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
-      return page;
-    },
-    pinExperiment: (input, p) => {
-      if (!isOwner(p)) throw new HttpError(403, "only you pin saved experiments");
-      return experimentErrors(() => ({ experiment: ctx.world.store!.pin(input.id, input.pinned) }));
-    },
-    deleteExperiment: (input, p) => {
-      // Deleting kept work is yours to decide (fleet:admin, which agents can never hold).
-      if (!isOwner(p)) throw new HttpError(403, "only you delete saved experiments");
-      return experimentErrors(() => {
-        if (!ctx.world.store!.remove(input.id)) throw new HttpError(404, `no saved experiment ${input.id} on ${ctx.nodeName}`);
-        return { deleted: true };
-      });
-    },
-    runExperiment: (input, p) => {
-      const { on, quest: relayed, ...rest } = input;
-      // An arm's sandboxes all belong to its own quest (Galahad's own, in chat, too); a node relays the arm's.
-      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
-      return longRunning(
-        onNode(p, on, routes.runExperiment.path, { ...rest, ...(quest ? { quest } : {}) }, async () => {
-          try {
-            return await runExperiment({ sandbox: ctx.sandbox!, world: ctx.world, nodeName: ctx.nodeName, log: ctx.log }, rest, quest ? { quest } : {});
-          } catch (error) {
-            if (error instanceof RunError) throw new HttpError(error.status, error.message);
-            throw error;
-          }
-        }).then((result) => {
-          // An experiment you started yourself has ended: worth telling you, if you've left (never its script's title).
-          if (isOwner(p) && result.experiment) ctx.notify.experimentEnded(result.experiment.id, result.exitCode === 0 && result.experiment.status !== "failed" ? "done" : "failed");
-          return result;
-        }),
-      );
-    },
-    world: (_input, p, req) => {
-      // Yours alone: it carries what Galahad is thinking about in your chats.
-      ownerOnly(p);
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          let open = true;
-          const write = (text: string) => {
-            if (!open) return;
-            try {
-              controller.enqueue(encoder.encode(text));
-            } catch {
-              open = false;
-            }
-          };
-          const send = (event: WorldEvent) => write(`data: ${JSON.stringify(event)}\n\n`);
-          send(ctx.world.hello());
-          const stop = ctx.world.watch(send);
-          // A page that draws the world can render his eyes (eyes.ts): it says so when it opens the stream.
-          const blind = new URL(req.url).searchParams.get("eyes") === "1" ? ctx.world.watchEyes(send) : null;
-          const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
-          const end = () => {
-            stop();
-            blind?.();
-            clearInterval(heartbeat);
-            if (open) {
-              open = false;
-              try {
-                controller.close();
-              } catch {
-                /* already closed */
-              }
-            }
-          };
-          req.signal.addEventListener("abort", end);
-          if (ctx.shutdown?.aborted) end();
-          else ctx.shutdown?.addEventListener("abort", end);
-        },
-      });
-      return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
-    },
-    // ---------- his eyes: what he sees, in words and (when a page can render it) a picture; his review of his world ----------
-    look: (input) => eyesErrors(() => ctx.eyes.look(input)),
-    worldEyes: (input, p) => {
-      // A frame is a rendering made on one of your own devices: nothing else answers for his eyes.
-      if (!isOwner(p)) throw new HttpError(403, "only your own devices answer for his eyes");
-      const frame = eyesErrors(() => ctx.eyes.answer(input, deviceName(p) ?? "a paired device"));
-      return { kept: frame.id, at: frame.at };
-    },
-    worldReviewStatus: () => ctx.review.state.status(),
-    worldReview: (input, p, req) => {
-      // It spends the day's budget on a model and files suggestions: yours to start (a loop you set up runs it in the node).
-      if (!isOwner(p)) throw new HttpError(403, "only you ask him to review his world");
-      return longRunning(ctx.review.run(input.places, req.signal));
-    },
-    setReviewBudget: (input, p) => {
-      if (!isOwner(p)) throw new HttpError(403, "only you set the review's budget");
-      return ctx.review.state.setBudget(input.budget);
-    },
     // ---------- the chalkboard: you draw, Galahad and your agents write, and only you erase your drawing ----------
     board: () => ctx.board.view(),
     boardSnapshot: () => {
@@ -2214,7 +1988,7 @@ export function createApp(ctx: AppContext) {
     execSandbox: (input, p) => {
       const { on, quest: relayed, ...rest } = input;
       const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
-      // An attempt's command: its helper is at the forge while it runs.
+      // An attempt's command: the census has it at the forge while it runs.
       const tag = ctx.compute.attemptOf(rest.id);
       const ended = tag ? ctx.compute.attemptBegin(tag, { station: "forge", doing: "Running a command" }) : null;
       return longRunning(
@@ -2320,7 +2094,6 @@ export function createApp(ctx: AppContext) {
       });
       // This node measures itself again if its own ceiling's threads changed; another node sees it at its next look.
       if (node.id === ctx.identity.id) ctx.computeUpkeep?.();
-      ctx.compute.changed();
       return { node: node.name, limit, capacity: ctx.compute.view().nodes.find((n) => n.id === node.id)?.capacity ?? null };
     },
     setComputePolicy: (input, p) => {
@@ -2336,7 +2109,6 @@ export function createApp(ctx: AppContext) {
       // An agent's quests are its own: it can't name (or pre-empt) one of yours.
       const quest = owner ? input.quest : `${p.kind === "arm" ? armQuest(p.label!) : "node"}.${input.quest}`.slice(0, 64);
       const grant = ctx.compute.grant({ quest, effort: input.effort, ...(input.on ? { on: resolveNode(input.on).id } : {}), ...(input.label ? { label: input.label } : {}) }, { by, owner });
-      if (grant.attempts > 1) ctx.world.doing("council", `Leading ${grant.attempts} attempts at a quest${input.label ? `: ${input.label}` : ""}`);
       return grant;
     },
     recordTrial: (input) => {
@@ -2528,8 +2300,6 @@ export function createApp(ctx: AppContext) {
     dismissNotice: (input) => {
       if (!ctx.store.lww(`notice:${input.key}`)?.value) throw new HttpError(404, "no such notice");
       ctx.store.emit(ctx.identity, "notice.dismissed", { key: input.key });
-      // He stops tending to it in the world.
-      ctx.world.heartbeatChanged();
       return { ok: true };
     },
     heartbeat: async () => ({ node: ctx.nodeName, findings: await ctx.heartbeatCheck() }),
@@ -2568,25 +2338,10 @@ export function createApp(ctx: AppContext) {
           ...(loop.label ? { label: loop.label } : {}),
         });
       }
-      ctx.world.heartbeatChanged();
       return selfActionView();
     },
     // His journal: the entries his loop kept, newest day first (read like any memory: agents may read his recollection).
     journal: (input) => journalEntries(ctx.store, input),
-    // His dog's name: the owner's setting, the same on every node.
-    companion: () => companionView(ctx.store),
-    setCompanion: (input) => {
-      const name: string | null = input.name;
-      // It replicates in plaintext, goes into his journal's prompt and onto every device's world.
-      if (name !== null) guardAgainstSecrets(name);
-      if ((companionOf(ctx.store)?.name ?? null) !== name) {
-        if (name === null) ctx.store.emit(ctx.identity, "companion.unnamed", {});
-        else ctx.store.emit(ctx.identity, "companion.named", { name });
-      }
-      // The world calls the dog by its name at once.
-      ctx.world.companionChanged();
-      return companionView(ctx.store);
-    },
     connectors: () => ({ connectors: connectorViews() }),
     setConnector: async (input) => {
       if (input.mcp) {
@@ -2795,17 +2550,6 @@ export function createApp(ctx: AppContext) {
     }
   };
 
-  /** The experiment store's refusals as plain HTTP errors. */
-  function experimentErrors<T>(run: () => T): T {
-    if (!ctx.world.store) throw new HttpError(424, "this node doesn't keep experiments");
-    try {
-      return run();
-    } catch (error) {
-      if (error instanceof ExperimentError) throw new HttpError(error.status, error.message);
-      throw error;
-    }
-  }
-
   /** Bank failures as plain HTTP errors: a status and a sentence, never the bank's body. */
   async function bankErrors<T>(run: () => Promise<T>): Promise<T> {
     try {
@@ -2816,32 +2560,16 @@ export function createApp(ctx: AppContext) {
     }
   }
 
-  /** His eyes' own refusals (nobody asked, not the image it claims, asked too often), with their statuses. */
-  function eyesErrors<T>(run: () => T): T {
-    const refuse = (error: unknown): never => {
-      if (error instanceof EyesError) throw new HttpError(error.status, error.message);
-      throw error;
-    };
-    try {
-      const out = run();
-      return out instanceof Promise ? (out.catch(refuse) as T) : out;
-    } catch (error) {
-      return refuse(error);
-    }
-  }
-
   const routeTable = new Map(Object.entries(routes).map(([name, r]) => [`${r.method} ${r.path}`, name as RouteName]));
 
   async function handle(req: Request, listener: Listener): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Sandboxes can reach exactly four things on the host, all token-gated: the model
-    // gateway, the git gateway (read-only clones of one repository), web search, and the
-    // world (their experiments, shown in the SANDBOX).
+    // Sandboxes can reach exactly three things on the host, all token-gated: the model
+    // gateway, the git gateway (read-only clones of one repository) and web search.
     if (listener === "sandbox") {
       if (path === "/search") return handleSandboxSearch(req, { tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}) });
-      if (path.startsWith("/world/")) return handleSandboxWorld(req, { tokens: ctx.tokens, world: ctx.world, nodeName: ctx.nodeName });
       if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
@@ -2882,7 +2610,6 @@ export function createApp(ctx: AppContext) {
       if (!principal) throw new HttpError(401, "sign the request with an enrolled device key");
       if (route.scope && !principal.scopes.includes(route.scope)) throw new HttpError(403, `requires scope ${route.scope}`);
       const input = route.input ? route.input.parse(body.length ? JSON.parse(new TextDecoder().decode(body)) : {}) : undefined;
-      if (principal.kind === "arm") armActivity(name, input, principal.label);
       const result = await handlers[name](input, principal, req);
       if (result instanceof Response) return result;
       // What the PWA reads goes compressed. Answers that carry a credential (an invite, a token) never do.

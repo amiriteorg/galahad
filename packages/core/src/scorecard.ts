@@ -3,15 +3,15 @@ import { z } from "zod";
 /*
  * The scorecard: what one benchmark suite measured in one run (`bun run bench`,
  * docs/BENCHMARKS.md). It is the contract between whatever measures (the suites
- * under bench/, the browser benchmark of the SANDBOX) and whatever reads (the
- * report, CI's gate, and later Galahad himself).
+ * under bench/) and whatever reads (the report, CI's gate, and later Galahad
+ * himself).
  *
  * Two kinds of metric, kept apart:
  *
- *  - "quality": exact and deterministic for a seed (a path's length against the
- *    optimum, whether replicas converged, how many triangles are degenerate). The
- *    same commit and seed give the same value, so any change is a real change,
- *    and one for the worse fails the run.
+ *  - "quality": exact and deterministic for a seed (whether replicas converged,
+ *    how many events a replica wrongly refused, a search's recall). The same
+ *    commit and seed give the same value, so any change is a real change, and
+ *    one for the worse fails the run.
  *  - "speed": a timing or a rate, as measured on this machine: the median of `n`
  *    samples, with their spread. It is compared across machines by scaling with
  *    `machine.calibration` (the calibration kernel's score on one thread), never

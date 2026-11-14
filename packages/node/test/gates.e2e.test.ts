@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, type Calibration, ceilingThreads, type LedgerEntry, type LoopView, type QuestView, REFERENCE_SINGLE, routes, type RouteName, type WorldEvent } from "@galahad/core";
+import { bodyFingerprint, type Calibration, ceilingThreads, type LedgerEntry, type LoopView, type QuestView, REFERENCE_SINGLE, routes, type RouteName } from "@galahad/core";
 import type { QuestEvent } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -298,25 +298,6 @@ describe("seeing where a quest is", () => {
     const { token: reader } = await call<{ token: string }>("mintArm", { label: "no-sandbox", scopes: ["mind:read"] });
     await expect(call("questProgress", { quest: "q-x", goal: "g", state: "working", step: 0, maxSteps: 1, revisions: 0, gates: [] }, reader)).rejects.toThrow(/403/);
   }, 20_000);
-
-  test("the world's slate: a quest in hand is in its hello with its plan; an agent that may read the bank, and a quest about the bank, without a word", async () => {
-    const progress = { state: "working", step: 3, maxSteps: 30, revisions: 0, plan: "1. Read the notes.\n2. Tidy them.\nDone when: they are tidy.", gates: [{ command: "bun test", by: "owner", exitCode: 1, excerpt: "GATE-OUTPUT" }] };
-    await call("questProgress", { ...progress, quest: "q-slate", goal: "Tidy the notes" });
-    const slate = () => (daemon.world.hello() as Extract<WorldEvent, { type: "hello" }>).quests ?? [];
-    expect(slate().find((q) => q.id === "q-slate")).toMatchObject({ by: "you", title: "Tidy the notes", plan: ["Read the notes.", "Tidy them."], doneWhen: "they are tidy.", step: 3, gates: [{ label: "bun test", passed: false }], veiled: false });
-    expect(JSON.stringify(slate())).not.toContain("GATE-OUTPUT");
-    // An agent you granted bank:read: its quests are drawn as their shape alone, whatever they say.
-    const { token } = await call<{ token: string }>("mintArm", { label: "ledger-agent" });
-    await call("grantArm", { label: "ledger-agent", add: ["bank:read"] });
-    await call("questProgress", { ...progress, quest: "q-agent", goal: "Tidy the notes" }, token);
-    expect(slate().find((q) => q.id === "q-agent")).toMatchObject({ by: "ledger-agent", veiled: true, title: "", plan: [], doneWhen: "", step: 3, gates: [{ label: "", passed: false }] });
-    // And yours, when its words are about the bank.
-    await call("questProgress", { ...progress, quest: "q-bank", goal: "Sum my bank transactions for October" });
-    expect(slate().find((q) => q.id === "q-bank")).toMatchObject({ by: "you", veiled: true, title: "", plan: [] });
-    expect(JSON.stringify(slate())).not.toContain("October");
-    for (const quest of ["q-slate", "q-bank"]) await call("questProgress", { ...progress, quest, goal: "over", state: "stopped" });
-    await call("questProgress", { ...progress, quest: "q-agent", goal: "over", state: "stopped" }, token);
-  });
 });
 
 describe("a loop's quest carries its gates", () => {

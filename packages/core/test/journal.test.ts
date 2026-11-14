@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { Bodies, routes } from "../src/index.ts";
-import { cleanCompanionName, COMPANION_NAME_MAX, companionNameProblem, readCompanion } from "../src/companion.ts";
+import { routes } from "../src/index.ts";
 import { journalDate, journalEntry, journalHeading, journalParts, journalTags } from "../src/journal.ts";
 
 /*
  * His journal as every surface reads it (an entry from the memory the loop kept, its
  * recollection, what he learned and what he'd like to do next, an older reflection
- * too), and his dog's name as the owner may give it.
+ * too).
  */
 
 const HLC = "001794430200000.000000";
@@ -72,50 +71,5 @@ describe("a journal entry", () => {
     expect(ok({ limit: 0 })).toBe(false);
     expect(ok({ limit: 101 })).toBe(false);
     expect(ok({ q: "x" })).toBe(false);
-  });
-});
-
-describe("his dog's name", () => {
-  test("letters of any script, digits, spaces, hyphens and apostrophes, 1 to 24 characters", () => {
-    for (const name of ["Bors", "Bjørn", "Sir Kay-2", "O'Malley", "D’Artagnan", "Ærø", "ポチ", "Шарик", "राजा", "Z"]) expect(companionNameProblem(cleanCompanionName(name))).toBeNull();
-    expect(companionNameProblem("x".repeat(COMPANION_NAME_MAX))).toBeNull();
-    expect(companionNameProblem("x".repeat(COMPANION_NAME_MAX + 1))).toContain("24");
-    expect(companionNameProblem("")).not.toBeNull();
-    for (const name of ["Rex!", "<b>Rex</b>", "Rex‮", "Rex_1", "a/b", "Rex.", "🐕", "{name}", "-'-"]) expect(companionNameProblem(cleanCompanionName(name))).not.toBeNull();
-  });
-
-  test("is kept trimmed, its spaces single, its letters composed", () => {
-    expect(cleanCompanionName("  Sir   Kay\t")).toBe("Sir Kay");
-    expect(cleanCompanionName("Björn")).toBe("Björn");
-    expect(cleanCompanionName("line\nbreak")).toBe("line break");
-  });
-
-  test("what the mind holds is read strictly: anything else is no name", () => {
-    expect(readCompanion({ name: "Bors" })).toEqual({ name: "Bors" });
-    expect(readCompanion(null)).toBeNull();
-    expect(readCompanion({ name: " Bors " })).toBeNull();
-    expect(readCompanion({ name: "Rex!" })).toBeNull();
-    expect(readCompanion({ name: 7 })).toBeNull();
-    expect(readCompanion("Bors")).toBeNull();
-  });
-
-  test("the routes: read with what reads the fleet, set with what sets the owner's other settings; the name is checked at the boundary", () => {
-    expect(routes.companion.scope).toBe(routes.fleet.scope);
-    expect(routes.setCompanion.scope).toBe(routes.setSelfAction.scope);
-    const parse = (input: unknown) => routes.setCompanion.input.safeParse(input);
-    expect(parse({ name: "  Sir   Kay " })).toMatchObject({ success: true, data: { name: "Sir Kay" } });
-    expect(parse({ name: null })).toMatchObject({ success: true, data: { name: null } });
-    expect(parse({ name: "" }).success).toBe(false);
-    expect(parse({ name: "Rex!" }).success).toBe(false);
-    expect(parse({ name: "x".repeat(25) }).success).toBe(false);
-    expect(parse({}).success).toBe(false);
-    expect(parse({ name: "Bors", extra: 1 }).success).toBe(false);
-  });
-
-  test("in the log it's two kinds: named and unnamed; the log takes a name a newer node might allow", () => {
-    expect(Bodies["companion.named"].safeParse({ name: "Bors" }).success).toBe(true);
-    expect(Bodies["companion.named"].safeParse({ name: "" }).success).toBe(false);
-    expect(Bodies["companion.named"].safeParse({ name: "x".repeat(65) }).success).toBe(false);
-    expect(Bodies["companion.unnamed"].safeParse({}).success).toBe(true);
   });
 });

@@ -332,7 +332,7 @@ describe("hybrid search: words and meaning, fused", () => {
   async function corpus() {
     const { store } = open();
     const docs = [
-      ["a", "experiment", "Sedan crash test", "We drove the sedan into the barrier at 50 km/h; the crumple zone absorbed the energy.", "agent"],
+      ["a", "model", "Sedan crash test", "We drove the sedan into the barrier at 50 km/h; the crumple zone absorbed the energy.", "agent"],
       ["b", "teaching", "Cantilever deflection", "A beam fixed at one end deflects PL^3/3EI under a point load at its tip.", "owner"],
       ["c", "idea", "Truss for the stream crossing", "A small truss span over the stream by the lab, timber girders.", "owner"],
       ["d", "artifact", "Rocket thrust curve", "The booster's thrust peaked at 1.2 kN two seconds after launch.", "agent"],

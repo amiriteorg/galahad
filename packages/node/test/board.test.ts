@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type BoardChange, type BoardView, BOARD_LIMITS, type RouteName, routes, type WorldEvent } from "@galahad/core";
+import { type BoardChange, type BoardView, BOARD_LIMITS, type RouteName, routes } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { BoardError, BoardStore, checkPng, writeOnBoard } from "../src/board.ts";
+import { BoardError, BoardStore, checkPng } from "../src/board.ts";
 import { boardLines } from "../src/board-cli.ts";
 import { png } from "./png-fixture.ts";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -153,17 +153,6 @@ describe("galahad board", () => {
   });
 });
 
-describe("writing from the node itself (for experiments' examinations)", () => {
-  test("checked like the route, his, and the world shows him writing it", () => {
-    const board = new BoardStore({ dir: dir() });
-    const doing: string[] = [];
-    const item = writeOnBoard({ board, world: { doing: (station, text) => doing.push(`${station}: ${text}`) } }, { item: { kind: "note", title: "Examination", text: "It held." } });
-    expect(item.by).toBe("galahad");
-    expect(doing).toEqual(["observatory: Writing on the chalkboard: Examination"]);
-    expect(() => writeOnBoard({ board }, { item: { kind: "note", text: "" } })).toThrow();
-  });
-});
-
 /* ---------------- the routes, against a real daemon ---------------- */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "board-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
@@ -179,7 +168,6 @@ let daemon: Daemon;
 let admin = "";
 let arm = "";
 let other = "";
-const events: WorldEvent[] = [];
 
 async function call(name: RouteName, input: unknown, token: string) {
   const route = routes[name];
@@ -197,7 +185,6 @@ beforeAll(async () => {
   store.close();
   home.writeConfig({ v: 1, name: "board-node", fleet, port, keystore, advertise: "127.0.0.1" });
   daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {} });
-  daemon.world.watch((e) => events.push(e));
   admin = home.adminToken();
   arm = ((await (await call("mintArm", { label: "claude-code" }, admin)).json()) as { token: string }).token;
   other = ((await (await call("mintArm", { label: "codex" }, admin)).json()) as { token: string }).token;
@@ -208,14 +195,12 @@ afterAll(async () => {
 });
 
 describe("who may do what with the board", () => {
-  test("you draw (with the snapshot); an agent can't, and the world says the board changed", async () => {
+  test("you draw (with the snapshot); an agent can't", async () => {
     const draw = { strokes: [strokeAt(1)], snapshot: Buffer.from(png(320, 180)).toString("base64") };
     expect((await call("boardDraw", draw, arm)).status).toBe(403);
     const response = await call("boardDraw", draw, admin);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ added: 1, version: 1 });
-    expect(events.find((e) => e.type === "board")).toMatchObject({ type: "board", version: 1, change: "draw", by: "owner", region: null });
-    expect(daemon.world.hello()).toMatchObject({ board: { version: 1 } });
     // A snapshot that isn't a PNG is refused with a reason.
     const lie = await call("boardDraw", { strokes: [], snapshot: Buffer.from("<svg/>").toString("base64") }, admin);
     expect(lie.status).toBe(400);
@@ -232,7 +217,6 @@ describe("who may do what with the board", () => {
     expect(wrote.status).toBe(200);
     const { item } = (await wrote.json()) as { item: { id: string; by: string } };
     expect(item.by).toBe("claude-code");
-    expect(events.at(-1)).toMatchObject({ type: "board", change: "write", by: "agent" });
     expect((await call("boardWrite", { item: { kind: "text", text: "key: sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE" } }, arm)).status).toBe(422);
     // Another agent can't take it off; its writer can.
     expect((await call("boardErase", { items: [item.id] }, other)).status).toBe(403);
