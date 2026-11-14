@@ -1,6 +1,6 @@
 import type { ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
-import type { QueuedMessage, QueueHold, TurnLimits, TurnView } from "@galahad/core/turns";
+import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import { filterConversations, groupConversations } from "../lib/chats.ts";
@@ -98,7 +98,6 @@ let held: QueueHold | null = null;
 let steering: string[] = [];
 /** A turn is running in this chat that this device may not watch (it may read the bank). */
 let unwatchable: TurnView | null = null;
-let limits: TurnLimits | null = null;
 
 /** The kept conversation on screen (null: a new one, kept from its first answer, unless temporary). */
 interface Current {
@@ -499,8 +498,7 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
   const look = async (): Promise<void> => {
     if (document.hidden) return;
     try {
-      const view = await api.get<{ turns: TurnView[]; limits: TurnLimits }>("/api/turns", signal);
-      limits = view.limits;
+      const view = await api.get<{ turns: TurnView[] }>("/api/turns", signal);
       const now = view.turns.map((t) => `${t.id}:${t.conversation}`).sort().join(",");
       const mine = current && view.turns.find((t) => t.conversation === current!.id);
       if (now !== known) {
