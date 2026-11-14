@@ -475,15 +475,13 @@ if [[ $("$HOME/.bun/bin/bun" --version 2>/dev/null || true) != "$BUN_VERSION" ]]
 fi
 echo "→ bun $(bun --version)"
 
+RELEASE="$HOME/galahad/releases/$REV"
 mkdir -p "$HOME/galahad/releases"
-rm -rf "$HOME/galahad/releases/$REV"
-cp -a "$STAGE" "$HOME/galahad/releases/$REV"
+rm -rf "$RELEASE"
+cp -a "$STAGE" "$RELEASE"
 # The release knows which commit it is (git archive ships no .git): trials record it.
-echo "$REV" > "$HOME/galahad/releases/$REV/REVISION"
-ln -sfn "$HOME/galahad/releases/$REV" "$HOME/galahad/app.next"
-mv -T "$HOME/galahad/app.next" "$HOME/galahad/app" 2>/dev/null || { rm -f "$HOME/galahad/app"; mv "$HOME/galahad/app.next" "$HOME/galahad/app"; }
-APP="$HOME/galahad/app"
-cd "$APP"
+echo "$REV" > "$RELEASE/REVISION"
+cd "$RELEASE"
 bun install --frozen-lockfile >/dev/null
 
 if [[ $SKIP_TESTS != 1 ]]; then
@@ -497,6 +495,13 @@ if [[ $SKIP_TESTS != 1 ]]; then
   tail -4 "$LOG"
   rm -f "$LOG"
 fi
+
+# Only now is it `app`, what the node starts from: a release that failed its tests here leaves
+# the node's code as it was, on disk as well as running (the CLI and a restart read `app`).
+ln -sfn "$RELEASE" "$HOME/galahad/app.next"
+mv -T "$HOME/galahad/app.next" "$HOME/galahad/app" 2>/dev/null || { rm -f "$HOME/galahad/app"; mv "$HOME/galahad/app.next" "$HOME/galahad/app"; }
+APP="$HOME/galahad/app"
+cd "$APP"
 
 if [[ ! -f $HOME/.galahad/config.json ]]; then
   case $MODE in

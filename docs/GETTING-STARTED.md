@@ -106,9 +106,9 @@ scripts/deploy.sh wmd@ultra
 What a deploy does:
 
 1. Ships the committed tree only, into a fresh private directory it makes on the server (`mktemp -d`, removed when the deploy ends). It refuses to run if you have uncommitted changes.
-2. Unpacks it into `~/galahad/releases/<rev>`, then switches the `~/galahad/app` symlink to that directory in one atomic step. To roll back, point the symlink at an older release and restart.
+2. Unpacks it into `~/galahad/releases/<rev>`.
 3. Installs Bun 1.4.4 (the version the repo is tested with) unless that's the one in `~/.bun/bin`, from the official release, checking its SHA-256 against the one pinned in `scripts/remote-setup.sh`; then runs `bun install --frozen-lockfile`.
-4. Runs the whole test suite on the server and stops if anything fails.
+4. Runs the whole test suite on the server, in that release's directory, and stops if anything fails: the node keeps running the release it has, and `~/galahad/app` still points at it. Only a release that passed becomes `app`, in one atomic step. To roll back, point the symlink at an older release and restart.
 5. Creates the node or joins the fleet, but only the first time. On later runs the node's identity and mind are kept. Old releases are removed: it keeps this one, the two before it and the one the node is running from (on Linux, where systemd says which).
 6. Installs and restarts the service, then prints `galahad status`.
 
