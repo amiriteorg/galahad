@@ -160,6 +160,28 @@ describe("a plan that routes a conversation by its session is told which convers
   });
 });
 
+describe("a plan whose allowance is spent says so", () => {
+  const LIMIT = '{"type":"error","error":{"type":"GoUsageLimitError","message":"OpenCode Go usage limit reached (5-hour, resets in 1h 37m). To keep going now, turn on Extra Usage."}}';
+  const spentFetch = (async () => new Response(LIMIT, { status: 429, headers: { "content-type": "application/json" } })) as unknown as typeof globalThis.fetch;
+
+  test("held to a plan's model whose window is spent, the answer's error is the plan's own words: what was reached and when it resets", async () => {
+    const events = await all(chat({ ...mind({ engineer: ["own/m"] }), fetch: spentFetch }, { role: "reviewer", model: "opencode-go/kimi-k3.1-pro", messages: ask, coding: true }));
+    const error = events.find((e) => e.type === "error") as { type: "error"; error: string };
+    expect(error.error).toContain("no model in the roster could answer");
+    // Why, for each model that was asked: a trial that crashes on this says what to do about it, not only that it crashed.
+    expect(error.error).toContain("opencode-go/kimi-k3.1-pro");
+    expect(error.error).toContain("usage limit reached (5-hour, resets in 1h 37m)");
+    expect(error.error.length).toBeLessThan(900);
+    expect(error.error).not.toContain(GO_KEY);
+  });
+
+  test("a role with nothing configured still reads as it did, with each model's reason beside it", async () => {
+    const events = await all(chat({ ...mind({ engineer: ["nowhere/a", "elsewhere/b"] }), fetch: spentFetch }, { role: "engineer", messages: ask, coding: true }));
+    const error = events.find((e) => e.type === "error") as { type: "error"; error: string };
+    expect(error.error).toBe('no model in the roster could answer; add a key or adjust the roster (nowhere/a: provider "nowhere" is not configured; elsewhere/b: provider "elsewhere" is not configured)');
+  });
+});
+
 describe("outside coding he never answers with a coding plan", () => {
   test("a role with a plan's model and one of his own: he answers with his own, and nothing is sent to the plan", async () => {
     const { seen, fetch } = recorded();

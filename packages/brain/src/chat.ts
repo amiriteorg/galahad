@@ -190,6 +190,12 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   let declined: string | null = null;
   /** Another model has taken the answer over after words were said: its first words are a paragraph of their own. */
   let apart = false;
+  /** Why each model that was asked couldn't answer, for the error if none could (a plan's spent window says when it resets). */
+  const whyNot: string[] = [];
+  const passOver = (ref: string, error: string): ChatStreamEvent => {
+    whyNot.push(`${ref}: ${error.replace(/\s+/g, " ").slice(0, 240)}`);
+    return { type: "fallback", from: ref, error };
+  };
   for (const ref of candidates) {
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.
     const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
@@ -197,16 +203,16 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     try {
       parsed = parseRef(ref);
     } catch (error) {
-      yield { type: "fallback", from: ref, error: (error as Error).message };
+      yield passOver(ref, (error as Error).message);
       continue;
     }
     const provider = resolveProvider(ctx.store, ctx.vault, parsed.provider, req.coding ? "coding" : "own");
     if (!provider) {
-      yield { type: "fallback", from: ref, error: `provider "${parsed.provider}" is not configured` };
+      yield passOver(ref, `provider "${parsed.provider}" is not configured`);
       continue;
     }
     if (!provider.apiKey && !provider.local) {
-      yield { type: "fallback", from: ref, error: whyNoKey(parsed.provider) };
+      yield passOver(ref, whyNoKey(parsed.provider));
       continue;
     }
     const start = () => {
@@ -357,8 +363,10 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         declined = message;
         apart = wrote;
       }
-      yield { type: "fallback", from: ref, error: message };
+      yield passOver(ref, message);
     }
   }
-  yield { type: "error", error: declined ? `${declined}. No other model in the roster could take the answer over.` : "no model in the roster could answer; add a key or adjust the roster" };
+  // (Each model's own reason goes with it: "no model could answer" alone doesn't say whether to add a key or wait an hour.)
+  const reasons = whyNot.length ? ` (${whyNot.join("; ").slice(0, 700)})` : "";
+  yield { type: "error", error: declined ? `${declined}. No other model in the roster could take the answer over.` : `no model in the roster could answer; add a key or adjust the roster${reasons}` };
 }
