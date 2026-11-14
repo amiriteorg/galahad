@@ -842,6 +842,14 @@
       .team-task-details > summary { color: var(--text-2); font-size: var(--fs-12); cursor: pointer; padding: 3px 0; }
       .team-task-details[open] > summary { margin-bottom: var(--sp-3); }
       .team-output { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; padding: var(--sp-3); background: var(--bg-sunken); border-radius: var(--r-md); font: var(--fs-12)/1.6 var(--font-mono); }
+      /* A knight's desktop in its Workspace: its screen as a picture (a click on it clicks there), then the ways to take it over. */
+      .desktop h3 { font-size: var(--fs-15); }
+      .desktop-shot { aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-sunken); }
+      .desktop-shot img { display: block; width: 100%; height: 100%; cursor: crosshair; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+      .desktop-shot img:not([data-shown]) { visibility: hidden; }
+      .desktop-line { display: flex; align-items: center; gap: var(--sp-2); }
+      .desktop-line .input { flex: 1; min-width: 0; }
+      .desktop-slot:empty { display: none; }
       /* A task given to the Roundtable: who took it and why, then how each of the others stood. */
       .give-choice { display: flex; align-items: center; gap: var(--sp-3); }
       .give-choice h3 { font-size: var(--fs-18); font-weight: 650; letter-spacing: -0.015em; }

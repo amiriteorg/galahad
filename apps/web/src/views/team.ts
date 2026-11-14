@@ -19,6 +19,7 @@ import { workerAvatar } from "../ui/avatar.ts";
 import { toast } from "../ui/toast.ts";
 import { noteSaid } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
+import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
 import { controlTeam, editKnight, editNotes, editRoom, giveTask, giveToRoundtable, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
 
@@ -250,106 +251,125 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     }
   }
 
+  /** The Workspace panel, made once: what is above the desktop and below it is drawn again as it changes, the desktop never. */
+  let panel: { top: HTMLElement; slot: HTMLElement; bottom: HTMLElement } | null = null;
+  let viewer: DesktopViewer | null = null;
+  scope.add(() => viewer?.dispose());
+
   function renderPanel(): void {
     const person = knight()!;
     const known = workspace;
     const vm = known?.workspace;
     // (The switch as the team says it now; what this VM has, as it was last asked.)
     const notes = engramLine(known?.engram && snapshot ? { ...known.engram, on: snapshot.engram === true } : known?.engram);
-    for (const trail of trails.values()) trail.dispose();
-    trails.clear();
-    drawnItems.clear();
-    keepPlace(content, () =>
+    if (!panel) {
+      // (Its desktop, when it has one, first: the screen is what the panel is opened to see.)
+      panel = { top: h("div", { class: "stack loose" }), slot: h("div", { class: "desktop-slot" }), bottom: h("div", { class: "stack loose" }) };
+      const head = h("div", { class: "row between" }, h("h3", {}, "Workspace"), button("Back to the timeline", { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => showPanel(false) }));
+      replace(content, h("div", { class: "team-panel stack loose", "aria-label": `${person.name}'s workspace` }, head, panel.slot, panel.top, panel.bottom));
+    }
+    // Its desktop, while its VM runs with one and this device may look: watched from here, and taken over.
+    const desktop = Boolean(vm && hasDesktop(vm) && vm.status === "running" && ctx.can("sandbox"));
+    if (desktop && !viewer) {
+      viewer = desktopViewer(ctx, person, content, canEdit ? () => remakeVm(ctx, person, vm!, madeVm(person), { desktop: true }) : null);
+      replace(panel.slot, viewer.el);
+    } else if (!desktop && viewer) {
+      viewer.dispose();
+      viewer = null;
+      replace(panel.slot);
+    }
+    const { top, bottom } = panel;
+    keepPlace(top, () =>
       replace(
-        content,
+        top,
         h(
           "div",
-          { class: "team-panel stack loose", "aria-label": `${person.name}'s workspace` },
-          h("div", { class: "row between" }, h("h3", {}, "Workspace"), button("Back to the timeline", { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => showPanel(false) })),
+          { class: "team-person-summary" },
+          avatar(person, true, 56),
           h(
             "div",
-            { class: "team-person-summary" },
-            avatar(person, true, 56),
-            h(
-              "div",
-              { class: "grow" },
-              h("strong", {}, person.name),
-              h("p", { class: "small muted" }, person.instructions || "No instructions yet."),
-              h("div", { class: "meta" }, [HARNESS[person.harness], person.role, `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")),
-              person.repository ? h("a", { class: "tiny mono", href: person.repository, target: "_blank", rel: "noopener noreferrer" }, person.repository.replace("https://github.com/", "")) : null,
-            ),
-            canEdit ? button("Edit", { size: "sm", icon: "edit", onClick: () => void editKnight(ctx, person) }) : null,
+            { class: "grow" },
+            h("strong", {}, person.name),
+            h("p", { class: "small muted" }, person.instructions || "No instructions yet."),
+            h("div", { class: "meta" }, [HARNESS[person.harness], person.role, `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")),
+            person.repository ? h("a", { class: "tiny mono", href: person.repository, target: "_blank", rel: "noopener noreferrer" }, person.repository.replace("https://github.com/", "")) : null,
           ),
-          canEdit
-            ? h(
+          canEdit ? button("Edit", { size: "sm", icon: "edit", onClick: () => void editKnight(ctx, person) }) : null,
+        ),
+        canEdit
+          ? h(
+              "div",
+              { class: "row wrap" },
+              button(person.enabled ? "Pause knight" : "Resume knight", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }),
+              button("Working notes", { size: "sm", icon: "memory", onClick: () => editNotes(ctx, person) }),
+              button("Remove knight", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeKnight(ctx, person) }),
+            )
+          : null,
+        known?.error ? callout("warn", known.error, { title: "Workspace status unavailable", actions: button("Check again", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }) }) : null,
+        vm
+          ? h(
+              "div",
+              { class: "card" },
+              h(
                 "div",
-                { class: "row wrap" },
-                button(person.enabled ? "Pause knight" : "Resume knight", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }),
-                button("Working notes", { size: "sm", icon: "memory", onClick: () => editNotes(ctx, person) }),
-                button("Remove knight", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeKnight(ctx, person) }),
-              )
-            : null,
-          known?.error ? callout("warn", known.error, { title: "Workspace status unavailable", actions: button("Check again", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }) }) : null,
-          vm
-            ? h(
+                { class: "card-body stack" },
+                h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, vm.name), badge(vm.status), badge(vm.isolation === "vm" ? "MicroVM" : "Container", vm.isolation === "vm" ? "ok" : "warn"), hasDesktop(vm) ? badge("Desktop", "neutral", "monitor") : badge("No desktop")),
+                h("p", { class: "small muted" }, `On ${vm.node} · ${vm.cpus} CPUs · ${vm.memoryGb} GB memory · ${vm.disk ? `${vm.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${vm.network}`),
+                h(
+                  "div",
+                  { class: "row wrap" },
+                  ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, vm, person.workspace?.node ?? null) }) : null,
+                  button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }),
+                  canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remakeVm(ctx, person, vm, madeVm(person)) }) : null,
+                ),
+              ),
+            )
+          : h(
+              "div",
+              { class: "team-workspace-empty" },
+              icon("sandbox", { size: 30 }),
+              h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
+              h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this knight a persistent VM for code, files and tools. Its job and working notes stay with it."),
+              canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provisionVm(ctx, person, madeVm(person)) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device."),
+            ),
+      ),
+    );
+    keepPlace(bottom, () =>
+      replace(
+        bottom,
+        known?.harnesses?.length
+          ? section(
+              "Harness readiness",
+              {},
+              h(
+                "div",
+                { class: "card" },
+                h("div", { class: "rows" }, ...known.harnesses.map((harness) => h("div", { class: "item" }, icon(harness.ready ? "check-circle" : "alert", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, HARNESS[harness.id as TeamHarness] ?? harness.id), harnessNote(harness) ? h("p", { class: "meta" }, harnessNote(harness)) : null), badge(harness.ready ? "Ready" : "Unavailable", harness.ready ? "ok" : "warn")))),
+              ),
+            )
+          : h("p", { class: "small subtle" }, "Harness readiness is checked on the workspace host; choosing one is not proof that it is installed or signed in."),
+        notes
+          ? section(
+              "Notes store",
+              {},
+              h(
                 "div",
                 { class: "card" },
                 h(
                   "div",
-                  { class: "card-body stack" },
-                  h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, vm.name), badge(vm.status), badge(vm.isolation === "vm" ? "MicroVM" : "Container", vm.isolation === "vm" ? "ok" : "warn"), hasDesktop(vm) ? badge("Desktop", "neutral", "monitor") : badge("No desktop")),
-                  h("p", { class: "small muted" }, `On ${vm.node} · ${vm.cpus} CPUs · ${vm.memoryGb} GB memory · ${vm.disk ? `${vm.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${vm.network}`),
+                  { class: "rows" },
                   h(
                     "div",
-                    { class: "row wrap" },
-                    ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, vm, person.workspace?.node ?? null) }) : null,
-                    button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }),
-                    canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remakeVm(ctx, person, vm, madeVm(person)) }) : null,
+                    { class: "item" },
+                    icon(notes.tone === "warn" ? "alert" : "memory", { size: 16 }),
+                    h("div", { class: "grow" }, h("strong", { class: "small" }, "Engram, for every knight on this node"), h("p", { class: "meta" }, notes.text)),
+                    badge(notes.badge, notes.tone),
+                    canEdit ? button(notes.badge === "Off" ? "Turn on" : "Turn off", { size: "sm", onClick: () => void setEngram(ctx, notes.badge === "Off").then((changed) => changed && !scope.disposed && void refreshWorkspace(person.id)) }) : null,
                   ),
                 ),
-              )
-            : h(
-                "div",
-                { class: "team-workspace-empty" },
-                icon("sandbox", { size: 30 }),
-                h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
-                h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this knight a persistent VM for code, files and tools. Its job and working notes stay with it."),
-                canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provisionVm(ctx, person, madeVm(person)) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device."),
               ),
-          known?.harnesses?.length
-            ? section(
-                "Harness readiness",
-                {},
-                h(
-                  "div",
-                  { class: "card" },
-                  h("div", { class: "rows" }, ...known.harnesses.map((harness) => h("div", { class: "item" }, icon(harness.ready ? "check-circle" : "alert", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, HARNESS[harness.id as TeamHarness] ?? harness.id), harnessNote(harness) ? h("p", { class: "meta" }, harnessNote(harness)) : null), badge(harness.ready ? "Ready" : "Unavailable", harness.ready ? "ok" : "warn")))),
-                ),
-              )
-            : h("p", { class: "small subtle" }, "Harness readiness is checked on the workspace host; choosing one is not proof that it is installed or signed in."),
-          notes
-            ? section(
-                "Notes store",
-                {},
-                h(
-                  "div",
-                  { class: "card" },
-                  h(
-                    "div",
-                    { class: "rows" },
-                    h(
-                      "div",
-                      { class: "item" },
-                      icon(notes.tone === "warn" ? "alert" : "memory", { size: 16 }),
-                      h("div", { class: "grow" }, h("strong", { class: "small" }, "Engram, for every knight on this node"), h("p", { class: "meta" }, notes.text)),
-                      badge(notes.badge, notes.tone),
-                      canEdit ? button(notes.badge === "Off" ? "Turn on" : "Turn off", { size: "sm", onClick: () => void setEngram(ctx, notes.badge === "Off").then((changed) => changed && !scope.disposed && void refreshWorkspace(person.id)) }) : null,
-                    ),
-                  ),
-                ),
-              )
-            : null,
-        ),
+            )
+          : null,
       ),
     );
   }
