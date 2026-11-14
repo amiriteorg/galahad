@@ -18,6 +18,7 @@ import {
   runArgs,
   type SandboxSpec,
   SEARCH_SCOPE,
+  TERMINAL_HANG_UP,
   terminalArgs,
   volumeName,
 } from "./spec.ts";
@@ -733,15 +734,30 @@ export class SandboxHost {
 
   /**
    * A shell in a running sandbox on a terminal of its own, for its owner: `docker exec --tty` under a pseudo-terminal
-   * here, so what runs there (an editor, a vendor's sign-in, a coding tool's screen) has a real terminal. Not ledgered
-   * here: whoever keeps the terminal says when it opened and closed, and never what was typed or shown.
+   * here, so what runs there (an editor, a vendor's sign-in, a coding tool's screen) has a real terminal. Killing it
+   * hangs up what it started in the sandbox too (TERMINAL_HANG_UP). Not ledgered here: whoever keeps the terminal
+   * says when it opened and closed, and never what was typed or shown.
    */
   async terminal(id: string, size: { cols: number; rows: number }, onData: (bytes: Uint8Array) => void): Promise<{ name: string; quest: string | null; process: TerminalProcess }> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
     if (sandbox.status !== "running") throw new SandboxError(`sandbox is ${sandbox.status}`, 409);
-    const shell = (this.opts.spawnTerminal ?? spawnTerminal)([this.bin, ...terminalArgs(id)], size, onData);
-    return { name: sandbox.name, quest: sandbox.quest || null, process: shell };
+    const tag = hex(randomBytes(8));
+    const shell = (this.opts.spawnTerminal ?? spawnTerminal)([this.bin, ...terminalArgs(id, tag)], size, onData);
+    const hangUp = () => void this.docker(execArgs(id, ["sh", "-c", TERMINAL_HANG_UP, "hang-up", tag], 30), 45_000).catch(() => {});
+    return {
+      name: sandbox.name,
+      quest: sandbox.quest || null,
+      process: {
+        write: (data) => shell.write(data),
+        resize: (cols, rows) => shell.resize(cols, rows),
+        kill: () => {
+          shell.kill();
+          hangUp();
+        },
+        exited: shell.exited,
+      },
+    };
   }
 
   /**

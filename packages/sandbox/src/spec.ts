@@ -193,9 +193,10 @@ export const execArgs = (id: string, cmd: string[], timeoutSec: number): string[
 
 /**
  * A login shell on a terminal of its own (bash where the image has it), as `docker exec` runs it under a pseudo-terminal
- * on the host. Nothing bounds its time but its closing: a terminal is yours, open while you use it.
+ * on the host. Nothing bounds its time but its closing: a terminal is yours, open while you use it. Its tag, in the
+ * environment of everything it starts, is how what it started is found again when it closes (TERMINAL_HANG_UP).
  */
-export const terminalArgs = (id: string): string[] => [
+export const terminalArgs = (id: string, tag: string): string[] => [
   "exec",
   "--interactive",
   "--tty",
@@ -203,11 +204,26 @@ export const terminalArgs = (id: string): string[] => [
   "/work",
   "--env",
   "TERM=xterm-256color",
+  "--env",
+  `GALAHAD_TERMINAL=${tag}`,
   containerName(id),
   "sh",
   "-c",
   "command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l",
 ];
+
+/**
+ * A closed terminal's hang-up, run in its sandbox with its tag (`sh -c TERMINAL_HANG_UP hang-up <tag>`): Docker leaves
+ * what an exec started running when its client goes. Everything with the tag in its environment is sent SIGHUP, as a
+ * terminal's hang-up sends (what was started with nohup stays); two seconds on, the tagged process that leads its own
+ * session (the shell) is killed if it is still there.
+ */
+export const TERMINAL_HANG_UP = `t=$1
+tagged() { for d in /proc/[0-9]*; do tr '\\0' '\\n' < "$d/environ" 2>/dev/null | grep -qx "GALAHAD_TERMINAL=$t" && echo "\${d#/proc/}"; done; }
+for p in $(tagged); do kill -HUP "$p" 2>/dev/null; done
+sleep 2
+for p in $(tagged); do [ "$(sed 's/.*) //' "/proc/$p/stat" 2>/dev/null | cut -d' ' -f4)" = "$p" ] && kill -KILL "$p" 2>/dev/null; done
+exit 0`;
 
 export function networkCreateArgs(kind: keyof typeof NETWORKS): string[] {
   const n = NETWORKS[kind];

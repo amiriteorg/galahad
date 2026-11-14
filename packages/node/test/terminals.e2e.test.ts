@@ -119,7 +119,8 @@ describe("a terminal in a sandbox, over the node's routes", () => {
   test("you open one, watch it and type into it; it is `docker exec --tty` into that sandbox; closing it ends the watching", async () => {
     const { terminal } = await api<{ terminal: TerminalView }>("openTerminal", { sandbox: sandbox.id, size: { cols: 90, rows: 25 } });
     expect(terminal).toMatchObject({ sandbox: sandbox.id, name: sandbox.name, cols: 90, rows: 25, exitCode: null });
-    expect(started.at(-1)).toEqual(["docker", "exec", "--interactive", "--tty", "--workdir", "/work", "--env", "TERM=xterm-256color", containerName(sandbox.id), "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l"]);
+    expect(started.at(-1)).toEqual(["docker", "exec", "--interactive", "--tty", "--workdir", "/work", "--env", "TERM=xterm-256color", "--env", expect.stringMatching(/^GALAHAD_TERMINAL=[0-9a-f]{16}$/), containerName(sandbox.id), "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l"]);
+    const tag = started.at(-1)![9]!.split("=")[1]!;
 
     const response = await call("watchTerminal", { terminal: terminal.id });
     expect(response.headers.get("content-type")).toBe("text/event-stream");
@@ -134,6 +135,9 @@ describe("a terminal in a sandbox, over the node's routes", () => {
     await screen.done;
     expect(screen.events.at(-1)?.type).toBe("exit");
     expect((await api<{ terminals: TerminalView[] }>("terminals")).terminals).toEqual([]);
+    // Docker leaves what an exec started running when its client goes: what this terminal started is hung up in there.
+    await until(() => docker.execs.some((e) => e.container === containerName(sandbox.id) && e.cmd.at(-1) === tag));
+    expect(docker.execs.find((e) => e.cmd.at(-1) === tag)!.cmd.slice(0, 2)).toEqual(["sh", "-c"]);
 
     // The ledger (newest first) says it was opened and closed, in that sandbox; what was typed and shown is nowhere in it.
     const entries = (await api<{ entries: LedgerEntry[] }>("ledger")).entries.filter((e) => e.resource === "sandbox.terminal");
