@@ -42,7 +42,7 @@ export async function checkModel(ctx: BrainContext, ref: string, options: { vers
   const { provider: providerId } = parseRef(ref);
   const provider = resolveProvider(ctx.store, ctx.vault, providerId, onPlan(ref) ? "coding" : "own");
   if (!provider) throw new Error(`provider "${providerId}" is not configured`);
-  if (!provider.apiKey && !provider.local) throw new Error(whyNoKey(providerId));
+  if (!provider.apiKey && !provider.local) throw new Error(whyNoKey(providerId, onPlan(ref) ? "coding" : "own"));
   const check: ModelCheck = { at: Date.now(), ...(options.version ? { version: options.version } : {}) };
   const errors: string[] = [];
   if (parts.has("format")) {

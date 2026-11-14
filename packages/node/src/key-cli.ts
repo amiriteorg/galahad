@@ -12,10 +12,14 @@ type Flags = Record<string, unknown>;
 
 /** What is said of a coding plan just added: what it is for, where its vendor says so, and the roster that puts it first for coding. */
 export function planAdvice(id: string, plan: CodingPlan, engineer: readonly string[]): string[] {
-  const lines = [
-    `${plan.name} is a coding plan: its key is for coding. Galahad and the other knights code on it themselves, as Galahad (his quests, their work), and lend it to the coding tools in their VMs (OpenCode, Hermes) and under \`galahad run\`, each calling as itself. His talk with you, his loops and his heartbeat never use it.`,
-    `What it may be used for is its vendor's to say. ${plan.says} ${plan.terms}`,
-  ];
+  // What it does is what its vendor's terms allow (providers.ts CodingPlan.allows), and it says so.
+  const does = plan.allows.native
+    ? `${plan.name} is a coding plan: its key is for coding. Galahad and the other knights code on it themselves, as Galahad (his quests, their work), and lend it to the coding tools in their VMs (OpenCode, Hermes) and under \`galahad run\`, each calling as itself.`
+    : plan.allows.tools === "unattended"
+      ? `${plan.name} is a coding plan whose terms allow it only inside the coding tools they name: Galahad never calls it himself; a knight's OpenCode, Claude Code, Codex or Hermes runs on it through the gateway, and so does a tool under \`galahad run\`, each calling as itself.`
+      : `${plan.name} is a coding plan for interactive use only, by its terms: it is lent to a tool you run yourself (galahad run --providers ${id} -- <tool>), and never to Galahad's own calls or a knight's unattended work.`;
+  const lines = [`${does} His talk with you, his loops and his heartbeat never use it.`, `What it may be used for is its vendor's to say. ${plan.says} ${plan.terms}`];
+  if (plan.allows.tools === "interactive") return lines;
   const has = engineer.filter((ref) => ref.startsWith(`${id}/`));
   if (has.length) lines.push(`Coding already has it: the engineer's roster has ${has.join(", ")}.`);
   else lines.push(`To put it first for coding: galahad roster set engineer ${[`${id}/${plan.models[0]}`, ...engineer].join(" ")}`);

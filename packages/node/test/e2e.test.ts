@@ -339,14 +339,14 @@ describe("M0: one mind, two bodies", () => {
     expect((await callA("providers")).signIns).toEqual(expect.arrayContaining([expect.objectContaining({ prefix: "sk-ant-oat" })]));
   });
 
-  test("a coding plan answers a quest's call, as Galahad, and never his talk with you", async () => {
+  test("a coding plan made for coding agents (OpenCode Go) answers a quest's call, as Galahad, and never his talk with you", async () => {
     const callA = admin(homeA, portA);
     // (The plan's own preset, pointed at the stand-in provider: a key pinned to where you say it goes.)
     const planKey = "0123456789abcdef0123456789abcdef.FAKEfakeFAKEfake";
     const base = `http://127.0.0.1:${upstream.port}/v1`;
-    await callA("setSecret", { name: "zai-coding", value: planKey, provider: "zai-coding", baseUrl: base });
-    await callA("setProvider", { id: "zai-coding", baseUrl: base, secret: "zai-coding" });
-    await callA("setRoster", { role: "engineer", models: ["zai-coding/glm-5.3"] });
+    await callA("setSecret", { name: "opencode-go", value: planKey, provider: "opencode-go", baseUrl: base });
+    await callA("setProvider", { id: "opencode-go", baseUrl: base, secret: "opencode-go" });
+    await callA("setRoster", { role: "engineer", models: ["opencode-go/glm-5.3"] });
     const ask = async (extra: object) => {
       const response = await fetch(`http://127.0.0.1:${portA}/api/chat`, {
         method: "POST",
@@ -364,13 +364,13 @@ describe("M0: one mind, two bodies", () => {
       expect(upstreamAuth).toBeUndefined();
       const work = await ask({ coding: true });
       expect(work.filter((e) => e.type === "text").map((e) => e.text).join("")).toBe("Good day, my liege.");
-      expect(work.find((e) => e.type === "model")).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
+      expect(work.find((e) => e.type === "model")).toEqual({ type: "model", ref: "opencode-go/glm-5.3" });
       expect(upstreamAuth).toBe(`Bearer ${planKey}`);
       expect(upstreamAgent).toMatch(/^Galahad\b/);
     } finally {
       await callA("setRoster", { role: "engineer", models: ["anthropic/claude-opus-5-5"] });
-      await callA("removeProvider", { id: "zai-coding" });
-      await callA("deleteSecret", { name: "zai-coding" });
+      await callA("removeProvider", { id: "opencode-go" });
+      await callA("deleteSecret", { name: "opencode-go" });
     }
   });
 

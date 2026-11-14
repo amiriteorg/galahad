@@ -38,6 +38,13 @@ export interface CodingPlan {
   models: string[];
   /** The header its endpoint routes a conversation by, where it refuses a call without one (OpenCode Go does: 400 MissingSessionID). */
   session?: string;
+  /**
+   * What its vendor's own terms let Galahad do with it (read 14 November 2026). `native`: his own coding calls (a
+   * quest's engineer, a knight's native runner), which only a plan made for coding agents that call as themselves
+   * allows. `tools`: lent through the gateway to a coding tool in a knight's VM or a quest's sandbox ("unattended"),
+   * or only to a tool you run yourself with `galahad run` ("interactive"), where the terms say interactive use only.
+   */
+  allows: { native: boolean; tools: "unattended" | "interactive" };
 }
 
 /**
@@ -61,9 +68,10 @@ export const PRESETS: ProviderPreset[] = [
     baseUrl: "https://api.z.ai/api/coding/paas/v4",
     plan: {
       name: "GLM Coding Plan",
-      says: 'Z.ai: "strictly limited to use within officially supported tools and products" (OpenCode and Claude Code are among them), and not for "general-purpose API access".',
+      says: 'Z.ai: not "for general-purpose API access or any scenarios outside such tools, including but not limited to directly invoking model APIs from your own applications, bots": only inside the coding tools it names (OpenCode, Claude Code, Codex and Hermes among them).',
       terms: "https://docs.z.ai/legal-agreement/subscription-terms",
       models: ["glm-5.3", "glm-5.3-flash"],
+      allows: { native: false, tools: "unattended" },
     },
     note: "Z.ai's GLM Coding Plan, with the plan's own key (Z.ai keeps plan keys apart from its API keys; the ordinary API is the zai preset). In mainland China: --base-url https://open.bigmodel.cn/api/coding/paas/v4.",
   },
@@ -77,6 +85,7 @@ export const PRESETS: ProviderPreset[] = [
       says: 'Kimi: "for interactive use only" (scripted batch runs are named as beyond normal use), and a tool must call as itself, never under another\'s name.',
       terms: "https://www.kimi.com/code/docs/en/kimi-code/community-guidelines.html",
       models: ["kimi-for-coding", "k3", "k3.1-pro"],
+      allows: { native: false, tools: "interactive" },
     },
     note: "Moonshot's Kimi Code membership, with a key from the Kimi Code console (the pay-as-you-go platform is the moonshot preset; their keys don't work on each other). In mainland China: --base-url https://api.kimi.com/coding/v1.",
   },
@@ -90,6 +99,7 @@ export const PRESETS: ProviderPreset[] = [
       says: "Alibaba: only in coding tools (Claude Code, Qoder, OpenClaw and the like); calls from automation scripts, an application's backend or any non-interactive batch use are forbidden, and may get the key banned.",
       terms: "https://help.aliyun.com/zh/model-studio/coding-plan",
       models: ["qwen3.7-plus", "qwen3.6-plus"],
+      allows: { native: false, tools: "interactive" },
     },
     note: "Alibaba Cloud Model Studio's (Bailian's) Coding Plan, with the plan's own sk-sp- key. Outside mainland China the plan has its own address: pass the one your console shows with --base-url.",
   },
@@ -102,6 +112,7 @@ export const PRESETS: ProviderPreset[] = [
       says: 'OpenCode: "designed for OpenCode and other coding agents that send similar traffic", each sending its own User-Agent.',
       terms: "https://opencode.ai/docs/go/",
       models: ["glm-5.3", "kimi-k3"],
+      allows: { native: true, tools: "unattended" },
       session: "x-opencode-session",
     },
   },
@@ -134,8 +145,16 @@ export function onPlan(ref: string): boolean {
 }
 
 /** Why he has no key to call a provider with: none in the vault, or a coding plan's, which is for coding and nothing else of his. */
-export const whyNoKey = (id: string): string =>
-  planOf(id) ? `${id} is a coding plan: its key is for coding (his quests, the knights' work and their coding tools), and nothing else he does` : `provider "${id}" has no key in the vault`;
+export const whyNoKey = (id: string, use: "own" | "coding" = "own"): string => {
+  const plan = planOf(id);
+  if (!plan) return `provider "${id}" has no key in the vault`;
+  if (use === "coding" && !plan.allows.native) {
+    return plan.allows.tools === "interactive"
+      ? `${id} is a coding plan its vendor's terms allow for interactive use only, in a tool you run yourself (galahad run): never his own calls, nor a knight's unattended work (${plan.terms})`
+      : `${id} is a coding plan its vendor's terms allow it only inside the coding tools they name (a knight's OpenCode, Claude Code, Codex or Hermes): never his own calls (${plan.terms})`;
+  }
+  return `${id} is a coding plan: its key is for coding (his quests, the knights' work and their coding tools), and nothing else he does`;
+};
 
 /** Who he says he is when he calls a coding plan himself: his own name, and never another tool's. */
 export const SELF = "Galahad (coding agent; https://galahad.bot)";
@@ -247,7 +266,9 @@ export function resolveProvider(store: MindStore, vault: Vault, id: string, use:
   const record = providerRecord(store, id);
   if (!record) return null;
   let apiKey: string | null = null;
-  if (keyUsable(vault, record) && (use !== "own" || !planOf(id))) {
+  // A plan's key: never for anything but coding, and for his own coding calls only where its terms allow them.
+  const plan = planOf(id);
+  if (keyUsable(vault, record) && (!plan || use === "tool" || (use === "coding" && plan.allows.native))) {
     try {
       apiKey = vault.reveal(record.secret!);
     } catch {

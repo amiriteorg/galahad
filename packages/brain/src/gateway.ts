@@ -132,6 +132,10 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   const verdict = ctx.tokens.consume(token, providerId);
   if (!verdict.ok) return json(401, verdict.reason);
 
+  // A plan for interactive use only is lent to a tool you run yourself (galahad run), never to unattended work.
+  if (planOf(providerId)?.allows.tools === "interactive" && !(ctx.tokens.labelOf(token) ?? "").startsWith("run:")) {
+    return json(403, `${providerId} is a coding plan for interactive use only (its vendor's terms): it is lent to a tool you run yourself (galahad run), never to a knight's or a quest's unattended work`);
+  }
   // The one place a coding plan's key is handed over: to a tool, calling as itself.
   const provider = resolveProvider(ctx.store, ctx.vault, providerId, "tool");
   if (!provider) return json(404, `provider ${providerId} is not configured`);

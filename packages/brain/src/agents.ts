@@ -1,3 +1,4 @@
+import { planOf } from "./providers.ts";
 import { type ExecResult, randomId, redact } from "@galahad/core";
 import { agentCleanupCommand, agentProcessCommand, AGENT_PROCESS_PY } from "./agent-process.ts";
 import { ENGRAM_ENV, engramArgv } from "./engram.ts";
@@ -328,6 +329,8 @@ export function chooseAgentModels(engineer: readonly string[], providers: readon
     const model = ref.slice(slash + 1);
     if (!model || model === "*") continue;
     const known = providers.find((p) => p.id === provider);
+    // (A plan for interactive use only never does a knight's or a quest's unattended work.)
+    if (planOf(provider)?.allows.tools === "interactive") continue;
     if (known?.hasKey && known.kind === kind && out.length < max) out.push({ provider, model });
   }
   return out;

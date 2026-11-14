@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RouteName } from "@galahad/core";
-import { keyAddCommand } from "../src/key-cli.ts";
+import { preset } from "@galahad/brain";
+import { keyAddCommand, planAdvice } from "../src/key-cli.ts";
 
 /* `galahad key add` at a terminal, against what the node would answer. */
 
@@ -68,15 +69,24 @@ test("a coding plan is said to be one: what its key is for, where its terms are,
   expect(calls[1]!.input).toEqual({ id: "zai-coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", kind: "openai", secret: "zai-coding" });
   expect(lines).toContain('Key stored and provider "zai-coding" configured.');
   expect(lines).toContain("GLM Coding Plan is a coding plan");
-  expect(lines).toContain("Galahad and the other knights code on it themselves, as Galahad");
+  // What it does is what its terms allow: Z.ai's, only inside the coding tools it names.
+  expect(lines).toContain("whose terms allow it only inside the coding tools they name: Galahad never calls it himself");
   expect(lines).toContain("His talk with you, his loops and his heartbeat never use it");
   // What its vendor says it is for, in the vendor's words, and where.
-  expect(lines).toContain('"strictly limited to use within officially supported tools and products"');
+  expect(lines).toContain('"for general-purpose API access or any scenarios outside such tools');
   expect(lines).toContain("https://docs.z.ai/legal-agreement/subscription-terms");
   // First for coding, with what the engineer has now still behind it.
   expect(lines).toContain("galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5");
   // The key itself is never printed.
   expect(lines).not.toContain(PLAN_KEY);
+});
+
+test("a plan for interactive use only says so, and how to use it: never put first for coding, since nothing of his may run on it", () => {
+  const lines = planAdvice("kimi-coding", preset("kimi-coding")!.plan!, ["opencode-go/glm-5.3"]).join("\n");
+  expect(lines).toContain("Kimi Code is a coding plan for interactive use only, by its terms: it is lent to a tool you run yourself (galahad run --providers kimi-coding -- <tool>)");
+  expect(lines).not.toContain("roster set engineer");
+  // OpenCode Go's terms allow a coding agent's own calls: it codes on it himself.
+  expect(planAdvice("opencode-go", preset("opencode-go")!.plan!, []).join("\n")).toContain("Galahad and the other knights code on it themselves, as Galahad");
 });
 
 test("a plan the engineer's roster already has is not offered again", async () => {

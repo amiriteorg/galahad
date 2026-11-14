@@ -233,7 +233,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       continue;
     }
     if (!provider.apiKey && !provider.local) {
-      yield passOver(ref, whyNoKey(parsed.provider));
+      yield passOver(ref, whyNoKey(parsed.provider, req.coding ? "coding" : "own"));
       continue;
     }
     // Whether it reads pictures, where a check has said: then that, not the rule of thumb (adapters.ts seesImages).

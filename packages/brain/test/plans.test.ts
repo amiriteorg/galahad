@@ -28,6 +28,9 @@ function mind(roster: Record<string, string[]>) {
   const go = preset("opencode-go")!;
   vault.set("opencode-go", GO_KEY, { provider: "opencode-go", origin: originOf(go.baseUrl)! });
   store.emit(identity, "provider.set", { id: "opencode-go", kind: go.kind, baseUrl: go.baseUrl, secret: "opencode-go" });
+  const kimi = preset("kimi-coding")!;
+  vault.set("kimi-coding", PLAN_KEY, { provider: "kimi-coding", origin: originOf(kimi.baseUrl)! });
+  store.emit(identity, "provider.set", { id: "kimi-coding", kind: kimi.kind, baseUrl: kimi.baseUrl, secret: "kimi-coding" });
   vault.set("own", OWN_KEY, { provider: "own", origin: "https://models.example.test" });
   store.emit(identity, "provider.set", { id: "own", kind: "openai", baseUrl: "https://models.example.test/v1", secret: "own" });
   for (const [role, models] of Object.entries(roster)) store.emit(identity, "roster.set", { role, models });
@@ -80,11 +83,11 @@ describe("coding plans are presets that say what they are", () => {
 describe("coding is what a coding plan is for: he codes on it himself, as himself", () => {
   test("a quest's or a knight's work goes to the plan first, in the roster's order, under his own name", async () => {
     const { seen, fetch } = recorded();
-    const events = await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3", "own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    const events = await all(chat({ ...mind({ engineer: ["opencode-go/glm-5.3", "own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
     expect(events.map((e) => e.type)).toEqual(["model", "text", "done"]);
-    expect(events[0]).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
-    expect(seen.map((s) => s.url)).toEqual(["https://api.z.ai/api/coding/paas/v4/chat/completions"]);
-    expect(seen[0]!.headers.get("authorization")).toBe(`Bearer ${PLAN_KEY}`);
+    expect(events[0]).toEqual({ type: "model", ref: "opencode-go/glm-5.3" });
+    expect(seen.map((s) => s.url)).toEqual(["https://opencode.ai/inference/go/openai/v1/chat/completions"]);
+    expect(seen[0]!.headers.get("authorization")).toBe(`Bearer ${GO_KEY}`);
     // He says who he is: his own name, and no other tool's.
     const agent = seen[0]!.headers.get("user-agent") ?? "";
     expect(agent).toMatch(/^Galahad\b/);
@@ -97,11 +100,52 @@ describe("coding is what a coding plan is for: he codes on it himself, as himsel
     expect(seen[0]!.headers.has("user-agent")).toBe(false);
   });
 
-  test("whatever the plan serves first (zai-coding/*) is the first model its preset names: the plan isn't called to find out", async () => {
+  test("whatever the plan serves first (opencode-go/*) is the first model its preset names: the plan isn't called to find out", async () => {
     const { seen, fetch } = recorded();
-    const events = await all(chat({ ...mind({ engineer: ["zai-coding/*"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
-    expect(events[0]).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
-    expect(seen.map((s) => new URL(s.url).pathname)).toEqual(["/api/coding/paas/v4/chat/completions"]);
+    const events = await all(chat({ ...mind({ engineer: ["opencode-go/*"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    expect(events[0]).toEqual({ type: "model", ref: `opencode-go/${preset("opencode-go")!.plan!.models[0]}` });
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual(["/inference/go/openai/v1/chat/completions"]);
+  });
+});
+
+describe("each plan is held to what its own vendor's terms allow (read 14 November 2026)", () => {
+  test("what each allows: his own coding calls only where the vendor's words permit a coding agent's own calls; a tool's unattended use only where it isn't forbidden", () => {
+    expect(Object.fromEntries(PRESETS.filter((p) => p.plan).map((p) => [p.id, p.plan!.allows]))).toEqual({
+      // "designed for OpenCode and other coding agents", calling as themselves.
+      "opencode-go": { native: true, tools: "unattended" },
+      // Not "directly invoking model APIs from your own applications": only inside the coding tools it names.
+      "zai-coding": { native: false, tools: "unattended" },
+      // "for interactive use only": a tool you run yourself, never a knight's or a quest's unattended work.
+      "kimi-coding": { native: false, tools: "interactive" },
+      "alibaba-coding": { native: false, tools: "interactive" },
+    });
+  });
+
+  test("a plan whose terms forbid his own calls is never handed to them: his coding passes it over, saying why, and the next model answers", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3", "own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    expect(events.find((e) => e.type === "fallback")).toEqual({ type: "fallback", from: "zai-coding/glm-5.3", error: expect.stringContaining("its vendor's terms allow it only inside the coding tools they name") });
+    expect(seen.map((s) => new URL(s.url).host)).toEqual(["models.example.test"]);
+    const { store, vault } = mind({});
+    expect(resolveProvider(store, vault, "zai-coding", "coding")!.apiKey).toBeNull();
+    // Lent to a coding tool it names, as ever.
+    expect(resolveProvider(store, vault, "zai-coding", "tool")!.apiKey).toBe(PLAN_KEY);
+  });
+
+  test("a plan for interactive use only is lent to a tool you run yourself, never to a knight's VM or a quest's sandbox", async () => {
+    const { store, vault } = mind({});
+    const tokens = new GatewayTokens(new Database(":memory:"));
+    const { seen, fetch } = recorded();
+    const call = (token: string) => handleGateway(new Request("http://gw/gw/kimi-coding/chat/completions", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}" }), { store, vault, tokens, fetch });
+    const yours = tokens.mint({ label: "run:claude", providers: ["kimi-coding"], ttlMinutes: 10, maxRequests: 5 }).token;
+    const knights = tokens.mint({ label: "sandbox:0123456789", providers: ["kimi-coding"], ttlMinutes: 10, maxRequests: 5 }).token;
+    expect((await call(yours)).status).toBe(200);
+    const refused = await call(knights);
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toContain("for interactive use only");
+    expect(seen).toHaveLength(1);
+    // Nor is it chosen for a knight's coding tool to run on.
+    expect(chooseAgentModels(["kimi-coding/kimi-for-coding", "own/m"], [{ id: "kimi-coding", kind: "openai", hasKey: true }, { id: "own", kind: "openai", hasKey: true }])).toEqual([{ provider: "own", model: "m" }]);
   });
 });
 
@@ -130,9 +174,8 @@ describe("a plan that routes a conversation by its session is told which convers
 
   test("no other provider is sent it: a plan that names no such header, or a model of his own", async () => {
     const { seen, fetch } = recorded();
-    await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3"] }), fetch }, { role: "engineer", messages: quest, coding: true }));
     await all(chat({ ...mind({ engineer: ["own/m"] }), fetch }, { role: "engineer", messages: quest, coding: true }));
-    expect(seen.map((s) => s.headers.has(SESSION))).toEqual([false, false]);
+    expect(seen.map((s) => s.headers.has(SESSION))).toEqual([false]);
   });
 
   test("through the gateway a tool's own session goes on as it sent it; a tool that sent none gets one of its VM's, so the plan answers it", async () => {
@@ -221,7 +264,9 @@ describe("outside coding he never answers with a coding plan", () => {
     const { store, vault } = mind({ embedder: ["zai-coding/embedding-3"], decider: ["zai-coding/glm-5.3"] });
     expect(resolveProvider(store, vault, "zai-coding")).toMatchObject({ id: "zai-coding", apiKey: null });
     expect(resolveProvider(store, vault, "zai-coding", "tool")!.apiKey).toBe(PLAN_KEY);
-    expect(resolveProvider(store, vault, "zai-coding", "coding")!.apiKey).toBe(PLAN_KEY);
+    // His own coding calls get a plan's key only where its terms allow them (OpenCode Go's do; Z.ai's don't).
+    expect(resolveProvider(store, vault, "zai-coding", "coding")!.apiKey).toBeNull();
+    expect(resolveProvider(store, vault, "opencode-go", "coding")!.apiKey).toBe(GO_KEY);
     // A provider of his own is his to call, as ever.
     expect(resolveProvider(store, vault, "own")!.apiKey).toBe(OWN_KEY);
     const { seen, fetch } = recorded();
