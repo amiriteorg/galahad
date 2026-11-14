@@ -294,3 +294,34 @@ describe("a reply of the engineer's that runs away", () => {
   });
 });
 
+describe("a long quest's conversation stays affordable, and stays the same", () => {
+  test("older observations become excerpts a batch at a time: between batches every turn's conversation begins with the turn before's, whole", async () => {
+    const n = 26;
+    const page = "x".repeat(3000);
+    const h = harness(
+      { engineer: [...Array.from({ length: n }, (_, i) => sh(`echo ${i}`)), "DONE\nAll of them ran."], outputs: Array.from({ length: n }, (_, i) => ({ stdout: `out ${i}\n${page}\n` })) },
+      { maxSteps: 30 },
+    );
+    expect((await h.run).status).toBe("done");
+    const turns = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages);
+    expect(turns).toHaveLength(n + 1);
+    // A provider reads a prompt's unchanged beginning from its cache: a turn that rewrites something earlier pays for
+    // everything after it again. Cutting one more observation every turn did that on every turn past the ninth.
+    let rewritten = 0;
+    for (let t = 1; t < turns.length; t++) if (JSON.stringify(turns[t]!.slice(0, turns[t - 1]!.length)) !== JSON.stringify(turns[t - 1])) rewritten += 1;
+    expect(rewritten).toBeGreaterThan(0);
+    expect(rewritten).toBeLessThanOrEqual(3);
+    for (const messages of turns) {
+      const observations = messages.filter((m, i) => i > 0 && m.role === "user" && m.content.startsWith("exit 0"));
+      const whole = observations.filter((m) => m.content.includes(page));
+      // Affordable: never more than a dozen whole, the newest four always among them, and what was cut says so.
+      expect(whole.length).toBeLessThanOrEqual(12);
+      expect(observations.slice(-4).every((m) => m.content.includes(page))).toBe(true);
+      for (const m of observations.filter((o) => !o.content.includes(page))) expect(m.content).toMatch(/… \[\d+ characters cut\] …/);
+    }
+    // By the end all but the newest few are excerpts.
+    expect(turns.at(-1)!.filter((m) => m.content.includes(page)).length).toBeLessThanOrEqual(12);
+    expect(turns.at(-1)!.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(14);
+  });
+});
+

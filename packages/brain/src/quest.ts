@@ -357,19 +357,28 @@ function keptReply(reply: string): { content: string; cut: number | null } {
 const cutNote = (length: number): string =>
   `\n\n(Your reply was ${length.toLocaleString("en-US")} characters long: only its beginning and end are kept in this conversation (the command ran as you sent it). Keep replies short: write long content with a script, or in several commands.)`;
 
-/** Keep the conversation affordable: older observations shrink to a short excerpt. */
-function compact(messages: ChatMessage[], keepFull = 8): ChatMessage[] {
+/**
+ * Keep the conversation affordable, and the same from turn to turn: older observations shrink to a short
+ * excerpt, a batch at a time. A provider bills a prompt's unchanged beginning at its cached price, so the
+ * conversation only grows at its end while the observations shown whole are at most COMPACT_AT; one more, and
+ * all but the newest KEEP_WHOLE are cut together. (Cutting one more on every turn rewrote the middle of the
+ * conversation on every turn, and everything after it was paid for in full each time.)
+ */
+const COMPACT_AT = 12;
+const KEEP_WHOLE = 4;
+
+const isObservation = (m: ChatMessage, i: number): boolean => i > 0 && m.role === "user" && /^(exit -?\d+ · |\[1\] \$ )/.test(m.content);
+
+/** How many of the oldest observations are excerpts from this turn on, given how many were before it. */
+function excerptedNow(messages: readonly ChatMessage[], excerpted: number): number {
+  const observations = messages.filter(isObservation).length;
+  return observations - excerpted > COMPACT_AT ? observations - KEEP_WHOLE : excerpted;
+}
+
+/** The conversation as it is sent: its oldest `excerpted` observations as excerpts, everything else as it was said. */
+function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessage[] {
   let seen = 0;
-  return messages
-    .slice()
-    .reverse()
-    .map((m, i, all) => {
-      const isObservation = m.role === "user" && i < all.length - 1 && /^(exit -?\d+ · |\[1\] \$ )/.test(m.content);
-      if (!isObservation) return m;
-      seen += 1;
-      return seen <= keepFull ? m : { role: m.role, content: clip(m.content, 400, 200) };
-    })
-    .reverse();
+  return messages.map((m, i) => (isObservation(m, i) && seen++ < excerpted ? { role: m.role, content: clip(m.content, 400, 200) } : m));
 }
 
 export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<QuestOutcome> {
@@ -589,10 +598,13 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
 
     const messages: ChatMessage[] = [{ role: "user", content: briefing(o, plan, gates) }];
     const trail: Step[] = [];
+    /** How many of the oldest observations are sent as excerpts (it only grows, a batch at a time: compact). */
+    let excerpted = 0;
 
     while (steps < o.maxSteps) {
       steps += 1;
-      const reply = await ask("engineer", compact(messages));
+      excerpted = excerptedNow(messages, excerpted);
+      const reply = await ask("engineer", compact(messages, excerpted));
       const kept = keptReply(reply.text);
       messages.push({ role: "assistant", content: kept.content });
       // (Appended to whatever he is told next: a command's result still begins as one.)
