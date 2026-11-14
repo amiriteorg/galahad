@@ -60,6 +60,52 @@ start() {
   fi
 }
 
+# The one page of the browser, through its debugging port (loopback only): `page navigate <address>` goes
+# there, waits for it to load and prints its title and address; `page text` prints its title, its
+# address and what it says. One page, so what is opened and what is read are the same thing.
+page() {
+  python3 - "$@" <<'PY'
+import json, sys, time, urllib.request, websocket
+PORT = "http://127.0.0.1:9222"
+def pages():
+    last = None
+    for _ in range(100):
+        try:
+            return [t for t in json.load(urllib.request.urlopen(PORT + "/json", timeout=5)) if t.get("type") == "page"]
+        except Exception as error:
+            last = error
+            time.sleep(0.2)
+    raise SystemExit("desktop: the browser is not answering (%s)" % last)
+found = pages()
+if not found:
+    urllib.request.urlopen(urllib.request.Request(PORT + "/json/new?about:blank", method="PUT"), timeout=10)
+    found = pages()
+ws = websocket.create_connection(found[0]["webSocketDebuggerUrl"], suppress_origin=True, timeout=30)
+asked = 0
+def call(method, **params):
+    global asked
+    asked += 1
+    ws.send(json.dumps({"id": asked, "method": method, "params": params}))
+    while True:
+        reply = json.loads(ws.recv())
+        if reply.get("id") == asked:
+            return reply.get("result", {})
+def value(expression):
+    return call("Runtime.evaluate", expression=expression, returnByValue=True).get("result", {}).get("value", "")
+if sys.argv[1] == "navigate":
+    went = call("Page.navigate", url=sys.argv[2])
+    if went.get("errorText"):
+        raise SystemExit("desktop: the browser could not open that address (%s)" % went["errorText"])
+    for _ in range(150):
+        if value("document.readyState") == "complete":
+            break
+        time.sleep(0.2)
+    print(value("document.title + ' · ' + location.href"))
+else:
+    print(value("document.title + '\\n' + location.href + '\\n' + (document.body ? document.body.innerText : '').slice(0, 20000)"))
+PY
+}
+
 verb=${1:-help}
 [ $# -gt 0 ] && shift
 case "$verb" in
@@ -73,17 +119,8 @@ case "$verb" in
     echo "The desktop is stopped." ;;
   open)
     case "${1:-}" in http://* | https://* | file://* | about:*) ;; *) refuse "an address begins with http, https, file or about" ;; esac
-    start && chromium --user-data-dir="$PROFILE" "$1" >/dev/null 2>&1 ;;
-  text)
-    start && python3 - <<'PY'
-import json, urllib.request, websocket
-tabs = [t for t in json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=10)) if t.get("type") == "page"]
-if not tabs: raise SystemExit("desktop: the browser has no page open")
-ws = websocket.create_connection(tabs[0]["webSocketDebuggerUrl"], suppress_origin=True, timeout=20)
-ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": "document.title + '\\n' + location.href + '\\n' + (document.body ? document.body.innerText : '').slice(0, 20000)", "returnByValue": True}}))
-print(json.loads(ws.recv())["result"]["result"].get("value", ""))
-PY
-    ;;
+    start && page navigate "$1" ;;
+  text) start && page text ;;
   shot)
     file=${1:-"$RUN/shot-$(date +%s)$$.png"}
     start && scrot -o "$file" && echo "$file" ;;

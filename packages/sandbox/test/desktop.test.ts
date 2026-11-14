@@ -69,7 +69,10 @@ describe("the desktop command", () => {
     expect(last("key", "ctrl+l", "Return")).toBe("xdotool [key] [--] [ctrl+l] [Return]");
     // What is typed is one argument to the tool, whatever is in it: never a command.
     expect(last("type", "a; rm -rf / $(id) `id`")).toBe("xdotool [type] [--delay] [12] [--] [a; rm -rf / $(id) `id`]");
-    expect(last("open", "https://example.com/a?b=c")).toBe("chromium [--user-data-dir=" + up.home + "/.config/chromium] [https://example.com/a?b=c]");
+    // An address goes to the browser's one page through its own port, never to a second browser: what is opened is what is read.
+    expect(last("open", "https://example.com/a?b=c")).toBe("python3 [-] [navigate] [https://example.com/a?b=c]");
+    expect(last("text")).toBe("python3 [-] [text]");
+    expect(up.traced().filter((line) => line.startsWith("chromium"))).toEqual([]);
     expect(up.traced().some((line) => line.startsWith("Xvfb "))).toBe(false);
   });
 
@@ -86,7 +89,7 @@ describe("the desktop command", () => {
 
   test("what isn't a place on the screen, a key, or an address is refused before anything is touched", () => {
     const m = machine({ running: true });
-    const refused = (...args: string[]) => { const before = m.traced().length; const r = m.ask(...args); expect({ args, code: r.code }).toEqual({ args, code: 2 }); expect(m.traced().filter((line) => /^(xdotool|chromium|scrot) /.test(line)).length).toBe(m.traced().slice(0, before).filter((line) => /^(xdotool|chromium|scrot) /.test(line)).length); return r.err; };
+    const refused = (...args: string[]) => { const before = m.traced().length; const r = m.ask(...args); expect({ args, code: r.code }).toEqual({ args, code: 2 }); expect(m.traced().filter((line) => /^(xdotool|chromium|scrot|python3) /.test(line)).length).toBe(m.traced().slice(0, before).filter((line) => /^(xdotool|chromium|scrot|python3) /.test(line)).length); return r.err; };
     expect(refused("click", "10", "x")).toContain("whole numbers");
     expect(refused("click", "-5", "10")).toContain("whole numbers");
     expect(refused("click", "10", "20", "sideways")).toContain("left, right, middle or double");
