@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type ExecResult, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { AGENTS, CLAUDE, CODEX, OWN_SIGN_IN, agentModelName, chooseAgentModels, type AgentDriver } from "../src/agents.ts";
+import { ENGRAM_BIN, engramArgv } from "../src/engram.ts";
 import { GatewayTokens, handleGateway } from "../src/gateway.ts";
 import { type QuestEvent, type QuestRole, runQuest } from "../src/quest.ts";
 import { CLAUDE_BRIDGE, CODEX_BRIDGE } from "../src/vendor-cli.ts";
@@ -184,17 +185,20 @@ else:
 `}`;
 
 const TOOLS = {
-  claude: { driver: CLAUDE, bridge: CLAUDE_BRIDGE, standIn: CLAUDE_STAND_IN, name: "Claude Code" },
-  codex: { driver: CODEX, bridge: CODEX_BRIDGE, standIn: CODEX_STAND_IN, name: "Codex" },
+  claude: { driver: CLAUDE, bridge: CLAUDE_BRIDGE, script: "/work/.agent/claude-code.py", standIn: CLAUDE_STAND_IN, name: "Claude Code" },
+  codex: { driver: CODEX, bridge: CODEX_BRIDGE, script: "/work/.agent/codex.py", standIn: CODEX_STAND_IN, name: "Codex" },
 };
 
-/** A squire's VM in miniature: the bridge, the stand-in CLI on PATH (or none), its sign-in state, and a gateway lease. */
-function vm(tool: keyof typeof TOOLS, options: { installed?: boolean; signedIn?: boolean; apiKey?: boolean } = {}) {
+/**
+ * A squire's VM in miniature: the bridge, the stand-in CLI on PATH (or none), its sign-in state, and a gateway
+ * lease. `engram`: the bridge as its driver writes it for a task that has the VM's notes store, under that project.
+ */
+function vm(tool: keyof typeof TOOLS, options: { installed?: boolean; signedIn?: boolean; apiKey?: boolean; engram?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), `galahad-${tool}-`));
   dirs.push(dir);
   const bin = join(dir, "bin"), home = join(dir, "home"), work = join(dir, "work");
   for (const made of [bin, home, work]) mkdirSync(made);
-  writeFileSync(join(dir, "bridge.py"), TOOLS[tool].bridge);
+  writeFileSync(join(dir, "bridge.py"), options.engram ? TOOLS[tool].driver.files([], options.engram)[TOOLS[tool].script]! : TOOLS[tool].bridge);
   if (options.installed !== false) {
     writeFileSync(join(bin, tool), TOOLS[tool].standIn);
     chmodSync(join(bin, tool), 0o700);
@@ -589,6 +593,82 @@ describe("what a tool says of its sign-in", () => {
       expect(read('{"type":"status","installed":true,"signedIn":true,"method":"squire@example.invalid"}')).toEqual({ signedIn: true });
       expect(read('{"type":"status","installed":true,"signedIn":true,"method":"x; rm -rf /"}')).toEqual({ signedIn: true });
       expect(read('noise\n{"type":"status","installed":true,"signedIn":true,"method":"api_key"}\n')).toEqual({ signedIn: true, method: "api_key" });
+    }
+  });
+});
+
+/*
+ * The VM's notes store (engram.ts): each tool is given it by arguments of its own, the vendor's documented
+ * ones, and starts the store's server itself. Nothing is written where a tool keeps its own configuration.
+ */
+describe("the vendors' tools and the notes store", () => {
+  const MCP_FILE = "/work/.agent/engram-mcp.json";
+  const CLAUDE_NOTES = ["--mcp-config", MCP_FILE];
+  const CODEX_NOTES = [
+    "-c", 'mcp_servers.engram.command="/opt/engram/bin/engram"',
+    "-c", 'mcp_servers.engram.args=["mcp","--tools=mem_search,mem_get_observation,mem_save,mem_update","--project","you-project"]',
+    "-c", 'mcp_servers.engram.env={ENGRAM_DATA_DIR="/work/.memory/engram",ENGRAM_NO_UPDATE_CHECK="1"}',
+  ];
+
+  test("Claude Code is pointed at a file of Galahad's own with --mcp-config: one stdio server, on every run, new or resumed, on its sign-in or through the gateway", async () => {
+    const files = CLAUDE.files([], "you-project");
+    expect(Object.keys(files)).toEqual(["/work/.agent/claude-code.py", MCP_FILE]);
+    expect(JSON.parse(files[MCP_FILE]!)).toEqual({ mcpServers: { engram: { type: "stdio", command: ENGRAM_BIN, args: engramArgv("you-project").slice(1), env: { ENGRAM_DATA_DIR: "/work/.memory/engram", ENGRAM_NO_UPDATE_CHECK: "1" } } } });
+    const box = vm("claude", { engram: "you-project" });
+    const run = await box.run(OWN, "Fix it ‘now’");
+    expect({ exit: run.exit, stderr: run.stderr }).toEqual({ exit: 0, stderr: "" });
+    // What it reports is what it reports without the store.
+    expect(run.events).toEqual((await vm("claude").run(OWN, "Fix it ‘now’")).events);
+    await box.run([...OWN, "--session", SESSION], "continue");
+    await box.run(["--provider", "anthropic", "--model", "claude-opus-5-5", "--session", SESSION]);
+    expect(box.runs().map((started) => started.argv)).toEqual([
+      [...CLAUDE_FLAGS, ...CLAUDE_NOTES],
+      // (The flag takes every word up to the next flag: it is never the last thing before a session's id.)
+      [...CLAUDE_FLAGS, ...CLAUDE_NOTES, "--resume", SESSION],
+      [...CLAUDE_FLAGS, "--model", "claude-opus-5-5", ...CLAUDE_NOTES, "--resume", SESSION],
+    ]);
+    // Nothing of the store is put in the tool's own environment: the file says it all.
+    for (const started of box.runs()) expect(Object.keys(started.env).filter((name) => name.startsWith("ENGRAM"))).toEqual([]);
+    // On its sign-in it is still never pointed at the gateway.
+    for (const name of GATEWAY_VARS) expect([name, box.runs()[0].env[name]]).toEqual([name, undefined]);
+  });
+
+  test("Codex is given three -c overrides of its own kind (a command, its arguments, its environment), on exec and on exec resume, beside the gateway's when it runs through it", async () => {
+    expect(Object.keys(CODEX.files([], "you-project"))).toEqual(["/work/.agent/codex.py"]);
+    const box = vm("codex", { engram: "you-project" });
+    const run = await box.run(OWN, "Fix it ‘now’");
+    expect({ exit: run.exit, stderr: run.stderr }).toEqual({ exit: 0, stderr: "" });
+    expect(run.events).toEqual((await vm("codex").run(OWN, "Fix it ‘now’")).events);
+    await box.run([...OWN, "--session", SESSION], "continue");
+    await box.run(["--provider", "orcarouter", "--model", "gpt-6.1-sol"]);
+    const [fresh, resumed, gateway] = box.runs().map((started) => started.argv);
+    expect(fresh).toEqual(["exec", ...CODEX_FLAGS, ...CODEX_NOTES, "-"]);
+    expect(resumed).toEqual(["exec", "resume", ...CODEX_FLAGS, ...CODEX_NOTES, SESSION, "-"]);
+    expect(gateway.slice(0, 2 + CODEX_FLAGS.length)).toEqual(["exec", ...CODEX_FLAGS, "-m"]);
+    expect(gateway.filter((word: string) => word.startsWith("model_providers.galahad."))).toHaveLength(4);
+    expect(gateway.slice(-7)).toEqual([...CODEX_NOTES, "-"]);
+    // The token is still only in the environment, and nothing of the store is.
+    expect(JSON.stringify(gateway)).not.toContain("gw_fake");
+    for (const started of box.runs()) expect(Object.keys(started.env).filter((name) => name.startsWith("ENGRAM"))).toEqual([]);
+  });
+
+  test("with the store each tool is still only asked its version, whether it is signed in, and to do the work; its status question is the plain bridge's", async () => {
+    for (const tool of ["claude", "codex"] as const) {
+      const box = vm(tool, { engram: "you-project" });
+      const status = await box.run(["--status"]);
+      expect(JSON.parse(status.stdout)).toMatchObject({ type: "status", installed: true, signedIn: true });
+      await box.run(OWN);
+      const calls: string[][] = box.trace().filter((item) => item.called).map((item) => item.called);
+      expect(calls.filter((call) => call.some((word) => /^(login|logout|update|upgrade|install|setup-token|mcp|plugin)$/.test(word)) && call.join(" ") !== "login status")).toEqual([]);
+      const { driver, bridge, script } = TOOLS[tool];
+      expect(driver.check).toBe(`python3 -c '${bridge.replace(/'/g, `'\\''`)}' --status`);
+      const written = driver.files([], "you-project")[script]!;
+      expect(written).not.toBe(bridge);
+      expect(written).not.toMatch(/user.agent|urllib\.request|http\.client|\bsocket\b|\bcurl\b|\bwget\b/i);
+      // The bridge as it was, with one part more: nothing of the plain one is changed.
+      const main = bridge.indexOf("\ndef main():");
+      expect(written.startsWith(bridge.slice(0, main))).toBe(true);
+      expect(written.endsWith(bridge.slice(main))).toBe(true);
     }
   });
 });

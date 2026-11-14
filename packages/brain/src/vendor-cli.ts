@@ -1,4 +1,5 @@
 import type { AgentDriver, AgentEvent, AgentModel } from "./agents.ts";
+import { ENGRAM_ENV, engramArgv } from "./engram.ts";
 import { readBridge } from "./hermes.ts";
 
 /*
@@ -408,6 +409,36 @@ class Reader:
 export const CLAUDE_BRIDGE = `${SHARED}${CLAUDE_PART}${MAIN}`;
 export const CODEX_BRIDGE = `${SHARED}${CODEX_PART}${MAIN}`;
 
+/**
+ * With the VM's notes store (engram.ts): the tool is given these arguments of its own too (the vendor's
+ * documented ones), and starts the store's server itself, as it starts any MCP server. Nothing is written
+ * where a tool keeps its own configuration, and nothing of the store is put in its environment.
+ */
+const withNotes = (argv: readonly string[]) => String.raw`
+NOTES = json.loads(${JSON.stringify(JSON.stringify(argv))})
+plain_arguments = arguments
+
+def arguments(args, extra):
+    return plain_arguments(args, extra + NOTES)
+`;
+
+/** What a tool is given for the store under a project: its arguments, and any file of Galahad's own they name. */
+type Notes = (project: string) => { argv: string[]; files?: Record<string, string> };
+
+/** Claude Code: `--mcp-config <file>`, a file Galahad writes beside its bridge, holding the one stdio server. */
+const CLAUDE_NOTES_FILE = "/work/.agent/engram-mcp.json";
+const claudeNotes: Notes = (project) => {
+  const [command, ...args] = engramArgv(project);
+  return { argv: ["--mcp-config", CLAUDE_NOTES_FILE], files: { [CLAUDE_NOTES_FILE]: JSON.stringify({ mcpServers: { engram: { type: "stdio", command, args, env: ENGRAM_ENV } } }, null, 2) } };
+};
+
+/** Codex: `-c mcp_servers.engram.*`, as its gateway provider is given it. (Each value is TOML: a string, an array of strings, an inline table.) */
+const codexNotes: Notes = (project) => {
+  const [command, ...args] = engramArgv(project);
+  const env = Object.entries(ENGRAM_ENV).map(([name, value]) => `${name}=${JSON.stringify(value)}`).join(",");
+  return { argv: ["-c", `mcp_servers.engram.command=${JSON.stringify(command)}`, "-c", `mcp_servers.engram.args=${JSON.stringify(args)}`, "-c", `mcp_servers.engram.env={${env}}`] };
+};
+
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** The words a tool has for how it is signed in. Nothing else a VM says of a sign-in is passed on. */
@@ -441,18 +472,22 @@ function read(line: string): AgentEvent[] {
   });
 }
 
-const driver = (name: string, title: string, kind: AgentDriver["kind"], script: string, bridge: string, signIn: Omit<NonNullable<AgentDriver["signIn"]>, "read">): AgentDriver => ({
+const driver = (name: string, title: string, kind: AgentDriver["kind"], script: string, part: string, notes: Notes, signIn: Omit<NonNullable<AgentDriver["signIn"]>, "read">): AgentDriver => ({
   name,
   title,
   kind,
   // (Passed whole: readiness is asked before any run has written the bridge into the sandbox.)
-  check: `python3 -c ${quote(bridge)} --status`,
+  check: `python3 -c ${quote(`${SHARED}${part}${MAIN}`)} --status`,
   signIn: { ...signIn, read: readStatus },
-  files: () => ({ [script]: bridge }),
+  files: (_models, engram) => {
+    if (!engram) return { [script]: `${SHARED}${part}${MAIN}` };
+    const given = notes(engram);
+    return { [script]: `${SHARED}${part}${withNotes(given.argv)}${MAIN}`, ...given.files };
+  },
   command: (model: AgentModel, session) => `python3 ${script} ${model.own ? "--own" : `--provider ${quote(model.provider)} --model ${quote(model.model)}`}${session ? ` --session ${quote(session)}` : ""}`,
   read,
 });
 
-export const CLAUDE = driver("claude", "Claude Code", "anthropic", "/work/.agent/claude-code.py", CLAUDE_BRIDGE, { login: "claude auth login", roster: "an Anthropic-API model" });
+export const CLAUDE = driver("claude", "Claude Code", "anthropic", "/work/.agent/claude-code.py", CLAUDE_PART, claudeNotes, { login: "claude auth login", roster: "an Anthropic-API model" });
 /** (Codex speaks only the Responses API: a roster model on an endpoint without it fails, and the next takes over.) */
-export const CODEX = driver("codex", "Codex", "openai", "/work/.agent/codex.py", CODEX_BRIDGE, { login: "codex login --device-auth", roster: "an OpenAI-compatible model that speaks the Responses API" });
+export const CODEX = driver("codex", "Codex", "openai", "/work/.agent/codex.py", CODEX_PART, codexNotes, { login: "codex login --device-auth", roster: "an OpenAI-compatible model that speaks the Responses API" });

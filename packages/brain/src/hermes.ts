@@ -1,5 +1,6 @@
 import { redact } from "@galahad/core";
 import type { AgentDriver, AgentEvent } from "./agents.ts";
+import { ENGRAM_ENV, engramArgv } from "./engram.ts";
 
 /*
  * Hermes' supported ACP protocol works on v0.21.1, whose CLI predates stream-json.
@@ -7,7 +8,7 @@ import type { AgentDriver, AgentEvent } from "./agents.ts";
  * the assigned sandbox: no host tools, owner config, provider keys or arm tokens.
  * Its profile and ACP session database survive subsequent runs in that workspace.
  */
-export const HERMES_ACP_BRIDGE = String.raw`import argparse, json, os, selectors, signal, subprocess, sys, time
+const BRIDGE = String.raw`import argparse, json, os, selectors, signal, subprocess, sys, time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -254,10 +255,44 @@ def main():
         return 1
     finally:
         bridge.close()
+`;
 
+const ENTRY = String.raw`
 if __name__ == "__main__":
     sys.exit(main())
 `;
+
+export const HERMES_ACP_BRIDGE = `${BRIDGE}${ENTRY}`;
+
+/**
+ * With the VM's notes store (engram.ts): a session is opened with its one stdio server, which Hermes then
+ * starts for itself (its environment is inside the entry: Hermes' own is the allowlist above). ACP has no
+ * word for "no stdio servers": every agent is to take them, its mcpCapabilities speak only of http and sse,
+ * and Hermes 0.21.1 reports none. So an agent that takes none says it by refusing the session; it is then
+ * asked again without, and the run says it has no notes store.
+ */
+const withNotes = (servers: readonly object[]) => String.raw`
+NOTES = json.loads(${JSON.stringify(JSON.stringify(servers))})
+plain_request = Bridge.request
+
+def request(self, method, params, timeout=45):
+    if method in ("session/new", "session/load"):
+        try:
+            return plain_request(self, method, dict(params, mcpServers=NOTES), timeout)
+        except RuntimeError as error:
+            if str(error) != "Hermes ACP rejected " + method:
+                raise
+            emit("text", text="Hermes refused a session with the notes store's MCP server: this run has no notes store")
+    return plain_request(self, method, params, timeout)
+
+Bridge.request = request
+`;
+
+/** The store's server as ACP names a stdio one. */
+const notesServer = (project: string) => {
+  const [command, ...args] = engramArgv(project);
+  return { name: "engram", command, args, env: Object.entries(ENGRAM_ENV).map(([name, value]) => ({ name, value })) };
+};
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -281,7 +316,7 @@ export const HERMES: AgentDriver = {
   title: "Hermes",
   kind: "openai",
   check: "hermes acp --check",
-  files: () => ({ "/work/.agent/hermes-acp.py": HERMES_ACP_BRIDGE }),
+  files: (_models, engram) => ({ "/work/.agent/hermes-acp.py": engram ? `${BRIDGE}${withNotes([notesServer(engram)])}${ENTRY}` : HERMES_ACP_BRIDGE }),
   command: (model, session) => `python3 /work/.agent/hermes-acp.py --provider ${quote(model.provider)} --model ${quote(model.model)}${session ? ` --session ${quote(session)}` : ""}`,
   read: readBridge,
 };

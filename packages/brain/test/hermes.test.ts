@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AGENTS, HERMES } from "../src/agents.ts";
+import { ENGRAM_BIN, engramArgv } from "../src/engram.ts";
 import { HERMES_ACP_BRIDGE } from "../src/hermes.ts";
 
 const dirs: string[] = [];
@@ -40,6 +41,8 @@ for raw in sys.stdin:
     method, params, ident = message.get("method"), message.get("params", {}), message.get("id")
     if method == "initialize":
         reply(ident, {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}, "agentInfo": {"name": "stand-in", "version": "fixture"}})
+    elif method in ("session/new", "session/load") and params["mcpServers"] and (home / "no-mcp").exists():
+        send({"id": ident, "error": {"code": -32602, "message": "Invalid params: mcpServers are not supported"}})
     elif method == "session/new":
         (home / "session").write_text("hermes-test-session")
         reply(ident, dict(state, sessionId="hermes-test-session"))
@@ -78,10 +81,10 @@ for raw in sys.stdin:
         reply(prompt_id, {"stopReason": "cancelled"})
 `;
 
-function fixture() {
+function fixture(bridge = HERMES_ACP_BRIDGE) {
   const dir = mkdtempSync(join(tmpdir(), "galahad-hermes-"));
   dirs.push(dir);
-  writeFileSync(join(dir, "bridge.py"), HERMES_ACP_BRIDGE);
+  writeFileSync(join(dir, "bridge.py"), bridge);
   writeFileSync(join(dir, "hermes"), STAND_IN);
   chmodSync(join(dir, "hermes"), 0o700);
   const home = join(dir, "profile");
@@ -189,6 +192,83 @@ describe("Hermes ACP driver", () => {
     expect(result.exit).toBe(1);
     expect(result.stdout).toContain("rejected session/prompt");
     expect(result.stdout).not.toContain("DO-NOT-LEAK");
+  });
+});
+
+/* The VM's notes store (engram.ts): Hermes is handed its server when a session is opened, and starts it itself. */
+describe("Hermes and the notes store", () => {
+  const withNotes = () => fixture(HERMES.files([], "you-project")["/work/.agent/hermes-acp.py"]!);
+  /** The one stdio server, as ACP names one: its environment inside the entry (the bridge's own is an allowlist). */
+  const server = { name: "engram", command: ENGRAM_BIN, args: engramArgv("you-project").slice(1), env: [{ name: "ENGRAM_DATA_DIR", value: "/work/.memory/engram" }, { name: "ENGRAM_NO_UPDATE_CHECK", value: "1" }] };
+  const opened = (trace: any[], method: string) => trace.filter((m) => m.method === method).map((m) => m.params.mcpServers);
+
+  test("without the store a session is opened with no MCP server, as ever", async () => {
+    const box = fixture();
+    expect((await box.run("do work")).exit).toBe(0);
+    expect((await box.run("continue", ["--session", "hermes-test-session"])).exit).toBe(0);
+    expect(opened(box.trace(), "session/new")).toEqual([[]]);
+    expect(opened(box.trace(), "session/load")).toEqual([[]]);
+  });
+
+  test("with it, a new session and a resumed one are opened with exactly that one server, and the run is otherwise the same", async () => {
+    const plain = await fixture().run("do work");
+    const box = withNotes();
+    const first = await box.run("do work");
+    expect({ exit: first.exit, stderr: first.stderr }).toEqual({ exit: 0, stderr: "" });
+    expect(first.events).toEqual(plain.events);
+    const second = await box.run("continue", ["--session", "hermes-test-session"]);
+    expect(second.exit).toBe(0);
+    expect(second.events).toEqual(plain.events);
+    expect(opened(box.trace(), "session/new")).toEqual([[server]]);
+    expect(opened(box.trace(), "session/load")).toEqual([[server]]);
+    // Hermes itself is started with the same allowlisted environment: nothing of the store is put in it.
+    const child = box.trace().find((m) => m.env);
+    expect(Object.keys(child.env).filter((name) => name.startsWith("ENGRAM"))).toEqual([]);
+    expect(child.env.SSH_AUTH_SOCK).toBeUndefined();
+    // Asking whether Hermes is there opens no session, with the store or without.
+    const check = await box.run("unused", ["--check"]);
+    expect(check.exit).toBe(0);
+    expect(check.stdout).toContain("Hermes ACP is ready");
+  });
+
+  test("an agent that takes no MCP server refuses the session: it is asked again without, and the run says it has no notes store", async () => {
+    const box = withNotes();
+    mkdirSync(box.home, { recursive: true });
+    writeFileSync(join(box.home, "no-mcp"), "");
+    const first = await box.run("do work");
+    expect({ exit: first.exit, stderr: first.stderr }).toEqual({ exit: 0, stderr: "" });
+    expect(first.events).toEqual([
+      { type: "text", text: "Hermes refused a session with the notes store's MCP server: this run has no notes store" },
+      { type: "session", id: "hermes-test-session" },
+      { type: "tool", tool: "terminal: test", input: "python3 test.py", output: "passed", ok: true },
+      { type: "text", text: "New answer." },
+      { type: "tokens", input: 10, output: 4 },
+    ]);
+    expect(opened(box.trace(), "session/new")).toEqual([[server], []]);
+    // A resumed session is asked the same way, and the session it continues is the same one.
+    const second = await box.run("continue", ["--session", "hermes-test-session"]);
+    expect(second.exit).toBe(0);
+    expect(second.events[0]).toEqual({ type: "text", text: "Hermes refused a session with the notes store's MCP server: this run has no notes store" });
+    expect(second.events[1]).toEqual({ type: "session", id: "hermes-test-session" });
+    expect(opened(box.trace(), "session/load")).toEqual([[server], []]);
+  });
+
+  test("a session that fails for another reason is not opened a second way: a missing one still fails, and is not replaced", async () => {
+    const box = withNotes();
+    const result = await box.run("continue", ["--session", "missing"]);
+    expect(result.exit).toBe(1);
+    expect(result.stdout).toContain("could not be loaded");
+    expect(result.stdout).not.toContain("notes store");
+    expect(opened(box.trace(), "session/load")).toEqual([[server]]);
+    expect(box.trace().some((m) => m.method === "session/new" || m.method === "session/prompt")).toBe(false);
+  });
+
+  test("the bridge with the store still speaks to nobody itself, and runs nothing of the store's own", () => {
+    const bridge = HERMES.files([], "you-project")["/work/.agent/hermes-acp.py"]!;
+    expect(bridge.startsWith(HERMES_ACP_BRIDGE.slice(0, HERMES_ACP_BRIDGE.lastIndexOf("\nif __name__"))) ).toBe(true);
+    expect(bridge).not.toMatch(/user.agent|urllib\.request|http\.client|\bsocket\b|\bcurl\b|\bwget\b/i);
+    expect(Object.keys(HERMES.files([], "you-project"))).toEqual(["/work/.agent/hermes-acp.py"]);
+    expect(HERMES.command({ provider: "p", model: "m" }, null)).not.toContain("engram");
   });
 });
 

@@ -1,5 +1,6 @@
 import { type ExecResult, randomId, redact } from "@galahad/core";
 import { agentCleanupCommand, agentProcessCommand, AGENT_PROCESS_PY } from "./agent-process.ts";
+import { ENGRAM_ENV, engramArgv } from "./engram.ts";
 import { HERMES } from "./hermes.ts";
 import { CLAUDE, CODEX } from "./vendor-cli.ts";
 export { HERMES } from "./hermes.ts";
@@ -58,8 +59,12 @@ export interface AgentDriver {
    * command to sign in; `roster`: what kind of model it runs on through the gateway instead.
    */
   signIn?: { read(stdout: string): { signedIn: boolean; method?: string }; login: string; roster: string };
-  /** Files written before the first run (absolute path → content): every model it may fall back to. */
-  files(models: readonly AgentModel[]): Record<string, string>;
+  /**
+   * Files written before the first run (absolute path → content): every model it may fall back to. `engram`:
+   * the project of the VM's notes store (engram.ts) when the run is given it; the tool then starts the store's
+   * server for itself, in its own way. Without one, a driver writes exactly what it did before there was a store.
+   */
+  files(models: readonly AgentModel[], engram?: string): Record<string, string>;
   /** The command for one run on one model, reading its message from AGENT_DIR/prompt.md (a session id continues one). */
   command(model: AgentModel, session: string | null): string;
   /** One line of the event stream, or null if it's nothing to report. */
@@ -88,7 +93,7 @@ export const OPENCODE: AgentDriver = {
   title: "OpenCode",
   kind: "openai",
   check: "opencode --version",
-  files: (models) => {
+  files: (models, engram) => {
     // One provider per gateway provider, all on the sandbox's one token: each model the
     // roster offers is a fallback the next run can continue the session on.
     const providers: Record<string, unknown> = {};
@@ -111,6 +116,8 @@ export const OPENCODE: AgentDriver = {
           model: `${ocProvider(models[0]!)}/${models[0]!.model}`,
           providers,
           permissions: [{ action: "*", resource: "*", effect: "allow" }],
+          // The notes store, as OpenCode's own `mcp add` writes a local server: OpenCode starts it, for the run.
+          ...(engram ? { mcp: { servers: { engram: { type: "local", command: engramArgv(engram), environment: ENGRAM_ENV } } } } : {}),
         },
         null,
         2,
