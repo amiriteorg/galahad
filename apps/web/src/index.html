@@ -770,7 +770,6 @@
       .team-notice { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--warn-soft); color: var(--warn); font-size: var(--fs-12); }
       .team-thread { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6); max-width: 880px; margin: 0 auto; }
       .team-message { display: flex; gap: var(--sp-3); min-width: 0; }
-      .team-message > .avatar { width: 40px; height: 40px; border-radius: 50%; }
       .team-message-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
       .team-message-by { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: 5px; font-size: var(--fs-12); }
       .team-message-by strong { font-weight: 650; }
@@ -825,61 +824,15 @@
       }
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
       @media (pointer: coarse) { .team-tab, .team-member-choice, .team-task-details > summary { min-height: 44px; } }
-      /* Small knights: CSS-only expression motion, with no timers or external assets. */
-      .worker-avatar { display: block; flex: none; overflow: visible; --avatar-phase: -0.2s; --avatar-breath: 7s; --avatar-blink: 6.8s; }
-      .worker-avatar[data-phase="1"] { --avatar-phase: -1.1s; }
-      .worker-avatar[data-phase="2"] { --avatar-phase: -2s; }
-      .worker-avatar[data-phase="3"] { --avatar-phase: -2.9s; }
-      .worker-avatar[data-phase="4"] { --avatar-phase: -3.8s; }
-      .worker-avatar[data-phase="5"] { --avatar-phase: -4.7s; }
-      .worker-avatar[data-phase="6"] { --avatar-phase: -5.6s; }
-      .worker-avatar[data-phase="7"] { --avatar-phase: -6.5s; }
-      .worker-avatar[data-temperament="curious"] { --avatar-breath: 6s; --avatar-blink: 5.7s; }
-      .worker-avatar[data-temperament="lively"] { --avatar-breath: 4.8s; --avatar-blink: 4.9s; }
-      .worker-avatar-body { transform-box: view-box; transform-origin: 40px 68px; animation: worker-avatar-breathe var(--avatar-breath) ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar-shadow { transform-box: view-box; transform-origin: 40px 71px; animation: worker-avatar-shadow var(--avatar-breath) ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar-head { transform-box: view-box; transform-origin: 40px 42px; }
-      .worker-avatar-eyes { transform-box: view-box; transform-origin: 40px 38px; animation: worker-avatar-blink var(--avatar-blink) ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar-hand { transform-box: view-box; }
-      .worker-avatar-hand-left { transform-origin: 19px 45px; transform: rotate(-10deg); }
-      .worker-avatar-hand-right { transform-origin: 61px 45px; transform: rotate(10deg); }
-      .worker-avatar[data-expression="thinking"] .worker-avatar-head { transform: rotate(-5deg); animation: worker-avatar-think 8s ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar[data-expression="thinking"] .worker-avatar-hand-right { transform: translate(-2px, -2px) rotate(-22deg); animation: worker-avatar-ponder 8s ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar[data-expression="working"] { --avatar-blink: 8.7s; }
-      .worker-avatar[data-expression="working"] .worker-avatar-head { transform: rotate(2deg); }
-      .worker-avatar[data-expression="working"] .worker-avatar-hand-left { animation: worker-avatar-tap-left 3.2s ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar[data-expression="working"] .worker-avatar-hand-right { animation: worker-avatar-tap-right 3.2s ease-in-out infinite; animation-delay: calc(var(--avatar-phase) - 0.75s); }
-      .worker-avatar[data-expression="waiting"] .worker-avatar-head { transform: rotate(2deg); }
-      .worker-avatar[data-expression="waiting"] .worker-avatar-gaze { animation: worker-avatar-glance 9s ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar[data-expression="waiting"] .worker-avatar-hand-left { animation: worker-avatar-fidget 9s ease-in-out infinite; animation-delay: var(--avatar-phase); }
-      .worker-avatar[data-expression="pleased"] .worker-avatar-body { animation-name: worker-avatar-delight; }
-      .worker-avatar[data-expression="pleased"] .worker-avatar-hand-left { transform: translate(0, -1px) rotate(18deg); }
-      .worker-avatar[data-expression="pleased"] .worker-avatar-hand-right { transform: translate(0, -1px) rotate(-18deg); }
-      .worker-avatar[data-expression="concerned"] .worker-avatar-head { transform: rotate(-3deg); }
-      .worker-avatar[data-expression="concerned"] .worker-avatar-hand-left { transform: translate(1px, 1px) rotate(-5deg); }
-      .worker-avatar[data-expression="concerned"] .worker-avatar-hand-right { transform: translate(-1px, 1px) rotate(5deg); }
-      .worker-avatar[data-expression="resting"] { --avatar-breath: 9s; }
-      .worker-avatar[data-expression="resting"] .worker-avatar-head { transform: rotate(3deg); }
-      .worker-avatar[data-expression="resting"] .worker-avatar-hand { transform: none; }
-      .worker-avatar[data-expression="resting"] .worker-avatar-eyes, .worker-avatar[data-expression="pleased"] .worker-avatar-eyes { animation: none; }
-      @keyframes worker-avatar-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-0.6px) scale(1.012, 1.014); } }
-      @keyframes worker-avatar-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.12; } 50% { transform: scaleX(0.95); opacity: 0.1; } }
-      @keyframes worker-avatar-blink { 0%, 39%, 43%, 100% { transform: scaleY(1); } 41% { transform: scaleY(0.1); } }
-      @keyframes worker-avatar-think { 0%, 100% { transform: rotate(-5deg); } 42%, 62% { transform: rotate(-2deg) translateY(-0.5px); } }
-      @keyframes worker-avatar-ponder { 0%, 100% { transform: translate(-2px, -2px) rotate(-22deg); } 45%, 60% { transform: translate(-2.5px, -3px) rotate(-28deg); } }
-      @keyframes worker-avatar-tap-left { 0%, 40%, 100% { transform: rotate(-10deg); } 15%, 25% { transform: translate(1px, -1.5px) rotate(-2deg); } }
-      @keyframes worker-avatar-tap-right { 0%, 40%, 100% { transform: rotate(10deg); } 15%, 25% { transform: translate(-1px, -1.5px) rotate(2deg); } }
-      @keyframes worker-avatar-glance { 0%, 25%, 100% { transform: translateX(0); } 35%, 55% { transform: translateX(1.8px); } 65%, 85% { transform: translateX(0.7px); } }
-      @keyframes worker-avatar-fidget { 0%, 65%, 100% { transform: rotate(-10deg); } 70%, 80% { transform: translateY(0.8px) rotate(-3deg); } 75%, 85% { transform: rotate(-10deg); } }
-      @keyframes worker-avatar-delight { 0%, 35%, 100% { transform: translateY(0) scale(1); } 12% { transform: translateY(-1.8px) scale(1.015, 1.025); } 23% { transform: translateY(0.3px) scale(1.02, 0.985); } }
-      .worker-avatar[data-still] * { animation: none !important; transition: none !important; }
+      /* Squires' faces (ui/avatar.ts): drawn whole in SVG and never moving. Galahad's own is in ink, whatever the theme. */
+      .worker-avatar { display: block; flex: none; }
+      .worker-avatar[data-galahad] { color: var(--accent); }
+      .worker-avatar[data-galahad] .worker-avatar-ink { color: var(--on-accent); }
       .avatar-editor { min-width: 0; margin: 0; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-lg); display: flex; flex-direction: column; gap: var(--sp-4); }
       .avatar-editor legend { padding: 0 6px; color: var(--text-2); font-size: var(--fs-13); font-weight: 600; }
       .avatar-editor-stage { display: flex; align-items: center; gap: var(--sp-4); }
       .avatar-editor-stage > .stack { flex: 1; min-width: 0; }
-      .avatar-editor-stage strong { font-size: var(--fs-14); }
       .avatar-editor-preview { width: 148px; height: 148px; display: grid; place-items: center; flex: none; border-radius: 24px; background: radial-gradient(ellipse at 50% 35%, var(--surface-3), var(--surface)); }
-      .avatar-editor .team-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
       .avatar-palettes { display: flex; flex-wrap: wrap; gap: 6px; }
       .avatar-palette { width: 40px; height: 40px; padding: 4px; border: 1px solid transparent; border-radius: 50%; }
       .avatar-palette[aria-pressed="true"] { border-color: var(--text-2); background: var(--surface-2); }
@@ -891,8 +844,6 @@
         .avatar-editor-stage { flex-direction: column; text-align: center; }
         .avatar-editor-stage > .stack { width: 100%; }
       }
-      :root[data-motion="reduce"] .worker-avatar * { animation: none !important; transition: none !important; }
-      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .worker-avatar * { animation: none !important; transition: none !important; } }
       /* ---------- end Team workspace ---------- */
 
       /* ---------- chat ---------- */

@@ -205,11 +205,11 @@ What to know before relying on it: an online VM can send out whatever is kept in
 
 Hermes can also use Galahad's shared memory through a separate native memory provider plugin when Hermes runs beside the daemon. That plugin needs a dedicated memory-scoped arm token; the VM's model gateway token cannot substitute for it. Installation, the loopback restriction and the tested protocol version are documented in [the Hermes integration](../integrations/hermes/README.md).
 
-## Small knights, one visual family
+## Simple faces, one visual family
 
-Each squire has a simple, soft little knight avatar: a plump helmet or hood, a gentle face opening, tiny hands and feet, and expressive eyes with small highlights. Thinking brings a tilted head and an upward glance; working brings attentive eyes and small hand movements; resting closes the eyes. Breathing and blinking have individual rhythms that survive a rename. In **Edit squire**, customize the shape, armor and accent colors, eyes, crest and motion temperament. Preview the expressions, then save; cancel leaves the saved appearance untouched. Existing squires receive a stable appearance from their immutable ID, so renaming one does not change its face. Reset returns to that default.
+Each squire has a very simple avatar: a round face in one flat color, with two eyes and a mouth drawn as a single line. The mouth says most of it: three dots while a task runs, a frown after a failure, a smile after verified work. A squire that is writing an answer looks up, one whose work is queued has flat eyes, and a paused one has its eyes shut and is drawn fainter. Nothing moves. Galahad is the same face in ink, with a small star. In **Edit squire**, choose the color (a preset or your own) and preview the expressions, then save; cancel leaves the saved appearance untouched. Existing squires receive a stable color from their immutable ID, so renaming one does not change its face. Reset returns to that default.
 
-Colors come as coordinated pairs. The eight presets (Mint, Sand, Lilac, Sky, Rose, Moss, Honey, Apricot) each pair a pastel armor with a deeper, soft accent of the same hue, and every seeded default is one of them. Choosing a new body color brings its matching accent with it, in the editor and from the CLI, so sky-blue armor does not keep another palette's brown tabard. An accent you pick yourself is yours and stays until you choose a preset or reset.
+There are eight presets (Mint, Sand, Lilac, Sky, Rose, Moss, Honey, Apricot), and every seeded default is one of them, so two squires can share a color until you give one of them another. A profile still carries what the little knights these faces replaced were made of: a form, eyes, an accessory, a temperament, and an accent that follows the color unless you pick your own. The node keeps them and the CLI sets them, but the app's face draws only the color. Two other ways to draw a squire (initials, and a glyph whose shape is the profile's form) are behind the same function, and `apps/web/design/avatars.html` shows all three side by side for choosing.
 
 ```sh
 bun galahad squires avatar ada
@@ -218,9 +218,9 @@ bun galahad squires avatar ada --color '#a8c9db' --accent '#33558a'
 bun galahad squires avatar ada --reset
 ```
 
-Thinking and working follow active conversations and tasks; queued work waits; a paused squire rests; a recently failed or interrupted job looks concerned; only a completed, verified task produces the brief pleased expression. These are activity cues, not model claims about feelings. Historical messages use a neutral face rather than changing their apparent emotion as new work arrives. Text labels remain alongside the avatars, and reduced motion disables decorative movement while preserving readable expressions.
+Thinking and working follow active conversations and tasks; queued work waits; a paused squire rests; a recently failed or interrupted job looks concerned; only a completed, verified task produces the brief pleased expression. These are activity cues, not model claims about feelings. Historical messages use a neutral face rather than changing their apparent emotion as new work arrives. Text labels remain alongside the avatars, and each avatar is named for a screen reader ("Ada · working"). The faces never move, so reduced motion has nothing to turn off.
 
-Profiles are versioned, validated cosmetic data saved in `team.db`. Colors are six-digit hex values; forms and details come from fixed options. No remote image, user-supplied SVG, script, upload or additional runtime dependency is required. Temperament changes animation, not the squire's permissions, instructions or budgets.
+Profiles are versioned, validated cosmetic data saved in `team.db`. Colors are six-digit hex values; forms and details come from fixed options. No remote image, user-supplied SVG, script, upload or additional runtime dependency is required. Nothing in a profile changes the squire's permissions, instructions or budgets.
 
 ## Tasks, dependencies and verification
 
