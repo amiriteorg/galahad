@@ -336,6 +336,27 @@ export function reviewQuestion(input: { goal: string; plan: string; steps: { com
 
 class Stopped extends Error {}
 
+/**
+ * How much of one reply of the engineer's stays in the conversation: its beginning and its end. Every reply is
+ * sent again on each later turn, so one that runs away (a file written inline, a model that doesn't stop) would
+ * be paid for on every turn after it, and beyond a point no chat call takes the conversation at all.
+ */
+const REPLY_KEPT = { head: 16_000, tail: 6_000 } as const;
+
+/** A command as the reviewer reads it in the trail: whole unless it runs away (a file written inline), then its beginning and end. */
+const trailCommand = (command: string): string => clip(command, 6_000, 2_000);
+
+/** A reply as the conversation keeps it, and how long it was if that is less than all of it. */
+function keptReply(reply: string): { content: string; cut: number | null } {
+  const text = reply.trim() || "(empty reply)";
+  const content = clip(text, REPLY_KEPT.head, REPLY_KEPT.tail);
+  return { content, cut: content.length < text.length ? text.length : null };
+}
+
+/** Said to the engineer once, after a reply of his was kept short: what he reads back is not all that he sent. */
+const cutNote = (length: number): string =>
+  `\n\n(Your reply was ${length.toLocaleString("en-US")} characters long: only its beginning and end are kept in this conversation (the command ran as you sent it). Keep replies short: write long content with a script, or in several commands.)`;
+
 /** Keep the conversation affordable: older observations shrink to a short excerpt. */
 function compact(messages: ChatMessage[], keepFull = 8): ChatMessage[] {
   let seen = 0;
@@ -572,12 +593,15 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     while (steps < o.maxSteps) {
       steps += 1;
       const reply = await ask("engineer", compact(messages));
-      messages.push({ role: "assistant", content: reply.text.trim() || "(empty reply)" });
+      const kept = keptReply(reply.text);
+      messages.push({ role: "assistant", content: kept.content });
+      // (Appended to whatever he is told next: a command's result still begins as one.)
+      const cut = kept.cut === null ? "" : cutNote(kept.cut);
       const action = parseAction(reply.text, o.parallelCommands);
 
       if (action.kind === "invalid") {
         emit({ type: "format", step: steps, problem: action.problem });
-        messages.push({ role: "user", content: action.problem });
+        messages.push({ role: "user", content: `${action.problem}${cut}` });
         continue;
       }
       if (action.kind === "give-up") return finish({ status: "gave-up", summary: action.reason });
@@ -597,14 +621,15 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const seen = results.map((result) => observation(result));
         for (const [i, command] of batch.entries()) {
           emit({ type: "observation", step: first + i, exitCode: results[i]!.exitCode, durationMs: results[i]!.durationMs, output: seen[i]! });
-          trail.push({ command, exitCode: results[i]!.exitCode, excerpt: clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) });
+          trail.push({ command: trailCommand(command), exitCode: results[i]!.exitCode, excerpt: clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) });
         }
         const dropped = action.commands.length - batch.length;
         messages.push({
           role: "user",
           content:
             batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}`).join("\n\n") +
-            (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : ""),
+            (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
+            cut,
         });
         continue;
       }
@@ -620,8 +645,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         }
         const seen = observation(result);
         emit({ type: "observation", step: steps, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
-        trail.push({ command: action.command, exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
-        messages.push({ role: "user", content: seen });
+        trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
+        messages.push({ role: "user", content: `${seen}${cut}` });
         continue;
       }
 
@@ -634,7 +659,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       if (revisions >= o.maxRevisions) return finish({ status: "unverified", summary: action.summary, review: verdict.notes });
       revisions += 1;
-      messages.push({ role: "user", content: sentBack(verdict, "verify, then reply DONE again.") });
+      messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${cut}` });
     }
     return finish({ status: "stopped", summary: `Stopped after ${o.maxSteps} commands without finishing.` });
   } catch (error) {

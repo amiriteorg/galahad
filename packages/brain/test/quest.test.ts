@@ -255,3 +255,42 @@ describe("a model that couldn't answer is never passed over in silence", () => {
   });
 });
 
+describe("a reply of the engineer's that runs away", () => {
+  test("its command runs as sent, but only its beginning and end stay in the conversation, and he is told", async () => {
+    // A file written inline, far longer than anything a later turn needs to read again.
+    const body = Array.from({ length: 30_000 }, (_, i) => `row ${i},${i * 7}`).join("\n");
+    const huge = sh(`cat > data.csv <<'EOF'\n${body}\nEOF`, "Writing the data inline.");
+    expect(huge.length).toBeGreaterThan(400_000);
+    const h = harness({ engineer: [huge, sh("wc -l data.csv"), "DONE\nWrote data.csv."] });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    // The sandbox was sent the command whole.
+    expect(h.commands[0]!.length).toBeGreaterThan(400_000);
+    expect(h.commands[0]).toContain("row 29999,209993");
+    // Every later turn carries a short form of that reply: its start, its end, and how much was left out.
+    const later = h.seen.filter((s) => s.role === "engineer").slice(1);
+    expect(later).toHaveLength(2);
+    for (const turn of later) {
+      const reply = turn.messages[1]!;
+      expect(reply.role).toBe("assistant");
+      expect(reply.content.length).toBeLessThan(30_000);
+      expect(reply.content).toContain("Writing the data inline.");
+      expect(reply.content).toMatch(/… \[\d+ characters cut\] …/);
+      expect(reply.content.endsWith("EOF\n```")).toBe(true);
+      // No message of the conversation is beyond what a chat call takes.
+      expect(Math.max(...turn.messages.map((m) => m.content.length))).toBeLessThan(400_000);
+    }
+    // He is told once, with the command's result, so he doesn't take the short form for what he sent.
+    const told = later[0]!.messages[2]!.content;
+    expect(told).toMatch(/^exit 0 · /);
+    expect(told).toMatch(/Your reply was \d[\d,]* characters long: only its beginning and end are kept in this conversation \(the command ran as you sent it\)/);
+    expect(later[1]!.messages[4]!.content).not.toContain("Your reply was");
+    // The reviewer reads what was run: that command's beginning and end, with how much lies between, and the rest whole.
+    const review = h.seen.find((s) => s.role === "reviewer")!.messages[0]!.content;
+    expect(review.length).toBeLessThan(30_000);
+    expect(review).toContain("1. $ cat > data.csv <<'EOF'\nrow 0,0");
+    expect(review).toMatch(/… \[\d+ characters cut\] …/);
+    expect(review).toContain("2. $ wc -l data.csv");
+  });
+});
+
