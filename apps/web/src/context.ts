@@ -1,4 +1,5 @@
 import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
@@ -37,6 +38,13 @@ export interface Live {
   /** The inbox has been asked at least once (until then, "nothing needs you" would be a guess). */
   inboxLoaded: Signal<boolean>;
   inboxCount: Signal<number>;
+  /** The knights, their rooms and their work, as the node last gave them (null: not yet, or not this device's to read). Set anew at every asking. */
+  team: Signal<TeamSnapshot | null>;
+  /** Why the last asking for the team failed (null: it didn't). */
+  teamProblem: Signal<unknown>;
+  refreshTeam(): Promise<void>;
+  /** How often the team is asked for while the app is visible (null: not at all). The shell says, from what is on screen. */
+  watchTeam(everyMs: number | null): void;
   refreshFleet(): Promise<void>;
   refreshActions(): Promise<void>;
   refreshNotices(): Promise<void>;

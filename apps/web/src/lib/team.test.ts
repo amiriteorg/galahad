@@ -23,6 +23,15 @@ describe("team navigation and identity", () => {
     expect(landingHash("chat", "#/chat?c=cv_abc")).toBe("#/chat");
     expect(landingHash("overview", "#/team?room=room-a_1")).toBe("#/overview");
   });
+  test("#/roundtable is the same page: its room is read from it, and the app settles on the page's own address", () => {
+    expect(teamLocation("#/roundtable?room=room-a_1")).toEqual({ room: "room-a_1" });
+    expect(teamLocation("#/roundtable")).toEqual({});
+    expect(teamLocation("#/roundtable?room=../secret")).toEqual({});
+    expect(landingHash("team", "#/roundtable?room=room-a_1")).toBe("#/team?room=room-a_1");
+    expect(landingHash("team", "#/roundtable")).toBe("#/team");
+    // (Only the Roundtable's two names: nothing else that merely begins the same way.)
+    expect(teamLocation("#/roundtables?room=room-a_1")).toEqual({});
+  });
   test("the handle field's pattern is one a browser can compile, and it takes handles and nothing else", () => {
     // (A browser compiles a field's pattern with the v flag, under which a bare hyphen in a class is an error:
     // the field is then never checked at all, and says so only in the console.)

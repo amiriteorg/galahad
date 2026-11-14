@@ -34,6 +34,16 @@ export function filterConversations(list: ConversationSummary[], query: string, 
   });
 }
 
+/** The conversation Galahad's row opens: the one last active (a pin does not make one more recent). Null: none kept yet. */
+export const mostRecent = (list: readonly ConversationSummary[]): ConversationSummary | null =>
+  list.reduce<ConversationSummary | null>((latest, c) => (!latest || c.updatedAt > latest.updatedAt ? c : latest), null);
+
+/** What his menu offers before anything about the chat on screen: a new chat, and every kept one. */
+export const CHATS_MENU = [
+  { value: "new", label: "New chat" },
+  { value: "history", label: "All chats…" },
+] as const;
+
 export interface ChatAction {
   value: "aside" | "rename" | "pin" | "delete";
   label: string;

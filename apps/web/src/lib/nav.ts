@@ -2,10 +2,11 @@ import type { AnyScope } from "../types.ts";
 import type { IconName } from "../ui/icons.ts";
 
 /*
- * The app's places, as one list (pure: no DOM; the shell gives each its view). Three come
- * first everywhere: Chat, Squires and Inbox. Every other place is reached from More, one
- * plain index under a few headings. An address (`#/fleet`) is a contract: a place is never
- * renamed or dropped here, and what a device may see follows its scopes.
+ * The app's places, as one list (pure: no DOM; the shell gives each its view). The roster
+ * comes first everywhere: Galahad's own timeline (Chat) and the Roundtable's, where every
+ * other knight and room has one. Every other place, the Inbox among them, is reached from
+ * More, one plain index under a few headings. An address (`#/fleet`) is a contract: a place
+ * is never renamed or dropped here, and what a device may see follows its scopes.
  */
 
 const HEADINGS = { work: "Work", knowledge: "Knowledge", machines: "Machines", keys: "Keys and models", device: "This device" } as const;
@@ -14,7 +15,7 @@ interface PlaceSpec {
   id: string;
   label: string;
   icon: IconName;
-  /** Where it's reached from: one of the three places, a heading on More, or (null) More itself. */
+  /** Where it's reached from: the roster, a heading on More, or (null) More itself. */
   under: "primary" | keyof typeof HEADINGS | null;
   scope: AnyScope | null;
   /** Also listed (read-only) for devices holding this scope. */
@@ -28,8 +29,10 @@ interface PlaceSpec {
 
 const LIST = [
   { id: "chat", label: "Chat", icon: "chat", under: "primary", scope: "chat", key: "c", keywords: ["galahad", "counsel", "ask", "talk", "history", "conversations", "home"], about: "" },
-  { id: "team", label: "Squires", icon: "fleet", under: "primary", scope: "chat", key: "h", keywords: ["squires", "team", "teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], about: "" },
-  { id: "inbox", label: "Inbox", icon: "inbox", under: "primary", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], about: "" },
+  // (Its address stays #/team, and #/roundtable is the same page. Its older names still find it.)
+  { id: "team", label: "Roundtable", icon: "fleet", under: "primary", scope: "chat", key: "h", keywords: ["knights", "roundtable", "give", "rooms", "messages", "tasks", "coordination", "team", "squires", "hermes"], about: "" },
+  // (What needs you shows on the row it belongs to; the Inbox is where all of it is answered.)
+  { id: "inbox", label: "Inbox", icon: "inbox", under: "work", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], about: "Everything that needs you, to answer" },
   { id: "more", label: "More", icon: "more", under: null, scope: null, key: ".", keywords: ["everything", "all", "index", "menu"], about: "" },
   { id: "overview", label: "Overview", icon: "overview", under: "work", scope: null, key: "o", keywords: ["dashboard", "health", "doctor"], about: "Health, what's in hand and recent activity" },
   { id: "projects", label: "Projects", icon: "folder", under: "work", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], about: "Instructions and chats, by project" },
@@ -59,11 +62,31 @@ export const PLACES: readonly Place[] = LIST;
 /** The places a device may see: its scopes decide. */
 export const placesFor = (can: (scope: AnyScope) => boolean): Place[] => PLACES.filter((place) => place.scope === null || can(place.scope) || (place.alsoFor !== undefined && can(place.alsoFor)));
 
-/** The places that come first, on the tab bar and in the sidebar. */
+/** A place's second address: the Roundtable is #/team, and #/roundtable as well. */
+const ALIASES: Readonly<Record<string, Route>> = { roundtable: "team" };
+
+/** The place an address is for, among those a device may see (null: none of them). */
+export function routeOf(hash: string, visible: Place[]): Route | null {
+  const name = hash.match(/^#\/([a-z]+)(?:[?/]|$)/)?.[1];
+  if (!name) return null;
+  const id = ALIASES[name] ?? name;
+  return visible.find((place) => place.id === id)?.id ?? null;
+}
+
+/** The roster's places: Galahad's own timeline, and the Roundtable's. */
 export const primaryOf = (visible: Place[]): Place[] => visible.filter((place) => place.under === "primary");
 
-/** The place the app opens on, and falls back to: Chat, or the Inbox for a device that may not chat. */
-export const homeOf = (visible: Place[]): Route => primaryOf(visible)[0]?.id ?? "inbox";
+/**
+ * The place the app opens on, and falls back to. A phone opens on the roster itself; a wide screen has the
+ * roster beside every page, so it opens on Galahad's timeline. A device that may not chat has neither: its Inbox.
+ */
+export const homeOf = (visible: Place[], screen: { narrow: boolean }): Route => {
+  const roster = primaryOf(visible).map((place) => place.id);
+  return (screen.narrow && roster.includes("team") ? "team" : roster[0]) ?? "inbox";
+};
+
+/** A phone's bar: the roster and More (for a device with no roster, its Inbox and More). */
+export const tabsOf = (visible: Place[]): Place[] => visible.filter((place) => place.id === (visible.some((other) => other.id === "team") ? "team" : "inbox") || place.id === "more");
 
 /** More's index: every other place this device may see, under its heading. */
 export function moreIndex(visible: Place[]): { heading: string; places: Place[] }[] {
@@ -72,5 +95,6 @@ export function moreIndex(visible: Place[]): { heading: string; places: Place[] 
     .filter((group) => group.places.length > 0);
 }
 
-/** Which entry of the navigation a place is under: itself for the three, More for the rest. */
-export const tabOf = (route: Route): Route => (PLACES.find((place) => place.id === route)?.under === "primary" ? route : "more");
+/** Which entry of the bar a place is under: itself when it is one, the roster for a timeline, More for the rest. */
+export const tabOf = (route: Route, tabs: Place[]): Route =>
+  tabs.some((tab) => tab.id === route) ? route : PLACES.find((place) => place.id === route)?.under === "primary" ? "team" : "more";

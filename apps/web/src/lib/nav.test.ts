@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { AnyScope } from "../types.ts";
-import { homeOf, moreIndex, PLACES, placesFor, primaryOf, tabOf } from "./nav.ts";
+import { homeOf, moreIndex, PLACES, placesFor, primaryOf, routeOf, tabOf, tabsOf } from "./nav.ts";
 
-/* Every address the app had before it was three places and More, with the scope each asked for (and Sandboxes'
+/* Every address the app had before it was a roster and More, with the scope each asked for (and Sandboxes'
  * second one): an address is a contract, and what a device may see follows its scopes as it did. */
 const BEFORE: Record<string, [scope: AnyScope | null, alsoFor?: AnyScope]> = {
   overview: [null], inbox: [null], chat: ["chat"], team: ["chat"], projects: ["mind:read"], memory: ["mind:read"], skills: ["mind:read"],
@@ -28,16 +28,27 @@ describe("the app's places", () => {
     }
   });
 
-  test("three places come first: Chat, Squires and Inbox", () => {
-    expect(ids(primaryOf(device(...OWNER)))).toEqual(["chat", "team", "inbox"]);
-    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Chat", "Squires", "Inbox"]);
+  test("the roster comes first: Galahad's own timeline and the Roundtable's; the Inbox is no longer a place of its own in the navigation", () => {
+    expect(ids(primaryOf(device(...OWNER)))).toEqual(["chat", "team"]);
+    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Chat", "Roundtable"]);
   });
 
-  test("everything else is reached from More, each under exactly one heading", () => {
+  test("#/roundtable is the Roundtable's address as well as #/team; no other place has a second name", () => {
+    const all = device(...OWNER);
+    for (const hash of ["#/roundtable", "#/roundtable?room=forge", "#/team", "#/team?room=forge&tab=workspace"]) expect([hash, routeOf(hash, all)]).toEqual([hash, "team"]);
+    expect(routeOf("#/fleet", all)).toBe("fleet");
+    expect(routeOf("#/chat?c=cv_abc", all)).toBe("chat");
+    for (const hash of ["", "#/", "#/nowhere", "#/roundtables", "#pair=abc"]) expect([hash, routeOf(hash, all)]).toEqual([hash, null]);
+    // A device that may not see the Roundtable doesn't reach it by its other name either.
+    expect(routeOf("#/roundtable", device("mind:read"))).toBeNull();
+  });
+
+  test("everything else is reached from More, the Inbox first, each under exactly one heading", () => {
     const index = moreIndex(device(...OWNER));
     const listed = index.flatMap((group) => ids(group.places));
-    expect(listed.sort()).toEqual(Object.keys(BEFORE).filter((id) => !["chat", "team", "inbox"].includes(id)).sort());
+    expect(listed.sort()).toEqual(Object.keys(BEFORE).filter((id) => !["chat", "team"].includes(id)).sort());
     expect(new Set(listed).size).toBe(listed.length);
+    expect(index[0]!.places[0]!.id).toBe("inbox");
     // A few plain headings, and each place says what's there in a line.
     expect(index.length).toBeGreaterThanOrEqual(3);
     expect(index.length).toBeLessThanOrEqual(5);
@@ -46,22 +57,34 @@ describe("the app's places", () => {
 
   test("More lists only what this device may see, and a heading with nothing under it is left out", () => {
     const index = moreIndex(device("chat"));
-    expect(index.flatMap((group) => ids(group.places)).sort()).toEqual(["overview", "settings"]);
+    expect(index.flatMap((group) => ids(group.places)).sort()).toEqual(["inbox", "overview", "settings"]);
     expect(index.every((group) => group.places.length > 0)).toBe(true);
   });
 
-  test("the app opens on Chat; a device that may not chat opens on its Inbox", () => {
-    expect(homeOf(device(...OWNER))).toBe("chat");
-    expect(homeOf(device("mind:read"))).toBe("inbox");
-    expect(ids(primaryOf(device("mind:read")))).toEqual(["inbox"]);
-    expect(homeOf(device())).toBe("inbox");
+  test("the app opens on the roster: a phone on the roster itself, a wide screen on Galahad's timeline beside it; a device that may not chat opens on its Inbox", () => {
+    expect(homeOf(device(...OWNER), { narrow: true })).toBe("team");
+    expect(homeOf(device(...OWNER), { narrow: false })).toBe("chat");
+    for (const narrow of [true, false]) {
+      expect(homeOf(device("mind:read"), { narrow })).toBe("inbox");
+      expect(homeOf(device(), { narrow })).toBe("inbox");
+    }
   });
 
-  test("a place reached from More keeps More marked in the navigation", () => {
-    expect(tabOf("chat")).toBe("chat");
-    expect(tabOf("team")).toBe("team");
-    expect(tabOf("inbox")).toBe("inbox");
-    for (const id of ["more", "overview", "fleet", "settings", "vault"] as const) expect([id, tabOf(id)]).toEqual([id, "more"]);
+  test("a phone's bar is the roster and More; a device with no roster has its Inbox there", () => {
+    expect(ids(tabsOf(device(...OWNER)))).toEqual(["team", "more"]);
+    expect(ids(tabsOf(device("chat")))).toEqual(["team", "more"]);
+    expect(ids(tabsOf(device("mind:read")))).toEqual(["inbox", "more"]);
+    expect(ids(tabsOf(device()))).toEqual(["inbox", "more"]);
+  });
+
+  test("a place reached from More keeps More marked, and a timeline keeps the roster marked", () => {
+    const tabs = tabsOf(device(...OWNER));
+    expect(tabOf("chat", tabs)).toBe("team");
+    expect(tabOf("team", tabs)).toBe("team");
+    for (const id of ["more", "inbox", "overview", "fleet", "settings", "vault"] as const) expect([id, tabOf(id, tabs)]).toEqual([id, "more"]);
+    // On a device whose bar holds the Inbox, the Inbox marks itself.
+    expect(tabOf("inbox", tabsOf(device("mind:read")))).toBe("inbox");
+    expect(tabOf("fleet", tabsOf(device("mind:read")))).toBe("more");
   });
 
   test("every place has its own key after G, and none is G itself", () => {

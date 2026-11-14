@@ -3,9 +3,11 @@ import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { type ChatAction, chatActions, filterConversations, groupConversations } from "../lib/chats.ts";
-import { galahadNow } from "../lib/now.ts";
+import { isWaiting } from "../live.ts";
+import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent } from "../lib/chats.ts";
+import { galahadNow, type NowInput } from "../lib/now.ts";
 import { questInHand } from "../lib/quests.ts";
+import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
@@ -103,8 +105,42 @@ let held: QueueHold | null = null;
 let steering: string[] = [];
 /** A turn is running in this chat that this device may not watch (it may read the bank). */
 let unwatchable: TurnView | null = null;
-/** The chat turns the node is running, as last asked while a chat was on screen (the header's line of what he's doing). */
-const nodeTurns = signal<TurnView[]>([]);
+/** The chat turns the node is running, as last asked (his line of what he's doing, in the chat's header and on the roster). */
+export const nodeTurns = signal<TurnView[]>([]);
+/** The quests in hand, as last asked. */
+export const questsInHand = signal<QuestView[]>([]);
+/** The step he is at in the answer this page watches (null: only just started; undefined: it watches none). */
+export const answerStep = signal<string | null | undefined>(undefined);
+const syncStep = (): void => answerStep.set(live ? (thread.target?.steps.at(-1)?.text ?? null) : undefined);
+/** What he has in hand, for his line wherever it is shown (lib/now.ts). */
+export const galahadWork = (): Pick<NowInput, "step" | "turns" | "quests"> => ({ ...(answerStep.value === undefined ? {} : { step: answerStep.value }), turns: nodeTurns.value, quests: questsInHand.value });
+/** A chat is on screen, and asks the node what he is doing itself. */
+let chatOnScreen = false;
+
+/** The turns the node runs, kept only when they changed (who is told redraws). */
+function noteTurns(turns: TurnView[]): boolean {
+  const of = (list: TurnView[]) => list.map((t) => `${t.id}:${t.conversation}:${t.title}`).sort().join(",");
+  if (of(turns) === of(nodeTurns.value)) return false;
+  nodeTurns.set(turns);
+  return true;
+}
+
+async function lookQuests(api: Api, signal?: AbortSignal): Promise<void> {
+  if (document.hidden) return;
+  try {
+    const going = (await api.get<{ quests: QuestView[] }>("/api/quests", signal)).quests.filter((q) => questInHand(q.state));
+    if (going.map((q) => q.quest + q.goal).join() !== questsInHand.value.map((q) => q.quest + q.goal).join()) questsInHand.set(going);
+  } catch {
+    /* out of reach just now: the next look tries again */
+  }
+}
+
+/** For the roster, while no chat is on screen to ask: the turns the node runs and the quests in hand, so his row says what he is doing. */
+export async function lookAtWork(api: Api, can: { chat: boolean; read: boolean }): Promise<void> {
+  if (chatOnScreen || document.hidden) return;
+  if (can.chat) await api.get<{ turns: TurnView[] }>("/api/turns").then((view) => noteTurns(view.turns), () => {});
+  if (can.read) await lookQuests(api);
+}
 
 /** The kept conversation on screen (null: a new one, kept from its first answer, unless temporary). */
 interface Current {
@@ -124,19 +160,24 @@ let kept: ConversationSummary[] | null = null;
 let projects: ProjectView[] | null = null;
 const keptChanged = new Set<() => void>();
 
-async function refreshKept(api: Api): Promise<void> {
-  try {
-    kept = (await api.get<{ conversations: ConversationSummary[] }>("/api/conversations")).conversations;
-    const mine = current && kept.find((c) => c.id === current!.id);
-    if (mine) current = { id: mine.id, title: mine.title, project: mine.project, bank: mine.bank, pinned: mine.pinned };
-    for (const fn of keptChanged) fn();
-  } catch {
-    // A node without chat history yet (or out of reach): chats still work; no recent ones to show.
-    if (kept === null) {
-      kept = [];
+/** (One asking at a time: whoever asks meanwhile waits for the same answer.) */
+let keptAsking: Promise<void> | null = null;
+function refreshKept(api: Api): Promise<void> {
+  keptAsking ??= (async () => {
+    try {
+      kept = (await api.get<{ conversations: ConversationSummary[] }>("/api/conversations")).conversations;
+      const mine = current && kept.find((c) => c.id === current!.id);
+      if (mine) current = { id: mine.id, title: mine.title, project: mine.project, bank: mine.bank, pinned: mine.pinned };
       for (const fn of keptChanged) fn();
+    } catch {
+      // A node without chat history yet (or out of reach): chats still work; no recent ones to show.
+      if (kept === null) {
+        kept = [];
+        for (const fn of keptChanged) fn();
+      }
     }
-  }
+  })().finally(() => (keptAsking = null));
+  return keptAsking;
 }
 
 async function refreshProjects(api: Api): Promise<void> {
@@ -159,6 +200,7 @@ export function chatsForPalette(api: Api, can: { chat: boolean; read: boolean })
 export const chatActivity = signal<{ streaming: boolean; model: string | null }>({ streaming: false, model: null });
 
 const emit = (turn: Turn | null) => {
+  syncStep();
   for (const fn of changed) fn(turn);
 };
 
@@ -174,6 +216,7 @@ function leave(): void {
   if (thread.target) endTurn(thread, Date.now());
   steering = [];
   chatActivity.set({ streaming: false, model: null });
+  syncStep();
 }
 
 /** Stop him: said to the node, which stops the turn and keeps what he'd said. */
@@ -295,6 +338,7 @@ function watching(api: Api, id: string | null = null): Watching {
   live = w;
   unwatchable = null;
   chatActivity.set({ streaming: true, model: null });
+  syncStep();
   return w;
 }
 
@@ -379,16 +423,23 @@ export function newConversation(project: string | null = current?.project ?? sta
 
 /**
  * After a reload (the page's memory is gone, the node's isn't): back to the kept chat you had open, attached
- * to the turn he's working on in it. Once per page load. A temporary chat is gone with the page; the node
- * stops its turn once nobody has watched it for a while (it's kept nowhere, so nobody could read it).
+ * to the turn he's working on in it. With none remembered (a new device, or a new chat was the last thing
+ * here), his most recent conversation, continued: his row opens the one timeline, and a new chat is yours to
+ * start. Once per page load. A temporary chat is gone with the page; the node stops its turn once nobody has
+ * watched it for a while (it's kept nowhere, so nobody could read it).
  */
 let restored = false;
 export function restoreOpenChat(api: Api): void {
   if (restored) return;
   restored = true;
+  const fresh = (): boolean => !current && !thread.turns.length && !live;
+  if (!fresh()) return;
   const id = openChatId();
-  if (!id || current || thread.turns.length || live) return;
-  void openConversation(api, id).catch(() => rememberOpenChat(null));
+  if (id) return void openConversation(api, id).catch(() => rememberOpenChat(null));
+  void refreshKept(api).then(() => {
+    const latest = mostRecent(kept ?? []);
+    if (latest && fresh() && !draft) void openConversation(api, latest.id).catch(() => {});
+  });
 }
 
 /** "New chat" from anywhere. A kept chat stays in your history; a temporary one can be brought back once. */
@@ -510,9 +561,9 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
       const view = await api.get<{ turns: TurnView[] }>("/api/turns", signal);
       const now = view.turns.map((t) => `${t.id}:${t.conversation}`).sort().join(",");
       const mine = current && view.turns.find((t) => t.conversation === current!.id);
+      noteTurns(view.turns);
       if (now !== known) {
         known = now;
-        nodeTurns.set(view.turns);
         void refreshKept(api);
       }
       if (mine && !live && (!unwatchable || unwatchable.id !== mine.id)) void sync(api);
@@ -552,6 +603,8 @@ export function openChatAside(api: Api, question = ""): void {
 // ---- view ----
 
 export const chatView: View = (root, ctx, { scope, opts }) => {
+  chatOnScreen = true;
+  scope.add(() => (chatOnScreen = false));
   const threadEl = h("div", { class: "thread", "aria-label": "Conversation" });
   const alerts = h("div", { class: "composer-alerts" });
   const input = h("textarea", {
@@ -590,38 +643,29 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const nowLine = h("span", { class: "chat-now ellipsis" });
   const answers = h("span", { class: "chat-as ellipsis" });
   const who = h("button", { class: "chat-who", type: "button", onclick: () => openInHand(ctx) }, face, h("span", { class: "chat-who-text" }, h("span", { class: "chat-name" }, "Galahad", answers), nowLine));
-  /** The quests in hand (asked for while the chat is on screen, by a device that may read the mind). */
-  let quests: QuestView[] = [];
+  // On a phone his timeline is the whole screen: the way back to the roster.
+  const back = h("a", { class: "btn ghost sm icon-only pane-back", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("chevron-left", { size: 16 }));
+  // The Inbox, one tap from him, counting what waits for you that is no other knight's (theirs is on their own rows).
+  const inboxCount = h("span", { class: "count", hidden: true });
+  const inbox = h("a", { class: "btn ghost sm icon-only chat-inbox", href: "#/inbox", "aria-label": "Inbox", title: "Inbox" }, icon("inbox", { size: 16 }), inboxCount);
   let shownFace = "";
   function renderNow(): void {
-    const now = galahadNow({
-      ...(live ? { step: thread.target?.steps.at(-1)?.text ?? null } : {}),
-      turns: nodeTurns.value,
-      quests,
-      needs: ctx.live.inboxLoaded.value ? ctx.live.inboxCount.value : null,
-    });
+    const waiting = ctx.live.actions.value.filter((action) => isWaiting(action));
+    const needs = ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, waiting, ctx.live.team.value?.teammates.map((person) => person.id) ?? []) : null;
+    const now = galahadNow({ ...galahadWork(), needs });
     if (nowLine.textContent !== now.text) {
       nowLine.textContent = now.text;
       nowLine.dataset.tone = now.tone;
       who.setAttribute("aria-label", `Galahad: ${now.text}. See what he has in hand.`);
     }
+    inboxCount.hidden = !needs;
+    inboxCount.textContent = String(needs ?? "");
+    inbox.setAttribute("aria-label", needs ? `Inbox: ${needs} waiting` : "Inbox");
     if (now.expression !== shownFace) replace(face, workerAvatar({ id: "galahad", name: "Galahad", expression: (shownFace = now.expression), size: 36 }));
     // Who answers and with what, beside his name: the model, and the role when it isn't the planner (the menu changes both).
     const as = [role === "planner" ? null : role, modelName((roster ?? DEFAULT_ROLES)[role]?.models[0])].filter(Boolean).join(" · ");
     if (answers.textContent !== as) answers.textContent = as;
   }
-  async function lookQuests(): Promise<void> {
-    if (document.hidden) return;
-    try {
-      const going = (await ctx.api.get<{ quests: QuestView[] }>("/api/quests", scope.signal)).quests.filter((q) => questInHand(q.state));
-      if (scope.disposed || going.map((q) => q.quest + q.goal).join() === quests.map((q) => q.quest + q.goal).join()) return;
-      quests = going;
-      renderNow();
-    } catch {
-      /* out of reach just now: the next look tries again */
-    }
-  }
-
   // ---- who answers, in which project, kept or not: one control ----
   function renderRoles(): void {
     const names = Object.keys(roster ?? DEFAULT_ROLES);
@@ -968,32 +1012,18 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   if (canChat) watchTurns(ctx.api, scope.signal);
   // What he has in hand beside this chat: the header's line says so.
   scope.add(nodeTurns.subscribe(renderNow));
+  scope.add(questsInHand.subscribe(renderNow));
   scope.add(ctx.live.inboxCount.subscribe(renderNow));
   scope.add(ctx.live.inboxLoaded.subscribe(renderNow));
-  if (ctx.can("mind:read")) scope.interval(() => void lookQuests(), 15_000);
+  if (ctx.can("mind:read")) scope.interval(() => void lookQuests(ctx.api, scope.signal), 15_000);
   // The minute "stops by itself in …" names moves on while he works.
   const ticking = setInterval(() => live && syncComposer(), 30_000);
   scope.add(() => clearInterval(ticking));
-
-  const newChat = button("New chat", {
-    size: "sm",
-    icon: "plus",
-    label: "New chat",
-    title: "New chat",
-    onClick: () => {
-      startNewChat();
-      input.focus();
-    },
-  });
-  newChat.classList.add("new-chat");
 
   // ---- your history and projects ----
   const subHead = h("div", { class: "chat-sub" });
   const node = ctx.whoami.nodeName ?? "this node";
   const projectName = (id: string) => projects?.find((p) => p.id === id)?.name ?? id;
-
-  const historyButton = button("Chats", { size: "sm", icon: "clock", label: "Your chats", title: "Your chats", onClick: () => openHistory() });
-  historyButton.classList.add("new-chat");
 
   /** Your projects, the ones you chatted in most recently first. */
   function projectsByUse(): ProjectView[] {
@@ -1056,7 +1086,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     }
   }
 
-  // The chat's one menu: what to do with this chat, who answers, in which project, kept or not.
+  // The chat's one menu: a new chat and every kept one, what to do with this chat, who answers, in which project, kept or not.
   const options = selector({
     label: "Chat options",
     scope,
@@ -1069,6 +1099,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       const specs = roster ?? DEFAULT_ROLES;
       const actions = chatActions({ kept: current !== null, pinned: current?.pinned ?? false, aside: canChat && asideTarget() !== null, node });
       const groups: SelectorGroup[] = [
+        ...(canChat ? [{ id: "chats", mode: "action" as const, options: CHATS_MENU.map((action) => ({ ...action, icon: action.value === "new" ? ("plus" as const) : ("clock" as const) })) }] : []),
         ...(actions.length ? [{ id: "do", mode: "action" as const, options: actions.map((action) => ({ ...action, icon: ACTION_ICON[action.value] })) }] : []),
         {
           id: "role",
@@ -1100,6 +1131,12 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     },
     footer: () => (projects?.length ? "A project's instructions and memories go with every answer." : null),
     onSelect: (group, option) => {
+      if (group === "chats") {
+        if (option.value === "history") return openHistory();
+        startNewChat();
+        if (!coarse) input.focus();
+        return;
+      }
       if (group === "do") {
         if (option.value === "aside") openChatAside(ctx.api);
         else if (option.value === "rename") rename();
@@ -1221,7 +1258,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       { class: "chat", "aria-labelledby": "chat-title" },
       h("h1", { id: "chat-title", class: "sr-only" }, "Chat with Galahad"),
       announcer,
-      h("div", { class: "chat-head" }, who, historyButton, newChat, options.el),
+      h("div", { class: "chat-head" }, back, who, inbox, options.el),
       subHead,
       threadEl,
       h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, panel.el, form),
@@ -1266,7 +1303,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       });
   }
   // Asked last: a browser sends only so many requests at once, and your chats come before his line.
-  if (ctx.can("mind:read")) void lookQuests();
+  if (ctx.can("mind:read")) void lookQuests(ctx.api, scope.signal);
 };
 
 /** The shell's "answering…" pill: visible from every page while a reply streams. */

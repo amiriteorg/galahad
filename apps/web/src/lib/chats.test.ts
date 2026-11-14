@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationSummary, StoredMessage } from "@galahad/core";
-import { chatActions, filterConversations, groupConversations, projectIdFrom, stepsOf } from "./chats.ts";
+import { chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent, projectIdFrom, stepsOf } from "./chats.ts";
 
 const now = new Date(2026, 10, 10, 15, 0).getTime();
 const HOUR = 3_600_000;
@@ -95,7 +95,21 @@ describe("project ids", () => {
   });
 });
 
+describe("the conversation Galahad's row opens", () => {
+  test("is the one last active, whatever order the node lists them in, and a pin doesn't make one more recent", () => {
+    const list = [chat({ id: "cv_old", updatedAt: now - 5 * HOUR, pinned: true }), chat({ id: "cv_latest", updatedAt: now - HOUR }), chat({ id: "cv_middle", updatedAt: now - 2 * HOUR })];
+    expect(mostRecent(list)?.id).toBe("cv_latest");
+    expect(mostRecent([...list].reverse())?.id).toBe("cv_latest");
+  });
+  test("with nothing kept yet there is none: a new chat", () => {
+    expect(mostRecent([])).toBeNull();
+  });
+});
+
 describe("a chat's one menu", () => {
+  test("a new chat and every kept one are always in it: his history is never hidden", () => {
+    expect(CHATS_MENU.map((action) => [action.value, action.label])).toEqual([["new", "New chat"], ["history", "All chats…"]]);
+  });
   const values = (chat: Parameters<typeof chatActions>[0]) => chatActions(chat).map((action) => action.value);
   test("a kept chat can be asked about on the side, renamed, pinned and deleted", () => {
     expect(values({ kept: true, pinned: false, aside: true, node: "keep" })).toEqual(["aside", "rename", "pin", "delete"]);

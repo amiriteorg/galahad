@@ -18,9 +18,10 @@ import { artifactsView } from "./views/artifacts.ts";
 import { archiveView, openNewIdea } from "./views/archive.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
-import { chatActivityPill, chatsForPalette, chatView, startNewChat } from "./views/chat.ts";
+import { rosterNav } from "./views/roster.ts";
+import { chatActivityPill, chatsForPalette, chatView, lookAtWork, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
-import { homeOf, type Place, placesFor, primaryOf, tabOf } from "./lib/nav.ts";
+import { homeOf, type Place, placesFor, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
 import { keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
@@ -78,9 +79,12 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const scopes = new Set<AnyScope>(base.whoami.scopes);
   const can = (scope: AnyScope) => scopes.has(scope);
   const visible = placesFor(can);
-  // Three places and More, on the tab bar and in the sidebar alike; the app opens on the first.
-  const tabs = [...primaryOf(visible), visible.find((r) => r.id === "more")!];
-  const home = homeOf(visible);
+  // The roster and More: the roster is the sidebar on a wide screen and the first screen on a phone, whose
+  // bar is the roster and More. The app opens on the roster (lib/nav.ts).
+  const tabs = tabsOf(visible);
+  const hasRoster = tabs.some((spec) => spec.id === "team");
+  const narrow = matchMedia("(max-width: 959px)");
+  const home = (): Route => homeOf(visible, { narrow: narrow.matches });
 
   let current: Route | null = null;
   let viewScope: Scope | null = null;
@@ -112,7 +116,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     can,
     live,
     navigate(route, opts = {}) {
-      const target = visible.find((r) => r.id === route) ? route : home;
+      const target = visible.find((r) => r.id === route) ? route : home();
       pending = { route: target, opts };
       const hash = target === "team" ? teamHash(opts) : `#/${target}`;
       if (location.hash === hash) render();
@@ -136,6 +140,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     navLinks.set(spec.id, [...(navLinks.get(spec.id) ?? []), a]);
     return a;
   };
+  // (Where the app opens depends on the screen: these follow it.)
+  const homeLinks: HTMLAnchorElement[] = [];
+  const homeLink = (className: string, ...content: (HTMLElement | SVGElement)[]): HTMLAnchorElement => {
+    const a = h("a", { class: className, href: `#/${home()}`, "aria-label": "Galahad" }, ...content);
+    homeLinks.push(a);
+    return a;
+  };
 
   const inboxBadges: HTMLElement[] = [];
   const inboxBadge = () => {
@@ -144,8 +155,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     return el;
   };
 
-  // Sidebar (desktop)
-  const navChildren = tabs.map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
+  // Sidebar: the roster, and under it More (a device with no roster has its Inbox there).
+  const roster = hasRoster ? rosterNav(ctx) : null;
+  const navChildren = tabs.filter((spec) => spec.id !== "team").map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
   const collapse = button(sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar", {
     variant: "ghost",
     size: "sm",
@@ -162,7 +174,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, h("a", { class: "wordmark grow", href: `#/${home}`, "aria-label": "Galahad" }, emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
+    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
     h(
       "button",
       { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
@@ -170,6 +182,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       h("span", { class: "label" }, "Search…"),
       h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
     ),
+    roster?.el ?? null,
     h("nav", { class: "nav", "aria-label": "Sections" }, ...navChildren),
     h("div", { class: "sidebar-foot" }, deviceChip),
   );
@@ -179,7 +192,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topbar = h(
     "header",
     { class: "topbar" },
-    h("a", { class: "brand-mini", href: `#/${home}`, "aria-label": "Galahad" }, emblem({ size: 24 })),
+    homeLink("brand-mini", emblem({ size: 24 })),
     topTitle,
     h(
       "div",
@@ -190,11 +203,11 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     ),
   );
 
-  // Tab bar (phones)
+  // Tab bar (phones): the Roundtable, and More. What waits in the Inbox is counted on the first.
   const tabbar = h(
     "nav",
     { class: "tabbar", "aria-label": "Sections" },
-    ...tabs.map((spec) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), spec.id === "inbox" ? inboxBadge() : null])),
+    ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.id === "team" ? "mark" : spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
   );
 
   const shell = h("div", { class: "shell" }, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar);
@@ -264,13 +277,18 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   }
 
   // ---------- routing ----------
-  function routeFromHash(): Route | null {
-    const id = location.hash.match(/^#\/([a-z]+)/)?.[1];
-    return visible.find((r) => r.id === id)?.id ?? null;
-  }
+  // (The Roundtable is #/team, and #/roundtable as well.)
+  const routeFromHash = (): Route | null => routeOf(location.hash, visible);
+
+  /** How often the team is asked for: every two seconds on its own pages, slowly while it is only the sidebar, never when nothing shows it. */
+  const watch = (): void => live.watchTeam(!hasRoster ? null : current === "team" ? 2000 : narrow.matches ? null : 6000);
+  narrow.addEventListener("change", () => (watch(), syncHome()), { signal: lifetime.signal });
+  const syncHome = (): void => {
+    for (const a of homeLinks) a.href = `#/${home()}`;
+  };
 
   function render(): void {
-    const route = routeFromHash() ?? home;
+    const route = routeFromHash() ?? home();
     const spec = visible.find((r) => r.id === route)!;
     const opts = pending?.route === route ? pending.opts : route === "team" ? teamLocation(location.hash) : {};
     pending = null;
@@ -279,8 +297,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     const changed = current !== route;
     current = route;
     shell.dataset.route = route;
+    // A timeline (his, a knight's, a room's) has no top bar: its header is whose it is. On a phone it is the whole
+    // screen, and the roster is the screen before it.
+    shell.dataset.pane = route === "chat" || (route === "team" && opts.room) ? "timeline" : route === "team" ? "roster" : "page";
+    roster?.at({ route, ...(route === "team" && opts.room ? { room: opts.room } : {}) });
+    watch();
     // A place reached from More keeps More marked.
-    for (const [id, els] of navLinks) for (const el of els) id === tabOf(route) ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
+    for (const [id, els] of navLinks) for (const el of els) id === tabOf(route, tabs) ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
     topTitle.textContent = spec.label;
     const n = live.inboxCount.value;
     document.title = `${n ? `(${n}) ` : ""}${spec.label} · Galahad`;
@@ -428,15 +451,23 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   }
 
   // ---------- go ----------
+  // His row says what he is doing wherever the roster shows: asked for here while no chat is on screen to ask it.
+  const work = (): void => {
+    if (roster && (!narrow.matches || shell.dataset.pane === "roster")) void lookAtWork(base.api, { chat: can("chat"), read: can("mind:read") });
+  };
+  const working = setInterval(work, 15_000);
+  lifetime.signal.addEventListener("abort", () => clearInterval(working));
   chatFromAddress();
-  const initial = routeFromHash() ?? home;
+  const initial = routeFromHash() ?? home();
   // (Tidied to its page; Team's address keeps its room and tab, which is what a reload comes back to.)
   const landing = landingHash(initial, location.hash);
   if (location.hash !== landing) history.replaceState(null, "", landing);
   render();
+  work();
   return {
     dispose() {
       lifetime.abort();
+      roster?.dispose();
       viewScope?.dispose();
       titleObserver?.disconnect();
       live.stop();

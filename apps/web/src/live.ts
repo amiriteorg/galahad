@@ -1,14 +1,16 @@
 import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
 import type { AnyScope } from "./types.ts";
 import { signal } from "./ui/signal.ts";
 
 /*
- * Background polling for what the shell shows everywhere: fleet health and
- * the inbox (pairing requests, secret requests, actions waiting for your
- * answer, the heartbeat's notices). It pauses while the app is hidden and
- * catches up the moment it's visible again.
+ * Background polling for what the shell shows everywhere: fleet health, the
+ * inbox (pairing requests, secret requests, actions waiting for your answer,
+ * the heartbeat's notices) and the team (the knights, their rooms and work:
+ * the roster's rows and every timeline read the one snapshot). It pauses while
+ * the app is hidden and catches up the moment it's visible again.
  */
 
 const FLEET_MS = 10_000;
@@ -36,6 +38,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const online = signal(navigator.onLine);
   const inboxLoaded = signal(false);
   const inboxCount = signal(0);
+  const team = signal<TeamSnapshot | null>(null);
+  const teamProblem = signal<unknown>(null);
   const seen = new Set<string>();
   const seenActions = new Set<string>();
   let lastFleet = "";
@@ -135,6 +139,35 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     }
   }
 
+  // One asking at a time: whoever asks meanwhile is given the same answer. Each answer is set anew, so what
+  // moves with the clock (a face that was pleased for half a minute) is worked out again by whoever shows it.
+  let teamAsking: Promise<void> | null = null;
+  function refreshTeam(): Promise<void> {
+    if (!can("chat")) return Promise.resolve();
+    teamAsking ??= api
+      .get<TeamSnapshot>("/api/team")
+      .then(
+        (next) => {
+          teamProblem.set(null);
+          team.set(next);
+        },
+        (error: unknown) => teamProblem.set(error),
+      )
+      .finally(() => (teamAsking = null));
+    return teamAsking;
+  }
+  let teamEvery: number | null = null;
+  let teamTimer: ReturnType<typeof setInterval> | undefined;
+  function watchTeam(everyMs: number | null = teamEvery): void {
+    if (everyMs === teamEvery && teamTimer) return;
+    teamEvery = everyMs;
+    clearInterval(teamTimer);
+    teamTimer = undefined;
+    if (everyMs === null || document.hidden) return;
+    void refreshTeam();
+    teamTimer = setInterval(() => void refreshTeam(), everyMs);
+  }
+
   const refreshInbox = async () => {
     await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices()]);
     inboxLoaded.set(true);
@@ -150,9 +183,12 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     timers.push(setInterval(() => void refreshRequests(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
+    watchTeam();
   }
   function stop(): void {
     for (const t of timers.splice(0)) clearInterval(t);
+    clearInterval(teamTimer);
+    teamTimer = undefined;
   }
 
   const listeners = new AbortController();
@@ -169,5 +205,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, notices, online, inboxLoaded, inboxCount, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, notices, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
 }

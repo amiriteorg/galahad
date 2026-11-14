@@ -29,9 +29,9 @@ export function engramLine(status: TeamEngramStatus | undefined): { badge: strin
   return { badge: "On", tone: "neutral", text: `On. Whether this VM has ${engram} is asked when the squire is idle and its VM is running.` };
 }
 
-/** Team addresses keep the room when the page is reloaded or shared. */
+/** Team addresses keep the room when the page is reloaded or shared (the Roundtable's: #/team, or #/roundtable). */
 export function teamLocation(hash: string): TeamLocation {
-  if (!/^#\/team(?:\?|$)/.test(hash)) return {};
+  if (!/^#\/(?:team|roundtable)(?:\?|$)/.test(hash)) return {};
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const room = params.get("room");
   const tab = params.get("tab");

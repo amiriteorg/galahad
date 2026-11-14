@@ -185,7 +185,9 @@ function watchPage(): void {
     // (A new chat holds a place for your recent chats until the node has said which they are.)
     if (location.hash.startsWith("#/chat")) return Boolean(main.querySelector(".chat .composer"));
     if (!location.hash.startsWith("#/team")) return Boolean(main.querySelector(".page-head h1"));
-    return Boolean(main.querySelector(location.hash.includes("room=") ? ".team-message, .team-task" : ".team-nav-row[data-key]"));
+    if (location.hash.includes("room=")) return Boolean(main.querySelector(".team-message, .team-task"));
+    // (The knights' rows: in the page's own list, or in the roster that is the sidebar and a phone's first screen.)
+    return Boolean(document.querySelector(".team-nav-row[data-key], .roster-row[data-key^='person:']"));
   };
   let seen = false;
   const watch = new MutationObserver(() => {

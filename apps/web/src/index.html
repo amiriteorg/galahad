@@ -250,15 +250,64 @@
       .nav-item[aria-current="page"] svg { color: var(--accent); }
       .nav-item .count { margin-left: auto; }
       .sidebar-foot { padding-top: var(--sp-2); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
-      :root[data-sidebar="collapsed"] .sidebar .label,
-      :root[data-sidebar="collapsed"] .sidebar .kbds,
-      :root[data-sidebar="collapsed"] .sidebar .wordmark span,
-      :root[data-sidebar="collapsed"] .sidebar .device-meta { display: none; }
-      :root[data-sidebar="collapsed"] .sidebar .nav-item,
-      :root[data-sidebar="collapsed"] .sidebar .search-trigger { justify-content: center; padding: 0; }
-      :root[data-sidebar="collapsed"] .sidebar .nav-item .count { position: absolute; margin: -18px -22px 0 0; }
-      :root[data-sidebar="collapsed"] .sidebar-head { flex-direction: column; height: auto; gap: var(--sp-2); padding: var(--sp-1) 0; }
-      :root[data-sidebar="collapsed"] .sidebar .nav-item { position: relative; }
+      .sidebar > .nav { flex: none; padding-top: var(--sp-2); }
+      @media (min-width: 960px) {
+        :root[data-sidebar="collapsed"] .sidebar .label,
+        :root[data-sidebar="collapsed"] .sidebar .kbds,
+        :root[data-sidebar="collapsed"] .sidebar .wordmark span,
+        :root[data-sidebar="collapsed"] .sidebar .roster-text,
+        :root[data-sidebar="collapsed"] .sidebar .roster-label,
+        :root[data-sidebar="collapsed"] .sidebar .roster-note,
+        :root[data-sidebar="collapsed"] .sidebar .roster-row > .btn,
+        :root[data-sidebar="collapsed"] .sidebar .device-meta { display: none; }
+        :root[data-sidebar="collapsed"] .sidebar .nav-item,
+        :root[data-sidebar="collapsed"] .sidebar .roster-row,
+        :root[data-sidebar="collapsed"] .sidebar .search-trigger { justify-content: center; padding: 0; }
+        :root[data-sidebar="collapsed"] .sidebar .nav-item .count { position: absolute; margin: -18px -22px 0 0; }
+        :root[data-sidebar="collapsed"] .sidebar-head { flex-direction: column; height: auto; gap: var(--sp-2); padding: var(--sp-1) 0; }
+        :root[data-sidebar="collapsed"] .sidebar .nav-item { position: relative; }
+      }
+
+      /* The roster: Galahad, then each knight, then each room. A face, a name, one line of latest activity, and a mark
+         when the row needs you. The sidebar on a wide screen; on a phone, the first screen. */
+      .roster { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-1)); padding: 0 var(--sp-1); scrollbar-width: none; }
+      .roster-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px var(--sp-2); border-radius: var(--r-md); color: var(--text); text-decoration: none; min-width: 0; }
+      .roster-row:hover { background: var(--surface-3); }
+      .roster-row[aria-current="page"] { background: linear-gradient(180deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
+      .roster-face { position: relative; flex: none; display: grid; place-items: center; width: 32px; height: 32px; }
+      .roster-face .avatar { width: 32px; height: 32px; border-radius: 50%; }
+      .roster-mark { position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--sidebar); }
+      .roster-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
+      .roster-name { font-weight: 600; font-size: var(--fs-14); letter-spacing: -0.005em; }
+      .roster-line { color: var(--text-3); font-size: var(--fs-12); }
+      .roster-row[data-needs] .roster-line { color: var(--warn); }
+      .roster-row > .btn { flex: none; }
+      .roster-label { display: flex; align-items: center; min-height: 32px; margin-top: var(--sp-3); padding: 0 2px 0 var(--sp-2); color: var(--text-3); font-size: var(--fs-12); font-weight: 600; }
+      .roster-note { padding: var(--sp-1) var(--sp-2) var(--sp-2); color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
+      .roster .sk-row { padding: 8px var(--sp-2); }
+      /* A way back to the roster, where a timeline is the whole screen. (Two classes: .btn would show it.) */
+      .btn.pane-back { display: none; }
+      /* A timeline (his, a knight's, a room's) has no top bar and no bar under it: its header is whose it is. */
+      .shell[data-pane="timeline"] { --topbar-h: 0px; --tabbar-h: 0px; }
+      .shell[data-pane="timeline"] .topbar, .shell[data-pane="timeline"] .tabbar { display: none; }
+      @media (max-width: 959px) {
+        .btn.pane-back { display: inline-flex; }
+        .shell[data-pane="roster"] .main-col { display: none; }
+        .shell[data-pane="roster"] .sidebar {
+          display: flex; flex-direction: column; min-width: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg);
+          padding: calc(var(--safe-top) + var(--sp-2)) calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)) calc(var(--sp-3) + var(--safe-left));
+        }
+        .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .search-trigger .kbds { display: none; }
+        .shell[data-pane="roster"] .sidebar-head { height: 44px; }
+        .shell[data-pane="roster"] .search-trigger { height: 40px; }
+        .roster { overflow: visible; }
+        .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
+        .roster-face, .roster-face .worker-avatar, .roster-face .avatar { width: 40px; height: 40px; }
+        .roster-mark { box-shadow: 0 0 0 2px var(--bg); }
+        .roster-name { font-size: var(--fs-15); }
+        .roster-line { font-size: var(--fs-13); }
+        .roster-label { min-height: 40px; }
+      }
 
       .device-chip {
         display: flex; align-items: center; gap: 10px; padding: var(--sp-2); border-radius: var(--r-md); color: var(--text-2);
@@ -739,22 +788,12 @@
 
       /* ---------- Team workspace: persistent people, rooms and work ---------- */
       .shell[data-route="team"] main.view { padding: 0; }
-      .team-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - var(--safe-bottom)); min-height: 320px; }
-      .team-nav { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; background: var(--sidebar); border-right: 1px solid var(--border); padding: var(--sp-3) var(--sp-2); }
-      .team-nav-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-4); }
-      .team-nav-head h1 { font-size: var(--fs-18); letter-spacing: -0.02em; font-weight: 650; flex: 1; }
-      .team-nav-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 60px; padding: 10px; color: var(--text); background: transparent; border: 0; border-radius: var(--r-md); text-align: left; }
-      .team-nav-row:hover, .team-nav-row[aria-current="true"] { background: var(--surface-3); }
-      .team-nav-row > .grow > span { display: block; }
+      .team-layout { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - var(--safe-bottom)); min-height: 320px; }
       .team-assignee { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-size: var(--fs-12); }
-      .team-nav-label { display: flex; align-items: center; min-height: 38px; margin-top: var(--sp-4); padding: 0 var(--sp-2); color: var(--text-3); font-size: var(--fs-12); font-weight: 600; }
-      .team-nav-note { padding: var(--sp-2); color: var(--text-3); font-size: var(--fs-12); line-height: 1.55; }
-      .team-nav-foot { display: flex; align-items: center; gap: var(--sp-2); margin-top: auto; padding: var(--sp-5) var(--sp-2) var(--sp-2); color: var(--text-3); font-size: var(--fs-11); }
-      .team-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-      .team-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); min-height: 78px; border-bottom: 1px solid var(--border); }
+      .team-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+      .team-head { display: flex; align-items: center; gap: var(--sp-3); padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) var(--sp-4); min-height: 78px; border-bottom: 1px solid var(--border); }
       .team-head:empty, .team-tabs:empty { display: none; }
       .team-head h2 { font-size: var(--fs-16); font-weight: 650; letter-spacing: -0.015em; }
-      .team-head > .btn:first-child { display: none; }
       .team-head > .btn { flex: none; }
       .team-tabs { display: flex; gap: var(--sp-5); padding: 0 var(--sp-6); border-bottom: 1px solid var(--border); flex: none; }
       .team-tab { padding: 12px 0; color: var(--text-3); background: none; border: 0; border-bottom: 2px solid transparent; font-size: var(--fs-13); }
@@ -799,14 +838,8 @@
       .team-person-summary { display: flex; align-items: flex-start; gap: var(--sp-3); }
       .team-workspace-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
       @media (min-width: 960px) { .team-layout { height: calc(100dvh - var(--topbar-h)); } }
-      @media (max-width: 1199px) and (min-width: 720px) { .team-layout { grid-template-columns: 220px minmax(0, 1fr); } }
       @media (max-width: 719px) {
-        .team-layout { grid-template-columns: 1fr; }
-        .team-layout:not(.has-room) .team-main { display: none; }
-        .team-layout.has-room .team-nav { display: none; }
-        .team-nav { border-right: 0; }
-        .team-head { padding: var(--sp-3); gap: var(--sp-2); min-height: 70px; }
-        .team-head > .btn:first-child { display: inline-flex; }
+        .team-head { padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-3) var(--sp-3); gap: var(--sp-2); min-height: 70px; }
         .team-head > .badge { display: none; }
         .team-head > .avatar { display: none; }
         .team-tabs { padding: 0 var(--sp-4); }
@@ -814,12 +847,11 @@
         .team-composer { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
         .team-composer .hint { font-size: var(--fs-11); }
         .team-message.owner { margin-left: 30px; }
-        .team-nav-row { min-height: 68px; }
         .team-task > .row:first-child { align-items: flex-start; }
       }
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
       @media (pointer: coarse) { .team-tab, .team-member-choice, .team-task-details > summary { min-height: 44px; } }
-      /* Squires' faces (ui/avatar.ts): drawn whole in SVG and never moving. Galahad's own is in ink, whatever the theme. */
+      /* The knights' faces (ui/avatar.ts): drawn whole in SVG and never moving. Galahad's own is in ink, whatever the theme. */
       .worker-avatar { display: block; flex: none; }
       .worker-avatar[data-galahad] { color: var(--accent); }
       .worker-avatar[data-galahad] .worker-avatar-ink { color: var(--on-accent); }
@@ -846,13 +878,14 @@
       @media (min-width: 960px) { .chat { min-height: 100dvh; } }
       /* The chat's header is Galahad himself, and on this page it takes the top bar's place: his face and what he's
          doing now in a line (a tap shows what he has in hand), then your chats, a new one, and the chat's one menu. */
-      .shell[data-route="chat"] .topbar { display: none; }
       .shell[data-route="chat"] main.view { padding-top: 0; }
       .shell[data-route="chat"] .main-col { overflow-x: clip; }
       .chat-head { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: calc(var(--safe-top) + 6px) 0 6px; margin-bottom: var(--sp-3); }
       /* (Its ground runs the page's whole width, as the top bar's does, whatever the column's.) */
       .chat-head::before { content: ""; position: absolute; z-index: -1; inset: 0 -100vw; background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px); border-bottom: 1px solid var(--border); }
       .chat-head > .btn, .chat-head > .selector-trigger { flex: none; }
+      .chat-inbox { position: relative; }
+      .chat-inbox .count { position: absolute; top: -4px; right: -4px; }
       .chat-who { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 2px 8px 2px 2px; margin-left: -2px; border: 0; border-radius: var(--r-md); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
       .chat-who:hover { background: var(--surface-2); }
       .chat-who-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
@@ -922,8 +955,6 @@
       :root[data-keyboard="open"] main.view, :root[data-keyboard="open"] .shell[data-route="chat"] main.view { padding-bottom: var(--sp-3); }
       @media (max-width: 639px) {
         .topbar .activity-pill:not([hidden]) ~ .fleet-pill { display: none; }
-        .chat-head .new-chat > span { display: none; }
-        .chat-head .new-chat { width: var(--control-h-sm); padding: 0; }
       }
       .composer { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); transition: border-color var(--d-1) var(--ease-out), box-shadow var(--d-1) var(--ease-out); }
       .composer:focus-within { border-color: color-mix(in srgb, var(--focus) 60%, var(--border-strong)); box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--focus) 14%, transparent); }
