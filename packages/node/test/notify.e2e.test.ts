@@ -384,10 +384,10 @@ describe("what he sends", () => {
     expect(tablet.browser.received.every((d) => d.payload?.kind !== "question" && d.payload?.body !== "He has 2 questions.")).toBe(true);
   });
 
-  test("a kind that's switched off says nothing; the journal is off until you turn it on", async () => {
+  test("a kind that's switched off says nothing", async () => {
     const before = phone.browser.received.length;
     const { prefs } = await json<{ prefs: NotifyView["prefs"] }>(phone.call("setNotify", { kinds: { "needs-you": false } }));
-    expect(prefs.kinds).toMatchObject({ "needs-you": false, approval: true, journal: false });
+    expect(prefs.kinds).toEqual({ "needs-you": false, approval: true, finished: true, question: true });
     raise("loop:ci", "warn", "Loop ci failed", "loop:ci");
     await look();
     expect(phone.browser.received).toHaveLength(before);
@@ -634,7 +634,6 @@ describe("from a terminal: galahad notify", () => {
     expect(text).toContain("Notifications from ultra");
     expect(text).toMatch(/phone\s+through a push service you allowed/);
     expect(text).toMatch(/on\s+needs-you\s+Something needs you/);
-    expect(text).toMatch(/off\s+journal\s+His journal is written/);
     expect(text).toContain("Quiet hours  off: he tells you whenever it happens");
     expect(text).toMatch(/The day's limit {2}\d+ of 12 sent today/);
     expect(text).toMatch(/needs-you\s+to phone, tablet/);
@@ -643,15 +642,17 @@ describe("from a terminal: galahad notify", () => {
   });
 
   test("kinds, quiet hours and the limit are set in words, and checked before anything is sent", async () => {
-    expect(await run("kinds", ["journal", "on", "finished", "off"])).toMatch(/on\s+journal/);
-    expect((await view()).prefs.kinds).toMatchObject({ journal: true, finished: false });
-    await run("kinds", ["journal", "off", "finished", "on"]);
+    expect(await run("kinds", ["question", "off", "finished", "off"])).toMatch(/off\s+question/);
+    expect((await view()).prefs.kinds).toMatchObject({ question: false, finished: false });
+    await run("kinds", ["question", "on", "finished", "on"]);
     expect(await run("quiet", ["21:30-06:45"], { tz: "Europe/Copenhagen" })).toBe("Quiet hours: 21:30 to 06:45, Europe/Copenhagen time: everything but an alert waits, then one message says what waited.");
     expect(await run("quiet", ["off"])).toBe("Quiet hours: off: he tells you whenever it happens.");
     expect(await run("limit", ["20"])).toContain("At most 20 a day");
     await run("limit", ["12"]);
     await expect(run("kinds", ["adverts", "on"])).rejects.toThrow("isn't a kind");
-    await expect(run("kinds", ["journal"])).rejects.toThrow("then on or off");
+    // A kind an older version had is no kind now.
+    await expect(run("kinds", ["journal", "on"])).rejects.toThrow("isn't a kind");
+    await expect(run("kinds", ["finished"])).rejects.toThrow("then on or off");
     await expect(run("quiet", ["10pm-7am"])).rejects.toThrow("two times of day");
     await expect(run("limit", ["0"])).rejects.toThrow("from 1 to 50");
     await expect(run("dance")).rejects.toThrow("usage: galahad notify");

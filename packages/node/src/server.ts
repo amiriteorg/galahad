@@ -122,7 +122,6 @@ import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
-import { journalEntries } from "./journal.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
@@ -226,7 +225,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** POST routes that only read (a search, a kept chat): compressed like the GET ones. */
-const COMPRESSED_READS = new Set<RouteName>(["recall", "journal", "conversation", "sandboxes", "archiveSearch", "archiveEntry", "skill"]);
+const COMPRESSED_READS = new Set<RouteName>(["recall", "conversation", "sandboxes", "archiveSearch", "archiveEntry", "skill"]);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
@@ -2285,8 +2284,6 @@ export function createApp(ctx: AppContext) {
       }
       return selfActionView();
     },
-    // His journal: the entries his loop kept, newest day first (read like any memory: agents may read his recollection).
-    journal: (input) => journalEntries(ctx.store, input),
     connectors: () => ({ connectors: connectorViews() }),
     setConnector: async (input) => {
       if (input.mcp) {

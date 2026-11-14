@@ -41,7 +41,6 @@ import { type DoctorDeps, type DoctorOptions, type DoctorRun, type DoctorSystem,
 import { NotifyService } from "./notify.ts";
 import { NotifyStore } from "./notify-store.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
-import { journalEntries } from "./journal.ts";
 
 export interface Daemon {
   port: number;
@@ -75,7 +74,7 @@ export interface DaemonOptions {
   capabilities?: Capabilities;
   /** How often the loop runner wakes (default 15 s). */
   loopIntervalMs?: number;
-  /** Let the fleet's founding node create the default loops, the heartbeat and his journal (default true; GALAHAD_HEARTBEAT=off disables). */
+  /** Let the fleet's founding node create its default loop, the heartbeat (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
@@ -125,26 +124,6 @@ function ensureHeartbeat(store: MindStore, identity: NodeIdentity, caps: Capabil
     enabled: true,
     task: { kind: "heartbeat" },
     label: "Galahad's regular look around",
-  });
-}
-
-/**
- * And his journal, once, the same way: every evening in Denmark (21:30), on
- * the node that runs the heartbeat (an always-on one). Never again after that, so a journal you removed stays
- * removed. The loop and its task are still named `reflect`: it was his daily reflection first, and fleets that
- * have that loop keep it as it is.
- */
-export function ensureReflection(store: MindStore, identity: NodeIdentity): void {
-  if (store.genesis?.device !== identity.id || store.lww("loop:reflect")) return;
-  const beat = loopRecords(store).find((l) => l.name === "heartbeat");
-  store.emit(identity, "loop.set", {
-    name: "reflect",
-    schedule: "30 21 * * *",
-    tz: "Europe/Copenhagen",
-    on: beat?.on ?? identity.id,
-    enabled: true,
-    task: { kind: "reflect" },
-    label: "Galahad's journal",
   });
 }
 
@@ -208,7 +187,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const arms = new ArmTokens(local);
   // This node's own count of its model calls (usage.ts): node-local, counts only, never the mind's log.
   const usage = new UsageStore(local);
-  /** His own upkeep's calls (the journal, the heartbeat's words, his skills, the archive), counted as his. */
+  /** His own upkeep's calls (the heartbeat's words, his skills, the archive), counted as his. */
   const upkeepSpent: NonNullable<BrainContext["spent"]> = (call) => usage.note("galahad", call.role, call.ref, call.usage);
 
   const port = env.GALAHAD_PORT ?? config.port;
@@ -421,10 +400,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
     },
   });
-  // Self-action's hands, and what his journal reads.
+  // Self-action's hands.
   taskDeps.runLoop = (name) => void loops.runNow(name);
   taskDeps.isRunning = (name) => loops.isRunning(name);
-  taskDeps.chats = chats;
   // The quests in hand on this node, as whoever runs each reports them (quests.ts).
   const quests = new QuestBoard();
   // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat.
@@ -453,10 +431,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       notices: () => store.lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:").flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
       actions: () => connectors.actions(),
       secretRequests: () => vault.requests().map((r) => r.name),
-      journal: () => {
-        const entry = journalEntries(store, { limit: 1 }).entries[0];
-        return entry ? { day: entry.day, at: entry.at } : null;
-      },
       turns,
       chats,
       quests,
@@ -578,11 +552,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ensureHeartbeat(store, identity, caps);
     } catch (error) {
       log(`default heartbeat not created: ${(error as Error).message}`);
-    }
-    try {
-      ensureReflection(store, identity);
-    } catch (error) {
-      log(`his journal's loop not created: ${(error as Error).message}`);
     }
   }
   loops.start(opts.loopIntervalMs);

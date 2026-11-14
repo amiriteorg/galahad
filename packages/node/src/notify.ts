@@ -3,7 +3,6 @@ import {
   inQuietHours,
   isP256Point,
   fromB64u,
-  journalItem,
   limitMessage,
   limitReached,
   noticeItem,
@@ -37,7 +36,7 @@ import type { LiveTurn } from "./turns.ts";
 /*
  * He comes to you. The node's own events become notifications on the owner's paired
  * devices, through one door: `tick()`. It looks at what stands (findings that need you,
- * approvals waiting, keys he asked for, today's journal) and at what happened (a turn
+ * approvals waiting, keys he asked for) and at what happened (a turn
  * that ended unwatched, a quest you started), asks the pure rules in
  * core's notify.ts what may be told now, and delivers that as one message a device.
  *
@@ -61,8 +60,6 @@ export interface NotifySources {
   actions(): { id: string; connector: string; tool: string; state: string; requestedAt: string; expires: number }[];
   /** The keys he's waiting for, by name. */
   secretRequests(): string[];
-  /** His latest journal entry: its day, and when it was written. */
-  journal(): { day: string; at: number } | null;
   turns: { running(): LiveTurn[]; view(turn: LiveTurn, watchable: boolean): { watchers: number } };
   chats: { summary(id: string): KeptSummary | null };
   quests: { list(): QuestView[]; onChange(fn: () => void): () => void };
@@ -88,8 +85,6 @@ const HOUR = 60 * 60_000;
 export const NOTICE_COOLDOWN_MS = 6 * HOUR;
 /** Something that happened and couldn't be told (quiet hours, the limit) is still news for this long. */
 export const PENDING_KEEP_MS = 18 * HOUR;
-/** A journal entry is news while it's this fresh. */
-const JOURNAL_FRESH_MS = 6 * HOUR;
 const TOLD_KEEP_MS = 48 * HOUR;
 /** Your own test, at most this often, and this many a day. */
 export const TEST_EVERY_MS = 5_000;
@@ -238,8 +233,6 @@ export class NotifyService {
     for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires }, now));
     for (const name of safely("key requests", () => this.o.sources.secretRequests())) out.push(secretItem(name));
-    const journal = safely("his journal", () => [this.o.sources.journal()])[0];
-    if (journal && now - journal.at <= JOURNAL_FRESH_MS) out.push(journalItem(journal.day));
     return out.filter((item): item is NotifyItem => item !== null);
   }
 

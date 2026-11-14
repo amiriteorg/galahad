@@ -1,4 +1,4 @@
-import { type ChatStreamEvent, type ConversationSummary, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
+import { type ChatStreamEvent, type NodeIdentity, redact, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
@@ -10,8 +10,6 @@ import type { ComputeService } from "./compute/service.ts";
 import type { ConnectorService } from "./connectors.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
 import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "./loops.ts";
-import { journalEntries } from "./journal.ts";
-import { type JournalInputs, ledgerAgent, REFLECT_ROLES, reflectOnce } from "./reflect.ts";
 import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
 import { learnedLines } from "./skills-quest.ts";
@@ -41,17 +39,15 @@ export interface LoopTaskDeps {
   now?: () => number;
   fetch?: typeof fetch;
   bank?: BankService;
-  /* ---- self-action and his journal (set by the daemon) ---- */
+  /* ---- self-action (set by the daemon) ---- */
   /** Start a run of one of this node's loops now (self-action's retry). */
   runLoop?: (name: string) => void;
   /** Whether one of this node's loops is running now. */
   isRunning?: (name: string) => boolean;
-  /** Your kept chats (their titles are what his journal reads of them). */
-  chats?: { list(): ConversationSummary[] };
   /** This node's compute: its calibration and the fleet's plan (self-action), what he'd suggest (the heartbeat). */
   compute?: ComputeService;
-  /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat, and what his journal reads of them. */
-  skills?: { tidy(mark?: boolean): { stale: number; merges: number }; journal(since: number): { at: number; line: string }[] };
+  /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat. */
+  skills?: { tidy(mark?: boolean): { stale: number; merges: number } };
   /** What a quick look by the doctor finds that the heartbeat doesn't check itself (doctor.ts; set by the daemon). */
   doctor?: () => Promise<{ key: string; severity: Finding["severity"]; title: string; body: string }[]>;
   /** Told of each model call his upkeep makes here, for this node's count of them (usage.ts; set by the daemon). */
@@ -111,10 +107,13 @@ function roleUsable(deps: LoopTaskDeps, models: string[]): boolean {
   });
 }
 
-/** The cheapest role with a usable model (his journal's order), or null: what his background writing runs on. */
+/** The roles his background writing tries, cheapest first. */
+const CHEAPEST_FIRST = ["swift", "reviewer", "planner", "engineer"] as const;
+
+/** The cheapest role with a usable model, or null: what his background writing runs on. */
 export function cheapestRole(deps: LoopTaskDeps): string | null {
   const models = roster(deps.store);
-  return REFLECT_ROLES.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null;
+  return CHEAPEST_FIRST.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null;
 }
 
 /** The bank connection, as the heartbeat sees it: only once it's set up on this node. */
@@ -326,86 +325,6 @@ function selfHands(deps: LoopTaskDeps) {
   };
 }
 
-/* ---------- his journal (the reflect loop) ---------- */
-
-/** What his journal reads (reflect.ts cuts it to the last day and the budget, and keeps the bank and secrets out). */
-export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "log" | "skills">, now: number): JournalInputs {
-  const store = deps.store;
-  const since = now - 24 * 60 * 60_000;
-  /** A source that can't be read today is left out, and the log says so: the journal is still written. */
-  const read = <T,>(what: string, from: () => T[]): T[] => {
-    try {
-      return from();
-    } catch (error) {
-      deps.log(`journal: ${what} not read (${redact(String((error as Error).message)).slice(0, 200)})`);
-      return [];
-    }
-  };
-  return {
-    now,
-    ledger: store.ledger(300).map((e) => ({ at: hlcMs(e.hlc), class: e.body.class, resource: e.body.resource, target: e.body.target, verdict: e.body.verdict, by: ledgerAgent(e.body) })),
-    notices: store
-      .lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:")
-      .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
-    runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
-    chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
-    skills: read("his skills", () => (deps.skills?.journal(since) ?? []).filter((s) => s.at <= now)),
-  };
-}
-
-async function reflect(deps: LoopTaskDeps, budget: number, signal: AbortSignal): Promise<RunResult> {
-  const now = (deps.now ?? Date.now)();
-  const store = deps.store;
-  const models = roster(store);
-  return reflectOnce(
-    {
-      now,
-      budget,
-      inputs: journalInputs(deps, now),
-      // Only an entry his loop kept counts: a memory an agent tagged like one doesn't stop him writing.
-      doneToday: (day) => journalEntries(store, { day }).entries.length > 0,
-      role: () => REFLECT_ROLES.find((role) => models[role] && roleUsable(deps, models[role]!.models)) ?? null,
-      ask: async (role, prompt, maxChars, outer) => {
-        // Stopped as soon as it has written its share of the budget.
-        const stop = new AbortController();
-        const abort = () => stop.abort();
-        outer.addEventListener("abort", abort, { once: true });
-        let text = "";
-        try {
-          for await (const event of chat({ store, vault: deps.vault, fetch: deps.fetch, ...(deps.spent ? { spent: deps.spent } : {}) }, { role, messages: [{ role: "user", content: prompt }], signal: stop.signal })) {
-            if (event.type === "text") text += event.text;
-            else if (event.type === "error") throw new Error(event.error);
-            if (text.length >= maxChars) {
-              stop.abort();
-              break;
-            }
-          }
-        } catch (error) {
-          if (!stop.signal.aborted || outer.aborted) throw error;
-        } finally {
-          outer.removeEventListener("abort", abort);
-        }
-        return text;
-      },
-      remember: (text, tags) => void store.remember(deps.identity, text, { tags, prov: { trust: "agent", source: JOURNAL_SOURCE } }),
-      suggest: (day, ideas) =>
-        void reconcile(
-          store,
-          deps.identity,
-          ideas.map((idea, i) => ({
-            key: `suggestion:${day}:${i + 1}`,
-            severity: "info" as const,
-            title: `Galahad suggests: ${idea}`.slice(0, 200),
-            body: `From his journal for ${day}. He won't do it on his own: if you'd like it done, ask him, or dismiss it.`,
-          })),
-          now,
-          "reflect",
-        ),
-    },
-    signal,
-  );
-}
-
 export function loopExecutor(deps: LoopTaskDeps) {
   return async (loop: RunnableLoop, ctx: RunContext): Promise<RunResult> => {
     const task = loop.task;
@@ -417,8 +336,6 @@ export function loopExecutor(deps: LoopTaskDeps) {
         const tidied = quietly(deps, "skills (tidy-up)", () => deps.skills?.tidy(task.selfAction !== false) ?? null);
         return tidied?.stale ? { ...result, summary: `${result.summary} Marked ${tidied.stale} skill${tidied.stale === 1 ? "" : "s"} stale.`.slice(0, 2000) } : result;
       }
-      case "reflect":
-        return reflect(deps, task.budget ?? REFLECT_BUDGET, ctx.signal);
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

@@ -5,7 +5,6 @@ import {
   conversationFromHash,
   GENERIC_NOTIFICATION,
   inQuietHours,
-  journalItem,
   limitMessage,
   limitReached,
   NOTIFY_BODY_MAX,
@@ -125,7 +124,7 @@ describe("what a notification may say", () => {
     expect(turnItem({ ...base, conversation: "not-a-chat" })).toBeNull();
   });
 
-  test("a quest you started, said as it ended; one you stopped isn't news; the journal's day", () => {
+  test("a quest you started, said as it ended; one you stopped isn't news", () => {
     expect(questItem({ quest: "q-abc", goal: "Tidy the repo's README", state: "done" })).toMatchObject({ key: "quest:q-abc", kind: "finished", title: "Quest done", body: "“Tidy the repo's README”", open: "overview" });
     expect(questItem({ quest: "q-abc", goal: "x", state: "unverified" })!.title).toBe("Quest ended unverified");
     expect(questItem({ quest: "q-abc", goal: "x", state: "gave-up" })!.title).toBe("Quest gave up");
@@ -133,8 +132,6 @@ describe("what a notification may say", () => {
     expect(questItem({ quest: "q-abc", goal: "x", state: "stopped" })).toBeNull();
     expect(questItem({ quest: "q-abc", goal: "x", state: "working" })).toBeNull();
     expect(questItem({ quest: "q-abc", goal: "Reconcile the bank transactions with the ledger", state: "done" })!.body).toBe("A quest you started has ended.");
-    expect(journalItem("2026-11-12")).toMatchObject({ key: "journal:2026-11-12", kind: "journal", title: "His journal is written", body: "Thursday 12 November 2026", open: "journal" });
-    expect(journalItem("yesterday")).toBeNull();
   });
 });
 
@@ -152,11 +149,12 @@ describe("when he speaks, and when he stays silent", () => {
     expect(plan([worse], { told: new Map([["notice:disk", { alert: true }]]) }).send).toEqual([]);
   });
 
-  test("a kind that's switched off says nothing; the journal is off unless you turn it on", () => {
-    const journal = item("journal:2026-11-12", { kind: "journal" });
-    expect(plan([journal]).send).toEqual([]);
-    const prefs: NotifyPrefs = { ...NOTIFY_DEFAULTS, kinds: { ...NOTIFY_DEFAULTS.kinds, journal: true, approval: false } };
-    expect(plan([journal, item("action:a", { kind: "approval" })], { prefs }).send).toEqual([journal]);
+  test("a kind that's switched off says nothing; neither does a kind this version no longer has", () => {
+    const done = item("quest:q-1", { kind: "finished" });
+    const prefs: NotifyPrefs = { ...NOTIFY_DEFAULTS, kinds: { ...NOTIFY_DEFAULTS.kinds, approval: false } };
+    expect(plan([done, item("action:a", { kind: "approval" })], { prefs }).send).toEqual([done]);
+    // Something a node held from before (his journal's notification, removed on 14 November 2026) is never told.
+    expect(plan([{ ...done, key: "journal:2026-11-12", kind: "journal" as never }]).send).toEqual([]);
   });
 
   test("quiet hours (22:00 to 07:00 in Denmark) hold everything but alerts; when they end, what waited is told together", () => {
@@ -348,17 +346,18 @@ describe("where a notification may be sent", () => {
 describe("settings and what a device hands over", () => {
   test("stored preferences read leniently: what doesn't read as a setting is the default", () => {
     expect(readNotifyPrefs(null)).toEqual(NOTIFY_DEFAULTS);
-    expect(readNotifyPrefs({ kinds: { journal: true, approval: "yes", extra: true }, quiet: { from: "25:00", to: "06:30", tz: "Nowhere/Land" }, perDay: 999 })).toEqual({
-      kinds: { ...NOTIFY_DEFAULTS.kinds, journal: true },
+    // (`journal`: a switch an older version stored for a kind that's gone; it's read past like any other stranger.)
+    expect(readNotifyPrefs({ kinds: { journal: true, finished: false, approval: "yes", extra: true }, quiet: { from: "25:00", to: "06:30", tz: "Nowhere/Land" }, perDay: 999 })).toEqual({
+      kinds: { ...NOTIFY_DEFAULTS.kinds, finished: false },
       quiet: { on: true, from: "22:00", to: "06:30", tz: "Europe/Copenhagen" },
       perDay: 12,
     });
-    expect(NOTIFY_DEFAULTS).toMatchObject({ kinds: { "needs-you": true, approval: true, finished: true, question: true, journal: false }, quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" } });
+    expect(NOTIFY_DEFAULTS).toMatchObject({ kinds: { "needs-you": true, approval: true, finished: true, question: true }, quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" } });
   });
 
   test("what the node takes is checked at the door", () => {
-    expect(NotifyPrefsInput.safeParse({ kinds: { journal: true }, quiet: { from: "21:30", tz: "Europe/Copenhagen" }, perDay: 20 }).success).toBe(true);
-    for (const bad of [{ kinds: { adverts: true } }, { quiet: { from: "9pm" } }, { quiet: { tz: "Mars/Olympus" } }, { perDay: 0 }, { perDay: 500 }, { extra: 1 }]) {
+    expect(NotifyPrefsInput.safeParse({ kinds: { finished: false }, quiet: { from: "21:30", tz: "Europe/Copenhagen" }, perDay: 20 }).success).toBe(true);
+    for (const bad of [{ kinds: { adverts: true } }, { kinds: { journal: true } }, { quiet: { from: "9pm" } }, { quiet: { tz: "Mars/Olympus" } }, { perDay: 0 }, { perDay: 500 }, { extra: 1 }]) {
       expect(NotifyPrefsInput.safeParse(bad).success).toBe(false);
     }
     const subscription = { endpoint: "https://web.push.apple.com/QGS8abc", expirationTime: null, keys: { p256dh: "B".repeat(87), auth: "a".repeat(22) } };

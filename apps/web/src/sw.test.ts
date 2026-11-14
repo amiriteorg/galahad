@@ -167,12 +167,12 @@ describe("a tap opens the app at the right place", () => {
     expect(opened).toEqual([]);
   });
 
-  test("with no window open, one opens at that place: the Inbox, the chat, the journal", async () => {
+  test("with no window open, one opens at that place: the Inbox, the chat, the overview", async () => {
     windows = [];
     for (const [payload, url] of [
       [finished, `/#/chat?c=${CHAT}`],
       [{ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "x", open: "inbox", tag: "t-0123456789abcdefghijkl" }, "/#/inbox"],
-      [{ v: 1, kind: "journal", title: "His journal is written", body: "Thursday 12 November 2026", open: "journal", tag: "t-0123456789abcdefghijkm" }, "/#/journal"],
+      [{ v: 1, kind: "finished", title: "Quest done", body: "A quest you started has ended.", open: "overview", tag: "t-0123456789abcdefghijkm" }, "/#/overview"],
     ] as const) {
       shown.length = 0;
       opened.length = 0;
@@ -207,7 +207,9 @@ describe("a tap opens the app at the right place", () => {
       [null, "/#/inbox"],
       ["text", "/#/inbox"],
       [{ open: "chat", conversation: "../x" }, "/#/chat"],
-      [{ open: "journal", conversation: CHAT }, "/#/journal"],
+      [{ open: "overview", conversation: CHAT }, "/#/overview"],
+      // A notification from before his journal was removed, still in the tray: the Inbox.
+      [{ open: "journal" }, "/#/inbox"],
     ];
     for (const [data, url] of cases) {
       opened.length = 0;

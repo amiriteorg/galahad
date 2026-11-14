@@ -49,11 +49,7 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   heartbeat: { label: "Heartbeat", icon: "activity" },
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
-  reflect: { label: "Journal", icon: "journal" },
 };
-
-/** His journal's daily budget (the reflect loop's), as the node takes it (packages/core/src/api.ts: REFLECT_BUDGET…). */
-const REFLECT = { budget: 4000, min: 1000, max: 50_000 };
 
 const PRESETS: { label: string; schedule: string }[] = [
   { label: "Every 30 min", schedule: "every 30m" },
@@ -71,7 +67,6 @@ export function describeTask(task: LoopTask | null): string {
     const what = task.checklist ? "Heartbeat: checks the fleet, then reads your checklist." : "Heartbeat: checks the fleet and the machine it runs on.";
     return `${what}${task.selfAction === false ? " Only reports: self-action is off." : " Then fixes what's safe himself."}`;
   }
-  if (task.kind === "reflect") return `His journal: the day recollected in his own words, kept as his own memory, within ${(task.budget ?? REFLECT.budget).toLocaleString("en-US")} tokens a day.`;
   if (task.kind === "quest") {
     const gates = task.gates?.length ? ` Done means ${task.gates.length === 1 ? "this passes" : `these ${task.gates.length} pass`}: ${clip(task.gates.join(" · "), 160)}` : "";
     return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
@@ -192,18 +187,6 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     field("Your checklist (optional)", checklist, { hint: "Plain words, read each run by the swift role. It answers all clear, or with a short note." }),
   );
 
-  const budget = h("input", { class: "input tnum", type: "number", min: REFLECT.min, max: REFLECT.max, step: 500, value: String(task0?.kind === "reflect" ? (task0.budget ?? REFLECT.budget) : REFLECT.budget) });
-  const reflectPanel = h(
-    "div",
-    { class: "stack" },
-    h(
-      "p",
-      { class: "small muted" },
-      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs and the titles of the chats you kept (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
-    ),
-    field("Daily budget (tokens)", budget, { hint: `What he reads and writes together, on the cheapest role that can answer. ${REFLECT.min.toLocaleString("en-US")} to ${REFLECT.max.toLocaleString("en-US")}.` }),
-  );
-
   const goal = h("textarea", { class: "textarea", rows: 4, maxlength: 4000, placeholder: "e.g. Read the open issues in amiriteorg/galahad and summarise what changed this week." });
   let network: NetworkMode = task0?.kind === "quest" ? task0.network : "isolated";
   if (task0?.kind === "quest") goal.value = task0.goal;
@@ -264,7 +247,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   connectorSelect.addEventListener("change", () => syncTools());
   toolSelect.addEventListener("change", () => syncArgs());
 
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, reflect: reflectPanel };
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -285,11 +268,6 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       // The self-action switch is its own control (on the Loops page); a changed heartbeat keeps it.
       const off = task0?.kind === "heartbeat" && task0.selfAction === false;
       return { task: { kind: "heartbeat", ...(text ? { checklist: text } : {}), ...(off ? { selfAction: false } : {}) } };
-    }
-    if (kind === "reflect") {
-      const n = Number(budget.value);
-      if (!Number.isInteger(n) || n < REFLECT.min || n > REFLECT.max) return { problem: `A daily budget is a whole number of tokens from ${REFLECT.min} to ${REFLECT.max}.`, focus: budget };
-      return { task: { kind: "reflect", ...(n !== REFLECT.budget ? { budget: n } : {}) } };
     }
     if (kind === "quest") {
       const text = goal.value.trim();
@@ -374,7 +352,6 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     heartbeatPanel,
     questPanel,
     callPanel,
-    reflectPanel,
     status,
     h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
   );

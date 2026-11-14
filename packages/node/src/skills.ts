@@ -593,7 +593,7 @@ export class SkillsService {
               key: "skills-waiting",
               severity: "info" as const,
               title: `${waiting.length} skill${waiting.length === 1 ? " waits" : "s wait"} for your approval`,
-              // By id and author only: a notice is read by agents and by his journal, and these words aren't theirs to read yet.
+              // By id and author only: a notice is read by agents, and these words aren't theirs to read yet.
               body: `${waiting.slice(0, 8).map((s) => `${s.id} (by ${skillAuthor(s.by)})`).join("; ")}. None is given to a model until you approve it: read each in full first (galahad skills show <id>, or the Skills page).`.slice(0, 2000),
             },
           ]
@@ -606,37 +606,6 @@ export class SkillsService {
       })),
     ].filter((f) => !findSecrets(`${f.title} ${f.body}`, this.scan).length);
     reconcile(store, identity, findings, now, "skills");
-  }
-
-  // ---- for his journal ----------------------------------------------------------------------
-
-  /** What his journal reads of the last day: each skill written and each one used, by title, with how its quest ended. */
-  journal(since: number): { at: number; line: string }[] {
-    const { store } = this.deps;
-    const records = store.skills();
-    const titles = new Map(records.map((r) => [r.id, skillView(r).title]));
-    const out: { at: number; line: string }[] = [];
-    for (const record of records) {
-      for (const v of skillVersions(record)) {
-        if (v.at < since || !v.doc) continue;
-        const from = v.quest ? ` from quest ${v.quest}` : "";
-        if (!versionUsable(v)) {
-          // It waits for the owner: he reads that it does, never its words (they aren't his to use, or to repeat in a journal).
-          if (!record.retired) out.push({ at: v.at, line: `${v.by === SKILL_BY_GALAHAD ? "you wrote" : `${skillAuthor(v.by)} proposed`} a skill${from} that waits for the owner's approval` });
-          continue;
-        }
-        const what = v.by === SKILL_BY_GALAHAD ? (v.n === 1 ? "you learned" : "you revised") : v.by === SKILL_BY_OWNER ? "the owner wrote" : `the owner approved ${skillAuthor(v.by)}'s`;
-        out.push({ at: v.at, line: `${what} the skill "${v.doc.title}"${from}` });
-      }
-    }
-    for (const use of store.recentSkillUses(200)) {
-      const at = ms(use.hlc);
-      if (at < since) continue;
-      const title = titles.get(use.skill);
-      if (!title) continue;
-      out.push({ at, line: use.quest.startsWith(SKILL_CHAT_USE) ? `you had the skill "${title}" at hand in a chat` : `you used the skill "${title}" in quest ${cleanSkillText(use.quest).slice(0, 100)}${use.status ? ` (${cleanSkillText(use.status).slice(0, 32)})` : ""}` });
-    }
-    return out.sort((a, b) => b.at - a.at);
   }
 }
 

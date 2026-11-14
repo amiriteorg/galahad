@@ -212,10 +212,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const read = ctx.can("mind:read");
 
   const waiting = () => ctx.live.actions.value.filter((a) => isWaiting(a));
-  // What his journal suggests (its "Next") is its own list: ideas he'd like to act on, never acted on by him.
-  const isSuggestion = (n: NoticeView) => n.source === "reflect";
-  const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed && !isSuggestion(n));
-  const suggestions = () => ctx.live.notices.value.filter((n) => !n.dismissed && isSuggestion(n));
+  const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed);
 
   async function dismiss(n: NoticeView, trigger: HTMLButtonElement): Promise<void> {
     await busy(trigger, async () => {
@@ -280,31 +277,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
     noticesSection.hidden = !list.length;
     renderAllClear();
   };
-  const suggestionsBox = h("div", { class: "card" });
-  const renderSuggestions = () => {
-    const list = suggestions();
-    const write = ctx.can("fleet:admin");
-    replace(
-      suggestionsBox,
-      h(
-        "div",
-        { class: "rows" },
-        ...list.map((n) => {
-          const idea = n.title.replace(/^Galahad suggests: /, "");
-          return findingRow(
-            ctx,
-            { ...n, title: idea },
-            [h("span", {}, "from his journal"), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
-            [
-              ctx.can("chat") ? button("Ask him", { size: "sm", icon: "chat", label: `Ask him: ${idea}`, onClick: () => ctx.navigate("chat", { query: idea }) }) : null,
-              write ? button("Dismiss", { size: "sm", variant: "ghost", icon: "x", label: `Dismiss: ${idea}`, onClick: (event) => void dismiss(n, event.currentTarget as HTMLButtonElement) }) : null,
-            ],
-          );
-        }),
-      ),
-    );
-    suggestionsSection.hidden = !list.length;
-  };
 
   // What he fixed himself after his heartbeats (self-action): his own, in the ledger; the switch is on Loops.
   const fixedRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
@@ -343,7 +315,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   }
 
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + suggestions().length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -379,12 +351,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);
   const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
-  const suggestionsSection = section(
-    "Galahad suggests",
-    {},
-    h("p", { class: "tiny subtle" }, "From his journal: things he'd like to do. He won't do any of them on his own; ask him, or dismiss it."),
-    suggestionsBox,
-  );
   const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);
   // Kept across re-renders so it stays open while the outbox changes.
   const history = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), historySummary), historyRows);
@@ -400,7 +366,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
       actionsSection,
       requestsSection,
       noticesSection,
-      suggestionsSection,
       read ? history : null,
       read ? fixed : null,
     ),
@@ -410,13 +375,11 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.secretRequests.subscribe(renderRequests));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
-  scope.add(ctx.live.notices.subscribe(renderSuggestions));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();
   renderRequests();
   renderActions();
   renderNotices();
-  renderSuggestions();
   void ctx.live.refreshInbox();
   void loadFixed();
   scope.interval(() => void loadFixed(), 15_000);

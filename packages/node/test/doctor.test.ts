@@ -53,7 +53,7 @@ function healthy(): DoctorFacts {
     compute: { canMeasure: true, lastAt: NOW - 2 * DAY, due: null, slots: 4, inUse: 1, waiting: 0 },
     loops: [
       { name: "heartbeat", enabled: true, runner: "ultra", runnerOnline: true, problem: null, recent: ["ok", "ok", "ok"], lastAt: NOW - 12 * MIN, next: NOW + 18 * MIN },
-      { name: "reflect", enabled: true, runner: "ultra", runnerOnline: true, problem: null, recent: ["ok"], lastAt: NOW - 15 * HOUR, next: NOW + 9 * HOUR },
+      { name: "nightly", enabled: true, runner: "ultra", runnerOnline: true, problem: null, recent: ["ok"], lastAt: NOW - 15 * HOUR, next: NOW + 9 * HOUR },
     ],
     connectors: [{ id: "github", label: "GitHub", host: "api.github.com", key: "ready", problem: null, reach: { ok: true, ms: 120, error: null } }],
     app: { missing: [], published: "https://ultra.tail1234.ts.net:8443", local: "http://127.0.0.1:7778" },
@@ -382,17 +382,17 @@ describe("each fault gives its own line and advice", () => {
   });
 
   test("loops: orphaned, unreadable, failing, a failed run, its node offline, no heartbeat", () => {
-    expect(fault((f) => (f.loops[1]!.runner = null), "loop.reflect").state).toBe("broken");
-    expect(fault((f) => (f.loops[1]!.problem = "schedule: not a schedule"), "loop.reflect").state).toBe("needs-you");
-    const failing = fault((f) => (f.loops[1]!.recent = ["failed", "failed", "failed"]), "loop.reflect");
+    expect(fault((f) => (f.loops[1]!.runner = null), "loop.nightly").state).toBe("broken");
+    expect(fault((f) => (f.loops[1]!.problem = "schedule: not a schedule"), "loop.nightly").state).toBe("needs-you");
+    const failing = fault((f) => (f.loops[1]!.recent = ["failed", "failed", "failed"]), "loop.nightly");
     expect(failing.state).toBe("broken");
-    expect(failing.fix).toContain("galahad loop runs reflect");
-    expect(fault((f) => (f.loops[1]!.recent = ["failed", "ok"]), "loop.reflect").state).toBe("needs-you");
-    expect(fault((f) => (f.loops[1]!.recent = ["interrupted"]), "loop.reflect").line).toContain("interrupted");
-    expect(fault((f) => (f.loops[1]!.runnerOnline = false), "loop.reflect").line).toContain("offline");
+    expect(failing.fix).toContain("galahad loop runs nightly");
+    expect(fault((f) => (f.loops[1]!.recent = ["failed", "ok"]), "loop.nightly").state).toBe("needs-you");
+    expect(fault((f) => (f.loops[1]!.recent = ["interrupted"]), "loop.nightly").line).toContain("interrupted");
+    expect(fault((f) => (f.loops[1]!.runnerOnline = false), "loop.nightly").line).toContain("offline");
     const paused = healthy();
     paused.loops[1]!.enabled = false;
-    expect(byId(diagnose(paused), "loop.reflect")).toMatchObject({ state: "ok" });
+    expect(byId(diagnose(paused), "loop.nightly")).toMatchObject({ state: "ok" });
     expect(byId(diagnose(healthy()), "loop.heartbeat").line).toBe("heartbeat on ultra: last ran 12 minutes ago (ok), next in 18 minutes");
     expect(fault((f) => (f.loops = f.loops.filter((l) => l.name !== "heartbeat")), "loops.heartbeat").fix).toContain("galahad loop add heartbeat");
   });

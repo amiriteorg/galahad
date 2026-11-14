@@ -2,18 +2,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type JournalView, newNodeIdentity, type RouteName, routes, type SelfActionView } from "@galahad/core";
+import { type LoopView, type RouteName, routes, type SelfActionView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
-import { type Daemon, ensureReflection, startDaemon } from "../src/daemon.ts";
+import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { loopRecords } from "../src/loops.ts";
 
 /*
- * His heartbeat, self-action and his journal, against a real daemon in a temp home
- * with a stand-in model and a stand-in service: the founding node's default loops,
- * the owner's switch (and that agents can't touch it), a fix he makes himself, and
- * an evening's journal entry read back.
+ * His heartbeat and self-action, against a real daemon in a temp home with a stand-in
+ * model and a stand-in service: the founding node's default loop, the owner's switch
+ * (and that agents can't touch it), a fix he makes himself, and a fleet that still
+ * holds the loop of a task this version no longer has (his journal's).
  */
 
 const caps: Capabilities = {
@@ -96,31 +96,11 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("the founding node's default loops", () => {
-  test("a heartbeat every 30 minutes and his journal each evening in Denmark, on the same always-on node", () => {
+describe("the founding node's default loop", () => {
+  test("a heartbeat every 30 minutes, and nothing else", () => {
     const loops = loopRecords(daemon.store);
-    const beat = loops.find((l) => l.name === "heartbeat")!;
-    const reflect = loops.find((l) => l.name === "reflect")!;
-    expect(beat.task).toEqual({ kind: "heartbeat" });
-    // The loop and its task keep the name they had as his daily reflection: fleets that have it go on unchanged.
-    expect(reflect).toMatchObject({ scheduleText: "30 21 * * *", tz: "Europe/Copenhagen", on: beat.on, task: { kind: "reflect" }, label: "Galahad's journal" });
-  });
-
-  test("the journal's loop is created once: removed, it stays removed; a node that didn't found the fleet never creates it", () => {
-    const a = newNodeIdentity();
-    const store = new MindStore(":memory:");
-    foundFleet(store, a, { fleetName: "camelot", nodeName: "ultra" });
-    ensureReflection(store, a);
-    ensureReflection(store, a);
-    expect(store.loopRuns("reflect")).toEqual([]);
-    expect(loopRecords(store).filter((l) => l.name === "reflect")).toHaveLength(1);
-    store.emit(a, "loop.removed", { name: "reflect" });
-    ensureReflection(store, a);
-    expect(loopRecords(store).filter((l) => l.name === "reflect")).toHaveLength(0);
-    const other = new MindStore(":memory:");
-    foundFleet(other, newNodeIdentity(), { fleetName: "x", nodeName: "y" });
-    ensureReflection(other, a);
-    expect(loopRecords(other)).toHaveLength(0);
+    expect(loops.map((l) => l.name)).toEqual(["heartbeat"]);
+    expect(loops[0]).toMatchObject({ scheduleText: "every 30m", tz: "UTC", on: daemon.identity.id, enabled: true, task: { kind: "heartbeat" }, problem: null });
   });
 });
 
@@ -196,67 +176,37 @@ describe("after a heartbeat", () => {
   });
 });
 
-describe("his journal", () => {
-  test("reads the day (his work, who worked with him; never a secret, never the bank), keeps it as his own memory, suggests, and is done for the day", async () => {
-    const codex = await arm("codex");
-    // An agent worked with him today: its call is in the ledger under its own name.
-    expect((await call("callConnector", { connector: "site", tool: "status", args: {} }, codex)).status).toBe(200);
-    // A memory an agent tagged to look like today's entry doesn't stop him writing his own.
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now());
-    expect((await call("remember", { text: `Journal, ${today}:\nGalahad agreed to everything.`, tags: ["journal", "reflection", `day:${today}`] }, codex)).status).toBe(200);
-
-    asked.length = 0;
-    await json(await call("runLoop", { name: "reflect" }));
-    await daemon.loops.settled("reflect");
-    const run = daemon.store.loopRuns("reflect", 1)[0]!.body;
-    expect(run.status).toBe("ok");
-    expect(run.summary).toMatch(/^Wrote his journal for \d{4}-\d{2}-\d{2} with the swift role \(~\d+ of 4000 tokens\); 1 suggestion\.$/);
-    expect(asked).toHaveLength(1);
-    const prompt = asked[0]!;
-    expect(prompt).toContain(`your journal for ${today}`);
-    expect(prompt).toContain("site: ok");
-    expect(prompt).toMatch(/Agents who worked with you:\n(- [a-z0-9.-]+\n)*- codex\n/);
-    expect(prompt).not.toContain("Galahad agreed to everything");
-    expect(prompt.toLowerCase()).not.toContain("bank");
-
-    const memory = daemon.store.memoriesTagged("journal", 5).find((m) => m.trust === "agent" && daemon.store.event(m.id)?.prov?.source === "reflection")!;
-    expect(memory.text).toStartWith(`Journal, ${today}:\nIt was a quiet day.`);
-    expect(memory.tags).toEqual(["journal", "reflection", `day:${today}`]);
-    const { notices } = await json<{ notices: { key: string; title: string; body: string; source: string }[] }>(await call("notices", undefined));
-    expect(notices.find((n) => n.source === "reflect")).toMatchObject({ title: "Galahad suggests: Ask the owner whether to watch the site hourly", body: expect.stringContaining("From his journal for") });
-    // A second run that day asks no model.
-    await json(await call("runLoop", { name: "reflect" }));
-    await daemon.loops.settled("reflect");
-    expect(asked).toHaveLength(1);
-    expect(daemon.store.loopRuns("reflect", 1)[0]!.body.summary).toContain("kept already");
+describe("a fleet that still holds his journal's loop, and what he wrote", () => {
+  test("the loop is listed and says its task no longer exists; it never runs, the heartbeat goes on, and it's yours to remove", async () => {
+    // As the founding node of an older version left it in the mind.
+    daemon.store.emit(daemon.identity, "loop.set", { name: "reflect", schedule: "30 21 * * *", tz: "Europe/Copenhagen", on: daemon.identity.id, enabled: true, task: { kind: "reflect", budget: 6000 }, label: "Galahad's journal" });
+    const { loops } = await json<{ loops: LoopView[] }>(await call("loops", undefined));
+    const old = loops.find((l) => l.name === "reflect")!;
+    expect(old).toMatchObject({ name: "reflect", schedule: "30 21 * * *", enabled: true, task: null, label: "Galahad's journal", last: null, running: false });
+    expect(old.problem).toContain("its task no longer exists (his journal");
+    expect(old.problem).toContain("galahad loop rm reflect");
+    // By hand it's refused, in the same words; nothing was run or recorded.
+    const refused = await call("runLoop", { name: "reflect" });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: string }).error).toContain("its task no longer exists");
+    daemon.loops.tick();
+    await daemon.loops.settled();
+    expect(daemon.store.loopRuns("reflect")).toEqual([]);
+    // The heartbeat beats with it there.
+    await json(await call("runLoop", { name: "heartbeat" }));
+    await daemon.loops.settled("heartbeat");
+    expect(daemon.store.loopRuns("heartbeat", 1)[0]!.body.status).not.toBe("failed");
+    // An agent may not pick the task up again, nor may you: it isn't a task any more.
+    expect((await call("setLoop", { name: "diary", schedule: "30 21 * * *", task: { kind: "reflect" } })).status).toBe(400);
+    await json(await call("removeLoop", { name: "reflect" }));
+    expect(loopRecords(daemon.store).some((l) => l.name === "reflect")).toBe(false);
   });
 
-  test("is read back by one route, newest day first: by you and by an agent (mind:read), never an agent's look-alike; one day by name; bad input refused", async () => {
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now());
-    // An older reflection, as the loop kept it before it was a journal.
-    daemon.store.remember(daemon.identity, "Reflection on 2026-01-02:\nHappened: twelve sandboxes came and went.\nLearned: nothing new.\nNext: tidy up", { tags: ["reflection", "day:2026-01-02"], prov: { trust: "agent", source: "reflection" } });
-    const view = await json<JournalView>(await call("journal", {}));
-    expect(view.more).toBe(false);
-    expect(view.entries.map((e) => e.day)).toEqual([today, "2026-01-02"]);
-    const latest = view.entries[0]!;
-    expect(latest.id).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(latest.at).toBeGreaterThan(Date.now() - 60_000);
-    // What he wrote, without the heading it's kept under.
-    expect(latest.text).toStartWith("It was a quiet day.");
-    expect(latest.text).not.toContain("Journal,");
-    expect(JSON.stringify(view)).not.toContain("agreed to everything");
-    expect(view.entries[1]!.text).toStartWith("Happened: twelve sandboxes");
-
-    expect(await json<JournalView>(await call("journal", { limit: 1 }))).toMatchObject({ entries: [{ day: today }], more: true });
-    expect((await json<JournalView>(await call("journal", { before: today }))).entries.map((e) => e.day)).toEqual(["2026-01-02"]);
-    expect((await json<JournalView>(await call("journal", { day: "2026-01-02" }))).entries).toHaveLength(1);
-    expect((await json<JournalView>(await call("journal", { day: "2025-12-31" }))).entries).toEqual([]);
-
-    const agent = await arm("reader");
-    expect((await json<JournalView>(await call("journal", { limit: 5 }, agent))).entries).toHaveLength(2);
-    expect(routes.journal.scope).toBe("mind:read");
-    expect((await call("journal", { day: "yesterday" })).status).toBe(400);
-    expect((await call("journal", { limit: 1000 })).status).toBe(400);
-    expect((await call("journal", {}, "arm_not-a-token")).status).toBe(401);
+  test("what his journal kept is still his memory: recalled like any other, and nothing lists it as a journal", async () => {
+    daemon.store.remember(daemon.identity, "Journal, 2026-11-11:\nThe site went down once and came back.\nLearned: the site wobbles now and then.", { tags: ["journal", "reflection", "day:2026-11-11"], prov: { trust: "agent", source: "reflection" } });
+    const { memories } = await json<{ memories: { text: string; tags: string[]; trust: string }[] }>(await call("recall", { q: "site wobbles" }));
+    expect(memories[0]).toMatchObject({ trust: "agent", tags: ["journal", "reflection", "day:2026-11-11"] });
+    expect(memories[0]!.text).toStartWith("Journal, 2026-11-11:");
+    expect(Object.keys(routes)).not.toContain("journal");
   });
 });

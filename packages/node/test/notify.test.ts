@@ -7,7 +7,7 @@ import type { PushSender, PushTarget } from "../src/push-send.ts";
 
 /*
  * The notifier with stand-ins for everything around it: what happened on the node (a
- * quest you started, his journal) becomes at most one message, said as
+ * quest you started) becomes at most one message, said as
  * it ended. The whole path over HTTP, with a stand-in push service, is notify.e2e.test.ts.
  */
 
@@ -17,10 +17,9 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
   const devices = over.devices ?? [{ id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat", "vault:read"] }];
   const quests: QuestView[] = [];
   const listeners: (() => void)[] = [];
-  let journal: { day: string; at: number } | null = null;
   const db = new NotifyStore(":memory:", () => now);
   // No quiet hours here: each test is about what's said, not when.
-  db.setPrefs({ ...db.prefs(), quiet: { ...db.prefs().quiet, on: false }, kinds: { ...db.prefs().kinds, journal: true } });
+  db.setPrefs({ ...db.prefs(), quiet: { ...db.prefs().quiet, on: false } });
   db.put("c_phone", { endpoint: "https://web.push.apple.com/stand-in", p256dh: "p", auth: "a", service: "Apple" });
   const sender = {
     publicKey: async () => "key",
@@ -33,7 +32,6 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
     notices: () => [],
     actions: () => [],
     secretRequests: () => [],
-    journal: () => journal,
     turns: { running: () => [], view: () => ({ watchers: 0 }) },
     chats: { summary: () => null },
     quests: { list: () => quests, onChange: (fn) => (listeners.push(fn), () => {}) },
@@ -54,7 +52,6 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
     sent,
     quest,
     ledger,
-    setJournal: (j: { day: string; at: number } | null) => (journal = j),
     advance: (ms: number) => (now += ms),
     now: () => now,
     look: async () => {
@@ -121,18 +118,7 @@ describe("a quest you started", () => {
   });
 });
 
-describe("his journal, and what couldn't be told in time", () => {
-  test("his journal: told while it's fresh, once, with the day and not a word of it; an old entry isn't news", async () => {
-    const h = harness();
-    h.setJournal({ day: "2026-11-11", at: h.now() - 14 * 3600_000 });
-    await h.look();
-    expect(h.sent).toEqual([]);
-    h.setJournal({ day: "2026-11-12", at: h.now() - 60_000 });
-    await h.look();
-    await h.look();
-    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "journal", title: "His journal is written", body: "Thursday 12 November 2026", open: "journal" }]);
-  });
-
+describe("what couldn't be told in time", () => {
   test("something that happened and couldn't be told in time is dropped, not told a day late", async () => {
     const h = harness();
     h.quest({ quest: "q-1", state: "working" });

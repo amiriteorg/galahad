@@ -16,7 +16,6 @@ import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomI
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
-import { JOURNAL_DAY } from "./journal.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
 import { NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
@@ -121,14 +120,6 @@ export const SandboxRequest = z.strictObject({
 });
 export type SandboxRequest = z.input<typeof SandboxRequest>;
 
-/** His journal's daily budget (the `reflect` loop's), in tokens (about four characters each): what he reads and writes together. */
-export const REFLECT_BUDGET = 4000;
-export const REFLECT_BUDGET_MIN = 1000;
-export const REFLECT_BUDGET_MAX = 50_000;
-
-/** A Danish day, YYYY-MM-DD: what a journal entry is about. */
-const JournalDay = z.string().regex(JOURNAL_DAY, "a day, YYYY-MM-DD");
-
 /** What a loop does each time it runs. */
 export const LoopTask = z.discriminatedUnion("kind", [
   /**
@@ -136,14 +127,6 @@ export const LoopTask = z.discriminatedUnion("kind", [
    * it, Galahad fixes what's on the self-action allowlist himself (self-action.ts) unless `selfAction` is false.
    */
   z.strictObject({ kind: z.literal("heartbeat"), checklist: z.string().max(4000).optional(), selfAction: z.boolean().optional() }),
-  /**
-   * His journal, once a day: a recollection of the day in his own words, what he learned and what he'd like
-   * to do next, kept as his own memory (journal.ts): by the cheapest usable role, within `budget` tokens a
-   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs and the titles of kept chats
-   * (never the bank, never secrets).
-   * The kind is still `reflect`: it was his daily reflection first, and loops on running fleets go on as they are.
-   */
-  z.strictObject({ kind: z.literal("reflect"), budget: z.number().int().min(REFLECT_BUDGET_MIN).max(REFLECT_BUDGET_MAX).optional() }),
   /** A quest in a fresh sandbox: plan, work, independent review, remembered. */
   z.strictObject({
     kind: z.literal("quest"),
@@ -164,6 +147,7 @@ export type LoopTask = z.infer<typeof LoopTask>;
  */
 export const RETIRED_LOOP_TASKS: Readonly<Record<string, string>> = {
   review: "his review of the 3D world, removed with it on 14 November 2026",
+  reflect: "his journal, removed on 14 November 2026; what he wrote is still in his memory",
 };
 
 export const routes = {
@@ -502,16 +486,6 @@ export const routes = {
   selfAction: { method: "GET", path: "/api/self-action", scope: "mind:read", input: null },
   /** The owner's switch for self-action (on by default). It steers Galahad, so it's brain:write: never an agent's. */
   setSelfAction: { method: "POST", path: "/api/self-action", scope: "brain:write", input: z.strictObject({ on: z.boolean() }) },
-  /**
-   * His journal (journal.ts): the entries the reflect loop kept, newest day first. `limit` (default 30) and
-   * `before` (a day: only older ones) page through it; `day` asks for one day's. Read like any memory.
-   */
-  journal: {
-    method: "POST",
-    path: "/api/journal",
-    scope: "mind:read",
-    input: z.strictObject({ limit: z.number().int().min(1).max(100).optional(), before: JournalDay.optional(), day: JournalDay.optional() }),
-  },
   connectors: { method: "GET", path: "/api/connectors", scope: "mind:read", input: null },
   setConnector: {
     method: "POST",
@@ -982,7 +956,7 @@ export interface LoopView {
   on: string;
   onName: string | null;
   enabled: boolean;
-  /** null when this node can't read the task (written by a newer version). */
+  /** null when this node can't read the task (a newer version's, or one this version no longer has): `problem` says which. */
   task: LoopTask | null;
   problem: string | null;
   label: string | null;

@@ -9,7 +9,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import type { Measure } from "../src/compute/service.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
-import { journalInputs, LocalClient } from "../src/loop-tasks.ts";
+import { LocalClient } from "../src/loop-tasks.ts";
 import { runNodeQuest } from "../src/quest-cli.ts";
 import { TOOLS } from "../src/tools.ts";
 import { fakeDocker } from "./fake-docker.ts";
@@ -566,19 +566,5 @@ describe("his skills in chat, and as tools", () => {
     expect(read).toContain("Steps:\n1. write the greeting into the file\n2. check the file says it");
     expect(read).toContain("written by Galahad from quest q-");
     await call("retireSkill", { id: proposed.id, retired: true });
-  });
-});
-
-describe("his journal's inputs", () => {
-  test("the skills learned and used that day are lines of their own", async () => {
-    // The node's own mind (no second connection to its database: the daemon is writing to it).
-    const { SkillsService } = await import("../src/skills.ts");
-    const service = new SkillsService({ store: daemon.store, identity: daemon.identity, log: () => {}, ledger: () => {}, role: () => null, ask: async () => ({ text: "", model: "" }) });
-    const inputs = journalInputs({ store: daemon.store, log: () => {}, skills: service }, Date.now());
-    const lines = (inputs.skills ?? []).map((s) => s.line);
-    expect(lines.some((l) => l.startsWith('you learned the skill "Write a greeting into a file" from quest q-'))).toBe(true);
-    expect(lines.some((l) => /^you used the skill "Write a greeting into a file" in quest q-\S+ \(done\)$/.test(l))).toBe(true);
-    // Nothing that waited for you is there in words.
-    expect(lines.join("\n")).not.toContain("An agent's way");
   });
 });

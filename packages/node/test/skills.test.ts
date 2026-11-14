@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { DISTIL_MAX_TOKENS, HlcClock, newNodeIdentity, type NodeIdentity, type QuestEvidence, SKILL_DISTIL_RESOURCE, SKILL_STALE_AFTER_MS, type SkillDoc, SKILLS_BUDGET, SKILLS_OFFERED } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
-import { journalLines } from "../src/reflect.ts";
 import { DISTIL_MIN_TOKENS, listSkills, MAX_WAITING, SkillError, type SkillsDeps, SkillsService, usableSkills, WITHHELD } from "../src/skills.ts";
 import { learnedLines, questEvidence, questTrail } from "../src/skills-quest.ts";
 
@@ -726,41 +725,10 @@ describe("the tidy-up, with the heartbeat", () => {
     const proposed = (await learn(r, evidence({ network: "online" }), "online")).skill!;
     const notice = () => r.store.lww<{ title: string; body: string }>("notice:skills-waiting")?.value ?? null;
     expect(notice()).toMatchObject({ title: "1 skill waits for your approval" });
-    // By id and author: agents and his journal read notices, and its words aren't theirs to read yet.
+    // By id and author: agents read notices, and its words aren't theirs to read yet.
     expect(notice()!.body).toContain(`${proposed.id} (by Galahad)`);
     expect(JSON.stringify(notice())).not.toContain("parser");
     r.skills.approve(proposed.id, proposed.head);
     expect(notice()).toBeNull();
-  });
-});
-
-describe("for his journal", () => {
-  test("his journal reads each skill learned, proposed and used in the day, by title", async () => {
-    const r = rig();
-    const start = r.now;
-    await learn(r);
-    r.now += 60_000;
-    r.answer = { text: reply({ title: "Found online" }) };
-    await learn(r, evidence({ quest: "q-online", network: "online", goal: "something else" }), "online");
-    r.now += 60_000;
-    r.skills.forQuest("q-2", "fix the failing parser test");
-    r.answer = { text: "NONE" };
-    await learn(r, evidence({ quest: "q-2" }));
-    r.skills.write({ doc: doc("From an agent") }, { kind: "agent", label: "claude-code" });
-    const lines = r.skills.journal(start - 1).map((l) => l.line);
-    expect(lines).toContain('you learned the skill "Fix a failing parser test" from quest q-1');
-    // What waits for the owner is a fact he reads, never its words: a journal is written by a model, and kept as his own.
-    expect(lines).toContain("you wrote a skill from quest q-online that waits for the owner's approval");
-    expect(lines).toContain('you used the skill "Fix a failing parser test" in quest q-2 (done)');
-    expect(lines).toContain("the agent claude-code proposed a skill that waits for the owner's approval");
-    expect(lines.join("\n")).not.toContain("From an agent");
-    expect(lines.join("\n")).not.toContain("Found online");
-    expect(r.skills.journal(r.now + 1)).toEqual([]);
-    // And they're in what he reads, under their own heading, in the order the day went.
-    const { sections } = journalLines({ now: r.now, ledger: [], notices: [], runs: [], chats: [], skills: r.skills.journal(start - 1) });
-    const section = sections["Your skills, learned and used"]!;
-    expect(section).toHaveLength(4);
-    expect(section[0]).toMatch(/^\d\d:\d\d you learned the skill "Fix a failing parser test" from quest q-1$/);
-    expect(section.at(-1)).toContain("the agent claude-code proposed a skill");
   });
 });

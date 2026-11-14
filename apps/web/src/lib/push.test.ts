@@ -41,9 +41,9 @@ describe("a tapped notification, as the service worker tells an open page", () =
     expect(readOpenMessage({ type: "galahad:open", open: "inbox", conversation: null })).toEqual({ route: "inbox" });
     expect(readOpenMessage({ type: "galahad:open", open: "chat", conversation: chat })).toEqual({ route: "chat", conversation: chat });
     // A chat only goes with the chat page, and only when it reads as one.
-    expect(readOpenMessage({ type: "galahad:open", open: "journal", conversation: chat })).toEqual({ route: "journal" });
+    expect(readOpenMessage({ type: "galahad:open", open: "overview", conversation: chat })).toEqual({ route: "overview" });
     expect(readOpenMessage({ type: "galahad:open", open: "chat", conversation: "<script>" })).toEqual({ route: "chat" });
-    for (const bad of [null, "galahad:open", { type: "galahad:updated" }, { type: "galahad:open", open: "vault" }, { type: "galahad:open", open: "https://evil.example" }, { type: "galahad:open" }]) {
+    for (const bad of [null, "galahad:open", { type: "galahad:updated" }, { type: "galahad:open", open: "vault" }, { type: "galahad:open", open: "journal" }, { type: "galahad:open", open: "https://evil.example" }, { type: "galahad:open" }]) {
       expect(readOpenMessage(bad)).toBeNull();
     }
   });

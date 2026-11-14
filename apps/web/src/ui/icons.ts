@@ -107,8 +107,6 @@ const ICONS = {
   gauge: ["M4.75 18.5a8.5 8.5 0 1 1 14.5 0", "M12 15l3.75-4.25", circle(12, 15, 1.25)],
   undo: ["M9 5.5 4.5 10 9 14.5", "M4.5 10H15a4.5 4.5 0 0 1 0 9h-3"],
   flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
-  /** His journal: a bound book, its spine and a few lines on the cover. */
-  journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

@@ -29,7 +29,7 @@ const Clock = z.string().regex(CLOCK, "a time of day, HH:MM");
 /** What he sends and when he stays silent: any part of it; what's left out stays as it is. */
 export const NotifyPrefsInput = z.strictObject({
   kinds: z
-    .strictObject({ "needs-you": z.boolean().optional(), approval: z.boolean().optional(), finished: z.boolean().optional(), question: z.boolean().optional(), journal: z.boolean().optional() })
+    .strictObject({ "needs-you": z.boolean().optional(), approval: z.boolean().optional(), finished: z.boolean().optional(), question: z.boolean().optional() })
     .optional(),
   quiet: z
     .strictObject({ on: z.boolean().optional(), from: Clock.optional(), to: Clock.optional(), tz: z.string().max(64).refine(isTimeZone, "an IANA time zone, such as Europe/Copenhagen").optional() })

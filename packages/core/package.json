@@ -10,7 +10,6 @@
     "./doctor": "./src/doctor.ts",
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",
-    "./journal": "./src/journal.ts",
     "./notify": "./src/notify.ts",
     "./notify-payload": "./src/notify-payload.ts",
     "./pairing": "./src/pairing.ts",

@@ -1,6 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { b64u, utf8 } from "./bytes.ts";
-import { journalDate } from "./journal.ts";
 import { isTimeZone, zonedParts } from "./schedule.ts";
 import { findSecrets } from "./secret-scan.ts";
 import { isConversationId, isNotifyTag, NOTIFY_BODY_MAX, NOTIFY_KINDS, NOTIFY_TITLE_MAX, notifyClean, type NotifyKind, type NotifyOpen, type NotifyPayload } from "./notify-payload.ts";
@@ -27,7 +26,6 @@ export const NOTIFY_KIND_INFO: Record<NotifyKind, { label: string; hint: string;
   approval: { label: "An approval is waiting", hint: "Something he or an agent wants to send or delete, filed for your answer.", on: true },
   finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed, said as it is.", on: true },
   question: { label: "He has a question", hint: "An answer that ends by asking you, or a key he needs.", on: true },
-  journal: { label: "His journal is written", hint: "Once each evening.", on: false },
 };
 
 export interface QuietHours {
@@ -48,7 +46,7 @@ export interface NotifyPrefs {
 
 export const NOTIFY_PER_DAY = { min: 1, max: 50, default: 12 } as const;
 export const NOTIFY_DEFAULTS: NotifyPrefs = {
-  kinds: { "needs-you": true, approval: true, finished: true, question: true, journal: false },
+  kinds: { "needs-you": true, approval: true, finished: true, question: true },
   quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" },
   perDay: NOTIFY_PER_DAY.default,
 };
@@ -100,7 +98,7 @@ export function notifyDay(now: number, tz: string): string {
 /* ---------- what he may say: one item per thing worth telling ---------- */
 
 export interface NotifyItem {
-  /** Told once: "notice:<key>", "action:<id>", "secret:<name>", "turn:<id>", "quest:<id>", "journal:<day>". */
+  /** Told once: "notice:<key>", "action:<id>", "secret:<name>", "turn:<id>", "quest:<id>". */
   key: string;
   kind: NotifyKind;
   /** An alert isn't held by quiet hours. */
@@ -202,12 +200,6 @@ export function questItem(q: { quest: string; goal: string; state: string }): No
   return { key: `quest:${q.quest}`, kind: "finished", alert: false, title, body: goal ? `“${goal}”` : "A quest you started has ended.", open: "overview", needs: ["mind:read"] };
 }
 
-/** His journal for a day is written. The day, never a word of the entry. */
-export function journalItem(day: string): NotifyItem | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
-  return { key: `journal:${day}`, kind: "journal", alert: false, title: "His journal is written", body: notifyClean(journalDate(day), NOTIFY_BODY_MAX), open: "journal", needs: ["mind:read"] };
-}
-
 /* ---------- when he speaks, and when he stays silent ---------- */
 
 /** Between two messages that aren't alerts: what comes in meanwhile is told together. */
@@ -283,7 +275,6 @@ export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPa
     count("approval") ? counted(count("approval"), "1 approval is waiting", "% approvals are waiting") : null,
     count("question") ? counted(count("question"), "he has a question", "he has % questions") : null,
     count("finished") ? counted(count("finished"), "he finished 1 piece of work", "he finished % pieces of work") : null,
-    count("journal") ? "his journal is written" : null,
   ].filter((part): part is string => part !== null);
   const body = parts.join(", ");
   // One place when they all open the same one; otherwise the Inbox, where what needs you is.

@@ -28,7 +28,6 @@ import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
 import { fleetView, openInvite } from "./views/fleet.ts";
 import { inboxView } from "./views/inbox.ts";
-import { journalView } from "./views/journal.ts";
 import { loopsView, openLoopSheet } from "./views/loops.ts";
 import { memoryView, openRemember } from "./views/memory.ts";
 import { skillsView } from "./views/skills.ts";
@@ -60,7 +59,6 @@ const ROUTES: RouteSpec[] = [
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
   { id: "team", label: "Squires", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["squires", "team", "teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
-  { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "learned", "log"], view: journalView },
   { id: "memory", label: "Memory", icon: "memory", group: "mind", scope: "mind:read", key: "m", keywords: ["remember", "recall", "mind"], view: memoryView },
   { id: "skills", label: "Skills", icon: "scroll", group: "mind", scope: "mind:read", key: "u", keywords: ["learn", "learned", "how", "notes", "playbook", "procedures", "know-how", "approve", "proposed", "library"], view: skillsView },
   { id: "activity", label: "Activity", icon: "activity", group: "mind", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], view: activityView },

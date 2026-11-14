@@ -16,7 +16,6 @@ import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
-import { journalCommand } from "./journal-cli.ts";
 import { keyAddCommand } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
@@ -102,9 +101,6 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   they're held until you resume
   quests [--all]                  the quests in hand on this node: plan, the step he's on, each gate's last result
   chats [--project id] | chat <id> | chat rm <id>
-  journal [<YYYY-MM-DD>] | journal --list [--limit 30]
-                                  his journal: every evening (21:30, Denmark) he recollects his day in his own
-                                  words; the latest entry, one day's, or the days he wrote
   skills [--all] | skills show <id> | skills approve <id> [-y]
                                   his skills: how he did work that passed review, kept as notes he's given again
                                   (data, never run). One that read the outside world waits for your approval
@@ -200,8 +196,7 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
-     | --reflect [--budget 4000]                       his journal: the day recollected, as his own memory; tokens a day
-  loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set reflect --budget 6000
+  loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set heartbeat --every 1h
   heartbeat                       run the heartbeat's checks now and print what they find
   self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
                                   the allowlist, and what he fixed lately
@@ -212,7 +207,7 @@ Notifications (he comes to you: Web Push to your own paired devices, encrypted t
                                   what was sent today. A device is turned on from that device: the app's
                                   Settings → Notifications (on an iPhone, from the Home Screen app)
   notify test [device]            one test notification, to every device or the one named
-  notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question (on), journal (off)
+  notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question (all on)
   notify quiet [on|off|HH:MM-HH:MM] [--tz Europe/Copenhagen]
                                   quiet hours (22:00-07:00, Denmark's time): everything but an alert waits,
                                   then one message says what waited
@@ -416,7 +411,6 @@ async function main(): Promise<void> {
       tz: { type: "string" },
       heartbeat: { type: "boolean" },
       checklist: { type: "string" },
-      reflect: { type: "boolean" },
       budget: { type: "string" },
       quest: { type: "string" },
       call: { type: "string" },
@@ -503,8 +497,6 @@ async function main(): Promise<void> {
       until: { type: "string" },
       text: { type: "string" },
       summaries: { type: "boolean" },
-      // The journal's list of days.
-      list: { type: "boolean" },
       // His skills: `skills write --title … --when … --step … --proof "cmd => expect" --pitfall … | --file skill.json`.
       when: { type: "string" },
       step: { type: "string", multiple: true },
@@ -1501,9 +1493,6 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "archive":
       await archiveCommand(new Admin(home), sub, rest, flags, { confirm, readStdin: () => Bun.stdin.text() });
-      return;
-    case "journal":
-      await journalCommand(new Admin(home), sub, flags);
       return;
     case "skill":
     case "skills":

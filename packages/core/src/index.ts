@@ -6,7 +6,6 @@ export * from "./chats.ts";
 export * from "./team.ts";
 export * from "./quests.ts";
 export * from "./turns.ts";
-export * from "./journal.ts";
 export * from "./lookalike.ts";
 export * from "./plain.ts";
 export * from "./skills.ts";

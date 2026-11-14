@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorView, type FindingView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, REFLECT_BUDGET, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorView, type FindingView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -27,7 +27,6 @@ const MARK: Record<string, string> = { ok: "✓", attention: "△", failed: "✗
 export function describeTask(task: LoopTask | null): string {
   if (!task) return "(a task this version can't read)";
   if (task.kind === "heartbeat") return `${task.checklist ? "heartbeat + your checklist" : "heartbeat"}${task.selfAction === false ? " (self-action off)" : ""}`;
-  if (task.kind === "reflect") return `his journal (budget ${task.budget ?? REFLECT_BUDGET} tokens a day)`;
   if (task.kind === "quest") return `quest (${task.network}${task.gates?.length ? `, ${task.gates.length} gate${task.gates.length === 1 ? "" : "s"}` : ""}): ${task.goal.length > 70 ? `${task.goal.slice(0, 70)}…` : task.goal}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${v}`).join(" ");
   return `call ${task.connector}.${task.tool}${args ? ` ${args}` : ""}`;
@@ -97,13 +96,8 @@ function printDiscovered(connector: ConnectorView, d: { server: string | null; t
 }
 
 async function taskFrom(api: Api, flags: Flags): Promise<LoopTask | undefined> {
-  const kinds = ["heartbeat", "quest", "call", "reflect"].filter((k) => flags[k] !== undefined);
-  if (kinds.length > 1) throw new Error("give one of --heartbeat, --quest, --call or --reflect");
-  if (flags.reflect || (str(flags, "budget") !== undefined && !kinds.length)) {
-    const budget = str(flags, "budget");
-    if (budget !== undefined && !/^\d+$/.test(budget)) throw new Error("--budget takes a number of tokens a day, e.g. 4000");
-    return { kind: "reflect", ...(budget !== undefined ? { budget: Number(budget) } : {}) };
-  }
+  const kinds = ["heartbeat", "quest", "call"].filter((k) => flags[k] !== undefined);
+  if (kinds.length > 1) throw new Error("give one of --heartbeat, --quest or --call");
   if (flags.heartbeat) return { kind: "heartbeat", ...(str(flags, "checklist") ? { checklist: str(flags, "checklist")! } : {}) };
   if (str(flags, "quest")) {
     const steps = str(flags, "steps");
@@ -142,13 +136,13 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
     }
     case "add":
     case "set": {
-      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *") [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v] | --reflect [--budget tokens])`);
+      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *") [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v])`);
       const every = str(flags, "every");
       const cron = str(flags, "cron");
       if (every && cron) throw new Error("give --every or --cron, not both");
       const schedule = every ? `every ${every}` : cron;
       const task = await taskFrom(api, flags);
-      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every or --cron, and --heartbeat, --quest, --call or --reflect");
+      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every or --cron, and --heartbeat, --quest or --call");
       const { loop } = await api.call<{ loop: LoopView }>("setLoop", {
         name,
         ...(schedule ? { schedule } : {}),

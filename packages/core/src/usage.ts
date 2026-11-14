@@ -51,7 +51,7 @@ export const PriceSchema = z.object({ input: Dollars, output: Dollars, cached: D
 export interface UsageRow extends UsageLine {
   /** UTC day, YYYY-MM-DD. */
   day: string;
-  /** you · arm:<label> (a loop's quest is arm:loop.<name>) · galahad (his own upkeep: the journal, skills, the archive). */
+  /** you · arm:<label> (a loop's quest is arm:loop.<name>) · galahad (his own upkeep: the heartbeat's words, skills, the archive). */
   who: string;
 }
 

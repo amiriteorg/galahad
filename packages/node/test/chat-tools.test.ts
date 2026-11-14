@@ -389,7 +389,7 @@ describe("one answer's tools", () => {
   test("he says which of his tools only look: those may be run again by a model that takes an answer over, the rest never", () => {
     const tools = chatTools(TOOLS, api, explain);
     const only = (name: string) => tools.readOnly?.({ id: "x", name, input: {} });
-    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
+    for (const name of ["recall", "fleet", "ledger", "notices", "archive_search"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
     for (const name of ["remember", "sandbox_run", "connector_call", "note_idea", "request_secret"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
     // A tool that isn't his is nothing he may run twice.
     expect(only("vault_read")).toBe(false);

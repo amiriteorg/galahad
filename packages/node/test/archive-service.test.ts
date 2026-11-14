@@ -187,7 +187,7 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     expect(store.counts()).toEqual(before);
   });
 
-  test("his journal arrives like any memory he kept: a teaching titled by its day, his own, found by its words and by its tags", async () => {
+  test("what his journal once kept arrives like any memory: a teaching titled by its day, his own, found by its words and by its tags", async () => {
     const w = world();
     const kept = w.mind.remember(w.identity, "Journal, 2026-11-11:\nBors woke me a little after six. In the afternoon I built the gripper at the bench.\n\nLearned: rack sleeps at night.\nNext:\n- Ask about rack's power settings", {
       tags: ["journal", "reflection", "day:2026-11-11"],

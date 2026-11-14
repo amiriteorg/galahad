@@ -1208,22 +1208,6 @@
       }
       @media print { .sidebar, .tabbar, .topbar, .toaster { display: none !important; } }
 
-      /* ---------- his journal: a page a day ---------- */
-      .journal { display: flex; flex-direction: column; gap: var(--sp-5); }
-      .journal-page { padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
-      .journal-date { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border); }
-      .journal-date h2 { font-size: var(--fs-18); font-weight: 600; letter-spacing: -0.014em; line-height: 1.3; }
-      .journal-date .when { font-size: var(--fs-12); color: var(--text-3); }
-      .journal-prose { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 68ch; font-size: var(--fs-16); line-height: 1.7; overflow-wrap: anywhere; }
-      .journal-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-4) var(--sp-6); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
-      .journal-note { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-      .journal-note h3 { font-size: var(--fs-13); font-weight: 600; color: var(--text-2); letter-spacing: 0.01em; }
-      .journal-note ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-      .journal-note li { position: relative; padding-left: var(--sp-4); line-height: 1.55; overflow-wrap: anywhere; }
-      .journal-note li::before { content: ""; position: absolute; left: 1px; top: 0.78em; width: 6px; height: 1px; background: var(--text-3); }
-      .journal-foot { color: var(--text-3); }
-      .journal-more { display: flex; justify-content: center; }
-
       /* ---------- his skills: each a page of notes ---------- */
       .skills-budget { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; color: var(--text-3); font-size: var(--fs-12); }
       .skill-page { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
@@ -1253,7 +1237,6 @@
       .skill-row-when { font-size: var(--fs-13); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .skills-retired > .rows { border-top: 1px solid var(--border); }
       @media (max-width: 639px) { .card.skill-page { padding: var(--sp-4); } .skill-head h3 { font-size: var(--fs-16); } .skill-record li.skill-version .grow { flex-basis: 100%; } }
-      @media (max-width: 639px) { .journal-page { padding: var(--sp-5) var(--sp-4); } .journal-date h2 { font-size: var(--fs-16); } }
     </style>
   </head>
   <body>
