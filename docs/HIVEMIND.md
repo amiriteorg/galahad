@@ -254,7 +254,7 @@ bun galahad squires task ROOM_ID lin "Review the predecessor's evidence and rema
 
 Use verification commands that actually exist in your repository. A dependency must already exist in the same room. The dependent task waits until every predecessor is **done and independently verified**. It receives their titles and result text; this is evidence transfer, not automatic file transfer, branch merging or repository integration across VMs.
 
-Every gate is a shell command run in the task's workspace. All gates must pass before the independent reviewer can accept the result. Gates are not approval prompts. The runner allows bounded revisions within the job; failed gates, a failed review or a missing harness cannot produce a verified completion. Squires shows the saved progress, output and error as it polls the controller.
+Every gate is a shell command run in the task's workspace. Each is tried once before the work begins, as the workspace stands: the squire is told which fail now, which pass already and which cannot run there at all (and to give up at once, with the reason, if nothing in its workspace can make one run), and the reviewer is told that a gate which passed before any work proves nothing by passing after it. All gates must pass before the independent reviewer can accept the result. Gates are not approval prompts. The runner allows bounded revisions within the job; failed gates, a failed review or a missing harness cannot produce a verified completion. Squires shows the saved progress, output and error as it polls the controller.
 
 ### What a task came to
 

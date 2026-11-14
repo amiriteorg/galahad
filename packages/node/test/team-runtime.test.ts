@@ -159,7 +159,8 @@ test("failing task gates cannot be replaced by an approving review or a squire's
   });
   const outcome = await f.runtime.executeTask(member, task, f.context);
   expect(outcome.verified).toBe(false);
-  expect(gates).toBe(3);
+  // Once before the work (a squire's gates are tried first), then at each of the three submissions.
+  expect(gates).toBe(4);
   expect(f.bodies).toHaveLength(4);
   expect(f.held()).toBe(0);
 });
@@ -565,4 +566,20 @@ test("a squire with no repository has none of this: no worktree, no diff, nothin
   expect(kept).toBe(0);
   expect(outcome.output).not.toMatch(/Base:|Changes:/);
   expect(outcome.changes).toBeUndefined();
+});
+
+test("a squire's gates are tried once before the work: one that cannot run in its VM is known before a command is spent, and the engineer is told", async () => {
+  const commands: string[] = [], progress: string[] = [];
+  // (Seen on ultra, 14 November 2026: `bun test` exited 127 in a squire's VM, found out only after eleven commands and $0.20.)
+  const f = fixture([say("1. Make the change."), say("GIVE UP\nThe gate cannot run in this VM: bun is not on the PATH.")], {
+    exec: async (_m, command) => { commands.push(command); return command.includes("bun test required-check") ? result({ exitCode: 127, stdout: "", stderr: "bash: bun: command not found" }) : result(); },
+  });
+  const outcome = await f.runtime.executeTask(member, task, { ...f.context, emit: (text) => void progress.push(text) });
+  expect(outcome.verified).toBe(false);
+  expect(outcome.record).toMatchObject({ ended: "gave-up", commands: 0 });
+  // The gate ran once, before the engineer was asked, and what it did is in what he was told and in the progress.
+  expect(commands.filter((c) => c.includes("bun test required-check"))).toHaveLength(1);
+  const told = String(f.bodies[1].messages.find((m: any) => m.role === "user").content);
+  expect(told).toContain("1. exit 127: it could not run here (bash: bun: command not found). If nothing in your workspace can make it run, reply GIVE UP");
+  expect(progress).toContain("Gates before the work · 1. exit 127 · bun test required-check");
 });

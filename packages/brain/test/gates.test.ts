@@ -191,6 +191,64 @@ describe("gates on a quest", () => {
   });
 });
 
+describe("gates tried before the work (gatesFirst)", () => {
+  // Seen on ultra on 14 November 2026: a squire's gate, `bun test`, could not run in its VM at all. That was found
+  // out only after the work was done: eleven commands, two send-backs and $0.20 for a task that could never pass.
+  const script = (exec: Script["exec"]) => harness({ engineer: [sh("echo fixed > calc.txt"), "DONE\nFixed."], exec }, { gates: ["bun test", "test -f calc.txt", "lint"], gatesFirst: true });
+
+  test("each gate runs once before the engineer is asked anything, and he is told what each did: failing, passing already, or unable to run", async () => {
+    const h = script((command, nth) => (command === "bun test" ? (nth === 1 ? { exitCode: 1, stdout: "1 fail\n" } : {}) : command === "lint" && nth === 1 ? { exitCode: 127, stdout: "", stderr: "bash: lint: command not found\n" } : {}));
+    await h.run;
+    // The plan, the three gates as the workspace stands, and only then the engineer.
+    expect(h.order.slice(0, 5)).toEqual(["planner", "$ bun test", "$ test -f calc.txt", "$ lint", "engineer"]);
+    const briefing = h.seen[1]!.messages[0]!.content;
+    expect(briefing).toContain("Each was run once before you began, as the workspace stood");
+    expect(briefing).toMatch(/1\. exit 1: it fails now, and must pass when you are done\./);
+    expect(briefing).toMatch(/2\. exit 0: it passes already\. Its passing will show nothing about your work/);
+    expect(briefing).toMatch(/3\. exit 127: it could not run here \(bash: lint: command not found\)\. If nothing in your workspace can make it run, reply GIVE UP and say so before you do the work\./);
+    // It is an event of its own, never a submission's round of the gates.
+    const baseline = h.events.find((e) => e.type === "baseline");
+    expect(baseline).toMatchObject({ results: [{ command: "bun test", exitCode: 1 }, { command: "test -f calc.txt", exitCode: 0 }, { command: "lint", exitCode: 127 }] });
+    expect(h.events.filter((e) => e.type === "gated").map((e) => (e as { round: number }).round)).toEqual([1]);
+  });
+
+  test("the reviewer is told too: a gate that passed before any work shows nothing by passing after it", async () => {
+    const h = script((command, nth) => (command === "bun test" && nth === 1 ? { exitCode: 1, stdout: "1 fail\n" } : {}));
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    const review = h.seen.at(-1)!.messages[0]!.content;
+    expect(review).toContain("Before any work was done, the same gates as the workspace stood then:");
+    expect(review).toMatch(/1\. \$ bun test → exit 1\n/);
+    expect(review).toMatch(/2\. \$ test -f calc\.txt → exit 0 \(it passed before any work: its passing now shows nothing about this work\)/);
+    // What the quest came to keeps them, beside each gate's last run.
+    expect(outcome.gatesBefore?.map((g) => g.exitCode)).toEqual([1, 0, 0]);
+    expect(outcome.gates?.map((g) => g.exitCode)).toEqual([0, 0, 0]);
+  });
+
+  test("a secret a gate prints before the work reaches no model either, and a gate the sandbox can't run is one that could not run", async () => {
+    const h = harness({ engineer: ["GIVE UP\nThe gate cannot run here."], exec: (command) => (command === "leak" ? { exitCode: 1, stdout: `KEY=${FAKE_KEY}\n` } : new Error("no such container")) }, { gates: ["leak", "broken"], gatesFirst: true });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("gave-up");
+    for (const { messages } of h.seen) for (const m of messages) expect(findSecrets(m.content)).toEqual([]);
+    expect(h.seen[1]!.messages[0]!.content).toMatch(/2\. exit -1: it could not run here \(The sandbox could not run this: no such container\)/);
+    expect(outcome.gatesBefore).toHaveLength(2);
+  });
+
+  test("without the switch nothing runs before the work, and nothing of it is said: a quest is what it was", async () => {
+    const h = harness({ engineer: [sh("echo fixed"), "DONE\nFixed."] }, { gates: ["bun test"] });
+    const outcome = await h.run;
+    expect(h.order.slice(0, 2)).toEqual(["planner", "engineer"]);
+    expect(h.seen[1]!.messages[0]!.content).not.toContain("before you began");
+    expect(h.seen.at(-1)!.messages[0]!.content).not.toContain("Before any work");
+    expect("gatesBefore" in outcome).toBe(false);
+    expect(h.events.some((e) => e.type === "baseline")).toBe(false);
+    // With the switch and no gates there is nothing to try.
+    const none = harness({ engineer: ["DONE\nNothing to do."] }, { gatesFirst: true });
+    await none.run;
+    expect(none.order[1]).toBe("engineer");
+  });
+});
+
 describe("gates the planner proposes", () => {
   test("read from its Gate: lines, at most three, a command each", () => {
     expect(parseProposedGates("1. Write it.\nDone when: the file says hi.\nGate: grep -q hi /work/out/a.txt")).toEqual(["grep -q hi /work/out/a.txt"]);
