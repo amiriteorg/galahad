@@ -1,6 +1,7 @@
 {
   "name": "@galahad/core",
   "version": "0.0.1",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -25,7 +26,8 @@
     "./team-record": "./src/team-record.ts",
     "./roundtable": "./src/roundtable.ts",
     "./model-checks": "./src/model-checks.ts",
-    "./team-limits": "./src/team-limits.ts"
+    "./team-limits": "./src/team-limits.ts",
+    "./terminal-input": "./src/terminal-input.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

@@ -19,9 +19,9 @@ describe("the PWA bundle", () => {
     expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
 
-    // Four bundles and no more (the 3D world's own bundle and its models went with it).
+    // Five bundles and no more (the 3D world's own bundle and its models went with it).
     expect(assets.has("/world.js")).toBe(false);
-    for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js"]) {
+    for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js", "/term.js"]) {
       expect(assets.has(path)).toBe(true);
       const response = assets.serve(path);
       expect(response.headers.get("content-type")).toContain("javascript");
@@ -55,7 +55,7 @@ describe("the PWA bundle", () => {
 
   test("every entry is self-contained, so the service worker can cache the shell by name", async () => {
     const assets = await buildAssets();
-    for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js"]) {
+    for (const path of ["/app.js", "/boot.js", "/pair.js", "/sw.js", "/term.js"]) {
       expect(await assets.serve(path).text()).not.toMatch(STATIC_IMPORT);
     }
     // boot.js runs as a classic script before first paint: no module syntax at all.
@@ -64,7 +64,8 @@ describe("the PWA bundle", () => {
 
   test("the browser bundles carry no server-only code and no HTML-string sinks", async () => {
     const assets = await buildAssets();
-    for (const path of ["/app.js", "/pair.js"]) {
+    // (The terminal's too: what a sandbox prints is drawn by the emulator, never parsed as HTML.)
+    for (const path of ["/app.js", "/pair.js", "/term.js"]) {
       const code = await assets.serve(path).text();
       expect(code).not.toContain("bun:sqlite");
       expect(code).not.toContain("@anthropic-ai/sdk");
@@ -73,6 +74,16 @@ describe("the PWA bundle", () => {
       expect(code).not.toMatch(/localStorage\.setItem\([^)]*(secret|key-value|chat)/i);
       expect(code).not.toMatch(/sessionStorage|indexedDB\.open\([^)]*chat/i);
     }
+  });
+
+  test("daily use doesn't load the terminal emulator; a terminal does", async () => {
+    const assets = await buildAssets();
+    const app = await assets.serve("/app.js").text();
+    const term = await assets.serve("/term.js").text();
+    expect(app).toContain("/term.js");
+    expect(term).toContain("xterm-helper-textarea");
+    expect(app).not.toContain("xterm-helper-textarea");
+    expect(term).not.toMatch(/\beval\(|new Function\(/);
   });
 
   test("daily use doesn't load the pairing schema; the pairing bundle does", async () => {

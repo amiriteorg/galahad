@@ -73,6 +73,11 @@ const AsideId = z.string().regex(/^as_[A-Za-z0-9_-]{22}$/);
 const NodeRef = z.string().min(1).max(100).regex(/^[A-Za-z0-9._:-]+$/);
 const SandboxId = z.string().regex(/^[a-f0-9]{10}$/);
 
+/** A terminal open on a node, and a terminal's size in characters. */
+export const TERMINAL_ID = /^tm_[A-Za-z0-9_-]{16}$/;
+const TerminalId = z.string().regex(TERMINAL_ID);
+const TerminalSize = z.strictObject({ cols: z.number().int().min(10).max(500), rows: z.number().int().min(4).max(200) });
+
 /**
  * One of several attempts at the same quest (effort): the node shows where each is, and counts
  * nothing by it. Its quest must be one an effort was granted for; otherwise it's ignored.
@@ -484,6 +489,22 @@ export const routes = {
       quest: z.string().max(64).optional(),
     }),
   },
+  /**
+   * Terminals in this node's sandboxes (a knight's VM, one of yours), for you alone: a login shell on a real terminal.
+   * One stays open while it is watched and for a while after, so a phone that leaves to finish a sign-in comes back to it.
+   */
+  terminals: { method: "GET", path: "/api/terminals", scope: "sandbox", input: null },
+  openTerminal: { method: "POST", path: "/api/terminals", scope: "sandbox", input: z.strictObject({ sandbox: SandboxId, size: TerminalSize }) },
+  /** What it shows, as `TerminalEvent`s: what it showed lately first, then as it comes; its exit ends them. */
+  watchTerminal: { method: "POST", path: "/api/terminals/watch", scope: "sandbox", input: z.strictObject({ terminal: TerminalId }) },
+  /** Keys typed or pasted, and the size it has now. In order: send the next when this one is answered. */
+  terminalInput: {
+    method: "POST",
+    path: "/api/terminals/input",
+    scope: "sandbox",
+    input: z.strictObject({ terminal: TerminalId, data: z.string().min(1).max(65_536).optional(), size: TerminalSize.optional() }),
+  },
+  closeTerminal: { method: "POST", path: "/api/terminals/close", scope: "sandbox", input: z.strictObject({ terminal: TerminalId }) },
   destroySandbox: {
     method: "POST",
     path: "/api/sandboxes/destroy",
@@ -980,6 +1001,23 @@ export interface ExecResult {
   durationMs: number;
   truncated: boolean;
 }
+
+/** A terminal open on a node: in which sandbox, its size, since when, and how it ended (null while its shell runs). */
+export interface TerminalView {
+  id: string;
+  sandbox: string;
+  /** The sandbox's name. */
+  name: string;
+  cols: number;
+  rows: number;
+  opened: number;
+  exitCode: number | null;
+  /** Devices watching it now. */
+  watchers: number;
+}
+
+/** What a watched terminal sends: its output (base64, as bytes), then its shell's exit code when it ends. */
+export type TerminalEvent = { type: "output"; data: string } | { type: "exit"; code: number };
 
 export interface LedgerEntry {
   id: string;

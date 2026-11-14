@@ -7,7 +7,7 @@ import { type BrainContext, GatewayTokens, pinLegacyKeys } from "@galahad/brain"
 import { UsageStore } from "./usage.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
+import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import type { HostLoad } from "@galahad/core";
 import { calibrate, spawnBench } from "./compute/calibrate.ts";
 import { GovernedSandboxHost } from "./compute/governed-host.ts";
@@ -39,6 +39,7 @@ import { createApp } from "./server.ts";
 import { shipNative } from "./ship.ts";
 import { type DoctorDeps, type DoctorOptions, type DoctorRun, type DoctorSystem, heartbeatFromDoctor, noSystem, realSystem, runDoctor, TroubleLog } from "./doctor-facts.ts";
 import { NotifyService } from "./notify.ts";
+import { Terminals } from "./terminals.ts";
 import { NotifyStore } from "./notify-store.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
 
@@ -82,6 +83,8 @@ export interface DaemonOptions {
   archiveIntervalMs?: number | false;
   /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
   docker?: DockerRunner;
+  /** How a terminal's process is started beside that stand-in (tests: a local shell instead of `docker exec`). */
+  spawnTerminal?: SpawnTerminal;
   /**
    * How this node measures itself. Default: the real benchmark, a few seconds at low priority (and never in
    * tests that pass their own capabilities, unless they give one here). false: it doesn't.
@@ -261,6 +264,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       tokenStore: sandboxTokens,
       ledger,
       ...(opts.docker ? { runner: opts.docker } : {}),
+      ...(opts.spawnTerminal ? { spawnTerminal: opts.spawnTerminal } : {}),
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),
       // Size-limited workspaces when the root helper is installed (scripts/remote-setup.sh); otherwise
@@ -285,6 +289,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       sandbox = null;
     }
   }
+  // Terminals in this node's sandboxes, where it runs any (terminals.ts).
+  const terminalHost = sandbox;
+  const terminals = terminalHost ? new Terminals({ start: (id, size, onData) => terminalHost.terminal(id, size, onData), ledger }) : null;
 
   const startedAt = Date.now();
   // How this node measures itself: the benchmark in its own low-priority process, a sandbox's start-up through
@@ -496,6 +503,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     compute,
     computeUpkeep: upkeep,
     sandboxContext,
+    terminals,
     connectors,
     artifacts,
     loops,
@@ -598,6 +606,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     async stop() {
       const finished = Promise.all(servers.map((s) => s.stop()));
       shutdown.abort();
+      // Every terminal's shell is ended, and whoever watched one is told (their streams end with it).
+      terminals?.closeAll();
       const teamEnded = team.service?.stop();
       clearInterval(outbox);
       if (refresh) clearInterval(refresh);

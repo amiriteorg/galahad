@@ -31,6 +31,7 @@ import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-co
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
 import { notifyCommand } from "./notify-cli.ts";
 import { teamCommand } from "./team-cli.ts";
+import { terminalCommand, ttyScreen } from "./terminal-cli.ts";
 
 const VERSION = "0.1.0";
 
@@ -185,6 +186,11 @@ Work
   sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
   sandbox build [--on ultra] [--lab|--gazebo|--desktop]
                                   build the sandbox image (or the Lab, Gazebo, or the knights' desktop) on a host
+  terminal <knight|sandbox>       a shell in that knight's VM (or that sandbox) on a real terminal: what a vendor's
+                                  sign-in or a coding tool's screen needs. Ctrl-] leaves and closes it; so does exit
+  terminal ls | terminal attach <terminal> | terminal close <terminal>
+                                  the terminals open on this node (one opened in the app can be taken up here, and
+                                  leaving it leaves it open)
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
@@ -300,7 +306,7 @@ class Admin {
     this.token = home.adminToken();
   }
 
-  private async request(name: RouteName, input?: unknown): Promise<Response> {
+  private async request(name: RouteName, input?: unknown, signal?: AbortSignal): Promise<Response> {
     const route = routes[name];
     let response: Response;
     try {
@@ -308,8 +314,10 @@ class Admin {
         method: route.method,
         headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
         body: route.method === "POST" ? JSON.stringify(input ?? {}) : undefined,
+        ...(signal ? { signal } : {}),
       });
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error;
       throw new CliError(`no daemon on ${this.base} — start it with \`galahad serve\``);
     }
     if (!response.ok) {
@@ -332,9 +340,10 @@ class Admin {
     return body as T;
   }
 
-  async *stream(name: RouteName, input: unknown): AsyncGenerator<ChatStreamEvent> {
-    const response = await this.request(name, input);
-    for await (const data of sseData(response.body!)) yield JSON.parse(data) as ChatStreamEvent;
+  /** A route that answers with events (a turn's, a terminal's), until it ends or `signal` is aborted. */
+  async *stream<T = ChatStreamEvent>(name: RouteName, input: unknown, signal?: AbortSignal): AsyncGenerator<T> {
+    const response = await this.request(name, input, signal);
+    for await (const data of sseData(response.body!)) yield JSON.parse(data) as T;
   }
 }
 
@@ -1553,6 +1562,9 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "squire":
     case "team":
       await teamCommand(new Admin(home), sub, rest, flags, console.log, confirm, process.stdout.isTTY ? process.stdout.columns : undefined);
+      return;
+    case "terminal":
+      process.exitCode = await terminalCommand(new Admin(home), sub, rest, ttyScreen(dim), console.log);
       return;
 
     case "doctor": {

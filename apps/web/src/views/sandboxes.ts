@@ -13,6 +13,7 @@ import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { openKeepWork } from "./artifacts.ts";
 import { isOnline } from "./fleet.ts";
+import { openTerminal } from "./terminal.ts";
 
 /*
  * Sandboxes: disposable machines with an explicit network boundary.
@@ -409,7 +410,10 @@ function sandboxCard(ctx: Ctx, sandbox: SandboxView, on: string | null): HTMLEle
       h(
         "div",
         { class: "row" },
-        button("Console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, sandbox, on) }),
+        // A terminal on this node; a sandbox on another has the one-command console.
+        on === null
+          ? button("Terminal", { size: "sm", icon: "terminal", onClick: () => void openTerminal(ctx, sandbox) })
+          : button("Console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, sandbox, on) }),
         /run|up/i.test(sandbox.status) && ctx.can("sandbox")
           ? button("Keep work…", { size: "sm", icon: "archive", title: "Keep its /work/out (or another folder) after it's gone", onClick: () => openKeepWork(ctx, sandbox, on) })
           : null,

@@ -56,6 +56,7 @@ import {
   routes,
   type Scope,
   type SandboxView,
+  type TerminalEvent,
   type Teammate,
   type TeamEngramStatus,
   TEAM_GALAHAD,
@@ -143,6 +144,7 @@ import type { TeamStore } from "./team-store.ts";
 import { harnessReadiness, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
+import type { Terminals } from "./terminals.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -179,6 +181,8 @@ export interface AppContext {
   computeUpkeep?: () => void;
   /** Build context for the sandbox image (repo `sandbox/`). */
   sandboxContext?: string;
+  /** Terminals in this node's sandboxes, for you (terminals.ts); absent where it runs none. */
+  terminals?: Terminals | null;
   connectors: ConnectorService;
   loops: LoopRunner;
   /** The heartbeat's checks, run here and now (no writes). */
@@ -1191,6 +1195,66 @@ export function createApp(ctx: AppContext) {
     return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
   }
 
+  /** This node's terminals, for you alone: a shell is never opened for an agent or another node. */
+  function terminalsFor(p: Principal): Terminals {
+    if (!isOwner(p)) throw new HttpError(403, "a terminal is yours alone: no agent or node opens one");
+    if (!ctx.terminals) throw new HttpError(424, "this node runs no sandboxes, so it has no terminals");
+    return ctx.terminals;
+  }
+
+  /**
+   * A terminal's screen as it comes (TerminalEvents), to one device. Its going away ends the watching and nothing
+   * else; a device that can't keep up (8 MB unread) is let go, and coming back it is shown what the terminal shows lately.
+   */
+  function watchTerminal(terminals: Terminals, id: string, req: Request): Response {
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let leave: () => void = () => {};
+    let open = true;
+    const close = (): void => {
+      if (!open) return;
+      open = false;
+      clearInterval(heartbeat);
+      leave();
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
+    };
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start: (c) => void (controller = c),
+        cancel: () => {
+          open = false;
+          clearInterval(heartbeat);
+          leave();
+        },
+      },
+      new ByteLengthQueuingStrategy({ highWaterMark: 64 * 1024 }),
+    );
+    const write = (text: string): void => {
+      if (!open) return;
+      if ((controller.desiredSize ?? 0) < -8 * 1024 * 1024) return close();
+      try {
+        controller.enqueue(encoder.encode(text));
+      } catch {
+        close();
+      }
+    };
+    // Before the answer: a terminal that isn't here is a 404, not an empty stream.
+    const unwatch = terminals.watch(id, (event: TerminalEvent) => {
+      write(`data: ${JSON.stringify(event)}\n\n`);
+      if (event.type === "exit") close();
+    });
+    if (open) leave = unwatch;
+    else unwatch();
+    heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
+    req.signal.addEventListener("abort", close);
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+  }
+
   /*
    * Side questions: answered from a chat's context without his tools, kept apart (here, in memory, for the
    * device that asked, for half an hour) and part of nothing unless brought back. A few at once, no more.
@@ -2104,6 +2168,17 @@ export function createApp(ctx: AppContext) {
           { sandbox: rest.id },
         ).finally(() => ended?.()),
       );
+    },
+    terminals: (_input, p) => ({ terminals: terminalsFor(p).list() }),
+    openTerminal: async (input, p) => ({ terminal: await terminalsFor(p).open(input.sandbox, input.size) }),
+    watchTerminal: (input, p, req) => watchTerminal(terminalsFor(p), input.terminal, req),
+    terminalInput: (input, p) => {
+      terminalsFor(p).input(input.terminal, input);
+      return { ok: true };
+    },
+    closeTerminal: (input, p) => {
+      terminalsFor(p).close(input.terminal);
+      return { closed: true };
     },
     investigations: () => ({ investigations: investigationViews() }),
     registerInvestigation: (input) => {
