@@ -1,12 +1,15 @@
-# CI on your self-hosted runners (ultra-runner, gamma, …): independent jobs run in
-# parallel across whichever runners are free.
+# CI on GitHub's own runners: independent jobs run in parallel. Galahad's repository is public, and a
+# pull request from a fork runs its own copy of a workflow, so no job here asks for a runner of the
+# owner's: a stranger's code must never reach the owner's machines (the organisation's runner group
+# refuses public repositories as well, and is left that way). GitHub's runners are free for a public
+# repository.
 #
 #  typecheck  ┐
 #  test       │ every push and PR
 #  bench      │ the scorecard's quality gates (bun run bench --ci, docs/BENCHMARKS.md)
 #  site-gate  ┘
-#  sandbox    real-Docker sandbox tests; opt-in via repo variables SANDBOX_TESTS=true
-#             and (optionally) SANDBOX_RUNNER='["self-hosted","linux","docker"]'
+#  sandbox    real-Docker sandbox tests; opt-in via the repo variable SANDBOX_TESTS=true (GitHub's runner
+#             has Docker and no KVM: the microVM cases are skipped there)
 #  site       on main, after everything passes: deploy galahad.bot (when CLOUDFLARE_API_TOKEN exists)
 #
 # Hardening: read-only token, actions pinned to commit SHAs, no pull_request_target,
@@ -29,7 +32,7 @@ concurrency:
 jobs:
   typecheck:
     name: Typecheck
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +46,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,7 +65,7 @@ jobs:
   # Timings are printed and never fail here: a runner isn't the machine the baseline was taken on.
   bench:
     name: Scorecard (quality gates)
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +81,7 @@ jobs:
 
   site-gate:
     name: Site gate
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,7 +96,7 @@ jobs:
     name: Sandbox (real Docker)
     needs: [typecheck, test]
     if: vars.SANDBOX_TESTS == 'true'
-    runs-on: ${{ fromJSON(vars.SANDBOX_RUNNER || '["self-hosted","linux"]') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,7 +115,7 @@ jobs:
     name: Deploy galahad.bot
     needs: [typecheck, test, bench, site-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: site
     steps:
