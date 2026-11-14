@@ -17,7 +17,6 @@ import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/con
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { workerAvatar } from "../ui/avatar.ts";
-import { emblem } from "../ui/emblem.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
@@ -767,7 +766,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "div",
       { class: "chat-hero" },
-      h("div", { class: "hero-mark" }, emblem({ size: 52 })),
+      // Galahad himself, as the owner drew him, at your service.
+      h("div", { class: "hero-galahad" }, workerAvatar({ id: "galahad", name: "Galahad", size: 168 })),
       h("h2", {}, startIn ? projectName(startIn) : "At your service."),
       h("p", {}, startIn ? "A new chat in this project: its instructions and memories go with every answer." : "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here."),
       canChat
