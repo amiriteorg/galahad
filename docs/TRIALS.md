@@ -141,7 +141,7 @@ Only runs at effort 1 under the baseline harness are in the table, so what diffe
 
 ## Does the harness help? ✅
 
-A **variant** is a named set of harness switches, recorded with its run: `gates` (a task's own gates run before the review), `planner-gates` (the planner may add its own), `effort` (1, 2 or 3 attempts), `skills` (his skills are offered to the planner and the engineer; a trial that offers them still teaches none), `archive` (the archive's context goes with the plan) and `revisions` (how many times work may be sent back). The named ones each differ from the `baseline` by one switch (`no-gates`, `planner-gates`, `effort-2`, `effort-3`, `skills`, `no-archive`, `no-revisions`; `bare` turns everything off); your own is spelled `mine:gates=off,skills=on`.
+A **variant** is a named set of harness switches, recorded with its run: `gates` (a task's own gates run before the review), `planner-gates` (the planner may add its own), `effort` (1, 2 or 3 attempts), `skills` (his skills are offered to the planner and the engineer; a trial that offers them still teaches none), `archive` (the archive's context goes with the plan), `revisions` (how many times work may be sent back) and `engram` (the engineer is given the sandbox's notes store: below). The named ones each differ from the `baseline` by one switch (`no-gates`, `planner-gates`, `effort-2`, `effort-3`, `skills`, `no-archive`, `no-revisions`, `engram`; `bare` turns everything off); your own is spelled `mine:gates=off,skills=on`. A run recorded before a switch existed reads with that switch off, which is what it was run with.
 
 `galahad trial ab baseline no-gates --suite agentic` runs **the same seeded tasks under both** and says, by the rule below:
 
@@ -150,6 +150,16 @@ A **variant** is a named set of harness switches, recorded with its run: `gates`
 - **what each cost**: tokens and money a trial, and a point; and **what each point gained cost** ("each point effort-3 gained cost 560k more tokens"), or that the extra was spent for nothing.
 
 `galahad trial compare <run> <run>` does the same for two recorded runs.
+
+**The notes store.** `galahad trial ab baseline engram --suite agentic` measures what [Engram](HIVEMIND.md#a-notes-store-the-harness-can-ask-engram) costs a task. Under `engram` a trial's quest asks its sandbox for the pinned binary, tells the engineer the store's two shell commands and how far to trust a note (about 200 words in its briefing), and runs the quest's commands with the store's place and project said. The sandbox the hidden tests run in is asked nothing and given nothing.
+
+| Question | Can a run answer it? |
+|---|---|
+| What does the store cost a task, and does it distract? | **Yes, for the engineer's own loop**: tokens a point and score, with and without, on the same seeds. Every trial starts in a fresh sandbox with an empty store, so this is the cost side alone, and the first search of every trial answers "unknown project" |
+| The same for OpenCode, Hermes, Claude Code and Codex | **No.** The suite runs the engineer's own loop only |
+| Does remembered knowledge of a repository help? | **No, by design.** Every task is drawn from a seed so that nothing can be remembered, and every trial gets a fresh sandbox |
+
+A sandbox whose image has no pinned Engram cannot measure the variant: the trial is recorded as crashed, with that as its note, never run without the store and scored as with it. The workshop image holds Engram once rebuilt (`galahad sandbox build`); the Lab's does not, so the variant is for the agentic suite. What would say whether notes help is a second visit to the same repository with the store kept, which nothing here does yet.
 
 ## Rules that keep the numbers honest
 
