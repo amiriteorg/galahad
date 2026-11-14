@@ -197,7 +197,15 @@ export const routes = {
   teamWorkspace: { method: "POST", path: "/api/team/workspace", scope: "sandbox", input: z.strictObject({ id: z.string().min(1).max(32) }) },
   provisionTeammate: {
     method: "POST", path: "/api/team/provision", scope: "fleet:admin",
-    input: z.strictObject({ id: z.string().min(1).max(32), on: NodeRef.optional(), cpus: z.number().min(0.25).max(64).default(1), memoryGb: z.number().min(0.25).max(512).default(2), diskGb: z.number().int().min(1).max(2048).default(20) }),
+    input: z.strictObject({
+      id: z.string().min(1).max(32), on: NodeRef.optional(), cpus: z.number().min(0.25).max(64).default(1), memoryGb: z.number().min(0.25).max(512).default(2), diskGb: z.number().int().min(1).max(2048).default(20),
+      /**
+       * What the squire's VM can reach: `online` (the internet and the model gateway: the owner's word is that
+       * squires can use the internet) or `gateway` (the model gateway and nothing else). Set when the VM is made:
+       * a microVM's network can't be changed afterwards.
+       */
+      network: z.enum(["online", "gateway"]).default("online"),
+    }),
   },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
@@ -308,6 +316,11 @@ export const routes = {
        * use is counted against it. Only his own quests (yours from a terminal, a loop's): never an agent's.
        */
       quest: z.strictObject({ id: z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/), goal: z.string().min(1).max(4000) }).optional(),
+      /**
+       * This call is coding work (a quest's planner, engineer or reviewer): a coding plan's models may answer
+       * it, called as Galahad. Without it a plan's models are passed over, as for any talk with him.
+       */
+      coding: z.boolean().optional(),
     }),
   },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */

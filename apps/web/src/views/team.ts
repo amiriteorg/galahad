@@ -5,7 +5,7 @@ import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { activeTeamWork, HANDLE_PATTERN, removalPlan, takenHandles, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type TeamTab } from "../lib/team.ts";
+import { activeTeamWork, HANDLE_PATTERN, HARNESS, harnessNote, removalPlan, takenHandles, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type HarnessStatus, type TeamTab } from "../lib/team.ts";
 import { relativeTime } from "../lib/time.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, dot, empty, errorState, field, section, skeletonRows } from "../ui/controls.ts";
@@ -20,12 +20,11 @@ import { openConsole } from "./sandboxes.ts";
 /* Team conversations and work belong to the node. Polling only observes them;
  * leaving a room never stops a teammate. Unsaved drafts stay in memory, never storage. */
 const drafts = new Map<string, string>();
-const HARNESS: Record<TeamHarness, string> = { native: "Galahad", opencode: "OpenCode", hermes: "Hermes Agent" };
 const WORK_TONE = { queued: "neutral", running: "accent", done: "ok", failed: "danger", stopped: "neutral", interrupted: "warn" } as const;
 interface WorkspaceStatus {
   workspace: SandboxView | null;
   error?: string;
-  harnesses?: { id: string; ready: boolean; reason?: string }[];
+  harnesses?: HarnessStatus[];
 }
 
 export const teamView: View = (root, ctx, { scope, opts }) => {
@@ -60,7 +59,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   const composer = h("form", { class: "composer", onsubmit: (event: Event) => { event.preventDefault(); void deliver(); } }, input,
     h("div", { class: "composer-bar" }, icon("shield-check", { size: 14, class: "subtle" }), composerHint, send));
   const composerWrap = h("div", { class: "team-composer", hidden: true }, status, problem, composer);
-  const main = h("section", { class: "team-main", "aria-label": "Galahad's team workspace" }, head, tabs, notice, content, composerWrap);
+  const main = h("section", { class: "team-main", "aria-label": "Galahad's squires" }, head, tabs, notice, content, composerWrap);
   const layout = h("div", { class: `team-layout${roomId ? " has-room" : ""}` }, nav, main);
   replace(root, layout);
   replace(nav, h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind")), skeletonRows(3));
@@ -112,19 +111,19 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     id.addEventListener("input", () => appearance.refreshIdentity());
     // A job Galahad wrote is his brief to this worker, and is told to it as his. Changing it here makes it yours.
     const author = existing?.instructionsBy && existing.instructionsBy !== "owner" ? (existing.instructionsBy === "galahad" ? "Galahad" : nameOf(existing.instructionsBy)) : null;
-    editor(existing ? `Edit ${existing.name}` : "New teammate", "A persistent worker in Galahad's hivemind, with a name and a lasting job.", [
+    editor(existing ? `Edit ${existing.name}` : "New squire", "A persistent squire in Galahad's hivemind, with a name and a lasting job.", [
       appearance.element,
       existing && author ? callout("info", `${author} wrote this job when making ${existing.name}, and it is told to ${existing.name} as ${author}'s brief. Change its words here and the instructions are yours.`, { title: `Made by ${author}` }) : null,
-      field("Name", name), field("Handle", id, { hint: "Used to address this teammate. It stays the same after a rename." }),
+      field("Name", name), field("Handle", id, { hint: "Used to address this squire. It stays the same after a rename." }),
       field("Job and instructions", instructions, { hint: "No keys or passwords. Those belong in the vault." }),
       field("Repository (optional)", repository, { hint: "An HTTPS GitHub repository. Tasks get their own worktrees in the VM." }),
-      h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it. Workspace checks show what's ready." }), field("Model role", role, { hint: "The role selects models from your Models settings." })),
+      h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the squire's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: "The role selects models from your Models settings." })),
       field("Daily turn and job budget", dailyTurns, { hint: "Maximum reply turns and jobs per day, not a money limit. Zero holds new work." }),
       h("label", { class: "row" }, enabled, h("span", {}, "Enabled")),
-    ], existing ? "Save teammate" : "Create teammate", async () => {
+    ], existing ? "Save squire" : "Create squire", async () => {
       if (findSecrets(instructions.value).length) throw new Error("Instructions contain something that looks like a secret. Keep it in the vault.");
       await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
-      toast(existing ? "Teammate saved" : "Teammate created");
+      toast(existing ? "Squire saved" : "Squire created");
     });
   }
 
@@ -138,11 +137,11 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       box.addEventListener("change", () => box.checked ? selected.add(person.id) : selected.delete(person.id));
       return h("label", { class: "team-member-choice" }, box, avatar(person), h("span", {}, person.name, h("span", { class: "meta" }, person.role)));
     }));
-    editor(existing ? "Room settings" : "New room", "Galahad's workers share this conversation and coordinate within its reply budget.", [
-      field("Name", name), h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Teammates"), choices),
+    editor(existing ? "Room settings" : "New room", "Galahad's squires share this conversation and coordinate within its reply budget.", [
+      field("Name", name), h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Squires"), choices),
       field("Reply budget per conversation chain", budget, { hint: "Includes autonomous handoffs. A new message from you starts a new chain." }),
     ], existing ? "Save room" : "Create room", async () => {
-      if (!selected.size) throw new Error("Choose at least one teammate.");
+      if (!selected.size) throw new Error("Choose at least one squire.");
       const result = await ctx.api.post<{ room: TeamRoom }>("/api/team/rooms", { ...(existing ? { id: existing.id, direct: existing.direct } : {}), name: name.value.trim(), members: [...selected], turnBudget: Number(budget.value) });
       goRoom(result.room.id);
     });
@@ -183,7 +182,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
 
   function editMemory(person: Teammate): void {
     const text = h("textarea", { class: "input", rows: 14, maxlength: TEAM_LIMITS.memory }, person.memory);
-    editor(`${person.name}'s working notes`, "Local execution context for this worker. Shared knowledge belongs to Galahad's Memory.", [field("Working notes", text, { hint: "Keep task context here. No credentials." })], "Save notes", async () => {
+    editor(`${person.name}'s working notes`, "Local execution context for this squire. Shared knowledge belongs to Galahad's Memory.", [field("Working notes", text, { hint: "Keep task context here. No credentials." })], "Save notes", async () => {
       if (findSecrets(text.value).length) throw new Error("This looks like it contains a secret. Keep it in the vault.");
       await ctx.api.post("/api/team/memory", { id: person.id, text: text.value });
     });
@@ -203,7 +202,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       box.addEventListener("change", () => box.checked ? dependencies.add(task.id) : dependencies.delete(task.id));
       return h("label", { class: "row" }, box, h("span", {}, task.title), badge(task.status, WORK_TONE[task.status]));
     }));
-    editor(copy ? "Run this task again" : "New task", "A teammate works in their own workspace. Independent tasks can run in parallel.", [
+    editor(copy ? "Run this task again" : "New task", "A squire works in its own workspace. Independent tasks can run in parallel.", [
       field("Title", title), field("Assigned to", assignee), field("Goal", goal),
       candidates.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Wait for these tasks"), choices) : null,
       field("Verification commands", gates, { hint: "One shell command per line, up to 16. These run inside the workspace to check the result." }),
@@ -222,11 +221,14 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     const cpus = h("input", { class: "input", type: "number", min: 1, max: 64, step: 1, value: 2, required: true });
     const memory = h("input", { class: "input", type: "number", min: 1, max: 256, step: 1, value: 4, required: true });
     const disk = h("input", { class: "input", type: "number", min: 1, max: 2048, step: 1, value: 20, required: true });
+    // What the VM can reach is chosen when it is made (a microVM's network can't be changed afterwards).
+    const network = h("select", { class: "select" }, h("option", { value: "online" }, "The internet, and Galahad's model gateway"), h("option", { value: "gateway" }, "Galahad's model gateway only"));
     editor(`Workspace for ${person.name}`, "Provision a persistent microVM on a capable fleet node. Provisioning fails if a VM isn't available.", [
       field("Machine", host), h("div", { class: "team-form-grid" }, field("CPUs", cpus), field("Memory (GB)", memory), field("Disk (GB)", disk, { hint: "Requires the host's workspace helper. Otherwise disk is unlimited." })),
+      field("It can reach", network, { hint: "Set when the VM is made. Online, it can fetch packages and sign a coding tool in to its own account; whatever is kept in the VM can then leave it." }),
       callout("info", "The workspace keeps its files between tasks. Model access goes through the gateway; keys stay outside the VM."),
     ], person.workspace ? "Check / provision VM" : "Provision VM", async () => {
-      const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView | null }>("/api/team/provision", { id: person.id, ...(host.value ? { on: host.value } : {}), cpus: Number(cpus.value), memoryGb: Number(memory.value), diskGb: Number(disk.value) });
+      const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView | null }>("/api/team/provision", { id: person.id, ...(host.value ? { on: host.value } : {}), cpus: Number(cpus.value), memoryGb: Number(memory.value), diskGb: Number(disk.value), network: network.value });
       workspaces.set(person.id, { workspace: result.workspace });
       selectedWorkspace = person.id;
       toast(result.workspace ? "Workspace ready" : "Workspace saved; checking status");
@@ -242,8 +244,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     navVersion = version;
     const rooms = [...data.rooms].filter((item) => !item.direct).sort((a, b) => b.updatedAt - a.updatedAt);
     keepPlace(nav, () => replace(nav,
-      h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind"), canEdit ? button("New teammate", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => editTeammate() }) : null),
-      !canEdit ? h("p", { class: "team-nav-note" }, "Read-only on this device. Sending work and changing the team need fleet:admin access on an owner device.") : null,
+      h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind"), canEdit ? button("New squire", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => editTeammate() }) : null),
+      !canEdit ? h("p", { class: "team-nav-note" }, "Read-only on this device. Sending work and changing his squires need fleet:admin access on an owner device.") : null,
       h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("chat") }, h("span", { class: "avatar agent" }, icon("mark", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Galahad"), h("span", { class: "meta" }, "One mind · your main conversation"))),
       ctx.can("mind:read") ? h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("world") }, h("span", { class: "avatar" }, icon("landscape", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Open SANDBOX"), h("span", { class: "meta" }, "His home, projects and builds"))) : null,
       ctx.can("mind:read") ? h("button", { class: "team-nav-row", type: "button", onclick: () => ctx.navigate("memory") }, h("span", { class: "avatar" }, icon("memory", { size: 17 })), h("span", { class: "grow" }, h("span", { class: "strong" }, "Shared Memory"), h("span", { class: "meta" }, "Galahad's knowledge"))) : null,
@@ -255,10 +257,10 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         const job = person.instructions.split("\n")[0]?.slice(0, 80) || person.role;
         return h("button", { class: "team-nav-row", type: "button", "data-key": `person:${person.id}`, "aria-current": directRoom?.id === roomId ? "true" : null, onclick: () => void direct(person) }, avatar(person), h("span", { class: "grow" }, h("span", { class: "strong ellipsis" }, person.name), h("span", { class: "meta ellipsis" }, state.text === "Ready" ? (maker ? `Made by ${maker} · ${job}` : job) : state.text)), dot(state.tone, { live: state.live, label: state.text }));
       }),
-      !data.teammates.length ? h("div", { class: "team-nav-note stack" }, h("p", {}, "Give one of Galahad's persistent workers a name and a lasting job."), canEdit ? button("Create teammate", { variant: "primary", size: "sm", icon: "plus", onClick: () => editTeammate() }) : null) : null,
+      !data.teammates.length ? h("div", { class: "team-nav-note stack" }, h("p", {}, "Give one of Galahad's squires a name and a lasting job."), canEdit ? button("Create squire", { variant: "primary", size: "sm", icon: "plus", onClick: () => editTeammate() }) : null) : null,
       h("div", { class: "team-nav-label" }, "Rooms", h("span", { class: "spacer" }), canEdit ? button("New room", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => editRoom() }) : null),
       ...rooms.map((item) => h("button", { class: "team-nav-row", type: "button", "data-key": `room:${item.id}`, "aria-current": item.id === roomId ? "true" : null, onclick: () => goRoom(item.id) }, h("span", { class: "avatar" }, icon("hash", { size: 16 })), h("span", { class: "grow" }, h("span", { class: "strong ellipsis" }, item.name), h("span", { class: "meta ellipsis" }, item.paused ? "Paused" : item.members.map(nameOf).join(", "))), item.paused ? icon("pause", { size: 13, class: "subtle" }) : null)),
-      !rooms.length ? h("p", { class: "team-nav-note" }, "Bring teammates together in a room.") : null,
+      !rooms.length ? h("p", { class: "team-nav-note" }, "Bring squires together in a room.") : null,
       h("div", { class: "team-nav-foot" }, icon("server", { size: 13 }), h("span", {}, `Kept on ${ctx.whoami.nodeName}`)),
     ));
   }
@@ -282,7 +284,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       canChat && active.length ? button("Stop room work", { variant: "ghost", size: "sm", iconOnly: true, icon: "stop", onClick: () => void control({ room: currentRoom.id, action: "stop" }) }) : null,
     ));
     keepPlace(tabs, () => replace(tabs, ...(["chat", "work", "workspace"] as TeamTab[]).map((value) => h("button", { class: "team-tab", type: "button", "data-key": `tab:${value}`, "aria-current": tab === value ? "page" : null, onclick: () => goRoom(currentRoom.id, value) }, value === "chat" ? "Conversation" : value === "work" ? `Work${currentRoom.tasks.length ? ` · ${currentRoom.tasks.length}` : ""}` : "Workspace"))));
-    composerHint.textContent = currentRoom.paused ? "Room paused · messages are kept" : active.length ? "Busy teammates reply when their current work ends" : `Up to ${currentRoom.turnBudget} replies per chain`;
+    composerHint.textContent = currentRoom.paused ? "Room paused · messages are kept" : active.length ? "Busy squires reply when their current work ends" : `Up to ${currentRoom.turnBudget} replies per chain`;
     input.placeholder = person ? `Message ${person.name}…` : `Message ${currentRoom.name}…`;
     input.setAttribute("aria-label", person ? `Message ${person.name}` : `Message ${currentRoom.name}`);
     composerWrap.hidden = !canChat || tab !== "chat";
@@ -307,7 +309,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         return h("article", { class: `team-message${owner ? " owner" : ""}`, "data-key": message.id, "aria-label": `${speaker} said` },
           owner ? null : message.speaker === "galahad" ? h("span", { class: "avatar agent", "aria-hidden": "true" }, icon("mark", { size: 20 })) : workerAvatar({ id: message.speaker, name: speaker, profile: personOf(message.speaker)?.avatar, still: true }), h("div", { class: "team-message-body" }, h("div", { class: "team-message-by" }, h("strong", {}, speaker), h("time", { datetime: new Date(message.createdAt).toISOString(), title: new Date(message.createdAt).toLocaleString() }, relativeTime(message.createdAt))), h("div", { class: owner ? "team-owner-text" : "md" }, owner ? message.text : renderMarkdown(message.text))));
       }),
-      !messages.length ? empty({ icon: "chat", title: room.direct ? `Talk with ${nameOf(room.members[0] ?? "")}` : `Welcome to ${room.name}`, body: room.direct ? "Give your teammate a job, share context, or ask a question." : "Give the team a goal. They can talk to you and each other within this room's reply budget.", compact: true }) : null,
+      !messages.length ? empty({ icon: "chat", title: room.direct ? `Talk with ${nameOf(room.members[0] ?? "")}` : `Welcome to ${room.name}`, body: room.direct ? "Give your squire a job, share context, or ask a question." : "Give his squires a goal. They can talk to you and each other within this room's reply budget.", compact: true }) : null,
     ));
     if (nearEnd || !previous) content.scrollTop = content.scrollHeight;
     else content.scrollTop = scroll;
@@ -323,7 +325,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         if (!tasks.length) return [];
         return [section(state === "running" ? "In progress" : state[0]!.toUpperCase() + state.slice(1), { count: String(tasks.length) }, h("div", { class: "stack" }, ...tasks.map(taskCard)))];
       }),
-      !currentRoom.tasks.length ? empty({ icon: "layers", title: "No assignments yet", body: "Create a task with a clear goal. Choose a teammate, add dependencies, and say how the result should be checked.", compact: true }) : null,
+      !currentRoom.tasks.length ? empty({ icon: "layers", title: "No assignments yet", body: "Create a task with a clear goal. Choose a squire, add dependencies, and say how the result should be checked.", compact: true }) : null,
     )));
   }
 
@@ -372,32 +374,32 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     if (!people.some((person) => person.id === selectedWorkspace)) selectedWorkspace = people[0]?.id ?? "";
     const person = people.find((candidate) => candidate.id === selectedWorkspace);
     // A room whose teammates have all left it (the last one was removed) has no workspace to show.
-    if (!person) { replace(content, empty({ icon: "sandbox", title: "Nobody is in this room", body: "Add teammates to it in the room's settings.", compact: true })); return; }
+    if (!person) { replace(content, empty({ icon: "sandbox", title: "Nobody is in this room", body: "Add squires to it in the room's settings.", compact: true })); return; }
     const known = workspaces.get(person.id);
     const workspace = known?.workspace;
-    const chooser = h("select", { class: "select", "aria-label": "Teammate workspace" }, ...people.map((candidate) => h("option", { value: candidate.id, selected: candidate.id === person.id }, candidate.name)));
+    const chooser = h("select", { class: "select", "aria-label": "Squire's workspace" }, ...people.map((candidate) => h("option", { value: candidate.id, selected: candidate.id === person.id }, candidate.name)));
     chooser.addEventListener("change", () => { selectedWorkspace = chooser.value; renderWorkspace(); void refreshWorkspace(chooser.value); });
     keepPlace(content, () => replace(content, h("div", { class: "team-panel stack loose" },
       h("div", { class: "row between wrap" }, h("h3", {}, `${person.name}'s workspace`), people.length > 1 ? chooser : null),
       h("div", { class: "team-person-summary" }, avatar(person, true, 56), h("div", { class: "grow" }, h("strong", {}, person.name), h("p", { class: "small muted" }, person.instructions || "No instructions yet."), h("div", { class: "meta" }, [HARNESS[person.harness], person.role, `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")), person.repository ? h("a", { class: "tiny mono", href: person.repository, target: "_blank", rel: "noopener noreferrer" }, person.repository.replace("https://github.com/", "")) : null), canEdit ? button("Edit", { size: "sm", icon: "edit", onClick: () => editTeammate(person) }) : null),
-      h("div", { class: "row wrap" }, canEdit ? button(person.enabled ? "Pause teammate" : "Resume teammate", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }) : null, canEdit ? button("Working notes", { size: "sm", icon: "memory", onClick: () => editMemory(person) }) : null, canEdit ? button("Room budget", { size: "sm", icon: "settings", onClick: () => room && editRoom(room) }) : null, canEdit ? button("Remove teammate", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeTeammate(person) }) : null),
+      h("div", { class: "row wrap" }, canEdit ? button(person.enabled ? "Pause squire" : "Resume squire", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }) : null, canEdit ? button("Working notes", { size: "sm", icon: "memory", onClick: () => editMemory(person) }) : null, canEdit ? button("Room budget", { size: "sm", icon: "settings", onClick: () => room && editRoom(room) }) : null, canEdit ? button("Remove squire", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeTeammate(person) }) : null),
       known?.error ? callout("warn", known.error, { title: "Workspace status unavailable", actions: button("Check again", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }) }) : null,
       workspace ? h("div", { class: "card" }, h("div", { class: "card-body stack" },
         h("div", { class: "row wrap" }, icon("sandbox"), h("strong", {}, workspace.name), badge(workspace.status), badge(workspace.isolation === "vm" ? "MicroVM" : "Container", workspace.isolation === "vm" ? "ok" : "warn")),
         h("p", { class: "small muted" }, `On ${workspace.node} · ${workspace.cpus} CPUs · ${workspace.memoryGb} GB memory · ${workspace.disk ? `${workspace.disk.limitGb} GB disk limit` : "Unlimited disk"} · ${workspace.network}`),
         h("div", { class: "row wrap" }, ctx.can("sandbox") ? button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, workspace, person.workspace?.node ?? null) }) : null, button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) })),
       )) : h("div", { class: "team-workspace-empty" }, icon("sandbox", { size: 30 }), h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
-        h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this worker a persistent VM for code, files, and tools. Its job and working notes remain part of Galahad's team."),
+        h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this squire a persistent VM for code, files, and tools. Its job and working notes remain part of Galahad's hivemind."),
         canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provision(person) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device.")),
-      known?.harnesses?.length ? section("Harness readiness", {}, h("div", { class: "card" }, h("div", { class: "rows" }, ...known.harnesses.map((harness) => h("div", { class: "item" }, icon(harness.ready ? "check-circle" : "alert", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, HARNESS[harness.id as TeamHarness] ?? harness.id), harness.reason ? h("p", { class: "meta" }, harness.reason) : null), badge(harness.ready ? "Ready" : "Unavailable", harness.ready ? "ok" : "warn")))))) : h("p", { class: "small subtle" }, "Harness readiness is checked on the workspace host; choosing one is not proof that it is installed."),
+      known?.harnesses?.length ? section("Harness readiness", {}, h("div", { class: "card" }, h("div", { class: "rows" }, ...known.harnesses.map((harness) => h("div", { class: "item" }, icon(harness.ready ? "check-circle" : "alert", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, HARNESS[harness.id as TeamHarness] ?? harness.id), harnessNote(harness) ? h("p", { class: "meta" }, harnessNote(harness)) : null), badge(harness.ready ? "Ready" : "Unavailable", harness.ready ? "ok" : "warn")))))) : h("p", { class: "small subtle" }, "Harness readiness is checked on the workspace host; choosing one is not proof that it is installed or signed in."),
     )));
   }
 
   function renderWelcome(): void {
     replace(head); replace(tabs); composerWrap.hidden = true;
-    replace(content, h("div", { class: "team-welcome" }, icon("fleet", { size: 36 }), h("h2", {}, snapshot?.teammates.length ? "Galahad's hivemind" : "Galahad's first worker"),
-      h("p", {}, snapshot?.teammates.length ? "One shared mind, with persistent workers. Talk directly, bring them into rooms, and follow the work. The SANDBOX is Galahad's home." : "Galahad is a hivemind. Give his workers names and lasting jobs, bring them together in rooms, and give each a workspace."),
-      canEdit ? h("div", { class: "row wrap" }, button("New teammate", { variant: "primary", icon: "plus", onClick: () => editTeammate() }), snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom() }) : null) : null,
+    replace(content, h("div", { class: "team-welcome" }, icon("fleet", { size: 36 }), h("h2", {}, snapshot?.teammates.length ? "Galahad's hivemind" : "Galahad's first squire"),
+      h("p", {}, snapshot?.teammates.length ? "One shared mind, with persistent squires. Talk directly, bring them into rooms, and follow the work. The SANDBOX is Galahad's home." : "Galahad is a hivemind. Give his squires names and lasting jobs, bring them together in rooms, and give each a workspace."),
+      canEdit ? h("div", { class: "row wrap" }, button("New squire", { variant: "primary", icon: "plus", onClick: () => editTeammate() }), snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom() }) : null) : null,
       ctx.can("mind:read") ? button("Open SANDBOX", { variant: "ghost", icon: "landscape", onClick: () => ctx.navigate("world") }) : null,
     ));
   }
@@ -453,8 +455,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     } catch (error) {
       if (scope.disposed || isAbort(error)) return;
       if (!snapshot) {
-        replace(content, isUnavailable(error) ? empty({ icon: "fleet", title: "Team isn't available here", body: "This node doesn't provide the team workspace yet.", actions: button("Try again", { onClick: () => void load(true) }) }) : errorState("Couldn't load your team", error, () => void load(true)));
-        replace(nav, h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind")), errorState("Couldn't load your team", error, () => void load(true)));
+        replace(content, isUnavailable(error) ? empty({ icon: "fleet", title: "Squires isn't available here", body: "This node doesn't provide Squires yet.", actions: button("Try again", { onClick: () => void load(true) }) }) : errorState("Couldn't load his squires", error, () => void load(true)));
+        replace(nav, h("div", { class: "team-nav-head" }, h("h1", {}, "Galahad's hivemind")), errorState("Couldn't load his squires", error, () => void load(true)));
       }
       else { notice.hidden = false; replace(notice, icon("offline", { size: 14 }), h("span", { class: "grow" }, "Updates paused. What you see may be out of date."), button("Retry", { size: "sm", onClick: () => void load(true) })); }
     } finally { loading = false; }

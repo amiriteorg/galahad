@@ -1,6 +1,7 @@
 import type { ProviderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { planLine, roleParts } from "../lib/text.ts";
 import type { PresetView, RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, copyText, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -38,9 +39,14 @@ export const modelsView: View = (root, ctx, { scope }) => {
 
   /** A role in one row: who it is, the models it hires in order, and Change. */
   function roleRow(role: string, spec: RoleSpec): HTMLElement {
-    const chain = spec.models.length
-      ? h("span", { class: "mono small ellipsis", title: spec.models.map((m, i) => `${i + 1}. ${m}`).join("\n") }, spec.models[0], spec.models.length > 1 ? h("span", { class: "subtle" }, ` +${spec.models.length - 1} fallback${spec.models.length > 2 ? "s" : ""}`) : null)
-      : h("span", { class: "small", style: "color:var(--warn)" }, "No model: this role can't answer");
+    // His own models answer, in order; a coding plan's do coding (his quests, his squires' work) and nothing else.
+    const { own, plans } = roleParts(spec.models, presets);
+    const tools = plans.length ? h("span", { class: "subtle" }, `${own.length ? " · " : ""}coding: ${plans.join(", ")}`) : null;
+    const chain = own.length
+      ? h("span", { class: "mono small ellipsis", title: spec.models.map((m, i) => `${i + 1}. ${m}`).join("\n") }, own[0], own.length > 1 ? h("span", { class: "subtle" }, ` +${own.length - 1} fallback${own.length > 2 ? "s" : ""}`) : null, tools)
+      : plans.length
+        ? h("span", { class: "mono small ellipsis", title: "A coding plan answers coding work only" }, tools, h("span", { class: "subtle" }, " · nothing answers outside coding"))
+        : h("span", { class: "small", style: "color:var(--warn)" }, "No model: this role can't answer");
     return h(
       "div",
       { class: "item center role-row" },
@@ -64,6 +70,12 @@ export const modelsView: View = (root, ctx, { scope }) => {
     const save = button("Save", { variant: "primary", icon: "check" });
 
     function render(focus?: string): void {
+      // (Which of them answer, and in what order: his own. A coding plan's do coding, in their own order.)
+      const { own } = roleParts(models, presets);
+      const part = (ref: string): string => {
+        const at = own.indexOf(ref);
+        return at < 0 ? "a coding plan: it does coding (his quests, his squires' work) and answers nothing else" : at === 0 ? "answers first" : `fallback ${at}`;
+      };
       replace(
         list,
         ...(models.length
@@ -72,7 +84,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
                 "div",
                 { class: "r-item", role: "listitem" },
                 h("span", { class: "r-index", "aria-hidden": "true" }, String(i + 1)),
-                h("span", { class: "mono small grow ellipsis", title: `${ref} · ${i === 0 ? "answers first" : `fallback ${i}`}` }, ref),
+                h("span", { class: "mono small grow ellipsis", title: `${ref} · ${part(ref)}` }, ref),
                 button(`Move ${ref} up`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-up", disabled: i === 0, onClick: () => move(i, -1) }),
                 button(`Move ${ref} down`, { variant: "ghost", size: "sm", iconOnly: true, icon: "chevron-down", disabled: i === models.length - 1, onClick: () => move(i, 1) }),
                 button(`Remove ${ref}`, { variant: "ghost", size: "sm", iconOnly: true, icon: "x", onClick: () => remove(i) }),
@@ -148,6 +160,8 @@ export const modelsView: View = (root, ctx, { scope }) => {
     const modelsBox = h("div");
     const local = /^https?:\/\/(127\.0\.0\.1|localhost)/.test(p.baseUrl);
     const keyBadge = p.hasKey ? badge("key sealed", "ok", "check") : local ? badge("local", "accent") : badge("no key", "warn", "alert");
+    // A coding plan (the node's presets say which): its key is for coding tools, and its vendor says which.
+    const plan = presets.find((preset) => preset.id === p.id)?.plan;
     const list = button("List models", { size: "sm", variant: "ghost", icon: "models" });
     list.addEventListener("click", () =>
       void busy(list, async () => {
@@ -180,8 +194,11 @@ export const modelsView: View = (root, ctx, { scope }) => {
       h(
         "div",
         { class: "grow" },
-        h("div", { class: "row wrap" }, h("span", { class: "strong" }, p.id), badge(p.kind === "anthropic" ? "Anthropic API" : "OpenAI-compatible", "neutral"), keyBadge),
+        h("div", { class: "row wrap" }, h("span", { class: "strong" }, p.id), badge(p.kind === "anthropic" ? "Anthropic API" : "OpenAI-compatible", "neutral"), keyBadge, plan ? badge("coding plan", "accent") : null),
         h("div", { class: "meta" }, h("span", { class: "mono" }, p.baseUrl), p.label ? h("span", {}, p.label) : null, p.secret ? h("span", {}, "key: ", h("span", { class: "mono" }, p.secret)) : null),
+        plan
+          ? h("div", { class: "meta" }, h("span", {}, `${plan.name}: he and his squires code on it, as Galahad, and their coding tools use it. His talk with you never does. ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
+          : null,
         modelsBox,
       ),
       h(
@@ -284,7 +301,9 @@ function openAddProvider(ctx: Ctx, presets: PresetView[], onDone: () => Promise<
     kind = chosen.kind;
     kindControl.set(chosen.kind);
     url.value = chosen.baseUrl;
-    replace(status, chosen.note ? callout("info", chosen.note) : null);
+    // A coding plan says what it is for (and what its vendor says of it) before it is saved.
+    const plan = planLine(chosen);
+    replace(status, plan ? callout("info", [plan, " ", chosen.plan!.says], { title: chosen.plan!.name }) : null, chosen.note ? callout("info", chosen.note) : null);
   });
   const save = button("Save provider", { variant: "primary", type: "submit", icon: "check" });
   const form = h(

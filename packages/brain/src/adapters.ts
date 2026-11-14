@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, Usage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import { keyHeaders, type ResolvedProvider, withoutRedirects } from "./providers.ts";
+import { keyHeaders, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -271,7 +271,8 @@ export function openAIConversation(input: CompletionInput): Conversation {
       const post = (askUsage: boolean): Promise<Response> =>
         (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
           method: "POST",
-          headers: { "content-type": "application/json", ...keyHeaders(input.provider) },
+          // (To a coding plan he says who he is: selfHeaders.)
+          headers: { "content-type": "application/json", ...keyHeaders(input.provider), ...selfHeaders(input.provider) },
           body: JSON.stringify({
             model: input.model,
             stream: true,

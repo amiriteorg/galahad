@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { fuzzyMatch, rank } from "./fuzzy.ts";
 import { type Block, type Inline, inlineText, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
 import { describeSchedule, scheduleProblem } from "./schedule.ts";
-import { detectProvider, matchRanges, parseCommand } from "./text.ts";
+import { detectProvider, detectSignIn, matchRanges, parseCommand, planLine, roleParts } from "./text.ts";
 import { countdown, duration, hlcMs, minutesLabel, relativeTime } from "./time.ts";
 
 const text = (v: string): Inline => ({ t: "text", v });
@@ -159,6 +159,37 @@ describe("text helpers", () => {
     expect(detectProvider("sk-ant-abc", presets)).toBe("anthropic");
     expect(detectProvider("sk-abc", presets)).toBe("openai");
     expect(detectProvider("nothing", presets)).toBeNull();
+  });
+
+  test("a subscription's sign-in is told from a key by what the node says of them, and is never taken for the vendor's API key", () => {
+    const presets = [{ id: "anthropic", keyPrefixes: ["sk-ant-"] }];
+    const signIns = [{ prefix: "sk-ant-oat", signIn: { vendor: "Anthropic", tool: "Claude Code", why: "A subscription's sign-in, not an API key." } }];
+    // (Fake: the form of a token from `claude setup-token`, not one.)
+    const oat = "sk-ant-oat01-FAKE-not-a-token-0000000000000000";
+    expect(detectSignIn(oat, signIns)).toEqual(signIns[0]!.signIn);
+    expect(detectSignIn("sk-ant-api03-FAKE", signIns)).toBeNull();
+    expect(detectProvider(oat, presets, signIns)).toBeNull();
+    expect(detectProvider("sk-ant-api03-FAKE", presets, signIns)).toBe("anthropic");
+    // An older node says nothing of sign-ins: its keys read as they always did.
+    expect(detectSignIn(oat, undefined)).toBeNull();
+    expect(detectProvider(oat, presets)).toBe("anthropic");
+  });
+
+  test("a coding plan is said to be one, in a line", () => {
+    expect(planLine({ id: "zai-coding", plan: { name: "GLM Coding Plan", says: "Z.ai: supported tools only.", terms: "https://docs.z.ai/legal-agreement/subscription-terms", models: ["glm-5.3"] } })).toBe(
+      "GLM Coding Plan is a coding plan: he and his squires code on it, and their coding tools use it. His talk with you never does.",
+    );
+    expect(planLine({ id: "anthropic" })).toBeNull();
+    expect(planLine(undefined)).toBeNull();
+  });
+
+  test("a role's models as he uses them: his own in order, and the plans that do coding", () => {
+    const presets = [{ id: "zai-coding", plan: { name: "GLM Coding Plan", says: "", terms: "", models: [] } }, { id: "zai" }, { id: "anthropic" }];
+    expect(roleParts(["zai-coding/glm-5.3", "anthropic/claude-opus-5-5", "zai/glm-5.3"], presets)).toEqual({ own: ["anthropic/claude-opus-5-5", "zai/glm-5.3"], plans: ["zai-coding/glm-5.3"] });
+    expect(roleParts(["anthropic/claude-opus-5-5"], presets)).toEqual({ own: ["anthropic/claude-opus-5-5"], plans: [] });
+    expect(roleParts(["zai-coding/glm-5.3"], presets)).toEqual({ own: [], plans: ["zai-coding/glm-5.3"] });
+    // A provider of your own that only starts like a plan's id is not the plan.
+    expect(roleParts(["zai-coding-mine/m"], presets)).toEqual({ own: ["zai-coding-mine/m"], plans: [] });
   });
 });
 

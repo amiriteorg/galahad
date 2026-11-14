@@ -165,7 +165,8 @@ bun galahad status          # both nodes, capabilities, online state
 Keys go into a **hidden prompt**, never on the command line and never into chat.
 
 ```sh
-bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk-orca- (OrcaRouter), sk-or- (OpenRouter)
+bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk-orca- (OrcaRouter), sk-or- (OpenRouter),
+                                       # sk-kimi- (Kimi Code) and sk-sp- (Alibaba Cloud Coding Plan)
 bun galahad key add --provider deepseek
 bun galahad key add --provider abliteration
 bun galahad key add --provider moonshot
@@ -176,6 +177,18 @@ bun galahad secret list                   # names + …last4 hints only, never v
 ```
 
 A key added on any full node is sealed into the vault and usable by every full node. Clients and tools never receive it.
+
+**Coding plans** (a flat-rate subscription with a key of its own) are added the same way, each as its own provider:
+
+```sh
+bun galahad key add --provider zai-coding     # Z.ai's GLM Coding Plan
+bun galahad key add                           # a Kimi Code key (sk-kimi-…) is recognised
+bun galahad provider presets                  # every preset; the plans are marked
+```
+
+A plan's key is for coding: its vendor's terms say so, and `key add` prints the vendor's own sentence and where it is said. Galahad and his squires are a coding tool, so they code on a plan themselves (his quests, their work), calling as Galahad, and lend it to the other coding tools in their VMs (OpenCode, Hermes) and under `galahad run`, each calling as itself. His talk with you, his loops and his heartbeat never use it. `key add` prints the roster line that puts the plan first for coding, for example `bun galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5`. [ARCHITECTURE §6](ARCHITECTURE.md) has the whole of it, and what each vendor says of its plan.
+
+A **Claude subscription's sign-in** (what `claude setup-token` prints, `sk-ant-oat…`) is not an API key, and is refused if you paste it as one: Anthropic keeps it to its own tool and its own sign-in flow. Claude Code and Codex on your own subscriptions work with Galahad as agents over MCP, each on its own sign-in (§10: `bun galahad mcp install claude --apply`).
 
 ## 6. Models and roles
 
@@ -192,19 +205,19 @@ bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 2. Run `bun galahad provider add ollama` once.
 3. The `swift` role already tries `ollama/*`, then `llamacpp/*`, then `anthropic/claude-haiku-5-5`.
 
-## 6½. Give the hivemind persistent workers
+## 6½. Give the hivemind persistent squires
 
-The whole system is Galahad. **Team** gives parts of his shared mind persistent names, jobs, rooms and DMs. Open it in the PWA paired to the node you want to keep as the controller, choose **New teammate**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a worker and brief it; he does so within a daily allowance, and Team marks it as made by him. The CLI equivalent starts with:
+The whole system is Galahad. **Squires** gives parts of his shared mind persistent names, jobs, rooms and DMs. Open it in the PWA paired to the node you want to keep as the controller, choose **New squire**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a squire and brief it; he does so within a daily allowance, and Squires marks it as made by him. The CLI equivalent starts with:
 
 ```sh
-bun galahad team add ada --name Ada --role engineer --agent native --limit 40
-bun galahad team dm ada "Help me plan the next small, verifiable improvement."
-bun galahad team
+bun galahad squires add ada --name Ada --role engineer --agent native --limit 40
+bun galahad squires dm ada "Help me plan the next small, verifiable improvement."
+bun galahad squires
 ```
 
-A worker you no longer want is paused (`bun galahad team pause teammate ada`) or removed for good (`bun galahad team remove ada`, or **Workspace → Remove teammate** in Team). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [HIVEMIND](HIVEMIND.md#removing-a-worker) has the details.
+A squire you no longer want is paused (`bun galahad squires pause squire ada`) or removed for good (`bun galahad squires remove ada`, or **Workspace → Remove squire** in Squires). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [HIVEMIND](HIVEMIND.md#removing-a-squire) has the details.
 
-Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode and Hermes must be installed by the owner in that VM before selecting them for work. Team state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin. SANDBOX remains his home, with his dog, builds and experiments.
+Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([HIVEMIND](HIVEMIND.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin. SANDBOX remains his home, with his dog, builds and experiments.
 
 ## 7. Let tools use your keys without seeing them
 

@@ -83,10 +83,35 @@ export function parseCommand(line: string): ParsedCommand {
 export interface KeyPreset {
   id: string;
   keyPrefixes?: string[];
+  /** A coding plan, when the preset is one (the node says so). */
+  plan?: { name: string; says: string; terms: string; models: string[] };
 }
 
-/** Longest matching key prefix wins (sk-orca- beats sk-). */
-export function detectProvider(key: string, presets: KeyPreset[]): string | null {
+/** A subscription's sign-in, as the node describes the ones it knows: not an API key, and never sealed as one. */
+export interface SignInForm {
+  prefix: string;
+  signIn: { vendor: string; tool: string; why: string };
+}
+
+/** What a pasted value is, when it is a subscription's sign-in and not a key (an older node names none). */
+export function detectSignIn(key: string, signIns: readonly SignInForm[] | undefined): SignInForm["signIn"] | null {
+  return signIns?.find(({ prefix }) => key.startsWith(prefix))?.signIn ?? null;
+}
+
+/** A coding plan in a line: what it is for. Null for a preset that isn't one. */
+export function planLine(preset: KeyPreset | undefined): string | null {
+  return preset?.plan ? `${preset.plan.name} is a coding plan: he and his squires code on it, and their coding tools use it. His talk with you never does.` : null;
+}
+
+/** A role's models as he uses them: his own in the roster's order (the first answers), and the coding plans' models, which do coding and answer nothing else. */
+export function roleParts(models: readonly string[], presets: readonly KeyPreset[]): { own: string[]; plans: string[] } {
+  const onPlan = (ref: string): boolean => presets.some((p) => p.plan && ref.startsWith(`${p.id}/`));
+  return { own: models.filter((ref) => !onPlan(ref)), plans: models.filter(onPlan) };
+}
+
+/** Longest matching key prefix wins (sk-orca- beats sk-). A subscription's sign-in is no provider's key. */
+export function detectProvider(key: string, presets: KeyPreset[], signIns?: readonly SignInForm[]): string | null {
+  if (detectSignIn(key, signIns)) return null;
   let best: { id: string; length: number } | null = null;
   for (const preset of presets) {
     for (const prefix of preset.keyPrefixes ?? []) {

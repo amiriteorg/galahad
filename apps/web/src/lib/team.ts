@@ -1,7 +1,17 @@
-import type { TeamDelivery, TeamMessage, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
+import type { TeamDelivery, TeamHarness, TeamMessage, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 
 export type TeamTab = "chat" | "work" | "workspace";
 export interface TeamLocation { room?: string; teamTab?: TeamTab }
+
+/** A squire's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
+ * (the vendors' own tools by their own names, in plain text). */
+export const HARNESS: Record<TeamHarness, string> = { native: "Galahad", opencode: "OpenCode", hermes: "Hermes Agent", claude: "Claude Code", codex: "Codex" };
+
+/** What the node found of one harness in a squire's VM: `on`, what it would run on there; `reason`, why it can't yet. */
+export interface HarnessStatus { id: string; ready: boolean; on?: string; reason?: string }
+
+/** The line under a harness's name: what to do so that it can work, or what it would run on. */
+export const harnessNote = (harness: HarnessStatus): string | null => harness.reason ?? (harness.on ? `Runs on ${harness.on}` : null);
 
 /** Team addresses keep the room when the page is reloaded or shared. */
 export function teamLocation(hash: string): TeamLocation {
@@ -38,7 +48,7 @@ export function teammateInitials(name: string): string {
 /** A profile ID is stable after a rename; reserved speakers are never assigned. */
 export function teammateId(name: string, taken: string[]): string {
   const cleaned = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const base = (/^[a-z]/.test(cleaned) ? cleaned : `teammate-${cleaned}`).slice(0, 28).replace(/-+$/, "") || "teammate";
+  const base = (/^[a-z]/.test(cleaned) ? cleaned : `squire-${cleaned}`).slice(0, 28).replace(/-+$/, "") || "squire";
   const used = new Set([...taken, "owner", "system", "galahad"]);
   if (!used.has(base)) return base;
   let suffix = 2;
@@ -87,7 +97,7 @@ export function removalPlan(person: Pick<Teammate, "id" | "name" | "workspace" |
 export function teamSpeaker(message: Pick<TeamMessage, "speaker" | "speakerName">, teammates: Teammate[]): string {
   if (message.speaker === "owner") return "You";
   if (message.speaker === "galahad") return "Galahad";
-  if (message.speaker === "system") return "Team activity";
+  if (message.speaker === "system") return "Squires' activity";
   return message.speakerName || teammates.find((person) => person.id === message.speaker)?.name || message.speaker;
 }
 

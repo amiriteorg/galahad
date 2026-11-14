@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
+import { NETWORKS } from "@galahad/sandbox";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -30,6 +31,8 @@ let releaseAlpha: (() => void) | undefined;
 let alphaHold: Promise<void> | undefined;
 let cleanupFailure = false;
 let dockerSilent = false;
+/** What a vendor's tool says of itself in a VM, when its bridge is asked (`--status`): by tool. */
+const toolStatus = new Map<"claude" | "codex", { code: number; stdout: string }>();
 // The worker as the SANDBOX would show it: the node's hello as it goes over the wire, read by the page's own reader.
 function worldWorker(id: string) {
   const hello = readWorldEvent(JSON.parse(JSON.stringify(daemon.world.hello())));
@@ -116,6 +119,8 @@ beforeAll(async () => {
     active.set(container, count); peak.set(container, Math.max(peak.get(container) ?? 0, count));
     try {
       if (kind === "cleanup" && cleanupFailure) return { code: 137, stdout: "", stderr: "cleanup deadline expired" };
+      const told = text.includes("--status") ? toolStatus.get(text.includes('NAME, LOGIN = "claude"') ? "claude" : "codex") : undefined;
+      if (told) return told;
       if (text.includes("write-alpha")) { alphaEntered = true; await alphaHold; }
       return { code: 0, stdout: text.includes("gate-") ? "required gate passed" : "command completed" };
     } finally { active.set(container, count - 1); }
@@ -129,7 +134,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { releaseAlpha?.(); await daemon?.stop(); model.stop(true); rmSync(root, { recursive: true, force: true }); });
 
-test("first task provisions one persistent VM; same-worker tasks serialize and verified dependencies cross workers", async () => {
+test("first task provisions one persistent VM; same-worker tasks serialize and verified dependencies cross squires", async () => {
   expect(runs).toHaveLength(0);
   expect((await snapshot()).teammates.every((member) => member.workspace === null)).toBe(true);
   alphaHold = new Promise<void>((resolve) => { releaseAlpha = resolve; });
@@ -189,6 +194,52 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
   } finally { releaseAlpha?.(); }
 }, 15000);
 
+test("harness readiness says what each would run on: a vendor's tool on its own sign-in, asked of the tool itself; otherwise the roster through the gateway, or what to do", async () => {
+  type Harness = { id: string; ready: boolean; on?: string; reason?: string };
+  const readiness = async () => Object.fromEntries((await api<{ harnesses: Harness[] }>("teamWorkspace", { id: "ada" })).harnesses.map((harness) => [harness.id, harness])) as Record<string, Harness>;
+  const told = (status: object) => JSON.stringify({ type: "status", ...status });
+  const vm = `galahad-sbx-${(await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!.id}`;
+  const before = events.length;
+  try {
+    // Idle, in a running VM. Claude Code says it is signed in there; Codex was never installed.
+    toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: true, method: "claude.ai" }) });
+    toolStatus.set("codex", { code: 1, stdout: told({ installed: false, signedIn: false }) });
+    const first = await readiness();
+    expect(Object.keys(first)).toEqual(["native", "opencode", "hermes", "claude", "codex"]);
+    expect(first.native).toEqual({ id: "native", ready: true });
+    expect(first.claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai)" });
+    expect(first.codex).toEqual({ id: "codex", ready: false, reason: "Install Codex in this squire's VM (Galahad never installs or signs in a harness)" });
+    // Each was asked once, in this squire's own VM, by its bridge's own status question.
+    const asked = events.slice(before).filter((event) => event.text.includes("--status"));
+    expect(asked.map((event) => event.target)).toEqual([vm, vm]);
+    expect(asked.every((event) => event.text.includes("def status():") && event.text.trimEnd().endsWith("--status"))).toBe(true);
+    // Not signed in, and no Anthropic-API model on the engineer's roster: what a person can do about it.
+    toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: false }) });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this squire's VM (claude auth login), or put an Anthropic-API model on the engineer's roster" });
+    // A VM that says more than the bridge's own status line is not believed.
+    toolStatus.set("claude", { code: 0, stdout: `signed in as someone\n${told({ installed: true, signedIn: "yes", method: "claude.ai", email: "squire@example.invalid" })}` });
+    const forged = await readiness();
+    expect(forged.claude!.ready).toBe(false);
+    expect(JSON.stringify(forged)).not.toContain("example.invalid");
+    // An Anthropic-API model is keyed and put on the roster now, after this VM was made: the VM's gateway token doesn't
+    // cover its provider, so it is not something this VM can run on, and readiness says that and never "ready".
+    await api("setSecret", { name: "claude-api", value: "fake-anthropic-api-key-for-tests-0000", provider: "claude-api", baseUrl: "https://claude-api.example.test" });
+    await api("setProvider", { id: "claude-api", kind: "anthropic", baseUrl: "https://claude-api.example.test", secret: "claude-api" });
+    await api("setRoster", { role: "engineer", models: ["stand-in/engineer", "claude-api/claude-opus-5-5"] });
+    toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: false }) });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this squire's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. claude-api/claude-opus-5-5 is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made" });
+    // Signed in, it runs on its sign-in all the same.
+    toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: true, method: "claude.ai" }) });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai)" });
+    // (An Anthropic-API model is not one Codex can speak to, covered or not.)
+    toolStatus.set("codex", { code: 0, stdout: told({ installed: true, signedIn: false }) });
+    expect((await readiness()).codex!.reason).toBe("Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
+  } finally {
+    toolStatus.clear();
+    await api("setRoster", { role: "engineer", models: ["stand-in/engineer"] });
+  }
+}, 15000);
+
 test("controller restart keeps the exact VM; failed old-worker cleanup blocks new credentials and work", async () => {
   const binding = (await snapshot()).teammates.find((member) => member.id === "ada")!.workspace;
   await daemon.stop(); daemon = await start();
@@ -210,7 +261,7 @@ test("controller restart keeps the exact VM; failed old-worker cleanup blocks ne
   } finally { cleanupFailure = false; }
 }, 10000);
 
-test("removing a worker that has a VM: refused until you say its workspace goes, and only from a device that may destroy one; then both go and the others carry on", async () => {
+test("removing a squire that has a VM: refused until you say its workspace goes, and only from a device that may destroy one; then both go and the others carry on", async () => {
   const bound = (await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!;
   const vms = docker.running();
   const listed = async () => (await api<{ sandboxes: SandboxView[] }>("sandboxes", {})).sandboxes.map((s) => s.id);
@@ -263,6 +314,15 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   // A VM made just before a crash, its binding never written: the worker looks unbound, and its VM is still there.
   await api("saveTeammate", { id: "sam", name: "SAM", role: "engineer" });
   const made = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "sam" })).workspace;
+  // A squire's VM can use the internet, by the owner's word: it is made online unless you say otherwise.
+  expect(made.network).toBe("online");
+  const ran = (id: string) => runs.find((args) => args[0] === "run" && args.some((arg) => arg.includes(id)))!;
+  expect(ran(made.id).filter((arg, i, all) => all[i - 1] === "--network")).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
+  await api("saveTeammate", { id: "una", name: "UNA", role: "engineer" });
+  const kept = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "una", network: "gateway" })).workspace;
+  expect(kept.network).toBe("gateway");
+  expect(ran(kept.id).filter((arg, i, all) => all[i - 1] === "--network")).toEqual([NETWORKS.gateway.name]);
+  expect(await api("removeTeammate", { id: "una", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
   await daemon.stop();
   const raw = new Database(join(home.dir, "team.db"));
   const stored = JSON.parse(raw.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("sam")!.value);
@@ -290,5 +350,5 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   expect(await api("removeTeammate", { id: "tom" })).toEqual({ removed: { id: "tom", name: "TOM" }, workspace: "left" });
   expect(docker.running()).toBe(stillThere);
   expect(await ledgered("tom")).toMatchObject({ detail: "its VM was on a node that has left the fleet; nothing there was touched" });
-  expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "lin", "sam", "tom"]);
+  expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "lin", "sam", "tom", "una"]);
 }, 20000);

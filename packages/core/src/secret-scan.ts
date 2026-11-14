@@ -15,6 +15,8 @@ const PATTERNS: [kind: string, pattern: RegExp][] = [
   ["OrcaRouter API key", /sk-orca-[A-Za-z0-9_-]{16,}/g],
   ["OpenRouter API key", /sk-or-[A-Za-z0-9_-]{20,}/g],
   ["API key (sk-…)", /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g],
+  // Zhipu's and Z.ai's keys (the GLM Coding Plan's too): an id of 32 hex digits, a dot, a secret of 16 letters and digits.
+  ["Zhipu / Z.ai API key", /\b[0-9a-f]{32}\.[A-Za-z0-9]{16}\b/g],
   ["GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g],
   ["AWS access key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/g],

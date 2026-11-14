@@ -1,5 +1,5 @@
 import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, redact } from "@galahad/core";
-import { type AgentDriver, type AgentModel, runAgent } from "./agents.ts";
+import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 
 /*
  * A quest: plan → work → independent review, in a sandbox.
@@ -490,7 +490,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           signal: deps.signal,
           sleep: pause,
           event: (event) => {
-            if (event.type === "text") emit({ type: "thought", step: steps, text: event.text, model: `${agent.driver.name} · ${model.provider}/${model.model}` });
+            if (event.type === "text") emit({ type: "thought", step: steps, text: event.text, model: `${agent.driver.name} · ${agentModelName(model)}` });
             if (event.type === "tool") {
               steps += 1;
               const command = `${event.tool}: ${event.input}`;
@@ -507,8 +507,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       if (run.status === "failed" && current + 1 < agent.models.length) {
         current += 1;
         const next = agent.models[current]!;
-        emit({ type: "retry", role: "engineer", attempt: current, error: `${model.provider}/${model.model}: ${run.error ?? "failed"}`.slice(0, 300), waitMs: 0 });
-        if (session) prompt = `Your last run stopped with an error (${(run.error ?? "").split("\n").find(Boolean) ?? "unknown"}); you're now on ${next.provider}/${next.model}. Continue the quest from where you left off.`;
+        emit({ type: "retry", role: "engineer", attempt: current, error: `${agentModelName(model)}: ${run.error ?? "failed"}`.slice(0, 300), waitMs: 0 });
+        if (session) prompt = `Your last run stopped with an error (${(run.error ?? "").split("\n").find(Boolean) ?? "unknown"}); you're now on ${agentModelName(next)}. Continue the quest from where you left off.`;
         continue;
       }
       if (run.status !== "finished") {

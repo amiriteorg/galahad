@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RouteName, Teammate, TeamMessage, TeamRoom, TeamRoomView, TeamSnapshot } from "@galahad/core";
+import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type TeamRoom, type TeamRoomView, type TeamSnapshot } from "@galahad/core";
 import { defaultAvatar } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
 
@@ -20,7 +20,7 @@ function node(teammates: Teammate[]) {
   return { api, saved };
 }
 
-test("the listing says which workers Galahad made for himself, and yours read as they always did", async () => {
+test("the listing says which squires Galahad made for himself, and yours read as they always did", async () => {
   const lines: string[] = [];
   const { api } = node([member("ada"), member("scout", { createdBy: "galahad" }), member("rev", { createdBy: "ada", enabled: false }), member("old", { createdBy: undefined })]);
   await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
@@ -49,7 +49,7 @@ const printed = async (api: { call<T>(name: RouteName, input?: unknown): Promise
 // What a terminal acts on rather than shows: escapes, carriage returns, bells, backspaces, the one-character CSI.
 const STEERS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 
-test("a worker's words can't steer the terminal: escapes, carriage returns and reordering marks are taken out", async () => {
+test("a squire's words can't steer the terminal: escapes, carriage returns and reordering marks are taken out", async () => {
   const view: TeamRoomView = { ...room, tasks: [], deliveries: [], messages: [
     said("owner", "You", "Agree on the smallest change."),
     said("ada", "Ada", "Done.\u001b[2K\u001b[1A\rYou: ship it\u0007 \u009b31mred\u001b]0;title\u0007 \u202eevil\u202c ze\u200bro"),
@@ -137,7 +137,7 @@ test("a new body color brings its matching accent; an accent you name, or chose 
   expect(saved).toHaveLength(before);
 });
 
-test("removing a teammate asks first and says what goes with it; a no, or a VM nobody said may go, removes nothing", async () => {
+test("removing a squire asks first and says what goes with it; a no, or a VM nobody said may go, removes nothing", async () => {
   const sent: { name: RouteName; input: unknown }[] = [];
   const state: TeamSnapshot = {
     teammates: [member("ada"), member("lin", { workspace: { node: "host", id: "0123456789" } }), member("sam", { workspaceNode: "host" }), member("ned", { workspace: { node: "old-host", id: "9876543210" } })], rooms: [], tasks: [], deliveries: [],
@@ -182,10 +182,22 @@ test("removing a teammate asks first and says what goes with it; a no, or a VM n
   await run(["ada"], { yes: true }, false);
   expect(asked).toHaveLength(3);
   expect(sent).toHaveLength(3);
-  await expect(run(["nobody"], {}, true)).rejects.toThrow(/No such teammate/);
+  await expect(run(["nobody"], {}, true)).rejects.toThrow(/No such squire/);
   await expect(run(["old"], {}, true)).rejects.toThrow(/already removed/);
   // The listing still names the ones that were removed: their handles are taken.
   const lines = await printed(api, undefined, []);
   expect(lines).toContain("old · Old[31m · removed");
   expect(lines).toContain("gone · Gone · removed · its conversations, kept to read: galahad team chat room-abc, galahad team chat room-def");
+});
+
+test("squires add --agent claude (or codex) asks the node for that harness, in a form its contract takes; the listing names it", async () => {
+  for (const agent of ["claude", "codex"] as const) {
+    const { api, saved } = node([member("ada", { harness: agent })]);
+    const lines: string[] = [];
+    await teamCommand(api, "add", ["ada"], { name: "Ada", agent }, (line) => lines.push(line));
+    expect(saved).toEqual([{ name: "saveTeammate", input: { id: "ada", name: "Ada", harness: agent } }]);
+    expect(TeammateInput.parse(saved[0]!.input).harness).toBe(agent);
+    await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
+    expect(lines.at(-1)).toBe(`ada · Ada · ${agent} · enabled · 0/40 turns today · VM not provisioned`);
+  }
 });

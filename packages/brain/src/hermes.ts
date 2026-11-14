@@ -1,5 +1,5 @@
 import { redact } from "@galahad/core";
-import type { AgentDriver } from "./agents.ts";
+import type { AgentDriver, AgentEvent } from "./agents.ts";
 
 /*
  * Hermes' supported ACP protocol works on v0.21.1, whose CLI predates stream-json.
@@ -261,21 +261,27 @@ if __name__ == "__main__":
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
+/** One line a bridge in the sandbox printed: its normalised event, checked and redacted (the sandbox's words are data). */
+export function readBridge(line: string): AgentEvent[] {
+  let e: any;
+  try { e = JSON.parse(line); } catch { return []; }
+  if (!e || typeof e !== "object") return [];
+  if (e.type === "session" && typeof e.id === "string" && e.id.length <= 256) return [{ type: "session", id: e.id }];
+  if (e.type === "text" && typeof e.text === "string") return [{ type: "text", text: redact(e.text) }];
+  if (e.type === "error" && typeof e.message === "string") return [{ type: "error", message: redact(e.message) }];
+  if (e.type === "tool" && [e.tool, e.input, e.output].every((v) => typeof v === "string") && typeof e.ok === "boolean") {
+    return [{ type: "tool", tool: redact(e.tool), input: redact(e.input), output: redact(e.output), ok: e.ok }];
+  }
+  if (e.type === "tokens" && [e.input, e.output].every((v) => Number.isSafeInteger(v) && v >= 0)) return [{ type: "tokens", input: e.input, output: e.output }];
+  return [];
+}
+
 export const HERMES: AgentDriver = {
   name: "hermes",
+  title: "Hermes",
+  kind: "openai",
+  check: "hermes acp --check",
   files: () => ({ "/work/.agent/hermes-acp.py": HERMES_ACP_BRIDGE }),
   command: (model, session) => `python3 /work/.agent/hermes-acp.py --provider ${quote(model.provider)} --model ${quote(model.model)}${session ? ` --session ${quote(session)}` : ""}`,
-  read(line) {
-    let e: any;
-    try { e = JSON.parse(line); } catch { return []; }
-    if (!e || typeof e !== "object") return [];
-    if (e.type === "session" && typeof e.id === "string" && e.id.length <= 256) return [{ type: "session", id: e.id }];
-    if (e.type === "text" && typeof e.text === "string") return [{ type: "text", text: redact(e.text) }];
-    if (e.type === "error" && typeof e.message === "string") return [{ type: "error", message: redact(e.message) }];
-    if (e.type === "tool" && [e.tool, e.input, e.output].every((v) => typeof v === "string") && typeof e.ok === "boolean") {
-      return [{ type: "tool", tool: redact(e.tool), input: redact(e.input), output: redact(e.output), ok: e.ok }];
-    }
-    if (e.type === "tokens" && [e.input, e.output].every((v) => Number.isSafeInteger(v) && v >= 0)) return [{ type: "tokens", input: e.input, output: e.output }];
-    return [];
-  },
+  read: readBridge,
 };

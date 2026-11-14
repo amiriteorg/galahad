@@ -1,6 +1,6 @@
 import { type DecisionAnswer, type DecisionRequest, type DecisionView, redact } from "@galahad/core";
 import { type BrainContext } from "./chat.ts";
-import { originOf, resolveProvider, type ResolvedProvider } from "./providers.ts";
+import { onPlan, originOf, resolveProvider, type ResolvedProvider } from "./providers.ts";
 import { parseRef, roleModels } from "./roster.ts";
 
 /*
@@ -79,7 +79,7 @@ export async function decide(ctx: BrainContext, request: DecisionRequest, signal
       continue;
     }
     if (!provider?.apiKey) {
-      problems.push(`${ref}: ${provider ? "no key" : "no such provider"}`);
+      problems.push(`${ref}: ${provider ? (onPlan(ref) ? "on a coding plan, whose key is for coding tools" : "no key") : "no such provider"}`);
       continue;
     }
     try {

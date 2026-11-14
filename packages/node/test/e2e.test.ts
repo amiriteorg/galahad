@@ -75,7 +75,8 @@ const proxyB = freePort();
 let laptop: Daemon;
 let server: Daemon;
 let upstream: ReturnType<typeof Bun.serve>;
-let upstreamAuth: string | null = null;
+let upstreamAuth: string | null | undefined = null;
+let upstreamAgent: string | null | undefined = null;
 
 beforeAll(async () => {
   // A stand-in for any OpenAI-compatible provider (DeepSeek, OrcaRouter, Verda, Ollama…).
@@ -84,6 +85,7 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     async fetch(req) {
       upstreamAuth = req.headers.get("authorization");
+      upstreamAgent = req.headers.get("user-agent");
       const body = (await req.json()) as { stream?: boolean; messages: { content: string }[] };
       if (!body.stream) return Response.json({ choices: [{ message: { content: "pong" } }] });
       const chunks = ["Good ", "day, ", "my liege."].map((t) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`);
@@ -310,6 +312,66 @@ describe("M0: one mind, two bodies", () => {
     await until(async () => (await callA("secretRequests")).requests.some((r: any) => r.name === "verda"));
     await callA("setSecret", { name: "verda", value: "verda-key-0123456789abcdef", provider: "verda" });
     await until(async () => (await callB("secretRequests")).requests.length === 0);
+  });
+
+  test("a subscription's sign-in pasted as a provider's key is refused, and never sealed; the presets say which are coding plans", async () => {
+    const callA = admin(homeA, portA);
+    // (Fake: the form of a token from `claude setup-token`, not one.)
+    const oat = "sk-ant-oat01-FAKE-not-a-token-0000000000000000";
+    await expect(callA("setSecret", { name: "anthropic", value: oat, provider: "anthropic" })).rejects.toThrow(/400.*sign-in, not an API key/);
+    await expect(callA("setSecret", { name: "glm", value: oat, provider: "zai-coding" })).rejects.toThrow(/400.*sign-in/);
+    const { secrets } = await callA("secrets");
+    expect(secrets.some((s: any) => s.name === "anthropic" || s.name === "glm")).toBe(false);
+    // Kept as a plain secret of your own, with no provider, it is yours to keep: it is pinned nowhere, so it is never sent.
+    await callA("setSecret", { name: "my-claude-sign-in", value: oat });
+    expect((await callA("secrets")).secrets.find((s: any) => s.name === "my-claude-sign-in")).toMatchObject({ provider: null, origin: null });
+    await callA("deleteSecret", { name: "my-claude-sign-in" });
+    const { presets } = await callA("providers");
+    expect(presets.find((p: any) => p.id === "zai-coding").plan).toMatchObject({ name: "GLM Coding Plan" });
+    expect(presets.find((p: any) => p.id === "anthropic").plan).toBeUndefined();
+    // A plan's models are the ones its preset names: the plan isn't called to list them (nothing answers at its address here).
+    await callA("setSecret", { name: "zai-coding", value: "0123456789abcdef0123456789abcdef.FAKEfakeFAKEfake", provider: "zai-coding" });
+    await callA("setProvider", { id: "zai-coding", secret: "zai-coding" });
+    expect((await callA("providerModels", { id: "zai-coding" })).models).toEqual(["glm-5.3", "glm-5.3-flash"]);
+    await callA("removeProvider", { id: "zai-coding" });
+    await callA("deleteSecret", { name: "zai-coding" });
+    // The page is told the forms of sign-ins too, so it can say so before anything is sent.
+    expect((await callA("providers")).signIns).toEqual(expect.arrayContaining([expect.objectContaining({ prefix: "sk-ant-oat" })]));
+  });
+
+  test("a coding plan answers a quest's call, as Galahad, and never his talk with you", async () => {
+    const callA = admin(homeA, portA);
+    // (The plan's own preset, pointed at the stand-in provider: a key pinned to where you say it goes.)
+    const planKey = "0123456789abcdef0123456789abcdef.FAKEfakeFAKEfake";
+    const base = `http://127.0.0.1:${upstream.port}/v1`;
+    await callA("setSecret", { name: "zai-coding", value: planKey, provider: "zai-coding", baseUrl: base });
+    await callA("setProvider", { id: "zai-coding", baseUrl: base, secret: "zai-coding" });
+    await callA("setRoster", { role: "engineer", models: ["zai-coding/glm-5.3"] });
+    const ask = async (extra: object) => {
+      const response = await fetch(`http://127.0.0.1:${portA}/api/chat`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${homeA.adminToken()}`, "content-type": "application/json" },
+        body: JSON.stringify({ role: "engineer", tools: false, messages: [{ role: "user", content: "write the function" }], ...extra }),
+      });
+      return (await response.text()).split("\n\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)));
+    };
+    try {
+      const forget = (): void => void (upstreamAuth = upstreamAgent = undefined);
+      forget();
+      const talk = await ask({});
+      expect(talk.at(-1)).toMatchObject({ type: "error" });
+      expect(talk.at(-1).error).toContain("coding plan");
+      expect(upstreamAuth).toBeUndefined();
+      const work = await ask({ coding: true });
+      expect(work.filter((e) => e.type === "text").map((e) => e.text).join("")).toBe("Good day, my liege.");
+      expect(work.find((e) => e.type === "model")).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
+      expect(upstreamAuth).toBe(`Bearer ${planKey}`);
+      expect(upstreamAgent).toMatch(/^Galahad\b/);
+    } finally {
+      await callA("setRoster", { role: "engineer", models: ["anthropic/claude-opus-5-5"] });
+      await callA("removeProvider", { id: "zai-coding" });
+      await callA("deleteSecret", { name: "zai-coding" });
+    }
   });
 
   test("sandbox requests are routed to a named node, with its answer relayed faithfully", async () => {

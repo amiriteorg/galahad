@@ -32,7 +32,7 @@ export function foldLine(line: string, width: number): string[] {
   out.push(`${out.length ? "  " : ""}${rest}`);
   return out;
 }
-const usage = "galahad team [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | pause|resume|stop <room|teammate|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -47,7 +47,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     for (const m of state.removed ?? []) print(`${m.id} · ${plainLine(m.name)} · removed${m.conversations?.length ? ` · its conversations, kept to read: ${m.conversations.map((room) => `galahad team chat ${room}`).join(", ")}` : ""}`);
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
     for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}`);
-    if (!state.teammates.length) print("Create a teammate with galahad team add <id> --name <name>, or open Team in the app.");
+    if (!state.teammates.length) print("Create a squire with galahad squires add <id> --name <name>, or open Squires in the app.");
     return;
   }
   if (sub === "add") {
@@ -58,7 +58,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
   if (sub === "avatar") {
     const state = await api.call<TeamSnapshot>("team");
     const member = state.teammates.find((m) => m.id === args[0]);
-    if (!member) throw new Error("No such teammate");
+    if (!member) throw new Error("No such squire");
     const fields = ["form", "accent", "eyes", "accessory", "temperament"] as const;
     const changes = Object.fromEntries(fields.flatMap((key) => string(key) !== undefined ? [[key, string(key)]] : []));
     const color = string("color");
@@ -88,27 +88,29 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(`${task.id} queued; completion requires its gates and independent review.`); return;
   }
   if (sub === "provision") {
-    const result = await api.call<{ workspace: { id: string; node: string } }>("provisionTeammate", { id: args[0], ...(string("on") ? { on: string("on") } : {}), ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}) });
-    print(`VM ${result.workspace.id} on ${result.workspace.node}`); return;
+    // (Online unless you say `--network gateway`: what its VM can reach is set when it is made.)
+    const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("provisionTeammate", { id: args[0], ...(string("on") ? { on: string("on") } : {}), ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}), ...(string("network") ? { network: string("network") } : {}) });
+    print(`VM ${result.workspace.id} on ${result.workspace.node}${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
   }
   if (sub === "memory") {
     if (args.length > 1) await api.call("teamMemory", { id: args[0], text: args.slice(1).join(" ") });
     const state = await api.call<TeamSnapshot>("team");
-    const m = state.teammates.find((m) => m.id === args[0]); if (!m) throw new Error("No such teammate"); print(plainText(m.memory).trim() || "No notes yet."); return;
+    const m = state.teammates.find((m) => m.id === args[0]); if (!m) throw new Error("No such squire"); print(plainText(m.memory).trim() || "No notes yet."); return;
   }
-  if (["pause", "resume", "stop"].includes(sub) && ["room", "teammate", "task"].includes(args[0] ?? "")) {
-    await api.call("controlTeam", { action: sub, [args[0]!]: args[1] }); print(`${sub}: ${args[0]} ${args[1]}`); return;
+  // (A squire by either word: `teammate` is what the command took before it was called squires.)
+  if (["pause", "resume", "stop"].includes(sub) && ["room", "squire", "teammate", "task"].includes(args[0] ?? "")) {
+    await api.call("controlTeam", { action: sub, [args[0] === "squire" ? "teammate" : args[0]!]: args[1] }); print(`${sub}: ${args[0]} ${args[1]}`); return;
   }
   if (sub === "remove") {
     const state = await api.call<TeamSnapshot>("team");
     const member = state.teammates.find((m) => m.id === args[0]);
-    if (!member) throw new Error((state.removed ?? []).some((m) => m.id === args[0]) ? "That teammate was already removed." : "No such teammate");
+    if (!member) throw new Error((state.removed ?? []).some((m) => m.id === args[0]) ? "That squire was already removed." : "No such squire");
     const who = `${plainLine(member.name)} (${member.id})`;
     // It has a VM, or one was being made for it when the node last stopped (and may exist, never bound). Either goes
     // with it or it stays: said here before anything is asked of the node, which looks for itself and has the last word.
     const vm = member.workspace ? `its VM ${member.workspace.id} on ${member.workspace.node}` : member.workspaceNode ? `the VM that was being made for it on ${member.workspaceNode}` : null;
     const destroy = flags["destroy-workspace"] === true;
-    if (vm && !destroy) throw new Error(`${who} has a persistent workspace (${vm}). Removing it destroys that VM and everything in /work: add --destroy-workspace, or pause it instead (galahad team pause teammate ${member.id}).`);
+    if (vm && !destroy) throw new Error(`${who} has a persistent workspace (${vm}). Removing it destroys that VM and everything in /work: add --destroy-workspace, or pause it instead (galahad squires pause squire ${member.id}).`);
     const kept = "Its conversations stay to read, and its handle can never be used again.";
     if (!flags.yes && !confirm(destroy ? `Remove ${who} for good, and destroy ${vm ?? "any VM it has"} with everything in /work? ${kept}` : `Remove ${who} for good? ${kept}`)) { print("Nothing was removed."); return; }
     const done = await api.call<{ workspace: "none" | "destroyed" | "gone" | "left" }>("removeTeammate", { id: member.id, ...(destroy ? { destroyWorkspace: true } : {}) });

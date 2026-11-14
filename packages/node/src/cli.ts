@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, padAt, phaseOf, qrToTerminal, type RouteName, routes, type SandboxView, SITES, type TrialView } from "@galahad/core";
-import { detectProvider, preset, sseData } from "@galahad/brain";
+import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { artifactTarget } from "./artifacts.ts";
@@ -17,6 +17,7 @@ import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeC
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { dogCommand, journalCommand } from "./journal-cli.ts";
+import { keyAddCommand } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
@@ -40,23 +41,24 @@ const VERSION = "0.1.0";
 
 const HELP = `galahad — one mind, many bodies
 
-Team (persistent sub-Galahads, rooms and verified work in VMs)
-  team                              teammates, rooms and tasks (those Galahad made for himself say so:
-                                    ask him in chat to make and brief a worker)
-  team add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes]
+Squires (his persistent sub-Galahads, their rooms and verified work in VMs; "team" is the same command)
+  squires                           squires, rooms and tasks (those Galahad made for himself say so:
+                                    ask him in chat to make and brief a squire)
+  squires add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
                                     [--repo https://github.com/owner/repo] [--limit daily-turns]
-  team dm <id> [message]             open/read a direct chat, or send a message
-  team room <name> <member…>         create a shared room (--limit bounds its coordination chain)
-  team chat <room> [message]         read a room, or send a message; work continues on the node
-  team task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
-  team provision <id> [--on node] [--cpus 1 --mem 2 --disk 20]
-  team memory <id> [text]            read or replace that teammate's notes
-  team avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
+  squires dm <id> [message]          open/read a direct chat, or send a message
+  squires room <name> <member…>      create a shared room (--limit bounds its coordination chain)
+  squires chat <room> [message]      read a room, or send a message; work continues on the node
+  squires task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
+  squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway]
+                                    its VM: online (the default) it can reach the internet, gateway only the models
+  squires memory <id> [text]         read or replace that squire's notes
+  squires avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
                   [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
-                                    customize that worker's little knight, or read its saved appearance
-  team pause|resume|stop <room|teammate|task> <id>
-  team remove <id> [--destroy-workspace] [--yes]
-                                    remove a teammate for good: it leaves its rooms and does no more work; what it
+                                    customize that squire's look, or read its saved appearance
+  squires pause|resume|stop <room|squire|task> <id>
+  squires remove <id> [--destroy-workspace] [--yes]
+                                    remove a squire for good: it leaves its rooms and does no more work; what it
                                     said stays to read, and its handle is never used again. One with a VM is removed
                                     only with --destroy-workspace, which destroys that VM and everything in /work
 
@@ -79,7 +81,8 @@ Mind
                                   a typed decision from the decider role (TypeSafe's Jev): yes/no, a choice, a score
 
 Keys & models (keys are typed into a hidden prompt — never into chat, never on the command line)
-  key add [--provider id]        paste any API key; provider is auto-detected when possible
+  key add [--provider id]        paste any API key, or a coding plan's (provider presets marks the plans);
+                                  the provider is auto-detected when the key's form says whose it is
   secret set <name> | secret list | secret rm <name> | vault rotate
   secret request <name> --reason "…"   ask for a credential; fill it later from any device
   run [--providers a,b] -- <cmd>  run a tool (opencode, claude, codex…) on a scoped gateway token
@@ -786,28 +789,8 @@ Next:
 
     case "key": {
       if (sub !== "add") fail("usage: galahad key add [--provider id]");
-      const value = await readSecret("Paste the API key (hidden): ");
-      if (!value) fail("no key given");
-      const providerId = str("provider") ?? detectProvider(value);
-      if (!providerId) fail("couldn't tell which provider this key is for; pass --provider <id> (see `galahad provider presets`)");
-      const admin = new Admin(home);
-      const secretName = str("secret") ?? providerId;
-      const known = preset(providerId);
-      const baseUrl = str("base-url") ?? (known?.baseUrl || undefined);
-      const { secret } = await admin.call<{ secret: { origin: string | null } }>("setSecret", {
-        name: secretName,
-        value,
-        provider: providerId,
-        ...(str("base-url") ? { baseUrl: str("base-url") } : {}),
-      });
-      if (!baseUrl) {
-        console.log(`Key stored as "${secretName}". ${known?.note ?? "Now add the provider with --base-url."}`);
-        return;
-      }
-      await admin.call("setProvider", { id: providerId, baseUrl, kind: (str("kind") ?? known?.kind) as any, secret: secretName });
-      console.log(
-        `Key stored and provider "${providerId}" configured. Every full node can now use it.\n${dim(`It will only ever be sent to ${secret.origin ?? "(unpinned: re-add with --base-url)"}.`)}`,
-      );
+      // Recognised, sealed and its provider configured (key-cli.ts).
+      await keyAddCommand(new Admin(home), await readSecret("Paste the API key (hidden): "), flags, console.log, dim);
       return;
     }
 
@@ -892,11 +875,11 @@ Next:
         for (const m of models) console.log(`${rest[0]}/${m}`);
       } else if (sub === "presets") {
         const { presets } = await admin.call("providers");
-        for (const p of presets) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.baseUrl || dim(p.note ?? "")}`);
+        for (const p of presets) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.baseUrl || dim(p.note ?? "")}${p.plan ? dim(`  coding plan: ${p.plan.name}`) : ""}`);
       } else {
         const { providers } = await admin.call("providers");
         if (!providers.length) console.log("No providers yet. `galahad key add` configures one.");
-        for (const p of providers) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}`);
+        for (const p of providers) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}${planOf(p.id) ? dim("  coding plan: for coding only") : ""}`);
       }
       return;
     }
@@ -909,7 +892,8 @@ Next:
       }
       const { roster } = await admin.call("roster");
       for (const [role, spec] of Object.entries(roster as Record<string, { models: string[]; configured: boolean }>)) {
-        console.log(`  ${role.padEnd(10)} ${spec.models.join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
+        // (A coding plan's model does his coding and his squires': he passes it over for anything else.)
+        console.log(`  ${role.padEnd(10)} ${spec.models.map((ref) => (onPlan(ref) ? `${ref} ${dim("(coding only)")}` : ref)).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
       }
       return;
     }
@@ -1754,6 +1738,8 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "notify":
       await notifyCommand(new Admin(home), sub, rest, flags);
       return;
+    case "squires":
+    case "squire":
     case "team":
       await teamCommand(new Admin(home), sub, rest, flags, console.log, confirm, process.stdout.isTTY ? process.stdout.columns : undefined);
       return;

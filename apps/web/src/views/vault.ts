@@ -1,6 +1,6 @@
 import type { ProviderView, SecretRequestView, SecretView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { detectProvider } from "../lib/text.ts";
+import { detectProvider, detectSignIn, planLine, type SignInForm } from "../lib/text.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { PresetView } from "../types.ts";
 import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonRows } from "../ui/controls.ts";
@@ -26,6 +26,8 @@ export const vaultChanged = signal(0);
 interface ProvidersResponse {
   providers: ProviderView[];
   presets: PresetView[];
+  /** The forms of subscription sign-ins the node knows (absent from an older node). */
+  signIns?: SignInForm[];
 }
 
 let providerCache: ProvidersResponse | null = null;
@@ -48,7 +50,7 @@ async function ensureProviderConfigured(ctx: Ctx, data: ProvidersResponse, provi
   if (!preset) return null;
   if (!preset.baseUrl) return preset.note ?? `Add ${providerId}'s base URL on the Models page to start using it.`;
   await ctx.api.post("/api/providers", { id: providerId, secret: secretName });
-  return `${providerId} is configured and ready.`;
+  return planLine(preset) ?? `${providerId} is configured and ready.`;
 }
 
 /** Seals a value into the vault, then wires up the provider if it's a known preset. */
@@ -106,16 +108,25 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
       replace(detected);
       return;
     }
-    const found = detectProvider(value, data.presets);
+    // A subscription's sign-in is not a key: said at once, before anything is chosen or sent.
+    const pasted = detectSignIn(value, data.signIns);
+    if (pasted) {
+      replace(detected, signInCallout(pasted));
+      return;
+    }
+    const found = detectProvider(value, data.presets, data.signIns);
     if (found && !manual) {
       providerSelect.value = found;
       if (!name.value || data.presets.some((p) => p.id === name.value)) name.value = found;
     }
+    // A coding plan says what it is for, whether it was recognised or chosen.
+    const plan = planLine(data.presets.find((p) => p.id === providerSelect.value));
     replace(
       detected,
       found
         ? [badge(`Recognised: ${found}`, "ok", "check"), manual && providerSelect.value !== found ? h("span", { class: "tiny subtle" }, `You chose ${providerSelect.value || "none"}`) : null]
         : h("span", { class: "tiny subtle" }, "Not recognised from its prefix. Choose the provider below."),
+      plan ? h("span", { class: "tiny subtle", style: "flex-basis:100%" }, plan) : null,
     );
   }
 
@@ -149,6 +160,12 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
         if (!NAME_RE.test(secretName)) {
           replace(status, callout("warn", "Give the secret a name (letters, digits and . _ : - only), then paste the key again. The field was cleared for safety."));
           name.focus();
+          return;
+        }
+        // Never sealed as a provider's key (the node refuses it too); as a secret of your own, with no provider, it is yours to keep.
+        const pasted = providerId ? detectSignIn(value, data.signIns) : null;
+        if (pasted) {
+          replace(status, signInCallout(pasted));
           return;
         }
         void busy(seal, async () => {
@@ -199,6 +216,9 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
       /* presets need mind:read; manual naming still works */
     });
 }
+
+/** Why a subscription's sign-in isn't taken as a key, and where it belongs. */
+const signInCallout = (pasted: SignInForm["signIn"]): HTMLElement => callout("warn", pasted.why, { title: `A ${pasted.tool} sign-in, not an API key` });
 
 /** An open request from Galahad for a credential, with an inline sealed field. */
 export function secretRequestCard(ctx: Ctx, request: SecretRequestView): HTMLElement {

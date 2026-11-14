@@ -12,12 +12,38 @@ export interface ProviderPreset {
   /** Runs on the node itself (no key, nothing leaves the machine). */
   local?: boolean;
   note?: string;
+  /** A subscription sold for coding tools, not the vendor's ordinary API (see CodingPlan). */
+  plan?: CodingPlan;
+}
+
+/**
+ * A coding plan: a flat-rate subscription whose key is for coding (its terms say so, and name
+ * tools), not for calling the API from any program for anything. Galahad and his squires are a
+ * coding tool, by their owner's word: he calls a plan himself for coding work (a quest's planner,
+ * engineer and reviewer, a squire at its work), under his own name (SELF), and lends it through
+ * the gateway to the other coding tools in his squires' VMs and under `galahad run`, each calling
+ * as itself. Nothing else he does is handed its key: not his talk with you, his loops or his
+ * heartbeat (chat.ts, resolveProvider). What a plan allows is its vendor's to say, and changes:
+ * `says` is their sentence and `terms` where they say it. Whether a vendor counts him among its
+ * supported tools is the vendor's to decide and the owner's to weigh.
+ */
+export interface CodingPlan {
+  /** The plan, as its vendor sells it. */
+  name: string;
+  /** What its vendor says the plan is for, in the vendor's words where they are short enough (read November 2026). */
+  says: string;
+  /** Where the vendor says it. */
+  terms: string;
+  /** The models it serves (a plan's endpoint doesn't always list them). */
+  models: string[];
 }
 
 /**
  * Starting points, not hard-coded truth: everything here is overridable with
  * `galahad provider add`. Base URLs were checked against each provider's docs
  * (Nov 2026); Verda's endpoint is account-specific so it must be supplied.
+ * A coding plan's key can't always be told from the same vendor's API key by its
+ * form (Z.ai's can't; Kimi's and Alibaba's can), so a plan is added as its own preset.
  */
 export const PRESETS: ProviderPreset[] = [
   { id: "anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", keyPrefixes: ["sk-ant-"] },
@@ -26,6 +52,57 @@ export const PRESETS: ProviderPreset[] = [
   { id: "orcarouter", kind: "openai", baseUrl: "https://api.orcarouter.ai/v1", keyPrefixes: ["sk-orca-"] },
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },
+  { id: "zai", kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4" },
+  {
+    id: "zai-coding",
+    kind: "openai",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    plan: {
+      name: "GLM Coding Plan",
+      says: 'Z.ai: "strictly limited to use within officially supported tools and products" (OpenCode and Claude Code are among them), and not for "general-purpose API access".',
+      terms: "https://docs.z.ai/legal-agreement/subscription-terms",
+      models: ["glm-5.3", "glm-5.3-flash"],
+    },
+    note: "Z.ai's GLM Coding Plan, with the plan's own key (Z.ai keeps plan keys apart from its API keys; the ordinary API is the zai preset). In mainland China: --base-url https://open.bigmodel.cn/api/coding/paas/v4.",
+  },
+  {
+    id: "kimi-coding",
+    kind: "openai",
+    baseUrl: "https://api.kimi.ai/coding/v1",
+    keyPrefixes: ["sk-kimi-"],
+    plan: {
+      name: "Kimi Code",
+      says: 'Kimi: "for interactive use only" (scripted batch runs are named as beyond normal use), and a tool must call as itself, never under another\'s name.',
+      terms: "https://www.kimi.com/code/docs/en/kimi-code/community-guidelines.html",
+      models: ["kimi-for-coding", "k3", "k3.1-pro"],
+    },
+    note: "Moonshot's Kimi Code membership, with a key from the Kimi Code console (the pay-as-you-go platform is the moonshot preset; their keys don't work on each other). In mainland China: --base-url https://api.kimi.com/coding/v1.",
+  },
+  {
+    id: "alibaba-coding",
+    kind: "openai",
+    baseUrl: "https://coding.dashscope.aliyuncs.com/v1",
+    keyPrefixes: ["sk-sp-"],
+    plan: {
+      name: "Alibaba Cloud Coding Plan",
+      says: "Alibaba: only in coding tools (Claude Code, Qoder, OpenClaw and the like); calls from automation scripts, an application's backend or any non-interactive batch use are forbidden, and may get the key banned.",
+      terms: "https://help.aliyun.com/zh/model-studio/coding-plan",
+      models: ["qwen3.7-plus", "qwen3.6-plus"],
+    },
+    note: "Alibaba Cloud Model Studio's (Bailian's) Coding Plan, with the plan's own sk-sp- key. Outside mainland China the plan has its own address: pass the one your console shows with --base-url.",
+  },
+  {
+    id: "opencode-go",
+    kind: "openai",
+    baseUrl: "https://opencode.ai/inference/go/openai/v1",
+    plan: {
+      name: "OpenCode Go",
+      says: 'OpenCode: "designed for OpenCode and other coding agents that send similar traffic", each sending its own User-Agent.',
+      terms: "https://opencode.ai/docs/go/",
+      models: ["glm-5.3", "kimi-k3"],
+    },
+  },
+  { id: "synthetic", kind: "openai", baseUrl: "https://api.synthetic.new/openai/v1" },
   {
     id: "cloudflare-ai",
     kind: "openai",
@@ -44,8 +121,57 @@ export const PRESETS: ProviderPreset[] = [
 
 export const preset = (id: string): ProviderPreset | undefined => PRESETS.find((p) => p.id === id);
 
+/** The coding plan a provider is on: one added as a plan's preset. A provider of your own making is yours, and Galahad knows nothing of its terms. */
+export const planOf = (id: string): CodingPlan | null => preset(id)?.plan ?? null;
+
+/** Whether a model ref is on a coding plan (a ref that doesn't parse isn't one: whoever reads it says what is wrong with it). */
+export function onPlan(ref: string): boolean {
+  const slash = ref.indexOf("/");
+  return slash > 0 && planOf(ref.slice(0, slash)) !== null;
+}
+
+/** Why he has no key to call a provider with: none in the vault, or a coding plan's, which is for coding and nothing else of his. */
+export const whyNoKey = (id: string): string =>
+  planOf(id) ? `${id} is a coding plan: its key is for coding (his quests, his squires' work and their coding tools), and nothing else he does` : `provider "${id}" has no key in the vault`;
+
+/** Who he says he is when he calls a coding plan himself: his own name, and never another tool's. */
+export const SELF = "Galahad (coding agent; https://galahad.bot)";
+
+/** What he sends beside the key when the call is his own: to a coding plan, his name. */
+export const selfHeaders = (provider: { id: string }): Record<string, string> => (planOf(provider.id) ? { "user-agent": SELF } : {});
+
+/**
+ * A subscription's sign-in is not an API key: its vendor keeps it to the vendor's own tool. Pasted
+ * where a key goes it is recognised and refused, and it is never sent to an API from here.
+ */
+export interface SignIn {
+  vendor: string;
+  /** The tool the sign-in is for. */
+  tool: string;
+  /** Why it isn't taken as a key, and where it belongs, in a sentence or two. */
+  why: string;
+}
+
+export const SIGN_INS: { prefix: string; signIn: SignIn }[] = [
+  {
+    // What `claude setup-token` prints, and what Claude Code keeps after a subscription login.
+    prefix: "sk-ant-oat",
+    signIn: {
+      vendor: "Anthropic",
+      tool: "Claude Code",
+      why: "This is a Claude subscription's sign-in, not an API key. Anthropic keeps a subscription to its own apps, and a sign-in to its own flow: Galahad doesn't hold it and never sends it to the API. It belongs with Claude Code itself, where that runs. An API key from the Claude Console starts sk-ant-api.",
+    },
+  },
+];
+
+/** What a pasted value is, when it is a subscription's sign-in and not a key. */
+export function signIn(value: string): SignIn | null {
+  return SIGN_INS.find(({ prefix }) => value.startsWith(prefix))?.signIn ?? null;
+}
+
 /** Guess the provider from a pasted key, when the key format is distinctive. */
 export function detectProvider(key: string): string | null {
+  if (signIn(key)) return null;
   const sorted = PRESETS.flatMap((p) => (p.keyPrefixes ?? []).map((prefix) => ({ id: p.id, prefix }))).sort(
     (a, b) => b.prefix.length - a.prefix.length,
   );
@@ -95,12 +221,17 @@ export function keyUsable(vault: Vault, record: ProviderRecord): boolean {
   return !!info && info.provider === record.id && !!info.origin && info.origin === originOf(record.baseUrl);
 }
 
-/** Provider config plus its key, decrypted in memory on this node only. */
-export function resolveProvider(store: MindStore, vault: Vault, id: string): ResolvedProvider | null {
+/**
+ * Provider config plus its key, decrypted in memory on this node only. A coding plan's key is
+ * handed over only for `coding` (his own coding work: chat.ts) and for a `tool` (the gateway,
+ * lending it to a coding tool). For his `own` calls of any other kind a plan resolves with no
+ * key, so nothing else he does can call one, whoever forgets to ask.
+ */
+export function resolveProvider(store: MindStore, vault: Vault, id: string, use: "own" | "coding" | "tool" = "own"): ResolvedProvider | null {
   const record = providerRecord(store, id);
   if (!record) return null;
   let apiKey: string | null = null;
-  if (keyUsable(vault, record)) {
+  if (keyUsable(vault, record) && (use !== "own" || !planOf(id))) {
     try {
       apiKey = vault.reveal(record.secret!);
     } catch {

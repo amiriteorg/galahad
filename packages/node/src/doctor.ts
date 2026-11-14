@@ -25,8 +25,11 @@ export interface RoleFact {
   role: string;
   /** Roles that answer in words are asked a word; the decider and the embedder aren't. */
   chats: boolean;
-  /** In the roster's order. `problem`: why this node can't use it (null: it can). */
-  models: { ref: string; problem: string | null }[];
+  /**
+   * In the roster's order. `problem`: why this node can't use it (null: it can). `plan`: it is on a coding plan,
+   * so it does his coding and his squires' coding tools use it, and it answers nothing else.
+   */
+  models: { ref: string; problem: string | null; plan?: boolean }[];
   /** The one-word call to the first model that can be used (null: nobody was asked). */
   probe: { ref: string; ok: boolean; ms: number; error: string | null } | null;
 }
@@ -116,6 +119,8 @@ export interface Diagnosis extends DoctorCheck {
 }
 
 const CORE_ROLES = new Set(["planner", "engineer", "reviewer"]);
+/** The roles whose own work is all coding (a quest's engineering and its review): a coding plan alone can play them. */
+const CODING_ROLES = new Set(["engineer", "reviewer"]);
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -264,14 +269,37 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   for (const role of f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem
     const id = `role.${role.role}`;
-    const usable = role.models.filter((m) => m.problem === null);
-    const first = role.models[0]!;
-    if (!usable.length) {
+    // A coding plan's models do his coding, and his squires' coding tools use them (brain/providers.ts); they
+    // answer nothing else, and are asked no word. What is judged for everything else a role does is the rest.
+    const plans = role.models.filter((m) => m.plan);
+    const own = role.models.filter((m) => !m.plan);
+    const lent = plans.filter((m) => m.problem === null);
+    const unlent = plans.filter((m) => m.problem !== null);
+    if (unlent.length) {
+      add(
+        "models",
+        `${id}.plan`,
+        "needs-you",
+        `${unlent.map((m) => `${m.ref} (${m.problem})`).join("; ")}: on ${role.role} for coding, which can't use ${unlent.length === 1 ? "it" : "them"}`,
+        `Add the plan's key: galahad key add --provider ${unlent[0]!.ref.slice(0, unlent[0]!.ref.indexOf("/"))}.`,
+      );
+    }
+    const tools = lent.length ? `; his coding and his squires' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
+    const usable = own.filter((m) => m.problem === null);
+    const first = own[0];
+    // A role whose work is all coding is played by a plan alone.
+    if (!own.length && lent.length && CODING_ROLES.has(role.role)) {
+      add("models", id, "ok", `${role.role}: ${lent[0]!.ref} does his coding (a coding plan: it is asked nothing else, so not a word)`);
+      continue;
+    }
+    if (!usable.length || !first) {
       add(
         "models",
         id,
         CORE_ROLES.has(role.role) ? "broken" : "needs-you",
-        `no model can play ${role.role}: ${role.models.map((m) => `${m.ref} (${m.problem})`).join("; ")}`,
+        own.length
+          ? `no model can play ${role.role}: ${own.map((m) => `${m.ref} (${m.problem})`).join("; ")}`
+          : `no model can play ${role.role} outside coding: ${plans.map((m) => m.ref).join(", ")} ${plans.length === 1 ? "is" : "are"} on a coding plan, which answers coding work only`,
         "Add a key (galahad key add) or hire a model that works here (galahad roster set " + role.role + " <provider/model>).",
       );
       continue;
@@ -287,9 +315,9 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       );
     }
     const probe = role.probe;
-    if (!role.chats) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (it doesn't answer in words, so it isn't asked)`);
-    else if (!probe) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (not asked${f.offline ? ": offline" : f.quick ? ": a full check asks it one word" : ""})`);
-    else if (probe.ok) add("models", id, "ok", `${role.role}: ${probe.ref} answered`, undefined, { ms: probe.ms });
+    if (!role.chats) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (it doesn't answer in words, so it isn't asked)${tools}`);
+    else if (!probe) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (not asked${f.offline ? ": offline" : f.quick ? ": a full check asks it one word" : ""})${tools}`);
+    else if (probe.ok) add("models", id, "ok", `${role.role}: ${probe.ref} answered${tools}`, undefined, { ms: probe.ms });
     else {
       const others = usable.filter((m) => m.ref !== probe.ref);
       const error = redact(probe.error ?? "no answer").replace(/\s+/g, " ").slice(0, 200);

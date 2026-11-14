@@ -61,7 +61,7 @@ const ROUTES: RouteSpec[] = [
   { id: "inbox", label: "Inbox", icon: "inbox", group: "main", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], view: inboxView },
   { id: "chat", label: "Chat", icon: "chat", group: "main", scope: "chat", key: "c", keywords: ["counsel", "ask", "talk", "history", "conversations"], view: chatView },
   { id: "world", label: "SANDBOX", icon: "landscape", group: "main", scope: "mind:read", key: "x", keywords: ["sandbox", "world", "3d", "experiments", "simulation", "galahad", "playground"], view: worldView },
-  { id: "team", label: "Team", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
+  { id: "team", label: "Squires", icon: "fleet", group: "main", scope: "chat", key: "h", keywords: ["squires", "team", "teammates", "rooms", "messages", "workers", "sub-galahads", "hermes", "tasks", "coordination"], view: teamView },
   { id: "board", label: "Chalkboard", icon: "board", group: "main", scope: "mind:read", key: "d", keywords: ["whiteboard", "chalk", "draw", "sketch", "board", "notes", "equations", "charts"], view: boardView },
   { id: "projects", label: "Projects", icon: "folder", group: "main", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], view: projectsView },
   { id: "journal", label: "Journal", icon: "journal", group: "mind", scope: "mind:read", key: "j", keywords: ["diary", "day", "recollection", "reflection", "evening", "dog", "learned", "log"], view: journalView },

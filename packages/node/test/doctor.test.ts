@@ -196,6 +196,52 @@ describe("each fault gives its own line and advice", () => {
     expect(asked.line).toContain("2 keys: github, cloudflare");
   });
 
+  test("models: a coding plan on a role does his coding and nothing else, and is never a model he lacks", () => {
+    // The roster `galahad key add` suggests for a plan: the plan first for the tools, a model of his own behind it.
+    const planned = healthy();
+    planned.roles[1]!.models = [{ ref: "zai-coding/glm-5.3", problem: null, plan: true }, ...planned.roles[1]!.models];
+    const checks = diagnose(planned);
+    expect(checks.some((c) => c.id === "role.engineer.first")).toBe(false);
+    const engineer = byId(checks, "role.engineer");
+    expect(engineer.state).toBe("ok");
+    expect(engineer.line).toContain("his coding and his squires' tools use zai-coding/glm-5.3");
+    expect(engineer.line).not.toContain("zai-coding/glm-5.3 has what it needs");
+    expect(engineer.line).not.toContain("zai-coding/glm-5.3 answered");
+    // The engineer's work is all coding: a plan alone can play it, and is asked no word (a word is no coding).
+    const only = healthy();
+    only.roles[1]!.models = [{ ref: "zai-coding/glm-5.3", problem: null, plan: true }];
+    only.roles[1]!.probe = null;
+    const coder = byId(diagnose(only), "role.engineer");
+    expect(coder.state).toBe("ok");
+    expect(coder.line).toBe("engineer: zai-coding/glm-5.3 does his coding (a coding plan: it is asked nothing else, so not a word)");
+    // The planner also talks with you, which a plan doesn't do: alone on it, nobody answers you.
+    const mute = fault((f) => {
+      f.roles[0]!.models = [{ ref: "zai-coding/glm-5.3", problem: null, plan: true }];
+      f.roles[0]!.probe = null;
+    }, "role.planner");
+    expect(mute.state).toBe("broken");
+    expect(mute.line).toContain("coding plan");
+    expect(mute.line).toContain("coding work only");
+    expect(mute.fix).toContain("galahad roster set planner");
+    // A plan with no key is said once, as the tools' lack and not his: the role itself is still well.
+    const unkeyed = healthy();
+    unkeyed.roles[1]!.models = [{ ref: "zai-coding/glm-5.3", problem: 'provider "zai-coding" has no key in the vault', plan: true }, { ref: "kimi-coding/k3", problem: 'provider "kimi-coding" is not configured', plan: true }, ...unkeyed.roles[1]!.models];
+    const lack = byId(diagnose(unkeyed), "role.engineer.plan");
+    expect(lack.state).toBe("needs-you");
+    expect(lack.line).toContain("zai-coding/glm-5.3");
+    expect(lack.line).toContain("kimi-coding/k3");
+    expect(lack.fix).toBe("Add the plan's key: galahad key add --provider zai-coding.");
+    expect(byId(diagnose(unkeyed), "role.engineer").state).toBe("ok");
+    expect(byId(diagnose(unkeyed), "role.engineer").line).not.toContain("tools use");
+    // A plan behind a model he lacks is still not the model that answers instead.
+    const lacking = fault((f) => {
+      f.roles[0]!.models = [{ ref: "anthropic/claude-opus-5-5", problem: 'provider "anthropic" has no key in the vault' }, { ref: "zai-coding/glm-5.3", problem: null, plan: true }];
+      f.roles[0]!.probe = null;
+    }, "role.planner");
+    expect(lacking.state).toBe("broken");
+    expect(lacking.line).toContain("no model can play planner");
+  });
+
   test("models: the first model skipped on every answer, none usable, a refusal, a filter, a refused key, a timeout", () => {
     const skipped = fault((f) => {
       f.roles[0]!.models = [{ ref: "anthropic/claude-opus-5-5", problem: 'provider "anthropic" has no key in the vault' }, { ref: "deepseek/deepseek-chat", problem: null }];

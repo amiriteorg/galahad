@@ -1,6 +1,6 @@
 import { redact } from "@galahad/core";
 import type { BrainContext } from "./chat.ts";
-import { keyHeaders, resolveProvider } from "./providers.ts";
+import { keyHeaders, resolveProvider, whyNoKey } from "./providers.ts";
 import { parseRef, roleModels } from "./roster.ts";
 
 /*
@@ -77,7 +77,7 @@ export async function embed(ctx: BrainContext, texts: string[], opts: { as: "que
   const provider = resolveProvider(ctx.store, ctx.vault, id);
   if (!provider) throw new EmbedderError(`provider "${id}" is not configured`);
   if (provider.kind !== "openai") throw new EmbedderError(`${id} has no embeddings endpoint (it speaks ${provider.kind})`);
-  if (!provider.apiKey && !provider.local) throw new EmbedderError(`provider "${id}" has no key in the vault`);
+  if (!provider.apiKey && !provider.local) throw new EmbedderError(whyNoKey(id));
   if (!texts.length) return { ref, vectors: [], dims: 0, local: provider.local };
   const signals = [AbortSignal.timeout(opts.timeoutMs ?? (provider.local ? 120_000 : 60_000)), ...(opts.signal ? [opts.signal] : [])];
   let response: Response;

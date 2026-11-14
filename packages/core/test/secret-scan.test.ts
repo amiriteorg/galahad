@@ -12,6 +12,10 @@ describe("secret scanning", () => {
     "-----BEGIN OPENSSH PRIVATE KEY-----",
     `gw_${b64u(randomBytes(32))}`,
     "Xq7vB2mK9pL4wR8tZ3nC6yH1sD5fG0jQ", // unknown provider, high entropy
+    "sk-kimi-Zq8Lw3Vn6Tb1Xc9Rk4Jh7Mp2Fd5Gs0Ya", // a Kimi Code membership key
+    "sk-sp-Zq8Lw3Vn6Tb1Xc9Rk4Jh7Mp2Fd5Gs0Ya", // an Alibaba Coding Plan key
+    "7f3a9c1e5b2d8f406a1c3e5b7d9f2a4c.Qw8ErT2yUi5oPa7S", // Zhipu / Z.ai: an id, a dot, a secret
+    "sk-ant-oat01-Zq8Lw3Vn6Tb1Xc9Rk4Jh7Mp2Fd5Gs0Ya8Ue3Io6Pq", // a Claude subscription's sign-in
   ];
 
   test.each(keys)("catches %s", (key) => {
@@ -24,6 +28,8 @@ describe("secret scanning", () => {
       "commit 0f6a77a3c9e1b2d4f5a6b7c8d9e0f1a2b3c4d5e6 fixed it", // git sha: hex only
       `my laptop is ${newNodeIdentity().id}`,
       "https://github.com/amiriteorg/galahad/blob/main/docs/ARCHITECTURE.md",
+      "bundle 7f3a9c1e5b2d8f406a1c3e5b7d9f2a4c.min.js is the one the page loads", // a hashed file name
+      "see 7f3a9c1e5b2d8f406a1c3e5b7d9f2a4c.d41d8cd98f00b204e9800998ecf8427e for both digests",
     ];
     for (const text of ordinary) expect(findSecrets(text)).toEqual([]);
   });

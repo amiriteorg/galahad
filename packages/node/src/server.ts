@@ -78,6 +78,7 @@ import {
   verifyRequestSignature,
 } from "@galahad/core";
 import {
+  AGENTS,
   CATALOG,
   agentCleanupCommand,
   chooseAgentModels,
@@ -93,12 +94,15 @@ import {
   listModels,
   originOf,
   parseRef,
+  planOf,
   PRESETS,
   preset,
   providerRecord,
   providerViews,
   resolveProvider,
   roster,
+  SIGN_INS,
+  signIn,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -140,7 +144,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamStore } from "./team-store.ts";
-import { teamRuntime } from "./team-runtime.ts";
+import { harnessReadiness, teamRuntime } from "./team-runtime.ts";
 import { githubRepo } from "./quest-cli.ts";
 
 /**
@@ -688,7 +692,7 @@ export function createApp(ctx: AppContext) {
   const isOwner = (p: Principal) => p.kind === "admin" || p.kind === "client";
   /**
    * Galahad himself, running his own tools in your conversation with him (never another agent, a loop or a node),
-   * and answering a device that may command his team itself: what you couldn't do in Team there, he doesn't do for you.
+   * and answering a device that may command his team itself: what you couldn't do in Squires there, he doesn't do for you.
    */
   const leadsTeam = (p: Principal) => p.kind === "arm" && p.label === GALAHAD_ARM && p.commandsTeam === true;
   /** Whose model calls these are, in this node's count of them: yours, an agent's (a loop's quest is arm:loop.<name>), a node's. */
@@ -740,7 +744,7 @@ export function createApp(ctx: AppContext) {
     return turn;
   }
   /**
-   * A turn to steer: watched, and if it has the tools to his workers, only from a device that may command the team
+   * A turn to steer: watched, and if it has the tools to his squires, only from a device that may command the team
    * itself. What it says next is his to act on with those tools, so steering it would be commanding the team through him.
    */
   function steeredTurn(id: string, p: Principal): LiveTurn {
@@ -848,7 +852,7 @@ export function createApp(ctx: AppContext) {
   }
   /** His tools for an answer. In a chat where he read the bank he's offered no way to write a skill: none is ever drawn from one. */
   const toolsIn = (agent: Principal, kept: ConversationSummary | null) => {
-    // (His own tools, the ones to his workers, only where he may lead them and this node keeps a team.)
+    // (His own tools, the ones to his squires, only where he may lead them and this node keeps a team.)
     const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team);
     return kept?.bank ? tools.filter((t) => t.name !== "skill_write") : tools;
   };
@@ -1388,15 +1392,17 @@ export function createApp(ctx: AppContext) {
     return ctx.team.store.requireTeammate(id);
   };
   const vmProvisioning = new Map<string, Promise<SandboxView>>();
+  /** The providers each squire's VM token covers, as its host last said: those that had a key when the VM was made. */
+  const leased = new Map<string, readonly string[]>();
   async function teamWorkspace(member: Teammate, signal: AbortSignal): Promise<SandboxView | null> {
     if (!member.workspace) return null;
     const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[] }>("sandboxes", { on: member.workspace.node });
     const sandbox = view.sandboxes.find((s) => s.id === member.workspace!.id);
-    if (!sandbox) throw new HttpError(404, "the teammate's VM is missing; recover its retained workspace before continuing");
-    if (sandbox.quest !== armQuest(teammateLabel(member.id)) || sandbox.ephemeral || sandbox.isolation !== "vm") throw new HttpError(403, "the workspace is not this teammate's persistent VM");
+    if (!sandbox) throw new HttpError(404, "the squire's VM is missing; recover its retained workspace before continuing");
+    if (sandbox.quest !== armQuest(teammateLabel(member.id)) || sandbox.ephemeral || sandbox.isolation !== "vm") throw new HttpError(403, "the workspace is not this squire's persistent VM");
     return sandbox;
   }
-  async function provisionTeam(id: string, input: { on?: string; cpus?: number; memoryGb?: number; diskGb?: number }, signal: AbortSignal): Promise<SandboxView> {
+  async function provisionTeam(id: string, input: { on?: string; cpus?: number; memoryGb?: number; diskGb?: number; network?: "online" | "gateway" }, signal: AbortSignal): Promise<SandboxView> {
     const pending = vmProvisioning.get(id);
     if (pending) return pending;
     const work = (async () => {
@@ -1406,18 +1412,19 @@ export function createApp(ctx: AppContext) {
       const chosen = member.workspaceNode ?? input.on;
       const hosts = candidates().filter((c) => c.online && c.caps?.sandbox?.vm);
       const best = chosen ? hosts.find((c) => c.device === resolveNode(chosen).id) : sandboxHost(hosts);
-      if (!best) throw new HttpError(424, chosen ? "this teammate's VM host is unavailable or lacks KVM/Kata" : "no VM-capable host is online; enroll a Linux host with KVM and Kata");
+      if (!best) throw new HttpError(424, chosen ? "this squire's VM host is unavailable or lacks KVM/Kata" : "no VM-capable host is online; enroll a Linux host with KVM and Kata");
       teamOf().planWorkspace(id, best.device);
       const api = inProcess(teamOwner, signal);
       // A previous attempt may have created its VM before the controller stopped. Recover it by immutable ownership.
       const listed = await api.call<{ sandboxes: SandboxView[] }>("sandboxes", { on: best.device });
       const owned = listed.sandboxes.filter((s) => s.quest === armQuest(teammateLabel(id)) && !s.ephemeral);
-      if (owned.length > 1) throw new HttpError(409, "more than one VM claims this teammate; choose the retained workspace manually");
+      if (owned.length > 1) throw new HttpError(409, "more than one VM claims this squire; choose the retained workspace manually");
       let sandbox = owned[0];
-      if (sandbox && sandbox.isolation !== "vm") throw new HttpError(409, "this teammate's existing workspace is not a VM");
+      if (sandbox && sandbox.isolation !== "vm") throw new HttpError(409, "this squire's existing workspace is not a VM");
       if (!sandbox) {
         const providers = providerViews(ctx.store, ctx.vault).filter((p) => p.hasKey).map((p) => p.id).slice(0, 16);
-        const made = await api.call<{ sandbox: SandboxView }>("createSandbox", { on: best.device, persistent: true, isolation: "vm", network: "gateway", quest: armQuest(teammateLabel(id)), cpus: input.cpus ?? 1, memoryGb: input.memoryGb ?? 2, diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers });
+        // Online unless asked otherwise (the owner's word: squires can use the internet); the gateway is there either way.
+        const made = await api.call<{ sandbox: SandboxView }>("createSandbox", { on: best.device, persistent: true, isolation: "vm", network: input.network ?? "online", quest: armQuest(teammateLabel(id)), cpus: input.cpus ?? 1, memoryGb: input.memoryGb ?? 2, diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers });
         sandbox = made.sandbox;
       }
       teamOf().setWorkspace(id, { node: best.device, id: sandbox.id });
@@ -1427,33 +1434,34 @@ export function createApp(ctx: AppContext) {
     try { return await work; } finally { vmProvisioning.delete(id); }
   }
   async function execTeam(member: Teammate, command: string, timeout: number, signal: AbortSignal) {
-    if (signal.aborted) throw new HttpError(409, "teammate stopped");
+    if (signal.aborted) throw new HttpError(409, "squire stopped");
     const current = teamMember(member.id);
-    if (!current.enabled) throw new HttpError(409, "teammate paused");
-    if (!current.workspace) throw new HttpError(424, "this teammate has no VM yet");
+    if (!current.enabled) throw new HttpError(409, "squire paused");
+    if (!current.workspace) throw new HttpError(424, "this squire has no VM yet");
     return inProcess(teammatePrincipal(member.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: current.workspace.node, id: current.workspace.id, cmd: ["bash", "-lc", command], timeoutSec: timeout });
   }
   async function prepareTeam(member: Teammate, signal: AbortSignal) {
     const workspace = await provisionTeam(member.id, {}, signal);
+    leased.set(member.id, workspace.providers);
     member = teamMember(member.id);
     // A controller crash can leave the old harness running. Stop that exact process
     // before replacing its lease or allowing any new writer into this VM.
     if (workspace.status === "running") await stopTeamWorker(member);
-    if (signal.aborted) throw new HttpError(409, "teammate stopped");
+    if (signal.aborted) throw new HttpError(409, "squire stopped");
     await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}) });
     if (member.repository) {
       // No key in command text or git config. The leased token is read inside the VM; the remote is reset to its public URL.
       const script = `import json,os,subprocess,sys\nd=json.load(open('/work/.galahad-gateway.json'))\np='/work/repo'\nif os.path.exists(p):\n sys.exit(0 if os.path.isdir(p+'/.git') else 1)\nr=subprocess.run(['git','-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'clone','--quiet',d['GALAHAD_REPO_URL'],p],capture_output=True)\nif r.returncode: print('Repository clone failed through the read-only gateway'); sys.exit(r.returncode)\nsubprocess.run(['git','-C',p,'remote','set-url','origin',sys.argv[1]],check=True)`;
       const encoded = Buffer.from(script).toString("base64");
       const cloned = await execTeam(member, `python3 -c "import base64; exec(base64.b64decode('${encoded}'))" '${member.repository}'`, 900, signal);
-      if (cloned.exitCode !== 0) throw new HttpError(424, "could not clone the teammate's repository through its GitHub connector");
+      if (cloned.exitCode !== 0) throw new HttpError(424, "could not clone the squire's repository through its GitHub connector");
     }
   }
   async function stopTeamWorker(member: Teammate): Promise<void> {
     const bound = teamMember(member.id).workspace;
     if (!bound) return;
     const result = await inProcess(teammatePrincipal(member.id), new AbortController().signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: bound.node, id: bound.id, cmd: ["bash", "-lc", agentCleanupCommand()], timeoutSec: 15 });
-    if (result.exitCode !== 0) throw new HttpError(424, "the previous worker could not be safely stopped; inspect its VM before resuming");
+    if (result.exitCode !== 0) throw new HttpError(424, "the squire's previous run could not be safely stopped; inspect its VM before resuming");
   }
   /* Whether a worker has a VM is asked of its host, never assumed: one made just before a crash may never have been
    * bound, and a host whose Docker cannot say just now has not said "none". If the host cannot be asked, nothing is
@@ -1467,16 +1475,16 @@ export function createApp(ctx: AppContext) {
       if (!node || !label) return { where: "none" };
       if (!ctx.store.devices().some((d) => d.kind === "node" && d.id === node)) return { where: "left" };
       const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[]; unknown?: boolean }>("sandboxes", { on: node });
-      if (view.unknown) throw new HttpError(503, "this teammate's VM host could not list its sandboxes just now; nothing was removed, try again");
+      if (view.unknown) throw new HttpError(503, "this squire's VM host could not list its sandboxes just now; nothing was removed, try again");
       const quest = armQuest(label);
       const bound = member.workspace ? view.sandboxes.find((s) => s.id === member.workspace!.id) : undefined;
-      if (bound && (bound.quest !== quest || bound.ephemeral || bound.isolation !== "vm")) throw new HttpError(403, "the workspace is not this teammate's persistent VM");
+      if (bound && (bound.quest !== quest || bound.ephemeral || bound.isolation !== "vm")) throw new HttpError(403, "the workspace is not this squire's persistent VM");
       const ids = view.sandboxes.filter((s) => s.quest === quest && !s.ephemeral).map((s) => s.id);
       return ids.length ? { where: "host", ids } : { where: "none" };
     };
     const mayDestroy = () => {
       if (!destroyWorkspace) throw new HttpError(409, `${member.name} has a persistent workspace (a VM on ${ctx.store.device(node!)?.name ?? node}). Removing ${member.name} destroys that VM and everything in /work: confirm that, or pause ${member.name} instead.`);
-      if (!p.scopes.includes("sandbox")) throw new HttpError(403, "destroying a teammate's workspace requires scope sandbox");
+      if (!p.scopes.includes("sandbox")) throw new HttpError(403, "destroying a squire's workspace requires scope sandbox");
     };
     // Before anything is paused or stopped: is there a VM, and may this request destroy it?
     if ((await vms()).where === "host") mayDestroy();
@@ -1496,6 +1504,14 @@ export function createApp(ctx: AppContext) {
     ctx.ledger?.({ class: "delete", resource: "team", target: `worker:${removed.id}`, verdict: "approved", reason: `removed by you (${p.device.slice(0, 12)})`, detail });
     return { removed: { id: removed.id, name: removed.name }, workspace };
   }
+  /** The engineer's roster models a harness can run on through the gateway: keyed, speaking that harness's API, and (given a
+   * VM's providers) covered by that VM's token. `outside`: when it covers none of them, the ones it doesn't. */
+  const harnessModels = (harness: string, vm?: readonly string[]) => {
+    const views = providerViews(ctx.store, ctx.vault);
+    const choose = (providers: typeof views) => chooseAgentModels(roleModels(ctx.store, "engineer"), providers, 3, AGENTS[harness]?.kind);
+    const models = choose(views.filter((p) => !vm || vm.includes(p.id)));
+    return { models, outside: models.length ? [] : choose(views) };
+  };
   if (ctx.team) {
     const runtime = teamRuntime({
       brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }),
@@ -1503,7 +1519,8 @@ export function createApp(ctx: AppContext) {
       exec: execTeam, prepare: prepareTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
-      models: () => chooseAgentModels(roleModels(ctx.store, "engineer"), providerViews(ctx.store, ctx.vault)),
+      models: (member) => harnessModels(member.harness, leased.get(member.id)).models,
+      modelsOutside: (member) => harnessModels(member.harness, leased.get(member.id)).outside,
       memories: (query) => memoryContext(query) ?? "",
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
@@ -1514,7 +1531,7 @@ export function createApp(ctx: AppContext) {
     // A worker Galahad makes for himself goes in the ledger: its handle and role, never its job's words.
     const onRecruit = (made: Teammate) => ctx.ledger?.({
       class: "create", resource: "team", target: `worker:${made.id}`, verdict: "allow",
-      reason: made.createdBy === TEAM_GALAHAD ? "Galahad made a worker of his own, in your conversation with him" : `his worker ${made.createdBy} made another, in its room`,
+      reason: made.createdBy === TEAM_GALAHAD ? "Galahad made a squire of his own, in your conversation with him" : `his squire ${made.createdBy} made another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
     ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, onRecruit, onChange: () => {
@@ -1528,7 +1545,7 @@ export function createApp(ctx: AppContext) {
       // The world's existing six-figure bound stays intact. Active workers take
       // precedence over recent outcomes, and terminal states replace stale work faces.
       const ids = [...new Set([...active.map((work) => work.teammate), ...[...latest].sort((a, b) => b[1] - a[1]).map(([id]) => id)])].slice(0, MAX_PARTNERS);
-      const labels = { idle: "Ready for the next task", thinking: "Coordinating within the hivemind", working: "Working in his persistent VM", waiting: "Waiting for queued work", pleased: "Task completed and verified", concerned: "Work needs attention", resting: "Worker paused" };
+      const labels = { idle: "Ready for the next task", thinking: "Coordinating within the hivemind", working: "Working in his persistent VM", waiting: "Waiting for queued work", pleased: "Task completed and verified", concerned: "Work needs attention", resting: "Squire paused" };
       for (const id of ids.reverse()) {
         // One that was removed still has its last work on record for a while: it is shown no more, and never stops the others being shown.
         const member = ctx.team!.store.teammate(id);
@@ -1558,22 +1575,22 @@ export function createApp(ctx: AppContext) {
     removeTeammate: (input, p, req) => {
       ownerOnly(p);
       const member = teamMember(input.id);
-      if (vmProvisioning.has(member.id)) throw new HttpError(409, "this teammate's VM is being provisioned; remove it when that has finished");
+      if (vmProvisioning.has(member.id)) throw new HttpError(409, "this squire's VM is being provisioned; remove it when that has finished");
       return longRunning(removeTeam(member, input.destroyWorkspace === true, p, req.signal));
     },
 
     /* His own way to his workers. Making one and writing to them are his alone: you have the routes above, and
      * no other agent, loop or node has either. */
     teamOverview: (input, p) => {
-      if (!leadsTeam(p)) throw new HttpError(403, "this is Galahad's own reading of his workers; you read them in Team");
+      if (!leadsTeam(p)) throw new HttpError(403, "this is Galahad's own reading of his squires; you read them in Squires");
       return teamOf().overview(input.room);
     },
     recruitTeammate: (input, p) => {
-      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself makes a worker of his own; you add one in Team");
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself makes a squire of his own; you add one in Squires");
       return { teammate: teamOf().recruit(input) };
     },
     sayToTeam: (input, p) => {
-      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself writes to his workers as himself; you write to them in Team");
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself writes to his squires as himself; you write to them in Squires");
       return { message: teamOf().say(input) };
     },
     provisionTeammate: (input, p, req) => { ownerOnly(p); return longRunning(provisionTeam(input.id, input, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace }))); },
@@ -1583,16 +1600,22 @@ export function createApp(ctx: AppContext) {
       const workspace = await teamWorkspace(member, req.signal);
       const state = teamOf().snapshot();
       const busy = state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running");
-      const harnesses: { id: string; ready: boolean; reason?: string }[] = [{ id: "native", ready: true }];
-      for (const id of ["opencode", "hermes"]) {
-        let ready = false;
-        if (!busy && workspace?.status === "running" && member.enabled) ready = (await execTeam(member, id === "hermes" ? "hermes acp --check" : "opencode --version", 30, req.signal)).exitCode === 0;
-        harnesses.push({ id, ready, ...(!ready ? { reason: busy ? "Readiness is checked when this teammate is idle" : "Install this harness in the teammate's VM" } : {}) });
+      // Each harness: is it installed there, and what would it run on (a vendor's tool: its own sign-in, asked of
+      // the tool itself and never read; then, or otherwise, a roster model through the gateway).
+      const harnesses: { id: string; ready: boolean; on?: string; reason?: string }[] = [{ id: "native", ready: true }];
+      for (const [id, driver] of Object.entries(AGENTS)) {
+        if (busy || workspace?.status !== "running" || !member.enabled) {
+          harnesses.push({ id, ready: false, reason: busy ? "Readiness is checked when this squire is idle" : "Install this harness in the squire's VM" });
+          continue;
+        }
+        const usable = harnessModels(id, workspace.providers);
+        const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside);
+        harnesses.push({ id, ready, ...(on ? { on } : {}), ...(reason ? { reason } : {}) });
       }
       return { workspace, harnesses };
     },
     prepareTeamWorkspace: (input, p) => {
-      if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller prepares worker credentials");
+      if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller prepares squire credentials");
       const repo = input.repository ? githubRepo(input.repository) : null;
       let git: { connector: string; owner: string; repo: string } | undefined;
       if (repo) {
@@ -1638,6 +1661,10 @@ export function createApp(ctx: AppContext) {
     },
     secrets: () => ({ secrets: ctx.vault.list().map(secretView), unlocked: ctx.vault.unlocked() }),
     setSecret: (input) => {
+      // A subscription's sign-in is not a key (providers.ts): it is never sealed as a provider's or a connector's,
+      // so it is never sent to one. As a plain secret of your own it is pinned nowhere, and never sent at all.
+      const pasted = input.provider || input.connector ? signIn(input.value) : null;
+      if (pasted) throw new HttpError(400, pasted.why);
       // Pin the key to an origin taken from what you entered with it, or the built-in
       // preset. Never from a provider record, which someone else may have repointed.
       const known = input.provider ? preset(input.provider) : undefined;
@@ -1685,7 +1712,7 @@ export function createApp(ctx: AppContext) {
       return { ok: true };
     },
     rotateVault: () => ctx.vault.rotate(),
-    providers: () => ({ providers: providerViews(ctx.store, ctx.vault), presets: PRESETS }),
+    providers: () => ({ providers: providerViews(ctx.store, ctx.vault), presets: PRESETS, signIns: SIGN_INS }),
     setProvider: (input) => {
       // Provider records replicate in plaintext: a key pasted into a URL or label must never land there.
       guardAgainstSecrets(input.baseUrl ?? "", input.label ?? "");
@@ -1709,7 +1736,9 @@ export function createApp(ctx: AppContext) {
     providerModels: async (input) => {
       const provider = resolveProvider(ctx.store, ctx.vault, input.id);
       if (!provider) throw new HttpError(404, `provider ${input.id} is not configured`);
-      return { models: await listModels(provider) };
+      // A coding plan isn't his to call, to list its models or for anything else: the ones its preset names.
+      const plan = planOf(input.id);
+      return { models: plan ? [...plan.models] : await listModels(provider) };
     },
     roster: () => ({ roster: roster(ctx.store) }),
     setRoster: (input) => {

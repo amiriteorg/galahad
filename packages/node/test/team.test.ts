@@ -15,7 +15,7 @@ function setup(options: Partial<Omit<TeamServiceOptions, "store">> = {}, budget 
   return { store, service };
 }
 
-describe("teammates converse through the node", () => {
+describe("squires converse through the node", () => {
   test("an owner message reaches every member without mentions; silence does not fan out", async () => {
     const heard: string[] = [];
     const { store, service } = setup({ respond: async (teammate, _room, history) => { heard.push(teammate.id); expect(history[0]?.speaker).toBe("owner"); return ""; } });
@@ -66,8 +66,8 @@ describe("teammates converse through the node", () => {
   });
 });
 
-describe("Galahad makes and briefs his own workers", () => {
-  test("a worker that needs another makes one: it joins the room and takes work there, all within the one bounded chain", async () => {
+describe("Galahad makes and briefs his own squires", () => {
+  test("a squire that needs another makes one: it joins the room and takes work there, all within the one bounded chain", async () => {
     const heard: string[] = [];
     const recruited: string[] = [];
     const { store, service } = setup({
@@ -91,7 +91,7 @@ describe("Galahad makes and briefs his own workers", () => {
     expect(store.deliveries().every((delivery) => delivery.chainId === asked.chainId)).toBe(true);
     expect(store.teammates().reduce((sum, t) => sum + t.turnsToday, 0)).toBeLessThanOrEqual(6);
   });
-  test("making workers is held to the day's allowance and to a turn's actions; one who may no longer act makes none", async () => {
+  test("making squires is held to the day's allowance and to a turn's actions; one who may no longer act makes none", async () => {
     const outcomes: string[] = [];
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => {
       if (teammate.id !== "ada") return "";
@@ -109,7 +109,7 @@ describe("Galahad makes and briefs his own workers", () => {
     expect(outcomes.slice(64)).toEqual(Array(6).fill("actions"));
     expect(store.teammates().filter((t) => t.createdBy === "ada")).toHaveLength(8);
   });
-  test("a worker that was paused while it worked makes no one", async () => {
+  test("a squire that was paused while it worked makes no one", async () => {
     let outcome = "";
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => {
       if (teammate.id !== "ada") return "";
@@ -122,7 +122,7 @@ describe("Galahad makes and briefs his own workers", () => {
     expect(outcome).toContain("may no longer act");
     expect(store.teammate("after-pause")).toBeNull();
   });
-  test("a worker made in a direct conversation stays out of it, and is reached by a message of its maker's", async () => {
+  test("a squire made in a direct conversation stays out of it, and is reached by a message of its maker's", async () => {
     const { store, service } = setup({ respond: async (teammate, room, _history, context) => {
       if (teammate.id === "ada" && room.direct && room.members.length === 1 && !store.teammate("aide")) {
         const made = context.recruit({ id: "aide", name: "Aide", instructions: "Gather the references Ada asks for." });
@@ -138,7 +138,7 @@ describe("Galahad makes and briefs his own workers", () => {
     expect(between.members).toEqual(["ada", "aide"]);
     expect(store.messages(between.id).map((message) => [message.speaker, message.chainId])).toEqual([["ada", asked.chainId], ["aide", asked.chainId]]);
   });
-  test("Galahad's own message reaches a worker in its direct conversation with you, or a room, as his", async () => {
+  test("Galahad's own message reaches a squire in its direct conversation with you, or a room, as his", async () => {
     const { store, service } = setup({ respond: async (teammate, _room, history) => `${teammate.name} heard ${history.at(-1)!.speakerName}.` }, 2);
     service.start();
     const toSam = service.say({ teammate: "sam", text: "Look into the flaky test." }); await service.settled();
@@ -151,11 +151,11 @@ describe("Galahad makes and briefs his own workers", () => {
     const toRoom = service.say({ room: "workshop", text: "Compare notes." }); await service.settled();
     expect(toRoom).toMatchObject({ room: "workshop", speaker: "galahad" });
     expect(store.messages("workshop").filter((message) => message.chainId === toRoom.chainId).length).toBe(3);
-    expect(() => service.say({ teammate: "nobody", text: "Anyone?" })).toThrow(/No such teammate/);
+    expect(() => service.say({ teammate: "nobody", text: "Anyone?" })).toThrow(/No such squire/);
     expect(() => service.say({ text: "Nobody." } as never)).toThrow(TeamError);
     expect(() => service.say({ teammate: "sam", room: "workshop", text: "Both." })).toThrow(TeamError);
   });
-  test("he makes a worker himself: new, his by record, told to whoever keeps the ledger; a stopped controller makes none", async () => {
+  test("he makes a squire himself: new, his by record, told to whoever keeps the ledger; a stopped controller makes none", async () => {
     const recruited: string[] = [];
     const { store, service } = setup({ onRecruit: (made) => { recruited.push(`${made.id} by ${made.createdBy}`); } });
     expect(service.recruit({ id: "scout", name: "Scout", instructions: "Watch the dependency updates." })).toMatchObject({ id: "scout", createdBy: "galahad", instructionsBy: "galahad" });
@@ -199,7 +199,7 @@ describe("task orchestration", () => {
     await service.settled();
     expect(service.activeWork()).toEqual([]);
   });
-  test("each teammate is serial across chat rooms and tasks while other teammates run in parallel", async () => {
+  test("each squire is serial across chat rooms and tasks while other squires run in parallel", async () => {
     const chat = deferred<string>(); const task = deferred<{ verified: boolean; output: string }>();
     const starts: string[] = [];
     const { store, service } = setup({ respond: async (teammate) => { starts.push(`chat:${teammate.id}`); return teammate.id === "ada" ? chat.promise : ""; }, executeTask: async (teammate) => { starts.push(`task:${teammate.id}`); return task.promise; } });
@@ -258,7 +258,7 @@ describe("stopping, interruption and resource bounds", () => {
         () => context.remember("Late memory"),
         () => context.send({ teammate: "lin" }, "Late message"),
         () => context.delegate({ assignee: "lin", title: "Late task", goal: "Late task" }),
-      ].map((write) => { try { write(); return false; } catch (error) { return (error as Error).message === "This teammate's work has stopped."; } });
+      ].map((write) => { try { write(); return false; } catch (error) { return (error as Error).message === "This squire's work has stopped."; } });
       return outcome;
     } });
     const task = service.createTask({ room: "workshop", assignee: "ada", title: "First", goal: "First" });
@@ -276,7 +276,7 @@ describe("stopping, interruption and resource bounds", () => {
     expect(rejectedAfterClose).toEqual([true, true, true, true]);
     await service.stop();
   });
-  test("pause cancels an active teammate, keeps queued work, and requires explicit resume", async () => {
+  test("pause cancels an active squire, keeps queued work, and requires explicit resume", async () => {
     let calls = 0;
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => { if (teammate.id !== "ada") return ""; calls++; if (calls > 1) return ""; return new Promise<string>((resolve) => context.signal.addEventListener("abort", () => resolve("late words"), { once: true })); } });
     service.post({ room: "workshop", text: "Work." }); service.start(); await until(() => calls === 1);
@@ -319,7 +319,7 @@ describe("stopping, interruption and resource bounds", () => {
   });
 });
 
-describe("removing a worker", () => {
+describe("removing a squire", () => {
   test("its work is stopped first, then it is gone; the room goes on without it", async () => {
     let calls = 0;
     const heard: string[] = [];
@@ -337,8 +337,8 @@ describe("removing a worker", () => {
     expect(service.activeWork().some((work) => work.teammate === "ada")).toBe(false);
     // What it was saying never lands; what it was doing and what waited for it both say why they stopped.
     expect(store.messages("workshop").some((m) => m.text === "late words")).toBe(false);
-    expect(store.deliveries().find((d) => d.teammate === "ada")).toMatchObject({ status: "stopped", error: "Stopped to remove its worker." });
-    expect(store.task(next.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+    expect(store.deliveries().find((d) => d.teammate === "ada")).toMatchObject({ status: "stopped", error: "Stopped to remove its squire." });
+    expect(store.task(next.id)).toMatchObject({ status: "stopped", error: "Its squire was removed." });
     service.post({ room: "workshop", text: "Carry on." }); await service.settled();
     expect(heard.filter((id) => id === "lin")).toHaveLength(2);
     expect(store.deliveries().filter((d) => d.teammate === "ada")).toHaveLength(1);
@@ -355,16 +355,16 @@ describe("removing a worker", () => {
     await expect(service.remove("ada", { waitMs: 20 })).rejects.toThrow(/still stopping/);
     expect(store.teammate("ada")).toMatchObject({ enabled: false });
     expect(store.room("workshop")!.members).toEqual(["ada", "lin"]);
-    expect(store.task(first.id)).toMatchObject({ status: "stopped", error: "Stopped to remove its worker." });
+    expect(store.task(first.id)).toMatchObject({ status: "stopped", error: "Stopped to remove its squire." });
     // What had not started is untouched: resuming the worker would run it.
     expect(store.task(waiting.id)!.status).toBe("queued");
     finish.resolve({ verified: true, output: "Too late" }); await service.settled();
     expect(store.task(first.id)).toMatchObject({ status: "stopped", verified: false, output: "" });
     expect((await service.remove("ada")).removedAt).toBeGreaterThan(0);
-    expect(store.task(waiting.id)).toMatchObject({ status: "stopped", error: "Its worker was removed." });
+    expect(store.task(waiting.id)).toMatchObject({ status: "stopped", error: "Its squire was removed." });
   });
 
-  test("a workspace goes only when the caller releases it; a release that fails leaves the worker here and bound", async () => {
+  test("a workspace goes only when the caller releases it; a release that fails leaves the squire here and bound", async () => {
     const { store, service } = setup();
     service.start();
     service.setWorkspace("ada", { node: "host", id: "0123456789" });
@@ -401,7 +401,7 @@ describe("removing a worker", () => {
     expect(service.saveTeammate({ id: "lin", name: "Lin" }).id).toBe("lin");
   });
 
-  test("the caller's release runs for a worker with no binding too, and a release already made is not left half done by a controller that begins to stop", async () => {
+  test("the caller's release runs for a squire with no binding too, and a release already made is not left half done by a controller that begins to stop", async () => {
     // A VM made just before a crash may never have been bound: only the caller can know, so it is always asked.
     const { store, service } = setup();
     service.start();

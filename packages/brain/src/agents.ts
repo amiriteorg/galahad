@@ -1,7 +1,9 @@
 import { type ExecResult, randomId, redact } from "@galahad/core";
 import { agentCleanupCommand, agentProcessCommand, AGENT_PROCESS_PY } from "./agent-process.ts";
 import { HERMES } from "./hermes.ts";
+import { CLAUDE, CODEX } from "./vendor-cli.ts";
 export { HERMES } from "./hermes.ts";
+export { CLAUDE, CODEX } from "./vendor-cli.ts";
 export { agentCleanupCommand } from "./agent-process.ts";
 
 /*
@@ -12,6 +14,8 @@ export { agentCleanupCommand } from "./agent-process.ts";
  * scoped to that sandbox (it never sees a key); Galahad follows its event stream, so
  * every command and edit is visible as it happens; and the independent reviewer
  * still judges the result. Pure orchestration over `exec`, like the quest itself.
+ * (A vendor's own tool that its owner signed in there calls its vendor itself
+ * instead, and the gateway is kept out of its way: vendor-cli.ts.)
  */
 
 /** The model the agent uses, through the gateway. */
@@ -19,7 +23,18 @@ export interface AgentModel {
   /** The gateway provider, e.g. "orcarouter". */
   provider: string;
   model: string;
+  /**
+   * Not a gateway model at all: the tool's own sign-in in this sandbox (vendor-cli.ts). The tool calls its
+   * vendor itself, on the model its account gives it, and is not pointed at the gateway.
+   */
+  own?: boolean;
 }
+
+/** A run on the tool's own sign-in. */
+export const OWN_SIGN_IN: AgentModel = { provider: "", model: "", own: true };
+
+/** What a run is on, as a person reads it. */
+export const agentModelName = (model: AgentModel): string => (model.own ? "its own sign-in" : `${model.provider}/${model.model}`);
 
 export type AgentEvent =
   | { type: "session"; id: string }
@@ -30,6 +45,19 @@ export type AgentEvent =
 
 export interface AgentDriver {
   name: string;
+  /** What a person calls it. */
+  title: string;
+  /** The API a gateway model must speak for it: a provider's kind. */
+  kind: "openai" | "anthropic";
+  /** A command that exits 0 in a sandbox where it is installed and can start. */
+  check: string;
+  /**
+   * A vendor's own tool, which its owner signs in himself, in the sandbox, through the vendor's own flow
+   * (vendor-cli.ts). `check` then also prints whether it has a sign-in, and `read` reads that: signed in or
+   * not, and the tool's word for how. The sign-in itself is never Galahad's to see. `login`: the tool's own
+   * command to sign in; `roster`: what kind of model it runs on through the gateway instead.
+   */
+  signIn?: { read(stdout: string): { signedIn: boolean; method?: string }; login: string; roster: string };
   /** Files written before the first run (absolute path → content): every model it may fall back to. */
   files(models: readonly AgentModel[]): Record<string, string>;
   /** The command for one run on one model, reading its message from AGENT_DIR/prompt.md (a session id continues one). */
@@ -57,6 +85,9 @@ const ocProvider = (model: AgentModel) => `g-${model.provider.replace(/[^A-Za-z0
 
 export const OPENCODE: AgentDriver = {
   name: "opencode",
+  title: "OpenCode",
+  kind: "openai",
+  check: "opencode --version",
   files: (models) => {
     // One provider per gateway provider, all on the sandbox's one token: each model the
     // roster offers is a fallback the next run can continue the session on.
@@ -117,7 +148,7 @@ export const OPENCODE: AgentDriver = {
   },
 };
 
-export const AGENTS: Record<string, AgentDriver> = { opencode: OPENCODE, hermes: HERMES };
+export const AGENTS: Record<string, AgentDriver> = { opencode: OPENCODE, hermes: HERMES, claude: CLAUDE, codex: CODEX };
 
 export interface AgentRunDeps {
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
@@ -277,10 +308,11 @@ export async function runAgent(
 
 /**
  * The agent's models, in the roster's order: the engineer's models on providers the gateway
- * can reach with a key, speaking the OpenAI-compatible API (the protocol the agent's config
- * uses here). The first does the work; the others are fallbacks, as for every role.
+ * can reach with a key, speaking the API the agent does (its driver's `kind`; the
+ * OpenAI-compatible one unless it says otherwise). The first does the work; the others are
+ * fallbacks, as for every role.
  */
-export function chooseAgentModels(engineer: readonly string[], providers: readonly { id: string; kind: string; hasKey: boolean }[], max = 3): AgentModel[] {
+export function chooseAgentModels(engineer: readonly string[], providers: readonly { id: string; kind: string; hasKey: boolean }[], max = 3, kind: AgentDriver["kind"] = "openai"): AgentModel[] {
   const out: AgentModel[] = [];
   for (const ref of engineer) {
     const slash = ref.indexOf("/");
@@ -289,7 +321,7 @@ export function chooseAgentModels(engineer: readonly string[], providers: readon
     const model = ref.slice(slash + 1);
     if (!model || model === "*") continue;
     const known = providers.find((p) => p.id === provider);
-    if (known?.hasKey && known.kind === "openai" && out.length < max) out.push({ provider, model });
+    if (known?.hasKey && known.kind === kind && out.length < max) out.push({ provider, model });
   }
   return out;
 }

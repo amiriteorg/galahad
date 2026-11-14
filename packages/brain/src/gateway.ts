@@ -132,7 +132,8 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   const verdict = ctx.tokens.consume(token, providerId);
   if (!verdict.ok) return json(401, verdict.reason);
 
-  const provider = resolveProvider(ctx.store, ctx.vault, providerId);
+  // The one place a coding plan's key is handed over: to a tool, calling as itself.
+  const provider = resolveProvider(ctx.store, ctx.vault, providerId, "tool");
   if (!provider) return json(404, `provider ${providerId} is not configured`);
   if (!provider.apiKey && !provider.local) return json(424, `provider ${providerId} has no key on this fleet`);
 

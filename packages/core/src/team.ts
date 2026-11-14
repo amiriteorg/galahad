@@ -16,7 +16,8 @@ export const TEAM_GALAHAD = "galahad";
 export const TeammateId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, "a lowercase name of at most 32 letters, digits or hyphens").refine((id) => id !== TEAM_OWNER && id !== "system" && id !== TEAM_GALAHAD, "that name is reserved");
 export const TeamRoomId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const TeamTaskId = z.string().regex(/^task-[a-z0-9_-]{12}$/);
-export const TeamHarness = z.enum(["native", "opencode", "hermes"]);
+/** `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the squire's VM. */
+export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex"]);
 export type TeamHarness = z.infer<typeof TeamHarness>;
 export const TeamWorkspaceQuest = z.string().regex(/^arm\.team\.[a-f0-9]{10}\.[a-z][a-z0-9-]{0,31}$/);
 /** Controller-local identities must not accidentally share a VM on a fleet host. */
@@ -87,7 +88,7 @@ export const TeamPostInput = z.strictObject({ room: TeamRoomId, text: z.string()
 export type TeamPostInput = z.infer<typeof TeamPostInput>;
 /** Galahad's own words into Team: to one worker (in that worker's direct conversation with you) or to a room. */
 export const TeamSayInput = z.strictObject({ teammate: TeammateId.optional(), room: TeamRoomId.optional(), text: z.string().trim().min(1).max(TEAM_LIMITS.message) })
-  .refine((input) => Boolean(input.teammate) !== Boolean(input.room), "choose one worker or one room");
+  .refine((input) => Boolean(input.teammate) !== Boolean(input.room), "choose one squire or one room");
 export type TeamSayInput = z.infer<typeof TeamSayInput>;
 export const TeamTaskInput = z.strictObject({
   room: TeamRoomId,
@@ -104,7 +105,7 @@ export const TeamControlInput = z.strictObject({
   teammate: TeammateId.optional(),
   task: TeamTaskId.optional(),
   action: z.enum(["pause", "resume", "stop"]),
-}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, teammate or task");
+}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, squire or task");
 export type TeamControlInput = z.infer<typeof TeamControlInput>;
 
 /** Removing a worker, which is yours alone. A worker that has a VM is removed only together with it, and only

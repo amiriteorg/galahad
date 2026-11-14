@@ -478,6 +478,8 @@ async function workIn(
           role,
           messages,
           tools: false,
+          // A quest is coding work, whichever of its roles speaks: a coding plan on the role may answer it.
+          coding: true,
           // A role held to one model asks exactly that one (no fallback: what's measured is that model).
           ...(options.pins?.[role] ? { model: options.pins[role] } : {}),
           // The archive's relevant entries go with the plan (the start), not with every step.
@@ -637,7 +639,7 @@ export async function runNodeQuest(
           ask: async (messages) => {
             let text = "";
             let model = "";
-            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false, ...(options.pins?.reviewer ? { model: options.pins.reviewer } : {}) })) {
+            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false, coding: true, ...(options.pins?.reviewer ? { model: options.pins.reviewer } : {}) })) {
               if (event.type === "text") text += event.text;
               else if (event.type === "model") model = event.ref;
               else if (event.type === "usage") spent({ role: "reviewer", model: event.ref, usage: event.usage });
@@ -746,8 +748,9 @@ async function agentFor(node: NodeClient, options: DoOptions): Promise<NonNullab
     node.call<{ roster: Record<string, { models: string[] }> }>("roster"),
     node.call<{ providers: ProviderView[] }>("providers"),
   ]);
-  const models = chooseAgentModels(roster.engineer?.models ?? [], providers);
-  if (!models.length) throw new Error("no engineer model on an OpenAI-compatible provider with a key: galahad roster set engineer <provider/model> …");
+  // (A quest's sandbox is made for the quest: no tool is signed in there, so it runs on the roster through the gateway.)
+  const models = chooseAgentModels(roster.engineer?.models ?? [], providers, 3, driver.kind);
+  if (!models.length) throw new Error(`no engineer model on ${driver.kind === "anthropic" ? "an Anthropic-API" : "an OpenAI-compatible"} provider with a key: galahad roster set engineer <provider/model> …`);
   return { driver, models, minutes: wanted.minutes, workdir: wanted.repo ? "/work/repo" : "/work" };
 }
 
@@ -876,7 +879,7 @@ export async function runNodeInvestigation(
           let text = "";
           let model = "";
           // The archive's relevant entries go with the plan (the start), not with every step.
-          for await (const event of node.stream("chat", { role, messages, tools: false, ...(role === "planner" && messages.length === 1 ? { archive: true } : {}) })) {
+          for await (const event of node.stream("chat", { role, messages, tools: false, coding: true, ...(role === "planner" && messages.length === 1 ? { archive: true } : {}) })) {
             if (event.type === "text") text += event.text;
             else if (event.type === "model") model = event.ref;
             else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);

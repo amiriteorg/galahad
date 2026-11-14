@@ -4,7 +4,7 @@ import { anthropicConversation, openAIConversation, RefusalError, type ToolCall,
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
-import { listModels, resolveProvider } from "./providers.ts";
+import { listModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
 
 export interface BrainContext {
@@ -29,6 +29,11 @@ export interface ChatRequest {
   tools?: ChatTools;
   /** Start the role's models at this position (effort: each parallel attempt takes another one first). */
   rotate?: number;
+  /**
+   * This answer is coding work: a quest's planner, engineer or reviewer, a squire at its work. A coding plan's
+   * models may give it (providers.ts); any other answer of his passes them over.
+   */
+  coding?: boolean;
   /** Messages the owner sends while this answer is under way: each reaches the model at the next safe point. */
   steering?: Steering;
 }
@@ -133,6 +138,12 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
       out.push(ref);
       continue;
     }
+    // A coding plan isn't asked what it serves (that is no coding): the first model its preset names.
+    const plan = planOf(provider);
+    if (plan) {
+      out.push(`${provider}/${plan.models[0]}`);
+      continue;
+    }
     const resolved = resolveProvider(ctx.store, ctx.vault, provider);
     if (!resolved) continue;
     try {
@@ -156,7 +167,15 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  * run) hands the answer to the next one, which starts it again from your message.
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
-  const listed = req.model ? [req.model] : await expand(ctx, roleModels(ctx.store, req.role ?? "planner"));
+  const asked = req.model ? [req.model] : roleModels(ctx.store, req.role ?? "planner");
+  // A coding plan's key is for coding (providers.ts): his coding work uses it, and his squires' coding tools through
+  // the gateway. For any other answer its models are passed over without a word, unless they were all there was.
+  const own = req.coding ? asked : asked.filter((ref) => !onPlan(ref));
+  if (!own.length && asked.length) {
+    yield { type: "error", error: `${asked.join(", ")} ${asked.length === 1 ? "is" : "are"} on a coding plan, whose key is for coding: his quests and his squires' work use it, and he doesn't answer you with it. ${req.model ? "Name" : "Give this role"} a model with a key of its own.` };
+    return;
+  }
+  const listed = req.model ? own : await expand(ctx, own);
   // A parallel attempt starts at another of the role's models; the rest stay its fallbacks, in order.
   const candidates = req.rotate ? rotated(listed, req.rotate) : listed;
   const tools = req.tools?.specs.length ? req.tools : undefined;
@@ -181,13 +200,13 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield { type: "fallback", from: ref, error: (error as Error).message };
       continue;
     }
-    const provider = resolveProvider(ctx.store, ctx.vault, parsed.provider);
+    const provider = resolveProvider(ctx.store, ctx.vault, parsed.provider, req.coding ? "coding" : "own");
     if (!provider) {
       yield { type: "fallback", from: ref, error: `provider "${parsed.provider}" is not configured` };
       continue;
     }
     if (!provider.apiKey && !provider.local) {
-      yield { type: "fallback", from: ref, error: `provider "${parsed.provider}" has no key in the vault` };
+      yield { type: "fallback", from: ref, error: whyNoKey(parsed.provider) };
       continue;
     }
     const start = () => {

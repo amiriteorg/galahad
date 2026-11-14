@@ -1,7 +1,7 @@
 import { readdirSync, statSync, statfsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
-import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, parseRef, resolveProvider, roster } from "@galahad/brain";
+import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, resolveProvider, roster } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
@@ -214,7 +214,8 @@ function modelProblem(deps: DoctorDeps, ref: string): string | null {
   } catch {
     return "not a <provider>/<model> reference";
   }
-  const provider = resolveProvider(deps.store, deps.vault, parsed.provider);
+  // (A coding plan's model is his workers' tools' to use: what is asked of it is whether a tool would get its key.)
+  const provider = resolveProvider(deps.store, deps.vault, parsed.provider, onPlan(ref) ? "tool" : "own");
   if (!provider) return `provider "${parsed.provider}" is not configured`;
   if (provider.local) {
     // The two runtimes this node looks for itself; any other local address is judged by asking it (a full check).
@@ -274,7 +275,7 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
   const roles: RoleFact[] = Object.entries(roster(deps.store)).map(([role, spec]) => ({
     role,
     chats: !SILENT_ROLES.has(role),
-    models: spec.models.slice(0, 16).map((ref) => ({ ref, problem: modelProblem(deps, ref) })),
+    models: spec.models.slice(0, 16).map((ref) => ({ ref, problem: modelProblem(deps, ref), ...(onPlan(ref) ? { plan: true } : {}) })),
     probe: null,
   }));
   if (!ask) return roles;
@@ -282,7 +283,8 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
   const wanted = new Map<string, RoleFact[]>();
   for (const role of roles) {
     if (!role.chats) continue;
-    const first = role.models.find((m) => m.problem === null);
+    // (His own: a coding plan's model is never asked a word by him.)
+    const first = role.models.find((m) => m.problem === null && !m.plan);
     const ref = first ? concrete(deps, first.ref) : null;
     if (!ref) continue;
     if (!wanted.has(ref) && wanted.size >= MAX_MODEL_PROBES) continue;

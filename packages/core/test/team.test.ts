@@ -15,6 +15,12 @@ describe("team contracts", () => {
       expect(TeammateInput.safeParse({ id: "ada", name: "Ada", avatar: invalid }).success).toBe(false);
     }
   });
+  test("a squire's harness is his own, or one of the tools the node drives: the vendors' own CLIs among them, and nothing unnamed", () => {
+    for (const harness of ["native", "opencode", "hermes", "claude", "codex"]) expect(TeammateInput.parse({ id: "ada", name: "Ada", harness }).harness).toBe(harness as never);
+    for (const harness of ["claude-code", "Claude", "gemini", "", "codex "]) expect([harness, TeammateInput.safeParse({ id: "ada", name: "Ada", harness }).success]).toEqual([harness, false]);
+    // Which harness a squire has is the owner's to say: a squire Galahad makes is never given one.
+    for (const harness of ["claude", "codex"]) expect(TeamRecruitInput.safeParse({ id: "ada", name: "Ada", instructions: "Review.", harness }).success).toBe(false);
+  });
   test("same-named workers on different controllers cannot claim each other's VM", () => {
     const label = teamArmLabel("node-one", "a".repeat(32));
     expect(label.length).toBeLessThanOrEqual(48);

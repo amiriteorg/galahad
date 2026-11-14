@@ -1,0 +1,208 @@
+import { Database } from "bun:sqlite";
+import { describe, expect, test } from "bun:test";
+import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
+import { foundFleet, MindStore, Vault } from "@galahad/mind";
+import { chat, chooseAgentModels, decide, detectProvider, embed, GatewayTokens, handleGateway, originOf, planOf, preset, PRESETS, resolveProvider, signIn } from "../src/index.ts";
+
+/*
+ * Coding plans and sign-ins. A coding plan is a subscription whose key is for coding (its terms
+ * say so), not for calling the API from any program for anything. Galahad and his squires are
+ * a coding tool: he calls a plan himself for coding work, under his own name; he lends it to the
+ * other coding tools in his squires' VMs through the gateway, each calling as itself; and nothing
+ * else he does (his talk with you, his loops, embeddings, decisions) is handed its key. A
+ * subscription's sign-in is not a key at all, and is never sent to an API from here.
+ */
+
+const PLAN_KEY = "0123456789abcdef0123456789abcdef.FAKEfakeFAKEfake";
+const OWN_KEY = "sk-ant-api03-FAKE-key-for-tests-0000";
+
+function mind(roster: Record<string, string[]>) {
+  const identity = newNodeIdentity();
+  const store = new MindStore(":memory:");
+  foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
+  const vault = new Vault(store, identity);
+  const plan = preset("zai-coding")!;
+  vault.set("zai-coding", PLAN_KEY, { provider: "zai-coding", origin: originOf(plan.baseUrl)! });
+  store.emit(identity, "provider.set", { id: "zai-coding", kind: plan.kind, baseUrl: plan.baseUrl, secret: "zai-coding" });
+  vault.set("own", OWN_KEY, { provider: "own", origin: "https://models.example.test" });
+  store.emit(identity, "provider.set", { id: "own", kind: "openai", baseUrl: "https://models.example.test/v1", secret: "own" });
+  for (const [role, models] of Object.entries(roster)) store.emit(identity, "roster.set", { role, models });
+  return { store, vault };
+}
+
+/** Every request made, and one spoken word for an answer. */
+function recorded() {
+  const seen: { url: string; headers: Headers }[] = [];
+  const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    seen.push({ url: String(url), headers: new Headers(init?.headers) });
+    return new Response('data: {"choices":[{"delta":{"content":"aye"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+  }) as typeof globalThis.fetch;
+  return { seen, fetch };
+}
+
+const all = async (events: AsyncGenerator<ChatStreamEvent>) => {
+  const out: ChatStreamEvent[] = [];
+  for await (const e of events) if (e.type !== "usage") out.push(e);
+  return out;
+};
+const ask = [{ role: "user" as const, content: "hello" }];
+
+describe("coding plans are presets that say what they are", () => {
+  test("each names its plan and where its terms are, on its vendor's own site, and points at the plan's own endpoint", () => {
+    const plans = PRESETS.filter((p) => p.plan);
+    expect(plans.map((p) => p.id).sort()).toEqual(["alibaba-coding", "kimi-coding", "opencode-go", "zai-coding"]);
+    for (const p of plans) {
+      expect([p.id, p.baseUrl.startsWith("https://")]).toEqual([p.id, true]);
+      expect([p.id, p.plan!.name.length > 3, p.plan!.terms.startsWith("https://")]).toEqual([p.id, true, true]);
+      // What its vendor says it is for, and who says so.
+      expect([p.id, p.plan!.says.length > 40, /^(Z\.ai|Kimi|Alibaba|OpenCode): /.test(p.plan!.says)]).toEqual([p.id, true, true]);
+      expect([p.id, p.plan!.models.length > 0]).toEqual([p.id, true]);
+    }
+    expect(preset("zai-coding")).toMatchObject({ kind: "openai", baseUrl: "https://api.z.ai/api/coding/paas/v4" });
+    // The same vendor's ordinary API is a provider of its own, at its own endpoint: a plan is never taken for it.
+    expect(preset("zai")).toMatchObject({ kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4" });
+    expect(preset("zai")!.plan).toBeUndefined();
+  });
+
+  test("a provider is on a plan when it was added as one; a provider of your own making is yours", () => {
+    expect(planOf("zai-coding")?.name).toBe("GLM Coding Plan");
+    expect(planOf("kimi-coding")?.name).toContain("Kimi");
+    expect(planOf("anthropic")).toBeNull();
+    expect(planOf("deepseek")).toBeNull();
+    expect(planOf("my-own-endpoint")).toBeNull();
+  });
+});
+
+describe("coding is what a coding plan is for: he codes on it himself, as himself", () => {
+  test("a quest's or a squire's work goes to the plan first, in the roster's order, under his own name", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3", "own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    expect(events.map((e) => e.type)).toEqual(["model", "text", "done"]);
+    expect(events[0]).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
+    expect(seen.map((s) => s.url)).toEqual(["https://api.z.ai/api/coding/paas/v4/chat/completions"]);
+    expect(seen[0]!.headers.get("authorization")).toBe(`Bearer ${PLAN_KEY}`);
+    // He says who he is: his own name, and no other tool's.
+    const agent = seen[0]!.headers.get("user-agent") ?? "";
+    expect(agent).toMatch(/^Galahad\b/);
+    expect(agent).not.toMatch(/opencode|claude|codex|kimi|cline|roo|cursor|hermes/i);
+  });
+
+  test("a model of his own is called as it always was: he names himself only to a plan", async () => {
+    const { seen, fetch } = recorded();
+    await all(chat({ ...mind({ engineer: ["own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    expect(seen[0]!.headers.has("user-agent")).toBe(false);
+  });
+
+  test("whatever the plan serves first (zai-coding/*) is the first model its preset names: the plan isn't called to find out", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ engineer: ["zai-coding/*"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
+    expect(events[0]).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual(["/api/coding/paas/v4/chat/completions"]);
+  });
+});
+
+describe("outside coding he never answers with a coding plan", () => {
+  test("a role with a plan's model and one of his own: he answers with his own, and nothing is sent to the plan", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ planner: ["zai-coding/glm-5.3", "own/m"] }), fetch }, { messages: ask }));
+    expect(events.map((e) => e.type)).toEqual(["model", "text", "done"]);
+    expect(events[0]).toEqual({ type: "model", ref: "own/m" });
+    expect(seen.map((s) => new URL(s.url).origin)).toEqual(["https://models.example.test"]);
+    expect(seen.some((s) => [...s.headers.values()].some((v) => v.includes(PLAN_KEY)))).toBe(false);
+  });
+
+  test("a role with nothing but a plan's model says why he can't answer, and still sends nothing", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ planner: ["zai-coding/glm-5.3"] }), fetch }, { messages: ask }));
+    expect(events.map((e) => e.type)).toEqual(["error"]);
+    const error = events[0]!.type === "error" ? events[0]!.error : "";
+    expect(error).toContain("zai-coding/glm-5.3");
+    expect(error).toContain("coding plan");
+    expect(seen).toEqual([]);
+  });
+
+  test("held to a plan's model by name (a trial's pin, a chat's choice), the same", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ planner: ["own/m"] }), fetch }, { messages: ask, model: "zai-coding/glm-5.3" }));
+    expect(events.map((e) => e.type)).toEqual(["error"]);
+    expect(events[0]!.type === "error" && events[0]!.error).toContain("coding plan");
+    expect(seen).toEqual([]);
+  });
+
+  test("whatever the plan serves first (zai-coding/*) is never asked for: the plan isn't called to find out", async () => {
+    const { seen, fetch } = recorded();
+    const events = await all(chat({ ...mind({ planner: ["zai-coding/*", "own/m"] }), fetch }, { messages: ask }));
+    expect(events[0]).toEqual({ type: "model", ref: "own/m" });
+    expect(seen.map((s) => new URL(s.url).origin)).toEqual(["https://models.example.test"]);
+  });
+
+  test("nothing he does himself is handed a plan's key: it is given to a tool, through the gateway, and to nothing else", async () => {
+    const { store, vault } = mind({ embedder: ["zai-coding/embedding-3"], decider: ["zai-coding/glm-5.3"] });
+    expect(resolveProvider(store, vault, "zai-coding")).toMatchObject({ id: "zai-coding", apiKey: null });
+    expect(resolveProvider(store, vault, "zai-coding", "tool")!.apiKey).toBe(PLAN_KEY);
+    expect(resolveProvider(store, vault, "zai-coding", "coding")!.apiKey).toBe(PLAN_KEY);
+    // A provider of his own is his to call, as ever.
+    expect(resolveProvider(store, vault, "own")!.apiKey).toBe(OWN_KEY);
+    const { seen, fetch } = recorded();
+    await expect(embed({ store, vault, fetch }, ["a line"], { as: "query" })).rejects.toThrow(/coding plan/);
+    await expect(decide({ store, vault, fetch }, { state: "s", questions: [{ id: "q", kind: "yes-no", text: "Is it?" }] } as never)).rejects.toThrow(/coding plan/);
+    expect(seen).toEqual([]);
+  });
+});
+
+describe("a coding plan serves the coding tools in his workers' VMs", () => {
+  test("the harness's models are the engineer's, plans among them, in the roster's order", () => {
+    const providers = [
+      { id: "zai-coding", kind: "openai", hasKey: true },
+      { id: "kimi-coding", kind: "openai", hasKey: false },
+      { id: "own", kind: "openai", hasKey: true },
+    ];
+    expect(chooseAgentModels(["zai-coding/glm-5.3", "kimi-coding/kimi-for-coding", "own/m"], providers)).toEqual([
+      { provider: "zai-coding", model: "glm-5.3" },
+      { provider: "own", model: "m" },
+    ]);
+  });
+
+  test("through the gateway the tool calls the plan as itself: its own user-agent goes on, and the gateway puts none in its place", async () => {
+    const { store, vault } = mind({});
+    const tokens = new GatewayTokens(new Database(":memory:"));
+    const { token } = tokens.mint({ label: "sandbox:w1", providers: ["zai-coding"], ttlMinutes: 10, maxRequests: 5 });
+    const { seen, fetch } = recorded();
+    const call = (headers: Record<string, string>) =>
+      handleGateway(new Request("http://127.0.0.1:7777/gw/zai-coding/chat/completions", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...headers }, body: "{}" }), { store, vault, tokens, fetch });
+    expect((await call({ "user-agent": "opencode/2.2.7" })).status).toBe(200);
+    expect(seen[0]!.url).toBe("https://api.z.ai/api/coding/paas/v4/chat/completions");
+    expect(seen[0]!.headers.get("authorization")).toBe(`Bearer ${PLAN_KEY}`);
+    expect(seen[0]!.headers.get("user-agent")).toBe("opencode/2.2.7");
+    // A tool that names nothing is passed on naming nothing.
+    await call({});
+    expect(seen[1]!.headers.has("user-agent")).toBe(false);
+  });
+});
+
+describe("a subscription's sign-in is not an API key", () => {
+  // (Fake: the form of a token from `claude setup-token`, not one.)
+  const OAT = "sk-ant-oat01-FAKE-not-a-token-0000000000000000";
+
+  test("it is recognised for what it is, and never taken for the vendor's API key", () => {
+    expect(signIn(OAT)).toMatchObject({ vendor: "Anthropic", tool: "Claude Code" });
+    expect(signIn(OAT)!.why.length).toBeGreaterThan(20);
+    expect(detectProvider(OAT)).toBeNull();
+    expect(signIn(OWN_KEY)).toBeNull();
+    expect(detectProvider(OWN_KEY)).toBe("anthropic");
+    expect(signIn("")).toBeNull();
+    expect(signIn(PLAN_KEY)).toBeNull();
+  });
+});
+
+describe("a plan's key is recognised where its form says whose it is", () => {
+  test("Kimi's and Alibaba's plan keys have forms of their own; Z.ai's has none, and is never guessed at", () => {
+    // (Fakes, in the vendors' documented forms.)
+    expect(detectProvider("sk-kimi-FAKE-membership-key-0000")).toBe("kimi-coding");
+    expect(detectProvider("sk-sp-FAKE-coding-plan-key-0000")).toBe("alibaba-coding");
+    expect(detectProvider(PLAN_KEY)).toBeNull();
+    // A key of the ordinary kind is not taken for a plan's.
+    expect(detectProvider("sk-FAKE-platform-key-0000")).toBeNull();
+    expect(detectProvider("sk-or-FAKE")).toBe("openrouter");
+  });
+});

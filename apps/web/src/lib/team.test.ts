@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask, Teammate } from "@galahad/core/team";
-import { HANDLE_PATTERN, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
+import { TeamHarness } from "@galahad/core/team";
+import { HANDLE_PATTERN, HARNESS, harnessNote, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
 
 const person: Teammate = { id: "ada", name: "Ada", instructions: "", role: "engineer", harness: "native", enabled: true, dailyTurns: 4, turnsToday: 1, memory: "", repository: null, workspaceNode: null, workspace: null, createdAt: 1, updatedAt: 1 };
 const task: TeamTask = { id: "task-abcdefghijkl", room: "work", assignee: "ada", title: "Check inputs", goal: "Check", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "chain", createdAt: 1, updatedAt: 1 };
@@ -34,7 +35,7 @@ describe("team navigation and identity", () => {
     expect(teammateId("Galahad", [])).toBe("galahad-2");
     expect(teammateId("System", ["system-2"])).toBe("system-3");
     expect(teammateId("Áda", ["ada", "ada-2"])).toBe("ada-3");
-    expect(teammateId("123", [])).toBe("teammate-123");
+    expect(teammateId("123", [])).toBe("squire-123");
     expect(teammateId("研究", [])).toMatch(/^[a-z][a-z0-9-]{0,31}$/);
   });
   test("a historical speaker keeps their saved name after a rename", () => {
@@ -95,5 +96,19 @@ describe("team work is reported from server facts", () => {
     expect(taskDependencies({ dependsOn }, [{ ...task, verified: false }])[0]?.satisfied).toBe(false);
     expect(taskDependencies({ dependsOn }, [{ ...task, status: "failed" }])[0]?.satisfied).toBe(false);
     expect(taskDependencies({ dependsOn }, [])[0]?.satisfied).toBe(false);
+  });
+});
+
+describe("a squire's coding harness", () => {
+  test("every harness the node takes has a name here, the vendors' own tools by their own names", () => {
+    expect(Object.keys(HARNESS).sort()).toEqual([...TeamHarness.options].sort());
+    expect(HARNESS).toMatchObject({ native: "Galahad", claude: "Claude Code", codex: "Codex" });
+  });
+  test("readiness says what a harness would run on, or what to do so that it can", () => {
+    expect(harnessNote({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai), then anthropic/claude-opus-5-5 through the gateway" })).toBe("Runs on its own sign-in in this VM (claude.ai), then anthropic/claude-opus-5-5 through the gateway");
+    expect(harnessNote({ id: "codex", ready: false, reason: "Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster" })).toBe("Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
+    // His own harness has nothing to say, and a node that says nothing of what one runs on (an older one) is shown as before.
+    expect(harnessNote({ id: "native", ready: true })).toBeNull();
+    expect(harnessNote({ id: "opencode", ready: true })).toBeNull();
   });
 });
