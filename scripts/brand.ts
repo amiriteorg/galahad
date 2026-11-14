@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /*
- * Regenerates every brand file from the one emblem definition (apps/web/src/brand.ts).
+ * Regenerates every brand file from the one mark (apps/web/src/brand.ts): the Templar's helm in lit dots.
  *
  *   bun scripts/brand.ts          SVGs only (deterministic; safe to run any time)
  *   bun scripts/brand.ts --png    also renders the PNG icons with headless Chromium
@@ -9,29 +9,18 @@
 import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { appIcon, emblemTree, EMBLEM_BOX, flatMark, INK_ON_DARK, INK_ON_LIGHT, maskableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
+import { appIcon, crestFile, flatMark, maskableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
-
-/** The emblem alone on a transparent ground, cropped to the mark. */
-function emblemFile(ink: typeof INK_ON_DARK): SvgNode {
-  const pad = 8;
-  const { x, y, width, height } = EMBLEM_BOX;
-  return {
-    tag: "svg",
-    attrs: { xmlns: "http://www.w3.org/2000/svg", viewBox: `${x - pad} ${y - pad} ${width + 2 * pad} ${height + 2 * pad}`, fill: "none" },
-    children: [{ tag: "title", attrs: {}, children: [{ tag: "#text", attrs: { text: "Galahad" } }] }, emblemTree("em", ink)],
-  };
-}
 
 const svgs: Record<string, SvgNode> = {
   "assets/icon.svg": appIcon(),
   "assets/galahad-mark.svg": flatMark(),
   "apps/web/src/icon-maskable.svg": maskableIcon(),
   "apps/site/public/icon.svg": appIcon(),
-  "apps/site/public/crest-white.svg": emblemFile(INK_ON_DARK),
-  "apps/site/public/crest-black.svg": emblemFile(INK_ON_LIGHT),
+  "apps/site/public/crest-white.svg": crestFile("white"),
+  "apps/site/public/crest-black.svg": crestFile("black"),
 };
 
 for (const [path, tree] of Object.entries(svgs)) {

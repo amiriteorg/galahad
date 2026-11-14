@@ -1,4 +1,5 @@
 import { AVATAR_ACCESSORIES, AVATAR_EXPRESSIONS, AVATAR_EYES, AVATAR_FORMS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, resolveAvatar, withBodyColor, type AvatarExpression, type AvatarProfile } from "@galahad/core/avatar";
+import { CROSS, HELM, SLITS as HELM_SLITS } from "../brand.ts";
 import { button, field } from "./controls.ts";
 import { h, replace, svg } from "./dom.ts";
 
@@ -110,7 +111,8 @@ const HELMS: Record<Form | "templar", Shape> = {
   round: symmetric([[M - 6.4, 3.2], [M - 10.6, 7.4], [M - 10.6, 17.2], [M - 8.2, 21.0]]),
   armored: symmetric([[M - 8.4, 3.4], [M - 10.8, 5.8], [M - 10.8, 17.6], [M - 6.2, 21.6], [M - 0.01, 22.6]]),
   hooded: symmetric([[M - 0.01, 1.4], [M - 7.6, 6.2], [M - 11.0, 11.8], [M - 11.4, 22.4]]),
-  templar: symmetric([[M - 7.0, 2.8], [M - 10.2, 6.0], [M - 10.2, 14.6], [M - 6.4, 20.6], [M - 0.01, 23.8]]),
+  // Galahad's is the mark's (../brand.ts), drawn on the same 32-cell grid.
+  templar: polygon(HELM),
 };
 /** Each visor: dark glass across the face, its ends cut at an angle, narrower below (its left half). */
 const VISORS: Record<Form, Point[]> = {
@@ -118,10 +120,10 @@ const VISORS: Record<Form, Point[]> = {
   armored: [[M - 8.9, 10.6], [M - 9.6, 13.6], [M - 7.4, 17.2]],
   hooded: [[M - 7.9, 11.4], [M - 8.8, 14.2], [M - 7.0, 18.0]],
 };
-/** Galahad's T: slits under the brow band, the brow band and the nasal strip his cross. */
-const SLITS: [number, number, number, number][] = [[M - 4.6, 12.6, 3.3, 1.1], [M + 4.6, 12.6, 3.3, 1.1]];
+/** Galahad's T, the mark's: slits under the brow band, the brow band and the nasal strip his cross. */
+const SLITS: [number, number, number, number][] = HELM_SLITS.map(({ cx, cy, hw, hh }) => [cx, cy, hw, hh]);
 const TEMPLAR_SLITS = union(...SLITS.map(([cx, cy, hw, hh]) => box(cx, cy, hw, hh)));
-const TEMPLAR_CROSS = union(box(M, 10.6, 8.6, 0.95), box(M, 13.2, 1.05, 10.2));
+const TEMPLAR_CROSS = union(...CROSS.map(({ cx, cy, hw, hh }) => box(cx, cy, hw, hh)));
 
 interface Paint { armor: string; under: string; accent: string; glow: string; panel: string; unlit: string; cross: string | null; held: string }
 function paintOf(look: Look, who: Who): Paint {

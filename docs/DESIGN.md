@@ -13,32 +13,30 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ## Brand
 
-### The emblem: Crest
+### The mark: the helm
 
-A **lodestar crowning a pyramid of chevrons**. The star is the guide (the oath he follows); the pyramid is the climb (work done, rank earned), built from chevrons. Bold and precise, in the spirit of defence-grade marks: few shapes, hard edges, exact gaps.
+**A Templar's great helm, front on, in lit dots.** The helm Galahad wears as a knight: the roster's avatars and the mark are one drawing, on one 32-cell grid. Few shapes, hard edges, a dot-matrix display's light.
 
-- **The star is the capstone.** The outer chevron's centre lines meet at the star's centre, so the star's lower rays point straight down its two legs, and the legs begin one gap past the ray tips.
-- **A true pyramid.** Inside the legs, a full chevron and a solid core. Every band ends on one baseline and runs at one slope, the Great Pyramid's 52°; the legs' top ends are cut square to the leg.
-- **One gap.** Every star tip that faces a band stops exactly one gap short of it (the lower rays at the legs, the south ray at the chevron's peak), and the bands are one gap apart.
-- **A compass lodestar.** A north ray, then east and west, short upper diagonals, lower diagonals that run down the legs, heavy valleys. The south ray is set by the gap. No needle: the north ray is only a little longer than the others.
-- **Lit like a pyramid.** Light comes from the upper left: every band's left face is lit and its right face a step down. Each ray of the star has a lit and a shaded side. The star is the brightest thing in the mark.
+- **Cut like a heater shield.** A flat crown, its corners cut, its sides angled in to a point at the jaw.
+- **A Templar's T.** The brow band across the helm and the nasal strip down it to the point are the oxblood cross; the eye slits sit under the brow, either side of the strip.
+- **His eyes in the slit.** On a dark ground the slits are dark glass with Galahad's eyes in them, glowing (`#fff1d6`): the same eyes as every knight's.
+- **Lit dots.** The helm's white is dots on a grid, sampled from the shapes, coarser at small sizes so the dots stay dots. On the app icon the tile's other cells are unlit dots, as on a display panel. The dots are mirror-true by construction (the helm is sampled from its left half).
 
-The proportions are named in `CREST` in `apps/web/src/brand.ts` (gap, band, slope, the star's centre and rays, the baseline). Everything is generated from that one definition, tests pin the pyramid (one baseline, one slope), the star's aim, every gap and the symmetry, and a test fails if a committed file drifts. `assets/paragon-v1.svg` is the first drawing it grew from.
+The shapes are named in `apps/web/src/brand.ts` (`HELM`, `SLITS`, `CROSS`, `EYES`, `INK`), and `ui/avatar.ts` draws Galahad from those same numbers. Everything is generated from that one definition; tests pin the helm's cut (a flat crown, cut corners, a point), the T (the slits under the brow, either side of the strip), that no dot ever falls in a slit, the symmetry at every grain, that nothing in it has an id, and that no committed file drifts.
 
 | File | Use |
 |---|---|
-| `assets/icon.svg` | App icon and favicon: a night tile (`#1e1e21` → `#050506`), a breath of starlight behind the star, the emblem in white ink |
-| `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the emblem sits inside the central safe circle |
+| `assets/icon.svg` | App icon and favicon: a black tile, the panel's unlit dots, the helm lit in it with his eyes |
+| `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the helm sits inside the central safe circle |
 | `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG |
-| `assets/galahad-mark.svg` | The flat mark in `currentColor`, for anywhere one ink is wanted |
-| `apps/site/public/crest-{white,black}.svg` | The faceted emblem on a transparent ground, for the site (dark and light) |
-| `ui/emblem.ts` → `emblem()` | The emblem inline in the PWA, painted with the `--em-*` tokens so it follows the theme |
-| `icon("mark")` | The whole crest, flat, on the 24 px grid, for avatars and menus (Galahad's voice: chat, requests, trust) |
+| `assets/galahad-mark.svg` | The flat mark in `currentColor`: its dots in one ink, the cross and slits gaps in it |
+| `apps/site/public/crest-{white,black}.svg` | The helm on a transparent ground, for the site (dark and light): white or near-black dots, the cross oxblood, the slits gaps |
+| `ui/emblem.ts` → `emblem()` | The helm inline in the PWA, on its own dark tile (as every knight stands on its panel), so it reads the same in either theme |
+| `icon("mark")` | The whole helm, flat, its T cut out, on the 24 px grid, for menus (Galahad's voice: chat, requests, trust) |
 
 Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium).
 
-- Faceting is lit from the upper left: on dark grounds lit faces run from white to `#d4d4d9` and shaded faces from `#e2e2e6` to `#b4b4bc`; on light grounds lit faces run from graphite `#3a3a3d` to black and shaded faces are near black.
-- Keep clear space of at least a quarter of the emblem's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the flat mark.
+- Keep clear space of at least a quarter of the helm's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the flat mark.
 
 ### Wordmark
 

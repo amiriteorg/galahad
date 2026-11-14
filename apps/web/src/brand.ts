@@ -1,146 +1,77 @@
 /*
- * Crest: Galahad's emblem, on a 1024 grid. A lodestar crowning a pyramid of
- * chevrons. The outer chevron's centre lines meet at the star's centre, so the
- * star's lower rays point straight down its legs: the star is the pyramid's
- * capstone. Inside, a full chevron and a solid core; every band ends on one
- * baseline and runs at one slope (the Great Pyramid's, 52°). One gap holds it
- * together: every star tip that faces a band stops exactly one gap short of
- * it, and the bands are one gap apart. Lit from the upper left like a real
- * pyramid. (assets/paragon-v1.svg is the first drawing it grew from.)
+ * The mark: a Templar's great helm, front on, cut like a heater shield (a flat crown, its corners cut, its sides
+ * angled in to a point), drawn in lit dots: its brow band and its nasal strip are the oxblood cross, and Galahad's
+ * eyes glow in the slit under the brow. It is the helm Galahad wears as a knight (ui/avatar.ts draws him from these
+ * same numbers), on the same 32-cell drawing as every knight.
  *
- * Pure data and a tiny SVG tree, no DOM: the PWA turns the tree into elements
- * (ui/emblem.ts), scripts/brand.ts serialises it into the icon files, so every
- * surface draws the same mark.
+ * Pure data and a tiny SVG tree, no DOM: the PWA turns the tree into elements (ui/emblem.ts), scripts/brand.ts
+ * serialises it into the icon files, so every surface draws the same mark.
  */
 
 export type Point = readonly [number, number];
 
 const round = (n: number): number => Math.round(n * 10) / 10;
 
-/** The proportions. Change these, run `bun scripts/brand.ts --png`, and every surface follows. */
-export const CREST = {
-  /** The one gap: lower ray tip to leg, band to band, south tip to the chevron's peak. */
-  gap: 26,
-  /** Each band's thickness, measured across it. */
-  band: 80,
-  /** The pyramid's slope, in degrees from the baseline. */
-  slope: 52,
-  /** The star's centre (where the outer chevron's centre lines meet) and the baseline. */
-  centre: 360,
-  base: 830,
-  /**
-   * The lodestar: a north ray, east and west, short upper diagonals, lower
-   * diagonals that run down the legs, heavy valleys. The south ray is set by the gap.
-   */
-  star: { north: 200, east: 140, diagonal: 84, lower: 124, valley: 46 },
-} as const;
+/** The drawing: 32 cells a side, the helm's centre line on the middle one. */
+export const CELLS = 32;
+const M = CELLS / 2;
 
-const CX = 512;
-const CY = CREST.centre;
-const RAD = Math.PI / 180;
-const SLOPE = CREST.slope * RAD;
-const HALF = CREST.band / 2;
+/** The helm's left half, from the crown down to the point; the right is its mirror. */
+const HELM_LEFT: readonly Point[] = [[M - 7.0, 2.8], [M - 10.2, 6.0], [M - 10.2, 14.6], [M - 6.4, 20.6], [M, 23.8]];
+/** The helm's outline, clockwise from the crown's left corner. */
+export const HELM: readonly Point[] = [...HELM_LEFT, ...HELM_LEFT.slice(0, -1).reverse().map(([x, y]) => [2 * M - x, y] as const)];
+/** A box by its centre and half sizes, in cells. */
+export interface Box { cx: number; cy: number; hw: number; hh: number }
+/** The slits, under the brow band, either side of the nasal strip. */
+export const SLITS: readonly Box[] = [{ cx: M - 4.6, cy: 12.6, hw: 3.3, hh: 1.1 }, { cx: M + 4.6, cy: 12.6, hw: 3.3, hh: 1.1 }];
+/** The cross: the brow band across the helm, the nasal strip down it to the point. */
+export const CROSS: readonly Box[] = [{ cx: M, cy: 10.55, hw: 8.6, hh: 0.95 }, { cx: M, cy: 13.2, hw: 1.05, hh: 10.2 }];
+/** Where Galahad's eyes sit in the slits, and their size (cells). */
+export const EYES: readonly Box[] = SLITS.map(({ cx, cy }) => ({ cx, cy, hw: 1.3, hh: 0.65 }));
 
-/**
- * A point by the right leg's own axes: `s` runs from the star's centre down
- * the leg's centre line, `e` runs across it (positive is up and out). Side 1
- * is the right, -1 its mirror.
- */
-function onLeg(s: number, e: number, side: 1 | -1): Point {
-  return [round(CX + side * (s * Math.cos(SLOPE) + e * Math.sin(SLOPE))), round(CY + s * Math.sin(SLOPE) - e * Math.cos(SLOPE))];
-}
-/** How far down its axis an edge (at `e` across) reaches the baseline. */
-const toBase = (e: number): number => (CREST.base - CY + e * Math.cos(SLOPE)) / Math.sin(SLOPE);
-/** Where an edge (at `e` across) meets the centre line. */
-const peak = (e: number): Point => [CX, round(CY - e / Math.cos(SLOPE))];
+/** The colours: black, the helm's white, the oxblood cross, the glow of his eyes. */
+export const INK = { night: "#050506", helm: "#f2eee6", cross: "#b23c3d", eyes: "#fff1d6", unlit: "#16161a" } as const;
 
-/** The south ray stops one gap (square to the edges) above the chevron's peak. */
-export const SOUTH = round(HALF / Math.cos(SLOPE));
-
-function lodestar(): Point[] {
-  const r = CREST.star;
-  const lower = 90 + CREST.slope;
-  const rays: [number, number][] = [
-    [0, r.north],
-    [45, r.diagonal],
-    [90, r.east],
-    [lower, r.lower],
-    [180, SOUTH],
-    [360 - lower, r.lower],
-    [270, r.east],
-    [315, r.diagonal],
-  ];
-  const points: Point[] = [];
-  rays.forEach(([bearing, length], i) => {
-    const next = rays[(i + 1) % rays.length]![0] + (i + 1 === rays.length ? 360 : 0);
-    const valley = ((bearing + next) / 2) * RAD;
-    points.push([round(CX + length * Math.sin(bearing * RAD)), round(CY - length * Math.cos(bearing * RAD))]);
-    points.push([round(CX + r.valley * Math.sin(valley)), round(CY - r.valley * Math.cos(valley))]);
-  });
-  return points;
+const inBox = ({ cx, cy, hw, hh }: Box, x: number, y: number, grow = 0): boolean => Math.abs(x - cx) <= hw + grow && Math.abs(y - cy) <= hh + grow;
+/** Whether a point (cells) is inside the helm. */
+export function inHelm(x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = HELM.length - 1; i < HELM.length; j = i++) {
+    const [xi, yi] = HELM[i]!, [xj, yj] = HELM[j]!;
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
-export const STAR_CENTER: Point = [CX, CY];
-
-/** The star's outline, clockwise from the north point. */
-export const STAR: readonly Point[] = lodestar();
-
-/** A leg: the outer chevron below the star, from one gap past the lower ray's tip down to the baseline. */
-function leg(side: 1 | -1): Point[] {
-  const from = CREST.star.lower + CREST.gap;
-  const points: Point[] = [onLeg(from, HALF, side), onLeg(toBase(HALF), HALF, side), onLeg(toBase(-HALF), -HALF, side), onLeg(from, -HALF, side)];
-  return side === 1 ? points : points.reverse();
+/** What a dot at a point (cells) is: the helm's white, the cross, nothing (a slit, or off the helm). Asked of the
+ * left half only, so the dots are mirror-true by construction, whatever a point on an edge would round to. */
+export function dotAt(x: number, y: number): "helm" | "cross" | null {
+  x = Math.min(x, 2 * M - x);
+  if (!inHelm(x, y) || SLITS.some((slit) => inBox(slit, x, y, 0.45))) return null;
+  return CROSS.some((bar) => inBox(bar, x, y)) ? "cross" : "helm";
 }
 
-/** The chevron inside the legs, one gap in, ending on the baseline. */
-function chevron(): Point[] {
-  const top = HALF - CREST.band - CREST.gap;
-  const bottom = top - CREST.band;
-  return [peak(top), onLeg(toBase(top), top, 1), onLeg(toBase(bottom), bottom, 1), peak(bottom), onLeg(toBase(bottom), bottom, -1), onLeg(toBase(top), top, -1)];
-}
-
-/** The core: a solid pyramid one gap inside the chevron. */
-function core(): Point[] {
-  const top = HALF - 2 * (CREST.band + CREST.gap);
-  return [peak(top), onLeg(toBase(top), top, 1), onLeg(toBase(top), top, -1)];
-}
-
-const CHEVRON_POINTS: readonly Point[][] = [leg(-1), leg(1), chevron(), core()];
-
-const pathOf = (points: readonly Point[]): string => `M${points.map(([x, y]) => `${x} ${y}`).join(" ")}Z`;
-
-/** The pyramid's shapes: the left leg, the right leg, the chevron, the core. */
-export const CHEVRONS: readonly string[] = CHEVRON_POINTS.map(pathOf);
-
-/** Where the pyramid's bands start: the legs' top corners. */
-const CHEVRON_TOP = Math.min(...CHEVRON_POINTS.flat().map(([, y]) => y));
-
-/** What the emblem covers, north tip to the baseline. */
-export const EMBLEM_BOX = (() => {
-  const all = [...STAR, ...CHEVRON_POINTS.flat()];
-  const xs = all.map(([x]) => x);
-  const ys = all.map(([, y]) => y);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return { x, y, width: round(Math.max(...xs) - x), height: round(Math.max(...ys) - y) };
+/** The helm's bounds, in cells, and the square the mark is drawn in: the helm centred with a little air. */
+export const HELM_BOX = (() => {
+  const xs = HELM.map(([x]) => x), ys = HELM.map(([, y]) => y);
+  return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 })();
 
-export const STAR_PATH = pathOf(STAR);
-
-/** The star's facets: a triangle from the centre to each pair of neighbouring points. Even facets are lit, odd ones shaded. */
-export const STAR_FACETS: readonly string[] = STAR.map((p, i) => pathOf([STAR_CENTER, p, STAR[(i + 1) % STAR.length]!]));
-
-/**
- * The whole mark as one filled path on a small icon grid (avatars, menus),
- * fitted inside `inset`. Same shapes as the emblem, flat.
- */
-export function markOnGrid(size = 24, inset = 1.5): string {
-  const { x, y, width, height } = EMBLEM_BOX;
-  const scale = (size - 2 * inset) / Math.max(width, height);
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-  const fine = (n: number): number => Math.round(n * 100) / 100;
-  return [STAR, ...CHEVRON_POINTS].map((shape) => pathOf(shape.map(([px, py]) => [fine(size / 2 + (px - cx) * scale), fine(size / 2 + (py - cy) * scale)] as const))).join("");
+export interface MarkOptions {
+  /** How many dots across the square. */
+  grain: number;
+  /** The side of the square the mark fills, in the drawing's units, and its top-left corner. */
+  side: number;
+  x?: number;
+  y?: number;
+  /** How much of the square the helm spans (its height). */
+  fill?: number;
+  /** One ink for everything: the cross and the slits are then gaps in it. */
+  ink?: string;
+  /** The square's other cells shown as dim dots, as on a dot-matrix display. */
+  unlit?: boolean;
+  /** His eyes in the slits (only on a dark ground). */
+  eyes?: boolean;
 }
 
 /* ---------- the tree ---------- */
@@ -152,153 +83,102 @@ export interface SvgNode {
 }
 
 const n = (tag: string, attrs: Record<string, string | number>, ...children: SvgNode[]): SvgNode => ({ tag, attrs, children });
+const dot = (cx: number, cy: number, r: number): string => `M${round(cx - r)} ${round(cy)}a${round(r)} ${round(r)} 0 1 0 ${round(2 * r)} 0a${round(r)} ${round(r)} 0 1 0 ${round(-2 * r)} 0`;
 
 /**
- * How the emblem is painted: three stops (light end, middle, deep end) for the
- * lit and shaded facets, plus the base under the star's facets. A colour may
- * be a CSS custom property (var(--x)), which is applied as a style so it can
- * follow the theme.
+ * The mark as a group of paths: its dots sampled from the helm on a grid of `grain` dots across a square of `side`
+ * units (one path per ink), the slits as dark glass with his eyes in them. A dot is as big as its cell allows; an
+ * unlit one is smaller.
  */
-export interface EmblemPaint {
-  lit: readonly [string, string, string];
-  shade: readonly [string, string, string];
-  base: string;
-}
-
-/** Black ink on a light ground: the lit face in graphite, the shaded face near black. */
-export const INK_ON_LIGHT: EmblemPaint = { lit: ["#3a3a3d", "#1c1c1e", "#000000"], shade: ["#1a1a1c", "#0c0c0d", "#000000"], base: "#0c0c0d" };
-/** White ink on a dark ground: the lit face starts white, the shaded face is a step down into steel. */
-export const INK_ON_DARK: EmblemPaint = { lit: ["#ffffff", "#f1f1f3", "#d4d4d9"], shade: ["#e2e2e6", "#cdcdd3", "#b4b4bc"], base: "#cdcdd3" };
-/** Theme-following ink for the PWA (the --em-* tokens in index.html). */
-export const INK_TOKENS: EmblemPaint = {
-  lit: ["var(--em-lit)", "var(--em-mid)", "var(--em-deep)"],
-  shade: ["var(--em-shade)", "var(--em-mid-shade)", "var(--em-shade-deep)"],
-  base: "var(--em-base)",
-};
-
-const paint = (color: string): Record<string, string> => (color.startsWith("var(") ? { style: `stop-color:${color}` } : { "stop-color": color });
-const fillOf = (color: string): Record<string, string> => (color.startsWith("var(") ? { style: `fill:${color}` } : { fill: color });
-
-function gradient(id: string, [x1, y1, x2, y2]: readonly [number, number, number, number], stops: readonly [string, string, string]): SvgNode {
-  return n(
-    "linearGradient",
-    { id, gradientUnits: "userSpaceOnUse", x1, y1, x2, y2 },
-    n("stop", { offset: 0, ...paint(stops[0]) }),
-    n("stop", { offset: 0.5, ...paint(stops[1]) }),
-    n("stop", { offset: 1, ...paint(stops[2]) }),
-  );
+export function emblemTree(options: MarkOptions): SvgNode {
+  const { grain, side } = options;
+  const ox = options.x ?? 0, oy = options.y ?? 0;
+  const pitch = side / grain;
+  // Cells of the drawing per unit: the helm's height fills `fill` of the square, centred.
+  const scale = (HELM_BOX.height + 0.6) / (side * (options.fill ?? 0.78));
+  const midX = HELM_BOX.x + HELM_BOX.width / 2, midY = HELM_BOX.y + HELM_BOX.height / 2;
+  const toCells = (u: number, mid: number) => mid + (u - side / 2) * scale;
+  const toUnits = (c: number, mid: number) => side / 2 + (c - mid) / scale;
+  let helm = "", cross = "", unlit = "";
+  for (let gy = 0; gy < grain; gy++) for (let gx = 0; gx < grain; gx++) {
+    const ux = (gx + 0.5) * pitch, uy = (gy + 0.5) * pitch;
+    const kind = dotAt(toCells(ux, midX), toCells(uy, midY));
+    if (kind === "helm" || (kind === "cross" && options.ink)) helm += dot(ox + ux, oy + uy, pitch * 0.43);
+    else if (kind === "cross") cross += dot(ox + ux, oy + uy, pitch * 0.43);
+    else if (options.unlit && !inHelm(Math.min(toCells(ux, midX), 2 * M - toCells(ux, midX)), toCells(uy, midY))) unlit += dot(ox + ux, oy + uy, pitch * 0.27);
+  }
+  const box = ({ cx, cy, hw, hh }: Box, ink: string, extra: Record<string, string | number> = {}) =>
+    n("rect", { x: round(ox + toUnits(cx - hw, midX)), y: round(oy + toUnits(cy - hh, midY)), width: round((2 * hw) / scale), height: round((2 * hh) / scale), ...extra, fill: ink });
+  const children: SvgNode[] = [];
+  if (unlit) children.push(n("path", { d: unlit, fill: INK.unlit }));
+  children.push(n("path", { d: helm, fill: options.ink ?? INK.helm }));
+  if (cross) children.push(n("path", { d: cross, fill: INK.cross }));
+  if (!options.ink) children.push(...SLITS.map((slit) => box(slit, INK.night)));
+  if (options.eyes && !options.ink) children.push(...EYES.map((eye) => box(eye, INK.eyes, { rx: round(eye.hh / scale) })));
+  return n("g", {}, ...children);
 }
 
 /**
- * The emblem on the 1024 grid. `id` prefixes every definition so several
- * emblems can share a document. A plain colour (or "currentColor") draws it
- * flat; an EmblemPaint draws the faceted mark.
+ * The whole helm as one filled path on a small icon grid (menus, the icon set), fitted inside `inset`: its outline,
+ * the slits and the cross cut out of it (wound the other way, so they are holes under the nonzero rule).
  */
-export function emblemTree(id: string, ink: EmblemPaint | string): SvgNode {
-  if (typeof ink === "string") return n("g", fillOf(ink), n("path", { d: STAR_PATH }), ...CHEVRONS.map((d) => n("path", { d })));
-
-  // Lit from the upper left, like a pyramid in the sun: every band's left face
-  // is lit and its right face shaded, and each ray of the star has a lit and a
-  // shaded side. A base under the star's facets hides the seams.
-  const box = EMBLEM_BOX;
-  const floor = box.y + box.height;
-  const [sx, sy] = STAR_CENTER;
-  const { east, lower } = CREST.star;
-  const defs = n(
-    "defs",
-    {},
-    n("clipPath", { id: `${id}-chevrons` }, ...CHEVRONS.map((d) => n("path", { d }))),
-    gradient(`${id}-left`, [box.x, CHEVRON_TOP, CX, floor], ink.lit),
-    gradient(`${id}-right`, [CX, CHEVRON_TOP, box.x + box.width, floor], ink.shade),
-    gradient(`${id}-lit`, [sx - east, sy - east, sx + east / 2, sy + lower], ink.lit),
-    gradient(`${id}-shade`, [sx, sy - east, sx + east, sy + lower], ink.shade),
-  );
-  const half = { y: round(CHEVRON_TOP - 1), height: round(floor - CHEVRON_TOP + 2) };
-  return n(
-    "g",
-    {},
-    defs,
-    n(
-      "g",
-      { "clip-path": `url(#${id}-chevrons)` },
-      // The left face overlaps the right by a unit so the ridge shows no seam.
-      n("rect", { x: CX, ...half, width: round(box.x + box.width - CX + 1), fill: `url(#${id}-right)` }),
-      n("rect", { x: round(box.x - 1), ...half, width: round(CX - box.x + 2), fill: `url(#${id}-left)` }),
-    ),
-    n("path", { d: STAR_PATH, ...fillOf(ink.base) }),
-    ...STAR_FACETS.map((d, i) => n("path", { d, fill: `url(#${id}-${i % 2 === 0 ? "lit" : "shade"})` })),
-  );
+export function markOnGrid(size = 24, inset = 1.5): string {
+  const scale = (size - 2 * inset) / Math.max(HELM_BOX.width, HELM_BOX.height);
+  const at = ([x, y]: Point): string => `${round(size / 2 + (x - (HELM_BOX.x + HELM_BOX.width / 2)) * scale)} ${round(size / 2 + (y - (HELM_BOX.y + HELM_BOX.height / 2)) * scale)}`;
+  // The outline clockwise; each hole counter-clockwise.
+  const hole = ({ cx, cy, hw, hh }: Box): string => `M${at([cx - hw, cy - hh])}L${at([cx - hw, cy + hh])}L${at([cx + hw, cy + hh])}L${at([cx + hw, cy - hh])}Z`;
+  const [brow, strip] = CROSS as [Box, Box];
+  // The cross's two bars as one hole: the brow band, then the strip below and above it, so they never overlap.
+  const below = { cx: strip.cx, hw: strip.hw, cy: (brow.cy + brow.hh + strip.cy + strip.hh) / 2, hh: (strip.cy + strip.hh - (brow.cy + brow.hh)) / 2 - 0.05 };
+  return `M${HELM.map(at).join("L")}Z${hole(brow)}${hole(below)}${SLITS.map(hole).join("")}`;
 }
 
 /* ---------- icons ---------- */
 
-const NIGHT = ["#1e1e21", "#050506"] as const;
-
-function night(id: string, y1: number, y2: number): SvgNode {
-  return n("linearGradient", { id, x1: 0, y1, x2: 0, y2, gradientUnits: "userSpaceOnUse" }, n("stop", { offset: 0, "stop-color": NIGHT[0] }), n("stop", { offset: 1, "stop-color": NIGHT[1] }));
-}
-
-function starlight(id: string, cx: number, cy: number, r: number, opacity: number): SvgNode {
-  return n(
-    "radialGradient",
-    { id, cx, cy, r, gradientUnits: "userSpaceOnUse" },
-    n("stop", { offset: 0, "stop-color": "#ffffff", "stop-opacity": opacity }),
-    n("stop", { offset: 1, "stop-color": "#ffffff", "stop-opacity": 0 }),
-  );
-}
-
 const root = (viewBox: string, title: string, ...children: SvgNode[]): SvgNode =>
   n("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox, fill: "none" }, n("title", {}, { tag: "#text", attrs: { text: title } }), ...children);
-
-/** The emblem scaled about its centre and placed at (cx, cy) on the 1024 grid. */
-function placed(id: string, ink: EmblemPaint | string, scale: number, cx = 512, cy = 512): { node: SvgNode; starY: number } {
-  const ex = EMBLEM_BOX.x + EMBLEM_BOX.width / 2;
-  const ey = EMBLEM_BOX.y + EMBLEM_BOX.height / 2;
-  return {
-    node: n("g", { transform: `translate(${cx} ${cy}) scale(${scale}) translate(${-ex} ${-ey})` }, emblemTree(id, ink)),
-    starY: round(cy + (STAR_CENTER[1] - ey) * scale),
-  };
-}
 
 /** The app tile: a rounded square of night on the 1024 grid. */
 export const TILE = { x: 64, y: 64, width: 896, height: 896, rx: 214 } as const;
 
-/** The app icon: a night tile, a breath of starlight, the emblem in white ink. Transparent corners. */
+/** The app icon: a night tile, a dot-matrix panel, the helm lit in it with his eyes. Transparent corners. */
 export function appIcon(): SvgNode {
   const { x, y, width, height, rx } = TILE;
-  const emblem = placed("em", INK_ON_DARK, 0.7);
+  const inner = 96;
   return root(
     "48 48 928 928",
     "Galahad",
-    n("defs", {}, night("night", y, y + height), starlight("starlight", 512, emblem.starY, 300, 0.2)),
-    n("rect", { x, y, width, height, rx, fill: "url(#night)" }),
-    n("rect", { x, y, width, height, rx, fill: "url(#starlight)" }),
-    emblem.node,
+    n("rect", { x, y, width, height, rx, fill: INK.night }),
+    emblemTree({ grain: 39, side: width - 2 * inner, x: x + inner, y: y + inner, fill: 0.86, unlit: true, eyes: true }),
     n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#ffffff", "stroke-opacity": 0.12, "stroke-width": 2 }),
   );
 }
 
 /**
- * Full bleed for platform masks (Android adaptive icons, iOS): the emblem is
- * scaled into the centre so it survives any mask shape.
+ * Full bleed for platform masks (Android adaptive icons, iOS): the helm scaled into the centre so it survives any
+ * mask shape.
  */
 export function maskableIcon(scale = 0.6): SvgNode {
-  const emblem = placed("em", INK_ON_DARK, scale);
+  const side = 1024 * scale;
   return root(
     "0 0 1024 1024",
     "Galahad",
-    n("defs", {}, night("night", 0, 1024), starlight("starlight", 512, emblem.starY, round(560 * scale), 0.2)),
-    n("rect", { width: 1024, height: 1024, fill: "url(#night)" }),
-    n("rect", { width: 1024, height: 1024, fill: "url(#starlight)" }),
-    emblem.node,
+    n("rect", { width: 1024, height: 1024, fill: INK.night }),
+    emblemTree({ grain: 31, side, x: (1024 - side) / 2, y: (1024 - side) / 2, fill: 0.92, eyes: true }),
   );
 }
 
-/** The flat, single-colour mark (currentColor): for embedding wherever one ink is wanted. */
+/** The flat, single-colour mark (currentColor): its dots in one ink, the cross and slits gaps in it. */
 export function flatMark(): SvgNode {
-  const pad = 24;
-  const { x, y, width, height } = EMBLEM_BOX;
-  return root(`${round(x - pad)} ${round(y - pad)} ${round(width + 2 * pad)} ${round(height + 2 * pad)}`, "Galahad", emblemTree("mark", "currentColor"));
+  return root("0 0 1024 1024", "Galahad", emblemTree({ grain: 27, side: 1024, fill: 0.9, ink: "currentColor" }));
+}
+
+/** The mark alone on a transparent ground, its dots in white or black ink, the cross oxblood: for the website. */
+export function crestFile(ink: "white" | "black"): SvgNode {
+  const tree = emblemTree({ grain: 27, side: 1024, fill: 0.92 });
+  // On a transparent ground the slits are gaps, not glass; the helm's dots take the page's ink.
+  const children = (tree.children ?? []).filter((child) => child.tag === "path").map((child) => (child.attrs.fill === INK.helm ? { ...child, attrs: { ...child.attrs, fill: ink === "white" ? INK.helm : "#141416" } } : child));
+  return root("0 0 1024 1024", "Galahad", n("g", {}, ...children));
 }
 
 const escapeAttr = (value: string | number): string => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

@@ -1,13 +1,11 @@
-import { EMBLEM_BOX, emblemTree, INK_TOKENS, type SvgNode } from "../brand.ts";
+import { emblemTree, INK, type SvgNode } from "../brand.ts";
 import { svg } from "./dom.ts";
 
 /*
- * Crest, inline: the faceted emblem in theme ink (the --em-* tokens), built
- * with createElementNS from constant geometry. Each instance gets its own
- * definition ids so gradients never resolve against another copy.
+ * The mark, inline: the Templar's helm in lit dots on its own dark tile, the way every knight stands on its panel, so
+ * it reads the same in a light theme as in a dark one. Built with createElementNS from constant geometry; nothing in
+ * it has an id, so any number can share a page.
  */
-
-let instances = 0;
 
 function build(node: SvgNode): Element {
   const el = svg(node.tag as keyof SVGElementTagNameMap, node.attrs);
@@ -18,6 +16,9 @@ function build(node: SvgNode): Element {
   return el;
 }
 
+/** How fine the dots are for a size: a small mark is sampled coarser, so its dots stay dots. */
+export const markGrain = (size: number): number => size <= 24 ? 13 : size <= 40 ? 17 : size <= 80 ? 23 : 31;
+
 export interface EmblemOptions {
   size?: number;
   class?: string;
@@ -27,12 +28,8 @@ export interface EmblemOptions {
 
 export function emblem(options: EmblemOptions = {}): SVGSVGElement {
   const size = options.size ?? 24;
-  // Square view box around the mark, with a hair of air.
-  const side = Math.max(EMBLEM_BOX.width, EMBLEM_BOX.height) + 16;
-  const x = EMBLEM_BOX.x + EMBLEM_BOX.width / 2 - side / 2;
-  const y = EMBLEM_BOX.y + EMBLEM_BOX.height / 2 - side / 2;
   const el = svg("svg", {
-    viewBox: `${x} ${y} ${side} ${side}`,
+    viewBox: "0 0 1024 1024",
     width: size,
     height: size,
     fill: "none",
@@ -40,6 +37,7 @@ export function emblem(options: EmblemOptions = {}): SVGSVGElement {
     focusable: "false",
     ...(options.label ? { role: "img", "aria-label": options.label } : { "aria-hidden": "true" }),
   });
-  el.appendChild(build(emblemTree(`crest-${++instances}`, INK_TOKENS)));
+  el.appendChild(svg("rect", { width: 1024, height: 1024, rx: 236, fill: INK.night }));
+  el.appendChild(build(emblemTree({ grain: markGrain(size), side: 1024, fill: 0.8, eyes: true })));
   return el;
 }
