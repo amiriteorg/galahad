@@ -191,6 +191,24 @@ export const execArgs = (id: string, cmd: string[], timeoutSec: number): string[
   ...cmd,
 ];
 
+/**
+ * A login shell on a terminal of its own (bash where the image has it), as `docker exec` runs it under a pseudo-terminal
+ * on the host. Nothing bounds its time but its closing: a terminal is yours, open while you use it.
+ */
+export const terminalArgs = (id: string): string[] => [
+  "exec",
+  "--interactive",
+  "--tty",
+  "--workdir",
+  "/work",
+  "--env",
+  "TERM=xterm-256color",
+  containerName(id),
+  "sh",
+  "-c",
+  "command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l",
+];
+
 export function networkCreateArgs(kind: keyof typeof NETWORKS): string[] {
   const n = NETWORKS[kind];
   return [

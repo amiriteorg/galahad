@@ -218,8 +218,8 @@ A Claude plan or a ChatGPT plan may be used only by its vendor's own tool, unmod
 To try it:
 
 1. Give the knight an online VM (the default; a VM made before 13 November 2026 reaches only the gateway and cannot sign in): `bun galahad roundtable provision ada`.
-2. In **Workspace → Open console**, install the tool as its vendor documents, so that it is on the VM's `PATH` or in `~/.local/bin` (`/work/.local/bin`, which is kept with the workspace).
-3. Still in the console, sign it in through the vendor's own flow: `claude auth login` for Claude Code; `codex login --device-auth` for Codex (OpenAI's device-code sign-in, which must be allowed in your ChatGPT security settings). Follow what the tool prints. The sign-in stays in that VM.
+2. Open a terminal in its VM: `bun galahad terminal ada` (a login shell on a real terminal; Ctrl-] leaves). There, install the tool as its vendor documents, so that it is on the VM's `PATH` or in `~/.local/bin` (`/work/.local/bin`, which is kept with the workspace).
+3. Still in the terminal, sign it in through the vendor's own flow: `claude auth login` for Claude Code; `codex login --device-auth` for Codex (OpenAI's device-code sign-in, which must be allowed in your ChatGPT security settings). Follow what the tool prints. The sign-in stays in that VM. (The app's **Workspace → Open console** runs one command at a time and shows its output only when it ends, so a sign-in that waits for you can't be done there.)
 4. Choose the harness in **Edit knight → Coding harness**, or `bun galahad roundtable add ada --name Ada --agent claude` (or `codex`).
 5. **Workspace → Harness readiness** then says what it would run on, for example "Runs on its own sign-in in this VM (claude.ai)".
 

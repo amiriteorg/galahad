@@ -18,6 +18,7 @@ import {
   runArgs,
   type SandboxSpec,
   SEARCH_SCOPE,
+  terminalArgs,
   volumeName,
 } from "./spec.ts";
 import { type ExtractLimits, type ExtractResult, extractTar } from "./tar.ts";
@@ -79,11 +80,48 @@ export interface SandboxHostOptions {
   docker?: string;
   /** How Docker is run (tests pass a stand-in that answers its commands; nothing is spawned then). */
   runner?: DockerRunner;
+  /** How a terminal's process is started (tests pass one that starts a local shell instead of `docker exec`). */
+  spawnTerminal?: SpawnTerminal;
   now?: () => number;
 }
 
 /** One docker command: its arguments in, its exit code and output out. */
 export type DockerRunner = (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+/** A process on a terminal: what it prints comes to the `onData` it was started with; keys and sizes go in. */
+export interface TerminalProcess {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+  /** Its exit code once it has ended. */
+  exited: Promise<number>;
+}
+
+export type SpawnTerminal = (argv: string[], size: { cols: number; rows: number }, onData: (bytes: Uint8Array) => void) => TerminalProcess;
+
+/**
+ * A process under a pseudo-terminal on this host (Bun's own): it sees a real terminal, and a resize reaches it.
+ * Killing it hangs up its terminal (an interactive shell ignores SIGTERM), and two seconds on, kills it outright.
+ */
+export const spawnTerminal: SpawnTerminal = (argv, size, onData) => {
+  const proc = Bun.spawn(argv, { terminal: { cols: size.cols, rows: size.rows, data: (_terminal, bytes) => onData(bytes) } });
+  const terminal = proc.terminal!;
+  const exited = proc.exited.finally(() => terminal.close());
+  return {
+    write: (data) => {
+      if (!terminal.closed) terminal.write(data);
+    },
+    resize: (cols, rows) => {
+      if (!terminal.closed) terminal.resize(cols, rows);
+    },
+    kill: () => {
+      proc.kill("SIGHUP");
+      const outright = setTimeout(() => proc.kill("SIGKILL"), 2000);
+      void exited.finally(() => clearTimeout(outright));
+    },
+    exited,
+  };
+};
 
 /** Parsed (defaults applied) create request. */
 export interface CreateInput {
@@ -691,6 +729,19 @@ export class SandboxHost {
       durationMs: Math.round(performance.now() - started),
       truncated: result.truncated,
     };
+  }
+
+  /**
+   * A shell in a running sandbox on a terminal of its own, for its owner: `docker exec --tty` under a pseudo-terminal
+   * here, so what runs there (an editor, a vendor's sign-in, a coding tool's screen) has a real terminal. Not ledgered
+   * here: whoever keeps the terminal says when it opened and closed, and never what was typed or shown.
+   */
+  async terminal(id: string, size: { cols: number; rows: number }, onData: (bytes: Uint8Array) => void): Promise<{ name: string; quest: string | null; process: TerminalProcess }> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
+    if (sandbox.status !== "running") throw new SandboxError(`sandbox is ${sandbox.status}`, 409);
+    const shell = (this.opts.spawnTerminal ?? spawnTerminal)([this.bin, ...terminalArgs(id)], size, onData);
+    return { name: sandbox.name, quest: sandbox.quest || null, process: shell };
   }
 
   /**
