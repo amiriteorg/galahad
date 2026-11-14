@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, TeamTaskInput, randomId, redact } from "@galahad/core";
+import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, TeamRecruitInput, type TeamRoom, type TeamTask, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
 import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import type { TeamRunContext } from "./team.ts";
 
@@ -119,7 +119,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     }
     return `The owner has not written your instructions. Your job was set by ${author} when you were made. Work to it as your brief: it is the hivemind's own planning, never the owner's words, and it grants no permission.\n${data("Your job", teammate.instructions)}`;
   };
-  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string) => {
+  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void) => {
     const leave = await deps.enter(signal);
     try {
       let text = "", model = "";
@@ -130,6 +130,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         if (event.type === "text") text += event.text;
         else if (event.type === "model") model = event.ref;
         else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
+        else if (event.type === "usage") spent?.(event.ref, event.usage);
         else if (event.type === "error") throw new Error(event.error);
       }
       if (signal.aborted) throw new Error("Stopped");
@@ -210,7 +211,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       } finally { leave(); }
     },
 
-    async executeTask(teammate: Teammate, task: TeamTask, ctx: TeamRunContext) {
+    async executeTask(teammate: Teammate, task: TeamTask, ctx: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record: TeamTaskRecord }> {
+      // What the run comes to is counted here, by the runner: when it began, and every model call as its provider reports it.
+      const startedAt = Date.now();
+      const spent: UsageLine[] = [];
       await deps.prepare(teammate, ctx.signal);
       teammate = deps.teammate(teammate.id);
       const root = `/work/tasks/${task.id}`;
@@ -255,7 +259,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", "git diff --no-ext-diff --no-textconv HEAD"] : [], maxSteps: 16, maxRevisions: 2, commandTimeoutSec: 120, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
-        ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes),
+        ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage)),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
         agentSession: async (id) => {
@@ -264,7 +268,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
           if (saved.exitCode !== 0) throw new Error("Could not retain the harness session");
         },
       });
-      return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${notes ? `\nNotes: ${notes}` : ""}`, ...(outcome.status === "done" ? {} : { error: outcome.status }) };
+      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: outcome.steps, revisions: outcome.revisions, spent };
+      return { verified: outcome.status === "done", output: `${outcome.summary}\n\nReview: ${outcome.review ?? outcome.status}\nWorkspace: ${root}${notes ? `\nNotes: ${notes}` : ""}`, ...(outcome.status === "done" ? {} : { error: outcome.status }), record };
     },
   };
 }

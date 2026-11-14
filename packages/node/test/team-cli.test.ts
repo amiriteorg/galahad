@@ -32,6 +32,25 @@ test("the listing says which squires Galahad made for himself, and yours read as
   ]);
 });
 
+test("a task that has run says what it came to: how it ended, its time, its commands, and its model calls in tokens and, where you stated prices, money", async () => {
+  const lines: string[] = [];
+  const task = (id: string, over: object) => ({ id, room: "forge", assignee: "ada", title: `Task ${id}`, goal: "g", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...over });
+  const spent = [{ role: "engineer", model: "plan/m", calls: 9, unknown: 0, input: 90_000, output: 4000, cached: 70_000, reasoning: 1500 }, { role: "reviewer", model: "plan/r", calls: 1, unknown: 0, input: 6000, output: 500, cached: 0, reasoning: 0 }];
+  const state = { teammates: [member("ada")], rooms: [], deliveries: [], tasks: [
+    task("task-one", { record: { startedAt: 0, endedAt: 724_000, ended: "done", commands: 8, revisions: 1, spent } }),
+    task("task-two", { status: "failed", verified: false, error: "unverified", record: { startedAt: 0, endedAt: 59_000, ended: "unverified", commands: 3, revisions: 2, spent: [{ ...spent[1]!, model: "other/unpriced" }] } }),
+    task("task-old", {}),
+  ] };
+  const api = { async call<T>(name: RouteName): Promise<T> { return (name === "prices" ? { prices: { "plan/m": { input: 1, output: 4, cached: 0.2 }, "plan/r": { input: 0.5, output: 2 } } } : state) as T; } };
+  await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
+  expect(lines.slice(1)).toEqual([
+    "task-one · done (verified) · ada · Task task-one · 12m04s · 8 commands, sent back once · 101k tokens · $0.05",
+    "task-two · failed · ada · Task task-two · ended unverified · 59s · 3 commands, sent back 2 times · 6,500 tokens · no price",
+    // One from before records were kept reads as it always did.
+    "task-old · done (verified) · ada · Task task-old",
+  ]);
+});
+
 /** A node that answers each route with what the test gives it. */
 const answering = (answers: Partial<Record<RouteName, unknown>>) => ({
   async call<T>(name: RouteName): Promise<T> {

@@ -4,6 +4,7 @@ import { sha256Bytes } from "./crypto.ts";
 import { utf8 } from "./bytes.ts";
 import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, type AvatarProfile } from "./avatar.ts";
 import { hasUndrawn, oneScript, readAlike } from "./lookalike.ts";
+import { SpendLines } from "./usage.ts";
 export { TEAM_LIMITS } from "./team-limits.ts";
 
 /* Named teammates and their conversations live on one controller node. Their VM
@@ -194,6 +195,22 @@ export interface TeamDelivery {
   updatedAt: number;
 }
 
+/**
+ * What a task's run came to, as the runner counted it (never the squire's own account): when the squire began on
+ * it and when it ended, how its quest ended, its commands, how often the work was sent back, and its model calls by
+ * role and model as the providers reported them (counts only). A coding harness's own calls, through the gateway
+ * or on its own sign-in, are not in `spent` yet: with a harness it holds the planner's and the reviewer's.
+ */
+export const TeamTaskRecord = z.strictObject({
+  startedAt: z.number().int().min(0),
+  endedAt: z.number().int().min(0),
+  ended: z.enum(["done", "unverified", "gave-up", "stopped"]),
+  commands: z.number().int().min(0).max(1_000_000),
+  revisions: z.number().int().min(0).max(1000),
+  spent: SpendLines,
+});
+export type TeamTaskRecord = z.infer<typeof TeamTaskRecord>;
+
 export interface TeamTask {
   id: string;
   room: string;
@@ -210,6 +227,8 @@ export interface TeamTask {
   chainId: string;
   createdAt: number;
   updatedAt: number;
+  /** What its run came to, once it has ended in the squire's hands (absent: not run yet, stopped before it began, or from before records were kept). */
+  record?: TeamTaskRecord;
 }
 
 export interface TeamSnapshot {

@@ -14,7 +14,7 @@ const result = (over: Partial<ExecResult> = {}): ExecResult => ({ stdout: "ok", 
 const say = (text: string) => ({ content: text });
 const call = (name: string, input: unknown) => ({ tool_calls: [{ index: 0, id: name, function: { name, arguments: JSON.stringify(input) } }] });
 
-function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}) {
+function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}, usage?: object) {
   const identity = newNodeIdentity();
   const store = new MindStore(":memory:"); stores.push(store);
   foundFleet(store, identity, { fleetName: "hivemind", nodeName: "keep" });
@@ -26,7 +26,8 @@ function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}) {
   const brain = { store, vault, fetch: (async (_url: unknown, init?: RequestInit) => {
     bodies.push(JSON.parse(String(init?.body)));
     const delta = script.shift() ?? say("GIVE UP\nUnexpected model call.");
-    return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+    // (`usage`: what a provider counts for the call, in the stream's last chunk; left out, it says nothing.)
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n${usage ? `data: ${JSON.stringify({ choices: [], usage })}\n\n` : ""}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   }) as typeof fetch };
   const deps: TeamRuntimeDeps = {
     brain: () => brain,
@@ -104,6 +105,31 @@ test("a model that can't do a squire's task is not passed over in silence: the t
   // Two engineer turns, one notice.
   expect(told).toHaveLength(1);
   expect(told[0]).toMatch(/missing\/first couldn't answer as engineer: .*not configured.* local\/fake answers instead/);
+});
+
+test("a task comes back with what it came to, as the runner counted it: its time, how it ended, its commands, and its model calls by role", async () => {
+  const usage = { prompt_tokens: 1200, completion_tokens: 80, prompt_tokens_details: { cached_tokens: 1000 } };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], {}, usage);
+  const before = Date.now();
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.verified).toBe(true);
+  const record = outcome.record!;
+  expect(record).toMatchObject({ ended: "done", commands: 2, revisions: 0 });
+  expect(record.startedAt).toBeGreaterThanOrEqual(before);
+  expect(record.endedAt).toBeGreaterThanOrEqual(record.startedAt);
+  // One plan, three engineer turns, one review: each as its provider counted it. Counts only: no word of a prompt.
+  expect([...record.spent].sort((a, b) => a.role.localeCompare(b.role))).toEqual([
+    { role: "engineer", model: "local/fake", calls: 3, unknown: 0, input: 3600, output: 240, cached: 3000, reasoning: 0 },
+    { role: "planner", model: "local/fake", calls: 1, unknown: 0, input: 1200, output: 80, cached: 1000, reasoning: 0 },
+    { role: "reviewer", model: "local/fake", calls: 1, unknown: 0, input: 1200, output: 80, cached: 1000, reasoning: 0 },
+  ]);
+  // Work that wasn't verified says how it ended, too.
+  const sent = fixture([say("1. Try."), say("GIVE UP\nIt can't be done here.")]);
+  const gave = await sent.runtime.executeTask(member, task, sent.context);
+  expect(gave.verified).toBe(false);
+  expect(gave.record).toMatchObject({ ended: "gave-up", commands: 0, revisions: 0 });
+  // A provider that reports nothing is counted as that: a call, its tokens unknown.
+  expect(gave.record!.spent.every((line) => line.unknown === line.calls && line.input === 0)).toBe(true);
 });
 
 test("failing task gates cannot be replaced by an approving review or a squire's claim", async () => {

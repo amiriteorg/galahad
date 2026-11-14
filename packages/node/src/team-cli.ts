@@ -1,4 +1,4 @@
-import { plainLine, plainText, type RouteName, type TeamSnapshot, type TeamRoomView, type TeamRoom, type Teammate } from "@galahad/core";
+import { costOf, plainLine, plainText, type Prices, type RouteName, spendTotal, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, tokensLabel, usdLabel } from "@galahad/core";
 import { resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -32,6 +32,30 @@ export function foldLine(line: string, width: number): string[] {
   out.push(`${out.length ? "  " : ""}${rest}`);
   return out;
 }
+const took = (ms: number): string => { const s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s` : `${s}s`; };
+
+/**
+ * What a task's run came to, for its line in the listing: how it ended when that isn't "done", how long it took,
+ * its commands and how often it was sent back, its tokens as the providers reported them, and money at your
+ * prices where every model that answered has one. Empty for a task with no record (not run, or from before them).
+ */
+export function taskRecordLine(task: Pick<TeamTask, "record">, prices: Prices): string {
+  const r = task.record;
+  if (!r) return "";
+  const total = spendTotal(r.spent);
+  const cost = costOf(r.spent, prices);
+  const tokens = !total.calls ? "no model calls" : total.unknown === total.calls ? "tokens unknown" : `${tokensLabel(total.tokens)}${total.complete ? "" : "+"} tokens`;
+  const money = !total.calls ? "" : cost.complete ? usdLabel(cost.usd) : "no price";
+  return [
+    "",
+    r.ended === "done" ? "" : `ended ${r.ended}`,
+    took(r.endedAt - r.startedAt),
+    `${r.commands} command${r.commands === 1 ? "" : "s"}${r.revisions ? `, sent back ${r.revisions === 1 ? "once" : `${r.revisions} times`}` : ""}`,
+    tokens,
+    money,
+  ].filter((part, i) => i === 0 || part).join(" · ");
+}
+
 const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
@@ -46,7 +70,9 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     // (One you removed is named still: its handle stays taken.)
     for (const m of state.removed ?? []) print(`${m.id} · ${plainLine(m.name)} · removed${m.conversations?.length ? ` · its conversations, kept to read: ${m.conversations.map((room) => `galahad team chat ${room}`).join(", ")}` : ""}`);
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
-    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}`);
+    // (Money is at your prices, asked for only when a task here has a record to price.)
+    const prices: Prices = state.tasks.some((t) => t.record) ? (await api.call<{ prices: Prices }>("prices").catch(() => ({ prices: {} }))).prices : {};
+    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}`);
     if (!state.teammates.length) print("Create a squire with galahad squires add <id> --name <name>, or open Squires in the app.");
     return;
   }

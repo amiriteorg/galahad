@@ -143,6 +143,26 @@ describe("team boundaries", () => {
     expect(JSON.stringify(store.snapshot())).not.toContain(fake);
     expect(store.messages("workshop")).toHaveLength(0);
   });
+  test("a finished task keeps what its run came to, as the runner counted it, and a reopened store still says it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-")); dirs.push(dir);
+    const store = make(join(dir, "team.db")); setup(store);
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Check", goal: "Check" });
+    expect(store.task(task.id)!.record).toBeUndefined();
+    store.claim(task.id);
+    const record = { startedAt: 1000, endedAt: 61_000, ended: "done" as const, commands: 7, revisions: 1, spent: [{ role: "engineer", model: "plan/m", calls: 8, unknown: 0, input: 90_000, output: 4000, cached: 70_000, reasoning: 1500 }] };
+    store.finish(task.id, "done", null, { verified: true, output: "Tests passed", record });
+    expect(store.task(task.id)!.record).toEqual(record);
+    expect(store.snapshot().tasks.find((t) => t.id === task.id)!.record).toEqual(record);
+    close(store);
+    expect(make(join(dir, "team.db")).task(task.id)!.record).toEqual(record);
+    // A record that isn't one (a runner from elsewhere, a field too many) is refused whole: the task ends without it.
+    const other = make(); setup(other);
+    const odd = other.createTask({ room: "workshop", assignee: "ada", title: "Check", goal: "Check" });
+    other.claim(odd.id);
+    other.finish(odd.id, "done", null, { verified: true, output: "Tests passed", record: { ...record, prompt: "the words themselves" } as never });
+    expect(other.task(odd.id)).toMatchObject({ status: "done", verified: true });
+    expect(other.task(odd.id)!.record).toBeUndefined();
+  });
   test("posts and delegated tasks cannot cross membership boundaries", () => {
     const store = make(); setup(store); store.saveTeammate({ id: "outsider", name: "Outside" });
     const message = store.post({ room: "workshop", text: "Work" });

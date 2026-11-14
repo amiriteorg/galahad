@@ -616,7 +616,11 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         messages.push({ role: "user", content: `${action.problem}${cut}` });
         continue;
       }
-      if (action.kind === "give-up") return finish({ status: "gave-up", summary: action.reason });
+      if (action.kind === "give-up") {
+        // (Like DONE, a turn and not a command: it isn't counted as one.)
+        steps -= 1;
+        return finish({ status: "gave-up", summary: action.reason });
+      }
       if (action.kind === "commands") {
         // Parallel sub-steps: each is a step of its own (the budget holds), run at the same time, reported in order.
         const first = steps;

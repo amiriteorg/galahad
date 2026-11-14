@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
-  type TeamMessage, type TeamTask, type TeamTaskInput, type TeamSnapshot, type TeamRoomView, type TeamOverview,
+  type TeamMessage, type TeamTask, type TeamTaskInput, type TeamTaskRecord, type TeamSnapshot, type TeamRoomView, type TeamOverview,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamJob, type TeamSelection } from "./team-store.ts";
 
@@ -26,7 +26,7 @@ export interface TeamRunContext {
 export interface TeamServiceOptions {
   store: TeamStore;
   respond(teammate: Teammate, room: TeamRoom, history: TeamMessage[], context: TeamRunContext): Promise<string | { text: string }>;
-  executeTask(teammate: Teammate, task: TeamTask, context: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string }>;
+  executeTask(teammate: Teammate, task: TeamTask, context: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record?: TeamTaskRecord }>;
   concurrency?: number;
   timeoutMs?: number;
   /** Shutdown waits this long for callbacks to settle, then leaves their persisted state interrupted. */

@@ -4,7 +4,7 @@ import { findSecrets, randomId, readAlike, redact } from "@galahad/core";
 import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
-  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspace,
+  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamTaskRecord, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
 } from "../../core/src/team.ts";
 
@@ -324,7 +324,7 @@ export class TeamStore {
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output" | "record">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }
@@ -427,13 +427,16 @@ export class TeamStore {
     const data = { ...JSON.parse(row.data), progress: teamOutput(text, TEAM_LIMITS.progress) };
     this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), this.now(), key);
   }
-  finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string }): void {
+  finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string; record?: TeamTaskRecord }): void {
     const row = this.jobRow(key);
     if (!row || (row.status !== "queued" && row.status !== "running")) return;
     const data = JSON.parse(row.data);
     if (row.kind === "task") {
       data.verified = status === "done" && result?.verified === true;
       data.output = teamOutput(result?.output ?? data.output ?? "");
+      // What the run came to, as its runner counted it: counts and times, kept only if it is exactly that.
+      const record = TeamTaskRecord.safeParse(result?.record);
+      if (record.success) data.record = record.data;
       if (status === "done" && !data.verified) { status = "failed"; error = error ?? "The work was not independently verified."; }
     }
     this.db.query("UPDATE team_jobs SET status=?,data=?,error=?,updated_at=? WHERE id=?").run(status, JSON.stringify(data), error ? teamOutput(error, 2000) : null, this.now(), key);
