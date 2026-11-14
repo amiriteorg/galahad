@@ -1,7 +1,7 @@
 import type { TrialRunsView, TrialView } from "@galahad/core";
 import { effortReport } from "@galahad/core/galahad-index";
 import { type Price, tokensLabel, usdLabel } from "@galahad/core/spend";
-import { type Comparison, modelReport, type ModelRow, reviewerReport, type ReviewerRow, type RoleReport, variantReport } from "@galahad/core/trial-reports";
+import { type Comparison, doneLine, doneReport, modelReport, type ModelRow, reviewerReport, type ReviewerRow, type RoleReport, variantReport } from "@galahad/core/trial-reports";
 import { isUnavailable } from "../api.ts";
 import type { Ctx, View } from "../context.ts";
 import { plural } from "../lib/text.ts";
@@ -167,6 +167,13 @@ function costNote(trials: readonly TrialView[], prices: Record<string, Price>): 
   );
 }
 
+/** What his "done" was worth in a run: how often a quest that ended done was found short by the grading. Null where no trial has a quest (the reviewer's cases). */
+function doneNote(trials: readonly TrialView[]): HTMLElement | null {
+  const report = doneReport(trials);
+  if (!report) return null;
+  return h("p", { class: "small muted", style: report.falseDone.count ? "color:var(--danger)" : null }, `His "done": ${doneLine(report)}.`);
+}
+
 function openRun(ctx: Ctx, r: RunSummary, held: string[], prices: Record<string, Price>): void {
   const body = h(
     "div",
@@ -179,6 +186,7 @@ function openRun(ctx: Ctx, r: RunSummary, held: string[], prices: Record<string,
       h("p", { class: "small muted" }, `${r.solved} of ${r.index.n} solved outright${r.crashed ? `; ${plural(r.crashed, "trial")} crashed and ${r.crashed === 1 ? "isn't" : "aren't"} counted` : ""}. Revision `, h("span", { class: "mono" }, r.version), ` on ${r.nodeName}.`),
       held.length ? h("div", { class: "row wrap" }, ...held.map((label) => badge(label, "accent"))) : null,
       costNote(r.trials, prices),
+      doneNote(r.trials),
     ),
     h("div", { class: "rows" }, ...r.trials.map((t) => trialRow(ctx, t, prices))),
   );
@@ -322,6 +330,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
   function runRow(r: RunSummary): HTMLElement {
     const held = heldLabels(settings[r.run]);
     const cost = runCost(r.trials, prices);
+    const falseDone = doneReport(r.trials)?.falseDone.count ?? 0;
     return h(
       "button",
       { class: "item item-button", type: "button", "data-key": r.run, "aria-label": `Run ${r.run}: Index ${percent(r.index.mean)}`, onclick: () => openRun(ctx, r, held, prices) },
@@ -343,6 +352,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
           { class: "meta tnum" },
           h("span", { title: absoluteTime(r.startedAt) }, relativeTime(r.startedAt)),
           h("span", {}, `${r.solved}/${r.index.n} solved`),
+          falseDone ? h("span", { style: "color:var(--danger)" }, `${falseDone} called done and found short`) : null,
           cost ? h("span", {}, cost.money ? `${cost.tokens} · ${cost.money}` : cost.tokens) : null,
           h("span", { class: "mono" }, r.version),
           r.models.length ? h("span", { class: "wrap-anywhere" }, r.models.join(", ")) : null,

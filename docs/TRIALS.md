@@ -54,6 +54,8 @@ Every problem but the cavity draws **fresh random parameters** from a seed each 
 
 `galahad trials` shows the Index for each run (mean score, 90 % bootstrap interval, the revision and the models that ran it) and how each problem has fared over every run; `galahad trial <id or run>` shows every answer next to the exact one. The PWA shows the same under **Trials**.
 
+**What his "done" was worth.** A quest ends `done` on his own evidence: its gates and its reviewer. The grading, which he never sees, says whether it was. So every run of the engineering and agentic suites also says, beside its Index, **how often he called work done that the grading found short** (the false done: the first failure the [mandate](MANDATE.md) names), with its 90 % interval, and how often work that was right wasn't called done. It is computed from the trial records when you look, so it is there for every run already recorded. The reviewer's cases have no quest and are left out; a crashed trial says nothing either way.
+
 ## The agentic suite ✅
 
 `galahad trial run --suite agentic` poses each task: a small repository and something to do in it, generated from a seed. The repository goes into a fresh sandbox with no network, and Galahad works it as an ordinary quest (planner → engineer → the task's own gates → independent reviewer; with effort, several attempts and the reviewer's pick). When the quest is over, what he left in the repository is taken out, that sandbox goes, and the **hidden tests** run, one process each, in another fresh sandbox he never had: no network, no models, nothing of his but the files. A program decides, check by check.

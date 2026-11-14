@@ -27,7 +27,7 @@ import {
   usdLabel,
 } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
-import { budgetLabel, describeCost, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
+import { budgetLabel, describeCost, describeDone, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
 import { suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
 
 /*
@@ -324,8 +324,7 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
         const held = [s ? `effort ${s.effort}` : "", s?.variant ? `variant ${s.variant.name}` : "", ...Object.entries(s?.pins ?? {}).map(([role, model]) => `${role}=${model}`)].filter(Boolean);
         console.log(`${bold(run)} ${dim(`${new Date(Math.min(...ts.map((t) => t.recordedAt))).toLocaleString()} · ${ts[0]!.suite}${held.length ? ` · ${held.join(" · ")}` : ""} · revision ${ts[0]!.version}${models.length ? ` · ${models.join(", ")}` : ""}`)}`);
         console.log(`  ${describeIndex(ts)}`);
-        const cost = describeCost(ts, prices);
-        if (cost) console.log(cost);
+        for (const line of [describeCost(ts, prices), describeDone(ts)]) if (line) console.log(line);
       }
       if (runs.size > 10 && !flags.all) console.log(dim(`  … ${runs.size - 10} older run(s): --all`));
       // Did more compute make him more capable? The Index per effort level, with its interval, says.
@@ -378,8 +377,7 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
   for (const t of [...run].reverse()) console.log(describeTrial(t));
   const s = settings[sub!];
   console.log(`\n${describeIndex(run)}${s ? dim(` · effort ${s.effort}${s.variant ? ` · variant ${s.variant.name}` : ""}`) : ""}`);
-  const cost = describeCost(run, prices);
-  if (cost) console.log(cost);
+  for (const line of [describeCost(run, prices), describeDone(run)]) if (line) console.log(line);
   return 0;
 }
 

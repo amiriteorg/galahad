@@ -24,6 +24,8 @@ export interface ReportTrial {
   seconds: number;
   models: readonly string[];
   spent?: { lines: readonly UsageLine[] };
+  /** How the trial's quest ended (done, unverified, gave-up, stopped); a reviewer's case has none. */
+  quest?: { status: string };
 }
 
 /** A run's settings as the reports read them (a TrialRunSettings has all of this). */
@@ -309,4 +311,48 @@ export function reviewerReport(trials: readonly ReportTrial[]): ReviewerRow[] {
 export function reviewerLine(row: ReviewerRow): string {
   const part = (p: ReviewerRow["passedWrong"], what: string): string => (p.of ? `${what} ${p.count} of ${p.of}${p.rate && p.of > 1 ? ` (${pct(p.rate.mean)}, ${pct(p.rate.low)}–${pct(p.rate.high)})` : ""}` : `${what}: no such case yet`);
   return `${row.model}: right ${said(row.right)} · ${part(row.passedWrong, "passed what it should fail")} · ${part(row.failedRight, "failed what it should pass")}${row.tokensPerCase !== null ? ` · ${tokensLabel(row.tokensPerCase)} tokens a case` : ""}`;
+}
+
+/* ---------- what "done" was worth ---------- */
+
+export interface DoneReport {
+  /** Of the quests that ended done: how many the grading found short. The error everything else is there to catch. */
+  falseDone: { count: number; of: number; rate: Interval | null };
+  /** Of the trials solved outright: how many he didn't call done. Right work he didn't stand behind. */
+  unclaimed: { count: number; of: number; rate: Interval | null };
+}
+
+/**
+ * What a quest's "done" was worth, over the scored trials that record how their quest ended: a quest ends
+ * done on his own evidence (its gates, its reviewer), and the trial's grading, which he never sees, says
+ * whether it was. Null when no trial here has a quest on record (a reviewer's case has none).
+ */
+export function doneReport(trials: readonly ReportTrial[]): DoneReport | null {
+  const of = scored(trials).filter((t) => t.quest);
+  if (!of.length) return null;
+  const part = (among: ReportTrial[], miss: (t: ReportTrial) => boolean): DoneReport["falseDone"] => ({
+    count: among.filter(miss).length,
+    of: among.length,
+    rate: among.length ? galahadIndex(among.map((t) => (miss(t) ? 1 : 0))) : null,
+  });
+  return {
+    falseDone: part(of.filter((t) => t.quest!.status === "done"), (t) => t.score < 1),
+    unclaimed: part(of.filter((t) => t.score === 1), (t) => t.quest!.status !== "done"),
+  };
+}
+
+/** What "done" was worth, in a line. */
+export function doneLine(report: DoneReport): string {
+  const { falseDone: f, unclaimed: u } = report;
+  const called = !f.of
+    ? "never called done"
+    : f.of === 1
+      ? `called done once, and it ${f.count ? "wasn't" : "was"}`
+      : `called done ${f.of} times, ${f.count || "none"} of them false (${pct(f.rate!.mean)}, ${pct(f.rate!.low)}–${pct(f.rate!.high)})`;
+  const solved = !u.of
+    ? "nothing solved outright"
+    : u.of === 1
+      ? `solved outright once, and ${u.count ? "not " : ""}called done`
+      : `solved outright ${u.of} times, ${u.count || "none"} of them not called done`;
+  return `${called} · ${solved}`;
 }

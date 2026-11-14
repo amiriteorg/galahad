@@ -8,6 +8,8 @@ import {
   costIndex,
   costOf,
   describeVariant,
+  doneLine,
+  doneReport,
   type EffortLevel,
   effortReport,
   galahadIndex,
@@ -516,6 +518,15 @@ export function describeCost(trials: readonly TrialView[], prices: Prices = {}):
 }
 
 /**
+ * What his "done" was worth in these trials: how often a quest that ended done was found short by the grading,
+ * and how often right work wasn't called done. Empty where no trial has a quest on record (the reviewer's cases).
+ */
+export function describeDone(trials: readonly TrialView[]): string {
+  const report = doneReport(trials);
+  return report ? `  ${dim("done")} ${doneLine(report)}` : "";
+}
+
+/**
  * The Index per effort level, and whether more compute measurably helped (the same rule as any change: its
  * interval must clear effort 1's). Empty when no run recorded an effort above 1.
  */
@@ -575,8 +586,8 @@ export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOp
     });
     const { run, trials, spent } = result;
     if (trials.length) {
-      const cost = describeCost(trials, options.prices);
-      console.log(`\n${describeIndex(trials)}${cost ? `\n${cost}` : ""}\n${dim(`run ${run} · galahad trials · galahad trial ${run}`)}`);
+      const said = [describeCost(trials, options.prices), describeDone(trials)].filter(Boolean);
+      console.log(`\n${describeIndex(trials)}${said.length ? `\n${said.join("\n")}` : ""}\n${dim(`run ${run} · galahad trials · galahad trial ${run}`)}`);
     }
     if (spent.length) console.log(dim(`spent in all: ${spendLabel(spent, options.prices)}`));
     return result;

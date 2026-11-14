@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compareTrials, measure, modelReport, pairedDifference, type ReportRun, type ReportTrial, reviewerLine, reviewerReport, type UsageLine, variantReport, VARIANTS } from "../src/index.ts";
+import { compareTrials, doneLine, doneReport, measure, modelReport, pairedDifference, type ReportRun, type ReportTrial, reviewerLine, reviewerReport, type UsageLine, variantReport, VARIANTS } from "../src/index.ts";
 
 /*
  * The reports the recorded trials give: which model is best in a role and how sure
@@ -177,5 +177,41 @@ describe("the reviewer, measured directly", () => {
     expect(rows[1]!.passedWrong.rate).toMatchObject({ mean: 1, low: 1, high: 1 });
     expect(reviewerLine(rows[1]!)).toBe("a/credulous: right 38% (19%–56%, 16 trials) · passed what it should fail 10 of 10 (100%, 100%–100%) · failed what it should pass 0 of 6 (0%, 0%–0%) · 3,000 tokens a case");
     expect(reviewerReport([trial("r-eng", 1)])).toEqual([]);
+  });
+});
+
+describe("what a quest's \"done\" was worth", () => {
+  const ended = (status: string, score: number, over: Partial<ReportTrial> = {}): ReportTrial => trial("r-a", score, { quest: { status }, ...over });
+
+  test("of the quests that ended done, how many the grading found short; of the trials solved outright, how many he didn't call done", () => {
+    const trials = [
+      ...Array.from({ length: 6 }, () => ended("done", 1)),
+      // Done, and the hidden tests say otherwise: wholly wrong twice, in part once.
+      ended("done", 0),
+      ended("done", 0),
+      ended("done", 0.5),
+      // Right, and he didn't stand behind it.
+      ended("unverified", 1),
+      // Not done and not right: neither error.
+      ended("gave-up", 0),
+      // A crashed run says nothing, and a reviewer's case has no quest to end.
+      ended("done", 0, { status: "crashed" }),
+      trial("r-rev", 1, { suite: "reviewer" }),
+    ];
+    const report = doneReport(trials)!;
+    expect(report.falseDone).toMatchObject({ count: 3, of: 9 });
+    expect(report.falseDone.rate!.mean).toBeCloseTo(1 / 3, 12);
+    expect(report.falseDone.rate!.low).toBeLessThan(1 / 3);
+    expect(report.falseDone.rate!.high).toBeGreaterThan(1 / 3);
+    expect(report.unclaimed).toMatchObject({ count: 1, of: 7 });
+    expect(doneLine(report)).toBe(`called done 9 times, 3 of them false (33%, ${Math.round(100 * report.falseDone.rate!.low)}%–${Math.round(100 * report.falseDone.rate!.high)}%) · solved outright 7 times, 1 of them not called done`);
+  });
+
+  test("nothing is said where nothing is known: no quest on record, none that ended done, nothing solved", () => {
+    expect(doneReport([trial("r-rev", 1, { suite: "reviewer" })])).toBeNull();
+    const never = doneReport([ended("gave-up", 0), ended("stopped", 0)])!;
+    expect(never).toMatchObject({ falseDone: { count: 0, of: 0, rate: null }, unclaimed: { count: 0, of: 0, rate: null } });
+    expect(doneLine(never)).toBe("never called done · nothing solved outright");
+    expect(doneLine(doneReport([ended("done", 1)])!)).toBe("called done once, and it was · solved outright once, and called done");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, type RouteName, routes, spendTotal, TrialRecord, type TrialRunsView, type TrialView, type Usage, VARIANTS } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, type TrialProblem } from "@galahad/brain";
-import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeTrial, estimateLabel, estimateRun, runTrials, type TrialUnit } from "../src/trial-cli.ts";
+import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeDone, describeTrial, estimateLabel, estimateRun, runTrials, type TrialUnit } from "../src/trial-cli.ts";
 import { parseBudget, parsePins, parseTokens } from "../src/trial-commands.ts";
 
 /*
@@ -112,6 +112,18 @@ describe("what a trial spent", () => {
     expect(spendTotal(trials[0]!.spent!.lines).complete).toBe(false);
     // The Index's cost columns leave such a trial out rather than count it short.
     expect(describeCost(trials, {})).toMatch(/tokens unknown/);
+  });
+});
+
+describe("what his \"done\" was worth", () => {
+  test("a quest that ended done on work the grading found short is counted as a false done, beside the run's Index", async () => {
+    // The stand-in leaves the cantilever's answers whatever was asked: both quests end done, and one of them is right.
+    const { node } = fakeNode();
+    const { trials } = await runTrials(node, { suite: "engineering", problems: [cantilever, rlc], repeat: 1, parallel: 1, network: "gateway", seed: 11 });
+    expect(trials.map((t) => [t.problem, t.quest?.status, t.score === 1])).toEqual([["cantilever-beam", "done", true], ["rlc-step", "done", false]]);
+    expect(describeDone(trials)).toMatch(/done.* called done 2 times, 1 of them false \(50%, \d+%–\d+%\) · solved outright once, and called done$/);
+    // A reviewer's case has no quest to end: nothing is said.
+    expect(describeDone(trials.map(({ quest: _quest, ...t }) => t))).toBe("");
   });
 });
 
