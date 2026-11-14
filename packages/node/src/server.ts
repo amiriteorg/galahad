@@ -30,6 +30,7 @@ import {
   randomId,
   redact,
   registrationDigest,
+  sha256B64u,
   isTimeZone,
   type LoopTask,
   type LoopView,
@@ -509,12 +510,21 @@ export function createApp(ctx: AppContext) {
   }
 
   /** Recalled memories become context for chat, labelled with their trust level. */
-  function memoryContext(query: string): string | undefined {
+  function memoryContext(query: string, steady = false): string | undefined {
     const memories = ctx.store.recall(query, 8);
     if (!memories.length) return undefined;
     // Fenced like the archive: an untrusted memory (a web page, an agent's text) can't pose as the prompt.
-    return fenceMemories("Relevant memories from your shared mind:", memories);
+    return fenceMemories("Relevant memories from your shared mind:", memories, steady ? steadyNonce(memories.map((m) => `${m.trust}\u0000${m.text}`)) : undefined);
   }
+
+  /**
+   * A fence's nonce for a block that goes with every turn of one conversation (what a quest recalls): the same
+   * for the same records, so the prompt's beginning is the same text each time and a provider can read it from
+   * its cache. No record can know it: it is made with a key of this process's own, from every record in the
+   * fence, so text that named it would be other text and get another.
+   */
+  const fenceKey = randomId(32);
+  const steadyNonce = (records: readonly string[]): string => sha256B64u(`${fenceKey}\u0000${records.join("\u0000")}`).slice(0, 16);
 
   /**
    * Galahad himself, as the agent that runs his tools in chat: the caller's scopes,
@@ -770,9 +780,9 @@ export function createApp(ctx: AppContext) {
    * Why a call was given others' words by this node itself: untrusted memories recalled for it (the same recall
    * memoryContext makes), untrusted archived entries among its steps. None: nothing untrusted went with it.
    */
-  function othersWords(asked: ChatMessage, steps: StoredStep[]): string[] {
+  function othersWords(recallFor: ChatMessage | undefined, steps: StoredStep[]): string[] {
     const why: string[] = [];
-    if (asked.role === "user" && ctx.store.recall(asked.content, 8).some((m) => m.trust === "untrusted")) why.push("its planner or engineer was given untrusted memories");
+    if (recallFor && ctx.store.recall(recallFor.content, 8).some((m) => m.trust === "untrusted")) why.push("its planner or engineer was given untrusted memories");
     if (steps.some((s) => s.kind === "archive" && s.entries.some((e) => e.trust === "untrusted"))) why.push("its planner or engineer was given untrusted archived entries");
     return why;
   }
@@ -1017,10 +1027,15 @@ export function createApp(ctx: AppContext) {
         else ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: m.content, model: null, steps: [], status: "done", error: null, bank: false });
       }
     }
-    const known = [project ? projectContext(project) : null, asked.role === "user" ? memoryContext(asked.content) : null].filter(Boolean).join("\n\n") || undefined;
+    // What he recalls: for your question, the latest thing said. For coding work (a quest's call), for what the
+    // quest is, how its conversation began: a quest sends its whole conversation again on every turn, and recalling
+    // for the last message would ask his memory about a command's output and change the prompt's beginning each
+    // time, so that no provider could read it from its cache (input tokens are the bill).
+    const recallFor = request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
+    const known = [project ? projectContext(project) : null, recallFor ? memoryContext(recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
-    return { request, wantTools, kept, messages, asked, project, known, fromArchive, attempt, quest };
+    return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest };
   }
 
   /** His tools' way into the node, noting what a turn leaves waiting on you: approvals it filed, keys it asked for. */
@@ -1711,7 +1726,7 @@ export function createApp(ctx: AppContext) {
             }
             // And what else this node gave the call that others wrote: a skill learned from a quest whose planner or
             // engineer read others' words waits for you, whatever its sandbox could reach (skills.ts).
-            if (quest && request.role !== "reviewer") ctx.skills.gave(questRef(p, quest.id), othersWords(ready.asked, answer.steps));
+            if (quest && request.role !== "reviewer") ctx.skills.gave(questRef(p, quest.id), othersWords(ready.recallFor, answer.steps));
             for await (const event of chat(brainFor(p), { ...request, messages, tools, context, signal: req.signal })) {
               keepStep(answer, event);
               seen(event);
