@@ -7,12 +7,14 @@
  *   bun apps/web/measure/first-load.ts --repo <checkout>   another one, measured the same way
  *     --runs 9      loads per page, profile and kind (the median is reported, with the fastest and slowest)
  *     --json <file> everything measured, as JSON
- *     --shots <dir> also screenshots: Overview, Squires, a room, its work and Trials, 390 and 1280 px, light and dark
+ *     --shots <dir> also screenshots: Chat (new, and a kept chat), Squires, a room, its work, Inbox, More, Overview and
+ *                   Trials, 390 and 1280 px, light and dark
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
- * few squires, a room, tasks and trials, pairs a headless Chrome with it through the real pairing
- * page, and then opens pages the way a browser does:
+ * few squires, a room, tasks and trials, a kept chat, a quest in hand and one thing that needs you,
+ * pairs a headless Chrome with it through the real pairing page, and then opens pages the way a
+ * browser does:
  *
  *   cold   nothing cached and no service worker: the first visit after pairing
  *   warm   the service worker holds the shell: every visit after that
@@ -149,9 +151,11 @@ class Chrome {
 }
 
 // ---------- what is measured ----------
+// (The first is the page the app opens on: its first visit is the one whose requests and files are listed.)
 const PAGES = [
-  { name: "Overview", hash: "#/overview" },
+  { name: "Chat", hash: "#/chat" },
   { name: "Squires", hash: "#/team" },
+  { name: "Overview", hash: "#/overview" },
 ] as const;
 const PROFILES = {
   laptop: { width: 1280, height: 800, scale: 2, mobile: false, cpu: 1, network: null },
@@ -178,6 +182,8 @@ function watchPage(): void {
   const there = (): boolean => {
     const main = document.querySelector(".shell main");
     if (!main || main.querySelector(".skeleton")) return false;
+    // (A new chat holds a place for your recent chats until the node has said which they are.)
+    if (location.hash.startsWith("#/chat")) return Boolean(main.querySelector(".chat .composer"));
     if (!location.hash.startsWith("#/team")) return Boolean(main.querySelector(".page-head h1"));
     return Boolean(main.querySelector(location.hash.includes("room=") ? ".team-message, .team-task" : ".team-nav-row[data-key]"));
   };
@@ -390,6 +396,17 @@ try {
       });
     }
   }
+  // A kept chat (asked through the real chat route, answered by the stand-in), a quest in hand and a key he asked for.
+  const asked = await fetch(`http://127.0.0.1:${port}${routes.chat!.path}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" },
+    body: JSON.stringify({ role: "planner", save: true, tools: false, messages: [{ role: "user", content: "What is left before the release, in order?" }] }),
+  });
+  const conversation = /"(cv_[A-Za-z0-9_-]{22})"/.exec(await asked.text())?.[1];
+  if (!asked.ok || !conversation) throw new Error(`the kept chat wasn't made: ${asked.status}`);
+  await until("the kept chat's turn to end", async () => (await admin("turns")).turns.length === 0);
+  await admin("questProgress", { quest: "measure-1", goal: "Make sync resume after a dropped connection", state: "working", plan: "1. Reproduce the drop.\n2. Resume from the last acknowledged entry.\n3. Run the gate.", step: 3, maxSteps: 30, doing: "bun test packages/link", revisions: 0, gates: [{ command: "bun test packages/link", by: "owner", exitCode: null }] });
+  await admin("requestSecret", { name: "github-token", purpose: "To open the pull request for the sync fix." });
   const team = await admin("team");
   const faces = Object.fromEntries(team.teammates.map((member: { id: string }) => [member.id, core.avatarExpression(member, team, Date.now())]));
 
@@ -551,7 +568,7 @@ try {
         cold.push(await open(target.hash, true));
         warm.push(await open(target.hash, false));
       }
-      if (name === "laptop" && target.name === "Overview") firstVisit = cold[0]!.wire;
+      if (name === "laptop" && target === PAGES[0]) firstVisit = cold[0]!.wire;
       const traces = [await traced(target.hash), await traced(target.hash), await traced(target.hash)];
       const work = Object.fromEntries(Object.keys(traces[0]!).map((kind) => [kind, Math.round(median(traces.map((t) => t[kind]!)) * 10) / 10]));
       results[`${target.name} · ${name}`] = { cold: summary(cold), warm: summary(warm), work };
@@ -584,11 +601,15 @@ try {
   if (SHOTS) {
     mkdirSync(SHOTS, { recursive: true });
     await setProfile("laptop");
-    const views = [
-      { name: "overview", hash: "#/overview" },
+    const views: { name: string; hash: string; wait?: string }[] = [
+      { name: "chat", hash: "#/chat" },
+      { name: "chat-kept", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
       { name: "squires", hash: "#/team" },
       { name: "room", hash: "#/team?room=forge" },
       { name: "room-work", hash: "#/team?room=forge&tab=work" },
+      { name: "inbox", hash: "#/inbox" },
+      { name: "more", hash: "#/more" },
+      { name: "overview", hash: "#/overview" },
       { name: "trials", hash: "#/trials" },
     ];
     for (const theme of ["light", "dark"]) {
@@ -597,7 +618,10 @@ try {
         await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }, page);
         await browser.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }, page);
         for (const view of views) {
+          // A new chat, not the kept one the last round left open (the app comes back to that one).
+          await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
           await open(view.hash, false);
+          if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`));
           await sleep(400);
           const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, page);
           const file = join(SHOTS, `${view.name}-${width}-${theme}.png`);
@@ -636,7 +660,7 @@ try {
   console.log(`Squires' faces while it was measured: ${Object.entries(faces).map(([id, face]) => `${id} ${face}`).join(", ")}.\n`);
   console.log("The app's files on a first visit, as the node sends them:");
   console.log(table([["file", "raw", "gzip", "brotli"], ...report.files.map((f) => [f.path, kb(f.raw), kb(f.gzip), kb(f.brotli)])]));
-  console.log(`\nA first visit to Overview: ${report.firstVisit.requests} requests seen, and /sw.js (${firstVisit.filter((w) => w.by === "page").length} by the page, ${firstVisit.filter((w) => w.by === "service worker").length} by the service worker; ${report.firstVisit.api} of them to the API),`);
+  console.log(`\nA first visit to ${PAGES[0].name}: ${report.firstVisit.requests} requests seen, and /sw.js (${firstVisit.filter((w) => w.by === "page").length} by the page, ${firstVisit.filter((w) => w.by === "service worker").length} by the service worker; ${report.firstVisit.api} of them to the API),`);
   console.log(`${kb(report.firstVisit.bytesOnTheWire)} on the wire with their headers (this Chrome was sent: ${[...new Set(firstVisit.filter((w) => w.encoding).map((w) => w.encoding))].join(", ") || "nothing compressed"}).\n`);
   const rows = [["page · profile · visit", "paint", "shell", "usable", "blocked", "elements", "requests", "on the wire"]];
   for (const [name, kinds] of Object.entries(results)) {
