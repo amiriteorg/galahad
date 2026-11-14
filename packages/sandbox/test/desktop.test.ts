@@ -49,7 +49,7 @@ describe("the desktop command", () => {
     expect(started[0]).toBe("Xvfb [:1] [-screen] [0] [1280x800x24] [-nolisten] [tcp]");
     // The browser: its profile on the workspace (a sign-in there stays with the squire's disk), its own inner sandbox
     // off (the VM forbids it), and a port on loopback through which a page can be read as text.
-    for (const flag of [`[--user-data-dir=${m.home}/.config/chromium]`, "[--no-sandbox]", "[--remote-debugging-port=9222]", "[--remote-debugging-address=127.0.0.1]", "[--window-size=1280,800]"]) expect(started[2]).toContain(flag);
+    for (const flag of [`[--user-data-dir=${m.home}/.config/chromium]`, "[--no-sandbox]", "[--hide-crash-restore-bubble]", "[--remote-debugging-port=9222]", "[--remote-debugging-address=127.0.0.1]", "[--window-size=1280,800]"]) expect(started[2]).toContain(flag);
     expect(m.ask("start").code).toBe(0);
     expect(m.traced().filter((line) => /^(Xvfb|openbox|chromium)( |$)/.test(line))).toHaveLength(3);
   });

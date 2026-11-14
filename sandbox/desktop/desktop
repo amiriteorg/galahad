@@ -55,7 +55,8 @@ start() {
     # Its own inner sandbox is off: the VM's restrictions (no new privileges, no capabilities) forbid it,
     # and the microVM is the boundary. Its profile is on the workspace, so what is signed in there stays
     # with this VM's disk.
-    chromium --user-data-dir="$PROFILE" --no-sandbox --test-type --no-first-run --no-default-browser-check \
+    # (No "restore pages?" bubble: a VM made again ends its browser without a goodbye, every time.)
+    chromium --user-data-dir="$PROFILE" --no-sandbox --test-type --no-first-run --no-default-browser-check --hide-crash-restore-bubble \
       --disable-gpu --disable-dev-shm-usage --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \
       --window-size="$(echo "$SIZE" | tr x ,)" --window-position=0,0 about:blank >"$RUN/browser.log" 2>&1 &
     until_true browser_up || fail "the browser did not start (see $RUN/browser.log)"
