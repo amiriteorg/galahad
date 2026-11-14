@@ -39,7 +39,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
 
   /** A role in one row: who it is, the models it hires in order, and Change. */
   function roleRow(role: string, spec: RoleSpec): HTMLElement {
-    // His own models answer, in order; a coding plan's do coding (his quests, his squires' work) and nothing else.
+    // His own models answer, in order; a coding plan's do coding (his quests, the knights' work) and nothing else.
     const { own, plans } = roleParts(spec.models, presets);
     const tools = plans.length ? h("span", { class: "subtle" }, `${own.length ? " · " : ""}coding: ${plans.join(", ")}`) : null;
     const chain = own.length
@@ -74,7 +74,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       const { own } = roleParts(models, presets);
       const part = (ref: string): string => {
         const at = own.indexOf(ref);
-        return at < 0 ? "a coding plan: it does coding (his quests, his squires' work) and answers nothing else" : at === 0 ? "answers first" : `fallback ${at}`;
+        return at < 0 ? "a coding plan: it does coding (his quests, the knights' work) and answers nothing else" : at === 0 ? "answers first" : `fallback ${at}`;
       };
       replace(
         list,
@@ -197,7 +197,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
         h("div", { class: "row wrap" }, h("span", { class: "strong" }, p.id), badge(p.kind === "anthropic" ? "Anthropic API" : "OpenAI-compatible", "neutral"), keyBadge, plan ? badge("coding plan", "accent") : null),
         h("div", { class: "meta" }, h("span", { class: "mono" }, p.baseUrl), p.label ? h("span", {}, p.label) : null, p.secret ? h("span", {}, "key: ", h("span", { class: "mono" }, p.secret)) : null),
         plan
-          ? h("div", { class: "meta" }, h("span", {}, `${plan.name}: he and his squires code on it, as Galahad, and their coding tools use it. His talk with you never does. ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
+          ? h("div", { class: "meta" }, h("span", {}, `${plan.name}: Galahad and the other knights code on it themselves, as Galahad, and their coding tools use it. His talk with you never does. ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
           : null,
         modelsBox,
       ),

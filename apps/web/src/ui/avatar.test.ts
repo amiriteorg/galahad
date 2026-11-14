@@ -30,7 +30,7 @@ const walk = (node: SvgNode): SvgNode[] => [node, ...node.children.flatMap(walk)
 const features = (node: SvgNode): SvgNode => walk(node).find((part) => part.tag === "path" && part.attrs.stroke)!;
 const head = (node: SvgNode): SvgNode => node.children[0]!;
 
-describe("squires' avatars at the SVG boundary", () => {
+describe("knights' avatars at the SVG boundary", () => {
   test("malformed snapshot profiles cannot introduce markup, event attributes or external paint", () => {
     const name = '<image href="https://invalid.example/pixel" onload="alert(1)">';
     const profile = { ...defaultAvatar("ada"), color: "url(https://invalid.example/paint)", accent: '#fff" onload="alert(1)', form: "foreignObject", onload: "alert(1)" };
@@ -50,7 +50,7 @@ describe("squires' avatars at the SVG boundary", () => {
     }
   });
 
-  test("flat paint: nothing in an avatar points at another when many squires share a page", () => {
+  test("flat paint: nothing in an avatar points at another when many knights share a page", () => {
     const nodes = render(...AVATAR_STYLES.flatMap((style) => Array.from({ length: 32 }, (_, i) => ({ id: `worker-${i}`, name: `Worker ${i}`, style }))));
     for (const part of nodes.flatMap(walk)) {
       expect(part.attrs.id).toBeUndefined();
@@ -87,7 +87,7 @@ describe("squires' avatars at the SVG boundary", () => {
       // Every head in this style is the same round one, whatever the profile's form.
       expect(head(node).attrs.d).toBe(head(faces[0]!).attrs.d);
     }
-    // A squire that is paused is drawn fainter as well, so it is told from one at work at a glance.
+    // A knight that is paused is drawn fainter as well, so it is told from one at work at a glance.
     expect(faces[AVATAR_EXPRESSIONS.indexOf("resting")]!.attrs.opacity).toBeDefined();
     expect(faces[AVATAR_EXPRESSIONS.indexOf("working")]!.attrs.opacity).toBeUndefined();
   });
@@ -125,7 +125,7 @@ describe("squires' avatars at the SVG boundary", () => {
     expect(features(light!).attrs.stroke).toBe("#18232b");
   });
 
-  test("a squire's look follows its handle, never its name or what it is doing", () => {
+  test("a knight's look follows its handle, never its name or what it is doing", () => {
     const [first, renamed, ...others] = render(
       { id: "ada", name: "Ada" },
       { id: "ada", name: "A new name", expression: "working" },
@@ -137,14 +137,14 @@ describe("squires' avatars at the SVG boundary", () => {
 
   test("Galahad himself is the same face in ink, told apart by one small mark", () => {
     for (const style of AVATAR_STYLES) {
-      const [galahad, squire] = render({ id: "galahad", name: "Galahad", style, still: true }, { id: "ada", name: "Ada", style, still: true });
+      const [galahad, knight] = render({ id: "galahad", name: "Galahad", style, still: true }, { id: "ada", name: "Ada", style, still: true });
       expect(galahad!.attrs["data-galahad"]).toBe("true");
-      expect(squire!.attrs["data-galahad"]).toBeUndefined();
+      expect(knight!.attrs["data-galahad"]).toBeUndefined();
       expect(galahad!.attrs["aria-label"]).toBe("Galahad's avatar");
       // Ink is the page's own, so it follows the theme: no colour of his is written into the drawing.
       for (const part of walk(galahad!)) for (const key of ["fill", "stroke"]) if (part.attrs[key]) expect(part.attrs[key]).toMatch(/^(none|currentColor)$/);
-      expect(features(galahad!).attrs.d).toBe(features(squire!).attrs.d);
-      expect(walk(galahad!).length).toBe(walk(squire!).length + 1);
+      expect(features(galahad!).attrs.d).toBe(features(knight!).attrs.d);
+      expect(walk(galahad!).length).toBe(walk(knight!).length + 1);
     }
   });
 });

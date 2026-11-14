@@ -4,30 +4,30 @@ import type { TeamDelivery, TeamEngramStatus, TeamHarness, TeamMessage, TeamSnap
 export type TeamTab = "chat" | "workspace";
 export interface TeamLocation { room?: string; teamTab?: TeamTab }
 
-/** A squire's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
+/** A knight's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
  * (the vendors' own tools by their own names, in plain text). */
 export const HARNESS: Record<TeamHarness, string> = { native: "Galahad", opencode: "OpenCode", hermes: "Hermes Agent", claude: "Claude Code", codex: "Codex" };
 
-/** What the node found of one harness in a squire's VM: `on`, what it would run on there; `reason`, why it can't yet. */
+/** What the node found of one harness in a knight's VM: `on`, what it would run on there; `reason`, why it can't yet. */
 export interface HarnessStatus { id: string; ready: boolean; on?: string; reason?: string }
 
 /** The line under a harness's name: what to do so that it can work, or what it would run on. */
 export const harnessNote = (harness: HarnessStatus): string | null => harness.reason ?? (harness.on ? `Runs on ${harness.on}` : null);
 
 /**
- * The notes store (Engram) in a squire's Workspace, in a line: the node's switch, and whether this VM has the
+ * The notes store (Engram) in a knight's Workspace, in a line: the node's switch, and whether this VM has the
  * pinned binary. A store that isn't in the VM is never called on for it. Null: the node says nothing of one.
  */
 export function engramLine(status: TeamEngramStatus | undefined): { badge: string; tone: "ok" | "warn" | "neutral"; text: string } | null {
   if (!status) return null;
   const engram = `Engram ${status.pinned}`;
   if (!status.on) {
-    const here = status.present === true ? ` ${engram} is in this VM, should you turn it on.` : status.present === false ? ` Turned on, it would not reach this squire: ${status.reason}.` : "";
+    const here = status.present === true ? ` ${engram} is in this VM, should you turn it on.` : status.present === false ? ` Turned on, it would not reach this knight: ${status.reason}.` : "";
     return { badge: "Off", tone: "neutral", text: `Off: tasks are given no notes store.${here}` };
   }
-  if (status.present === true) return { badge: "On", tone: "ok", text: `${engram} is in this VM, and this squire's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted.` };
-  if (status.present === false) return { badge: "Not in this VM", tone: "warn", text: `On, but ${status.reason}. This squire's tasks run without it and say so.` };
-  return { badge: "On", tone: "neutral", text: `On. Whether this VM has ${engram} is asked when the squire is idle and its VM is running.` };
+  if (status.present === true) return { badge: "On", tone: "ok", text: `${engram} is in this VM, and this knight's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted.` };
+  if (status.present === false) return { badge: "Not in this VM", tone: "warn", text: `On, but ${status.reason}. This knight's tasks run without it and say so.` };
+  return { badge: "On", tone: "neutral", text: `On. Whether this VM has ${engram} is asked when the knight is idle and its VM is running.` };
 }
 
 /** Team addresses keep the room when the page is reloaded or shared (the Roundtable's: #/team, or #/roundtable). */
@@ -66,7 +66,7 @@ export function teammateInitials(name: string): string {
 /** A profile ID is stable after a rename; reserved speakers are never assigned. */
 export function teammateId(name: string, taken: string[]): string {
   const cleaned = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const base = (/^[a-z]/.test(cleaned) ? cleaned : `squire-${cleaned}`).slice(0, 28).replace(/-+$/, "") || "squire";
+  const base = (/^[a-z]/.test(cleaned) ? cleaned : `knight-${cleaned}`).slice(0, 28).replace(/-+$/, "") || "knight";
   const used = new Set([...taken, "owner", "system", "galahad"]);
   if (!used.has(base)) return base;
   let suffix = 2;
@@ -115,7 +115,7 @@ export function removalPlan(person: Pick<Teammate, "id" | "name" | "workspace" |
 export function teamSpeaker(message: Pick<TeamMessage, "speaker" | "speakerName">, teammates: Teammate[]): string {
   if (message.speaker === "owner") return "You";
   if (message.speaker === "galahad") return "Galahad";
-  if (message.speaker === "system") return "Squires' activity";
+  if (message.speaker === "system") return "The Roundtable";
   return message.speakerName || teammates.find((person) => person.id === message.speaker)?.name || message.speaker;
 }
 

@@ -3,7 +3,7 @@ import { teammateInitials } from "../lib/team.ts";
 import { button, field } from "./controls.ts";
 import { h, replace, svg } from "./dom.ts";
 
-/** The ways a squire can be drawn. The app draws the first; apps/web/design/avatars.html shows all three. */
+/** The ways a knight can be drawn. The app draws the first; apps/web/design/avatars.html shows all three. */
 export const AVATAR_STYLES = ["face", "initials", "glyph"] as const;
 export type AvatarStyle = (typeof AVATAR_STYLES)[number];
 
@@ -33,7 +33,7 @@ const FACES: Record<AvatarExpression, [eyes: string, mouth: string]> = {
 const title = (value: string) => value[0]!.toUpperCase() + value.slice(1);
 
 export interface WorkerAvatarOptions {
-  /** A squire's handle, or "galahad" for Galahad himself (a handle no squire can have). */
+  /** A knight's handle, or "galahad" for Galahad himself (a handle no other knight can have). */
   id: string;
   name: string;
   profile?: unknown;
@@ -53,9 +53,9 @@ export function workerAvatar(options: WorkerAvatarOptions): SVGSVGElement {
   const style = AVATAR_STYLES.includes(options.style!) ? options.style! : "face";
   const expression = !options.still && AVATAR_EXPRESSIONS.includes(options.expression!) ? options.expression! : "idle";
   const size = Number.isFinite(options.size) ? Math.max(24, Math.min(192, options.size!)) : 40;
-  const name = String(options.name || "Worker").slice(0, 160);
+  const name = String(options.name || "Knight").slice(0, 160);
   const luminance = [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => sum + weight * parseInt(profile.color.slice(1 + index * 2, 3 + index * 2), 16), 0);
-  // Galahad is drawn in the page's own ink (index.html gives it both tones); a squire in its one flat colour.
+  // Galahad is drawn in the page's own ink (index.html gives it both tones); another knight in its one flat colour.
   const ink = galahad ? "currentColor" : luminance < 90 ? LIGHT : INK;
   const [eyes, mouth] = FACES[expression];
   return svg("svg", {
@@ -94,7 +94,7 @@ export function avatarEditor(options: { id(): string; name(): string; profile?: 
     return choice;
   });
   function render(): void {
-    replace(preview, workerAvatar({ id: options.id(), name: options.name() || "Your worker", profile, expression: expression.value as AvatarExpression, size: 96 }));
+    replace(preview, workerAvatar({ id: options.id(), name: options.name() || "Your knight", profile, expression: expression.value as AvatarExpression, size: 96 }));
     paletteButtons.forEach((choice, i) => choice.setAttribute("aria-pressed", String(profile.color === AVATAR_PALETTES[i]!.color)));
   }
   function sync(): void {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /*
- * Draws apps/web/design/avatars.html: the three ways a squire can be drawn (src/ui/avatar.ts), side by
+ * Draws apps/web/design/avatars.html: the three ways a knight can be drawn (src/ui/avatar.ts), side by
  * side at 24, 40 and 96 px, in light and in dark, in every expression, so one can be chosen by eye.
  * One file with nothing to fetch. It is not part of the app: the node serves only what assets.ts names.
  *
@@ -46,9 +46,9 @@ function draw(options: WorkerAvatarOptions): string {
 }
 
 const STYLES: Record<AvatarStyle, { title: string; says: string }> = {
-  face: { title: "Face", says: "A round face in the squire's one flat colour: two eyes and a mouth, drawn as a single line. The plainest of the three, and the one the app draws now. Squires are told apart by colour alone, and there are eight colours unless you choose another, so two squires can look the same." },
-  initials: { title: "Initials", says: "The squire's initials in its colour, with the mouth under them. The letters stand where the eyes would be, so only the mouth is left to say how the work goes." },
-  glyph: { title: "Glyph", says: "The same face on one of three shapes (round, square, arched), which follows the profile's form. Shape and colour together tell more squires apart; it is a little less plain." },
+  face: { title: "Face", says: "A round face in the knight's one flat colour: two eyes and a mouth, drawn as a single line. The plainest of the three, and the one the app draws now. Knights are told apart by colour alone, and there are eight colours unless you choose another, so two knights can look the same." },
+  initials: { title: "Initials", says: "The knight's initials in its colour, with the mouth under them. The letters stand where the eyes would be, so only the mouth is left to say how the work goes." },
+  glyph: { title: "Glyph", says: "The same face on one of three shapes (round, square, arched), which follows the profile's form. Shape and colour together tell more knights apart; it is a little less plain." },
 };
 /** The rule is avatarExpression's, in packages/core/src/avatar.ts: the first of these that holds. */
 const MEANS: Record<AvatarExpression, string> = {
@@ -105,7 +105,7 @@ export function avatarSheet(): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Squires' avatars: three styles</title>
+    <title>The knights' avatars: three styles</title>
     <style>
       :root { color-scheme: light dark; ${tokens} }
       body { margin: 0; padding: 24px; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-sans); }
@@ -133,9 +133,9 @@ export function avatarSheet(): string {
   </head>
   <body>
     <main>
-      <h1>Squires' avatars: three styles</h1>
-      <p>Three ways to draw a squire, all from the one function in <code>apps/web/src/ui/avatar.ts</code>. Each is shown at 24, 40 and 96 px, in light and in dark, in every expression. Nothing moves in any of them, so they are the same with reduced motion. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier. Galahad is the one in ink with a star.</p>
-      <p>An expression is never a mood. It is what the node says of the squire's work, by this rule, the first that holds:</p>
+      <h1>The knights' avatars: three styles</h1>
+      <p>Three ways to draw a knight, all from the one function in <code>apps/web/src/ui/avatar.ts</code>. Each is shown at 24, 40 and 96 px, in light and in dark, in every expression. Nothing moves in any of them, so they are the same with reduced motion. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier. Galahad is the one in ink with a star.</p>
+      <p>An expression is never a mood. It is what the node says of the knight's work, by this rule, the first that holds:</p>
       <dl>${ORDER.map((expression) => `<dt>${expression}</dt><dd>${MEANS[expression]}</dd>`).join("")}</dl>${AVATAR_STYLES.map((style) => `
       <h2>${STYLES[style].title}</h2>
       <p>${STYLES[style].says} ${alike(style)}</p>

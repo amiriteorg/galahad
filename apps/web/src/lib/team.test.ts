@@ -46,7 +46,7 @@ describe("team navigation and identity", () => {
     expect(teammateId("Galahad", [])).toBe("galahad-2");
     expect(teammateId("System", ["system-2"])).toBe("system-3");
     expect(teammateId("Áda", ["ada", "ada-2"])).toBe("ada-3");
-    expect(teammateId("123", [])).toBe("squire-123");
+    expect(teammateId("123", [])).toBe("knight-123");
     expect(teammateId("研究", [])).toMatch(/^[a-z][a-z0-9-]{0,31}$/);
   });
   test("a historical speaker keeps their saved name after a rename", () => {
@@ -56,6 +56,8 @@ describe("team navigation and identity", () => {
   });
   test("Galahad's own words in a room are said to be his, and who made a worker is said only when it wasn't you", () => {
     expect(teamSpeaker({ speaker: "galahad", speakerName: "Galahad" }, [])).toBe("Galahad");
+    // What the node notes in a conversation itself is the Roundtable's.
+    expect(teamSpeaker({ speaker: "system", speakerName: "system" }, [])).toBe("The Roundtable");
     expect(teamSpeaker({ speaker: "galahad", speakerName: "" }, [{ ...person, id: "galahad-2", name: "Not him" }])).toBe("Galahad");
     expect(teammateMaker(person, [])).toBeNull();
     expect(teammateMaker({ ...person, createdBy: "owner" }, [])).toBeNull();
@@ -110,29 +112,29 @@ describe("team work is reported from server facts", () => {
   });
 });
 
-describe("a squire's coding harness", () => {
+describe("a knight's coding harness", () => {
   test("every harness the node takes has a name here, the vendors' own tools by their own names", () => {
     expect(Object.keys(HARNESS).sort()).toEqual([...TeamHarness.options].sort());
     expect(HARNESS).toMatchObject({ native: "Galahad", claude: "Claude Code", codex: "Codex" });
   });
   test("readiness says what a harness would run on, or what to do so that it can", () => {
     expect(harnessNote({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai), then anthropic/claude-opus-5-5 through the gateway" })).toBe("Runs on its own sign-in in this VM (claude.ai), then anthropic/claude-opus-5-5 through the gateway");
-    expect(harnessNote({ id: "codex", ready: false, reason: "Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster" })).toBe("Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
+    expect(harnessNote({ id: "codex", ready: false, reason: "Sign Codex in in this knight's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster" })).toBe("Sign Codex in in this knight's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
     // His own harness has nothing to say, and a node that says nothing of what one runs on (an older one) is shown as before.
     expect(harnessNote({ id: "native", ready: true })).toBeNull();
     expect(harnessNote({ id: "opencode", ready: true })).toBeNull();
   });
 });
 
-describe("the notes store in a squire's Workspace", () => {
+describe("the notes store in a knight's Workspace", () => {
   const absent = "this VM's image has no Engram 3.7.2 (a VM keeps the image it was made from)";
   test("its line says the switch and whether this VM has the pinned Engram, and never calls a store ready that isn't there", () => {
-    expect(engramLine({ on: true, pinned: "3.7.2", present: true })).toEqual({ badge: "On", tone: "ok", text: "Engram 3.7.2 is in this VM, and this squire's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted." });
-    expect(engramLine({ on: true, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Not in this VM", tone: "warn", text: `On, but ${absent}. This squire's tasks run without it and say so.` });
+    expect(engramLine({ on: true, pinned: "3.7.2", present: true })).toEqual({ badge: "On", tone: "ok", text: "Engram 3.7.2 is in this VM, and this knight's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted." });
+    expect(engramLine({ on: true, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Not in this VM", tone: "warn", text: `On, but ${absent}. This knight's tasks run without it and say so.` });
     expect(engramLine({ on: true, pinned: "3.7.2", present: false, reason: "this VM has Engram 3.7.1, not the pinned 3.7.2" })?.badge).toBe("Not in this VM");
-    expect(engramLine({ on: true, pinned: "3.7.2" })).toEqual({ badge: "On", tone: "neutral", text: "On. Whether this VM has Engram 3.7.2 is asked when the squire is idle and its VM is running." });
+    expect(engramLine({ on: true, pinned: "3.7.2" })).toEqual({ badge: "On", tone: "neutral", text: "On. Whether this VM has Engram 3.7.2 is asked when the knight is idle and its VM is running." });
     expect(engramLine({ on: false, pinned: "3.7.2", present: true })).toEqual({ badge: "Off", tone: "neutral", text: "Off: tasks are given no notes store. Engram 3.7.2 is in this VM, should you turn it on." });
-    expect(engramLine({ on: false, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Off", tone: "neutral", text: `Off: tasks are given no notes store. Turned on, it would not reach this squire: ${absent}.` });
+    expect(engramLine({ on: false, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Off", tone: "neutral", text: `Off: tasks are given no notes store. Turned on, it would not reach this knight: ${absent}.` });
     expect(engramLine({ on: false, pinned: "3.7.2" })).toEqual({ badge: "Off", tone: "neutral", text: "Off: tasks are given no notes store." });
     // A node from before the switch says nothing of it: there is no line to show.
     expect(engramLine(undefined)).toBeNull();

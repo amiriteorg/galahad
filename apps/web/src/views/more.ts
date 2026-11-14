@@ -4,7 +4,7 @@ import { pageHead, section } from "../ui/controls.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 
-/* More: every place that isn't Chat, Squires or the Inbox, as one plain index. Only what this device may see. */
+/* More: every place that isn't Chat, the Roundtable or the Inbox, as one plain index. Only what this device may see. */
 
 export const moreView: View = (root, ctx) => {
   replace(

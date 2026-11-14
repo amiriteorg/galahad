@@ -177,7 +177,7 @@ describe("text helpers", () => {
 
   test("a coding plan is said to be one, in a line", () => {
     expect(planLine({ id: "zai-coding", plan: { name: "GLM Coding Plan", says: "Z.ai: supported tools only.", terms: "https://docs.z.ai/legal-agreement/subscription-terms", models: ["glm-5.3"] } })).toBe(
-      "GLM Coding Plan is a coding plan: he and his squires code on it, and their coding tools use it. His talk with you never does.",
+      "GLM Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does.",
     );
     expect(planLine({ id: "anthropic" })).toBeNull();
     expect(planLine(undefined)).toBeNull();

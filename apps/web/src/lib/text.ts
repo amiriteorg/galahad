@@ -100,7 +100,7 @@ export function detectSignIn(key: string, signIns: readonly SignInForm[] | undef
 
 /** A coding plan in a line: what it is for. Null for a preset that isn't one. */
 export function planLine(preset: KeyPreset | undefined): string | null {
-  return preset?.plan ? `${preset.plan.name} is a coding plan: he and his squires code on it, and their coding tools use it. His talk with you never does.` : null;
+  return preset?.plan ? `${preset.plan.name} is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does.` : null;
 }
 
 /** A role's models as he uses them: his own in the roster's order (the first answers), and the coding plans' models, which do coding and answer nothing else. */
