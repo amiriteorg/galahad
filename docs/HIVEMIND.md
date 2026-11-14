@@ -267,6 +267,10 @@ task-… · done (verified) · ada · Fix the importer · 12m04s · 8 commands, 
 
 This is the first of the numbers the [mandate](MANDATE.md) asks for per task (cost and time). Not in it yet: a coding harness's own model calls (with OpenCode, Hermes, Claude Code or Codex the record holds the planner's and the reviewer's calls, and the harness's are missing), and how often the task needed you. A task from before records were kept, or one that never ran, has none.
 
+### Following a task, and reading one that failed
+
+A task keeps what it did as it happened: its plan, the gates as they stood before the work, each command and what it printed, each reply that had no command, the gates' runs, the review. `galahad squires trail <task-id>` prints it, and `--follow` keeps reading until the task has ended; the app reads the same lines. It is kept after the task ends (the six hundred latest lines of a task, each cut to two thousand characters, redacted like everything a squire prints), so a task that failed can be read for why.
+
 ### Pause, stop, resume and revise
 
 ```sh
@@ -282,7 +286,7 @@ Pausing a room holds its queue and interrupts active work there. Pausing a squir
 
 In Squires, **Stop and revise** stops the original task and opens an editable copy of its goal, gates and dependencies. Saving creates a successor task; the original remains in the record. It does not change the original task in place or automatically rewire its dependents. Squires messages do not provide live task steering. The main Chat page's existing steer/queue/aside controls are a separate flow.
 
-A task may run forty commands and forty-five minutes (a reply, fifteen minutes). If a job reaches its controller limit, or the node stops during it, the work becomes interrupted and its room is held for review. Restarting the controller does not replay interrupted side effects automatically.
+A task may run forty commands and forty-five minutes (a reply, fifteen minutes). The squire is told when its commands are running out, and if they do run out with work done, that work still goes to the gates and the reviewer: what they pass is verified, whoever said it was finished. If a job reaches its controller limit, or the node stops during it, the work becomes interrupted and its room is held for review. Restarting the controller does not replay interrupted side effects automatically.
 
 ### Removing a squire
 

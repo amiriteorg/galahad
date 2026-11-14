@@ -12,7 +12,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskId, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -156,6 +156,8 @@ export const routes = {
   saveTeamRoom: { method: "POST", path: "/api/team/rooms", scope: "fleet:admin", input: TeamRoomInput },
   directTeammate: { method: "POST", path: "/api/team/direct", scope: "fleet:admin", input: z.strictObject({ id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/) }) },
   teamRoom: { method: "POST", path: "/api/team/room", scope: "chat", input: z.strictObject({ id: z.string().min(1).max(80) }) },
+  /** What a task did, as it happened: its kept lines after number `after`, a page at a time, with the task's status now. Yours to read, like a room. */
+  teamTrail: { method: "POST", path: "/api/team/trail", scope: "chat", input: z.strictObject({ task: TeamTaskId, after: z.number().int().min(0).max(10_000_000).optional() }) },
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
   createTeamTask: { method: "POST", path: "/api/team/tasks", scope: "fleet:admin", input: TeamTaskInput },
   controlTeam: { method: "POST", path: "/api/team/control", scope: "fleet:admin", input: TeamControlInput },

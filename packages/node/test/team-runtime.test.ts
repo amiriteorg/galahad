@@ -609,3 +609,16 @@ test("a task has room for real work: forty commands", async () => {
   const outcome = await f.runtime.executeTask(member, task, f.context);
   expect(outcome.record).toMatchObject({ ended: "stopped", commands: 40 });
 });
+
+test("a squire that finishes its work and never says so is still judged: out of commands, what is there goes to the gates and the reviewer", async () => {
+  // Seen on ultra, 14 November 2026: gareth made its change to this repository, went on checking it, and ran out of
+  // commands. The work was right and nobody was asked: the task ended stopped and unverified.
+  const replies = Array.from({ length: 40 }, (_, i) => say(`\`\`\`sh\necho ${i}\n\`\`\``));
+  const f = fixture([say("1. Make the change."), ...replies, say("PASS\nThe gate passes and the commands show the change.")]);
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.verified).toBe(true);
+  expect(outcome.record).toMatchObject({ ended: "done", commands: 40 });
+  expect(outcome.output).toContain("He ran out of commands (40) before he said he was done.");
+  // The last model asked was the reviewer, and it was told nobody had claimed the work done.
+  expect(JSON.stringify(f.bodies.at(-1))).toContain("He ran out of commands before he said he was done: this is the work as it stands.");
+});

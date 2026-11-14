@@ -1492,6 +1492,7 @@ export function createApp(ctx: AppContext) {
     saveTeamRoom: (input, p) => { ownerOnly(p); return { room: teamOf().saveRoom(input) }; },
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
+    teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
     postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
     controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },

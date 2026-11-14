@@ -245,6 +245,13 @@ export interface TeamTask {
   changes?: TeamTaskChanges;
 }
 
+/** One line of what a task did, as it happened: its number in order (from 1), when, and the line (redacted, cut if long). */
+export interface TeamTrailEntry {
+  n: number;
+  at: number;
+  text: string;
+}
+
 export interface TeamSnapshot {
   teammates: Teammate[];
   rooms: TeamRoom[];

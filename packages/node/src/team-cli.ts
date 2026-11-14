@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -93,6 +93,22 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? flags.gate : [];
     const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}) });
     print(`${task.id} queued; completion requires its gates and independent review.`); return;
+  }
+  if (sub === "trail") {
+    // What a task did, as it happened: once, or with --follow until the task has ended.
+    if (!args[0]) throw new Error("usage: galahad squires trail <task-id> [--follow]");
+    const wait = Math.max(1, Number(string("poll-ms") ?? 1000));
+    let after = 0;
+    for (;;) {
+      const page = await api.call<{ task: { id: string; status: string }; entries: { n: number; at: number; text: string }[]; more: boolean }>("teamTrail", { task: args[0], after });
+      for (const entry of page.entries) print(`${new Date(entry.at).toTimeString().slice(0, 8)}  ${plainText(entry.text).trimEnd().split("\n").join("\n          ")}`);
+      after = page.entries.at(-1)?.n ?? after;
+      if (page.more) continue;
+      const working = page.task.status === "running" || page.task.status === "queued";
+      if (!working) { if (flags.follow) print(`(ended: ${page.task.status})`); return; }
+      if (!flags.follow) { print(`(still ${page.task.status}: galahad squires trail ${page.task.id} --follow)`); return; }
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
   }
   if (sub === "provision" && flags.remake) {
     // Its VM made again from the image as it is now: the same VM and /work, a new container. Its own route.

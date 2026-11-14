@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
-  type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamSnapshot, type TeamRoomView, type TeamOverview,
+  type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamJob, type TeamSelection } from "./team-store.ts";
 
@@ -154,6 +154,13 @@ export class TeamService {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([Promise.all([...this.active.values()].map((a) => a.done)), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.options.shutdownGraceMs ?? 10_000); })]);
     if (timer) clearTimeout(timer);
+  }
+
+  /** What a task did, as it happened (TeamStore.trail), with its status now. */
+  trail(task: string, after = 0): { task: { id: string; status: TeamTask["status"] }; entries: TeamTrailEntry[]; more: boolean } {
+    const found = this.store.task(task);
+    if (!found) throw new TeamError(404, "No such team task.");
+    return { task: { id: found.id, status: found.status }, ...this.store.trail(task, after) };
   }
 
   control(raw: TeamControlInput): TeamSnapshot {

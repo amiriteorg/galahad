@@ -4,7 +4,7 @@ import { findSecrets, randomId, readAlike, redact } from "@galahad/core";
 import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
-  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, TeamWorkspace,
+  TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
 } from "../../core/src/team.ts";
 
@@ -24,6 +24,9 @@ export function teamText(text: string): void {
 }
 
 /** Model output and failures are untrusted too; callers never persist their raw values. */
+/** A task's trail: how long one line may be, how many a task keeps, and how many are read at once. */
+const TRAIL = { text: 2_000, keep: 600, page: 200 } as const;
+
 export function teamOutput(text: string, max: number = TEAM_LIMITS.output): string {
   const safe = redact(String(text)).slice(0, max);
   return findSecrets(safe).length ? "[Output withheld because it looks like a credential.]" : safe;
@@ -76,7 +79,8 @@ export class TeamStore {
       CREATE INDEX IF NOT EXISTS team_jobs_queue ON team_jobs(status, seq);
       CREATE INDEX IF NOT EXISTS team_jobs_teammate ON team_jobs(teammate, status);
       CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);
-      CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));`);
   }
 
   close(): void { this.db.close(); }
@@ -425,8 +429,21 @@ export class TeamStore {
   progress(key: string, text: string): void {
     const row = this.jobRow(key);
     if (!row || row.kind !== "task" || row.status !== "running") return;
+    const at = this.now();
     const data = { ...JSON.parse(row.data), progress: teamOutput(text, TEAM_LIMITS.progress) };
-    this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), this.now(), key);
+    this.db.transaction(() => {
+      this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), at, key);
+      // Its trail: each line as it happened, numbered in order, kept after the task has ended. Bounded: a line is cut
+      // to TRAIL.text, and once a task has more than TRAIL.keep lines the oldest go (the numbers stay as written).
+      const n = (this.db.query<{ n: number | null }, [string]>("SELECT MAX(n) AS n FROM team_trail WHERE task=?").get(key)?.n ?? 0) + 1;
+      this.db.query("INSERT INTO team_trail(task,n,at,text) VALUES(?,?,?,?)").run(key, n, at, teamOutput(text, TRAIL.text));
+      if (n > TRAIL.keep) this.db.query("DELETE FROM team_trail WHERE task=? AND n<=?").run(key, n - TRAIL.keep);
+    })();
+  }
+  /** What a task did, as it happened: its lines after number `after` (0: from the first kept), a page at a time; `more`: there are further lines. */
+  trail(task: string, after = 0): { entries: TeamTrailEntry[]; more: boolean } {
+    const rows = this.db.query<TeamTrailEntry, [string, number, number]>("SELECT n, at, text FROM team_trail WHERE task=? AND n>? ORDER BY n LIMIT ?").all(task, Math.max(0, Math.trunc(after)), TRAIL.page + 1);
+    return { entries: rows.slice(0, TRAIL.page), more: rows.length > TRAIL.page };
   }
   finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string; record?: TeamTaskRecord; changes?: TeamTaskChanges }): void {
     const row = this.jobRow(key);

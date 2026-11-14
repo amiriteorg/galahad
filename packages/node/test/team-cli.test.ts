@@ -291,3 +291,31 @@ test("a task that changed its repository says how many files and where they are 
   expect(lines.find((line) => line.includes("One line"))).toEndWith(" · 1 file changed, kept as art_AAAAAAAAAAAAAAAAAAAAAA");
   expect(lines.find((line) => line.includes("No repository"))).toBe("task-cccccccccccc · done (verified) · ada · No repository");
 });
+
+test("squires trail prints what a task did as it happened, and --follow keeps reading until the task has ended", async () => {
+  const lines: string[] = [];
+  const asked: { name: RouteName; input: any }[] = [];
+  // The node's answers, in turn: a task at work with two lines, then a third, then ended with nothing new.
+  const answers = [
+    { task: { id: "task-abcdefghijkl", status: "running" }, entries: [{ n: 1, at: Date.UTC(2026, 10, 14, 13, 5, 9), text: "Plan · 1. Look." }, { n: 2, at: Date.UTC(2026, 10, 14, 13, 5, 12), text: "Running · ls\x1b[31m\nsecond line" }], more: false },
+    { task: { id: "task-abcdefghijkl", status: "running" }, entries: [{ n: 3, at: Date.UTC(2026, 10, 14, 13, 5, 20), text: "Exit 0 · exit 0 · 3 ms" }], more: false },
+    { task: { id: "task-abcdefghijkl", status: "failed" }, entries: [], more: false },
+  ];
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name !== "teamTrail") throw new Error(`unexpected call: ${name}`);
+      return answers.shift() as T;
+    },
+  };
+  await teamCommand(api, "trail", ["task-abcdefghijkl"], {}, (line) => lines.push(line));
+  // Once, without --follow: what there is. A line of several lines is indented under its first; an escape character is taken out, so it can't steer the terminal.
+  expect(asked).toEqual([{ name: "teamTrail", input: { task: "task-abcdefghijkl", after: 0 } }]);
+  // (Times are the terminal's own: this machine's zone.)
+  const at = (h: number, m: number, sec: number) => new Date(Date.UTC(2026, 10, 14, h, m, sec)).toTimeString().slice(0, 8);
+  expect(lines).toEqual([`${at(13, 5, 9)}  Plan · 1. Look.`, `${at(13, 5, 12)}  Running · ls[31m\n          second line`, "(still running: galahad squires trail task-abcdefghijkl --follow)"]);
+  lines.length = 0;
+  await teamCommand(api, "trail", ["task-abcdefghijkl"], { follow: true, "poll-ms": "1" }, (line) => lines.push(line));
+  expect(asked.slice(1).map((a) => a.input.after)).toEqual([0, 3]);
+  expect(lines).toEqual([`${at(13, 5, 20)}  Exit 0 · exit 0 · 3 ms`, "(ended: failed)"]);
+});

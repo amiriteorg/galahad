@@ -45,6 +45,8 @@ Squires (his persistent sub-Galahads, their rooms and verified work in VMs; "tea
   squires room <name> <member…>      create a shared room (--limit bounds its coordination chain)
   squires chat <room> [message]      read a room, or send a message; work continues on the node
   squires task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
+  squires trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
+                                    the gates, the review; --follow keeps reading until the task has ended
   squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway]
                                     its VM: online (the default) it can reach the internet, gateway only the models
   squires provision <id> --remake [--network online|gateway]
@@ -497,6 +499,8 @@ async function main(): Promise<void> {
       reset: { type: "boolean" },
       "destroy-workspace": { type: "boolean" },
       remake: { type: "boolean" },
+      follow: { type: "boolean" },
+      "poll-ms": { type: "string" },
       // The archive's filters and ideas.
       trust: { type: "string" },
       source: { type: "string" },

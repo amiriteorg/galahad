@@ -165,6 +165,19 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
     expect(faceOf("ada", finished)).toBe("pleased");
     expect(faceOf("lin", finished)).toBe("pleased");
     for (const id of [alpha.id, beta.id, gamma.id]) expect(finished.tasks.find((item) => item.id === id)).toMatchObject({ status: "done", verified: true, error: null });
+    // What each did is kept as it happened, to read after it has ended: its plan, its command, the gate, the review.
+    const trail = await api<{ task: { id: string; status: string }; entries: { n: number; at: number; text: string }[]; more: boolean }>("teamTrail", { task: alpha.id });
+    expect(trail.task).toEqual({ id: alpha.id, status: "done" });
+    expect(trail.more).toBe(false);
+    const said = trail.entries.map((entry) => entry.text.split("\n")[0]!);
+    expect(said[0]).toStartWith("Plan · ");
+    expect(said.some((line) => line.startsWith("Running · ") && line.includes("write-alpha"))).toBe(true);
+    expect(said.some((line) => line.startsWith("Gate 1/1 · exit 0"))).toBe(true);
+    expect(said.some((line) => line.startsWith("Review · pass"))).toBe(true);
+    expect(trail.entries.map((entry) => entry.n)).toEqual(trail.entries.map((_, i) => i + 1));
+    // Whoever follows asks for what is new; a task that isn't there is not found.
+    expect((await api<{ entries: unknown[] }>("teamTrail", { task: alpha.id, after: trail.entries.length })).entries).toEqual([]);
+    await expect(api("teamTrail", { task: "task-nosuchtask00" })).rejects.toThrow(/404/);
     expect(finished.teammates.find((member) => member.id === "ada")!.workspace).toEqual(bound);
     const other = finished.teammates.find((member) => member.id === "lin")!.workspace!;
     expect(other.id).not.toBe(bound.id);

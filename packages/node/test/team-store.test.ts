@@ -98,6 +98,50 @@ describe("private team persistence", () => {
     expect(() => reopened.saveTeammate({ id: "ada", name: "Ada", repository: "https://github.com/example/different" })).toThrow(/already bound/);
     expect(() => reopened.saveTeammate({ id: "ada", name: "Augusta", repository: "https://github.com/example/fixture.git" })).not.toThrow();
   });
+  test("a task keeps what it did as it happened: every progress line in order, with its time, readable from any point and after the task has ended", () => {
+    // (Until 14 November 2026 a task held only its last line: one that failed left nothing to read, and nothing could follow one as it worked.)
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-")); dirs.push(dir); const path = join(dir, "team.db");
+    let clock = 1_000;
+    const store = make(path, () => clock++); setup(store);
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it" });
+    // Nothing is kept of a task that is not running.
+    store.progress(task.id, "too early");
+    expect(store.trail(task.id)).toEqual({ entries: [], more: false });
+    store.claim(task.id);
+    for (const line of ["Plan · 1. Look.", "Running · ls", "Exit 0 · exit 0 · 3 ms\nREADME.md"]) store.progress(task.id, line);
+    const all = store.trail(task.id);
+    expect(all.entries.map((e) => [e.n, e.text])).toEqual([[1, "Plan · 1. Look."], [2, "Running · ls"], [3, "Exit 0 · exit 0 · 3 ms\nREADME.md"]]);
+    expect(all.entries.every((e, i, list) => e.at > 0 && (i === 0 || e.at >= list[i - 1]!.at))).toBe(true);
+    // Whoever follows it asks only for what is new.
+    expect(store.trail(task.id, 2).entries.map((e) => e.n)).toEqual([3]);
+    expect(store.trail(task.id, 3)).toEqual({ entries: [], more: false });
+    // The last line is still the task's progress, as it always was.
+    expect(store.task(task.id)!.progress).toBe("Exit 0 · exit 0 · 3 ms\nREADME.md");
+    store.finish(task.id, "failed", "gave-up", { verified: false, output: "It can't be done here." });
+    close(store);
+    // After the task has ended, and after the node has restarted, it is all still there.
+    const reopened = make(path);
+    expect(reopened.trail(task.id).entries.map((e) => e.text)).toEqual(["Plan · 1. Look.", "Running · ls", "Exit 0 · exit 0 · 3 ms\nREADME.md"]);
+    expect(reopened.trail("task-nosuchtask00")).toEqual({ entries: [], more: false });
+  });
+  test("a trail is bounded and holds no secret: long lines are cut, a page is at most two hundred, and the oldest go once a task has more than it may keep", () => {
+    const store = make(); setup(store);
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Loud", goal: "Print a lot" }); store.claim(task.id);
+    store.progress(task.id, `Exit 0 · ${"x".repeat(9_000)}`);
+    store.progress(task.id, `Exit 0 · KEY=sk-ant-api03-${"FAKE".repeat(8)}`);
+    const [long, leaked] = store.trail(task.id).entries;
+    expect(long!.text.length).toBeLessThanOrEqual(2_000);
+    expect(leaked!.text).not.toContain("FAKEFAKE");
+    for (let i = 0; i < 700; i++) store.progress(task.id, `Running · step ${i}`);
+    const first = store.trail(task.id);
+    expect(first.entries).toHaveLength(200);
+    expect(first.more).toBe(true);
+    // 702 lines were written; the six hundred newest are kept, numbered as they were written.
+    expect(first.entries[0]!.n).toBe(103);
+    let last = first.entries.at(-1)!.n, pages = 1;
+    for (let page = store.trail(task.id, last); page.entries.length; page = store.trail(task.id, last)) { last = page.entries.at(-1)!.n; pages++; }
+    expect({ last, pages }).toEqual({ last: 702, pages: 3 });
+  });
   test("a squire whose VM has no repository may be given one; from then on it is bound like any other", () => {
     // (Seen on ultra, 14 November 2026: the first squire was made without a repository, and with its VM made it could never have one.)
     const store = make(); setup(store);

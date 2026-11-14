@@ -12,7 +12,7 @@ interface Script {
   outputs?: Partial<ExecResult>[];
 }
 
-function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number } = {}) {
+function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean } = {}) {
   const queues: Record<QuestRole, string[]> = {
     planner: [...(script.planner ?? ["1. Do it.\nDone when: it is done."])],
     engineer: [...script.engineer],
@@ -24,7 +24,7 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
   const events: QuestEvent[] = [];
   const controller = new AbortController();
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions },
+    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}) },
     {
       ask: async (role, messages) => {
         seen.push({ role, messages });
@@ -137,6 +137,51 @@ describe("quests", () => {
     await h.run;
     const format = h.events.find((e) => e.type === "format")!;
     expect(findSecrets(JSON.stringify(format))).toEqual([]);
+  });
+
+  test("he is told when his commands are running out: once at ten left, then on each of the last five", async () => {
+    // Seen on ultra, 14 November 2026: a squire finished its change, went on checking, and ran out of its forty
+    // commands without ever saying DONE. Nothing had told it how many were left since the briefing.
+    const h = harness({ engineer: Array.from({ length: 14 }, (_, i) => sh(`echo ${i}`)) }, { maxSteps: 14 });
+    await h.run;
+    const told = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+    // (What he is told before each reply: the briefing, then each command's result.)
+    const left = told.map((text) => /\((\d+) commands? left/.exec(text)?.[1] ?? null);
+    expect(left).toEqual([null, null, null, null, "10", null, null, null, null, "5", "4", "3", "2", "1"]);
+    expect(told[9]).toContain("(5 commands left. When the work is done and verified, reply DONE: what is never submitted is never reviewed.)");
+    // A short quest is not told at every turn from its first.
+    const short = harness({ engineer: [sh("a"), sh("b"), sh("c")] }, { maxSteps: 3 });
+    await short.run;
+    expect(short.seen.filter((s) => s.role === "engineer").map((s) => /commands? left/.test(s.messages.at(-1)!.content))).toEqual([false, true, true]);
+  });
+
+  test("out of commands with work done (submitAtLimit): what is there goes to the gates and the reviewer, and work they pass is done", async () => {
+    const h = harness({ engineer: [sh("echo fixed > a.txt"), sh("cat a.txt")], reviewer: ["PASS\nThe file holds the fix and the commands show it."] }, { maxSteps: 2, submitAtLimit: true });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(outcome.steps).toBe(2);
+    // The reviewer is told that nobody claimed it done: the evidence is all there is.
+    expect(h.seen.at(-1)!.role).toBe("reviewer");
+    expect(h.seen.at(-1)!.messages[0]!.content).toContain("He ran out of commands before he said he was done: this is the work as it stands.");
+    expect(outcome.summary).toContain("ran out of commands");
+    expect(outcome.review).toBe("The file holds the fix and the commands show it.");
+  });
+
+  test("out of commands and the reviewer isn't satisfied, or nothing ever ran: stopped, as it was, with what the reviewer said", async () => {
+    const sentBack = harness({ engineer: [sh("echo half")], reviewer: ["REVISE\nNothing shows it works."] }, { maxSteps: 1, submitAtLimit: true });
+    const outcome = await sentBack.run;
+    expect(outcome.status).toBe("stopped");
+    expect(outcome.summary).toBe("Stopped after 1 commands without finishing. What was there was put to the reviewer, who did not accept it.");
+    expect(outcome.review).toBe("Nothing shows it works.");
+    // Replies with no command are no work to submit.
+    const odd = "```console\n$ ls\n```";
+    const idle = harness({ engineer: [odd, odd] }, { maxSteps: 2, submitAtLimit: true });
+    expect((await idle.run).status).toBe("stopped");
+    expect(idle.seen.some((s) => s.role === "reviewer")).toBe(false);
+    // Without the switch a quest is what it was: nobody is asked.
+    const plain = harness({ engineer: [sh("a"), sh("b")] }, { maxSteps: 2 });
+    expect((await plain.run).summary).toBe("Stopped after 2 commands without finishing.");
+    expect(plain.seen.some((s) => s.role === "reviewer")).toBe(false);
   });
 
   test("the step budget is a hard limit", async () => {

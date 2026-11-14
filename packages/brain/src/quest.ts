@@ -80,6 +80,12 @@ export interface QuestOptions {
    */
   gatesFirst?: boolean;
   /**
+   * When the engineer runs out of commands having run some, put the work as it stands to the gates and the
+   * reviewer anyway: he may have finished and never said so, and what they pass is done whoever claimed it.
+   * Default off: a quest out of commands is stopped, as it was.
+   */
+  submitAtLimit?: boolean;
+  /**
    * The sandbox's notes store (engram.ts), by the project its notes are kept under, when the caller found the
    * store there. Whoever does the engineer's part is told how far to trust a note and how to reach the store:
    * a coding agent is started with its tools; the engineer's own loop is told its two shell commands (the
@@ -402,6 +408,13 @@ const REPLY_KEPT = { head: 16_000, tail: 6_000 } as const;
 /** A command as the reviewer reads it in the trail: whole unless it runs away (a file written inline), then its beginning and end. */
 const trailCommand = (command: string): string => clip(command, 6_000, 2_000);
 
+/**
+ * Said with a command's result when few are left: once at ten, then on each of the last five. Nothing else tells
+ * him after the briefing, and work he never submits is never reviewed.
+ */
+const leftNote = (left: number): string =>
+  left > 0 && (left <= 5 || left === 10) ? `\n\n(${left} command${left === 1 ? "" : "s"} left. When the work is done and verified, reply DONE: what is never submitted is never reviewed.)` : "";
+
 /** A reply as the conversation keeps it, and how long it was if that is less than all of it. */
 function keptReply(reply: string): { content: string; cut: number | null } {
   const text = reply.trim() || "(empty reply)";
@@ -452,6 +465,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     // A plan fixed in advance has no planner to propose anything.
     proposeGates: Boolean(options.proposeGates) && options.plan === undefined,
     gatesFirst: Boolean(options.gatesFirst),
+    submitAtLimit: Boolean(options.submitAtLimit),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
@@ -694,7 +708,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (malformedRun >= MALFORMED_RUN) {
           return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
         }
-        messages.push({ role: "user", content: `${action.problem}${cut}` });
+        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}` });
         continue;
       }
       malformedRun = 0;
@@ -727,7 +741,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           content:
             batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}`).join("\n\n") +
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
-            cut,
+            cut +
+            leftNote(o.maxSteps - steps),
         });
         continue;
       }
@@ -744,7 +759,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const seen = observation(result);
         emit({ type: "observation", step: steps, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
         trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
-        messages.push({ role: "user", content: `${seen}${cut}` });
+        messages.push({ role: "user", content: `${seen}${cut}${leftNote(o.maxSteps - steps)}` });
         continue;
       }
 
@@ -760,12 +775,24 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${cut}` });
     }
     const ran = steps - malformed;
-    return finish({
-      status: "stopped",
-      summary: malformed
-        ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
-        : `Stopped after ${o.maxSteps} commands without finishing.`,
-    });
+    const stopped = malformed
+      ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
+      : `Stopped after ${o.maxSteps} commands without finishing.`;
+    // Out of commands with work done: the gates and the reviewer still decide (submitAtLimit). He may have finished
+    // and gone on checking; what they pass is done, whoever said so.
+    if (o.submitAtLimit && ran > 0) {
+      const verdict = await submit("He ran out of commands before he said he was done: this is the work as it stands.", trail);
+      if (verdict.verdict === "pass") {
+        return finish({
+          status: "done",
+          summary: `He ran out of commands (${o.maxSteps}) before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
+          review: verdict.notes || undefined,
+          ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
+        });
+      }
+      return finish({ status: "stopped", summary: `${stopped} What was there was put to ${verdict.by === "gates" ? "the gates, which did not pass" : "the reviewer, who did not accept it"}.`, review: verdict.notes });
+    }
+    return finish({ status: "stopped", summary: stopped });
   } catch (error) {
     if (error instanceof Stopped) return finish({ status: "stopped", summary: "Stopped at your request." });
     throw error;
