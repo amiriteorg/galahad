@@ -1,10 +1,12 @@
 import type { QuestView } from "@galahad/core";
 import type { TurnLimits, TurnView } from "@galahad/core/turns";
 import { type Ctx, errorMessage } from "../context.ts";
+import { needsYou } from "../lib/now.ts";
 import { gateOwner, gateResult, questBadge, questInHand, questWhere } from "../lib/quests.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { stopsIn } from "../lib/turns.ts";
-import { badge, button, meter, section } from "../ui/controls.ts";
+import { badge, button, callout, meter, section } from "../ui/controls.ts";
+import { openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace, type Scope } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
@@ -15,9 +17,11 @@ import { toast } from "../ui/toast.ts";
  * is watching, when it stops by itself), and the quests in hand: each one's plan, the
  * command he's on, and each gate's last result. Then the quests that ended lately,
  * with how. Nothing is shown when there's nothing in hand and nothing ended.
+ * The same section is one tap from the chat's header, in a sheet that also says what
+ * needs you.
  */
 
-function turnRow(ctx: Ctx, t: TurnView, now: number): HTMLElement {
+function turnRow(ctx: Ctx, t: TurnView, now: number, leave?: () => void): HTMLElement {
   const watching = t.watchers === 0 ? "nobody watching" : t.watchers === 1 ? "1 watching" : `${t.watchers} watching`;
   const meta = [duration(now - t.startedAt), t.tools ? `${t.tools} tool${t.tools === 1 ? "" : "s"}` : null, watching, stopsIn(t.deadline, now)].filter(Boolean).join(" · ");
   const stop = button("Stop", {
@@ -37,7 +41,7 @@ function turnRow(ctx: Ctx, t: TurnView, now: number): HTMLElement {
       h("div", { class: "row" }, h("span", { class: "strong small ellipsis" }, t.title ?? "A temporary chat"), t.steering ? badge(`${t.steering} on its way to him`, "info") : null),
       h("div", { class: "meta" }, h("span", { class: "ellipsis" }, t.watchable ? (t.step ?? "Starting") : "May read the bank: not shown to this device"), h("span", { class: "tnum" }, meta)),
     ),
-    t.conversation && t.watchable ? button("Open", { size: "sm", onClick: () => ctx.navigate("chat", { conversation: t.conversation! }) }) : null,
+    t.conversation && t.watchable ? button("Open", { size: "sm", onClick: () => (leave?.(), ctx.navigate("chat", { conversation: t.conversation! })) }) : null,
     stop,
   );
 }
@@ -80,8 +84,11 @@ function questCard(q: QuestView, opened: Set<string>): HTMLElement {
   );
 }
 
-/** The section itself: asks the node while it's on screen, and redraws only when something changed. */
-export function inHandSection(ctx: Ctx, scope: Scope): HTMLElement {
+/**
+ * The section itself: asks the node while it's on screen, and redraws only when something changed.
+ * `always`: said even when there's nothing in hand; `leave`: called before a row goes to a chat.
+ */
+export function inHandSection(ctx: Ctx, scope: Scope, options: { always?: boolean; leave?: () => void } = {}): HTMLElement {
   const host = h("div", { class: "in-hand", hidden: true });
   const opened = new Set<string>();
   let seen = "";
@@ -103,7 +110,7 @@ export function inHandSection(ctx: Ctx, scope: Scope): HTMLElement {
     const signature = JSON.stringify([running, going, ended, Math.floor(Date.now() / 60_000)]);
     if (signature === seen) return;
     seen = signature;
-    host.hidden = !running.length && !going.length && !ended.length;
+    host.hidden = !options.always && !running.length && !going.length && !ended.length;
     if (host.hidden) return replace(host);
     const now = Date.now();
     const count = running.length + going.length;
@@ -113,7 +120,7 @@ export function inHandSection(ctx: Ctx, scope: Scope): HTMLElement {
         section(
           "In hand",
           { count: count ? String(count) : undefined },
-          running.length ? h("div", { class: "card rows" }, ...running.map((t) => turnRow(ctx, t, now))) : null,
+          running.length ? h("div", { class: "card rows" }, ...running.map((t) => turnRow(ctx, t, now, options.leave))) : null,
           ...going.map((q) => questCard(q, opened)),
           !count ? h("p", { class: "small muted" }, "Nothing in hand right now.") : null,
           running.length
@@ -128,4 +135,27 @@ export function inHandSection(ctx: Ctx, scope: Scope): HTMLElement {
   void load();
   scope.interval(() => void load(), 5000);
   return host;
+}
+
+/** One tap from the chat's header: what he has in hand, and what needs you. The rest of the day's picture is the Overview. */
+export function openInHand(ctx: Ctx): void {
+  const needs = h("div");
+  const sheet = openSheet({
+    title: "Galahad",
+    description: "What he has in hand, and what needs you.",
+    size: "wide",
+    body: needs,
+    footer: button("Overview", { icon: "overview", title: "Health, the fleet and recent activity", onClick: () => ctx.navigate("overview") }),
+  });
+  sheet.body.append(inHandSection(ctx, sheet.scope, { always: true, leave: sheet.close }));
+  sheet.scope.add(
+    ctx.live.inboxCount.watch((n) =>
+      replace(
+        needs,
+        n
+          ? callout("warn", "It waits in your Inbox: nothing is approved for you.", { title: needsYou(n), actions: button("Open the Inbox", { size: "sm", icon: "inbox", onClick: () => ctx.navigate("inbox") }) })
+          : null,
+      ),
+    ),
+  );
 }

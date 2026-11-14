@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationSummary, StoredMessage } from "@galahad/core";
-import { filterConversations, groupConversations, projectIdFrom, stepsOf } from "./chats.ts";
+import { chatActions, filterConversations, groupConversations, projectIdFrom, stepsOf } from "./chats.ts";
 
 const now = new Date(2026, 10, 10, 15, 0).getTime();
 const HOUR = 3_600_000;
@@ -92,5 +92,23 @@ describe("project ids", () => {
     expect(projectIdFrom("Ærø Sø-Både")).toBe("aero-so-bade");
     expect(projectIdFrom("  !!! ")).toBe("project");
     expect(projectIdFrom("Rocket", ["rocket", "rocket-2"])).toBe("rocket-3");
+  });
+});
+
+describe("a chat's one menu", () => {
+  const values = (chat: Parameters<typeof chatActions>[0]) => chatActions(chat).map((action) => action.value);
+  test("a kept chat can be asked about on the side, renamed, pinned and deleted", () => {
+    expect(values({ kept: true, pinned: false, aside: true, node: "keep" })).toEqual(["aside", "rename", "pin", "delete"]);
+    const actions = chatActions({ kept: true, pinned: false, aside: true, node: "keep" });
+    expect(actions.find((action) => action.value === "pin")!.label).toBe("Pin to the top of your chats");
+    expect(actions.find((action) => action.value === "delete")!.meta).toBe("For good, on keep");
+    expect(chatActions({ kept: true, pinned: true, aside: true, node: "keep" }).find((action) => action.value === "pin")!.label).toBe("Unpin");
+  });
+  test("a temporary chat he's working in can only be asked about on the side; a new chat has nothing to do yet", () => {
+    expect(values({ kept: false, pinned: false, aside: true, node: "keep" })).toEqual(["aside"]);
+    expect(values({ kept: false, pinned: false, aside: false, node: "keep" })).toEqual([]);
+  });
+  test("a device that may not chat is offered no side question", () => {
+    expect(values({ kept: true, pinned: false, aside: false, node: "keep" })).toEqual(["rename", "pin", "delete"]);
   });
 });

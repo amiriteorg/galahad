@@ -34,6 +34,29 @@ export function filterConversations(list: ConversationSummary[], query: string, 
   });
 }
 
+export interface ChatAction {
+  value: "aside" | "rename" | "pin" | "delete";
+  label: string;
+  meta?: string;
+}
+
+/**
+ * What a chat's one menu offers to do with the chat itself, in order: a side question when there is something to
+ * ask about, and for a kept chat its name, its pin and its end. A new chat with nothing said has none.
+ */
+export function chatActions(chat: { kept: boolean; pinned: boolean; aside: boolean; node: string }): ChatAction[] {
+  return [
+    ...(chat.aside ? [{ value: "aside" as const, label: "Ask on the side…", meta: "Answered apart: what he's doing goes on" }] : []),
+    ...(chat.kept
+      ? [
+          { value: "rename" as const, label: "Rename…" },
+          { value: "pin" as const, label: chat.pinned ? "Unpin" : "Pin to the top of your chats" },
+          { value: "delete" as const, label: "Delete…", meta: `For good, on ${chat.node}` },
+        ]
+      : []),
+  ];
+}
+
 export interface KeptStep {
   kind: "asked" | "model" | "fallback" | "archive" | "tool" | "answer" | "error" | "stopped" | "steered";
   text: string;

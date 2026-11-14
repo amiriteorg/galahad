@@ -1,9 +1,11 @@
-import type { ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
+import type { ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { filterConversations, groupConversations } from "../lib/chats.ts";
+import { type ChatAction, chatActions, filterConversations, groupConversations } from "../lib/chats.ts";
+import { galahadNow } from "../lib/now.ts";
+import { questInHand } from "../lib/quests.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
@@ -12,6 +14,7 @@ import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
+import { workerAvatar } from "../ui/avatar.ts";
 import { emblem } from "../ui/emblem.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
@@ -20,6 +23,7 @@ import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { openAside } from "./chat-aside.ts";
 import { queuePanel } from "./chat-queue.ts";
+import { openInHand } from "./in-hand.ts";
 import { openAddKey } from "./vault.ts";
 
 /*
@@ -52,9 +56,10 @@ const DEFAULT_ROLES: Record<string, RoleSpec> = {
   swift: { models: [], configured: false, description: "cheap and fast: routing, classification, summaries" },
 };
 const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "code", reviewer: "review", swift: "zap", decider: "sparkle" };
+const ACTION_ICON: Record<ChatAction["value"], IconName> = { aside: "chat", rename: "edit", pin: "pin", delete: "trash" };
 const roleTitle = (name: string): string => name[0]!.toUpperCase() + name.slice(1);
 /** A model as people say it: "claude-opus-5-5" for anthropic/claude-opus-5-5, "ollama" for ollama/*. */
-export const modelName = (ref: string | undefined): string => {
+const modelName = (ref: string | undefined): string => {
   if (!ref) return "";
   const [provider, ...rest] = ref.split("/");
   const model = rest.join("/");
@@ -98,6 +103,8 @@ let held: QueueHold | null = null;
 let steering: string[] = [];
 /** A turn is running in this chat that this device may not watch (it may read the bank). */
 let unwatchable: TurnView | null = null;
+/** The chat turns the node is running, as last asked while a chat was on screen (the header's line of what he's doing). */
+const nodeTurns = signal<TurnView[]>([]);
 
 /** The kept conversation on screen (null: a new one, kept from its first answer, unless temporary). */
 interface Current {
@@ -274,6 +281,8 @@ const RECONNECTING = "Reconnecting to the node";
 function finish(w: Watching, failure?: string): void {
   const turn = failure ? failTurn(thread, failure, Date.now()) : endTurn(thread, Date.now());
   live = null;
+  // (It has ended: the header's line doesn't wait for the node's list to say so.)
+  nodeTurns.set(nodeTurns.value.filter((t) => t.id !== w.id));
   steering = [];
   chatActivity.set({ streaming: false, model: null });
   emit(turn);
@@ -503,6 +512,7 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
       const mine = current && view.turns.find((t) => t.conversation === current!.id);
       if (now !== known) {
         known = now;
+        nodeTurns.set(view.turns);
         void refreshKept(api);
       }
       if (mine && !live && (!unwatchable || unwatchable.id !== mine.id)) void sync(api);
@@ -575,12 +585,50 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const canChat = ctx.can("chat");
   const coarse = matchMedia("(pointer: coarse)").matches;
 
+  // ---- Galahad himself: his face, and what he's doing now in a line. A tap shows what he has in hand. ----
+  const face = h("span", { class: "chat-face" });
+  const nowLine = h("span", { class: "chat-now ellipsis" });
+  const answers = h("span", { class: "chat-as ellipsis" });
+  const who = h("button", { class: "chat-who", type: "button", onclick: () => openInHand(ctx) }, face, h("span", { class: "chat-who-text" }, h("span", { class: "chat-name" }, "Galahad", answers), nowLine));
+  /** The quests in hand (asked for while the chat is on screen, by a device that may read the mind). */
+  let quests: QuestView[] = [];
+  let shownFace = "";
+  function renderNow(): void {
+    const now = galahadNow({
+      ...(live ? { step: thread.target?.steps.at(-1)?.text ?? null } : {}),
+      turns: nodeTurns.value,
+      quests,
+      needs: ctx.live.inboxLoaded.value ? ctx.live.inboxCount.value : null,
+    });
+    if (nowLine.textContent !== now.text) {
+      nowLine.textContent = now.text;
+      nowLine.dataset.tone = now.tone;
+      who.setAttribute("aria-label", `Galahad: ${now.text}. See what he has in hand.`);
+    }
+    if (now.expression !== shownFace) replace(face, workerAvatar({ id: "galahad", name: "Galahad", expression: (shownFace = now.expression), size: 36 }));
+    // Who answers and with what, beside his name: the model, and the role when it isn't the planner (the menu changes both).
+    const as = [role === "planner" ? null : role, modelName((roster ?? DEFAULT_ROLES)[role]?.models[0])].filter(Boolean).join(" · ");
+    if (answers.textContent !== as) answers.textContent = as;
+  }
+  async function lookQuests(): Promise<void> {
+    if (document.hidden) return;
+    try {
+      const going = (await ctx.api.get<{ quests: QuestView[] }>("/api/quests", scope.signal)).quests.filter((q) => questInHand(q.state));
+      if (scope.disposed || going.map((q) => q.quest + q.goal).join() === quests.map((q) => q.quest + q.goal).join()) return;
+      quests = going;
+      renderNow();
+    } catch {
+      /* out of reach just now: the next look tries again */
+    }
+  }
+
   // ---- who answers, in which project, kept or not: one control ----
   function renderRoles(): void {
     const names = Object.keys(roster ?? DEFAULT_ROLES);
     if (!names.includes(role) || roleProblem(role)) role = names.find((n) => !roleProblem(n)) ?? names[0] ?? "planner";
     options.refresh();
     renderMeta();
+    renderNow();
   }
   function renderMeta(): void {
     meta.textContent = composerHint({ busy: live !== null, enter: chatEnter(), canQueue: current !== null, coarse, mac: /Mac|iPhone|iPad/.test(navigator.platform) });
@@ -769,7 +817,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const queueButton = button("Queue", { size: "sm", title: "Keep it on the node and send it when he's done", onClick: () => void deliver({ how: "queue" }) });
   const stopButton = button("Stop", { icon: "stop", iconOnly: true, label: "Stop him", title: "Stop him (Esc)", onClick: () => stopChat() });
   stopButton.classList.add("send");
-  const asideButton = button("Ask on the side", { variant: "ghost", size: "sm", icon: "chat", iconOnly: true, title: "Ask on the side: answered apart, without changing what he's doing (/btw)", onClick: () => openChatAside(ctx.api) });
   const panel = queuePanel(queueActions(ctx.api));
   const elsewhere = h("div", { class: "composer-alerts" });
   let shownElsewhere = "";
@@ -788,7 +835,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     // The one Enter does is in ink.
     steerButton.classList.toggle("primary", !canQueue || enter === "steer");
     queueButton.classList.toggle("primary", canQueue && enter === "queue");
-    asideButton.hidden = !canChat || !asideTarget();
     input.placeholder = busy ? (canQueue ? "Steer him, or queue what's next…" : "Steer him…") : "Ask Galahad…";
     panel.render({ queue, held, steering, busy, deadline: live?.deadline ?? null });
     // He's working in this chat on a turn this device may not watch (it may read the bank): said, with Stop.
@@ -806,6 +852,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       );
     }
     renderMeta();
+    renderNow();
   }
 
   function secretWarning(kind: string, secret: string): HTMLElement {
@@ -919,6 +966,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   }, { passive: true });
   // A turn that started in this chat elsewhere (another device, the queue going on) is noticed and attached to.
   if (canChat) watchTurns(ctx.api, scope.signal);
+  // What he has in hand beside this chat: the header's line says so.
+  scope.add(nodeTurns.subscribe(renderNow));
+  scope.add(ctx.live.inboxCount.subscribe(renderNow));
+  scope.add(ctx.live.inboxLoaded.subscribe(renderNow));
+  if (ctx.can("mind:read")) {
+    void lookQuests();
+    scope.interval(() => void lookQuests(), 15_000);
+  }
   // The minute "stops by itself in …" names moves on while he works.
   const ticking = setInterval(() => live && syncComposer(), 30_000);
   scope.add(() => clearInterval(ticking));
@@ -960,70 +1015,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       ],
     };
   }
-
-  // Who answers, in which project, kept or not: one control that says so in words.
-  const options = selector({
-    label: "Chat options",
-    scope,
-    search: "auto",
-    placeholder: "Find a role or project…",
-    current: () => {
-      const model = modelName((roster ?? DEFAULT_ROLES)[role]?.models[0]);
-      const fresh = !current;
-      const parts = [roleTitle(role), model || null, fresh && startIn ? projectName(startIn) : null, fresh && temporary ? "Temporary" : null].filter(Boolean);
-      return { text: parts.join(" · "), icon: ROLE_ICON[role] ?? "sparkle", ...(fresh && temporary ? { tone: "warn" as const } : {}) };
-    },
-    groups: () => {
-      const specs = roster ?? DEFAULT_ROLES;
-      const groups: SelectorGroup[] = [
-        {
-          id: "role",
-          label: "Who answers",
-          options: Object.entries(specs).map(([name, spec]) => {
-            const problem = roleProblem(name);
-            const models = spec.models;
-            return {
-              value: name,
-              label: roleTitle(name),
-              icon: ROLE_ICON[name] ?? "sparkle",
-              meta: models.length ? `${models[0]}${models.length > 1 ? ` · ${plural(models.length - 1, "fallback")}` : ""}` : spec.description,
-              keywords: [spec.description, ...models],
-              selected: name === role,
-              ...(problem ? { disabled: problem } : {}),
-            };
-          }),
-        },
-      ];
-      // A new chat starts in a project (a kept one moves from its own menu).
-      if (!current && projects?.length) groups.push(projectChoices(startIn));
-      groups.push({
-        id: "keep",
-        label: "Keeping",
-        mode: "many",
-        options: [{ value: "temporary", label: "Temporary chat", icon: "eye", meta: current ? "Starts a new chat that isn't kept" : "Not kept: gone when you start another or close the app", selected: temporary && !current }],
-      });
-      return groups;
-    },
-    onSelect: (group, option) => {
-      if (group === "role") {
-        role = option.value;
-        rememberRole(role);
-      } else if (group === "project") {
-        const next = option.value || null;
-        temporary = false;
-        if (thread.turns.length) newConversation(next);
-        else startIn = next;
-      } else if (group === "keep") {
-        if (thread.turns.length) newConversation();
-        temporary = !temporary;
-      }
-      renderSub();
-      if (!thread.turns.length) renderAll();
-      renderMeta();
-      if (!coarse) input.focus();
-    },
-  });
-  options.el.classList.add("chat-options");
 
   async function changeKept(change: { title?: string; project?: string | null; pinned?: boolean }): Promise<void> {
     if (!current) return;
@@ -1068,37 +1059,75 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     }
   }
 
-  // A kept chat's own menu: rename, pin, its project, delete.
-  const chatMenu = selector({
-    label: "This chat",
+  // The chat's one menu: what to do with this chat, who answers, in which project, kept or not.
+  const options = selector({
+    label: "Chat options",
     scope,
-    search: false,
+    search: "auto",
+    placeholder: "Find a role or project…",
     variant: "ghost",
     className: "icon-only",
     current: () => ({ text: "", icon: "more" }),
     groups: () => {
-      if (!current) return [];
+      const specs = roster ?? DEFAULT_ROLES;
+      const actions = chatActions({ kept: current !== null, pinned: current?.pinned ?? false, aside: canChat && asideTarget() !== null, node });
       const groups: SelectorGroup[] = [
+        ...(actions.length ? [{ id: "do", mode: "action" as const, options: actions.map((action) => ({ ...action, icon: ACTION_ICON[action.value] })) }] : []),
         {
-          id: "do",
-          mode: "action",
-          options: [
-            { value: "rename", label: "Rename…", icon: "edit" },
-            { value: "pin", label: current.pinned ? "Unpin" : "Pin to the top of your chats", icon: "pin" },
-            { value: "delete", label: "Delete…", icon: "trash", meta: `For good, on ${node}` },
-          ],
+          id: "role",
+          label: "Who answers",
+          options: Object.entries(specs).map(([name, spec]) => {
+            const problem = roleProblem(name);
+            const models = spec.models;
+            return {
+              value: name,
+              label: roleTitle(name),
+              icon: ROLE_ICON[name] ?? "sparkle",
+              meta: models.length ? `${models[0]}${models.length > 1 ? ` · ${plural(models.length - 1, "fallback")}` : ""}` : spec.description,
+              keywords: [spec.description, ...models],
+              selected: name === role,
+              ...(problem ? { disabled: problem } : {}),
+            };
+          }),
         },
       ];
-      if (ctx.can("mind:read") && projects?.length) groups.push({ ...projectChoices(current.project), label: "Move to a project" });
+      // A new chat starts in a project; a kept one moves to another.
+      if (projects?.length) groups.push(current ? { ...projectChoices(current.project), label: "Move to a project" } : projectChoices(startIn));
+      groups.push({
+        id: "keep",
+        label: "Keeping",
+        mode: "many",
+        options: [{ value: "temporary", label: "Temporary chat", icon: "eye", meta: current ? "Starts a new chat that isn't kept" : "Not kept: gone when you start another or close the app", selected: temporary && !current }],
+      });
       return groups;
     },
-    footer: () => (ctx.can("mind:read") && projects?.length ? "A project's instructions and memories go with every answer." : null),
+    footer: () => (projects?.length ? "A project's instructions and memories go with every answer." : null),
     onSelect: (group, option) => {
-      if (!current) return;
-      if (group === "project") void changeKept({ project: option.value || null });
-      else if (option.value === "rename") rename();
-      else if (option.value === "pin") void changeKept({ pinned: !current.pinned });
-      else if (option.value === "delete") void deleteCurrent();
+      if (group === "do") {
+        if (option.value === "aside") openChatAside(ctx.api);
+        else if (option.value === "rename") rename();
+        else if (option.value === "pin") void changeKept({ pinned: !current?.pinned });
+        else void deleteCurrent();
+        return;
+      }
+      if (group === "project" && current) return void changeKept({ project: option.value || null });
+      if (group === "role") {
+        role = option.value;
+        rememberRole(role);
+      } else if (group === "project") {
+        const next = option.value || null;
+        temporary = false;
+        if (thread.turns.length) newConversation(next);
+        else startIn = next;
+      } else if (group === "keep") {
+        if (thread.turns.length) newConversation();
+        temporary = !temporary;
+      }
+      renderSub();
+      if (!thread.turns.length) renderAll();
+      renderMeta();
+      renderNow();
+      if (!coarse) input.focus();
     },
   });
 
@@ -1112,8 +1141,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
           ? h("a", { class: "chip", href: "#/projects", onclick: (e: Event) => { e.preventDefault(); ctx.navigate("projects", { project: current!.project! }); } }, icon("folder", { size: 12 }), projectName(current.project))
           : null,
         current.bank ? badge("bank", "neutral", "bank") : null,
-        h("span", { class: "spacer" }),
-        chatMenu.el,
       );
     } else if (temporary) {
       replace(subHead, badge("temporary", "warn", "eye"), h("span", { class: "small muted" }, "Not kept: gone when you start another chat or close the app."));
@@ -1187,7 +1214,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       },
     },
     input,
-    h("div", { class: "composer-bar" }, icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta, asideButton, queueButton, steerButton, stopButton, sendButton),
+    h("div", { class: "composer-bar" }, icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta, queueButton, steerButton, stopButton, sendButton),
   );
 
   replace(
@@ -1197,7 +1224,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       { class: "chat", "aria-labelledby": "chat-title" },
       h("h1", { id: "chat-title", class: "sr-only" }, "Chat with Galahad"),
       announcer,
-      h("div", { class: "chat-head" }, options.el, h("span", { class: "spacer" }), historyButton, newChat),
+      h("div", { class: "chat-head" }, who, historyButton, newChat, options.el),
       subHead,
       threadEl,
       h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, panel.el, form),
