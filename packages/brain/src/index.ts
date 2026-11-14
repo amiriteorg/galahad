@@ -14,6 +14,7 @@ export * from "./trial-suite.ts";
 export * from "./agentic/index.ts";
 export * from "./reviewer-cases.ts";
 export * from "./agents.ts";
+export * from "./engram.ts";
 export * from "./decisions.ts";
 export * from "./embeddings.ts";
 export * from "./effort.ts";
