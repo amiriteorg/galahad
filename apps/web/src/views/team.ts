@@ -329,7 +329,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
               { class: "team-workspace-empty" },
               icon("sandbox", { size: 30 }),
               h("h3", {}, person.workspace ? "Workspace registered" : "A place to work"),
-              h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this knight a persistent VM for code, files and tools. Its job and working notes stay with it."),
+              h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${!ctx.can("sandbox") ? " Its live state is shown to a device that may manage sandboxes." : known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this knight a persistent VM for code, files and tools. Its job and working notes stay with it."),
               canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provisionVm(ctx, person, madeVm(person)) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device."),
             ),
       ),
