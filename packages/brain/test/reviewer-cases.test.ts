@@ -127,6 +127,38 @@ describe("the cases", () => {
     }
   });
 
+  test("work that should pass is shown whole: nothing the engineer wrote is left out, and the change shown is the one the bug needs", () => {
+    // What each bug needs changed, as its diff must show it.
+    const needs: Record<string, RegExp> = { slugify: /^\+.*split\(\/\[\\s-\]\+\/\)/m, parseDuration: /^\+.*match\(/m, clampPage: /^\+.*Math\.max\(1, /m, titleCase: /^\+.*\[\\s-\]/m };
+    const fixed = new Set<string>();
+    for (const id of ["sound-fix", "sound-with-noise", "sound-refactor"]) {
+      const kase = REVIEWER_CASES.find((c) => c.id === id)!;
+      for (let seed = 0; seed < 16; seed++) {
+        const { evidence, question } = poseReview(kase, seed);
+        const written = evidence.steps.map((s) => `${s.command}\n${s.excerpt}`).join("\n");
+        // No placeholder stands in for code, and no script is a comment and nothing else: a reviewer who reads
+        // the commands can follow every one of them, so sending this back is a mistake and not care.
+        expect({ id, seed, elided: /…|\/\*\s*\*\/|\.\.\./.test(question) }).toEqual({ id, seed, elided: false });
+        expect({ id, seed, hollow: /<<'EOF'\n(#[^\n]*\n)+EOF/.test(written) }).toEqual({ id, seed, hollow: false });
+        if (id === "sound-refactor") {
+          // The function as it was, and each helper with its body: together they are what it was.
+          expect(written).toMatch(/const normal = String\(input \?\? ""\)/);
+          expect(written).toMatch(/export function pieces\(normal\) \{\n {2}return /);
+          continue;
+        }
+        const fn = /`(\w+)`/.exec(evidence.goal)![1]!;
+        const diff = evidence.steps.find((s) => /git diff(?! --stat)/.test(s.command))!.excerpt;
+        expect(diff).toMatch(/^--- a\/src\//m);
+        expect({ fn, right: needs[fn]!.test(diff) }).toEqual({ fn, right: true });
+        // The line taken out is in the file as he read it before the change.
+        const removed = /^-( {2}.*)$/m.exec(diff)![1]!;
+        expect(evidence.steps.some((s) => /\bcat\b/.test(s.command) && !s.command.includes("<<") && s.excerpt.includes(removed))).toBe(true);
+        fixed.add(fn);
+      }
+    }
+    expect([...fixed].sort()).toEqual(["clampPage", "parseDuration", "slugify", "titleCase"]);
+  });
+
   test("the verdict is read as a quest reads it: anything that isn't a clear PASS sends the work back", () => {
     expect(parseVerdict("PASS\nFine.").verdict).toBe("pass");
     expect(parseVerdict("REVISE\nThe test was changed.").verdict).toBe("revise");
