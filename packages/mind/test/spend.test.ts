@@ -36,13 +36,14 @@ const syncInto = (from: MindStore, to: MindStore) => {
   }
 };
 
-function fleet() {
+/** Two nodes of one fleet. With `now`, both keep that time: a test that says which of two things came first sets it itself. */
+function fleet(now?: () => number) {
   const a = newNodeIdentity();
   const b = newNodeIdentity();
-  const storeA = new MindStore(":memory:");
+  const storeA = new MindStore(":memory:", now ? new HlcClock(now) : undefined);
   foundFleet(storeA, a, { fleetName: "camelot", nodeName: "ultra" });
   enrollDevice(storeA, a, { device: b.id, name: "rack", kind: "node", box: b64u(b.boxPublic) });
-  const storeB = new MindStore(":memory:");
+  const storeB = new MindStore(":memory:", now ? new HlcClock(now) : undefined);
   storeB.expectFleet(storeA.fleet!);
   syncInto(storeA, storeB);
   return { a, b, storeA, storeB };
@@ -92,8 +93,12 @@ describe("prices", () => {
 
 describe("what a model was seen to do", () => {
   test("the latest check of a model stands on every replica, whichever came first, and what a newer node added is kept", () => {
-    const { a, b, storeA, storeB } = fleet();
+    // The time is the test's own, so which came first is said here and never left to how fast the machine is:
+    // inside one millisecond two nodes' checks are ordered by their ids, and either order is a history they agree on.
+    let now = Date.now();
+    const { a, b, storeA, storeB } = fleet(() => now);
     storeA.emit(a, "model.checked", { model: "opencode-go/kimi-k3.1-pro", check: { at: 1, format: { replies: 25, good: 8 } } });
+    now += 5;
     storeB.emit(b, "model.checked", { model: "opencode-go/kimi-k3.1-pro", check: { at: 2, format: { replies: 6, good: 2 }, reads: { ok: true, said: "x" }, latencyMs: 800 } });
     storeA.emit(a, "model.checked", { model: "opencode-go/gpt-6-luna", check: { at: 3, places: { targets: 8, landed: 8, meanErrorPx: 4 } } });
     syncInto(storeA, storeB);
