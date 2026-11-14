@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, Usage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import { keyHeaders, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
+import { conversationSession, keyHeaders, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -260,6 +260,8 @@ export function openAIConversation(input: CompletionInput): Conversation {
   let finalPending = false;
   /** The last call's usage (see Conversation.spent). */
   let spent: Usage | null | undefined;
+  // Which conversation this is, for a plan that routes by that: from how it began, so each of its turns says the same.
+  const session = conversationSession(input.model, wordsOf(input.messages.find((m) => m.role === "user")?.content));
   return {
     spent: () => spent,
     async *turn(tools, signal) {
@@ -268,8 +270,8 @@ export function openAIConversation(input: CompletionInput): Conversation {
       const post = (askUsage: boolean): Promise<Response> =>
         (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
           method: "POST",
-          // (To a coding plan he says who he is: selfHeaders.)
-          headers: { "content-type": "application/json", ...keyHeaders(input.provider), ...selfHeaders(input.provider) },
+          // (To a coding plan he says who he is, and which conversation this is: selfHeaders.)
+          headers: { "content-type": "application/json", ...keyHeaders(input.provider), ...selfHeaders(input.provider, session) },
           body: JSON.stringify({
             model: input.model,
             stream: true,

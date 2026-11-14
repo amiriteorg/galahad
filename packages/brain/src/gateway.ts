@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { randomId, redact, sha256B64u } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { keyHeaders, resolveProvider } from "./providers.ts";
+import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers.ts";
 
 /*
  * The model gateway: how arms (OpenCode, Claude Code, Codex, Hermes, sandboxes)
@@ -141,6 +141,13 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   for (const name of FORWARDED_HEADERS) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
+  }
+  // A plan that routes a conversation by its session refuses a call without one: the tool's own goes on as it
+  // sent it, and a tool that sent none is given its VM's.
+  const session = planOf(providerId)?.session;
+  if (session) {
+    const own = request.headers.get(session);
+    headers.set(session, own && /^[\x21-\x7e]{1,128}$/.test(own) ? own : gatewaySession(token));
   }
   for (const [name, value] of Object.entries(keyHeaders(provider))) headers.set(name, value);
   const target = `${provider.baseUrl.replace(/\/$/, "")}/${rest}${url.search}`;

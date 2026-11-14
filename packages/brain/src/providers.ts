@@ -1,4 +1,4 @@
-import type { ProviderView } from "@galahad/core";
+import { type ProviderView, sha256B64u } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 
 export type ProviderKind = "openai" | "anthropic";
@@ -36,6 +36,8 @@ export interface CodingPlan {
   terms: string;
   /** The models it serves (a plan's endpoint doesn't always list them). */
   models: string[];
+  /** The header its endpoint routes a conversation by, where it refuses a call without one (OpenCode Go does: 400 MissingSessionID). */
+  session?: string;
 }
 
 /**
@@ -100,6 +102,7 @@ export const PRESETS: ProviderPreset[] = [
       says: 'OpenCode: "designed for OpenCode and other coding agents that send similar traffic", each sending its own User-Agent.',
       terms: "https://opencode.ai/docs/go/",
       models: ["glm-5.3", "kimi-k3"],
+      session: "x-opencode-session",
     },
   },
   { id: "synthetic", kind: "openai", baseUrl: "https://api.synthetic.new/openai/v1" },
@@ -137,8 +140,21 @@ export const whyNoKey = (id: string): string =>
 /** Who he says he is when he calls a coding plan himself: his own name, and never another tool's. */
 export const SELF = "Galahad (coding agent; https://galahad.bot)";
 
-/** What he sends beside the key when the call is his own: to a coding plan, his name. */
-export const selfHeaders = (provider: { id: string }): Record<string, string> => (planOf(provider.id) ? { "user-agent": SELF } : {});
+/** What he sends beside the key when the call is his own: to a coding plan, his name, and which conversation this is where the plan routes by that. */
+export function selfHeaders(provider: { id: string }, session?: string): Record<string, string> {
+  const plan = planOf(provider.id);
+  if (!plan) return {};
+  return { "user-agent": SELF, ...(plan.session && session ? { [plan.session]: session } : {}) };
+}
+
+/**
+ * A conversation's session, for a plan that routes by one: an id made from the model and how the conversation
+ * began, so every turn of it carries the same one and another conversation another. It says nothing of either.
+ */
+export const conversationSession = (model: string, began: string): string => sha256B64u(`galahad/session/v1\u0000${model}\u0000${began}`).slice(0, 32);
+
+/** A VM's session for a tool that sent none of its own through the gateway: from the token it calls with, and not the token. */
+export const gatewaySession = (token: string): string => sha256B64u(`galahad/gateway-session/v1\u0000${token}`).slice(0, 32);
 
 /**
  * A subscription's sign-in is not an API key: its vendor keeps it to the vendor's own tool. Pasted

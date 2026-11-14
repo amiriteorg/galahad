@@ -15,6 +15,7 @@ import { chat, chooseAgentModels, decide, detectProvider, embed, GatewayTokens, 
 
 const PLAN_KEY = "0123456789abcdef0123456789abcdef.FAKEfakeFAKEfake";
 const OWN_KEY = "sk-ant-api03-FAKE-key-for-tests-0000";
+const GO_KEY = "sk-FAKE-opencode-go-key-for-tests-0000";
 
 function mind(roster: Record<string, string[]>) {
   const identity = newNodeIdentity();
@@ -24,6 +25,9 @@ function mind(roster: Record<string, string[]>) {
   const plan = preset("zai-coding")!;
   vault.set("zai-coding", PLAN_KEY, { provider: "zai-coding", origin: originOf(plan.baseUrl)! });
   store.emit(identity, "provider.set", { id: "zai-coding", kind: plan.kind, baseUrl: plan.baseUrl, secret: "zai-coding" });
+  const go = preset("opencode-go")!;
+  vault.set("opencode-go", GO_KEY, { provider: "opencode-go", origin: originOf(go.baseUrl)! });
+  store.emit(identity, "provider.set", { id: "opencode-go", kind: go.kind, baseUrl: go.baseUrl, secret: "opencode-go" });
   vault.set("own", OWN_KEY, { provider: "own", origin: "https://models.example.test" });
   store.emit(identity, "provider.set", { id: "own", kind: "openai", baseUrl: "https://models.example.test/v1", secret: "own" });
   for (const [role, models] of Object.entries(roster)) store.emit(identity, "roster.set", { role, models });
@@ -98,6 +102,61 @@ describe("coding is what a coding plan is for: he codes on it himself, as himsel
     const events = await all(chat({ ...mind({ engineer: ["zai-coding/*"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
     expect(events[0]).toEqual({ type: "model", ref: "zai-coding/glm-5.3" });
     expect(seen.map((s) => new URL(s.url).pathname)).toEqual(["/api/coding/paas/v4/chat/completions"]);
+  });
+});
+
+describe("a plan that routes a conversation by its session is told which conversation this is", () => {
+  const SESSION = "x-opencode-session";
+  const quest = [{ role: "user" as const, content: "Quest: fix the report" }];
+
+  test("OpenCode Go refuses a call without one: each conversation of his has a session, the same through its turns and another for another conversation", async () => {
+    const { seen, fetch } = recorded();
+    const ctx = { ...mind({ engineer: ["opencode-go/glm-5.3", "opencode-go/kimi-k3.1-pro"] }), fetch };
+    await all(chat(ctx, { role: "engineer", messages: quest, coding: true }));
+    // The same conversation a turn later: what followed is added, and its beginning is as it was.
+    await all(chat(ctx, { role: "engineer", messages: [...quest, { role: "assistant", content: "```sh\nls\n```" }, { role: "user", content: "exit 0 · 3 ms\nREADME.md" }], coding: true }));
+    await all(chat(ctx, { role: "engineer", messages: [{ role: "user", content: "Quest: another one" }], coding: true }));
+    // Another model on the same quest is another conversation.
+    await all(chat(ctx, { role: "engineer", model: "opencode-go/kimi-k3.1-pro", messages: quest, coding: true }));
+    const sessions = seen.map((s) => s.headers.get(SESSION));
+    expect(sessions[0]).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
+    expect(sessions[1]).toBe(sessions[0]);
+    expect(sessions[2]).not.toBe(sessions[0]);
+    expect(sessions[3]).not.toBe(sessions[0]);
+    // An id, and nothing of what was asked or of the key.
+    expect(sessions.join(" ")).not.toMatch(/Quest|report|FAKE/);
+    expect(seen.every((s) => s.headers.get("user-agent")?.startsWith("Galahad"))).toBe(true);
+  });
+
+  test("no other provider is sent it: a plan that names no such header, or a model of his own", async () => {
+    const { seen, fetch } = recorded();
+    await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3"] }), fetch }, { role: "engineer", messages: quest, coding: true }));
+    await all(chat({ ...mind({ engineer: ["own/m"] }), fetch }, { role: "engineer", messages: quest, coding: true }));
+    expect(seen.map((s) => s.headers.has(SESSION))).toEqual([false, false]);
+  });
+
+  test("through the gateway a tool's own session goes on as it sent it; a tool that sent none gets one of its VM's, so the plan answers it", async () => {
+    const { store, vault } = mind({});
+    const tokens = new GatewayTokens(new Database(":memory:"));
+    const mint = (label: string) => tokens.mint({ label, providers: ["opencode-go", "zai-coding"], ttlMinutes: 10, maxRequests: 9 }).token;
+    const [one, two] = [mint("sandbox:w1"), mint("sandbox:w2")];
+    const { seen, fetch } = recorded();
+    const call = (provider: string, token: string, headers: Record<string, string> = {}) =>
+      handleGateway(new Request(`http://127.0.0.1:7777/gw/${provider}/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...headers }, body: "{}" }), { store, vault, tokens, fetch });
+    expect((await call("opencode-go", one, { [SESSION]: "ses_the_tools_own" })).status).toBe(200);
+    await call("opencode-go", one);
+    await call("opencode-go", one);
+    await call("opencode-go", two);
+    await call("zai-coding", one, { [SESSION]: "ses_the_tools_own" });
+    const sessions = seen.map((s) => s.headers.get(SESSION));
+    expect(sessions[0]).toBe("ses_the_tools_own");
+    expect(sessions[1]).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
+    expect(sessions[2]).toBe(sessions[1]);
+    expect(sessions[3]).not.toBe(sessions[1]);
+    // Nothing of the VM's token is in it, and a provider that doesn't route by it isn't sent it.
+    expect(one.includes(sessions[1]!) || sessions[1]!.includes(one.slice(3, 12))).toBe(false);
+    expect(sessions[4]).toBeNull();
+    expect(seen[1]!.headers.get("authorization")).toBe(`Bearer ${GO_KEY}`);
   });
 });
 
