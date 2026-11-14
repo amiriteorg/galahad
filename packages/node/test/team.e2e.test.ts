@@ -19,7 +19,7 @@ const prompts: any[] = [];
 const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   prompts.push(await req.json()); calls++;
   const delta = calls === 1
-    ? { tool_calls: [{ index: 0, id: "shared-note", function: { name: "remember", arguments: JSON.stringify({ text: "The hivemind shares verified lessons.", tags: ["team-test"] }) } }] }
+    ? { tool_calls: [{ index: 0, id: "shared-note", function: { name: "remember", arguments: JSON.stringify({ text: "The Roundtable shares verified lessons.", tags: ["team-test"] }) } }] }
     : { content: "A useful contribution." };
   return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: calls === 1 ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
 } });
@@ -28,7 +28,7 @@ async function api<T = any>(name: RouteName, input?: unknown): Promise<T> { cons
 const start = () => startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, shutdownGraceMs: 100 });
 beforeAll(async () => {
   const { identity, keystore } = await home.createIdentity("file"); const mind = new MindStore(home.mindPath);
-  const fleet = foundFleet(mind, identity, { fleetName: "hivemind", nodeName: "keep" }); mind.close();
+  const fleet = foundFleet(mind, identity, { fleetName: "roundtable", nodeName: "keep" }); mind.close();
   home.writeConfig({ v: 1, name: "keep", fleet, port, keystore, advertise: "127.0.0.1" });
   daemon = await start();
   await api("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` });
@@ -49,10 +49,13 @@ test("real API: squires converse autonomously under a shared bound and write to 
   expect(room.messages.filter((m) => m.speaker !== "owner")).toHaveLength(3);
   expect(new Set(room.messages.map((m) => m.speaker))).toEqual(new Set(["owner", "ada", "lin"]));
   expect(state.teammates.reduce((n, m) => n + m.turnsToday, 0)).toBe(3);
-  const shared = daemon.store.recall("hivemind shares", 8).find((m) => m.text.includes("verified lessons"));
+  const shared = daemon.store.recall("Roundtable shares", 8).find((m) => m.text.includes("verified lessons"));
   expect(shared?.trust).toBe("agent");
   expect(daemon.store.event(shared!.id)?.prov?.source).toMatch(new RegExp(`^arm:(${["ada", "lin"].map((id) => teamArmLabel(daemon.identity.id, id).replace(/\./g, "\\.")).join("|")})$`));
-  expect(prompts.some((p) => JSON.stringify(p).includes("Galahad is a hivemind"))).toBe(true);
+  // What a knight is told of the others: fellows at one table, none beneath another, the best suited takes the task.
+  expect(prompts.some((p) => JSON.stringify(p).includes("a knight of your liege's Roundtable, with a lasting job and a voice of your own. Galahad is his first knight and your fellow, not your master"))).toBe(true);
+  expect(prompts.some((p) => JSON.stringify(p).includes("the Roundtable is a technocracy, where the one best suited to a task takes it"))).toBe(true);
+  expect(prompts.some((p) => /hivemind|sub-Galahad/i.test(JSON.stringify(p)))).toBe(false);
   expect(prompts.flatMap((p) => p.tools ?? []).map((t: any) => t.function?.name)).not.toContain("bank_accounts");
 }, 10000);
 

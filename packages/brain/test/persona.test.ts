@@ -31,14 +31,19 @@ describe("what he knows about his own work", () => {
     expect(TOOL_GUIDE).toMatch(/Say a skill is saved only when the tool or the quest's outcome says it is/);
   });
 
-  test("he knows his squires are his to grow: look first, make one when asked or needed, brief it, and claim nothing the tool didn't say", () => {
+  test("he may seat another knight at his liege's Roundtable: look first, make one when asked or needed, brief it as a fellow, and claim nothing the tool didn't say", () => {
     for (const tool of ["team", "team_recruit", "team_message"]) expect(TOOL_GUIDE).toContain(tool);
     expect(TOOL_GUIDE).toMatch(/When your liege asks for another, or the work needs a lasting job none of them fits/);
     expect(TOOL_GUIDE).toMatch(/before making another/);
     expect(TOOL_GUIDE).toMatch(/only a few in a day/);
     expect(TOOL_GUIDE).toMatch(/only when the tool says so/);
     // He only adds: what he cannot do to a worker he says is his liege's, rather than claiming it done.
-    expect(TOOL_GUIDE).toMatch(/You only add: pausing, changing or removing a squire is your liege's to do in Squires/);
+    expect(TOOL_GUIDE).toMatch(/You only add: pausing, changing or removing a knight is your liege's to do there/);
+    // The others are his liege's knights and his fellows: never his own, never beneath him, never parts of him.
+    expect(TOOL_GUIDE).toMatch(/Your liege's other knights have lasting jobs of their own/);
+    expect(TOOL_GUIDE + GALAHAD_SYSTEM).not.toMatch(/hivemind|sub-Galahad|parts of you|your squires/i);
+    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/None of them is beneath you and none is a part of you: they are your fellows, respectful, capable and brave/);
+    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/The Roundtable is a technocracy: the one best suited to a task takes it, and evidence decides, never rank/);
   });
 
   test("it stays small: the guide and the persona are sent with every answer", () => {

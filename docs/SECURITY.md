@@ -17,7 +17,7 @@ Galahad is an autonomous agent with access to every machine you own, so its secu
 - an attacker who is already root on a full node, which holds the vault by design
 - your Tailscale control plane being compromised, which is mitigated, not eliminated, by device-key signatures on every request
 
-## Hivemind squires
+## The Roundtable's knights
 
 Squires share Galahad's identity and knowledge while retaining attributable execution identities. Squires conversations, task state, VM bindings and working notes live in the controller's private `team.db`; this database is not replicated. Explicit `remember` calls write agent-trust entries to the existing signed shared mind. Room messages, predecessor results and notes enter model context as fenced data, never as new permissions.
 
@@ -185,9 +185,9 @@ He reaches you by Web Push, to your own paired devices only. No messaging gatewa
 - **Keys stay out.** OpenCode in a sandbox reaches models only through the gateway, on a token scoped to one provider that dies with the sandbox; the provider key never enters the sandbox. Its config is written by Galahad and holds only `{env:…}` references.
 - **The sandbox is the boundary.** The agent may use every tool it has (it runs non-interactively), because the sandbox decides what's reachable: models only by default (`--net gateway`), the internet only with `--net online` (then a microVM where the host has KVM). Its working state lives in the sandbox's `/work` and goes with it.
 - **Pinned.** The OpenCode binary is a fixed release, verified against its SHA-256 at image build; self-updates are disabled. So is Engram's (3.7.2), the notes store a squire's harness may be given: fetched by version, checked against the digest its release and GitHub both give, with its update check off. The pin makes it reproducible, not trusted: its releases are not signed or attested, the checksum comes from the same release, the binary also holds a cloud server and a dashboard that nothing here starts, and only its latest release gets security fixes, so a pinned one is soon an unsupported one. Each bump is a review of someone else's fast-moving code (15 releases in the 44 days before this one).
-- **A vendor's own tool is the owner's to install and sign in.** Claude Code and Codex are in no image and are never fetched: as a squire's harness each is the binary its owner put in that squire's VM, on its own sign-in there or on a roster model through the gateway. See "Hivemind squires" above for what Galahad never does with a sign-in.
+- **A vendor's own tool is the owner's to install and sign in.** Claude Code and Codex are in no image and are never fetched: as a squire's harness each is the binary its owner put in that squire's VM, on its own sign-in there or on a roster model through the gateway. See "The Roundtable's knights" above for what Galahad never does with a sign-in.
 - **Watched and bounded.** Every command and edit it makes is followed from its event stream and shown; past its time budget, or when you stop the quest, its whole process group is killed; an independent reviewer judges the result from the sandbox, not from the agent's account.
-- **Residual risk:** inside the sandbox the agent can do anything the sandbox user can; what it writes is untrusted, like all model output, and a patch is only a proposal until you apply it. With the notes store on, what it writes there outlives the task: see "Hivemind squires" above.
+- **Residual risk:** inside the sandbox the agent can do anything the sandbox user can; what it writes is untrusted, like all model output, and a patch is only a proposal until you apply it. With the notes store on, what it writes there outlives the task: see "The Roundtable's knights" above.
 
 ## Shipping (tested)
 

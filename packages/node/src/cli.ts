@@ -36,7 +36,8 @@ const VERSION = "0.1.0";
 
 const HELP = `galahad — one mind, many bodies
 
-Squires (his persistent sub-Galahads, their rooms and verified work in VMs; "team" is the same command)
+The Roundtable (your knights beside Galahad, none beneath another: each with a lasting job, a room and verified work in a VM
+of its own; "roundtable", "squires" and "team" are the same command)
   squires                           squires, rooms and tasks (those Galahad made for himself say so:
                                     ask him in chat to make and brief a squire)
   squires add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
@@ -1521,6 +1522,7 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "notify":
       await notifyCommand(new Admin(home), sub, rest, flags);
       return;
+    case "roundtable":
     case "squires":
     case "squire":
     case "team":

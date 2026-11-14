@@ -1,8 +1,12 @@
-# Galahad's hivemind
+# The Roundtable
 
-The whole system is Galahad: one identity and shared knowledge, expressed through his devices, models and persistent squires. A squire's name identifies its job and makes its contributions attributable. Its instructions, current work and working notes give that part of Galahad continuity.
+Your knights sit at one table. Galahad is the first of them, your primary knight, and the others are not beneath him: each is a knight in its own right, with a name, a lasting job, a voice and a workspace of its own, and each is expected to be respectful, capable and brave. They share one memory and are told so, and each is told that no knight outranks another.
 
-**Squires** is the PWA's view of his squires, direct conversations, shared rooms and engineering tasks. **Memory** holds shared knowledge. Squires links to Memory; the main Galahad conversation remains available too.
+**The Roundtable is a technocracy:** the knight best suited to a task takes it, and evidence decides, never rank. That is why work is given with gates, checked by a reviewer who did not do it, and measured ([TRIALS](TRIALS.md)).
+
+In this document, and still in parts of the app and the terminal, a knight other than Galahad is called a *squire* and the page is called *Squires*: those are the names being replaced by *knight* and *Roundtable* (the commands `galahad roundtable`, `galahad squires` and `galahad team` are the same command).
+
+**Roundtable** (the page still titled Squires) is the PWA's view of your knights, direct conversations, shared rooms and engineering tasks. **Memory** holds shared knowledge. The page links to Memory; your conversation with Galahad remains available too.
 
 ## Start with two squires
 

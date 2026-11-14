@@ -169,7 +169,7 @@ A **variant** is a named set of harness switches, recorded with its run: `gates`
 
 `galahad trial compare <run> <run>` does the same for two recorded runs.
 
-**The notes store.** `galahad trial ab baseline engram --suite agentic` measures what [Engram](HIVEMIND.md#a-notes-store-the-harness-can-ask-engram) costs a task. Under `engram` a trial's quest asks its sandbox for the pinned binary, tells the engineer the store's two shell commands and how far to trust a note (about 200 words in its briefing), and runs the quest's commands with the store's place and project said. The sandbox the hidden tests run in is asked nothing and given nothing.
+**The notes store.** `galahad trial ab baseline engram --suite agentic` measures what [Engram](ROUNDTABLE.md#a-notes-store-the-harness-can-ask-engram) costs a task. Under `engram` a trial's quest asks its sandbox for the pinned binary, tells the engineer the store's two shell commands and how far to trust a note (about 200 words in its briefing), and runs the quest's commands with the store's place and project said. The sandbox the hidden tests run in is asked nothing and given nothing.
 
 | Question | Can a run answer it? |
 |---|---|

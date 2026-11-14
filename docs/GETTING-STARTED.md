@@ -204,7 +204,7 @@ bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 2. Run `bun galahad provider add ollama` once.
 3. The `swift` role already tries `ollama/*`, then `llamacpp/*`, then `anthropic/claude-haiku-5-5`.
 
-## 6½. Give the hivemind persistent squires
+## 6½. Seat knights at your Roundtable
 
 The whole system is Galahad. **Squires** gives parts of his shared mind persistent names, jobs, rooms and DMs. Open it in the PWA paired to the node you want to keep as the controller, choose **New squire**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a squire and brief it; he does so within a daily allowance, and Squires marks it as made by him. The CLI equivalent starts with:
 
@@ -214,9 +214,9 @@ bun galahad squires dm ada "Help me plan the next small, verifiable improvement.
 bun galahad squires
 ```
 
-A squire you no longer want is paused (`bun galahad squires pause squire ada`) or removed for good (`bun galahad squires remove ada`, or **Workspace → Remove squire** in Squires). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [HIVEMIND](HIVEMIND.md#removing-a-squire) has the details.
+A squire you no longer want is paused (`bun galahad squires pause squire ada`) or removed for good (`bun galahad squires remove ada`, or **Workspace → Remove squire** in Squires). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [ROUNDTABLE](ROUNDTABLE.md#removing-a-squire) has the details.
 
-Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([HIVEMIND](HIVEMIND.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin.
+Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([ROUNDTABLE](ROUNDTABLE.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [ROUNDTABLE](ROUNDTABLE.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin.
 
 ## 7. Let tools use your keys without seeing them
 

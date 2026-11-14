@@ -114,7 +114,7 @@ export type TeamControlInput = z.infer<typeof TeamControlInput>;
 export const TeamRemoveInput = z.strictObject({ id: z.string().min(1).max(32), destroyWorkspace: z.boolean().optional() });
 export type TeamRemoveInput = z.infer<typeof TeamRemoveInput>;
 
-/** The VMs' notes store (Engram: docs/HIVEMIND.md): one switch for all of a node's squires, yours alone to turn, and
+/** The VMs' notes store (Engram: docs/ROUNDTABLE.md): one switch for all of a node's squires, yours alone to turn, and
  * off until you do. Nothing else of the store is anyone's to set: its version is the image's, its place and its
  * tools are the code's, and a squire's project is its repository's name or its own handle. */
 export const TeamEngramInput = z.strictObject({ on: z.boolean() });

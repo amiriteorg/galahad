@@ -13,7 +13,7 @@ import { Home } from "../src/home.ts";
 import { chatTools, type GalahadTool, TOOLS, toolsFor } from "../src/tools.ts";
 
 /*
- * Galahad grows his own hivemind: asked in your conversation with him, or when the work needs one, he makes a
+ * Galahad seats a knight at his liege's Roundtable: asked in your conversation with him, or when the work needs one, he makes a
  * worker himself and briefs it, through his own tools (team, team_recruit, team_message) and nobody else's.
  * Against a real daemon and a stand-in model: his own answers are scripted, a worker's is told by its briefing.
  */
@@ -38,7 +38,7 @@ const ANSWER = `Scout here: I'll start with the lockfile.\n${FORGED}`;
 const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   const body = await req.json();
   // A worker's briefing says what it is; whatever else calls the model here is Galahad himself.
-  if (JSON.stringify(body).includes("You are his persistent squire")) { workers.push(body); return say(ANSWER)(); }
+  if (JSON.stringify(body).includes("a knight of your liege's Roundtable, with a lasting job and a voice of your own")) { workers.push(body); return say(ANSWER)(); }
   his.push(body);
   return (script.shift() ?? say("OK."))();
 } });
@@ -82,7 +82,7 @@ async function pairDevice(name: string, scopes: Scope[]) {
 
 beforeAll(async () => {
   const { identity, keystore } = await home.createIdentity("file"); const mind = new MindStore(home.mindPath);
-  const fleet = foundFleet(mind, identity, { fleetName: "hivemind", nodeName: "keep" }); mind.close();
+  const fleet = foundFleet(mind, identity, { fleetName: "roundtable", nodeName: "keep" }); mind.close();
   home.writeConfig({ v: 1, name: "keep", fleet, port, keystore, advertise: "127.0.0.1" });
   daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, shutdownGraceMs: 100 });
   await api("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` });

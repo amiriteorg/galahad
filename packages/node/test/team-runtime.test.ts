@@ -73,7 +73,8 @@ test("task completion requires its gates before independent review, and the revi
   expect(f.commands.at(-1)).toBe("rm -rf '/work/.tmp/task-abcdefghijkl'");
   expect(f.commands.at(-2)).toContain("bun test required-check");
   const engineer = JSON.stringify(f.bodies[1]);
-  expect(engineer).toContain("squire Ada (ada) within Galahad's hivemind");
+  expect(engineer).toContain("You are Ada (ada), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave");
+  expect(engineer).not.toMatch(/hivemind|his persistent squire|your squire identity/i);
   expect(engineer).toContain("Shared knowledge:");
   expect(engineer).toContain("private working note");
   expect(engineer).toContain("Verified predecessor result");
