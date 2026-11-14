@@ -414,11 +414,20 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   // She is still bound to that VM, and what was done is in the ledger as yours.
   expect((await snapshot()).teammates.find((member) => member.id === "una")!.workspace).toMatchObject({ id: kept.id });
   expect((await api<{ entries: LedgerEntry[] }>("ledger")).entries.find((e) => e.resource === "docker.container" && e.class === "modify" && e.target.includes(kept.id))).toMatchObject({ verdict: "approved", detail: expect.stringContaining("made again from") });
+  // Made again with a desktop: the same VM, from the desktop image.
+  const desked = (await api<{ workspace: SandboxView }>("remakeTeammate", { id: "una", desktop: true })).workspace;
+  expect(desked).toMatchObject({ id: kept.id, image: "galahad/desktop:1" });
   // A squire with no VM has none to make again, and a squire that isn't there is not found.
   await api("saveTeammate", { id: "vmless", name: "VMLESS", role: "engineer" });
   await expect(api("remakeTeammate", { id: "vmless" })).rejects.toThrow(/424 .*no VM yet/);
   await expect(api("remakeTeammate", { id: "nobody" })).rejects.toThrow(/404/);
   expect(await api("removeTeammate", { id: "una", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
+  // A squire may be given a desktop from the start, with room for a browser whatever memory was asked.
+  // (Here, once una's VM has gone: this host carries only so many at once.)
+  await api("saveTeammate", { id: "dex", name: "DEX", role: "engineer" });
+  const dex = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "dex", desktop: true, memoryGb: 2 })).workspace;
+  expect(dex).toMatchObject({ image: "galahad/desktop:1", memoryGb: 4, isolation: "vm" });
+  expect(await api("removeTeammate", { id: "dex", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
   await daemon.stop();
   const raw = new Database(join(home.dir, "team.db"));
   const stored = JSON.parse(raw.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("sam")!.value);
@@ -446,5 +455,5 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   expect(await api("removeTeammate", { id: "tom" })).toEqual({ removed: { id: "tom", name: "TOM" }, workspace: "left" });
   expect(docker.running()).toBe(stillThere);
   expect(await ledgered("tom")).toMatchObject({ detail: "its VM was on a node that has left the fleet; nothing there was touched" });
-  expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "lin", "sam", "tom", "una"]);
+  expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "dex", "lin", "sam", "tom", "una"]);
 }, 20000);

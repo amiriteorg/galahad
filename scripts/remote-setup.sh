@@ -246,6 +246,14 @@ UNIT
       else
         echo "Lab image build failed; sandboxes still work, without the Lab" >&2
       fi
+      # The squires' desktop (a display, a window manager, a browser): made from the image above, a minute or two the first time.
+      if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/desktop:1 "$APP/sandbox/desktop" >/dev/null; then
+        DESK=$(docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 --mount type=volume,dst=/work \
+          --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true --network none galahad/desktop:1 desktop start 2>&1 | tail -1)
+        echo "→ desktop image ready: ${DESK:-desktop start gave no report}"
+      else
+        echo "desktop image build failed; sandboxes still work, without a desktop" >&2
+      fi
       # Gazebo (robotics simulation, headless): a few minutes the first time, cached after.
       if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/gazebo:1 "$APP/sandbox/gazebo" >/dev/null; then
         GZ=$(docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 --mount type=volume,dst=/work \

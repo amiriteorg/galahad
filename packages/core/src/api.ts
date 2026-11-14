@@ -115,6 +115,8 @@ export const SandboxRequest = z.strictObject({
   lab: z.boolean().optional(),
   /** The Gazebo image: robotics simulation (gz-sim 8, headless, DART physics). */
   gazebo: z.boolean().optional(),
+  /** The desktop image: the workshop with a display, a window manager and a browser (`desktop help` inside it). */
+  desktop: z.boolean().optional(),
   /** Web search through the gateway (the node's own SearXNG), even without the internet: `websearch <words>`. */
   search: z.boolean().optional(),
 });
@@ -182,6 +184,8 @@ export const routes = {
        * a microVM's network can't be changed afterwards.
        */
       network: z.enum(["online", "gateway"]).default("online"),
+      /** A desktop in its VM (a display, a window manager, a browser) for work that needs a screen. Set when the VM is made, or made again. */
+      desktop: z.boolean().optional(),
     }),
   },
   /**
@@ -191,13 +195,13 @@ export const routes = {
    */
   remakeTeammate: {
     method: "POST", path: "/api/team/remake", scope: "fleet:admin",
-    input: z.strictObject({ id: z.string().min(1).max(32), network: z.enum(["online", "gateway"]).optional() }),
+    input: z.strictObject({ id: z.string().min(1).max(32), network: z.enum(["online", "gateway"]).optional(), /** With a desktop from now on (true), or without one (false); absent: as it is. */ desktop: z.boolean().optional() }),
   },
   /** The same, asked of the node that hosts the VM by the team's controller (never by a squire). */
   remakeTeamWorkspace: {
     method: "POST", path: "/api/team/remake-workspace", scope: "fleet:admin",
     input: z.strictObject({
-      id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, providers: z.array(z.string().min(1).max(64)).max(16), network: z.enum(["online", "gateway"]).optional(),
+      id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, providers: z.array(z.string().min(1).max(64)).max(16), network: z.enum(["online", "gateway"]).optional(), desktop: z.boolean().optional(),
       /** The device whose word it was, when a node passes the request on to the VM's host. */
       onBehalfOf: z.string().max(100).optional(),
     }),
@@ -466,7 +470,7 @@ export const routes = {
     method: "POST",
     path: "/api/sandboxes/build",
     scope: "sandbox",
-    input: z.strictObject({ on: NodeRef.optional(), lab: z.boolean().optional(), gazebo: z.boolean().optional() }),
+    input: z.strictObject({ on: NodeRef.optional(), lab: z.boolean().optional(), gazebo: z.boolean().optional(), desktop: z.boolean().optional() }),
   },
   loops: { method: "GET", path: "/api/loops", scope: "mind:read", input: null },
   setLoop: {

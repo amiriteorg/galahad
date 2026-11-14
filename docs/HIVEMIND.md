@@ -154,6 +154,23 @@ bun galahad squires provision ada --remake --network online
 
 In Squires it is **Workspace → Make VM again**. It is the same VM: its id, its host, its CPUs, memory and disk, and everything in `/work` (the repository, its files, its notes store, a coding tool's own sign-in). The container is new, from the image as it is built now, with a new gateway token that covers the providers that have a key today. What the VM can reach may be chosen again with it, which nothing else can change. Whatever is running in the VM ends, so it is refused while the squire is working, and a task that starts meanwhile waits for it. The host sets the old container aside and removes it only once the new one runs; one that will not start is cleared away and the old one is put back as it was. It is yours alone, like a removal: no squire, agent or node acting by itself is let through, and the ledger records it as approved by the device that asked. It needs `fleet:admin`.
 
+**A desktop, for work that needs a screen.** A squire's VM can have a desktop: a display (1280 by 800), a window manager and a browser (Chromium), with one command in the VM that operates them. Choose it when the VM is made, or have an existing VM made again with one:
+
+```sh
+bun galahad squires provision ada --desktop
+bun galahad squires provision ada --remake --desktop      # --no-desktop takes it away again
+```
+
+Inside the VM, `desktop help` lists what there is: `desktop open <address>`, `desktop text` (the page in front as text: its title, its address, what it says), `desktop shot` (a screenshot, as a file), `desktop click <x> <y>`, `desktop move`, `desktop scroll`, `desktop type <text>` and `desktop key <key>…`. Each brings the desktop up first if it isn't. A squire whose VM has one is told so as each task starts, and uses these as it uses any command; you can use them from **Workspace → Open console**.
+
+What to know about it:
+
+- **It is the workshop image with a desktop added** (`galahad/desktop:1`, about 1.1 GB more), built on a sandbox host by a deploy or `galahad sandbox build --desktop`. A VM with a desktop is never made with less than 4 GB.
+- **The browser runs without its own inner sandbox.** A squire's VM allows no new privileges and no capabilities, which Chromium's sandbox needs; the microVM is the boundary instead. So treat a page the squire opens as able to do whatever the squire can do in that VM, as you already treat any code it runs there.
+- **Nothing of it is reachable from outside the VM.** The display takes no network connections, and the browser's debugging port (through which `desktop text` reads a page) listens on the VM's loopback only.
+- **The browser's profile is on the workspace** (`/work/.config/chromium`), so what is signed in there stays with the squire's disk across tasks and across making the VM again, and, in an online VM, can leave it like anything else kept there.
+- **Not there yet:** a squire's own loop reads pages as text and acts by address, keys and coordinates; a model that looks at screenshots and decides where to click (Computer Use in the full sense) is the next step, as is watching the desktop from the app and taking it over.
+
 For repository work, set an owner-selected HTTPS GitHub URL on the squire and configure the corresponding GitHub connector first:
 
 ```sh

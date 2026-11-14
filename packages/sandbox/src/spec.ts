@@ -64,11 +64,15 @@ export const LAB_IMAGE = "galahad/lab:1";
 /** Gazebo: robotics simulation, headless (sandbox/gazebo/Dockerfile). */
 export const GAZEBO_IMAGE = "galahad/gazebo:1";
 
+/** The squires' desktop: the workshop with a display, a window manager and a browser (sandbox/desktop/Dockerfile). Built after the workshop image, which it is made from. */
+export const DESKTOP_IMAGE = "galahad/desktop:1";
+
 /** Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. */
 export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: string }>> = {
   [DEFAULT_IMAGE]: { context: ".", keeper: KEEPER },
   [LAB_IMAGE]: { context: "lab", keeper: "galahad-lab-image" },
   [GAZEBO_IMAGE]: { context: "gazebo", keeper: "galahad-gazebo-image" },
+  [DESKTOP_IMAGE]: { context: "desktop", keeper: "galahad-desktop-image" },
 };
 
 export const containerName = (id: string) => `galahad-sbx-${id}`;

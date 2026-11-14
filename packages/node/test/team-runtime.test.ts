@@ -622,3 +622,13 @@ test("a squire that finishes its work and never says so is still judged: out of 
   // The last model asked was the reviewer, and it was told nobody had claimed the work done.
   expect(JSON.stringify(f.bodies.at(-1))).toContain("He ran out of commands before he said he was done: this is the work as it stands.");
 });
+
+test("a squire whose VM has a desktop is told so, and how to operate it; one without is told nothing of one", async () => {
+  const told = async (has: boolean) => {
+    const f = fixture([say("1. Make the change."), say("DONE\nBuilt."), say("PASS\nFine.")], { exec: async (_m, command) => (command === "command -v desktop" ? (has ? result({ stdout: "/usr/local/bin/desktop\n" }) : result({ exitCode: 1, stdout: "" })) : result()) });
+    await f.runtime.executeTask(member, task, f.context);
+    return String(f.bodies[1].messages.find((m: any) => m.role === "user").content);
+  };
+  expect(await told(true)).toContain("This VM has a desktop: a display (1280 by 800) and a browser, which you operate with the `desktop` command (open an address, read the page as text, take a screenshot, click, type, press keys). `desktop help` lists it.");
+  expect(await told(false)).not.toContain("desktop");
+});

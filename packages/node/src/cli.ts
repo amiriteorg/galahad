@@ -47,11 +47,14 @@ Squires (his persistent sub-Galahads, their rooms and verified work in VMs; "tea
   squires task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
   squires trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
                                     the gates, the review; --follow keeps reading until the task has ended
-  squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway]
-                                    its VM: online (the default) it can reach the internet, gateway only the models
-  squires provision <id> --remake [--network online|gateway]
+  squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway] [--desktop]
+                                    its VM: online (the default) it can reach the internet, gateway only the models;
+                                    --desktop: with a display, a window manager and a browser, for work that needs a
+                                    screen (at least 4 GB; in the VM, desktop help lists what operates it)
+  squires provision <id> --remake [--network online|gateway] [--desktop|--no-desktop]
                                     its VM made again from the image as it is now (a fix to the image, a newer tool):
-                                    the same VM and everything in /work, a new container; not while it is working
+                                    the same VM and everything in /work, a new container; not while it is working.
+                                    --desktop gives a VM that has none a desktop; --no-desktop takes it away
   squires memory <id> [text]         read or replace that squire's notes
   squires engram [on|off]            the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a squire's harness can search and keep notes in its own VM, where the
@@ -171,11 +174,12 @@ Work
                                   open a pull request from a quest's kept changes (the node commits them on
                                   a new branch with the connector's key; the sandbox never holds it)
   place [--docker] [--vm] [--gpu] [--mem 16] [--tools git,opencode] [--long] [--untrusted] [--interactive]
-  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab|--gazebo]
+  sandbox run [--on ultra] [--net gateway|online|isolated] [--cpus 4] [--mem 8] [--disk 20] [--ttl 120] [--vm|--container] [--lab|--gazebo|--desktop]
               [--providers deepseek,anthropic] [--image img] [--timeout 600] [--keep] -- <command…>
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
-  sandbox build [--on ultra] [--lab|--gazebo]   build the sandbox image (or the Lab, or Gazebo) on a host
+  sandbox build [--on ultra] [--lab|--gazebo|--desktop]
+                                  build the sandbox image (or the Lab, Gazebo, or the squires' desktop) on a host
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
@@ -394,6 +398,8 @@ async function main(): Promise<void> {
       container: { type: "boolean" },
       lab: { type: "boolean" },
       gazebo: { type: "boolean" },
+      desktop: { type: "boolean" },
+      "no-desktop": { type: "boolean" },
       out: { type: "string" },
       workshop: { type: "boolean" },
       gpu: { type: "boolean" },
@@ -1217,9 +1223,9 @@ Evidence: galahad artifact ${i!.artifact}`));
         process.stderr.write(dim(`[exit ${r.exitCode} · ${r.durationMs} ms${r.truncated ? " · output truncated" : ""}]\n`));
       };
       if (sub === "build") {
-        console.log(dim(flags.lab ? "Building the Lab image (the first build takes 10 minutes or more)…" : flags.gazebo ? "Building the Gazebo image (a few minutes the first time)…" : "Building the sandbox image (first build takes a few minutes)…"));
-        await admin.call("buildSandboxImage", { ...(on ? { on } : {}), ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : {}) });
-        console.log(flags.lab ? "Lab image ready." : flags.gazebo ? "Gazebo image ready." : "Sandbox image ready.");
+        console.log(dim(flags.lab ? "Building the Lab image (the first build takes 10 minutes or more)…" : flags.gazebo ? "Building the Gazebo image (a few minutes the first time)…" : flags.desktop ? "Building the desktop image (a minute or two the first time; the sandbox image must be built first)…" : "Building the sandbox image (first build takes a few minutes)…"));
+        await admin.call("buildSandboxImage", { ...(on ? { on } : {}), ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : flags.desktop ? { desktop: true } : {}) });
+        console.log(flags.lab ? "Lab image ready." : flags.gazebo ? "Gazebo image ready." : flags.desktop ? "Desktop image ready." : "Sandbox image ready.");
         return;
       }
       const shape = (s: SandboxView) => (s.isolation === "vm" ? "microVM" : "container");
@@ -1269,7 +1275,7 @@ Evidence: galahad artifact ${i!.artifact}`));
           ...(str("mem") ? { memoryGb: Number(str("mem")) } : {}),
           ...(str("disk") ? { diskGb: Number(str("disk")) } : {}),
           ...(isolation() ? { isolation: isolation() } : {}),
-          ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : {}),
+          ...(flags.lab ? { lab: true } : flags.gazebo ? { gazebo: true } : flags.desktop ? { desktop: true } : {}),
           ...(str("ttl") ? { ttlMinutes: Number(str("ttl")) } : {}),
           ...(str("providers") ? { providers: str("providers")!.split(",").filter(Boolean) } : {}),
           ...(str("image") ? { image: str("image") } : {}),

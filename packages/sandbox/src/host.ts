@@ -7,6 +7,7 @@ import {
   DEFAULT_IMAGE,
   execArgs,
   gatewayEnv,
+  DESKTOP_IMAGE,
   GAZEBO_IMAGE,
   LAB_IMAGE,
   LABEL,
@@ -102,6 +103,8 @@ export interface CreateInput {
   lab?: boolean;
   /** The Gazebo image (robotics simulation) instead of the workshop. */
   gazebo?: boolean;
+  /** The desktop image (a display, a window manager and a browser) instead of the workshop. */
+  desktop?: boolean;
   /** Web search through the gateway (the node's own SearXNG): `websearch` in the images. */
   search?: boolean;
 }
@@ -271,11 +274,11 @@ export class SandboxHost {
     if (isolation === "vm" && !this.opts.microVMs) {
       throw new SandboxError("this host can't run microVMs: it needs KVM and Kata Containers, which a deploy with sudo installs", 424);
     }
-    const image = input.lab ? LAB_IMAGE : input.gazebo ? GAZEBO_IMAGE : (input.image ?? DEFAULT_IMAGE);
+    const image = input.lab ? LAB_IMAGE : input.gazebo ? GAZEBO_IMAGE : input.desktop ? DESKTOP_IMAGE : (input.image ?? DEFAULT_IMAGE);
     const own = OWN_IMAGES[image];
     if (own && !(await this.hasImage(image))) {
       // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
-      if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : input.gazebo ? " --gazebo" : ""}\``, 424);
+      if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : input.gazebo ? " --gazebo" : input.desktop ? " --desktop" : ""}\``, 424);
       const built = await this.build(join(this.opts.imageContext, own.context), "rebuilt: the image was missing when a sandbox was needed", image);
       if (!built.ok) throw new SandboxError(`${image} was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
     }
@@ -483,7 +486,7 @@ export class SandboxHost {
    * is put back as it was. Its network may change with it (a microVM's can't be changed any other way), and its
    * gateway token covers `providers`, as for a VM made today. Everything outside `/work` is the image's again.
    */
-  async remakeTeam(id: string, quest: string, opts: { providers: string[]; network?: "online" | "gateway"; approvedBy: string }): Promise<SandboxView> {
+  async remakeTeam(id: string, quest: string, opts: { providers: string[]; network?: "online" | "gateway"; desktop?: boolean; approvedBy: string }): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -493,7 +496,9 @@ export class SandboxHost {
     const aside = `${name}-replaced`;
     const network = opts.network ?? (sandbox.network === "isolated" ? "gateway" : sandbox.network);
     const providers = sandboxScopes({ network, providers: opts.providers, search: sandbox.providers.includes(SEARCH_SCOPE) });
-    if (!(await this.hasImage(sandbox.image))) throw new SandboxError(`${sandbox.image} is not built on this node: run \`galahad sandbox build\` first`, 424);
+    // With a desktop from now on, or without one, when asked; else the image it has (by its name: as it is built now).
+    const image = opts.desktop === true ? DESKTOP_IMAGE : opts.desktop === false ? DEFAULT_IMAGE : sandbox.image;
+    if (!(await this.hasImage(image))) throw new SandboxError(`${image} is not built on this node: run \`galahad sandbox build${image === DESKTOP_IMAGE ? " --desktop" : ""}\` first`, 424);
     const ws = this.opts.workspaces;
     if (sandbox.disk && (!ws?.mount || !ws.retain)) throw new SandboxError("update the workspace helper before making this teammate's VM again", 424);
     // A remake that was cut short after the old container was set aside left it there: it gets its name back first.
@@ -548,7 +553,7 @@ export class SandboxHost {
         id,
         quest,
         node: this.opts.node,
-        image: sandbox.image,
+        image,
         network,
         cpus: sandbox.cpus,
         memoryGb: sandbox.memoryGb,
@@ -584,7 +589,7 @@ export class SandboxHost {
       verdict: "approved",
       reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
       quest,
-      detail: `made again from ${sandbox.image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
+      detail: `made again from ${image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
     });
     return (await this.get(id))!;
   }

@@ -278,6 +278,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         ctx.emit(`Notes · ${notes}`);
       }
       // (With the store, every command is told where it is and which project: the engineer's own loop has only a shell.)
+      // A desktop in this VM (the desktop image: a display, a window manager, a browser)? Asked of the VM as the task
+      // starts, so the squire is told what it has and how to operate it, and one without is told nothing of one.
+      const desktop = (await deps.exec(teammate, "command -v desktop", 30, ctx.signal).catch(() => null))?.stdout.trim().endsWith("/desktop") === true;
       // A temporary directory of the task's own, on the workspace: a sandbox's /tmp is mounted noexec, so a test that
       // writes a script there and runs it fails with exit 126 (and with it a gate that passes everywhere else).
       const temp = `/work/.tmp/${task.id}`;
@@ -302,7 +305,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are squire ${teammate.name} (${teammate.id}) within Galahad's hivemind. The whole system is Galahad: one identity and shared knowledge. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your squire identity.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes within Galahad's hivemind", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${desktop ? " This VM has a desktop: a display (1280 by 800) and a browser, which you operate with the `desktop` command (open an address, read the page as text, take a screenshot, click, type, press keys). `desktop help` lists it." : ""}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         ask: (role, messages) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage)),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),

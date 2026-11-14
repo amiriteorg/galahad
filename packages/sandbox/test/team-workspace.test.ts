@@ -249,6 +249,17 @@ describe("persistent teammate workspaces", () => {
     expect(run).toContain(`${LABEL}.network=online`);
   });
 
+  test("made again, a VM can be given a desktop or have it taken away; unasked it keeps the image it has", async () => {
+    const image = async (desktop?: boolean) => {
+      const f = teammateHost({ status: "running" });
+      await f.host.remakeTeam(ID, QUEST, { ...REMADE, ...(desktop === undefined ? {} : { desktop }) });
+      return { run: f.commands.find((args) => args[0] === "run")!.at(-3), ledger: f.ledger.at(-1)!.detail };
+    };
+    expect(await image()).toMatchObject({ run: "galahad/sandbox:1" });
+    expect(await image(true)).toEqual({ run: "galahad/desktop:1", ledger: expect.stringContaining("made again from galahad/desktop:1") });
+    expect((await image(false)).run).toBe("galahad/sandbox:1");
+  });
+
   test("a remake that was cut short is taken up again: the container that was set aside gets its name back first", async () => {
     const f = teammateHost({ status: "exited", setAside: true });
     const name = containerName(ID);

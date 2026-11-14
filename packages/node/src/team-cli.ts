@@ -114,13 +114,13 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     // Its VM made again from the image as it is now: the same VM and /work, a new container. Its own route.
     const kept = ["on", "cpus", "mem", "disk"].filter((flag) => flags[flag] !== undefined);
     if (kept.length) throw new Error(`a VM is made again where and as large as it is: leave out --${kept.join(", --")} (only --network can be chosen again)`);
-    const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("remakeTeammate", { id: args[0], ...(string("network") ? { network: string("network") } : {}) });
-    print(`VM ${result.workspace.id} on ${result.workspace.node} made again from its image as it is now · /work kept${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
+    const result = await api.call<{ workspace: { id: string; node: string; network?: string; image?: string } }>("remakeTeammate", { id: args[0], ...(string("network") ? { network: string("network") } : {}), ...(flags.desktop ? { desktop: true } : flags["no-desktop"] ? { desktop: false } : {}) });
+    print(`VM ${result.workspace.id} on ${result.workspace.node} made again from its image as it is now · /work kept${result.workspace.image?.includes("desktop") ? " · with a desktop" : ""}${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
   }
   if (sub === "provision") {
     // (Online unless you say `--network gateway`: what its VM can reach is set when it is made.)
-    const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("provisionTeammate", { id: args[0], ...(string("on") ? { on: string("on") } : {}), ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}), ...(string("network") ? { network: string("network") } : {}) });
-    print(`VM ${result.workspace.id} on ${result.workspace.node}${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
+    const result = await api.call<{ workspace: { id: string; node: string; network?: string } }>("provisionTeammate", { id: args[0], ...(string("on") ? { on: string("on") } : {}), ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}), ...(string("network") ? { network: string("network") } : {}), ...(flags.desktop ? { desktop: true } : {}) });
+    print(`VM ${result.workspace.id} on ${result.workspace.node}${flags.desktop ? " · with a desktop" : ""}${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
   }
   if (sub === "memory") {
     if (args.length > 1) await api.call("teamMemory", { id: args[0], text: args.slice(1).join(" ") });

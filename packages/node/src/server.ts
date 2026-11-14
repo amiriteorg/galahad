@@ -103,7 +103,7 @@ import {
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
-import { type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
+import { DESKTOP_IMAGE, type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
 import type { GovernedSandboxHost } from "./compute/governed-host.ts";
 import type { Governor } from "./compute/governor.ts";
 import type { ComputeService } from "./compute/service.ts";
@@ -1324,7 +1324,7 @@ export function createApp(ctx: AppContext) {
     if (sandbox.quest !== armQuest(teammateLabel(member.id)) || sandbox.ephemeral || sandbox.isolation !== "vm") throw new HttpError(403, "the workspace is not this squire's persistent VM");
     return sandbox;
   }
-  async function provisionTeam(id: string, input: { on?: string; cpus?: number; memoryGb?: number; diskGb?: number; network?: "online" | "gateway" }, signal: AbortSignal): Promise<SandboxView> {
+  async function provisionTeam(id: string, input: { on?: string; cpus?: number; memoryGb?: number; diskGb?: number; network?: "online" | "gateway"; desktop?: boolean }, signal: AbortSignal): Promise<SandboxView> {
     const pending = vmProvisioning.get(id);
     if (pending) return pending;
     const work = (async () => {
@@ -1346,7 +1346,9 @@ export function createApp(ctx: AppContext) {
       if (!sandbox) {
         const providers = providerViews(ctx.store, ctx.vault).filter((p) => p.hasKey).map((p) => p.id).slice(0, 16);
         // Online unless asked otherwise (the owner's word: squires can use the internet); the gateway is there either way.
-        const made = await api.call<{ sandbox: SandboxView }>("createSandbox", { on: best.device, persistent: true, isolation: "vm", network: input.network ?? "online", quest: armQuest(teammateLabel(id)), cpus: input.cpus ?? 1, memoryGb: input.memoryGb ?? 2, diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers });
+        const made = await api.call<{ sandbox: SandboxView }>("createSandbox", { on: best.device, persistent: true, isolation: "vm", network: input.network ?? "online", quest: armQuest(teammateLabel(id)), cpus: input.cpus ?? 1,
+          // (A browser needs room: a desktop is never made with less than four.)
+          memoryGb: input.desktop ? Math.max(4, input.memoryGb ?? 4) : (input.memoryGb ?? 2), diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers, ...(input.desktop ? { desktop: true } : {}) });
         sandbox = made.sandbox;
       }
       teamOf().setWorkspace(id, { node: best.device, id: sandbox.id });
@@ -1382,7 +1384,7 @@ export function createApp(ctx: AppContext) {
   /* A squire's VM made again from its image as it is now, on the owner's word (`p`: the device that asked, which the
    * VM's host records). Not while the squire is working: whatever runs in a VM ends with its container. A task that
    * starts meanwhile waits for it, as it would for a VM being made. Its token covers the providers with a key now. */
-  async function remakeTeamVm(member: Teammate, network: "online" | "gateway" | undefined, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+  async function remakeTeamVm(member: Teammate, network: "online" | "gateway" | undefined, desktop: boolean | undefined, p: Principal, signal: AbortSignal): Promise<SandboxView> {
     const existing = await teamWorkspace(member, signal);
     if (!existing) throw new HttpError(424, `this squire has no VM yet: galahad squires provision ${member.id} makes one`);
     const state = teamOf().snapshot();
@@ -1392,7 +1394,7 @@ export function createApp(ctx: AppContext) {
     if (vmProvisioning.has(member.id)) throw new HttpError(409, "this squire's VM is being made; have it made again when that has finished");
     const work = (async () => {
       const providers = providerViews(ctx.store, ctx.vault).filter((v) => v.hasKey).map((v) => v.id).slice(0, 16);
-      const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("remakeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), providers, ...(network ? { network } : {}) });
+      const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("remakeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), providers, ...(network ? { network } : {}), ...(desktop !== undefined ? { desktop } : {}) });
       leased.set(member.id, sandbox.providers);
       return sandbox;
     })();
@@ -1528,7 +1530,7 @@ export function createApp(ctx: AppContext) {
     remakeTeammate: (input, p, req) => {
       ownerOnly(p);
       const member = teamMember(input.id);
-      return longRunning(remakeTeamVm(member, input.network, p, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace })));
+      return longRunning(remakeTeamVm(member, input.network, input.desktop, p, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace })));
     },
     remakeTeamWorkspace: (input, p) => {
       // Yours alone, like a removal: an arm (a squire among them) is never let through, whatever its scopes.
@@ -1536,7 +1538,7 @@ export function createApp(ctx: AppContext) {
       if (!approver) throw new HttpError(403, "a squire's VM is made again only on your word");
       const { on, ...asked } = input;
       return longRunning(onNode(p, on, routes.remakeTeamWorkspace.path, { ...asked, onBehalfOf: approver }, async () => ({
-        sandbox: await ctx.sandbox!.remakeTeam(input.id, input.quest, { providers: input.providers, ...(input.network ? { network: input.network } : {}), approvedBy: approver }),
+        sandbox: await ctx.sandbox!.remakeTeam(input.id, input.quest, { providers: input.providers, ...(input.network ? { network: input.network } : {}), ...(input.desktop !== undefined ? { desktop: input.desktop } : {}), approvedBy: approver }),
       }), { sandbox: input.id }));
     },
     teamWorkspace: async (input, p, req) => {
@@ -2423,12 +2425,14 @@ export function createApp(ctx: AppContext) {
     revokeArm: (input) => ({ revoked: ctx.arms.revoke(input.label) }),
     buildSandboxImage: (input, p) =>
       longRunning(
-        onNode(p, input.on, routes.buildSandboxImage.path, input.lab ? { lab: true } : input.gazebo ? { gazebo: true } : {}, async () => {
+        onNode(p, input.on, routes.buildSandboxImage.path, input.lab ? { lab: true } : input.gazebo ? { gazebo: true } : input.desktop ? { desktop: true } : {}, async () => {
           const result = input.lab
             ? await ctx.sandbox!.build(`${ctx.sandboxContext!}/lab`, undefined, "galahad/lab:1")
             : input.gazebo
               ? await ctx.sandbox!.build(`${ctx.sandboxContext!}/gazebo`, undefined, "galahad/gazebo:1")
-              : await ctx.sandbox!.build(ctx.sandboxContext!);
+              : input.desktop
+                ? await ctx.sandbox!.build(`${ctx.sandboxContext!}/desktop`, undefined, DESKTOP_IMAGE)
+                : await ctx.sandbox!.build(ctx.sandboxContext!);
           if (!result.ok) throw new HttpError(500, `image build failed: ${result.output.slice(-400)}`);
           return { ok: true };
         }),
