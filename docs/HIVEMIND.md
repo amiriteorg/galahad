@@ -289,7 +289,7 @@ Each removal is a line in the ledger that says what became of its VM: destroyed 
 
 The shared mind still uses the replicated signed event log. The squires' profiles, room history, jobs, allowances, working notes and VM bindings live in **`team.db` in the controller's Galahad home** (`~/.galahad/team.db` by default). That database is not replicated through the mind and is not reconstructed by replaying it. Keep using the same controller; another node has its own Squires state. A remote VM host does not become a second team controller for those squires.
 
-This implementation provides persistent squires, squires Galahad makes for himself, bounded coordination, task dependencies, parallel progress, VM workspaces and verified task results. Automatic cross-VM file integration, live steering of Squires tasks, erasing a removed squire's history and a complete pull-request/CI-repair loop are not implemented. Browser checks with a mock API, deterministic runtime tests and a credential-free Hermes handshake do not establish a model-backed task running successfully in a live VM. That deployment validation remains separate.
+This implementation provides persistent squires, squires Galahad makes for himself, bounded coordination, task dependencies, parallel progress, VM workspaces and verified task results. Automatic cross-VM file integration, live steering of Squires tasks, erasing a removed squire's history and a complete pull-request/CI-repair loop are not implemented. A squire's VM is made from the image as it was that day and is never made again: a fix to the image, or a newer tool in it, reaches only VMs made afterwards, and the only way to give an existing squire a new VM is to remove the squire, which retires its handle. Model-backed tasks have run in a live VM with the native runner ([the first tasks in a real VM](#verification--14-november-2026-the-first-tasks-in-a-real-vm)); OpenCode, Hermes, Claude Code and Codex have not.
 
 ## Rollback without losing work
 
@@ -382,3 +382,22 @@ Engram for the squires, from a design study of the same day. No Plane item: Plan
 - The image was not built here. Its fetch, checksum and unpack steps were replayed on the real release asset.
 
 Not verified: any harness using the store in a real VM, or calling one of its tools anywhere; a resumed session of any harness with the store; Claude Code without `--bare` or on its own sign-in; the image's OpenCode 2.2.6; the image built with Engram in it, and an existing squire's VM moved to it; a store on a plain Docker volume; the Workspace panel's Notes store row in a browser; and every number about whether notes help. No push, pull request or deployment was made.
+
+## Verification — 14 November 2026, the first tasks in a real VM
+
+The first squire on a real node (`gareth` on `ultra`, native runner, a Kata microVM, models on the OpenCode Go plan: planner `glm-5.3`, engineer `kimi-k3.1-pro`, reviewer `qwen3.8-max`). Five small tasks, each with a gate. No Plane item: Plane is not reachable from the session that did this.
+
+| Task | Ended | Time | Commands | Tokens | Money |
+|---|---|---|---|---|---|
+| Roman numerals, gate `bun test` | gave up | 6m15s | 11, sent back twice | 128k | $0.20 |
+| The same, gate `/opt/bun/bin/bun test` | done, verified | 2m42s | 5 | 46.6k | $0.13 |
+| Slugs, notes store on | done, verified | 5m39s | 7 | 56.6k | $0.15 |
+| Clamp a page | stopped | 1m44s | 0 (reported as 16) | 68.6k | $0.09 |
+| The same again, watched | done, verified | 1m43s | 4 | 30.5k | $0.08 |
+
+- **What worked as built.** A VM made in two seconds; a task planned, done, gated and passed by the independent reviewer; the task's record on its line in `galahad squires` (time, commands, send-backs, tokens, money at the stated prices). The second task's gate was run again by hand in its directory: 6 tests, 4,039 assertions, exit 0. With the notes store on, the squire kept one note under its own project (`gareth`), the task said "Notes: Engram 3.7.2, project gareth", and the next task asked the store before it looked around (its words found nothing: one note, other words).
+- **Found: the image's tools were not on a squire's PATH.** A squire's commands run in login shells, and Debian's `/etc/profile` sets `PATH` afresh, so `bun`, `opencode` and `engram` were missing there though the image has them (the notes-store work had read this from Debian and not seen it). The first task's tests passed when the squire called `/opt/bun/bin/bun`; its gate, `bun test`, exited 127; it gave up and said why, and changed nothing outside its workspace to get round it. Fixed in the image (`sandbox/tools-path.sh`, read from `/etc/profile.d`; `0038abe`), with `~/.local/bin` added last (`b957ac2`). Seen after the deploy in a new microVM: a login shell finds all three.
+- **Found: sixteen replies with no command.** In the fourth task the engineer sent sixteen replies in a row that had no command the loop could run. Nothing ran, sixteen calls were paid for, the task said "Stopped after 16 commands" and its progress the bare word "format". What the replies were is not known: nothing of them was kept. Fixed in `8cb9555`: such a reply is kept with its event, shown in the task's progress, never counted as a command, and three in a row end the task. The same task, given again, was done in four commands.
+- **Found, not fixed.** An existing squire's VM cannot be moved to a newer image (above), so `gareth`'s VM still has the old PATH and its gates must name `bun` by its path. A task that fails leaves only its last progress line and its result: the commands it ran are in the ledger, but each line there begins with the wrapper that reads the gateway's lease, so they all look alike. A gate that cannot run in the VM is found out only after the work is done: the first task spent $0.20 on one.
+
+Not verified: OpenCode, Hermes, Claude Code or Codex in a real squire's VM (the first needs a VM made from the new image); a squire with a repository; a task that depends on another; two squires at once; the page in a browser against these real tasks; whether notes make a later task cheaper or better (one note, one search that missed it).
