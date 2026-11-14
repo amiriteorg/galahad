@@ -10,7 +10,7 @@ import { icon } from "../ui/icons.ts";
 import { workerAvatar } from "../ui/avatar.ts";
 import type { Signal } from "../ui/signal.ts";
 import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat } from "./chat.ts";
-import { editKnight, editRoom, openDirect } from "./team-forms.ts";
+import { editKnight, editRoom, giveToRoundtable, openDirect } from "./team-forms.ts";
 
 /*
  * The roster: the app's home, the Roundtable. Galahad first, as your primary knight and first among
@@ -49,6 +49,11 @@ export function rosterNav(ctx: Ctx): Roster {
     );
 
   const label = (text: string, ...actions: Child[]): HTMLElement => h("div", { class: "roster-label" }, h("span", { class: "grow" }, text), ...actions);
+  const give = (): HTMLElement => {
+    const el = button("Give a task", { variant: "ghost", size: "sm", icon: "layers", title: "Give a task to the knight best suited to it, or to one by name", onClick: () => giveToRoundtable(ctx) });
+    el.dataset.give = "";
+    return el;
+  };
 
   function knightOrRoom(item: RosterRow): HTMLElement {
     const knight = item.kind === "knight";
@@ -81,7 +86,8 @@ export function rosterNav(ctx: Ctx): Roster {
     keepPlace(el, () =>
       replace(
         el,
-        label("Roundtable", canEdit ? button("New knight", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => void editKnight(ctx) }) : null),
+        // Giving a task to the Roundtable (the knight best suited takes it), or to one knight by name: one sheet.
+        label("Roundtable", canEdit && knights.length ? give() : null, canEdit ? button("New knight", { variant: "ghost", size: "sm", iconOnly: true, icon: "plus", onClick: () => void editKnight(ctx) }) : null),
         row({
           key: "galahad",
           href: "#/chat",

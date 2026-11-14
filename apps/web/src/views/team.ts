@@ -19,7 +19,7 @@ import { toast } from "../ui/toast.ts";
 import { noteSaid } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, giveTask, giveToRoundtable, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
 
 /*
  * A knight, or a room, as one timeline: what was said and the tasks given, in the order they happened, each task a
@@ -363,8 +363,16 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         { class: "team-welcome" },
         icon("fleet", { size: 36 }),
         h("h2", {}, snapshot?.teammates.length ? "The Roundtable" : "Seat your first knight"),
-        h("p", {}, snapshot?.teammates.length ? "Your knights sit at one table, Galahad first among them. Talk with one directly, bring several into a room, and follow the work." : "Galahad is your primary knight, and the others are his fellows, none beneath him. Give a knight a name, a lasting job and a workspace of its own."),
-        canEdit ? h("div", { class: "row wrap" }, button("New knight", { variant: "primary", icon: "plus", onClick: () => void editKnight(ctx) }), snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom(ctx) }) : null) : null,
+        h("p", {}, snapshot?.teammates.length ? "Your knights sit at one table, Galahad first among them. Give a task to the Roundtable and the knight best suited to it takes it, and says why; or talk with one directly, and bring several into a room." : "Galahad is your primary knight, and the others are his fellows, none beneath him. Give a knight a name, a lasting job and a workspace of its own."),
+        canEdit
+          ? h(
+              "div",
+              { class: "row wrap" },
+              snapshot?.teammates.length ? button("Give a task", { variant: "primary", icon: "layers", onClick: () => giveToRoundtable(ctx) }) : null,
+              button("New knight", { variant: snapshot?.teammates.length ? "default" : "primary", icon: "plus", onClick: () => void editKnight(ctx) }),
+              snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom(ctx) }) : null,
+            )
+          : null,
       ),
     );
   }

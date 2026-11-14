@@ -40,6 +40,7 @@ import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
 import { trialsView } from "./views/trials.ts";
 import { teamView } from "./views/team.ts";
+import { giveToRoundtable } from "./views/team-forms.ts";
 import { landingHash, teamHash, teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
@@ -359,6 +360,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       const actions: Command[] = [];
       if (can("chat")) actions.push({ id: "new-chat", label: "New chat", group: "Actions", icon: "chat", keywords: ["clear", "conversation"], run: () => (startNewChat(), ctx.navigate("chat")) });
       if (can("vault:write")) actions.push({ id: "add-key", label: "Add a key to the vault", group: "Actions", icon: "key", keywords: ["api key", "secret", "seal"], run: () => openAddKey(ctx) });
+      if (can("fleet:admin") && can("chat")) actions.push({ id: "give", label: "Give a task to the Roundtable", group: "Actions", icon: "layers", keywords: ["task", "knights", "delegate", "best suited", "assign"], run: () => giveToRoundtable(ctx) });
       if (can("fleet:admin")) {
         actions.push({ id: "invite-client", label: "Pair a phone or browser", group: "Actions", icon: "phone", keywords: ["invite", "device", "add"], run: () => openInvite(ctx, "client") });
         actions.push({ id: "invite-node", label: "Add a machine to the fleet", group: "Actions", icon: "server", keywords: ["invite", "node", "join"], run: () => openInvite(ctx, "node") });

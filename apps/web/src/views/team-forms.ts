@@ -4,6 +4,7 @@ import type { TeamControlInput, TeamRoom, TeamTaskInput, Teammate } from "@galah
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
+import { gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
 import { HANDLE_PATTERN, HARNESS, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, field } from "../ui/controls.ts";
@@ -175,9 +176,94 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
     field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace." }),
   ], "Give task", async () => {
     if (findSecrets(goal.value).length) throw new Error("The goal contains something that looks like a secret.");
-    const checks = gates.value.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (checks.length > 16 || checks.some((line) => line.length > 1000)) throw new Error("Use at most 16 commands, each at most 1,000 characters.");
-    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks });
+    const checks = gatesFrom(gates.value);
+    if ("error" in checks) throw new Error(checks.error);
+    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates });
+  });
+}
+
+/**
+ * A task given to the Roundtable: the knight best suited to it takes it (POST /api/team/give), and the sheet then says
+ * who and why, and how each of the others stood. Beside that, the same task to one knight by name, in its own
+ * conversation with you. What it needs of the knight (a desktop, a repository) is the Roundtable's to weigh.
+ */
+export function giveToRoundtable(ctx: Ctx): void {
+  const knights = ctx.live.team.value?.teammates ?? [];
+  if (!knights.length) return void editKnight(ctx);
+  const goal = h("textarea", { class: "input", name: "goal", required: true, rows: 5, maxlength: 8000, placeholder: "What should be done, and what shows it is done?" });
+  const title = h("input", { class: "input", name: "title", maxlength: 200, placeholder: "A short name for it", autocomplete: "off" });
+  const gates = h("textarea", { class: "input mono", name: "gates", rows: 3, placeholder: "bun test\ntest -s export.csv" });
+  const who = h("select", { class: "select", name: "who" }, h("option", { value: "" }, "The Roundtable: the knight best suited to it"), ...knights.map((person) => h("option", { value: person.id }, `${person.name}${person.enabled ? "" : " (paused)"}`)));
+  const desktop = h("input", { type: "checkbox", name: "desktop" });
+  const repository = h("input", { class: "input mono", name: "repository", type: "url", maxlength: 300, placeholder: "https://github.com/owner/repository", autocomplete: "off" });
+  const needs = h("div", { class: "stack" }, h("label", { class: "row" }, desktop, h("span", {}, "It needs a desktop: a screen and a browser")), field("Only on this repository (optional)", repository, { hint: "Only a knight that works on it can take the task." }));
+  who.addEventListener("change", () => (needs.hidden = who.value !== ""));
+  const error = h("div", { role: "status" });
+  const submit = button("Give task", { variant: "primary", type: "submit" });
+  const form = h(
+    "form",
+    { class: "stack" },
+    field("Goal", goal),
+    field("Title (optional)", title),
+    field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace, and a reviewer who did not do the work checks it." }),
+    field("Who takes it", who),
+    needs,
+    error,
+  );
+  const sheet = openSheet({ title: "Give a task", description: "The Roundtable is a technocracy: the knight best suited to a task takes it, and says why.", size: "wide", body: form, footer: [button("Cancel", { onClick: () => sheet.close() }), submit] });
+  const face = (id: string, name: string, size: number) => workerAvatar({ id, name, profile: knights.find((person) => person.id === id)?.avatar, still: true, size });
+
+  function answered(answer: Given): void {
+    const given = givenTo(answer);
+    replace(
+      sheet.body,
+      h(
+        "div",
+        { class: "give-result stack loose", role: "status" },
+        h("div", { class: "give-choice" }, face(given.id, given.name, 48), h("div", { class: "grow" }, h("h3", {}, `${given.name} takes it`), h("p", { class: "muted" }, given.why))),
+        given.others.length
+          ? h("div", { class: "stack" }, h("strong", { class: "small" }, "How the others stood"), h("div", { class: "card rows" }, ...given.others.map((other) => h("div", { class: "item", "data-could": String(other.could) }, face(other.id, other.name, 28), h("div", { class: "grow" }, h("strong", { class: "small" }, other.name), h("p", { class: "meta" }, other.line))))))
+          : null,
+        h("p", { class: "small subtle" }, `It is queued in ${given.name}'s own conversation with you. Its commands and an independent reviewer decide whether the work is verified.`),
+      ),
+    );
+    replace(sheet.foot, button("Done", { onClick: () => sheet.close() }), button(`Open ${given.name}`, { variant: "primary", onClick: () => (sheet.close(), ctx.navigate("team", { room: given.room })) }));
+  }
+
+  async function give(): Promise<void> {
+    // (Enter while it is being given gives it once.)
+    if (submit.getAttribute("aria-busy") === "true") return;
+    replace(error);
+    if (!form.reportValidity()) return;
+    if (findSecrets(goal.value).length) return void replace(error, callout("danger", "The goal contains something that looks like a secret. Keep it in the vault."));
+    const checks = gatesFrom(gates.value);
+    if ("error" in checks) return void replace(error, callout("danger", checks.error));
+    await busy(submit, async () => {
+      try {
+        if (who.value) {
+          // By name: in that knight's own conversation with you.
+          const { room } = await ctx.api.post<{ room: TeamRoom }>("/api/team/direct", { id: who.value });
+          await ctx.api.post("/api/team/tasks", { room: room.id, assignee: who.value, title: title.value.trim() || goal.value.trim().slice(0, 200), goal: goal.value.trim(), gates: checks.gates });
+          sheet.close();
+          void ctx.live.refreshTeam();
+          ctx.navigate("team", { room: room.id });
+          return;
+        }
+        const answer = await ctx.api.post<Given>("/api/team/give", giveInput({ goal: goal.value, title: title.value, gates: checks.gates, desktop: desktop.checked, repository: repository.value }));
+        void ctx.live.refreshTeam();
+        answered(answer);
+      } catch (failure) {
+        if (!sheet.scope.disposed && !isAbort(failure)) replace(error, callout("danger", errorMessage(failure), { title: "It wasn't given" }));
+      }
+    });
+  }
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void give();
+  });
+  submit.addEventListener("click", (event) => {
+    event.preventDefault();
+    void give();
   });
 }
 
