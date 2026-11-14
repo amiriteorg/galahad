@@ -81,7 +81,6 @@ Nothing is needed on the server: the node makes its own key the first time a dev
 ```sh
 bun galahad notify                         # the devices he can reach, what he tells you, quiet hours, what was sent today
 bun galahad notify test                    # one test notification to every device (notify test phone: to one)
-bun galahad notify kinds journal on        # also tell you when his journal is written (off by default)
 bun galahad notify quiet 22:00-07:00       # quiet hours, Denmark's time unless --tz says otherwise (notify quiet off)
 bun galahad notify limit 12                # at most this many a day, the last two kept for alerts; one message says when it's reached
 bun galahad notify off phone               # stop notifying a device (it's turned on again from that device)
@@ -217,7 +216,7 @@ bun galahad squires
 
 A squire you no longer want is paused (`bun galahad squires pause squire ada`) or removed for good (`bun galahad squires remove ada`, or **Workspace → Remove squire** in Squires). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [HIVEMIND](HIVEMIND.md#removing-a-squire) has the details.
 
-Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([HIVEMIND](HIVEMIND.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin. SANDBOX remains his home, with his dog, builds and experiments.
+Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([HIVEMIND](HIVEMIND.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [HIVEMIND](HIVEMIND.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin.
 
 ## 7. Let tools use your keys without seeing them
 
@@ -418,7 +417,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops`, `notices` and `journal` (Galahad's own journal, to read), plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.
@@ -428,14 +427,10 @@ The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet
 
 ## 11. Loops and the heartbeat
 
-Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once, the world's weather) and records each in the ledger as his own; everything else waits for you. Each evening (21:30, Denmark's time) he also writes his **journal**: the day recollected in his own words (his work, what he built, tested and examined, the chalkboard, who worked with him, and his day in the SANDBOX with his dog), then what he learned and what he'd like to do next. It's kept as his own memory, read on the app's Journal page, and what he'd like to do becomes a suggestion in your inbox: he does none of it on his own.
+Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once) and records each in the ledger as his own; everything else waits for you.
 
 ```sh
 bun galahad self-action                    # on or off, what he may fix, what he fixed lately (self-action off to stop it)
-bun galahad journal                        # his latest entry (journal 2026-11-11 for one day's, journal --list for the days he wrote)
-bun galahad loop run reflect               # have him write today's now (the journal's loop is named reflect; once a day)
-bun galahad loop set reflect --budget 6000 # his journal's daily budget, in tokens (4000 by default)
-bun galahad dog name Bors                  # name his dog, on every device: in the SANDBOX and in his journal (dog to see it, dog unname to take it back)
 bun galahad heartbeat                      # run the checks now and print what they find
 bun galahad notices                        # what needs you (notice dismiss <key> to quiet one)
 bun galahad loop ls                        # every loop, where it runs, when next, how the last run went
@@ -568,24 +563,6 @@ bun galahad ask --project rocket "Size the nozzle for 5 kN at sea level"
 bun galahad projects
 ```
 
-## 12¾. Watch Galahad: the SANDBOX
-
-The app's **SANDBOX** page is a world where Galahad walks between the places of his keep as he works, and every experiment he runs stands on its own plot, live. In a terminal: `bun galahad world --follow`. In any sandbox with a network, `python3 -m galahad_world arm|plane|rocket` puts a demo on a plot (the Lab has MuJoCo, JSBSim and RocketPy); `bun galahad sandbox run --gazebo -- python3 -m galahad_world gazebo` runs one in Gazebo. More: [WORLD](WORLD.md).
-
-He sees his world through his own eyes, and so can you: **His eyes** on the SANDBOX (`V`) is the view from his visor, and `B` swaps it with the main view. With the SANDBOX open on one of your devices:
-
-```sh
-bun galahad look                              # what he sees, in words (where he is, what he's looking at, what's in view)
-bun galahad look --out view.jpg               # and the picture, saved
-bun galahad look --place hearth --out h.jpg   # the view standing at his hearth (or bench, council, forge, meadow)
-bun galahad world review                      # he looks at his world and suggests what to mend (inbox and ideas; he changes nothing)
-bun galahad world review --status             # its daily budget, what's used today, how the last went
-bun galahad world review --budget 40000       # tokens a day
-bun galahad loop add world-review --cron "0 15 * * 6" --tz Europe/Copenhagen --review   # every Saturday afternoon, if you like
-```
-
-In chat he has the same as a tool (`look`): ask him what he sees. The review needs a role with a model that sees (Claude, or one of Ollama's vision models).
-
 ## 13. Your bank, read-only
 
 Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:
@@ -602,11 +579,11 @@ Then authorise in the PWA (**Bank → Connect**, in the paired browser), and aga
 
 ## 14. The archive: everything kept, and searched by meaning
 
-Every node keeps an archive of what it holds: kept work and the models in it, what Galahad was taught and found (memories, investigations, trials), ideas, kept chats (never one where he read the bank), saved experiments and whiteboards (once those land), and lessons drawn from them. Nothing is ever evicted; only you delete. It works at once, searching by words; an **embedder** adds search by meaning.
+Every node keeps an archive of what it holds: kept work and the models in it, what Galahad was taught and found (memories, investigations, trials), ideas, kept chats (never one where he read the bank), and lessons drawn from them. Nothing is ever evicted; only you delete. It works at once, searching by words; an **embedder** adds search by meaning.
 
 ```sh
 galahad archive                                   # what's in it, what's embedded, the embedder, the last integrity check
-galahad archive search "cantilever deflection" --kind teaching,experiment --since 30d
+galahad archive search "cantilever deflection" --kind teaching,artifact --since 30d
 galahad archive show arc_…                        # summary, facts, lessons, files, links
 galahad archive idea "A windmill for the lab" --text "Pump water to the stream"
 ```
@@ -634,7 +611,7 @@ A **remote** embedder works too (any OpenAI-compatible provider with an embeddin
 
 ### Summaries and lessons
 
-The `swift` role writes each entry's summary, facts, tags and named things, and lessons for experiments and teachings, a few at a time in the background. Until you set a budget, **only a local swift model** does it (an Ollama chat model on the server, which `ollama/*` picks up: `sudo -u galahad-ollama OLLAMA_HOST=127.0.0.1:11434 /opt/ollama/bin/ollama pull qwen3:8b`), so nothing leaves. `galahad archive budget 200` allows 200 a day by the role's models in order (a cloud model among them gets the entries' text); `galahad archive budget 0` stops it.
+The `swift` role writes each entry's summary, facts, tags and named things, and lessons for teachings, a few at a time in the background. Until you set a budget, **only a local swift model** does it (an Ollama chat model on the server, which `ollama/*` picks up: `sudo -u galahad-ollama OLLAMA_HOST=127.0.0.1:11434 /opt/ollama/bin/ollama pull qwen3:8b`), so nothing leaves. `galahad archive budget 200` allows 200 a day by the role's models in order (a cloud model among them gets the entries' text); `galahad archive budget 0` stops it.
 
 ### Where it lives
 

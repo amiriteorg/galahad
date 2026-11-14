@@ -1,11 +1,11 @@
 # The scorecard: is he moving the right way?
 
-The [Trials](TRIALS.md) measure what costs model tokens: how good his answers are. This measures everything else: the algorithms, the models the world is made of, and whether the system grows when it's given more devices and more compute. One command, no model calls, no network, a few minutes:
+The [Trials](TRIALS.md) measure what costs model tokens: how good his answers are. This measures everything else: the algorithms, and whether the system grows when it's given more devices and more compute. One command, no model calls, no network, a few minutes:
 
 ```sh
 bun run bench                       # every suite, against its recorded baseline
 bun run bench fleet compute         # some suites
-bun run bench --full                # the long sizes too (32 nodes, eighteen simulated years, bigger logs)
+bun run bench --full                # the long sizes too (32 nodes, bigger logs)
 bun run bench --all                 # every metric, not just the headline ones and those that moved
 bun run bench --json                # the scorecards and verdicts on stdout
 bun run bench --ci                  # what CI gates on: quality only
@@ -21,10 +21,10 @@ They are the Trials' own, applied to what a program can measure by itself.
 
 - **Programs grade, never models.** Every input is drawn from a seed (`--seed`, by default 20 261 112), so any result can be reproduced exactly. The seed and the revision are in every scorecard.
 - **Two kinds of metric, kept apart.**
-  - **Quality** is exact and deterministic: whether replicas converged, a path's length against the shortest, how many triangles have no area. The same seed and code give the same value, so any change is a real change. One for the worse **fails the run**, and so does a metric the baseline had that the run no longer reports (a benchmark can't pass by measuring less).
+  - **Quality** is exact and deterministic: whether replicas converged, how many events a replica wrongly refused, whether a search found what it should. The same seed and code give the same value, so any change is a real change. One for the worse **fails the run**, and so does a metric the baseline had that the run no longer reports (a benchmark can't pass by measuring less).
   - **Speed** is a timing: the median of repeated samples, with their interquartile range. It is compared after scaling by the machine's calibration (below), a difference inside the noise band isn't called a change, a slower one beyond it is reported with its size, and it **fails only past 2× slower** (and never under `--ci`).
 - **A change wins only beyond noise** (see "Noise").
-- **A fixed budget.** The default run takes about two and a half minutes on the reference machine (an i7-11700) while it is doing other work, `--full` about twenty minutes; each suite runs alone.
+- **A fixed budget.** The default run took about two and a half minutes on the reference machine (an i7-11700) while it was doing other work, and `--full` about twenty; that was with the two suites of the 3D world, which were removed with it on 14 November 2026 and were about a quarter of the default run. It hasn't been timed there since. Each suite runs alone.
 - **Baselines are recorded on purpose.** One file a suite in `bench/baseline/`, small, one metric a line, reviewed like code. Only `--update-baseline` writes them; a default run's baseline keeps the `full.` metrics the last full run recorded.
 - **Nothing is retried.** A timing that came out slow is reported slow; a simulation that failed, failed.
 
@@ -51,11 +51,11 @@ fleet: N replicas over the real sync engine and a hostile network: do they conve
 
 A suite with no baseline, or run with another seed, isn't judged (under `--ci` that fails). `--all` lists every metric; each has a note in the JSON saying what it is.
 
-**The file.** `{ suite, commit, at, seed, machine: { name, calibration, cores }, metrics: [{ id, value, unit, kind, better, spread?, n?, note? }] }` (`packages/core/src/scorecard.ts`, checked with zod wherever one is read). `value` is as measured on that machine; `spread` is how much the number moves when nothing changed (a timing's interquartile range; a quality metric's stated resolution, when it has one); an id starting `full.` is measured only by `--full`. The SANDBOX's rendering in a real browser writes the same shape to `bench/out/world-scale.json` from its own runner (`bench/browser/world-scale.ts`), and `bun run bench` shows it when it's there.
+**The file.** `{ suite, commit, at, seed, machine: { name, calibration, cores }, metrics: [{ id, value, unit, kind, better, spread?, n?, note? }] }` (`packages/core/src/scorecard.ts`, checked with zod wherever one is read). `value` is as measured on that machine; `spread` is how much the number moves when nothing changed (a timing's interquartile range; a quality metric's stated resolution, when it has one); an id starting `full.` is measured only by `--full`.
 
 ## Noise
 
-A quality metric has none: it's a count, or exact arithmetic on seeded inputs. A few pass through the machine's own sine, cosine or square-root-of-sums, whose last bit can differ between platforms; those state a resolution (a hundredth of an arc-minute, a millionth of a ratio) and a difference within it isn't a change.
+A quality metric has none: it's a count, or exact arithmetic on seeded inputs. One that passes through the machine's own sine, cosine or square-root-of-sums, whose last bit can differ between platforms, states a resolution, and a difference within it isn't a change (no suite needs one today).
 
 Speed is another matter on a machine that is doing other work, as the reference machine often is:
 
@@ -128,53 +128,6 @@ What it says:
 
   After, placement does exactly what it would with every host's slots known this instant.
 
-### world-algorithms: the SANDBOX's algorithms, headless
-
-No GPU and no browser: the same functions the page calls.
-
-| | First baseline |
-|---|---|
-| Chunks grown twice that differ · the most two neighbours differ along an edge | 0 · 0 m |
-| Biomes out of sane bounds over 2 km square (water 15.6 %, meadow 29.0 %, heath 15.6 %, woodland 12.6 %, pinewood 10.9 %, birchwood 6.9 %, outcrop 3.7 %, marsh 3.1 %, shore 1.6 %, lawn 1.0 %) | 0 |
-| Ground under water that isn't water · water above the water | 0 · 0 |
-| Of 9,093 things placed on the home ground: big ones on what's built · on his hearth · solid ones on his trail | 0 · 0 · 0 |
-| Small ones under water · anything inside a solid of the keep | 2 · 9 |
-| Finding a way, 300 pairs on the real map: no way found where there is one · a way through something solid | 5 · 2 |
-| The planner's way against the shortest: mean · worst | 1.01× · 1.30× |
-| A year of the whole cast over 5 seeds: residents lost · kinds over bounds | 0 · 0 |
-| The sun against an independent series, 36 instants: mean · worst | 0.267′ · 0.641′ |
-| The moon, likewise | 88.47′ · 166.3′ |
-| Nine stars against the Naval Observatory, 17 instants: mean · worst | 0.394′ · 0.839′ |
-| Sunrise and sunset against the almanac, worst of four | 0.751 min |
-| A chunk's ground and big plants · its fine surface · a way planned | 1.96 ms · 2.58 ms · 0.579 ms |
-| A thousand steps of the ecosystem: low · medium · high tier | 17.82 · 29.31 · 54.10 ms |
-
-What it says:
-
-- **The land is sound**: the same seed gives the same bytes, chunks meet exactly, water is where the ground is under it, and nothing big grows on what's built, on his hearth or on his trail.
-- **The planner is near the shortest way almost always** (the reference is an exhaustive search over the whole home ground on a half-metre grid, pulled taut: `bench/world/reference.ts`), and it has two faults the reference found, held as tests that fail until they're fixed (`bench/world/world.test.ts`): on a long way its grid is coarse (cells up to 2.5 m), and a hop between two free cells with something thin between them is never swept, so 2 of 300 ways go through a solid; and it gives up on a way that needs more than a 120 m look round the blocked line, so 5 pairs across the water east of the keep (40 to 200 m apart, 400 to 500 m on foot) get none. With `--full`, 900 more pairs: 9 without a way, 4 through a solid, the mean 1.01× the shortest.
-- **A few small plants are where they shouldn't be**: 9 tufts of grass and flowers inside solids of the keep (the lab's hill, the council's dais, a post), because what's built is asked of circles smaller than those solids; 2 under a stream's pool.
-- **The ecosystem holds**: every resident through a year on every seed, nobody over what a tier may draw; its step costs 17.82, 29.31 and 54.10 microseconds on the three tiers. With `--full`, the fox and the hare alone for eighteen years over twelve seeds (the ecosystem's own test holds one seed to it): neither is ever lost or over its bounds; the cycle the test describes (a deep fall, a recovery, the two tied as predator and prey) shows in seven of twelve. In the others a lone fox can't breed and none wanders in while one is left (the test's range is topped up only below a tenth of what it holds), so the foxes stay at one for years and the hares at what the land carries. That is the test's thin immigration, not an instability: with the page's own (half) it can't happen.
-- **The sun and the stars are right to under an arc-minute; the moon is off by one to three degrees.** It's computed from the main term of each coordinate, from the Earth's centre. The reference adds the next five terms in longitude, three in latitude, and the parallax of standing in Copenhagen. No almanac table can be fetched offline, so the sun and moon are cross-checked against an independent series (the Astronomical Almanac's low-precision formulae: `bench/world/sky.ts`), the stars against the Naval Observatory's figures the world's own tests hold.
-
-### procedural-models: is every mesh sound?
-
-Each builder is run headless, for each tier it builds differently, and what it made is read as it would be drawn (`bench/models/audit.ts`, which reads a geometry through the fields every one has and needs no three.js of its own): 87 models made by code (289,460 triangles), and the four real robots as the page loads them.
-
-| | Made by code | The four real robots |
-|---|---:|---:|
-| Numbers that aren't | 0 | |
-| Triangles of no area | 112 | 9 |
-| Closed parts wound inside out (of 10,716 · 87) | 6 | 1 |
-| Triangles of closed parts whose normals point in | 0 | |
-| A face drawn twice in one place in another colour | 941 | 450 |
-| A face drawn twice in the same colour | 469 | 259 |
-| Skinned vertices (of 175,962) with weights that don't sum to one, or a bone that isn't there | 0 | |
-| A size or footing that doesn't fit what the thing is | 0 | |
-| Over its triangle budget · built twice, a different mesh | 0 · 0 | |
-
-What it says: the knight (9,548 triangles, 2.31 m, his feet on the ground), his dog, his hearth, the animals, everything that grows, the distance and the helpers are clean on every count. The keep has 15 clashing faces (2.7 m west and 2 m south of its middle, 4 to 6 m up); the two sites have the rest: the proving ground 36 triangles of no area, 3 parts inside out (medium and high tiers) and 63 to 101 clashing faces by tier (the first at 110 m west, 63 m south, 5 to 10 m up), the workshop 179 to 266 clashing faces in its fixed kit (the first at 107 m east, 16 m north, under a metre up). The real robots' simplified meshes carry 450 clashing faces (the rover 354) and 9 triangles of no area. Two faces in exactly one place don't flicker the way two that merely overlap do (their depths are identical, so the one drawn first wins everywhere), but one of the two colours is never seen and both are paid for. The budgets are stated in `bench/models/builders.ts`: docs/WORLD.md's figure where it gives one, else what the model had when the audit was written with a tenth to spare.
-
 ### mind: what the log costs as it grows
 
 A log shaped like a real one at 4,000 and 16,000 events (every event signed and chained), and each thing the daemon does with it timed. `scripts/bench-mind.ts` does the same at 5k, 40k and 400k (minutes).
@@ -206,25 +159,14 @@ Words alone find half (they can't tell a topic from its sibling), meaning alone 
 
 The chat loop and the quest runner driven by stand-in models that answer at once and tools that return at once, in the provider's own wire format: 0.145 ms a tool round, 0.351 ms an answer without tools, 0.123 ms a quest step. Next to a model's seconds it is nothing, which is the point of holding it: a change that makes the loop slow shows here, where no model's latency hides it.
 
-### world-scale: the SANDBOX drawn in a real browser, at scale
-
-`bench/browser/world-scale.ts` measures the SANDBOX where it runs. It starts a throwaway node on a temp home, opens the world in headless Edge over CDP paired as a client, loads it once per configuration (tier, backend, screen, and how much world is asked for: `?trace=1&tier=…&webgl=1&animals=N&reach=N&plants=N`) and measures each scene in windows of a few seconds. `bun bench/browser/world-scale.ts` is the quick matrix (each tier, the ends of each curve, a part's cost, his walk; about ten minutes). `--full` is every tier, backend and screen, the animals, reach and plants curves until they can't hold 15 fps, weather, his eyes, sound, helpers and experiments, and his day (62 loads, 125 scenes, an hour and a half on a shared machine). It writes `bench/out/world-scale.json` in the scorecard's shape with ids like `base.high.webgpu.desktop.wide-day.cpu.p95`, `headroom.medium.animals.frame60`, `parts.high.desktop.cost-plants.cpu` and `bundle.world.brotli`, and everything measured to `world-scale.raw.json` beside it. `bun run bench` shows it when that file is there.
-
-What it can be trusted for: counts (objects handed to the renderer, triangles, animals alive, chunks) are exact. Main-thread times are the page's own clock inside its frame function. GPU time is WebGPU timestamp queries round every pass. The frame interval is taken with the browser's frame-rate limit off, so it is the whole pipeline. A small fixed loop runs on the page's own thread round every window, and CPU-clock times are scaled to the best that loop has done on the machine; each result carries `quiet` and the unscaled p95. Scaled times are good to about a fifth, so compare runs by counts and by the paired part costs, not by frame times a tenth apart. It drives the browser it finds: the one named by `EDGE` (or `GALAHAD_BROWSER`), else Edge or Chrome where the platform keeps them, on Windows, macOS or Linux. It needs a real GPU, so it is not for CI runners without one; the GPU process's memory is counted on Windows only. Every number in these docs was taken on Windows with Edge; on macOS one quick load with Chrome has been run end to end (WebGL2, low tier), which shows the runner works there and nothing about speed. What it writes is checked against the scorecard's contract before it is written (`bench/browser/card.ts`), so `bun run bench` can always read it. No phone is measured: "phone" is a phone's size and pixel ratio in a desktop browser.
-
-What the first runs said (2026-11-12, an i7-11700 with an RTX A4000): the world was limited by its main thread handing three.js objects to draw (about three quarters of a frame on the high tier, at 11 to 16 µs an object a pass), with the GPU nearly idle; and the animals' curve broke in one function that compared every walker with every other. With the robots drawn as one object a kind and walkers parted by a grid, the high tier holds 60 fps to about 5,000 animals where it held about 750, and medium to about 2,800 where it held about 900. The same slice built in Babylon.js and PlayCanvas (`spikes/engines/`) gave no headroom at the phone tier's object count, so the world stays on three.js: the reasoning and the numbers are in [WORLD](WORLD.md).
-
 ## Adding a metric, or a suite
 
 - A metric: in its suite, `ctx.quality(id, value, unit, "higher" | "lower", { note, resolution? })` for something exact, `ctx.time(id, fn, { n, warm, batch, per, note })` for something timed (or `ctx.speed(id, samples, unit, better, [from, to], note)` for samples timed elsewhere, with when they were taken). Names are lower case with dots and dashes; one only `--full` measures starts `full.`. Say in the note what the number is. Then record the baseline on purpose and commit it with the change.
 - Quality must be the same every time: draw from `rng(subSeed(ctx.seed, "name"))`, never from the clock or `Math.random`; keep the machine's own sine and logarithm out of anything a threshold or a rank depends on, or state a resolution.
 - A suite: a file in `bench/suites/` exporting `suite` (`name`, `about`, `headline`, `run(ctx)`), and its line in `bench/run.ts`. Keep it inside its share of the budget; put the long sizes behind `ctx.full`.
-- Something measured outside (a browser, a device): write the same JSON to `bench/out/<suite>.json` and add its name to `EXTERNAL` in `bench/run.ts`.
 
 ## What isn't measured here
 
 - Model quality and the agent harness's effect on it: the [Trials](TRIALS.md).
-- The SANDBOX on a real phone: the world-scale suite emulates a phone's screen in a desktop browser, and no iPhone has been measured.
 - Real networks, real Docker, real disks under load: the simulations use the real decision code and stand-in work.
-- The sun and moon against a tabulated almanac (no network): an independent series stands in.
-- The same quality values on another platform. They're expected to be the same (the only platform-dependent arithmetic is the last bit of a sine, a cosine or a hypotenuse, inside the stated resolutions), and the baselines were recorded on Windows.
+- The same quality values on another platform. They're expected to be the same (they are counts and exact arithmetic on seeded inputs), and the baselines were recorded on Windows.

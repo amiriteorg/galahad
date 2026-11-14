@@ -2,7 +2,7 @@
 
 # galahad
 
-**The autonomous paragonic knight and engineer.** Galahad is a hivemind: the whole system is one identity, with shared knowledge across devices (laptops, servers, desktops, phones) and persistent workers with distinct jobs. SANDBOX is his home, with his dog, workshop and the work he shows you. You can keep adding compute, models, keys and tools, and he grows more capable with each one. He stays courteous, candid and bound by [his oath](docs/OATH.md).
+**A lean, highly capable agent for tasks, above all for coding and for managing large projects.** Galahad creates and orchestrates persistent squires: named workers with lasting jobs, each working in a VM of its own on machines you own. He is one mind across your devices (laptops, servers, desktops, phones): one identity and one memory, the same on each. You can keep adding compute, models, keys and tools, and he grows more capable with each one. He stays courteous, candid and bound by [his oath](docs/OATH.md).
 
 ## Status: M0 built
 
@@ -16,13 +16,13 @@ Working and tested today (`bun run check` runs the whole suite, including proper
 - **Provider-agnostic brain.** Roles (planner, engineer, reviewer, swift) with fallback chains. Anthropic via the official SDK, plus DeepSeek, Abliteration, OrcaRouter, OpenRouter, Moonshot, Z.ai, Synthetic, Verda, Ollama and llama.cpp. Coding plans (GLM Coding Plan, Kimi Code, Alibaba Cloud's, OpenCode Go) do his and his squires' coding, and nothing else.
 - **Quests.** `galahad do "<goal>"` plans, works in a fresh sandbox one shell command at a time, and is checked by an independent reviewer model before it counts as done. `--gate "<command>"` says what done means: every gate must pass before the reviewer is even asked. Works with any model on the roster.
 - **Persistent squires.** The PWA's Squires page and `galahad squires` provide named squires, DMs, shared rooms, bounded coordination and tasks with dependencies, progress and independent verification. Galahad makes and briefs more of them himself when you ask or the work needs one, within a daily allowance and marked as his; removing one is yours alone. Shell work requires each squire's retained Kata VM; native, OpenCode, Hermes, Claude Code and Codex are separate engineering harness choices (the last two can run on your own Claude or ChatGPT subscription, signed in by you inside the VM). Squires state is controller-local, and live model-backed VM execution remains deployment validation. Setup and limits: [HIVEMIND](docs/HIVEMIND.md).
-- **His squires' looks.** Each squire has a custom, emotive avatar shared by Squires and SANDBOX. Appearance is saved; expressions follow work, with reduced-motion support and a brief celebration only after verified completion.
+- **His squires' looks.** Each squire has a custom, emotive avatar on the Squires page. Appearance is saved; expressions follow work, with reduced-motion support and a brief celebration only after verified completion.
 - **Turns that outlive the page.** A chat turn runs on the node to its end whether or not anyone is watching; any device attaches and sees it from its start. While he works, a message steers him now or queues for after; a side question doesn't change his course. Anything that needs you waits for you.
 - **Skills.** When a quest passes its review he may write one short note on how that kind of work went, and is given the notes that bear on later work, fenced as data with a track record. A skill is words, never something that runs. One that could have read the outside world waits for your approval; yours are yours, and he never changes them (`galahad skills`, the app's Skills page).
 - **Placement.** Work goes to the body that suits it: long and untrusted work to the always-on sandbox server, interactive work to the laptop you're on.
 - **Compute.** He grows by having machines added to him, and never acquires any. Each node measures itself; you set a ceiling per node (by default he uses half of a machine); work that doesn't fit waits rather than oversubscribing a host; and a quest can spend more compute for a better answer (`--effort`: parallel attempts, the independent reviewer takes the best), which the Trials measure per effort level.
 - **The oath gate.** Creating is free; deleting and outward-facing actions ask first.
-- **The archive.** Every experiment, model, teaching, idea, kept chat and lesson is kept for good (content-addressed, never evicted; only you delete), indexed by words and meaning (FTS5 and local embeddings, fused), summarised, and offered back to Galahad as fenced context when it bears on his work. `galahad archive`, the app's Archive page; `deploy.sh --embedder` runs the embedder on your server.
+- **The archive.** Every model, teaching, idea, kept chat and lesson is kept for good (content-addressed, never evicted; only you delete), indexed by words and meaning (FTS5 and local embeddings, fused), summarised, and offered back to Galahad as fenced context when it bears on his work. `galahad archive`, the app's Archive page; `deploy.sh --embedder` runs the embedder on your server.
 - **PWA.** Pair a phone or browser with a non-extractable WebCrypto key and the 6-digit code. From there you can chat, search memory, add keys in a password field (never shown back), answer secret requests, approve devices and edit the roster. Every request is signed, each route has its own scope, and the CSP is strict. *It has paired and run in a real browser (headless Edge, November 2026).*
 
 ## Quick start
@@ -46,7 +46,6 @@ bun galahad ask "Good morning, Galahad."
 | [OATH](docs/OATH.md) | Character, duties, limits, autonomy classes |
 | [TRIALS](docs/TRIALS.md) | How we prove quality holds and intelligence grows |
 | [BENCHMARKS](docs/BENCHMARKS.md) | The scorecard (`bun run bench`): what's measured without model tokens, its baselines, and what they say |
-| [WORLD](docs/WORLD.md) | The SANDBOX: Galahad's world, and experiments shown live in it |
 | [BANK](docs/BANK.md) | Your bank accounts, read-only, for the agents you choose: setup, threat model, checklist |
 | [DOCTRINE](docs/DOCTRINE.md) | The ideas Galahad is built on, and whose they are |
 | [AGENTS.md](AGENTS.md) | Rules for agents (and Galahad) working on this repo |

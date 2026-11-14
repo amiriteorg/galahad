@@ -354,7 +354,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   const host = f.sandbox.host;
   if (!host) {
     const hosts = f.sandbox.others;
-    if (!hosts.length) add("sandbox", "sandbox.host", "needs-you", "no node in the fleet hosts sandboxes, so quests and experiments can't run", "Enrol a machine with Docker (galahad join there), or install Docker on this one and restart the node.");
+    if (!hosts.length) add("sandbox", "sandbox.host", "needs-you", "no node in the fleet hosts sandboxes, so quests and trials can't run", "Enrol a machine with Docker (galahad join there), or install Docker on this one and restart the node.");
     else add("sandbox", "sandbox.host", "ok", `${self} hosts no sandboxes (no Docker here); they run on ${hosts.map((h) => h.name).join(", ")}`);
   } else {
     if (!host.docker) add("sandbox", "sandbox.docker", "broken", "Docker isn't answering on this machine", "systemctl status docker, and check that the node's user is in the docker group.");

@@ -2,7 +2,7 @@
 
 The whole system is Galahad: one identity and shared knowledge, expressed through his devices, models and persistent squires. A squire's name identifies its job and makes its contributions attributable. Its instructions, current work and working notes give that part of Galahad continuity.
 
-**SANDBOX is his home**, with his dog, workshop, experiments and the work he shows you. **Squires** is the PWA's view of his squires, direct conversations, shared rooms and engineering tasks. **Memory** holds shared knowledge. Squires links to both SANDBOX and Memory; the main Galahad conversation remains available too. See [WORLD](WORLD.md) for his home.
+**Squires** is the PWA's view of his squires, direct conversations, shared rooms and engineering tasks. **Memory** holds shared knowledge. Squires links to Memory; the main Galahad conversation remains available too.
 
 ## Start with two squires
 
@@ -170,11 +170,9 @@ bun galahad squires avatar ada --color '#a8c9db' --accent '#33558a'
 bun galahad squires avatar ada --reset
 ```
 
-In the SANDBOX the same profile is drawn in three dimensions. Each form is one smooth mesh (an egg, a squarer helm, a hood with a peak) with the face opening and the tabard set into the helm's own surface, so nothing stands off it as a plate; the eyes and mouth sit on that curve. A crown is a small band with three points, a plume has a curl, and ears stand on the helm wherever its shape puts them. Pleased eyes close into arches and sleeping ones droop, as in Squires. The world's sunlight and tone mapping wash pale colors out, so each color is deepened there with its hue held; an already vivid one is left nearly as it is.
+Thinking and working follow active conversations and tasks; queued work waits; a paused squire rests; a recently failed or interrupted job looks concerned; only a completed, verified task produces the brief pleased expression. These are activity cues, not model claims about feelings. Historical messages use a neutral face rather than changing their apparent emotion as new work arrives. Text labels remain alongside the avatars, and reduced motion disables decorative movement while preserving readable expressions.
 
-Squires and the SANDBOX share the same profile. Thinking and working follow active conversations and tasks; queued work waits; a paused squire rests; a recently failed or interrupted job looks concerned; only a completed, verified task produces the brief pleased expression. These are activity cues, not model claims about feelings. Historical messages use a neutral face rather than changing their apparent emotion as new work arrives. Text labels remain alongside the avatars, and reduced motion disables decorative movement while preserving readable expressions.
-
-Profiles are versioned, validated cosmetic data saved in `team.db`. Colors are six-digit hex values; forms and details come from fixed options. No remote image, user-supplied SVG, script, upload or additional runtime dependency is required. Temperament changes animation, not the squire's permissions, instructions or budgets. The existing SANDBOX limit of six visible partners remains; active squires take precedence over recent outcomes. Six knights share four meshes (one a form, and one of small rounded details), posed without allocating.
+Profiles are versioned, validated cosmetic data saved in `team.db`. Colors are six-digit hex values; forms and details come from fixed options. No remote image, user-supplied SVG, script, upload or additional runtime dependency is required. Temperament changes animation, not the squire's permissions, instructions or budgets.
 
 ## Tasks, dependencies and verification
 
@@ -233,8 +231,6 @@ Each removal is a line in the ledger that says what became of its VM: destroyed 
 
 The shared mind still uses the replicated signed event log. The squires' profiles, room history, jobs, allowances, working notes and VM bindings live in **`team.db` in the controller's Galahad home** (`~/.galahad/team.db` by default). That database is not replicated through the mind and is not reconstructed by replaying it. Keep using the same controller; another node has its own Squires state. A remote VM host does not become a second team controller for those squires.
 
-Active squire presence is projected into SANDBOX under `Galahad · <name>` at the council or forge. Conversation and task contents stay in Squires; presence is a view of work, not another store of it.
-
 This implementation provides persistent squires, squires Galahad makes for himself, bounded coordination, task dependencies, parallel progress, VM workspaces and verified task results. Automatic cross-VM file integration, live steering of Squires tasks, erasing a removed squire's history and a complete pull-request/CI-repair loop are not implemented. Browser checks with a mock API, deterministic runtime tests and a credential-free Hermes handshake do not establish a model-backed task running successfully in a live VM. That deployment validation remains separate.
 
 ## Rollback without losing work
@@ -244,6 +240,8 @@ Pause rooms and squires, let active operations settle, and stop the controller b
 A build from before squire removal does not know a removed squire's record: after a rollback to one, removed squires are listed again as paused squires, and saving one there erases the mark. Leave them paused and unedited until the newer build is back.
 
 **Keep the workspace helper with retention support installed. Do not downgrade it during rollback.** Older cleanup behavior does not understand retained image-backed squire disks. Preserve named volumes separately on hosts without the helper. Do not substitute normal orphan cleanup for an owner-approved workspace deletion.
+
+(The 3D world (the SANDBOX), the chalkboard, the journal and the experiments that the records below mention were removed on 14 November 2026.)
 
 (The records below were written when the Squires page was called Team and his squires were called workers or teammates; they are left as they were written.)
 
