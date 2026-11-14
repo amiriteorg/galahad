@@ -20,7 +20,8 @@ import { editKnight, editRoom, giveToRoundtable, openDirect } from "./team-forms
  * the Inbox and his work as the app has them.
  */
 
-/** What a knight's card says of it in a word, on a phone (its line says the rest; a row on a wide screen has its mark). */
+/** What a knight's card says of it in a word, on a phone (its line says the rest; a row on a wide screen has its mark).
+ * Each screen shows, and so reads out, only one of the two. */
 interface Badge { text: string; tone: "needs" | "quiet" | "ok" }
 const badgeOf = (item: RosterRow): Badge | null =>
   item.needs ? { text: "Needs you", tone: "needs" } : item.expression === "resting" ? { text: "Paused", tone: "quiet" } : item.expression === "pleased" ? { text: "Verified", tone: "ok" } : null;
@@ -52,7 +53,7 @@ export function rosterNav(ctx: Ctx): Roster {
       h(
         "span",
         { class: "roster-text" },
-        h("span", { class: "roster-head" }, h("span", { class: "roster-name ellipsis" }, opts.name), opts.badge ? h("span", { class: "roster-badge", "data-tone": opts.badge.tone, "aria-hidden": "true" }, opts.badge.text) : null),
+        h("span", { class: "roster-head" }, h("span", { class: "roster-name ellipsis" }, opts.name), opts.badge ? h("span", { class: "roster-badge", "data-tone": opts.badge.tone }, opts.badge.text) : null),
         h("span", { class: "roster-line ellipsis" }, opts.line),
       ),
       opts.after,
