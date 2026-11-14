@@ -15,28 +15,21 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 ### The mark: the helm
 
-**A Templar's great helm, front on, in lit dots.** The helm Galahad wears as a knight: the roster's avatars and the mark are one drawing, on one 32-cell grid. Few shapes, hard edges, a dot-matrix display's light.
-
-- **Cut like a heater shield.** A flat crown, its corners cut, its sides angled in to a point at the jaw.
-- **A Templar's T.** The brow band across the helm and the nasal strip down it to the point are the oxblood cross; the eye slits sit under the brow, either side of the strip.
-- **His eyes in the slit.** On a dark ground the slits are dark glass with Galahad's eyes in them, glowing (`#fff1d6`): the same eyes as every knight's.
-- **Lit dots.** The helm's white is dots on a grid, sampled from the shapes, coarser at small sizes so the dots stay dots. On the app icon the tile's other cells are unlit dots, as on a display panel. The dots are mirror-true by construction (the helm is sampled from its left half).
-
-The shapes are named in `apps/web/src/brand.ts` (`HELM`, `SLITS`, `CROSS`, `EYES`, `INK`), and `ui/avatar.ts` draws Galahad from those same numbers. Everything is generated from that one definition; tests pin the helm's cut (a flat crown, cut corners, a point), the T (the slits under the brow, either side of the strip), that no dot ever falls in a slit, the symmetry at every grain, that nothing in it has an id, and that no committed file drifts.
+**Galahad's helm as the owner drew it: a white great helm, his oxblood cross down its face and across its brow, his eyes in the dark slit behind the cross's arm.** The mark is the drawing itself, cut out of its paper along the helm's own bottom edge (`apps/web/src/knights/galahad-helm.webp`), the same drawing Galahad is in the roster. Where a mark must be one flat colour (the icon set at 16–24 px, the flat file) it is the helm's silhouette, traced from the same drawing, with the cross and the slit cut out of it (`MARK_PATH` in `apps/web/src/brand.ts`).
 
 | File | Use |
 |---|---|
-| `assets/icon.svg` | App icon and favicon: a black tile, the panel's unlit dots, the helm lit in it with his eyes |
+| `assets/icon.svg` | App icon and favicon: the drawn helm on a black tile |
 | `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the helm sits inside the central safe circle |
-| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG |
-| `assets/galahad-mark.svg` | The flat mark in `currentColor`: its dots in one ink, the cross and slits gaps in it |
-| `apps/site/public/crest-{white,black}.svg` | The helm on a transparent ground, for the site (dark and light): white or near-black dots, the cross oxblood, the slits gaps |
-| `ui/emblem.ts` → `emblem()` | The helm inline in the PWA, on its own dark tile (as every knight stands on its panel), so it reads the same in either theme |
-| `icon("mark")` | The whole helm, flat, its T cut out, on the 24 px grid, for menus (Galahad's voice: chat, requests, trust) |
+| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG, rendered from the full-size cut-out (`apps/web/design/galahad-helm.webp`) |
+| `assets/galahad-mark.svg` | The flat mark in `currentColor`: the silhouette, the cross and the slit holes in it |
+| `apps/site/public/crest-{white,black}.svg` | The drawn helm, for the site's header and crest (it reads on a light page and a dark one) |
+| `ui/emblem.ts` → `emblem()` | The drawn helm inline in the PWA, on no tile: its own ink line holds it in either theme; the boot screen shows it too |
+| `icon("mark")` | The flat silhouette on the 24 px grid, for menus and the tab bar (Galahad's voice: chat, requests, trust) |
 
-Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium).
+Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium). Tests pin the silhouette to the icon grid, the icons' tile and safe zone, that the SVGs carry the helm the app serves and fetch nothing, and that no committed file drifts.
 
-- Keep clear space of at least a quarter of the helm's width. Don't recolour it, add effects, or put it on a busy image. Below 20 px use the flat mark.
+- Keep clear space of at least a quarter of the helm's width. Don't recolour the drawing, add effects, or put it on a busy image. Below 20 px use the flat mark.
 
 ### Wordmark
 
@@ -171,7 +164,7 @@ Rules:
 | Toasts | `ui/toast.ts` | Sonner-style stack: newest in front, three visible, fan out on hover or focus, timers pause while you read, a close button, optional actions (Undo, Review, Reload). Errors stay 8 s and are announced assertively. A toast raised while a modal sheet is open waits until it closes (the page behind a modal is inert); feedback that belongs to a sheet is shown inline in it. |
 | Markdown | `lib/markdown.ts` → `ui/markdown.ts` | Paragraphs, headings, lists (nested), quotes, rules, GFM tables, fenced code with language and Copy, inline code, bold, italic, strike, links. |
 | Stat tile, meter, timeline | `controls.ts`, `views/activity.ts` | Figures in tabular numerals; meters turn amber past 85–90%. |
-| Avatar | `ui/avatar.ts` `workerAvatar()` | A knight in lit dots on a dark panel, the mark's grammar: an angular helmet with a visor of dark glass, eyes that glow in its colour, a status light, a small body; cream armour for every knight, its colour in its light (eyes, light, its one accent, the panel's tint). Shapes sampled onto a grid of dots, coarser at small sizes (`grain`), a large one showing the panel's unlit dots. What it is doing is the node's word on its work (`avatarExpression` in `@galahad/core/avatar`, from the mark that starts its task's latest line), never a mood, acted out with what it holds and its eyes: keys, a page, a screen, a lens; a chip in the corner for what its face can't say (thinking, waiting, asking in oxblood, passed, failed, paused). The motion is CSS the first avatar gives the page (`KNIGHT_CSS`); a speaker beside something it said earlier stays still, and nothing moves under reduced motion. Each is named for a screen reader ("Ada · working"; "Ada's avatar" beside something it said earlier). Galahad wears the mark's Templar helm, the oxblood cross, on navy, and in beast mode is the Black Knight (`beast`). `apps/web/design/avatars.html` (written by `bun apps/web/design/avatars.ts`, not served) shows every look and state. |
+| Avatar | `ui/avatar.ts` `workerAvatar()` | One of the owner's ten drawings of knights (`apps/web/src/knights/`), the drawing itself cut out of its paper, every one on the same square canvas with its feet on one baseline, and live eyes drawn over the drawn ones. Which drawing a knight is, core's `avatarLook` says (a look chosen for it; else the drawing its name is; else one from its handle). What it is doing is the node's word on its work (`avatarExpression` in `@galahad/core/avatar`, from the mark that starts its task's latest line), never a mood, shown with its eyes: up while it thinks, down at the work, along the lines, after the pointer, back and forth while its gates run, up and away while it waits; wide with a red mark beside it when it asks your leave, happy after a pass, lowered after a failure, shut (its colour drained) while paused. The motion is CSS the first avatar gives the page (`KNIGHT_CSS`); a speaker beside something it said earlier stays still, and nothing moves under reduced motion. Each is named for a screen reader ("Percival · working"; "Percival's avatar" beside something it said earlier). Galahad is his own drawing with his red cross, and in beast mode the Black Knight, eyes burning red (`beast`). `apps/web/design/avatars.html` (written by `bun apps/web/design/avatars.ts`, not served) shows every drawing and state; `apps/web/design/knights-cutout.py` is how a drawing is cut out. |
 
 ## Smart selector
 

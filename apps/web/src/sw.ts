@@ -13,8 +13,9 @@ import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, 
  */
 
 const VERSION = "galahad-shell-v8";
-const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png", "/knights/galahad.webp"];
-/** Kept the first time they are fetched, then served like the shell: the knights' drawings (Galahad's is in the shell). */
+const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/apple-touch-icon.png", "/knights/galahad.webp", "/knights/galahad-helm.webp"];
+/** Kept the first time they are fetched, then served like the shell: the knights' drawings (Galahad's, and his helm, the
+ * mark, are in the shell). */
 const KEPT_ONCE_FETCHED = ["/knights/"];
 const NEVER_CACHE = ["/api/", "/link/", "/gw/"];
 

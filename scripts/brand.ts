@@ -1,34 +1,43 @@
 #!/usr/bin/env bun
 /*
- * Regenerates every brand file from the one mark (apps/web/src/brand.ts): the Templar's helm in lit dots.
+ * Regenerates every brand file from the one mark (apps/web/src/brand.ts): Galahad's helm as the owner drew it.
  *
  *   bun scripts/brand.ts          SVGs only (deterministic; safe to run any time)
  *   bun scripts/brand.ts --png    also renders the PNG icons with headless Chromium
  *                                 (set GALAHAD_BROWSER to the browser binary if it isn't found)
+ *
+ * The SVG icons carry the helm the app serves (apps/web/src/knights/galahad-helm.webp); the PNGs are rendered from the
+ * full-size cut-out kept beside the design sheet (apps/web/design/galahad-helm.webp), so a 512 px icon stays sharp.
  */
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appIcon, crestFile, flatMark, maskableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
+const dataUrl = (p: string): string => `data:image/webp;base64,${readFileSync(at(p)).toString("base64")}`;
+/** The helm as the app serves it, and at full size. */
+const HELM = dataUrl("apps/web/src/knights/galahad-helm.webp");
+const HELM_FULL = dataUrl("apps/web/design/galahad-helm.webp");
 
-const svgs: Record<string, SvgNode> = {
-  "assets/icon.svg": appIcon(),
-  "assets/galahad-mark.svg": flatMark(),
-  "apps/web/src/icon-maskable.svg": maskableIcon(),
-  "apps/site/public/icon.svg": appIcon(),
-  "apps/site/public/crest-white.svg": crestFile("white"),
-  "apps/site/public/crest-black.svg": crestFile("black"),
+/** Every committed SVG, by where it goes: what tests read back (brand.test.ts). */
+export const BRAND_SVGS: Record<string, () => SvgNode> = {
+  "assets/icon.svg": () => appIcon(HELM),
+  "assets/galahad-mark.svg": () => flatMark(),
+  "apps/web/src/icon-maskable.svg": () => maskableIcon(HELM),
+  "apps/site/public/icon.svg": () => appIcon(HELM),
+  "apps/site/public/crest-white.svg": () => crestFile(HELM),
+  "apps/site/public/crest-black.svg": () => crestFile(HELM),
 };
 
-for (const [path, tree] of Object.entries(svgs)) {
-  writeFileSync(at(path), `${toSvg(tree)}\n`);
-  console.log(`wrote ${path}`);
+if (import.meta.main) {
+  for (const [path, tree] of Object.entries(BRAND_SVGS)) {
+    writeFileSync(at(path), `${toSvg(tree())}\n`);
+    console.log(`wrote ${path}`);
+  }
+  if (Bun.argv.includes("--png")) await renderPngs();
 }
-
-if (Bun.argv.includes("--png")) await renderPngs();
 
 async function renderPngs(): Promise<void> {
   const browser = findBrowser();
@@ -36,17 +45,25 @@ async function renderPngs(): Promise<void> {
   const work = mkdtempSync(join(tmpdir(), "galahad-brand-"));
   try {
     const pngs: [string, SvgNode, number, string][] = [
-      ["apps/web/src/icon-192.png", appIcon(), 192, "transparent"],
-      ["apps/web/src/icon-512.png", appIcon(), 512, "transparent"],
-      ["apps/web/src/icon-maskable-512.png", maskableIcon(), 512, "#050506"],
-      // iOS rounds the corners itself, so the touch icon is full bleed with a larger emblem.
-      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.7), 180, "#050506"],
+      ["apps/web/src/icon-192.png", appIcon(HELM_FULL), 192, "transparent"],
+      ["apps/web/src/icon-512.png", appIcon(HELM_FULL), 512, "transparent"],
+      ["apps/web/src/icon-maskable-512.png", maskableIcon(HELM_FULL), 512, "#0a0a0b"],
+      // iOS rounds the corners itself, so the touch icon is full bleed with a larger helm.
+      ["apps/web/src/apple-touch-icon.png", maskableIcon(HELM_FULL, 0.72), 180, "#0a0a0b"],
     ];
+    // A drawing makes a heavy PNG: where ImageMagick is installed, each icon is cut to a 256-colour palette (a quarter
+    // of the bytes, the same to the eye); without it, the full-colour render is kept.
+    const magick = Bun.which("magick");
     for (const [path, tree, size, background] of pngs) {
       const out = join(work, `${size}-${pngs.findIndex((p) => p[0] === path)}.png`);
       await screenshot(browser, work, toSvg(tree), size, background, out);
+      if (magick) {
+        const small = `${out}.8.png`;
+        const quantised = Bun.spawnSync([magick, out, "-dither", "FloydSteinberg", "-colors", "256", `PNG8:${small}`], { stdout: "ignore", stderr: "ignore" });
+        if (quantised.exitCode === 0 && existsSync(small)) copyFileSync(small, out);
+      }
       copyFileSync(out, at(path));
-      console.log(`rendered ${path}`);
+      console.log(`rendered ${path}${magick ? " (256 colours)" : ""}`);
     }
     copyFileSync(at("apps/web/src/apple-touch-icon.png"), at("apps/site/public/apple-touch-icon.png"));
     console.log("copied apps/site/public/apple-touch-icon.png");

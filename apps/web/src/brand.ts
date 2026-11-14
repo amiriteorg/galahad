@@ -1,78 +1,20 @@
 /*
- * The mark: a Templar's great helm, front on, cut like a heater shield (a flat crown, its corners cut, its sides
- * angled in to a point), drawn in lit dots: its brow band and its nasal strip are the oxblood cross, and Galahad's
- * eyes glow in the slit under the brow. It is the helm Galahad wears as a knight (ui/avatar.ts draws him from these
- * same numbers), on the same 32-cell drawing as every knight.
+ * The mark: Galahad's helm as the owner drew it, his oxblood cross down its face and across its brow. Two forms of the
+ * one drawing. Where it can be a picture, it is the drawing itself (src/knights/galahad-helm.webp, cut out of his
+ * drawing along the helm's own bottom edge). Where a mark must be one flat colour (the icon set, the website's crest),
+ * it is the helm's silhouette with the cross and the slit cut out of it (MARK_PATH, traced from the same drawing onto
+ * the 24-unit icon grid).
  *
- * Pure data and a tiny SVG tree, no DOM: the PWA turns the tree into elements (ui/emblem.ts), scripts/brand.ts
- * serialises it into the icon files, so every surface draws the same mark.
+ * Pure data and a tiny SVG tree, no DOM: the PWA shows the drawing (ui/emblem.ts) and draws the silhouette
+ * (ui/icons.ts); scripts/brand.ts writes the icon files from them, so every surface carries the same helm.
  */
 
-export type Point = readonly [number, number];
+/** The helm's silhouette on the 24-unit icon grid, within a 1.5 inset: the cross and the slit are holes in it, under
+ * the even-odd rule. */
+export const MARK_PATH = "M11.8 1.59C11.8 1.63 11.43 1.7 10.97 1.73C7.57 2 4.45 4 3.59 6.48C3.06 8 2.48 12.66 2.24 17.21C2.16 18.86 2.22 19.11 2.93 19.77C4.15 20.92 7.17 21.98 9.98 22.26C10.37 22.29 10.7 22.37 10.7 22.41C10.7 22.46 11.29 22.5 12 22.5C12.72 22.5 13.3 22.46 13.3 22.41C13.3 22.37 13.63 22.29 14.03 22.25C17.13 21.95 20.89 20.5 21.62 19.32C21.9 18.87 21.9 18.35 21.61 15.57C20.79 7.86 20.6 6.68 19.98 5.45C19.02 3.56 16.08 1.94 13.23 1.74C12.72 1.7 12.3 1.63 12.3 1.59C12.3 1.54 12.19 1.5 12.05 1.5C11.91 1.5 11.8 1.54 11.8 1.59ZM14.27 3.25C14.49 3.32 14.49 3.33 14.1 3.78C13.52 4.43 13.33 5.16 13.2 7.12C13.15 8.02 13.1 9.14 13.1 9.62C13.1 10.67 12.79 10.57 16.2 10.66C19.03 10.73 19.23 10.7 19.86 10.09C20.04 9.92 20.2 9.83 20.24 9.88C20.29 9.96 20.5 13.76 20.5 14.65L20.5 14.94L20.08 14.53C19.49 13.97 19.19 13.84 18.15 13.71C17.16 13.59 14.56 13.56 13.71 13.67L13.17 13.73L13.23 16.49C13.29 19.7 13.35 20 14.05 20.78L14.51 21.29L14.03 21.37C13.41 21.47 10.82 21.47 10.07 21.37L9.49 21.28L9.94 20.79C10.69 19.96 10.9 18.79 10.9 15.5L10.9 13.73L10.53 13.66C9.94 13.57 6.74 13.59 5.79 13.7C4.73 13.82 4.32 13.99 3.73 14.53L3.27 14.95L3.34 13.85C3.37 13.24 3.45 12.06 3.52 11.22L3.63 9.69L4.04 10.08C4.69 10.71 4.87 10.73 7.94 10.66C9.43 10.62 10.73 10.56 10.83 10.53C11.01 10.48 11.01 10.36 10.95 8.37C10.85 5.2 10.69 4.46 9.93 3.68L9.57 3.31L9.96 3.25C10.18 3.22 10.42 3.17 10.5 3.15C10.76 3.09 14.04 3.17 14.27 3.25ZM6.54 11.2C5.56 11.25 5.03 11.33 4.78 11.44C4.2 11.72 4.03 12.36 4.41 12.84L4.62 13.1L7.78 13.08L10.95 13.05L10.98 12.07L11.01 11.1L9.48 11.12C8.64 11.12 7.32 11.16 6.54 11.2ZM13.1 12.1L13.1 13.1L16.11 13.1C17.9 13.1 19.19 13.06 19.3 13C19.87 12.7 19.7 11.72 19.03 11.44C18.64 11.27 16.31 11.11 14.33 11.1L13.1 11.1L13.1 12.1Z";
 
-const round = (n: number): number => Math.round(n * 10) / 10;
-
-/** The drawing: 32 cells a side, the helm's centre line on the middle one. */
-export const CELLS = 32;
-const M = CELLS / 2;
-
-/** The helm's left half, from the crown down to the point; the right is its mirror. */
-const HELM_LEFT: readonly Point[] = [[M - 7.0, 2.8], [M - 10.2, 6.0], [M - 10.2, 14.6], [M - 6.4, 20.6], [M, 23.8]];
-/** The helm's outline, clockwise from the crown's left corner. */
-export const HELM: readonly Point[] = [...HELM_LEFT, ...HELM_LEFT.slice(0, -1).reverse().map(([x, y]) => [2 * M - x, y] as const)];
-/** A box by its centre and half sizes, in cells. */
-export interface Box { cx: number; cy: number; hw: number; hh: number }
-/** The slits, under the brow band, either side of the nasal strip. */
-export const SLITS: readonly Box[] = [{ cx: M - 4.6, cy: 12.6, hw: 3.3, hh: 1.1 }, { cx: M + 4.6, cy: 12.6, hw: 3.3, hh: 1.1 }];
-/** The cross: the brow band across the helm, the nasal strip down it to the point. */
-export const CROSS: readonly Box[] = [{ cx: M, cy: 10.55, hw: 8.6, hh: 0.95 }, { cx: M, cy: 13.2, hw: 1.05, hh: 10.2 }];
-/** Where Galahad's eyes sit in the slits, and their size (cells). */
-export const EYES: readonly Box[] = SLITS.map(({ cx, cy }) => ({ cx, cy, hw: 1.3, hh: 0.65 }));
-
-/** The colours: black, the helm's white, the oxblood cross, the glow of his eyes. */
-export const INK = { night: "#050506", helm: "#f2eee6", cross: "#b23c3d", eyes: "#fff1d6", unlit: "#16161a" } as const;
-
-const inBox = ({ cx, cy, hw, hh }: Box, x: number, y: number, grow = 0): boolean => Math.abs(x - cx) <= hw + grow && Math.abs(y - cy) <= hh + grow;
-/** Whether a point (cells) is inside the helm. */
-export function inHelm(x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, j = HELM.length - 1; i < HELM.length; j = i++) {
-    const [xi, yi] = HELM[i]!, [xj, yj] = HELM[j]!;
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-/** What a dot at a point (cells) is: the helm's white, the cross, nothing (a slit, or off the helm). Asked of the
- * left half only, so the dots are mirror-true by construction, whatever a point on an edge would round to. */
-export function dotAt(x: number, y: number): "helm" | "cross" | null {
-  x = Math.min(x, 2 * M - x);
-  if (!inHelm(x, y) || SLITS.some((slit) => inBox(slit, x, y, 0.45))) return null;
-  return CROSS.some((bar) => inBox(bar, x, y)) ? "cross" : "helm";
-}
-
-/** The helm's bounds, in cells, and the square the mark is drawn in: the helm centred with a little air. */
-export const HELM_BOX = (() => {
-  const xs = HELM.map(([x]) => x), ys = HELM.map(([, y]) => y);
-  return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
-})();
-
-export interface MarkOptions {
-  /** How many dots across the square. */
-  grain: number;
-  /** The side of the square the mark fills, in the drawing's units, and its top-left corner. */
-  side: number;
-  x?: number;
-  y?: number;
-  /** How much of the square the helm spans (its height). */
-  fill?: number;
-  /** One ink for everything: the cross and the slits are then gaps in it. */
-  ink?: string;
-  /** The square's other cells shown as dim dots, as on a dot-matrix display. */
-  unlit?: boolean;
-  /** His eyes in the slits (only on a dark ground). */
-  eyes?: boolean;
-}
+/** The app tile's black, and the inks the flat mark is drawn in on the website. */
+export const INK = { tile: "#0a0a0b", light: "#f8ebdc", dark: "#141416" } as const;
 
 /* ---------- the tree ---------- */
 
@@ -83,102 +25,44 @@ export interface SvgNode {
 }
 
 const n = (tag: string, attrs: Record<string, string | number>, ...children: SvgNode[]): SvgNode => ({ tag, attrs, children });
-const dot = (cx: number, cy: number, r: number): string => `M${round(cx - r)} ${round(cy)}a${round(r)} ${round(r)} 0 1 0 ${round(2 * r)} 0a${round(r)} ${round(r)} 0 1 0 ${round(-2 * r)} 0`;
-
-/**
- * The mark as a group of paths: its dots sampled from the helm on a grid of `grain` dots across a square of `side`
- * units (one path per ink), the slits as dark glass with his eyes in them. A dot is as big as its cell allows; an
- * unlit one is smaller.
- */
-export function emblemTree(options: MarkOptions): SvgNode {
-  const { grain, side } = options;
-  const ox = options.x ?? 0, oy = options.y ?? 0;
-  const pitch = side / grain;
-  // Cells of the drawing per unit: the helm's height fills `fill` of the square, centred.
-  const scale = (HELM_BOX.height + 0.6) / (side * (options.fill ?? 0.78));
-  const midX = HELM_BOX.x + HELM_BOX.width / 2, midY = HELM_BOX.y + HELM_BOX.height / 2;
-  const toCells = (u: number, mid: number) => mid + (u - side / 2) * scale;
-  const toUnits = (c: number, mid: number) => side / 2 + (c - mid) / scale;
-  let helm = "", cross = "", unlit = "";
-  for (let gy = 0; gy < grain; gy++) for (let gx = 0; gx < grain; gx++) {
-    const ux = (gx + 0.5) * pitch, uy = (gy + 0.5) * pitch;
-    const kind = dotAt(toCells(ux, midX), toCells(uy, midY));
-    if (kind === "helm" || (kind === "cross" && options.ink)) helm += dot(ox + ux, oy + uy, pitch * 0.43);
-    else if (kind === "cross") cross += dot(ox + ux, oy + uy, pitch * 0.43);
-    else if (options.unlit && !inHelm(Math.min(toCells(ux, midX), 2 * M - toCells(ux, midX)), toCells(uy, midY))) unlit += dot(ox + ux, oy + uy, pitch * 0.27);
-  }
-  const box = ({ cx, cy, hw, hh }: Box, ink: string, extra: Record<string, string | number> = {}) =>
-    n("rect", { x: round(ox + toUnits(cx - hw, midX)), y: round(oy + toUnits(cy - hh, midY)), width: round((2 * hw) / scale), height: round((2 * hh) / scale), ...extra, fill: ink });
-  const children: SvgNode[] = [];
-  if (unlit) children.push(n("path", { d: unlit, fill: INK.unlit }));
-  children.push(n("path", { d: helm, fill: options.ink ?? INK.helm }));
-  if (cross) children.push(n("path", { d: cross, fill: INK.cross }));
-  if (!options.ink) children.push(...SLITS.map((slit) => box(slit, INK.night)));
-  if (options.eyes && !options.ink) children.push(...EYES.map((eye) => box(eye, INK.eyes, { rx: round(eye.hh / scale) })));
-  return n("g", {}, ...children);
-}
-
-/**
- * The whole helm as one filled path on a small icon grid (menus, the icon set), fitted inside `inset`: its outline,
- * the slits and the cross cut out of it (wound the other way, so they are holes under the nonzero rule).
- */
-export function markOnGrid(size = 24, inset = 1.5): string {
-  const scale = (size - 2 * inset) / Math.max(HELM_BOX.width, HELM_BOX.height);
-  const at = ([x, y]: Point): string => `${round(size / 2 + (x - (HELM_BOX.x + HELM_BOX.width / 2)) * scale)} ${round(size / 2 + (y - (HELM_BOX.y + HELM_BOX.height / 2)) * scale)}`;
-  // The outline clockwise; each hole counter-clockwise.
-  const hole = ({ cx, cy, hw, hh }: Box): string => `M${at([cx - hw, cy - hh])}L${at([cx - hw, cy + hh])}L${at([cx + hw, cy + hh])}L${at([cx + hw, cy - hh])}Z`;
-  const [brow, strip] = CROSS as [Box, Box];
-  // The cross's two bars as one hole: the brow band, then the strip below and above it, so they never overlap.
-  const below = { cx: strip.cx, hw: strip.hw, cy: (brow.cy + brow.hh + strip.cy + strip.hh) / 2, hh: (strip.cy + strip.hh - (brow.cy + brow.hh)) / 2 - 0.05 };
-  return `M${HELM.map(at).join("L")}Z${hole(brow)}${hole(below)}${SLITS.map(hole).join("")}`;
-}
+const root = (viewBox: string, title: string, ...children: SvgNode[]): SvgNode =>
+  n("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox, fill: "none" }, n("title", {}, { tag: "#text", attrs: { text: title } }), ...children);
+/** The drawing, as a data URL, on the 1024 grid: its square centred on (cx, cy), `side` across. */
+const drawing = (helm: string, side: number, cx = 512, cy = 512): SvgNode =>
+  n("image", { href: helm, x: cx - side / 2, y: cy - side / 2, width: side, height: side, preserveAspectRatio: "xMidYMid meet" });
+/** The flat silhouette, scaled from its 24-unit grid to a 1024 square. */
+const silhouette = (fill: string): SvgNode => n("path", { d: MARK_PATH, fill, "fill-rule": "evenodd", transform: "scale(42.6667)" });
 
 /* ---------- icons ---------- */
 
-const root = (viewBox: string, title: string, ...children: SvgNode[]): SvgNode =>
-  n("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox, fill: "none" }, n("title", {}, { tag: "#text", attrs: { text: title } }), ...children);
-
-/** The app tile: a rounded square of night on the 1024 grid. */
+/** The app tile: a rounded square on the 1024 grid. */
 export const TILE = { x: 64, y: 64, width: 896, height: 896, rx: 214 } as const;
 
-/** The app icon: a night tile, a dot-matrix panel, the helm lit in it with his eyes. Transparent corners. */
-export function appIcon(): SvgNode {
+/** The app icon: the drawn helm on a black tile, transparent at its corners. `helm` is the drawing as a data URL. */
+export function appIcon(helm: string): SvgNode {
   const { x, y, width, height, rx } = TILE;
-  const inner = 96;
   return root(
     "48 48 928 928",
     "Galahad",
-    n("rect", { x, y, width, height, rx, fill: INK.night }),
-    emblemTree({ grain: 39, side: width - 2 * inner, x: x + inner, y: y + inner, fill: 0.86, unlit: true, eyes: true }),
+    n("rect", { x, y, width, height, rx, fill: INK.tile }),
+    drawing(helm, width * 0.7, 512, 506),
     n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#ffffff", "stroke-opacity": 0.12, "stroke-width": 2 }),
   );
 }
 
-/**
- * Full bleed for platform masks (Android adaptive icons, iOS): the helm scaled into the centre so it survives any
- * mask shape.
- */
-export function maskableIcon(scale = 0.6): SvgNode {
-  const side = 1024 * scale;
-  return root(
-    "0 0 1024 1024",
-    "Galahad",
-    n("rect", { width: 1024, height: 1024, fill: INK.night }),
-    emblemTree({ grain: 31, side, x: (1024 - side) / 2, y: (1024 - side) / 2, fill: 0.92, eyes: true }),
-  );
+/** Full bleed for platform masks (Android adaptive icons, iOS): the helm scaled into the centre so any mask keeps it. */
+export function maskableIcon(helm: string, scale = 0.6): SvgNode {
+  return root("0 0 1024 1024", "Galahad", n("rect", { width: 1024, height: 1024, fill: INK.tile }), drawing(helm, 1024 * scale));
 }
 
-/** The flat, single-colour mark (currentColor): its dots in one ink, the cross and slits gaps in it. */
+/** The flat, single-colour mark (currentColor). */
 export function flatMark(): SvgNode {
-  return root("0 0 1024 1024", "Galahad", emblemTree({ grain: 27, side: 1024, fill: 0.9, ink: "currentColor" }));
+  return root("0 0 1024 1024", "Galahad", silhouette("currentColor"));
 }
 
-/** The mark alone on a transparent ground, its dots in white or black ink, the cross oxblood: for the website. */
-export function crestFile(ink: "white" | "black"): SvgNode {
-  const tree = emblemTree({ grain: 27, side: 1024, fill: 0.92 });
-  // On a transparent ground the slits are gaps, not glass; the helm's dots take the page's ink.
-  const children = (tree.children ?? []).filter((child) => child.tag === "path").map((child) => (child.attrs.fill === INK.helm ? { ...child, attrs: { ...child.attrs, fill: ink === "white" ? INK.helm : "#141416" } } : child));
-  return root("0 0 1024 1024", "Galahad", n("g", {}, ...children));
+/** The mark for the website's header and crest: the drawn helm, which reads on a light page and a dark one alike. */
+export function crestFile(helm: string): SvgNode {
+  return root("0 0 1024 1024", "Galahad", drawing(helm, 1024));
 }
 
 const escapeAttr = (value: string | number): string => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
