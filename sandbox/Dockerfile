@@ -37,6 +37,11 @@ ENV PATH=/opt/engram/bin:$PATH
 ENV ENGRAM_DATA_DIR=/work/.memory/engram
 ENV ENGRAM_NO_UPDATE_CHECK=1
 
+# A login shell sets PATH afresh (/etc/profile), and a squire's commands run in one: this puts the tools
+# above back on it (tools-path.sh says why; a directory added to the PATH here is added there too).
+COPY tools-path.sh /etc/profile.d/galahad-tools.sh
+RUN chmod 0644 /etc/profile.d/galahad-tools.sh
+
 # Web search through Galahad's own SearXNG, via the gateway (no internet needed).
 COPY websearch /usr/local/bin/websearch
 RUN chmod 0755 /usr/local/bin/websearch

@@ -38,6 +38,16 @@ describe.if(enabled)("sandbox host on real Docker", () => {
     expect(await host.get(sb.id)).toBeNull();
   }, 120_000);
 
+  test("a login shell there has the image's tools, as a plain one does (a squire's commands run in login shells)", async () => {
+    const sb = await host.create({ ...base, network: "isolated", quest: "it-path" });
+    for (const tool of ["bun", "opencode", "engram"]) {
+      const plain = (await host.exec(sb.id, ["sh", "-c", `command -v ${tool}`])).stdout.trim();
+      expect(plain).toStartWith("/opt/");
+      expect((await host.exec(sb.id, ["bash", "-lc", `command -v ${tool}`])).stdout.trim()).toBe(plain);
+    }
+    await host.destroy(sb.id, { quest: "it-path" });
+  }, 120_000);
+
   test("gateway mode has no internet; online mode does", async () => {
     const gw = await host.create({ ...base, network: "gateway", quest: "it-2", providers: ["deepseek"] });
     const env = (await host.exec(gw.id, ["sh", "-c", "echo $OPENAI_BASE_URL; echo ${OPENAI_API_KEY%%_*}"])).stdout.split("\n");
