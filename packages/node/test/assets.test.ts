@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildAssets } from "../src/assets.ts";
 
 const STATIC_IMPORT = /\bimport\s*[{*"']|\bimport\s+[\w$]/;
@@ -64,6 +66,20 @@ describe("the PWA bundle", () => {
       expect(new TextDecoder("latin1").decode(bytes.slice(0, 4)) + new TextDecoder("latin1").decode(bytes.slice(8, 12))).toBe("RIFFWEBP");
     }
     for (const path of ["/knights/", "/knights/merlin.webp", "/knights/../index.html", "/knights/galahad.png"]) expect(assets.has(path)).toBe(false);
+  });
+
+  test("the app's typeface is its own: Geist, served from the node with its licence beside it, never fetched elsewhere", async () => {
+    const assets = await buildAssets();
+    const html = await assets.serve("/").text();
+    const faces = [...html.matchAll(/url\("([^"]+)"\) format\("woff2"\)/g)].map((match) => match[1]!);
+    expect(faces).toEqual(["/fonts/geist.woff2"]);
+    expect(html).toContain('<link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />');
+    const font = assets.serve("/fonts/geist.woff2");
+    expect(font.headers.get("content-type")).toBe("font/woff2");
+    expect(new TextDecoder("latin1").decode(new Uint8Array(await font.arrayBuffer()).slice(0, 4))).toBe("wOF2");
+    expect(readFileSync(join(import.meta.dir, "../../../apps/web/src/fonts/OFL.txt"), "utf8")).toContain("SIL Open Font License, Version 1.1");
+    // Nothing from another origin: the CSP would refuse it anyway.
+    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
   });
 
   test("every entry is self-contained, so the service worker can cache the shell by name", async () => {

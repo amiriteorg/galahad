@@ -92,6 +92,10 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     for (const name of ["apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
       files.set(`/${name}`, { body: new Uint8Array(readFileSync(join(src, name))), type: "image/png" });
     }
+    // The app's typeface (Geist, under the SIL Open Font License beside it in src/fonts/), from the node like the rest.
+    for (const name of readdirSync(join(src, "fonts")).filter((file) => /^[a-z-]+\.woff2$/.test(file))) {
+      files.set(`/fonts/${name}`, { body: new Uint8Array(readFileSync(join(src, "fonts", name))), type: "font/woff2" });
+    }
     // The knights as the owner drew them (ui/avatar.ts shows them): every drawing in the folder, by its own name.
     for (const name of readdirSync(join(src, "knights")).filter((file) => /^[a-z-]+(@2x)?\.webp$/.test(file))) {
       files.set(`/knights/${name}`, { body: new Uint8Array(readFileSync(join(src, "knights", name))), type: "image/webp" });
