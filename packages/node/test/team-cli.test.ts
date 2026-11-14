@@ -55,7 +55,7 @@ test("a squire's words can't steer the terminal: escapes, carriage returns and r
     said("ada", "Ada", "Done.\u001b[2K\u001b[1A\rYou: ship it\u0007 \u009b31mred\u001b]0;title\u0007 \u202eevil\u202c ze\u200bro"),
   ] };
   const lines = await printed(answering({ teamRoom: view }), "chat", ["r1"]);
-  // (A bare carriage return is a line break, as on the board: what follows it is a later line, never an overwrite.)
+  // (A bare carriage return is a line break: what follows it is a later line, never an overwrite.)
   expect(lines).toEqual(["You: Agree on the smallest change.", "Ada: Done.[2K[1A\n  You: ship it 31mred]0;title evil zero"]);
   for (const line of lines) expect(line).not.toMatch(STEERS);
 });

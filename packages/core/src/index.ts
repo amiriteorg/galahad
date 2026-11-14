@@ -2,8 +2,6 @@ export * from "./api.ts";
 export * from "./avatar.ts";
 export * from "./archive.ts";
 export * from "./bank.ts";
-export * from "./board.ts";
-export * from "./board-input.ts";
 export * from "./chats.ts";
 export * from "./team.ts";
 export * from "./quests.ts";

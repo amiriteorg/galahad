@@ -199,7 +199,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     h(
       "p",
       { class: "small muted" },
-      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs, the titles of the chats you kept and the chalkboard (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
+      "Once a day he writes his journal. He reads the day's ledger, the notices, his loops' runs and the titles of the chats you kept (never the bank, never a secret), and recollects the day in his own words: then what he learned, and what he'd like to do next. It's kept as his own memory and read on the Journal page; what he'd like to do becomes a suggestion in your Inbox, never an action.",
     ),
     field("Daily budget (tokens)", budget, { hint: `What he reads and writes together, on the cheapest role that can answer. ${REFLECT.min.toLocaleString("en-US")} to ${REFLECT.max.toLocaleString("en-US")}.` }),
   );

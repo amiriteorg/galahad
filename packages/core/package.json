@@ -6,7 +6,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./avatar": "./src/avatar.ts",
-    "./board": "./src/board.ts",
     "./bytes": "./src/bytes.ts",
     "./doctor": "./src/doctor.ts",
     "./galahad-index": "./src/galahad-index.ts",

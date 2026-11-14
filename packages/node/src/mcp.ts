@@ -76,7 +76,7 @@ export function createMcpServer(opts: McpOptions): McpServer {
       try {
         const result = await t.run(api, args ?? {});
         if (typeof result === "string") return { content: [{ type: "text" as const, text: result }] };
-        // A picture (the chalkboard) goes as MCP image content, after its words.
+        // A picture goes as MCP image content, after its words.
         return { content: [{ type: "text" as const, text: result.text }, ...(result.images ?? []).map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))] };
       } catch (error) {
         return { content: [{ type: "text" as const, text: `Galahad: ${(error as Error).message}` }], isError: true };

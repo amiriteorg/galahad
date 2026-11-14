@@ -1,4 +1,4 @@
-import { type BoardVersionInfo, type ChatStreamEvent, type ConversationSummary, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
+import { type ChatStreamEvent, type ConversationSummary, JOURNAL_SOURCE, type NodeIdentity, redact, REFLECT_BUDGET, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
 import { chat, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
@@ -48,8 +48,6 @@ export interface LoopTaskDeps {
   isRunning?: (name: string) => boolean;
   /** Your kept chats (their titles are what his journal reads of them). */
   chats?: { list(): ConversationSummary[] };
-  /** The chalkboard's history (his journal reads today's versions: who changed it, and how, in a line). */
-  board?: { history: { before(before: number | null, limit: number): { versions: BoardVersionInfo[] } } };
   /** This node's compute: its calibration and the fleet's plan (self-action), what he'd suggest (the heartbeat). */
   compute?: ComputeService;
   /** His skills (skills.ts; set by the daemon): the tidy-up that goes with the heartbeat, and what his journal reads of them. */
@@ -331,7 +329,7 @@ function selfHands(deps: LoopTaskDeps) {
 /* ---------- his journal (the reflect loop) ---------- */
 
 /** What his journal reads (reflect.ts cuts it to the last day and the budget, and keeps the bank and secrets out). */
-export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "board" | "log" | "skills">, now: number): JournalInputs {
+export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "log" | "skills">, now: number): JournalInputs {
   const store = deps.store;
   const since = now - 24 * 60 * 60_000;
   /** A source that can't be read today is left out, and the log says so: the journal is still written. */
@@ -351,9 +349,6 @@ export function journalInputs(deps: Pick<LoopTaskDeps, "store" | "chats" | "boar
       .flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
     runs: store.loopRuns(undefined, 100).map((r) => ({ at: r.body.finished, loop: r.body.loop, status: r.body.status, summary: r.body.summary })),
     chats: (deps.chats?.list() ?? []).map((c) => ({ title: c.title, updatedAt: c.updatedAt, bank: c.bank })),
-    board: read("the chalkboard", () =>
-      (deps.board?.history.before(null, 200).versions ?? []).filter((v) => v.at >= since && v.change !== "start").map((v) => ({ at: v.at, by: v.by, summary: v.summary })),
-    ),
     skills: read("his skills", () => (deps.skills?.journal(since) ?? []).filter((s) => s.at <= now)),
   };
 }

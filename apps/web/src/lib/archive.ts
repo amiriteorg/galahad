@@ -9,7 +9,7 @@ import type { ArchiveStatusView } from "@galahad/core";
 export interface KindInfo {
   label: string;
   plural: string;
-  icon: "flask" | "layers" | "memory" | "lightbulb" | "archive" | "chat" | "edit" | "sparkle" | "file";
+  icon: "layers" | "memory" | "lightbulb" | "archive" | "chat" | "sparkle" | "file";
 }
 
 export const KIND_INFO: Record<string, KindInfo> = {
@@ -18,7 +18,6 @@ export const KIND_INFO: Record<string, KindInfo> = {
   idea: { label: "Idea", plural: "Ideas", icon: "lightbulb" },
   artifact: { label: "Artifact", plural: "Artifacts", icon: "archive" },
   chat: { label: "Chat", plural: "Chats", icon: "chat" },
-  board: { label: "Whiteboard", plural: "Whiteboards", icon: "edit" },
   lesson: { label: "Lesson", plural: "Lessons", icon: "sparkle" },
 };
 

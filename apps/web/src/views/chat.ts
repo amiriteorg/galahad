@@ -39,7 +39,6 @@ function toolIcon(name: string): IconName {
   if (name.startsWith("connector")) return "plug";
   if (name.startsWith("artifact")) return "archive";
   if (name.startsWith("archive_")) return "library";
-  if (name.startsWith("board_")) return "board";
   const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key", note_idea: "lightbulb" };
   return icons[name] ?? "zap";
 }

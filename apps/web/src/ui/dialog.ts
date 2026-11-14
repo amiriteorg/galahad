@@ -11,8 +11,7 @@ import { icon } from "./icons.ts";
 export interface SheetOptions {
   title: string;
   description?: Child;
-  /** full: most of a desktop, the whole of a phone (the chalkboard). */
-  size?: "small" | "wide" | "full";
+  size?: "small" | "wide";
   body?: Child;
   footer?: Child;
   /** Element to focus first; defaults to the first field, else the close button. */

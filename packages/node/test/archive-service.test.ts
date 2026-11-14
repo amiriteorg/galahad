@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { archiveId, newNodeIdentity, type NodeIdentity, registrationDigest, type Preregistration, TRIAL_ARCHIVE_KIND } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, type ExternalSource, investigationsAdapter, memoriesAdapter, trialsAdapter } from "../src/archive/adapters.ts";
+import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "../src/archive/adapters.ts";
 import { LocalDiskBackend, sha256Hex } from "../src/archive/blobs.ts";
 import { fence } from "../src/archive/retrieval.ts";
 import { ArchiveService, defaultSummarise } from "../src/archive/service.ts";
@@ -77,7 +77,7 @@ function world(): World {
         mind,
         identity,
         nodeName: "ultra",
-        adapters: [memoriesAdapter(mind), investigationsAdapter(mind), trialsAdapter(mind), artifactsAdapter(artifacts), chatsAdapter(chats, lookup, { now: () => clock.now }), boardsAdapter(null)],
+        adapters: [memoriesAdapter(mind), investigationsAdapter(mind), trialsAdapter(mind), artifactsAdapter(artifacts), chatsAdapter(chats, lookup, { now: () => clock.now })],
         log: () => {},
         now: () => clock.now,
         load: () => 0,
@@ -180,8 +180,6 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     expect(store.get(archiveId("artifacts", `${art.id}/out/make_beam.py`))!.title).toBe("make_beam.py (script that builds a model (build123d))");
     // Files are stored once by SHA-256 even though the artifact and its model entries both hold them.
     expect(store.counts().blobs).toBe(3);
-    // The whiteboard isn't hooked up on this branch yet: it says so, and waits.
-    expect(service.status().sources.find((s) => s.name === "boards")).toMatchObject({ waiting: true, pulled: 0 });
 
     // Nothing more to do: pulling again changes nothing.
     const before = store.counts();
@@ -248,37 +246,6 @@ describe("sources: each by its cursor, idempotent, catching up after downtime", 
     w.clock.now += 86_400_000 + 1;
     await service.drain();
     expect(store.has("memories", late.id)).toBe(true);
-  });
-});
-
-describe("the shape the whiteboard plugs into", () => {
-  test("a board's versions, each by its description, after a cursor; not hooked up, it waits", async () => {
-    const versions = [
-      { id: "board-1@1", title: "Keep gate, v1", at: 1, description: "A drawbridge sketch: leaf 2.4 m, one hinge." },
-      { id: "board-1@2", title: "Keep gate, v2", at: 2, description: `Two hinges and a counterweight; see art_${"A".repeat(22)}.` },
-    ];
-    const source: ExternalSource = {
-      async listSince(cursor, limit) {
-        const after = versions.filter((v) => cursor === null || v.id > cursor).slice(0, limit);
-        return { records: after.map(({ id, title, at }) => ({ id, title, at })), cursor: after.at(-1)?.id ?? cursor };
-      },
-      async describe(id) {
-        return { description: versions.find((v) => v.id === id)!.description, files: [] };
-      },
-    };
-    const first = await boardsAdapter(source).pull(null, 1);
-    expect(first.entries.map((e) => [e.kind, e.source, e.sourceId, e.title])).toEqual([["board", "boards", "board-1@1", "Keep gate, v1"]]);
-    const second = await boardsAdapter(source).pull(first.cursor, 10);
-    expect(second.entries[0]!.links).toEqual([{ rel: "uses", to: archiveId("artifacts", `art_${"A".repeat(22)}`) }]);
-    expect(second.more).toBe(false);
-    // The whiteboard's own lister answers null when nothing is new: the cursor stays where it was.
-    const quiet: ExternalSource = { listSince: async () => ({ records: [], cursor: null }), describe: source.describe };
-    expect((await boardsAdapter(quiet).pull(second.cursor, 10)).cursor).toBe(second.cursor);
-    // A file may come as a path on this node, streamed in, never read whole into memory here.
-    const streamed: ExternalSource = { listSince: source.listSince, describe: async () => ({ description: "x", files: [{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }] }) };
-    expect((await boardsAdapter(streamed).pull(null, 1)).entries[0]!.files).toEqual([{ path: "frames/000000.jsonl.gz", fromPath: "/somewhere/frames.gz" }]);
-    expect(boardsAdapter(null).waiting).toBe(true);
-    expect(await boardsAdapter(null).pull(null, 10)).toEqual({ entries: [], cursor: null, more: false });
   });
 });
 

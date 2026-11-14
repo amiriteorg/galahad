@@ -34,10 +34,7 @@ export interface ToolCall {
   input: unknown;
 }
 
-/**
- * A picture a tool hands back (the chalkboard as the owner sees it), and what to
- * say instead to a model that can't see it.
- */
+/** A picture a tool hands back, and what to say instead to a model that can't see it. */
 export interface ToolImage {
   mediaType: "image/png" | "image/jpeg" | "image/webp";
   /** Base64. */

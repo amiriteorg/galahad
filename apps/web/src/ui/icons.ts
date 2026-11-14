@@ -105,13 +105,7 @@ const ICONS = {
   /** The Lab: mathematics, physics and engineering. */
   bank: ["M3.5 9.5 12 4.5l8.5 5", "M5 9.5v8M9.67 9.5v8M14.33 9.5v8M19 9.5v8", "M3.5 19.5h17"],
   gauge: ["M4.75 18.5a8.5 8.5 0 1 1 14.5 0", "M12 15l3.75-4.25", circle(12, 15, 1.25)],
-  /** The chalkboard: a slate on an easel, with writing. */
-  board: [rect(3.5, 4, 17, 11, 1.5), "M7.5 15 5.5 20.5M16.5 15l2 5.5", "M7 8h5M7 11h8"],
-  /** The duster: rubbing chalk out. */
-  eraser: ["M8.75 19.5H19.5", "M4.9 14.6l7.7-7.7a2 2 0 0 1 2.83 0l2.67 2.67a2 2 0 0 1 0 2.83l-6.35 6.35a2.6 2.6 0 0 1-1.84.76H9.3z", "M9.25 10.25l5 5"],
   undo: ["M9 5.5 4.5 10 9 14.5", "M4.5 10H15a4.5 4.5 0 0 1 0 9h-3"],
-  redo: ["M15 5.5l4.5 4.5L15 14.5", "M19.5 10H9a4.5 4.5 0 0 0 0 9h3"],
-  expand: ["M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"],
   flask: ["M9.5 3.5h5", "M10.25 3.5v6L5 18.25a1.5 1.5 0 0 0 1.3 2.25h11.4a1.5 1.5 0 0 0 1.3-2.25L13.75 9.5v-6", "M7.25 15h9.5"],
   /** His journal: a bound book, its spine and a few lines on the cover. */
   journal: [rect(5, 3.5, 14, 17, 2), "M8.75 3.5v17", "M12 8.25h4M12 11.75h4"],

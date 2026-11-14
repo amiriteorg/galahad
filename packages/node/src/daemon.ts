@@ -16,13 +16,11 @@ import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
-import { artifactsAdapter, boardsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
-import { boardSource } from "./archive/external.ts";
+import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
 import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
-import { BoardStore } from "./board.ts";
 import { ChatStore } from "./chats.ts";
 import { TeamStore } from "./team-store.ts";
 import type { TeamService } from "./team.ts";
@@ -55,8 +53,6 @@ export interface Daemon {
   connectors: ConnectorService;
   artifacts: ArtifactStore;
   bank: BankService;
-  /** The chalkboard you and Galahad share. */
-  board: BoardStore;
   /** The archive: everything kept for good, and searched by words and meaning. */
   archive: ArchiveService;
   /** Compute: the census, this node's calibration and slots, the plan, effort. */
@@ -347,7 +343,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ...opts.turnLimits,
     },
   });
-  const board = new BoardStore({ dir: join(home.dir, "boards"), log });
   // ---- The archive: node-local, its own database and blob store in the home, never the mind's log.
   const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
   const archive = new ArchiveService({
@@ -364,9 +359,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       trialsAdapter(store),
       artifactsAdapter(artifacts),
       chatsAdapter(chats, { has: (s, id) => archiveStore.has(s, id), sourceIds: (s, prefix) => archiveStore.sourceIds(s, prefix) }),
-      // The chalkboard's versions (a run of strokes as one; each as trusted as the least trusted hand on it):
-      // archive/external.ts.
-      boardsAdapter(boardSource(board)),
       // His skills (skills.ts): each version, once it's his to use.
       skillsAdapter(store),
     ],
@@ -433,7 +425,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   taskDeps.runLoop = (name) => void loops.runNow(name);
   taskDeps.isRunning = (name) => loops.isRunning(name);
   taskDeps.chats = chats;
-  taskDeps.board = board;
   // The quests in hand on this node, as whoever runs each reports them (quests.ts).
   const quests = new QuestBoard();
   // His skills (skills.ts): learned from quests that passed review, offered as data, tidied with the heartbeat.
@@ -539,7 +530,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     turns,
     team,
     quests,
-    board,
     archive,
     skills,
     usage,
@@ -625,7 +615,6 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectors,
     artifacts,
     bank,
-    board,
     archive,
     compute,
     turns,

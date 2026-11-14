@@ -107,7 +107,7 @@ export interface ChatTools {
   specs: ToolSpec[];
   /** The tool's title and a short, safe summary of the arguments, for the user's view. */
   describe(call: ToolCall): { title: string; input: string };
-  /** A result may carry pictures (the chalkboard): models that see get them, the rest their descriptions. */
+  /** A result may carry pictures: models that see get them, the rest their descriptions. */
   run(call: ToolCall, signal?: AbortSignal): Promise<{ content: string; isError?: boolean; summary: string; images?: ToolImage[] }>;
   /**
    * Whether running this call only looks (it changes nothing, so a model that takes an answer over may run

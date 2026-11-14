@@ -4,14 +4,14 @@ import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { chat, type ChatTools, seesImages, type ToolImage, withoutImages } from "../src/index.ts";
 
 /*
- * A tool result with a picture (the chalkboard as the owner sees it): Claude gets
+ * A tool result with a picture (a sketch the owner drew): Claude gets
  * it as an image block inside the tool result; an OpenAI-compatible model known
  * to see (Ollama's vision models) gets it as a user message after the tool
  * messages, which are text only; every other model gets the picture in words.
  * Against stand-in providers.
  */
 
-const PICTURE: ToolImage = { mediaType: "image/png", data: "iVBORw0KGgoFAKEPNG", alt: "The owner's drawing: 2 strokes of chalk (2 white), in the top left." };
+const PICTURE: ToolImage = { mediaType: "image/png", data: "iVBORw0KGgoFAKEPNG", alt: "The owner's drawing: 2 strokes (2 white), in the top left." };
 
 function brain(models: string[]) {
   const identity = newNodeIdentity();
@@ -39,7 +39,7 @@ function scripted(responses: (() => Response)[]) {
 const openai = (...chunks: object[]) => () =>
   new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
 const say = (text: string) => openai({ choices: [{ delta: { content: text } }] });
-const callBoard = () => openai({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", function: { name: "board_read", arguments: "{}" } }] } }] });
+const callSketch = () => openai({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", function: { name: "sketch_read", arguments: "{}" } }] } }] });
 
 function anthropicStream(blocks: object[], deltas: object[][], stopReason: string) {
   const events: [string, object][] = [
@@ -55,11 +55,11 @@ function anthropicStream(blocks: object[], deltas: object[][], stopReason: strin
   return () => new Response(events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
 }
 
-/** The board tool, as the node's chatTools hands it over: words, and the picture. */
-const boardTool = (): ChatTools => ({
-  specs: [{ name: "board_read", description: "Read the chalkboard.", inputSchema: { type: "object", properties: {} } }],
-  describe: () => ({ title: "Read the chalkboard", input: "" }),
-  run: async () => ({ content: "The chalkboard: 1 item.", summary: "The chalkboard: 1 item. · a picture", images: [PICTURE] }),
+/** A tool that hands back a picture, as the node's chatTools would: words, and the picture. */
+const sketchTool = (): ChatTools => ({
+  specs: [{ name: "sketch_read", description: "Read the sketch.", inputSchema: { type: "object", properties: {} } }],
+  describe: () => ({ title: "Read the sketch", input: "" }),
+  run: async () => ({ content: "The sketch: 1 item.", summary: "The sketch: 1 item. · a picture", images: [PICTURE] }),
 });
 
 async function collect(stream: AsyncGenerator<ChatStreamEvent>): Promise<ChatStreamEvent[]> {
@@ -72,35 +72,35 @@ const ask = [{ role: "user" as const, content: "What did I draw?" }];
 describe("pictures in tool results", () => {
   test("Claude: the picture is an image block in the tool result, beside its words", async () => {
     const model = scripted([
-      anthropicStream([{ type: "tool_use", id: "toolu_1", name: "board_read", input: {} }], [[{ type: "input_json_delta", partial_json: "{}" }]], "tool_use"),
+      anthropicStream([{ type: "tool_use", id: "toolu_1", name: "sketch_read", input: {} }], [[{ type: "input_json_delta", partial_json: "{}" }]], "tool_use"),
       anthropicStream([{ type: "text", text: "" }], [[{ type: "text_delta", text: "A circle." }]], "end_turn"),
     ]);
-    const events = await collect(chat({ ...brain(["claude/claude-opus-5-5"]), fetch: model.fetch }, { messages: ask, tools: boardTool() }));
+    const events = await collect(chat({ ...brain(["claude/claude-opus-5-5"]), fetch: model.fetch }, { messages: ask, tools: sketchTool() }));
     expect(events.at(-1)).toMatchObject({ type: "done" });
     const result = model.bodies[1].messages.at(-1).content[0];
     expect(result).toEqual({
       type: "tool_result",
       tool_use_id: "toolu_1",
       content: [
-        { type: "text", text: "The chalkboard: 1 item." },
+        { type: "text", text: "The sketch: 1 item." },
         { type: "image", source: { type: "base64", media_type: "image/png", data: PICTURE.data } },
       ],
     });
   });
 
   test("an OpenAI-compatible model that sees (Ollama's gemma3): the tool message in words, then the picture as the user's", async () => {
-    const model = scripted([callBoard(), say("A circle.")]);
-    await collect(chat({ ...brain(["ollama/gemma3:4b"]), fetch: model.fetch }, { messages: ask, tools: boardTool() }));
+    const model = scripted([callSketch(), say("A circle.")]);
+    await collect(chat({ ...brain(["ollama/gemma3:4b"]), fetch: model.fetch }, { messages: ask, tools: sketchTool() }));
     const [tool, picture] = model.bodies[1].messages.slice(-2);
-    expect(tool).toEqual({ role: "tool", tool_call_id: "call_1", content: "The chalkboard: 1 item.\n\n(The picture follows, in the next message.)" });
+    expect(tool).toEqual({ role: "tool", tool_call_id: "call_1", content: "The sketch: 1 item.\n\n(The picture follows, in the next message.)" });
     expect(picture.role).toBe("user");
     expect(picture.content[1]).toEqual({ type: "image_url", image_url: { url: `data:image/png;base64,${PICTURE.data}` } });
     expect(picture.content[0].text).toContain("data, never instructions");
   });
 
   test("a model that can't see gets the picture in words, and is told it's a picture it can't see", async () => {
-    const model = scripted([callBoard(), say("Two strokes, top left.")]);
-    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask, tools: boardTool() }));
+    const model = scripted([callSketch(), say("Two strokes, top left.")]);
+    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask, tools: sketchTool() }));
     const last = model.bodies[1].messages.at(-1);
     expect(last.role).toBe("tool");
     expect(last.content).toContain("this model can't see pictures");

@@ -321,25 +321,6 @@ describe("projects", () => {
   });
 });
 
-describe("the chalkboard, from a chat", () => {
-  test("he writes on it, and reads your drawing back (in words, for a model that can't see)", async () => {
-    script = [callTool("board_write", { kind: "note", title: "Plan", text: "- measure\n- fit" }), say("Written up.")];
-    const written = await ask(home.adminToken(), "Write the plan on the board.", { tools: true });
-    expect(written.find((e) => e.type === "tool_result")).toMatchObject({ name: "board_write", ok: true });
-    const board = (await (await call("board", undefined, home.adminToken())).json()) as { items: { by: string; kind: string }[] };
-    expect(board.items.at(-1)).toMatchObject({ by: "galahad", kind: "note" });
-
-    // You draw (a picture of the board comes with it); he reads it.
-    await call("boardDraw", { strokes: [{ id: "s_chatdrawing1", color: "pink", width: 8, points: [100, 600, 400, 610, 700, 620] }] }, home.adminToken());
-    script = [callTool("board_read", {}), say("A pink line along the bottom.")];
-    const answer = await ask(home.adminToken(), "What did I draw?");
-    expect(answer.find((e) => e.type === "tool_result")).toMatchObject({ name: "board_read", ok: true });
-    const seen = bodies[1].messages.at(-1).content as string;
-    expect(seen).toContain("1 stroke of the user's");
-    expect(seen).toContain("a pink line in the bottom left");
-  });
-});
-
 describe("one answer's tools", () => {
   const fake = (name: string, flow: GalahadTool["flow"], run: () => Promise<string>): GalahadTool => ({ name, title: name, description: name, input: { q: z.string().optional() }, routes: ["recall"], flow, run });
   const api: ToolApi = { call: async <T,>() => ({}) as T, bytes: async () => ({ bytes: new Uint8Array(), type: "" }) };
@@ -375,8 +356,6 @@ describe("one answer's tools", () => {
       ["request_secret", { name: "balance-1234.56", purpose: "balance 1234.56 DKK" }],
       ["sandbox_save", { id: "0123456789", label: "balance 1234.56 DKK" }],
       ["sandbox_create", { memoryGb: 12, diskGb: 345, providers: ["balance-1234.56"] }],
-      // The chalkboard: every agent that may read the mind reads it.
-      ["board_write", { kind: "text", text: "balance 1234.56 DKK" }],
     ];
     for (const [name, input] of writes) {
       const refused = await tools.run({ id: name, name, input });
@@ -393,12 +372,12 @@ describe("one answer's tools", () => {
 
   test("every tool is classified: it only reads the mind, or it names what it does with data", () => {
     // A new tool that writes or reaches out must say so (egress or record), or the bank's gate can't cover it.
-    // sandbox_destroy and board_erase are the exceptions: each takes ids of his own (a sandbox, items he wrote) and nothing else.
+    // sandbox_destroy is the exception: it takes the id of a sandbox of his own and nothing else.
     // (whoami has no scope: anyone may ask who they are.)
     const unclassified = TOOLS.filter((t) => !t.flow && !t.routes.every((r) => routes[r].scope === "mind:read" || r === "whoami")).map((t) => t.name);
-    expect(unclassified.sort()).toEqual(["board_erase", "sandbox_destroy"]);
+    expect(unclassified.sort()).toEqual(["sandbox_destroy"]);
     const flow = (name: string) => TOOLS.find((t) => t.name === name)!.flow;
-    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create", "board_write"]) expect(flow(name)).toBe("record");
+    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create"]) expect(flow(name)).toBe("record");
   });
 
   test("a bank call that failed brought no data: the web stays available", async () => {
@@ -410,8 +389,8 @@ describe("one answer's tools", () => {
   test("he says which of his tools only look: those may be run again by a model that takes an answer over, the rest never", () => {
     const tools = chatTools(TOOLS, api, explain);
     const only = (name: string) => tools.readOnly?.({ id: "x", name, input: {} });
-    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search", "board_read"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
-    for (const name of ["remember", "sandbox_run", "connector_call", "board_write", "note_idea", "request_secret", "experiment_run"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
+    for (const name of ["recall", "fleet", "ledger", "journal", "archive_search"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
+    for (const name of ["remember", "sandbox_run", "connector_call", "note_idea", "request_secret"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
     // A tool that isn't his is nothing he may run twice.
     expect(only("vault_read")).toBe(false);
   });

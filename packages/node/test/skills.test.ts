@@ -757,7 +757,7 @@ describe("for his journal", () => {
     expect(lines.join("\n")).not.toContain("Found online");
     expect(r.skills.journal(r.now + 1)).toEqual([]);
     // And they're in what he reads, under their own heading, in the order the day went.
-    const { sections } = journalLines({ now: r.now, ledger: [], notices: [], runs: [], chats: [], board: [], skills: r.skills.journal(start - 1) });
+    const { sections } = journalLines({ now: r.now, ledger: [], notices: [], runs: [], chats: [], skills: r.skills.journal(start - 1) });
     const section = sections["Your skills, learned and used"]!;
     expect(section).toHaveLength(4);
     expect(section[0]).toMatch(/^\d\d:\d\d you learned the skill "Fix a failing parser test" from quest q-1$/);

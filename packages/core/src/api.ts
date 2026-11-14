@@ -15,7 +15,6 @@ import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
 import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
-import { BoardDrawInput, BoardEraseInput, BoardHistoryInput, BoardVersionInput, BoardWriteInput } from "./board-input.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 import { JOURNAL_DAY } from "./journal.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
@@ -140,8 +139,8 @@ export const LoopTask = z.discriminatedUnion("kind", [
   /**
    * His journal, once a day: a recollection of the day in his own words, what he learned and what he'd like
    * to do next, kept as his own memory (journal.ts): by the cheapest usable role, within `budget` tokens a
-   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs, the titles of kept chats and
-   * the chalkboard (never the bank, never secrets).
+   * day (default REFLECT_BUDGET), from the day's ledger, notices, loop runs and the titles of kept chats
+   * (never the bank, never secrets).
    * The kind is still `reflect`: it was his daily reflection first, and loops on running fleets go on as they are.
    */
   z.strictObject({ kind: z.literal("reflect"), budget: z.number().int().min(REFLECT_BUDGET_MIN).max(REFLECT_BUDGET_MAX).optional() }),
@@ -367,25 +366,6 @@ export const routes = {
   /** Whoever runs a quest says where it stands (whoever may run its sandbox may: the sandbox scope). */
   questProgress: { method: "POST", path: "/api/quests/progress", scope: "sandbox", input: QuestProgressInput },
   projects: { method: "GET", path: "/api/projects", scope: "mind:read", input: null },
-  /*
-   * The chalkboard you and Galahad share (node-local, a file in the home). Reading is mind:read. Drawing,
-   * writing and erasing are part of your conversation with him (chat): what you draw reaches his models as
-   * a picture, as what you type does. Only you draw or erase your drawing (the node refuses agents); an
-   * agent erases only what it wrote; clearing it all is fleet:admin, which agents never hold.
-   */
-  board: { method: "GET", path: "/api/board", scope: "mind:read", input: null },
-  /** The PNG of the board as you last saw it (uploaded with your strokes), for models that can see. */
-  boardSnapshot: { method: "POST", path: "/api/board/snapshot", scope: "mind:read", input: z.strictObject({}) },
-  boardDraw: { method: "POST", path: "/api/board/draw", scope: "chat", input: BoardDrawInput },
-  boardWrite: { method: "POST", path: "/api/board/write", scope: "chat", input: BoardWriteInput },
-  boardErase: { method: "POST", path: "/api/board/erase", scope: "chat", input: BoardEraseInput },
-  boardClear: { method: "POST", path: "/api/board/clear", scope: "fleet:admin", input: z.strictObject({}) },
-  /** Every version is kept (clearing and erasing destroy nothing): read them, restore one (yours), forget them (yours, fleet:admin). */
-  boardHistory: { method: "POST", path: "/api/board/history", scope: "mind:read", input: BoardHistoryInput },
-  boardVersion: { method: "POST", path: "/api/board/version", scope: "mind:read", input: BoardVersionInput },
-  boardVersionPicture: { method: "POST", path: "/api/board/version/picture", scope: "mind:read", input: BoardVersionInput },
-  boardRestore: { method: "POST", path: "/api/board/restore", scope: "chat", input: BoardVersionInput },
-  boardForget: { method: "POST", path: "/api/board/history/forget", scope: "fleet:admin", input: z.strictObject({}) },
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },

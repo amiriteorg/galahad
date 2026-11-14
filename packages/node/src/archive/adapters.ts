@@ -14,7 +14,7 @@ import { skillVersions } from "../skills.ts";
  * what arrived late (a memory synced from a node that was offline).
  *
  * Adapters read only through public APIs: the mind's (recall, lww), the chat store's,
- * the artifact store's. The chalkboard plugs in through `ExternalSource` (archive/external.ts).
+ * the artifact store's.
  */
 
 export interface Pull {
@@ -49,7 +49,6 @@ const firstLine = (text: string, max = 90) => {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line || "(empty)";
 };
-const ART_ID = /\bart_[A-Za-z0-9_-]{22}\b/g;
 
 /** Records sorted by a key, after a cursor, a batch at a time: the shape every list-backed source shares. */
 function after<T>(items: { key: string; item: T }[], cursor: string | null, limit: number): { batch: { key: string; item: T }[]; more: boolean } {
@@ -343,56 +342,6 @@ export function chatsAdapter(chats: ChatSource, archive: ArchiveLookup, opts: { 
     },
   };
 }
-
-// ---- The chalkboard (its source: archive/external.ts) ------
-
-/**
- * What a source outside this module exposes: records since a cursor, and one record's
- * files and plain-text description (and, if it varies by record, how far it's trusted).
- * A null cursor from a source means nothing new: the archive's stays where it was.
- */
-export interface ExternalSource {
-  listSince(cursor: string | null, limit: number): Promise<{ records: { id: string; title: string; at: number }[]; cursor: string | null }>;
-  /** A file comes as bytes, or as a path on this node to stream in (a recording can be large); a record may say how far it's trusted. */
-  describe(id: string): Promise<{ description: string; trust?: Trust; files: { path: string; bytes?: Uint8Array; fromPath?: string }[] }>;
-}
-
-function externalAdapter(name: string, kind: string, source: ExternalSource | null | undefined, opts: { trust: Trust; tags: string[] }): ArchiveAdapter {
-  return {
-    name,
-    waiting: !source,
-    async pull(cursor, limit) {
-      if (!source) return { entries: [], cursor, more: false };
-      const listed = await source.listSince(cursor, limit);
-      const records = listed.records;
-      // A source may answer null when nothing is new: the cursor stays where it was.
-      const next = listed.cursor ?? cursor;
-      const entries: IncomingEntry[] = [];
-      for (const r of records.slice(0, limit)) {
-        const { description, files, trust } = await source.describe(r.id);
-        // The kept work it names (code, models, recordings) is linked as what it used.
-        const used = [...new Set(description.match(ART_ID) ?? [])];
-        entries.push({
-          kind,
-          source: name,
-          sourceId: r.id,
-          title: r.title,
-          description,
-          trust: trust ?? opts.trust,
-          createdAt: r.at,
-          tags: opts.tags,
-          meta: { [kind]: r.id },
-          files: files.map((f) => ({ path: f.path, ...(f.bytes ? { bytes: f.bytes } : {}), ...(f.fromPath ? { fromPath: f.fromPath } : {}) })),
-          links: used.map((a) => ({ rel: "uses", to: archiveId("artifacts", a) })),
-        });
-      }
-      return { entries, cursor: next, more: records.length >= limit };
-    },
-  };
-}
-
-/** The whiteboard: each version of a board, by its description. */
-export const boardsAdapter = (source: ExternalSource | null | undefined): ArchiveAdapter => externalAdapter("boards", "board", source, { trust: "agent", tags: ["board"] });
 
 // ---- Skills: how he did a kind of work, as the mind keeps them ---------------------------
 
