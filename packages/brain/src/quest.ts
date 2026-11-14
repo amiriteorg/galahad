@@ -177,7 +177,7 @@ export const ASK_RETRY_DELAYS_MS = [15_000, 60_000, 180_000] as const;
 
 /**
  * This many replies in a row with no command to run end the quest: a model that is told what was wrong three
- * times and sends the same again is not going to stop, and each further reply is paid for. (A squire's engineer
+ * times and sends the same again is not going to stop, and each further reply is paid for. (A knight's engineer
  * sent sixteen in a row on 14 November 2026: its whole budget, with nothing run.)
  */
 export const MALFORMED_RUN = 3;

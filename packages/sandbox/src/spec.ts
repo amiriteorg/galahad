@@ -1,7 +1,7 @@
 import type { SandboxNetwork } from "@galahad/core";
 
 /*
- * A sandbox is where a squire works: an unprivileged, resource-capped container
+ * A sandbox is where a knight works: an unprivileged, resource-capped container
  * with its own workspace and nothing else of the host. This module is pure: it
  * turns a spec into `docker` arguments, so the security posture is unit-tested.
  */
@@ -64,7 +64,7 @@ export const LAB_IMAGE = "galahad/lab:1";
 /** Gazebo: robotics simulation, headless (sandbox/gazebo/Dockerfile). */
 export const GAZEBO_IMAGE = "galahad/gazebo:1";
 
-/** The squires' desktop: the workshop with a display, a window manager and a browser (sandbox/desktop/Dockerfile). Built after the workshop image, which it is made from. */
+/** The knights' desktop: the workshop with a display, a window manager and a browser (sandbox/desktop/Dockerfile). Built after the workshop image, which it is made from. */
 export const DESKTOP_IMAGE = "galahad/desktop:1";
 
 /** Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. */
@@ -107,7 +107,7 @@ export function runArgs(spec: SandboxSpec): string[] {
     "--name",
     containerName(spec.id),
     "--hostname",
-    "squire",
+    "knight",
     "--init",
     // Nobody inside is root, nothing can gain privileges, the kernel surface is minimal.
     "--user",
@@ -116,7 +116,7 @@ export function runArgs(spec: SandboxSpec): string[] {
     "ALL",
     "--security-opt",
     "no-new-privileges:true",
-    // The image is immutable; the squire writes only to its workspace and /tmp.
+    // The image is immutable; the knight writes only to its workspace and /tmp.
     "--read-only",
     "--tmpfs",
     "/tmp:rw,nosuid,nodev,size=2g,mode=1777",
@@ -126,7 +126,7 @@ export function runArgs(spec: SandboxSpec): string[] {
     "/work",
     "--env",
     "HOME=/work",
-    // Bounded resources: a runaway squire cannot starve the host.
+    // Bounded resources: a runaway knight cannot starve the host.
     "--cpus",
     String(spec.cpus),
     "--memory",

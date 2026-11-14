@@ -6,7 +6,7 @@ import { readBridge } from "./hermes.ts";
  * The vendors' own coding tools as harnesses: Claude Code and Codex. A subscription (a Claude
  * plan, a ChatGPT plan) may be used only by its vendor's own tool, unmodified, signed in by its
  * owner through the vendor's own flow. So that is all this does: it runs the tool the owner
- * installed and signed in inside the squire's VM, headless, and reads what it prints.
+ * installed and signed in inside the knight's VM, headless, and reads what it prints.
  *
  *   - Galahad never holds a sign-in. Nothing here opens, copies, moves or sends where a tool keeps
  *     one. Whether the tool has one is asked of the tool (its own status command), and of the

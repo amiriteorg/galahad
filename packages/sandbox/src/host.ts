@@ -109,7 +109,7 @@ export interface CreateInput {
   search?: boolean;
 }
 
-/** One thing done on a squire's desktop from outside its VM (`look`: nothing, only the picture). */
+/** One thing done on a knight's desktop from outside its VM (`look`: nothing, only the picture). */
 export type DesktopAction =
   | { do: "look" }
   | { do: "click"; x: number; y: number; button?: "left" | "right" | "middle" | "double" }
@@ -177,7 +177,7 @@ async function readCapped(stream: ReadableStream<Uint8Array>, max: number): Prom
 }
 
 /**
- * A sandbox host: this node runs squires' work in hardened containers.
+ * A sandbox host: this node runs knights' work in hardened containers.
  * Creating is free (logged); destroying goes through the oath gate, which lets a
  * quest clean up its own ephemeral sandboxes and asks for everything else.
  */
@@ -496,9 +496,9 @@ export class SandboxHost {
   }
 
   /**
-   * Owner only. Make a squire's VM again from its image as it is now: the same VM (its id, its `/work`, what it
+   * Owner only. Make a knight's VM again from its image as it is now: the same VM (its id, its `/work`, what it
    * was given), a new container. A VM is made from the image as it was that day, so a fix to the image, or a
-   * newer tool in it, reaches an existing squire only this way. The container that was is set aside under
+   * newer tool in it, reaches an existing knight only this way. The container that was is set aside under
    * another name and removed only once the new one runs; one that won't start is cleared away and the old one
    * is put back as it was. Its network may change with it (a microVM's can't be changed any other way), and its
    * gateway token covers `providers`, as for a VM made today. Everything outside `/work` is the image's again.
@@ -612,7 +612,7 @@ export class SandboxHost {
   }
 
   /**
-   * A squire's desktop, from outside its VM (the owner watching, or taking over to sign in): do one thing there
+   * A knight's desktop, from outside its VM (the owner watching, or taking over to sign in): do one thing there
    * with the VM's own `desktop` command, then bring back a picture of the screen. No port is opened into the VM.
    * Each thing done is a line in the ledger; looking is not (whoever watches asks again every second or two);
    * what is typed is carried to the VM as one argument no shell reads, and the ledger says only how much.
@@ -657,7 +657,7 @@ export class SandboxHost {
     if (sandbox.status !== "running") throw new SandboxError(`the teammate's VM is ${sandbox.status}`, 409);
     /** Why the VM's command failed, as the owner should read it. */
     const failed = (run: Run): never => {
-      if (run.code === 127 || /desktop: (command )?not found/.test(run.stderr)) throw new SandboxError("this teammate's VM has no desktop: have it made again with one (galahad squires provision <id> --remake --desktop)", 424);
+      if (run.code === 127 || /desktop: (command )?not found/.test(run.stderr)) throw new SandboxError("this teammate's VM has no desktop: have it made again with one (galahad roundtable provision <id> --remake --desktop)", 424);
       throw new SandboxError(`the desktop could not do that: ${redact(run.stderr.trim().split("\n").at(-1) ?? "").slice(0, 300) || `exit ${run.code}`}`, 424);
     };
     if (argv) {

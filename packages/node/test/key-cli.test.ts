@@ -68,7 +68,7 @@ test("a coding plan is said to be one: what its key is for, where its terms are,
   expect(calls[1]!.input).toEqual({ id: "zai-coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", kind: "openai", secret: "zai-coding" });
   expect(lines).toContain('Key stored and provider "zai-coding" configured.');
   expect(lines).toContain("GLM Coding Plan is a coding plan");
-  expect(lines).toContain("Galahad and his squires code on it themselves, as Galahad");
+  expect(lines).toContain("Galahad and the other knights code on it themselves, as Galahad");
   expect(lines).toContain("His talk with you, his loops and his heartbeat never use it");
   // What its vendor says it is for, in the vendor's words, and where.
   expect(lines).toContain('"strictly limited to use within officially supported tools and products"');

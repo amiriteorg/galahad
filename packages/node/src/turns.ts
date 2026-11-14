@@ -98,7 +98,7 @@ export interface TurnSpec {
   by: QueuedBy;
   /** Its asker may read the bank, so it may come to hold bank data: only a device that may read the bank watches or steers it. */
   bank: boolean;
-  /** Its asker may command the team, so it has the tools to his workers: only a device that may command the team steers it. */
+  /** Its asker may command the team, so it has the tools to the knights: only a device that may command the team steers it. */
   team?: boolean;
   role: string;
   /** The kept chat it belongs to (null: a temporary chat, kept nowhere). */

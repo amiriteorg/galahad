@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { containerName, LABEL, SandboxHost, type DockerRunner, type LedgerEntryInput } from "../src/index.ts";
 
 /*
- * Watching a squire's desktop and taking it over, from outside its VM: the host does one thing there with the
+ * Watching a knight's desktop and taking it over, from outside its VM: the host does one thing there with the
  * `desktop` command (a click, some typing, a key, an address) and brings back a picture of the screen. No port is
- * opened into the VM for it. What is typed (a password, when you sign in for the squire) is never written down.
+ * opened into the VM for it. What is typed (a password, when you sign in for the knight) is never written down.
  */
 
 const ID = "0123456789";
@@ -33,7 +33,7 @@ function desk(options: { status?: string; labels?: Record<string, string>; missi
   return { host, ledger, execs };
 }
 
-describe("a squire's desktop, from outside its VM", () => {
+describe("a knight's desktop, from outside its VM", () => {
   test("looking brings back a picture of the screen and writes nothing down", async () => {
     const d = desk();
     const seen = await d.host.desktop(ID, QUEST, { do: "look" });
@@ -87,7 +87,7 @@ describe("a squire's desktop, from outside its VM", () => {
     expect(d.ledger).toEqual([]);
   });
 
-  test("only a squire's own running VM, and only one that has a desktop", async () => {
+  test("only a knight's own running VM, and only one that has a desktop", async () => {
     await expect(desk().host.desktop(ID, "arm.team.abcdef0123.other", { do: "look" })).rejects.toMatchObject({ status: 403 });
     await expect(desk({ labels: { [`${LABEL}.ephemeral`]: "true" } }).host.desktop(ID, QUEST, { do: "look" })).rejects.toMatchObject({ status: 403 });
     await expect(desk().host.desktop("9876543210", QUEST, { do: "look" })).rejects.toMatchObject({ status: 404 });

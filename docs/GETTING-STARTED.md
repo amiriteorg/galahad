@@ -185,7 +185,7 @@ bun galahad key add                           # a Kimi Code key (sk-kimi-…) is
 bun galahad provider presets                  # every preset; the plans are marked
 ```
 
-A plan's key is for coding: its vendor's terms say so, and `key add` prints the vendor's own sentence and where it is said. Galahad and his squires are a coding tool, so they code on a plan themselves (his quests, their work), calling as Galahad, and lend it to the other coding tools in their VMs (OpenCode, Hermes) and under `galahad run`, each calling as itself. His talk with you, his loops and his heartbeat never use it. `key add` prints the roster line that puts the plan first for coding, for example `bun galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5`. [ARCHITECTURE §6](ARCHITECTURE.md) has the whole of it, and what each vendor says of its plan.
+A plan's key is for coding: its vendor's terms say so, and `key add` prints the vendor's own sentence and where it is said. Galahad and his knights are a coding tool, so they code on a plan themselves (his quests, their work), calling as Galahad, and lend it to the other coding tools in their VMs (OpenCode, Hermes) and under `galahad run`, each calling as itself. His talk with you, his loops and his heartbeat never use it. `key add` prints the roster line that puts the plan first for coding, for example `bun galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5`. [ARCHITECTURE §6](ARCHITECTURE.md) has the whole of it, and what each vendor says of its plan.
 
 A **Claude subscription's sign-in** (what `claude setup-token` prints, `sk-ant-oat…`) is not an API key, and is refused if you paste it as one: Anthropic keeps it to its own tool and its own sign-in flow. Claude Code and Codex on your own subscriptions work with Galahad as agents over MCP, each on its own sign-in (§10: `bun galahad mcp install claude --apply`).
 
@@ -206,15 +206,15 @@ bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 
 ## 6½. Seat knights at your Roundtable
 
-The whole system is Galahad. **Squires** gives parts of his shared mind persistent names, jobs, rooms and DMs. Open it in the PWA paired to the node you want to keep as the controller, choose **New squire**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a squire and brief it; he does so within a daily allowance, and Squires marks it as made by him. The CLI equivalent starts with:
+Your knights sit at the **Roundtable**: Galahad, your primary knight, and the others you seat there, none beneath another, each with a name, a lasting job, rooms and DMs of its own. Open it in the PWA paired to the node you want to keep as the controller, choose **New knight**, then create a room or open a DM. The owner device needs `fleet:admin` to send messages or manage work. You can also ask Galahad in your main conversation to make a knight and brief it; he does so within a daily allowance, and Squires marks it as made by him. The CLI equivalent starts with:
 
 ```sh
-bun galahad squires add ada --name Ada --role engineer --agent native --limit 40
-bun galahad squires dm ada "Help me plan the next small, verifiable improvement."
-bun galahad squires
+bun galahad roundtable add ada --name Ada --role engineer --agent native --limit 40
+bun galahad roundtable dm ada "Help me plan the next small, verifiable improvement."
+bun galahad roundtable
 ```
 
-A squire you no longer want is paused (`bun galahad squires pause squire ada`) or removed for good (`bun galahad squires remove ada`, or **Workspace → Remove squire** in Squires). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [ROUNDTABLE](ROUNDTABLE.md#removing-a-squire) has the details.
+A knight you no longer want is paused (`bun galahad roundtable pause knight ada`) or removed for good (`bun galahad roundtable remove ada`, or **Workspace → Remove knight** at the Roundtable). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [ROUNDTABLE](ROUNDTABLE.md#removing-a-knight) has the details.
 
 Conversation can begin with the configured roster. Engineering tasks and shell calls require a persistent Kata VM on a Linux KVM host; they fail if one is unavailable. Image-backed workspaces require the updated helper's retention support; without the helper, files live in a persistent named volume with no disk quota. OpenCode, Hermes, Claude Code and Codex must be installed by the owner in that VM before selecting them for work; Claude Code and Codex can run there on your own Claude or ChatGPT subscription once you have signed them in yourself, in the VM, through the vendor's own flow ([ROUNDTABLE](ROUNDTABLE.md#claude-code-and-codex-your-subscription-does-the-coding)). Squires state lives in this controller's `team.db`, while `recall` and `remember` use Galahad's shared mind. **Working notes** are local execution context. Follow [ROUNDTABLE](ROUNDTABLE.md) for VM provisioning, shared rooms, budgets, dependencies, gates and Stop-and-revise, and [the Hermes integration](../integrations/hermes/README.md) for its separate shared-memory plugin.
 

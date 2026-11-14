@@ -36,7 +36,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await daemon?.stop(); model.stop(true); rmSync(root, { recursive: true, force: true }); });
 
-test("real API: squires converse autonomously under a shared bound and write to the same mind", async () => {
+test("real API: knights converse autonomously under a shared bound and write to the same mind", async () => {
   for (const id of ["ada", "lin"]) await api("saveTeammate", { id, name: id.toUpperCase(), role: "planner" });
   await api("saveTeamRoom", { id: "forge", name: "Forge", members: ["ada", "lin"], turnBudget: 3 });
   await api("postTeamMessage", { room: "forge", text: "Coordinate on the project together." });
@@ -70,7 +70,7 @@ test("team owner routes reject external arms, spoofed speakers and fake VM avail
   expect((await request("mintArm", { label: "team.ada" })).status).toBeGreaterThanOrEqual(400);
 });
 
-test("squires, notes, rooms and messages survive a controller restart", async () => {
+test("knights, notes, rooms and messages survive a controller restart", async () => {
   await api("teamMemory", { id: "ada", text: "Working context for the ongoing build." });
   const avatar = { ...defaultAvatar("ada"), form: "round" as const, color: "#b9dfd4", accessory: "plume" as const };
   const saved = await api("saveTeammate", { id: "ada", name: "ADA", avatar });
@@ -86,11 +86,11 @@ test("squires, notes, rooms and messages survive a controller restart", async ()
   expect(persisted?.avatar).toEqual(avatar);
 });
 
-test("real API: you remove a squire, nobody else can; it is gone from the team and what it said stays its own", async () => {
+test("real API: you remove a knight, nobody else can; it is gone from the team and what it said stays its own", async () => {
   await api("saveTeammate", { id: "temp", name: "Temp", role: "planner" });
   const { token } = await api("mintArm", { label: "remover", scopes: ["chat", "mind:read", "mind:write", "sandbox"] });
   expect((await request("removeTeammate", { id: "temp" }, token)).status).toBe(403);
-  // Nor has anyone else a squire's VM made again: an agent is refused on your route and on its host's, and no
+  // Nor has anyone else a knight's VM made again: an agent is refused on your route and on its host's, and no
   // agent can be given the scope that both need.
   expect((await request("remakeTeammate", { id: "temp" }, token)).status).toBe(403);
   expect((await request("remakeTeamWorkspace", { id: "0123456789", quest: "arm.team.abcdef0123.temp", providers: [] }, token)).status).toBe(403);

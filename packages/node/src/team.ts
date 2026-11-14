@@ -34,7 +34,7 @@ export interface TeamServiceOptions {
   /** Shutdown waits this long for callbacks to settle, then leaves their persisted state interrupted. */
   shutdownGraceMs?: number;
   onChange?(): void;
-  /** A worker Galahad made for himself (in your conversation, or one of his workers in its room): for the record. */
+  /** A knight seated by Galahad (in your conversation) or by another knight (in its room): for the record. */
   onRecruit?(made: Teammate): void;
 }
 
@@ -87,18 +87,18 @@ export class TeamService {
   setWorkspace(id: string, binding: TeamWorkspace | null): Teammate {
     this.accepting();
     this.steady(id);
-    if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this squire's work before changing its workspace.");
+    if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this knight's work before changing its workspace.");
     const saved = this.store.setWorkspace(id, binding);
     this.changed();
     return saved;
   }
   remember(id: string, text: string): Teammate { this.accepting(); const saved = this.store.remember(id, text); this.changed(); return saved; }
-  /** The VMs' notes store, for every squire here: a task reads the switch as it starts, so one that is running is not changed. */
+  /** The VMs' notes store, for every knight here: a task reads the switch as it starts, so one that is running is not changed. */
   setEngram(on: boolean): boolean { this.accepting(); const set = this.store.setEngram(on); this.changed(); return set; }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
     this.steady(id);
-    if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this squire's work before provisioning its workspace.");
+    if (this.active.has(id) && this.store.requireTeammate(id).workspace) throw new TeamError(409, "Stop this knight's work before provisioning its workspace.");
     const saved = this.store.planWorkspace(id, node); this.changed(); return saved;
   }
   saveRoom(input: TeamRoomInput): TeamRoom {
@@ -203,7 +203,7 @@ export class TeamService {
     this.removing.add(id);
     try {
       this.store.enable(id, false);
-      this.cancel({ teammate: id }, "stopped", "Stopped to remove its squire.");
+      this.cancel({ teammate: id }, "stopped", "Stopped to remove its knight.");
       const winding = this.active.get(id);
       if (winding) {
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -212,10 +212,10 @@ export class TeamService {
         this.accepting();
       }
       // A callback may still be winding down its VM command: its teammate's record and workspace must outlast it.
-      if (this.active.has(id)) throw new TeamError(409, "This squire's work is still stopping. It is paused now: remove it once its current command has finished.");
+      if (this.active.has(id)) throw new TeamError(409, "This knight's work is still stopping. It is paused now: remove it once its current command has finished.");
       const bound = this.store.requireTeammate(id);
       if (options.release) await options.release(bound);
-      else if (bound.workspace) throw new TeamError(409, "This squire has a workspace and nothing was given to release it.");
+      else if (bound.workspace) throw new TeamError(409, "This knight has a workspace and nothing was given to release it.");
       // What was released is gone: the record follows it at once, even if the controller has begun to stop meanwhile.
       if (bound.workspace) this.store.setWorkspace(id, null);
       return this.store.remove(id);
@@ -237,7 +237,7 @@ export class TeamService {
   }
 
   private accepting(): void { if (this.stopping) throw new TeamError(409, "This team controller has stopped."); }
-  private steady(id: unknown): void { if (typeof id === "string" && this.removing.has(id)) throw new TeamError(409, "This squire is being removed."); }
+  private steady(id: unknown): void { if (typeof id === "string" && this.removing.has(id)) throw new TeamError(409, "This knight is being removed."); }
   private changed(): void { try { this.options.onChange?.(); } catch { /* an observer cannot stop the scheduler */ } }
   private recruited(made: Teammate): void {
     try { this.options.onRecruit?.(made); } catch { /* nor undo what was made */ }
@@ -289,10 +289,10 @@ export class TeamService {
   private async run(job: TeamJob, signal: AbortSignal): Promise<void> {
     let calls = 0;
     const current = () => {
-      if (signal.aborted || this.store.job(job.id)?.status !== "running") throw new TeamError(409, "This squire's work has stopped.");
+      if (signal.aborted || this.store.job(job.id)?.status !== "running") throw new TeamError(409, "This knight's work has stopped.");
       const member = this.store.requireTeammate(job.teammate);
       const room = this.store.requireRoom(job.room);
-      if (!member.enabled || room.paused || !room.members.includes(member.id)) throw new TeamError(403, "This squire may no longer act in this room.");
+      if (!member.enabled || room.paused || !room.members.includes(member.id)) throw new TeamError(403, "This knight may no longer act in this room.");
     };
     const budget = () => { current(); if (++calls > 64) throw new TeamError(429, "This turn reached its team action limit."); };
     const context: TeamRunContext = {

@@ -27,7 +27,7 @@ export interface RoleFact {
   chats: boolean;
   /**
    * In the roster's order. `problem`: why this node can't use it (null: it can). `plan`: it is on a coding plan,
-   * so it does his coding and his squires' coding tools use it, and it answers nothing else.
+   * so it does his coding and the knights' coding tools use it, and it answers nothing else.
    */
   models: { ref: string; problem: string | null; plan?: boolean }[];
   /** The one-word call to the first model that can be used (null: nobody was asked). */
@@ -269,7 +269,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   for (const role of f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem
     const id = `role.${role.role}`;
-    // A coding plan's models do his coding, and his squires' coding tools use them (brain/providers.ts); they
+    // A coding plan's models do his coding, and the knights' coding tools use them (brain/providers.ts); they
     // answer nothing else, and are asked no word. What is judged for everything else a role does is the rest.
     const plans = role.models.filter((m) => m.plan);
     const own = role.models.filter((m) => !m.plan);
@@ -284,7 +284,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
         `Add the plan's key: galahad key add --provider ${unlent[0]!.ref.slice(0, unlent[0]!.ref.indexOf("/"))}.`,
       );
     }
-    const tools = lent.length ? `; his coding and his squires' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
+    const tools = lent.length ? `; his coding and the knights' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
     const usable = own.filter((m) => m.problem === null);
     const first = own[0];
     // A role whose work is all coding is played by a plan alone.

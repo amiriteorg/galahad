@@ -9,7 +9,7 @@ describe("oath gate", () => {
   });
 
   test("a quest may clean up only the ephemeral things it created", () => {
-    const scratch = { class: "delete" as const, resource: "docker.container", target: "squire-7" };
+    const scratch = { class: "delete" as const, resource: "docker.container", target: "knight-7" };
     expect(decide({ ...scratch, quest: "q1", createdBy: { quest: "q1", ephemeral: true } }).verdict).toBe("allow");
     expect(decide({ ...scratch, quest: "q2", createdBy: { quest: "q1", ephemeral: true } }).verdict).toBe("ask");
     expect(decide({ ...scratch, quest: "q1", createdBy: { quest: "q1", ephemeral: false } }).verdict).toBe("ask");

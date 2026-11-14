@@ -197,7 +197,7 @@ describe("persistent teammate workspaces", () => {
     expect(f.ledger.at(-1)?.verdict).toBe("approved");
   });
 
-  test("a squire's VM is made again from its image as it is now: the same VM and disk, a new lease, and the old container goes only once the new one runs", async () => {
+  test("a knight's VM is made again from its image as it is now: the same VM and disk, a new lease, and the old container goes only once the new one runs", async () => {
     const f = teammateHost({ status: "running", labels: { [`${LABEL}.cpus`]: "2", [`${LABEL}.memory`]: "4", [`${LABEL}.created`]: "1000", [`${LABEL}.expires`]: "604801000" } });
     const remade = await f.host.remakeTeam(ID, QUEST, REMADE);
     expect(remade).toMatchObject({ id: ID, quest: QUEST, ephemeral: false, isolation: "vm" });

@@ -152,9 +152,9 @@ export const RETIRED_LOOP_TASKS: Readonly<Record<string, string>> = {
   reflect: "his journal, removed on 14 November 2026; what he wrote is still in his memory",
 };
 
-/** A place on a squire's screen, in its pixels. */
+/** A place on a knight's screen, in its pixels. */
 const ScreenPx = z.number().int().min(0).max(10_000);
-/** One thing done on a squire's desktop from outside its VM (`look`: nothing, only the picture). */
+/** One thing done on a knight's desktop from outside its VM (`look`: nothing, only the picture). */
 export const DesktopAction = z.discriminatedUnion("do", [
   z.strictObject({ do: z.literal("look") }),
   z.strictObject({ do: z.literal("click"), x: ScreenPx, y: ScreenPx, button: z.enum(["left", "right", "middle", "double"]).optional() }),
@@ -180,9 +180,9 @@ export const routes = {
   /** Yours alone, and for good. A worker with a VM goes only with `destroyWorkspace`, from a device that also holds `sandbox`. */
   removeTeammate: { method: "POST", path: "/api/team/remove", scope: "fleet:admin", input: TeamRemoveInput },
   teamMemory: { method: "POST", path: "/api/team/memory", scope: "fleet:admin", input: z.strictObject({ id: z.string().min(1).max(32), text: z.string().max(20000) }) },
-  /** The VMs' notes store (Engram) for this node's squires: on or off, and yours alone to say. `team` says when it is on; a squire's `teamWorkspace` says whether its VM has it. */
+  /** The VMs' notes store (Engram) for this node's knights: on or off, and yours alone to say. `team` says when it is on; a knight's `teamWorkspace` says whether its VM has it. */
   teamEngram: { method: "POST", path: "/api/team/engram", scope: "fleet:admin", input: TeamEngramInput },
-  /* Galahad's own way to his workers, from your conversation with him (his tools: team, team_recruit, team_message).
+  /* Galahad's own way to the other knights, from your conversation with him (his tools: team, team_recruit, team_message).
    * Refused to everyone else whatever their scopes, you included: the routes above are yours. */
   teamOverview: { method: "POST", path: "/api/team/overview", scope: "mind:read", input: z.strictObject({ room: TeamRoomId.optional() }) },
   recruitTeammate: { method: "POST", path: "/api/team/recruit", scope: "mind:write", input: TeamRecruitInput },
@@ -193,8 +193,8 @@ export const routes = {
     input: z.strictObject({
       id: z.string().min(1).max(32), on: NodeRef.optional(), cpus: z.number().min(0.25).max(64).default(1), memoryGb: z.number().min(0.25).max(512).default(2), diskGb: z.number().int().min(1).max(2048).default(20),
       /**
-       * What the squire's VM can reach: `online` (the internet and the model gateway: the owner's word is that
-       * squires can use the internet) or `gateway` (the model gateway and nothing else). Set when the VM is made:
+       * What the knight's VM can reach: `online` (the internet and the model gateway: the owner's word is that
+       * knights can use the internet) or `gateway` (the model gateway and nothing else). Set when the VM is made:
        * a microVM's network can't be changed afterwards.
        */
       network: z.enum(["online", "gateway"]).default("online"),
@@ -203,15 +203,15 @@ export const routes = {
     }),
   },
   /**
-   * A squire's VM made again from its image as it is now, on your word: the same VM and `/work`, a new
-   * container, so a fix to the image (or a newer tool in it) reaches a squire that was made before it. Its
-   * network may be chosen again with it. Refused while the squire is working. Yours alone, like its removal.
+   * A knight's VM made again from its image as it is now, on your word: the same VM and `/work`, a new
+   * container, so a fix to the image (or a newer tool in it) reaches a knight that was made before it. Its
+   * network may be chosen again with it. Refused while the knight is working. Yours alone, like its removal.
    */
   remakeTeammate: {
     method: "POST", path: "/api/team/remake", scope: "fleet:admin",
     input: z.strictObject({ id: z.string().min(1).max(32), network: z.enum(["online", "gateway"]).optional(), /** With a desktop from now on (true), or without one (false); absent: as it is. */ desktop: z.boolean().optional() }),
   },
-  /** The same, asked of the node that hosts the VM by the team's controller (never by a squire). */
+  /** The same, asked of the node that hosts the VM by the team's controller (never by a knight). */
   remakeTeamWorkspace: {
     method: "POST", path: "/api/team/remake-workspace", scope: "fleet:admin",
     input: z.strictObject({
@@ -221,7 +221,7 @@ export const routes = {
     }),
   },
   /**
-   * A squire's desktop, for you to watch and to take over (to sign in for it, to get it past something): one
+   * A knight's desktop, for you to watch and to take over (to sign in for it, to get it past something): one
    * thing done there, or nothing (`look`), and a picture of the screen back. Yours alone. What you type is carried
    * to the VM and never written to the ledger.
    */

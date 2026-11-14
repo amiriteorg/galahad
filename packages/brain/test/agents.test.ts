@@ -120,7 +120,7 @@ describe("a driver and the notes store", () => {
       expect([name, text.includes("/work/.memory/engram")]).toEqual([name, true]);
       expect([name, text.includes("ENGRAM_NO_UPDATE_CHECK")]).toEqual([name, true]);
       expect([name, /ENGRAM_CLOUD|ENGRAM_URL|7437|mem_(context|session|judge|delete|merge|save_prompt)/.test(text)]).toEqual([name, false]);
-      // The project is a second squire's or a second repository's: nothing else of what is made changes with it.
+      // The project is a second knight's or a second repository's: nothing else of what is made changes with it.
       expect([name, made(driver, "other-repo")]).toEqual([name, text.replaceAll("you-project", "other-repo")]);
     }
   });

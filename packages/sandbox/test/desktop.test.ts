@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { DESKTOP_IMAGE, OWN_IMAGES } from "../src/index.ts";
 
 /*
- * A squire's desktop: a display, a window manager and a browser in its own VM, and one command (`desktop`) that
+ * A knight's desktop: a display, a window manager and a browser in its own VM, and one command (`desktop`) that
  * operates them: open an address, read the page, take a screenshot, move the pointer, press keys. Tried by hand in
  * a microVM on ultra on 14 November 2026 before any of this was written (Chromium runs there only without its own
  * inner sandbox: the VM's restrictions forbid it, and the microVM is the boundary). Here the command itself is run,
@@ -47,7 +47,7 @@ describe("the desktop command", () => {
     const started = m.traced().filter((line) => /^(Xvfb|openbox|chromium)( |$)/.test(line));
     expect(started.map((line) => line.split(" ")[0])).toEqual(["Xvfb", "openbox", "chromium"]);
     expect(started[0]).toBe("Xvfb [:1] [-screen] [0] [1280x800x24] [-nolisten] [tcp]");
-    // The browser: its profile on the workspace (a sign-in there stays with the squire's disk), its own inner sandbox
+    // The browser: its profile on the workspace (a sign-in there stays with the knight's disk), its own inner sandbox
     // off (the VM forbids it), and a port on loopback through which a page can be read as text.
     for (const flag of [`[--user-data-dir=${m.home}/.config/chromium]`, "[--no-sandbox]", "[--hide-crash-restore-bubble]", "[--remote-debugging-port=9222]", "[--remote-debugging-address=127.0.0.1]", "[--window-size=1280,800]"]) expect(started[2]).toContain(flag);
     expect(m.ask("start").code).toBe(0);
@@ -129,13 +129,13 @@ describe("looking at the screen", () => {
 });
 
 describe("the desktop image", () => {
-  test("is the squires' image with a display, a window manager, a browser and the tools that operate them, and ends as the squire", () => {
+  test("is the knights' image with a display, a window manager, a browser and the tools that operate them, and ends as the knight", () => {
     expect(dockerfile).toMatch(/^FROM galahad\/sandbox:1$/m);
     const installed = dockerfile.replace(/\\\n/g, " ");
     for (const pkg of ["xvfb", "openbox", "chromium", "xdotool", "scrot", "x11-utils", "python3-websocket", "fonts-noto-cjk"]) expect(installed).toMatch(new RegExp(`apt-get install[^\\n]* ${pkg}( |$)`, "m"));
     expect(dockerfile).toContain("COPY desktop /usr/local/bin/desktop\n");
     expect(dockerfile).toContain("RUN chmod 0755 /usr/local/bin/desktop\n");
-    // Root only to install: the image is left as the squire's user, like the one it is made from.
+    // Root only to install: the image is left as the knight's user, like the one it is made from.
     expect(dockerfile.trimEnd().split("\n").filter((line) => line.startsWith("USER ")).at(-1)).toBe("USER 1000:1000");
     expect(DESKTOP_IMAGE).toBe("galahad/desktop:1");
     expect(OWN_IMAGES[DESKTOP_IMAGE]).toEqual({ context: "desktop", keeper: "galahad-desktop-image" });

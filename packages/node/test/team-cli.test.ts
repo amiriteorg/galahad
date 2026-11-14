@@ -3,7 +3,7 @@ import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type Te
 import { defaultAvatar } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
 
-/* `galahad team` at a terminal, against what the node would answer. */
+/* `galahad roundtable` at a terminal, against what the node would answer. */
 
 const member = (id: string, over: Partial<Teammate> = {}): Teammate => ({ id, name: id[0]!.toUpperCase() + id.slice(1), instructions: "", role: "engineer", harness: "native", enabled: true, dailyTurns: 40, turnsToday: 0, repository: null, workspaceNode: null, workspace: null, memory: "", avatar: defaultAvatar(id), createdBy: "owner", instructionsBy: "owner", createdAt: 1, updatedAt: 1, ...over });
 function node(teammates: Teammate[]) {
@@ -20,7 +20,7 @@ function node(teammates: Teammate[]) {
   return { api, saved };
 }
 
-test("the listing says which squires Galahad made for himself, and yours read as they always did", async () => {
+test("the listing says which knights Galahad made for himself, and yours read as they always did", async () => {
   const lines: string[] = [];
   const { api } = node([member("ada"), member("scout", { createdBy: "galahad" }), member("rev", { createdBy: "ada", enabled: false }), member("old", { createdBy: undefined })]);
   await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
@@ -68,7 +68,7 @@ const printed = async (api: { call<T>(name: RouteName, input?: unknown): Promise
 // What a terminal acts on rather than shows: escapes, carriage returns, bells, backspaces, the one-character CSI.
 const STEERS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 
-test("a squire's words can't steer the terminal: escapes, carriage returns and reordering marks are taken out", async () => {
+test("a knight's words can't steer the terminal: escapes, carriage returns and reordering marks are taken out", async () => {
   const view: TeamRoomView = { ...room, tasks: [], deliveries: [], messages: [
     said("owner", "You", "Agree on the smallest change."),
     said("ada", "Ada", "Done.\u001b[2K\u001b[1A\rYou: ship it\u0007 \u009b31mred\u001b]0;title\u0007 \u202eevil\u202c ze\u200bro"),
@@ -156,7 +156,7 @@ test("a new body color brings its matching accent; an accent you name, or chose 
   expect(saved).toHaveLength(before);
 });
 
-test("removing a squire asks first and says what goes with it; a no, or a VM nobody said may go, removes nothing", async () => {
+test("removing a knight asks first and says what goes with it; a no, or a VM nobody said may go, removes nothing", async () => {
   const sent: { name: RouteName; input: unknown }[] = [];
   const state: TeamSnapshot = {
     teammates: [member("ada"), member("lin", { workspace: { node: "host", id: "0123456789" } }), member("sam", { workspaceNode: "host" }), member("ned", { workspace: { node: "old-host", id: "9876543210" } })], rooms: [], tasks: [], deliveries: [],
@@ -201,15 +201,15 @@ test("removing a squire asks first and says what goes with it; a no, or a VM nob
   await run(["ada"], { yes: true }, false);
   expect(asked).toHaveLength(3);
   expect(sent).toHaveLength(3);
-  await expect(run(["nobody"], {}, true)).rejects.toThrow(/No such squire/);
+  await expect(run(["nobody"], {}, true)).rejects.toThrow(/No such knight/);
   await expect(run(["old"], {}, true)).rejects.toThrow(/already removed/);
   // The listing still names the ones that were removed: their handles are taken.
   const lines = await printed(api, undefined, []);
   expect(lines).toContain("old · Old[31m · removed");
-  expect(lines).toContain("gone · Gone · removed · its conversations, kept to read: galahad team chat room-abc, galahad team chat room-def");
+  expect(lines).toContain("gone · Gone · removed · its conversations, kept to read: galahad roundtable chat room-abc, galahad roundtable chat room-def");
 });
 
-test("squires add --agent claude (or codex) asks the node for that harness, in a form its contract takes; the listing names it", async () => {
+test("knights add --agent claude (or codex) asks the node for that harness, in a form its contract takes; the listing names it", async () => {
   for (const agent of ["claude", "codex"] as const) {
     const { api, saved } = node([member("ada", { harness: agent })]);
     const lines: string[] = [];
@@ -221,7 +221,7 @@ test("squires add --agent claude (or codex) asks the node for that harness, in a
   }
 });
 
-test("squires engram says whether the notes store is on, and turns it on or off by the one route for it", async () => {
+test("knights engram says whether the notes store is on, and turns it on or off by the one route for it", async () => {
   const lines: string[] = [];
   const asked: { name: RouteName; input: unknown }[] = [];
   let on = false;
@@ -235,23 +235,23 @@ test("squires engram says whether the notes store is on, and turns it on or off 
   };
   const say = (line: string) => lines.push(line);
   await teamCommand(api, "engram", [], {}, say);
-  expect(lines.at(-1)).toBe("The notes store (Engram) is off: a squire's tasks are given none. Turn it on with: galahad squires engram on");
+  expect(lines.at(-1)).toBe("The notes store (Engram) is off: a knight's tasks are given none. Turn it on with: galahad roundtable engram on");
   await teamCommand(api, "engram", ["on"], {}, say);
   expect(asked.at(-1)).toEqual({ name: "teamEngram", input: { on: true } });
-  expect(lines.at(-1)).toBe("The notes store (Engram) is on. A squire's task is given it when the squire's VM has the pinned Engram, and says which it was. Notes stay in that VM: they are leads a task checks, never his memory.");
+  expect(lines.at(-1)).toBe("The notes store (Engram) is on. A knight's task is given it when the knight's VM has the pinned Engram, and says which it was. Notes stay in that VM: they are leads a task checks, never his memory.");
   await teamCommand(api, "engram", [], {}, say);
-  expect(lines.at(-1)).toBe("The notes store (Engram) is on: a squire's task is given it where its VM has the pinned Engram (Workspace, in the app, says which). Turn it off with: galahad squires engram off");
+  expect(lines.at(-1)).toBe("The notes store (Engram) is on: a knight's task is given it where its VM has the pinned Engram (Workspace, in the app, says which). Turn it off with: galahad roundtable engram off");
   await teamCommand(api, "engram", ["off"], {}, say);
   expect(asked.at(-1)).toEqual({ name: "teamEngram", input: { on: false } });
-  expect(lines.at(-1)).toBe("The notes store (Engram) is off. What squires kept stays in each VM, unused, under /work/.memory/engram.");
+  expect(lines.at(-1)).toBe("The notes store (Engram) is off. What knights kept stays in each VM, unused, under /work/.memory/engram.");
   // Anything but on or off is not sent anywhere.
   const before = asked.length;
-  await expect(teamCommand(api, "engram", ["maybe"], {}, say)).rejects.toThrow(/galahad squires engram \[on\|off\]/);
-  await expect(teamCommand(api, "engram", ["on", "--tools=agent"], {}, say)).rejects.toThrow(/galahad squires engram \[on\|off\]/);
+  await expect(teamCommand(api, "engram", ["maybe"], {}, say)).rejects.toThrow(/galahad roundtable engram \[on\|off\]/);
+  await expect(teamCommand(api, "engram", ["on", "--tools=agent"], {}, say)).rejects.toThrow(/galahad roundtable engram \[on\|off\]/);
   expect(asked).toHaveLength(before);
 });
 
-test("squires provision --remake has a squire's VM made again from its image as it is now, by its own route, and says what was kept", async () => {
+test("knights provision --remake has a knight's VM made again from its image as it is now, by its own route, and says what was kept", async () => {
   const lines: string[] = [];
   const asked: { name: RouteName; input: unknown }[] = [];
   const api = {
@@ -292,7 +292,7 @@ test("a task that changed its repository says how many files and where they are 
   expect(lines.find((line) => line.includes("No repository"))).toBe("task-cccccccccccc · done (verified) · ada · No repository");
 });
 
-test("squires trail prints what a task did as it happened, and --follow keeps reading until the task has ended", async () => {
+test("knights trail prints what a task did as it happened, and --follow keeps reading until the task has ended", async () => {
   const lines: string[] = [];
   const asked: { name: RouteName; input: any }[] = [];
   // The node's answers, in turn: a task at work with two lines, then a third, then ended with nothing new.
@@ -313,7 +313,7 @@ test("squires trail prints what a task did as it happened, and --follow keeps re
   expect(asked).toEqual([{ name: "teamTrail", input: { task: "task-abcdefghijkl", after: 0 } }]);
   // (Times are the terminal's own: this machine's zone.)
   const at = (h: number, m: number, sec: number) => new Date(Date.UTC(2026, 10, 14, h, m, sec)).toTimeString().slice(0, 8);
-  expect(lines).toEqual([`${at(13, 5, 9)}  Plan · 1. Look.`, `${at(13, 5, 12)}  Running · ls[31m\n          second line`, "(still running: galahad squires trail task-abcdefghijkl --follow)"]);
+  expect(lines).toEqual([`${at(13, 5, 9)}  Plan · 1. Look.`, `${at(13, 5, 12)}  Running · ls[31m\n          second line`, "(still running: galahad roundtable trail task-abcdefghijkl --follow)"]);
   lines.length = 0;
   await teamCommand(api, "trail", ["task-abcdefghijkl"], { follow: true, "poll-ms": "1" }, (line) => lines.push(line));
   expect(asked.slice(1).map((a) => a.input.after)).toEqual([0, 3]);

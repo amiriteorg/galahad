@@ -34,7 +34,7 @@ let dockerSilent = false;
 const toolStatus = new Map<"claude" | "codex", { code: number; stdout: string }>();
 /** What a VM answers when asked for its notes store's version (unset: as a VM made from an image without it does). */
 let engramSays: { code: number; stdout: string; stderr?: string } | undefined;
-// A squire's face as the Squires page draws it: from the snapshot the node serves, by the page's own rule.
+// A knight's face as the Roundtable page draws it: from the snapshot the node serves, by the page's own rule.
 const faceOf = (id: string, team: TeamSnapshot) => avatarExpression(team.teammates.find((member) => member.id === id)!, team, Date.now());
 const summaries: Record<string, string> = { ALPHA: "Verified predecessor contract: packet-v1.", BETA: "Verified independent follow-up.", GAMMA: "Verified consumer of packet-v1." };
 const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request) => {
@@ -132,7 +132,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { releaseAlpha?.(); await daemon?.stop(); model.stop(true); rmSync(root, { recursive: true, force: true }); });
 
-test("first task provisions one persistent VM; same-worker tasks serialize and verified dependencies cross squires", async () => {
+test("first task provisions one persistent VM; same-worker tasks serialize and verified dependencies cross knights", async () => {
   expect(runs).toHaveLength(0);
   expect((await snapshot()).teammates.every((member) => member.workspace === null)).toBe(true);
   alphaHold = new Promise<void>((resolve) => { releaseAlpha = resolve; });
@@ -218,16 +218,16 @@ test("harness readiness says what each would run on: a vendor's tool on its own 
     expect(Object.keys(first)).toEqual(["native", "opencode", "hermes", "claude", "codex"]);
     expect(first.native).toEqual({ id: "native", ready: true });
     expect(first.claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai)" });
-    expect(first.codex).toEqual({ id: "codex", ready: false, reason: "Install Codex in this squire's VM (Galahad never installs or signs in a harness)" });
-    // Each was asked once, in this squire's own VM, by its bridge's own status question.
+    expect(first.codex).toEqual({ id: "codex", ready: false, reason: "Install Codex in this knight's VM (Galahad never installs or signs in a harness)" });
+    // Each was asked once, in this knight's own VM, by its bridge's own status question.
     const asked = events.slice(before).filter((event) => event.text.includes("--status"));
     expect(asked.map((event) => event.target)).toEqual([vm, vm]);
     expect(asked.every((event) => event.text.includes("def status():") && event.text.trimEnd().endsWith("--status"))).toBe(true);
     // Not signed in, and no Anthropic-API model on the engineer's roster: what a person can do about it.
     toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: false }) });
-    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this squire's VM (claude auth login), or put an Anthropic-API model on the engineer's roster" });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the engineer's roster" });
     // A VM that says more than the bridge's own status line is not believed.
-    toolStatus.set("claude", { code: 0, stdout: `signed in as someone\n${told({ installed: true, signedIn: "yes", method: "claude.ai", email: "squire@example.invalid" })}` });
+    toolStatus.set("claude", { code: 0, stdout: `signed in as someone\n${told({ installed: true, signedIn: "yes", method: "claude.ai", email: "knight@example.invalid" })}` });
     const forged = await readiness();
     expect(forged.claude!.ready).toBe(false);
     expect(JSON.stringify(forged)).not.toContain("example.invalid");
@@ -237,13 +237,13 @@ test("harness readiness says what each would run on: a vendor's tool on its own 
     await api("setProvider", { id: "claude-api", kind: "anthropic", baseUrl: "https://claude-api.example.test", secret: "claude-api" });
     await api("setRoster", { role: "engineer", models: ["stand-in/engineer", "claude-api/claude-opus-5-5"] });
     toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: false }) });
-    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this squire's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. claude-api/claude-opus-5-5 is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made" });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. claude-api/claude-opus-5-5 is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made" });
     // Signed in, it runs on its sign-in all the same.
     toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: true, method: "claude.ai" }) });
     expect((await readiness()).claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai)" });
     // (An Anthropic-API model is not one Codex can speak to, covered or not.)
     toolStatus.set("codex", { code: 0, stdout: told({ installed: true, signedIn: false }) });
-    expect((await readiness()).codex!.reason).toBe("Sign Codex in in this squire's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
+    expect((await readiness()).codex!.reason).toBe("Sign Codex in in this knight's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
   } finally {
     toolStatus.clear();
     await api("setRoster", { role: "engineer", models: ["stand-in/engineer"] });
@@ -271,7 +271,7 @@ test("the notes store is one switch, the owner's: off until it is turned on, a t
     expect(off.told).not.toMatch(/Notes store|engram/i);
     expect(off.ran.some((text) => /engram/i.test(text))).toBe(false);
 
-    // Turning it on is the owner's, from a device that may command Squires: one that can only read them may not.
+    // Turning it on is the owner's, from a device that may command the Roundtable: one that can only read them may not.
     const reader = await pairDevice("reader", ["chat", "sandbox"]);
     expect((await reader("teamEngram", { on: true })).status).toBe(403);
     expect("engram" in (await snapshot())).toBe(false);
@@ -342,7 +342,7 @@ test("controller restart keeps the exact VM; failed old-worker cleanup blocks ne
   } finally { cleanupFailure = false; }
 }, 10000);
 
-test("removing a squire that has a VM: refused until you say its workspace goes, and only from a device that may destroy one; then both go and the others carry on", async () => {
+test("removing a knight that has a VM: refused until you say its workspace goes, and only from a device that may destroy one; then both go and the others carry on", async () => {
   const bound = (await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!;
   const vms = docker.running();
   const listed = async () => (await api<{ sandboxes: SandboxView[] }>("sandboxes", {})).sandboxes.map((s) => s.id);
@@ -393,7 +393,7 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   // A VM made just before a crash, its binding never written: the worker looks unbound, and its VM is still there.
   await api("saveTeammate", { id: "sam", name: "SAM", role: "engineer" });
   const made = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "sam" })).workspace;
-  // A squire's VM can use the internet, by the owner's word: it is made online unless you say otherwise.
+  // A knight's VM can use the internet, by the owner's word: it is made online unless you say otherwise.
   expect(made.network).toBe("online");
   const ran = (id: string) => runs.find((args) => args[0] === "run" && args.some((arg) => arg.includes(id)))!;
   expect(ran(made.id).filter((arg, i, all) => all[i - 1] === "--network")).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
@@ -434,12 +434,12 @@ test("what became of its VM is asked of the host and said as it was: Docker that
     await expect(api("teamDesktop", { id: "una", action: { do: "open", address: "javascript:alert(1)" } })).rejects.toThrow(/400/);
     await expect(api("teamDesktop", { id: "vmless-not-yet" })).rejects.toThrow(/404/);
   } finally { docker.onExec = answered; }
-  // A squire with no VM has none to make again, and a squire that isn't there is not found.
+  // A knight with no VM has none to make again, and a knight that isn't there is not found.
   await api("saveTeammate", { id: "vmless", name: "VMLESS", role: "engineer" });
   await expect(api("remakeTeammate", { id: "vmless" })).rejects.toThrow(/424 .*no VM yet/);
   await expect(api("remakeTeammate", { id: "nobody" })).rejects.toThrow(/404/);
   expect(await api("removeTeammate", { id: "una", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
-  // A squire may be given a desktop from the start, with room for a browser whatever memory was asked.
+  // A knight may be given a desktop from the start, with room for a browser whatever memory was asked.
   // (Here, once una's VM has gone: this host carries only so many at once.)
   await api("saveTeammate", { id: "dex", name: "DEX", role: "engineer" });
   const dex = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "dex", desktop: true, memoryGb: 2 })).workspace;

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 
 /*
  * Disk limits for sandboxes. Each sandbox's /work is its own fixed-size ext4 image
- * (sparse: it takes only what's written), so a runaway squire fills its own
+ * (sparse: it takes only what's written), so a runaway knight fills its own
  * workspace, never the host's disk. Mounting needs root, which the node doesn't
  * have; a tiny root helper (sandbox/galahad-workspace, started by systemd per
  * connection) does exactly that, on a socket only the galahad user can open.

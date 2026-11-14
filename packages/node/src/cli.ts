@@ -38,34 +38,34 @@ const HELP = `galahad — one mind, many bodies
 
 The Roundtable (your knights beside Galahad, none beneath another: each with a lasting job, a room and verified work in a VM
 of its own; "roundtable", "squires" and "team" are the same command)
-  squires                           squires, rooms and tasks (those Galahad made for himself say so:
-                                    ask him in chat to make and brief a squire)
-  squires add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
+  roundtable                        knights, rooms and tasks (those Galahad seated say so:
+                                    ask him in chat to seat and brief a knight)
+  roundtable add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
                                     [--repo https://github.com/owner/repo] [--limit daily-turns]
-  squires dm <id> [message]          open/read a direct chat, or send a message
-  squires room <name> <member…>      create a shared room (--limit bounds its coordination chain)
-  squires chat <room> [message]      read a room, or send a message; work continues on the node
-  squires task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
-  squires trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
+  roundtable dm <id> [message]       open/read a direct chat, or send a message
+  roundtable room <name> <member…>   create a shared room (--limit bounds its coordination chain)
+  roundtable chat <room> [message]   read a room, or send a message; work continues on the node
+  roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
+  roundtable trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
                                     the gates, the review; --follow keeps reading until the task has ended
-  squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway] [--desktop]
+  roundtable provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway] [--desktop]
                                     its VM: online (the default) it can reach the internet, gateway only the models;
                                     --desktop: with a display, a window manager and a browser, for work that needs a
                                     screen (at least 4 GB; in the VM, desktop help lists what operates it)
-  squires provision <id> --remake [--network online|gateway] [--desktop|--no-desktop]
+  roundtable provision <id> --remake [--network online|gateway] [--desktop|--no-desktop]
                                     its VM made again from the image as it is now (a fix to the image, a newer tool):
                                     the same VM and everything in /work, a new container; not while it is working.
                                     --desktop gives a VM that has none a desktop; --no-desktop takes it away
-  squires memory <id> [text]         read or replace that squire's notes
-  squires engram [on|off]            the VMs' notes store (Engram): say whether it is on, or turn it on or off.
-                                    On, a squire's harness can search and keep notes in its own VM, where the
+  roundtable memory <id> [text]      read or replace that knight's notes
+  roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
+                                    On, a knight's harness can search and keep notes in its own VM, where the
                                     VM's image has the pinned Engram; off (the default), nothing is given
-  squires avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
+  roundtable avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
                   [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
-                                    customize that squire's look, or read its saved appearance
-  squires pause|resume|stop <room|squire|task> <id>
-  squires remove <id> [--destroy-workspace] [--yes]
-                                    remove a squire for good: it leaves its rooms and does no more work; what it
+                                    customize that knight's look, or read its saved appearance
+  roundtable pause|resume|stop <room|knight|task> <id>
+  roundtable remove <id> [--destroy-workspace] [--yes]
+                                    remove a knight for good: it leaves its rooms and does no more work; what it
                                     said stays to read, and its handle is never used again. One with a VM is removed
                                     only with --destroy-workspace, which destroys that VM and everything in /work
 
@@ -180,7 +180,7 @@ Work
   sandbox ls [--on ultra] | sandbox exec <id> [--on ultra] -- <command…> | sandbox rm <id> [--on ultra]
   sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
   sandbox build [--on ultra] [--lab|--gazebo|--desktop]
-                                  build the sandbox image (or the Lab, Gazebo, or the squires' desktop) on a host
+                                  build the sandbox image (or the Lab, Gazebo, or the knights' desktop) on a host
   artifacts | artifact <id> [file] [--out dir]   what quests and sandboxes kept; print a file or save them all
   ledger [--limit 30]             what Galahad did, and the oath's verdict on each action
 
@@ -870,7 +870,7 @@ Next:
       }
       const { roster } = await admin.call("roster");
       for (const [role, spec] of Object.entries(roster as Record<string, { models: string[]; configured: boolean }>)) {
-        // (A coding plan's model does his coding and his squires': he passes it over for anything else.)
+        // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
         console.log(`  ${role.padEnd(10)} ${spec.models.map((ref) => (onPlan(ref) ? `${ref} ${dim("(coding only)")}` : ref)).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
       }
       return;

@@ -48,8 +48,8 @@ const DAY = 24 * 3_600_000;
 const OVERVIEW = { messages: 20, message: 1200, job: 300 } as const;
 const clipped = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}… (${text.length - max} more characters)` : text);
 /** Why work stopped when its worker is gone, and why a direct conversation with a removed worker takes nothing new. */
-const REMOVED = "Its squire was removed.";
-const CLOSED = "This conversation is kept to read: its squire was removed.";
+const REMOVED = "Its knight was removed.";
+const CLOSED = "This conversation is kept to read: its knight was removed.";
 const matches = (job: TeamJob, select: TeamSelection) => (!select.room || job.room === select.room) && (!select.teammate || job.teammate === select.teammate) && (!select.task || job.id === select.task);
 
 /** Additive, private, node-local state. Opening the store never touches chat history or the mind. */
@@ -86,7 +86,7 @@ export class TeamStore {
   close(): void { this.db.close(); }
   private day(): string { return new Date(this.now()).toISOString().slice(0, 10); }
   private turns(teammate: string): number { return this.db.query<{ turns: number }, [string, string]>("SELECT turns FROM team_usage WHERE teammate = ? AND day = ?").get(teammate, this.day())?.turns ?? 0; }
-  /** The VMs' notes store (Engram) for this node's squires: off until you turn it on, and kept across restarts. */
+  /** The VMs' notes store (Engram) for this node's knights: off until you turn it on, and kept across restarts. */
   engram(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='engram'").get()?.value === "on"; }
   setEngram(raw: boolean): boolean {
     const on = teamInput(z.boolean(), raw);
@@ -116,11 +116,11 @@ export class TeamStore {
   saveTeammate(raw: TeammateInput): Teammate {
     const input = teamInput(TeammateInput, raw);
     teamText([input.name, input.instructions, input.role, input.repository].filter(Boolean).join("\n"));
-    if (this.record(input.id)?.removedAt !== undefined) throw new TeamError(409, "That handle belonged to a squire that was removed. Its history stays its own: choose another handle.");
+    if (this.record(input.id)?.removedAt !== undefined) throw new TeamError(409, "That handle belonged to a knight that was removed. Its history stays its own: choose another handle.");
     const previous = this.teammate(input.id);
     // A VM's repository is not changed or taken away under the work that is in it. One that has none may be given its first: nothing there to orphan.
-    if (previous?.workspace && previous.repository && input.repository !== undefined && input.repository !== previous.repository) throw new TeamError(409, "This squire's workspace is already bound to its repository. Keep that repository to preserve its work.");
-    if (!previous && this.teammates().length >= TEAM_LIMITS.teammates) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} squires can live on this node.`);
+    if (previous?.workspace && previous.repository && input.repository !== undefined && input.repository !== previous.repository) throw new TeamError(409, "This knight's workspace is already bound to its repository. Keep that repository to preserve its work.");
+    if (!previous && this.teammates().length >= TEAM_LIMITS.teammates) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} knights can live on this node.`);
     const at = this.now();
     // This is your own way in: instructions you change here are yours from then on, whoever wrote the ones before.
     // (Saved as they were, with something else about the worker, they stay whose they were: the app sends them every time.)
@@ -144,14 +144,14 @@ export class TeamStore {
     return this.db.transaction(() => {
       if (by !== TEAM_GALAHAD) this.requireTeammate(by);
       const taken = this.record(input.id);
-      if (taken?.removedAt !== undefined) throw new TeamError(409, `The handle ${input.id} belonged to a squire that was removed. Its history stays its own: choose another handle.`);
-      if (taken) throw new TeamError(409, `A squire with the handle ${input.id} already exists. Work with them, or choose another handle.`);
+      if (taken?.removedAt !== undefined) throw new TeamError(409, `The handle ${input.id} belonged to a knight that was removed. Its history stays its own: choose another handle.`);
+      if (taken) throw new TeamError(409, `A knight with the handle ${input.id} already exists. Work with them, or choose another handle.`);
       // A name a model chose must not be taken for another worker's, however it is spelled: one that was removed too, whose name is still beside what it said.
       const twin = this.records().find((other) => readAlike(other.name, input.name));
-      if (twin) throw new TeamError(409, `The name ${input.name} reads like ${twin.name}'s (${twin.id}). Choose a name nobody could take for another squire's.`);
+      if (twin) throw new TeamError(409, `The name ${input.name} reads like ${twin.name}'s (${twin.id}). Choose a name nobody could take for another knight's.`);
       const spare = this.spare();
-      if (!spare.workers) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} squires can live on this node.`);
-      if (!spare.today) throw new TeamError(429, `Galahad has made ${TEAM_LIMITS.recruitsPerDay} squires in the last day, which is his allowance. The owner can add more in Squires.`);
+      if (!spare.workers) throw new TeamError(409, `At most ${TEAM_LIMITS.teammates} knights can live on this node.`);
+      if (!spare.today) throw new TeamError(429, `Galahad has made ${TEAM_LIMITS.recruitsPerDay} knights in the last day, which is his allowance. The owner can add more at the Roundtable.`);
       const joined = room ? this.requireRoom(room) : null;
       // A worker brings one only into a room of its own.
       if (joined && by !== TEAM_GALAHAD) this.roomMember(joined, by);
@@ -165,16 +165,16 @@ export class TeamStore {
     const current = this.requireTeammate(teammate);
     const node = teamInput(z.string().min(1).max(200), raw);
     teamText(node);
-    if (current.workspaceNode && current.workspaceNode !== node) throw new TeamError(409, "This squire's workspace is already assigned to another host.");
+    if (current.workspaceNode && current.workspaceNode !== node) throw new TeamError(409, "This knight's workspace is already assigned to another host.");
     return this.putTeammate({ ...current, workspaceNode: node, updatedAt: this.now() });
   }
   setWorkspace(teammate: string, raw: TeamWorkspace | null): Teammate {
     const current = this.requireTeammate(teammate);
     const workspace = raw === null ? null : teamInput(TeamWorkspace, raw);
     if (workspace) teamText(workspace.node);
-    if (workspace && current.workspace && (current.workspace.node !== workspace.node || current.workspace.id !== workspace.id)) throw new TeamError(409, "This squire already has a workspace. Recover that workspace rather than replacing its work.");
-    if (workspace && current.workspaceNode && current.workspaceNode !== workspace.node) throw new TeamError(409, "This squire's workspace is already assigned to another host.");
-    if (workspace && this.teammates().some((t) => t.id !== teammate && t.workspace?.node === workspace.node && t.workspace?.id === workspace.id)) throw new TeamError(409, "That workspace belongs to another squire.");
+    if (workspace && current.workspace && (current.workspace.node !== workspace.node || current.workspace.id !== workspace.id)) throw new TeamError(409, "This knight already has a workspace. Recover that workspace rather than replacing its work.");
+    if (workspace && current.workspaceNode && current.workspaceNode !== workspace.node) throw new TeamError(409, "This knight's workspace is already assigned to another host.");
+    if (workspace && this.teammates().some((t) => t.id !== teammate && t.workspace?.node === workspace.node && t.workspace?.id === workspace.id)) throw new TeamError(409, "That workspace belongs to another knight.");
     return this.putTeammate({ ...current, workspace, workspaceNode: workspace?.node ?? current.workspaceNode, updatedAt: this.now() });
   }
   remember(teammate: string, raw: string): Teammate {
@@ -184,8 +184,8 @@ export class TeamStore {
   }
   requireTeammate(id: string): Teammate {
     const teammate = this.record(id);
-    if (!teammate) throw new TeamError(404, "No such squire.");
-    if (teammate.removedAt !== undefined) throw new TeamError(410, "That squire was removed.");
+    if (!teammate) throw new TeamError(404, "No such knight.");
+    if (teammate.removedAt !== undefined) throw new TeamError(410, "That knight was removed.");
     return teammate;
   }
   /**
@@ -197,8 +197,8 @@ export class TeamStore {
   remove(id: string): Teammate {
     return this.db.transaction(() => {
       const current = this.requireTeammate(id);
-      if (current.workspace) throw new TeamError(409, "This squire still has a workspace. Destroy it with the squire, or keep the squire paused instead.");
-      if (this.db.query("SELECT id FROM team_jobs WHERE teammate=? AND status='running'").get(id)) throw new TeamError(409, "Stop this squire's work before removing it.");
+      if (current.workspace) throw new TeamError(409, "This knight still has a workspace. Destroy it with the knight, or keep the knight paused instead.");
+      if (this.db.query("SELECT id FROM team_jobs WHERE teammate=? AND status='running'").get(id)) throw new TeamError(409, "Stop this knight's work before removing it.");
       const at = this.now();
       // Its direct conversations are closed with it: what its peers had still to say there is stopped too.
       const closing = new Set(this.rooms().filter((room) => room.direct && room.members.includes(id)).map((room) => room.id));
@@ -235,7 +235,7 @@ export class TeamStore {
     for (const member of input.members) this.requireTeammate(member);
     const previous = input.id ? this.room(input.id) : null;
     const direct = input.direct ?? previous?.direct ?? false;
-    if (direct && input.members.length > 2) throw new TeamError(400, "A direct conversation has one or two squires.");
+    if (direct && input.members.length > 2) throw new TeamError(400, "A direct conversation has one or two knights.");
     if (previous?.direct && (direct !== true || [...previous.members].sort().join() !== [...input.members].sort().join())) throw new TeamError(409, "The people in a direct conversation cannot be changed.");
     if (!previous && this.rooms().length >= TEAM_LIMITS.rooms) throw new TeamError(409, `At most ${TEAM_LIMITS.rooms} team rooms can live on this node.`);
     const at = this.now();
@@ -246,7 +246,7 @@ export class TeamStore {
   direct(teammate: string, from?: string): TeamRoom {
     const target = this.requireTeammate(teammate);
     if (from) this.requireTeammate(from);
-    if (from === teammate) throw new TeamError(400, "A squire cannot send a direct message to itself.");
+    if (from === teammate) throw new TeamError(400, "A knight cannot send a direct message to itself.");
     const members = from ? [from, teammate].sort() : [teammate];
     const existing = this.rooms().find((r) => r.direct && [...r.members].sort().join() === members.join());
     return existing ?? this.saveRoom({ name: from ? `${this.requireTeammate(from).name} & ${target.name}`.slice(0, 100) : target.name, members, direct: true });
@@ -259,7 +259,7 @@ export class TeamStore {
   private pending(): number { return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM team_jobs WHERE status IN ('queued','running')").get()!.n; }
   private roomMember(room: TeamRoom, teammate: string): void {
     this.requireTeammate(teammate);
-    if (!room.members.includes(teammate)) throw new TeamError(403, "That squire is not a member of this room.");
+    if (!room.members.includes(teammate)) throw new TeamError(403, "That knight is not a member of this room.");
   }
   /** Owner posts start a bounded chain, and so do Galahad's own from your conversation (`galahad`), within his
    * allowance for the day. Brokered posts keep their originating chain across rooms. */
@@ -270,12 +270,12 @@ export class TeamStore {
       const room = this.requireRoom(input.room);
       if (by.galahad && (by.teammate || by.chainId)) throw new TeamError(400, "Galahad speaks for himself, in a conversation of his own.");
       if (by.galahad && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_messages WHERE speaker = ? AND created_at > ?").get(TEAM_GALAHAD, this.now() - DAY)!.n >= TEAM_LIMITS.saysPerDay) {
-        throw new TeamError(429, `Galahad has sent ${TEAM_LIMITS.saysPerDay} messages into Squires in the last day, which is his allowance. The owner can message the squires in Squires.`);
+        throw new TeamError(429, `Galahad has sent ${TEAM_LIMITS.saysPerDay} messages to the Roundtable in the last day, which is his allowance. The owner can message the knights at the Roundtable.`);
       }
       if (by.teammate) this.roomMember(room, by.teammate);
       // (Only a direct conversation can still name a worker that was removed: it is kept to read, and takes no new words.)
       for (const member of room.members) this.requireTeammate(member);
-      if (by.teammate && !by.chainId) throw new TeamError(403, "A squire message must belong to its current conversation.");
+      if (by.teammate && !by.chainId) throw new TeamError(403, "A knight message must belong to its current conversation.");
       if (by.chainId && !this.db.query("SELECT id FROM team_chains WHERE id = ?").get(by.chainId)) throw new TeamError(404, "No such conversation chain.");
       const recipients = room.members.filter((member) => member !== by.teammate);
       if (this.pending() + recipients.length > TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
@@ -410,7 +410,7 @@ export class TeamStore {
       if (!teammate) { this.finish(key, "stopped", REMOVED); return false; }
       const room = this.requireRoom(row.room);
       if (this.closed(room)) { this.finish(key, "stopped", CLOSED); return false; }
-      if (!room.members.includes(teammate.id)) { this.finish(key, "stopped", "The squire is no longer in this room."); return false; }
+      if (!room.members.includes(teammate.id)) { this.finish(key, "stopped", "The knight is no longer in this room."); return false; }
       if (!teammate.enabled || room.paused) return false;
       if (this.db.query("SELECT id FROM team_jobs WHERE teammate=? AND status='running'").get(teammate.id)) return false;
       if (row.kind === "task") {
@@ -483,7 +483,7 @@ export class TeamStore {
       const found = this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status IN ('interrupted','stopped','failed') ORDER BY seq").all().filter((r) => matches(jobOf(r), select) && (select.task || r.status === "interrupted"));
       // What a removed worker left unfinished is never started again: asked for by name it says so, otherwise it is passed over.
       const rows = found.filter((r) => this.teammate(r.teammate));
-      if (select.task && found.length && !rows.length) throw new TeamError(410, "That task's squire was removed. Revise the task for another squire.");
+      if (select.task && found.length && !rows.length) throw new TeamError(410, "That task's knight was removed. Revise the task for another knight.");
       if (this.pending() + rows.length > TEAM_LIMITS.pending) throw new TeamError(429, "Too much work to resume at once.");
       const chains = new Map<string, string>();
       for (const row of rows) {

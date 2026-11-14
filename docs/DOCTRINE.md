@@ -24,12 +24,12 @@ Sources: [Dr. Eggbot](https://agentools.sh/use-cases/dr-eggbot/), [brainmaxxing]
 
 | Idea | How Galahad uses it |
 |---|---|
-| **Dr. Eggbot:** design single-purpose bots, each with one job and a list of things it must not do; audit the fleet | The **Squire Forge**: charters with one job, allowed tools, must-nots, budget and expiry, plus periodic audits (M4) |
+| **Dr. Eggbot:** design single-purpose bots, each with one job and a list of things it must not do; audit the fleet | The **Knight Forge**: charters with one job, allowed tools, must-nots, budget and expiry, plus periodic audits (M4) |
 | **"I did it" is not evidence**; verification is the most important skill | Verify before declaring done (oath duty). Verification skills per surface. The Trials. |
 | **brainmaxxing:** reflect → ruminate → meditate, plus plan and review | The mind's maintenance loop: reflect after corrections, mine past sessions, audit skills against the mind and prune contradictions |
 | Scoped **feature maps** (what exists, how to reach it, how to drive it, what breaks) beat a wiki for agents | Per-surface verification maps for Galahad's own repo and for the projects he works on |
-| **noodle:** skill-based orchestration with worktrees and loops | Round Table squires, each in its own worktree (M2) |
-| Trust first, then parallel | Parallel squires only where verification exists |
+| **noodle:** skill-based orchestration with worktrees and loops | Round Table knights, each in its own worktree (M2) |
+| Trust first, then parallel | Parallel knights only where verification exists |
 
 ## Andrej Karpathy
 
@@ -47,7 +47,7 @@ Source: [The lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-t
 
 | Idea | How Galahad uses it |
 |---|---|
-| Private data + untrusted content + a way to communicate externally = exfiltration | **No squire gets all three.** Untrusted work runs sandboxed on the server, with no vault access and only narrow outbound access. Content from untrusted sources is tagged `untrusted` in the mind and can never change the oath or permissions. |
+| Private data + untrusted content + a way to communicate externally = exfiltration | **No knight gets all three.** Untrusted work runs sandboxed on the server, with no vault access and only narrow outbound access. Content from untrusted sources is tagged `untrusted` in the mind and can never change the oath or permissions. |
 
 ## Jesse Vincent: obra/superpowers
 
@@ -56,7 +56,7 @@ Source: [superpowers](https://github.com/obra/superpowers)
 | Idea | How Galahad uses it |
 |---|---|
 | brainstorm → worktree → plan (2–5 minute tasks) → subagent-driven development with two-stage review (spec, then quality) → TDD → finish the branch | The Round Table pipeline for engineering quests (M2) |
-| verification-before-completion; systematic debugging | Oath duty; a skill set for squires |
+| verification-before-completion; systematic debugging | Oath duty; a skill set for knights |
 
 ## HumanLayer: 12-factor agents
 
@@ -68,8 +68,8 @@ Source: [12-factor-agents](https://github.com/humanlayer/12-factor-agents)
 | Unify execution state and business state | One event log is the source of truth. *Built.* |
 | Launch / pause / resume | Quests with checkpoints (M2) |
 | Contact humans with tool calls | Approvals and secret requests (secret requests *built*) |
-| Compact errors into context; escalate after three consecutive errors | Squire runtime rule (M2) |
-| Small, focused agents; agent as a stateless reducer | Squires; materialized state as a fold over events (*built*) |
+| Compact errors into context; escalate after three consecutive errors | Knight runtime rule (M2) |
+| Small, focused agents; agent as a stateless reducer | Knights at the Roundtable; materialized state as a fold over events (*built*) |
 
 ## Geoffrey Huntley: the Ralph loop
 

@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /*
- * The squires' image puts its tools on the PATH with ENV, and a squire's commands run in login shells
+ * The knights' image puts its tools on the PATH with ENV, and a knight's commands run in login shells
  * (packages/node/src/team-runtime.ts), where /etc/profile sets PATH afresh: Debian's does. Seen on ultra on
- * 14 November 2026, in the first task a squire ran in a real VM: its gate, `bun test`, exited 127, though bun
- * was in the image and the squire's tests passed when it called bun by its whole path. So the image carries a
+ * 14 November 2026, in the first task a knight ran in a real VM: its gate, `bun test`, exited 127, though bun
+ * was in the image and the knight's tests passed when it called bun by its whole path. So the image carries a
  * script that every login shell reads, which puts the image's tools back, and this holds the two together.
  */
 
@@ -32,14 +32,14 @@ test("the image puts tools on the PATH (or there is nothing here to hold togethe
   expect(imagePath("BASE").split(":")).toEqual(["/opt/engram/bin", "/opt/opencode/bin", "/opt/bun/bin", "BASE", "/work/.local/bin"]);
 });
 
-test("what a squire's VM has installed for itself (~/.local/bin, kept with its workspace) is found, and last: it can't stand in for a tool the image or the system has", async () => {
+test("what a knight's VM has installed for itself (~/.local/bin, kept with its workspace) is found, and last: it can't stand in for a tool the image or the system has", async () => {
   // ROUNDTABLE.md tells the owner to install a vendor's coding tool there; Claude Code's installer puts it there.
   expect(dockerfile).toContain("ENV HOME=/work\n");
   expect(imagePath("BASE").split(":").at(-1)).toBe("/work/.local/bin");
   expect((await afterScript(PROFILE_PATH)).split(":").at(-1)).toBe("/work/.local/bin");
 });
 
-test("a login shell in the squires' image has every tool a plain shell there has, in the same order", async () => {
+test("a login shell in the knights' image has every tool a plain shell there has, in the same order", async () => {
   expect(await afterScript(PROFILE_PATH)).toBe(imagePath(PROFILE_PATH));
 });
 
@@ -49,13 +49,13 @@ test("a login shell started from another (a harness that starts its own) has the
   expect(await afterScript(imagePath("/usr/bin:/bin"))).toBe(imagePath("/usr/bin:/bin"));
 });
 
-test("the image installs that script where Debian's /etc/profile reads it, readable by the squire", () => {
+test("the image installs that script where Debian's /etc/profile reads it, readable by the knight", () => {
   const copied = /^COPY tools-path\.sh (\/etc\/profile\.d\/(\S+))$/m.exec(dockerfile);
   expect(copied).not.toBeNull();
   // /etc/profile reads only names of this form (its run-parts --regex).
   expect(copied![2]).toMatch(/^[a-zA-Z0-9_][a-zA-Z0-9._-]*\.sh$/);
   // Its mode is said, not left to whatever the checkout's umask gave the file.
   expect(dockerfile).toContain(`RUN chmod 0644 ${copied![1]}\n`);
-  // Before the image drops to the squire's user: /etc is root's.
+  // Before the image drops to the knight's user: /etc is root's.
   expect(dockerfile.indexOf(`RUN chmod 0644 ${copied![1]}`)).toBeLessThan(dockerfile.indexOf("USER 1000:1000"));
 });

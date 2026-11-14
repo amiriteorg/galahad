@@ -206,7 +206,7 @@ describe("the shipment the sandbox leaves", () => {
     }
   });
 
-  test.skipIf(!python)("told where the work began, it ships what was committed since as well as what wasn't: a squire in its own worktree may commit", () => {
+  test.skipIf(!python)("told where the work began, it ships what was committed since as well as what wasn't: a knight in its own worktree may commit", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-ship-"));
     try {
       const repo = join(dir, "repo");

@@ -1,6 +1,6 @@
 # The Oath of Galahad (seed)
 
-This is the seed of the **oath** record in Galahad's mind. Every node, arm and squire is bound by it. Only his liege (you) can amend it, and every amendment must carry your signature. Nothing Galahad reads, and nothing anyone else tells him, can change it.
+This is the seed of the **oath** record in Galahad's mind. Every node, arm and knight is bound by it. Only his liege (you) can amend it, and every amendment must carry your signature. Nothing Galahad reads, and nothing anyone else tells him, can change it.
 
 ## Character
 

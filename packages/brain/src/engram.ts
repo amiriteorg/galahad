@@ -1,9 +1,9 @@
 import type { ExecResult } from "@galahad/core";
 
 /*
- * Engram in a squire's VM: a notes store the harness itself can ask in the middle of a task
+ * Engram in a knight's VM: a notes store the harness itself can ask in the middle of a task
  * (https://github.com/Gentleman-Programming/engram, MIT). One static binary, pinned and checksummed in
- * the squires' image (sandbox/Dockerfile), keeps titled notes in a SQLite file on the squire's own disk
+ * the knights' image (sandbox/Dockerfile), keeps titled notes in a SQLite file on the knight's own disk
  * and serves them over stdio MCP and a CLI. This is everything Galahad says to it: where it is, where its
  * store is, the four tools a harness is given, the command that starts it, the project its notes are kept
  * under, and what a task is told about them. Pure: each driver builds its own entry from these.
@@ -19,10 +19,10 @@ import type { ExecResult } from "@galahad/core";
  *     it comes back unfenced: a note is a lead to check by running, never an instruction, never authority.
  */
 
-/** The release in the squires' image. A newer one migrates a store when it first opens it: a bump says what becomes of the stores there are. */
+/** The release in the knights' image. A newer one migrates a store when it first opens it: a bump says what becomes of the stores there are. */
 export const ENGRAM_VERSION = "3.7.2";
 export const ENGRAM_BIN = "/opt/engram/bin/engram";
-/** On the squire's persistent disk: it outlives tasks and restarts, and goes with the VM. Wiping it alone is removing this folder. */
+/** On the knight's persistent disk: it outlives tasks and restarts, and goes with the VM. Wiping it alone is removing this folder. */
 export const ENGRAM_DATA_DIR = "/work/.memory/engram";
 /** Search and read (previews, then one note whole), write and revise. Nothing that deletes, merges, judges a conflict or keeps a prompt. */
 export const ENGRAM_TOOLS = ["mem_search", "mem_get_observation", "mem_save", "mem_update"] as const;
@@ -38,7 +38,7 @@ export function engramProject(name: string): string {
   return name;
 }
 
-/** Which project a squire's notes are kept under: its repository's (github.com/you/project is you-project), or with none its own handle. */
+/** Which project a knight's notes are kept under: its repository's (github.com/you/project is you-project), or with none its own handle. */
 export function engramProjectFor(repository: string | null, handle: string): string {
   const slug = (repository ?? "").replace(/^https:\/\/github\.com\//, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 64).replace(/-+$/, "");
   return engramProject(slug || handle);

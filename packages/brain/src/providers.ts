@@ -18,10 +18,10 @@ export interface ProviderPreset {
 
 /**
  * A coding plan: a flat-rate subscription whose key is for coding (its terms say so, and name
- * tools), not for calling the API from any program for anything. Galahad and his squires are a
+ * tools), not for calling the API from any program for anything. Galahad and the knights are a
  * coding tool, by their owner's word: he calls a plan himself for coding work (a quest's planner,
- * engineer and reviewer, a squire at its work), under his own name (SELF), and lends it through
- * the gateway to the other coding tools in his squires' VMs and under `galahad run`, each calling
+ * engineer and reviewer, a knight at its work), under his own name (SELF), and lends it through
+ * the gateway to the other coding tools in the knights' VMs and under `galahad run`, each calling
  * as itself. Nothing else he does is handed its key: not his talk with you, his loops or his
  * heartbeat (chat.ts, resolveProvider). What a plan allows is its vendor's to say, and changes:
  * `says` is their sentence and `terms` where they say it. Whether a vendor counts him among its
@@ -135,7 +135,7 @@ export function onPlan(ref: string): boolean {
 
 /** Why he has no key to call a provider with: none in the vault, or a coding plan's, which is for coding and nothing else of his. */
 export const whyNoKey = (id: string): string =>
-  planOf(id) ? `${id} is a coding plan: its key is for coding (his quests, his squires' work and their coding tools), and nothing else he does` : `provider "${id}" has no key in the vault`;
+  planOf(id) ? `${id} is a coding plan: its key is for coding (his quests, the knights' work and their coding tools), and nothing else he does` : `provider "${id}" has no key in the vault`;
 
 /** Who he says he is when he calls a coding plan himself: his own name, and never another tool's. */
 export const SELF = "Galahad (coding agent; https://galahad.bot)";

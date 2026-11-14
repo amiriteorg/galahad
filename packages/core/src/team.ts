@@ -17,7 +17,7 @@ export const TEAM_GALAHAD = "galahad";
 export const TeammateId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, "a lowercase name of at most 32 letters, digits or hyphens").refine((id) => id !== TEAM_OWNER && id !== "system" && id !== TEAM_GALAHAD, "that name is reserved");
 export const TeamRoomId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const TeamTaskId = z.string().regex(/^task-[a-z0-9_-]{12}$/);
-/** `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the squire's VM. */
+/** `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the knight's VM. */
 export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex"]);
 export type TeamHarness = z.infer<typeof TeamHarness>;
 export const TeamWorkspaceQuest = z.string().regex(/^arm\.team\.[a-f0-9]{10}\.[a-z][a-z0-9-]{0,31}$/);
@@ -89,7 +89,7 @@ export const TeamPostInput = z.strictObject({ room: TeamRoomId, text: z.string()
 export type TeamPostInput = z.infer<typeof TeamPostInput>;
 /** Galahad's own words into Team: to one worker (in that worker's direct conversation with you) or to a room. */
 export const TeamSayInput = z.strictObject({ teammate: TeammateId.optional(), room: TeamRoomId.optional(), text: z.string().trim().min(1).max(TEAM_LIMITS.message) })
-  .refine((input) => Boolean(input.teammate) !== Boolean(input.room), "choose one squire or one room");
+  .refine((input) => Boolean(input.teammate) !== Boolean(input.room), "choose one knight or one room");
 export type TeamSayInput = z.infer<typeof TeamSayInput>;
 export const TeamTaskInput = z.strictObject({
   room: TeamRoomId,
@@ -106,7 +106,7 @@ export const TeamControlInput = z.strictObject({
   teammate: TeammateId.optional(),
   task: TeamTaskId.optional(),
   action: z.enum(["pause", "resume", "stop"]),
-}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, squire or task");
+}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, knight or task");
 export type TeamControlInput = z.infer<typeof TeamControlInput>;
 
 /** Removing a worker, which is yours alone. A worker that has a VM is removed only together with it, and only
@@ -114,18 +114,18 @@ export type TeamControlInput = z.infer<typeof TeamControlInput>;
 export const TeamRemoveInput = z.strictObject({ id: z.string().min(1).max(32), destroyWorkspace: z.boolean().optional() });
 export type TeamRemoveInput = z.infer<typeof TeamRemoveInput>;
 
-/** The VMs' notes store (Engram: docs/ROUNDTABLE.md): one switch for all of a node's squires, yours alone to turn, and
+/** The VMs' notes store (Engram: docs/ROUNDTABLE.md): one switch for all of a node's knights, yours alone to turn, and
  * off until you do. Nothing else of the store is anyone's to set: its version is the image's, its place and its
- * tools are the code's, and a squire's project is its repository's name or its own handle. */
+ * tools are the code's, and a knight's project is its repository's name or its own handle. */
 export const TeamEngramInput = z.strictObject({ on: z.boolean() });
 export type TeamEngramInput = z.infer<typeof TeamEngramInput>;
 
-/** What a squire's Workspace is told of the notes store: the node's switch, and whether this VM has the pinned binary. */
+/** What a knight's Workspace is told of the notes store: the node's switch, and whether this VM has the pinned binary. */
 export interface TeamEngramStatus {
   on: boolean;
-  /** The version the squires' image pins. */
+  /** The version the knights' image pins. */
   pinned: string;
-  /** This VM has it, at that version. Absent: not asked (no running VM, or the squire is at work). */
+  /** This VM has it, at that version. Absent: not asked (no running VM, or the knight is at work). */
   present?: boolean;
   /** When it hasn't: why, in words. */
   reason?: string;
@@ -196,7 +196,7 @@ export interface TeamDelivery {
 }
 
 /**
- * What a task's run came to, as the runner counted it (never the squire's own account): when the squire began on
+ * What a task's run came to, as the runner counted it (never the knight's own account): when the knight began on
  * it and when it ended, how its quest ended, its commands, how often the work was sent back, and its model calls by
  * role and model as the providers reported them (counts only). A coding harness's own calls, through the gateway
  * or on its own sign-in, are not in `spent` yet: with a harness it holds the planner's and the reviewer's.
@@ -212,7 +212,7 @@ export const TeamTaskRecord = z.strictObject({
 export type TeamTaskRecord = z.infer<typeof TeamTaskRecord>;
 
 /**
- * What a task in a repository changed, kept on the node that hosts the squire's VM: the artifact that holds the
+ * What a task in a repository changed, kept on the node that hosts the knight's VM: the artifact that holds the
  * patch and the shipment (`galahad ship` turns it into a pull request, on your word), how many files, and the
  * commit the work began from.
  */
@@ -239,7 +239,7 @@ export interface TeamTask {
   chainId: string;
   createdAt: number;
   updatedAt: number;
-  /** What its run came to, once it has ended in the squire's hands (absent: not run yet, stopped before it began, or from before records were kept). */
+  /** What its run came to, once it has ended in the knight's hands (absent: not run yet, stopped before it began, or from before records were kept). */
   record?: TeamTaskRecord;
   /** What it changed in its repository, where that was kept (absent: no repository, nothing changed, or it could not be kept). */
   changes?: TeamTaskChanges;

@@ -191,7 +191,7 @@ export function shipNative(artifacts: ArtifactStore): NativeTool {
  * What a quest leaves for shipping, run in the sandbox after the work (python3 is in the
  * workshop) as `python3 -c SCRIPT <repo> <out> [<base>]`: the starting commit, the remote, and every
  * change since, new files included. Prints how many files changed. The start is the clone's HEAD unless
- * `base` says where the work began: a squire's task works in a worktree of its own and may commit there,
+ * `base` says where the work began: a knight's task works in a worktree of its own and may commit there,
  * and a commit of its own is no start GitHub has ever seen.
  */
 export const SHIPMENT_SCRIPT = `import json, os, shutil, subprocess, sys

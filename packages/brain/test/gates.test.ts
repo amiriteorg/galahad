@@ -192,7 +192,7 @@ describe("gates on a quest", () => {
 });
 
 describe("gates tried before the work (gatesFirst)", () => {
-  // Seen on ultra on 14 November 2026: a squire's gate, `bun test`, could not run in its VM at all. That was found
+  // Seen on ultra on 14 November 2026: a knight's gate, `bun test`, could not run in its VM at all. That was found
   // out only after the work was done: eleven commands, two send-backs and $0.20 for a task that could never pass.
   const script = (exec: Script["exec"]) => harness({ engineer: [sh("echo fixed > calc.txt"), "DONE\nFixed."], exec }, { gates: ["bun test", "test -f calc.txt", "lint"], gatesFirst: true });
 

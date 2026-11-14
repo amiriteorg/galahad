@@ -38,7 +38,7 @@ describe.if(enabled)("sandbox host on real Docker", () => {
     expect(await host.get(sb.id)).toBeNull();
   }, 120_000);
 
-  test("a login shell there has the image's tools, as a plain one does (a squire's commands run in login shells)", async () => {
+  test("a login shell there has the image's tools, as a plain one does (a knight's commands run in login shells)", async () => {
     const sb = await host.create({ ...base, network: "isolated", quest: "it-path" });
     for (const tool of ["bun", "opencode", "engram"]) {
       const plain = (await host.exec(sb.id, ["sh", "-c", `command -v ${tool}`])).stdout.trim();
@@ -103,7 +103,7 @@ describe.if(enabled && existsSync(WORKSPACE_SOCKET))("size-limited workspaces on
     for (const s of await host.list()) await host.destroy(s.id, { approvedBy: "test-cleanup" });
   });
 
-  test("a squire fills its own workspace and stops there; the host's disk is untouched", async () => {
+  test("a knight fills its own workspace and stops there; the host's disk is untouched", async () => {
     const sb = await host.create({ ...base, quest: "it-disk", diskGb: 1 });
     expect(sb.disk).toMatchObject({ limitGb: 1 });
     const size = Number((await host.exec(sb.id, ["sh", "-c", "df -k /work | tail -1 | awk '{print $2}'"])).stdout.trim());
@@ -112,7 +112,7 @@ describe.if(enabled && existsSync(WORKSPACE_SOCKET))("size-limited workspaces on
     const fill = await host.exec(sb.id, ["sh", "-c", "dd if=/dev/zero of=/work/fill bs=1M count=3000 2>&1; echo done"]);
     expect(fill.stdout).toMatch(/No space left on device/);
     expect((await host.get(sb.id))!.disk!.usedGb).toBeGreaterThan(0.8);
-    // It's still the squire's own, writable workspace, owned by the squire.
+    // It's still the knight's own, writable workspace, owned by the knight.
     expect((await host.exec(sb.id, ["sh", "-c", "rm /work/fill && echo ok > /work/f && stat -c %u /work/f"])).stdout.trim()).toBe("1000");
     await host.destroy(sb.id, { quest: "it-disk" });
     expect((await workspaces.stats()).images.some((i) => i.id === sb.id)).toBe(false);

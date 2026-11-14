@@ -1,4 +1,4 @@
-# The workshop where Galahad's squires work. Built on each sandbox host by
+# The workshop where Galahad's knights work. Built on each sandbox host by
 # `galahad sandbox build`. Runs unprivileged (uid 1000), read-only at runtime,
 # with all capabilities dropped; see packages/sandbox/src/spec.ts.
 FROM debian:trixie-slim
@@ -8,7 +8,7 @@ RUN apt-get update \
       ca-certificates curl git unzip jq ripgrep procps python3 python3-venv build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# Pinned toolchain, installed system-wide and readable by the squire.
+# Pinned toolchain, installed system-wide and readable by the knight.
 ENV BUN_INSTALL=/opt/bun
 ENV PATH=/opt/bun/bin:$PATH
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4" && chmod -R a+rX /opt/bun
@@ -23,9 +23,9 @@ RUN curl -fsSL -o /tmp/opencode.tgz "https://github.com/anomalyco/opencode/relea
  && chmod 0755 /opt/opencode/bin/opencode && rm /tmp/opencode.tgz
 ENV PATH=/opt/opencode/bin:$PATH
 
-# Engram, the notes store a squire's harness may be given (galahad squires engram on). Pinned, and
+# Engram, the notes store a knight's harness may be given (galahad roundtable engram on). Pinned, and
 # checked against its SHA-256. A newer one migrates a store when it first opens it, so a bump says what
-# becomes of the stores there are. Its store is on the squire's own disk and its update check is off;
+# becomes of the stores there are. Its store is on the knight's own disk and its update check is off;
 # nothing here starts it (a harness does, for the length of a run: packages/brain/src/engram.ts).
 ARG ENGRAM_VERSION=3.7.2
 ARG ENGRAM_SHA256=8db9d5db1c1574b8b830aac4ffbe86c024014aed6b9a3f0406ac3361a152cdf0
@@ -37,7 +37,7 @@ ENV PATH=/opt/engram/bin:$PATH
 ENV ENGRAM_DATA_DIR=/work/.memory/engram
 ENV ENGRAM_NO_UPDATE_CHECK=1
 
-# A login shell sets PATH afresh (/etc/profile), and a squire's commands run in one: this puts the tools
+# A login shell sets PATH afresh (/etc/profile), and a knight's commands run in one: this puts the tools
 # above back on it (tools-path.sh says why; a directory added to the PATH here is added there too).
 COPY tools-path.sh /etc/profile.d/galahad-tools.sh
 RUN chmod 0644 /etc/profile.d/galahad-tools.sh
@@ -46,7 +46,7 @@ RUN chmod 0644 /etc/profile.d/galahad-tools.sh
 COPY websearch /usr/local/bin/websearch
 RUN chmod 0755 /usr/local/bin/websearch
 
-RUN useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
+RUN useradd --uid 1000 --create-home --home-dir /home/knight --shell /bin/bash knight \
  && mkdir -p /work && chown 1000:1000 /work
 
 USER 1000:1000

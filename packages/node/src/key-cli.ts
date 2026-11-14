@@ -13,7 +13,7 @@ type Flags = Record<string, unknown>;
 /** What is said of a coding plan just added: what it is for, where its vendor says so, and the roster that puts it first for coding. */
 export function planAdvice(id: string, plan: CodingPlan, engineer: readonly string[]): string[] {
   const lines = [
-    `${plan.name} is a coding plan: its key is for coding. Galahad and his squires code on it themselves, as Galahad (his quests, their work), and lend it to the coding tools in their VMs (OpenCode, Hermes) and under \`galahad run\`, each calling as itself. His talk with you, his loops and his heartbeat never use it.`,
+    `${plan.name} is a coding plan: its key is for coding. Galahad and the other knights code on it themselves, as Galahad (his quests, their work), and lend it to the coding tools in their VMs (OpenCode, Hermes) and under \`galahad run\`, each calling as itself. His talk with you, his loops and his heartbeat never use it.`,
     `What it may be used for is its vendor's to say. ${plan.says} ${plan.terms}`,
   ];
   const has = engineer.filter((ref) => ref.startsWith(`${id}/`));

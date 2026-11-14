@@ -97,7 +97,7 @@ describe("quests", () => {
   });
 
   test("replies with no command to run are not commands: three in a row end the quest, and it says what the last one was", async () => {
-    // Seen on ultra on 14 November 2026: a squire's engineer sent 16 such replies in a row. Sixteen model calls were
+    // Seen on ultra on 14 November 2026: a knight's engineer sent 16 such replies in a row. Sixteen model calls were
     // paid for, nothing ran, the task said "Stopped after 16 commands", and nothing of the replies was kept.
     const odd = "Listing first.\n```console\n$ ls -la\n```";
     const h = harness({ engineer: [odd, odd, odd, sh("ls"), "DONE\nok"] }, { maxSteps: 16 });
@@ -140,7 +140,7 @@ describe("quests", () => {
   });
 
   test("he is told when his commands are running out: once at ten left, then on each of the last five", async () => {
-    // Seen on ultra, 14 November 2026: a squire finished its change, went on checking, and ran out of its forty
+    // Seen on ultra, 14 November 2026: a knight finished its change, went on checking, and ran out of its forty
     // commands without ever saying DONE. Nothing had told it how many were left since the briefing.
     const h = harness({ engineer: Array.from({ length: 14 }, (_, i) => sh(`echo ${i}`)) }, { maxSteps: 14 });
     await h.run;

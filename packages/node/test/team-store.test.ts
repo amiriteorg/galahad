@@ -44,7 +44,7 @@ describe("private team persistence", () => {
     expect(db.query<{ value: string }, []>("SELECT value FROM team_teammates WHERE id='ada'").get()?.value).toBe(raw);
     db.close();
   });
-  test("squires, memory, workspace, messages and queued work survive reopen; files stay private", () => {
+  test("knights, memory, workspace, messages and queued work survive reopen; files stay private", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-")); dirs.push(dir);
     const path = join(dir, "team.db");
     const store = make(path); setup(store);
@@ -83,7 +83,7 @@ describe("private team persistence", () => {
     store.saveTeammate({ id: "ada", name: "Augusta" });
     expect(store.teammate("ada")).toMatchObject({ name: "Augusta", memory: "My notes", workspace: { node: "host", id: "0123456789" } });
     expect(store.messages("workshop").at(-1)?.speakerName).toBe("Ada");
-    expect(() => store.setWorkspace("lin", { node: "host", id: "0123456789" })).toThrow(/another squire/);
+    expect(() => store.setWorkspace("lin", { node: "host", id: "0123456789" })).toThrow(/another knight/);
   });
   test("provisioning intent survives reopen and neither its host nor a bound repository silently changes", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-")); dirs.push(dir); const path = join(dir, "team.db");
@@ -142,8 +142,8 @@ describe("private team persistence", () => {
     for (let page = store.trail(task.id, last); page.entries.length; page = store.trail(task.id, last)) { last = page.entries.at(-1)!.n; pages++; }
     expect({ last, pages }).toEqual({ last: 702, pages: 3 });
   });
-  test("a squire whose VM has no repository may be given one; from then on it is bound like any other", () => {
-    // (Seen on ultra, 14 November 2026: the first squire was made without a repository, and with its VM made it could never have one.)
+  test("a knight whose VM has no repository may be given one; from then on it is bound like any other", () => {
+    // (Seen on ultra, 14 November 2026: the first knight was made without a repository, and with its VM made it could never have one.)
     const store = make(); setup(store);
     store.setWorkspace("lin", { node: "host", id: "0123456789" });
     expect(store.teammate("lin")!.repository).toBeNull();
@@ -295,11 +295,11 @@ describe("team boundaries", () => {
   });
 });
 
-describe("the squires Galahad makes for himself", () => {
+describe("the knights Galahad makes for himself", () => {
   const DAY = 24 * 3_600_000;
   const job = (id: string) => ({ id, name: id[0]!.toUpperCase() + id.slice(1), instructions: "A lasting job." });
 
-  test("a squire he makes is a new one with the defaults, and says whose words its job is", () => {
+  test("a knight he makes is a new one with the defaults, and says whose words its job is", () => {
     const store = make(); setup(store);
     const scout = store.recruit({ id: "scout", name: "Scout", instructions: "Watch the dependency updates.", role: "reviewer" }, "galahad");
     expect(scout).toMatchObject({ id: "scout", name: "Scout", instructions: "Watch the dependency updates.", role: "reviewer", harness: "native", enabled: true, dailyTurns: 40, turnsToday: 0, repository: null, workspace: null, workspaceNode: null, memory: "", avatar: defaultAvatar("scout"), createdBy: "galahad", instructionsBy: "galahad" });
@@ -320,7 +320,7 @@ describe("the squires Galahad makes for himself", () => {
     expect(store.saveTeammate({ id: "scout", name: "Scout", instructions: "Watch them weekly." })).toMatchObject({ createdBy: "galahad", instructionsBy: "owner" });
   });
 
-  test("he cannot give a squire a name that reads as another squire's; yours stay yours to name", () => {
+  test("he cannot give a knight a name that reads as another knight's; yours stay yours to name", () => {
     const store = make(); setup(store);
     store.saveTeammate({ id: "ilya", name: "Ilya" });
     store.saveTeammate({ id: "mona", name: "Mona Lisa" });
@@ -375,7 +375,7 @@ describe("the squires Galahad makes for himself", () => {
     expect(store.teammates()).toHaveLength(TEAM_LIMITS.teammates);
   });
 
-  test("a squire made by a squire joins its maker's shared room at once; never a direct conversation; and all of it or none", () => {
+  test("a knight made by a knight joins its maker's shared room at once; never a direct conversation; and all of it or none", () => {
     const store = make(); setup(store);
     const made = store.recruit({ ...job("rev"), instructions: "Review Ada's diffs." }, "ada", "workshop");
     expect(made).toMatchObject({ createdBy: "ada", instructionsBy: "ada" });
@@ -383,7 +383,7 @@ describe("the squires Galahad makes for himself", () => {
     const direct = store.direct("lin");
     store.recruit(job("aide"), "lin", direct.id);
     expect(store.room(direct.id)!.members).toEqual(["lin"]);
-    expect(() => store.recruit(job("orphan"), "nobody")).toThrow(/No such squire/);
+    expect(() => store.recruit(job("orphan"), "nobody")).toThrow(/No such knight/);
     expect(() => store.recruit(job("lost"), "ada", "no-such-room")).toThrow(/No such team room/);
     // Nor into a room its maker is not in.
     store.saveRoom({ id: "private", name: "Private", members: ["lin"] });
@@ -429,7 +429,7 @@ describe("the squires Galahad makes for himself", () => {
   test("a message of his that is refused leaves nothing behind, not even the conversation it would have opened", () => {
     const store = make(); setup(store);
     expect(() => store.say({ teammate: "ada", text: `The key is ${"sk-ant-" + "obviouslyfaketest".repeat(3)}` })).toThrow(/credential/);
-    expect(() => store.say({ teammate: "nobody", text: "Anyone?" })).toThrow(/No such squire/);
+    expect(() => store.say({ teammate: "nobody", text: "Anyone?" })).toThrow(/No such knight/);
     expect(() => store.say({ text: "To nobody." } as never)).toThrow(TeamError);
     expect(store.rooms().map((room) => room.id)).toEqual(["workshop"]);
     const said = store.say({ teammate: "ada", text: "Look into the flaky test." });
@@ -439,7 +439,7 @@ describe("the squires Galahad makes for himself", () => {
     expect(store.say({ room: "workshop", text: "Compare notes." })).toMatchObject({ room: "workshop", speaker: "galahad" });
   });
 
-  test("his overview says who each squire is and what it is doing, never its working notes; a room's words only when asked", () => {
+  test("his overview says who each knight is and what it is doing, never its working notes; a room's words only when asked", () => {
     let now = Date.UTC(2026, 10, 13, 12);
     const store = make(":memory:", () => now); setup(store);
     store.saveTeammate({ id: "ada", name: "Ada", instructions: `Implement small changes.\n${"More detail. ".repeat(60)}`, repository: "https://github.com/example/fixture" });
@@ -472,7 +472,7 @@ describe("the squires Galahad makes for himself", () => {
   });
 });
 
-describe("removing a squire", () => {
+describe("removing a knight", () => {
   const DAY = 24 * 3_600_000;
   const job = (id: string) => ({ id, name: id[0]!.toUpperCase() + id.slice(1), instructions: "A lasting job." });
   /** One reply of a worker's in a room, as the service would record it: claimed, said, done. */
@@ -507,7 +507,7 @@ describe("removing a squire", () => {
     expect(store.overview().workers.map((w) => w.id)).toEqual(["lin"]);
     // What it had not started is stopped, and says why.
     expect(store.queued().filter((j) => j.teammate === "ada")).toEqual([]);
-    expect(store.task(task.id)).toMatchObject({ status: "stopped", error: "Its squire was removed." });
+    expect(store.task(task.id)).toMatchObject({ status: "stopped", error: "Its knight was removed." });
     // The shared room goes on without it; what it said there is still its own.
     expect(store.room("workshop")!.members).toEqual(["lin"]);
     expect(store.messages("workshop").map((m) => [m.speaker, m.speakerName, m.text])).toContainEqual(["ada", "Ada", "On it."]);
@@ -540,7 +540,7 @@ describe("removing a squire", () => {
     for (const change of [() => store.remove("ada"), () => store.remember("ada", "notes"), () => store.enable("ada", true), () => store.planWorkspace("ada", "host"), () => store.setWorkspace("ada", { node: "host", id: "0123456789" })]) {
       expect(change).toThrow(/was removed/);
     }
-    expect(() => store.remove("nobody")).toThrow(/No such squire/);
+    expect(() => store.remove("nobody")).toThrow(/No such knight/);
     expect(store.teammates().map((t) => t.id)).toEqual(["lin"]);
   });
 
@@ -552,7 +552,7 @@ describe("removing a squire", () => {
     store.post({ room: "workshop", text: "Go." });
     const running = store.queued().find((j) => j.teammate === "ada")!;
     expect(store.claim(running.id)).toBe(true);
-    expect(() => store.remove("ada")).toThrow(/Stop this squire's work/);
+    expect(() => store.remove("ada")).toThrow(/Stop this knight's work/);
     expect(store.teammate("ada")).toMatchObject({ enabled: true });
     expect(store.room("workshop")!.members).toEqual(["ada", "lin"]);
     store.finish(running.id, "stopped", "Stopped by you.");
@@ -580,11 +580,11 @@ describe("removing a squire", () => {
     const reopened = make(path);
     expect(reopened.queued().map((j) => j.id)).toEqual([hers.id, his.id]);
     expect(reopened.claim(hers.id)).toBe(false);
-    expect(reopened.task(hers.id)).toMatchObject({ status: "stopped", error: "Its squire was removed." });
+    expect(reopened.task(hers.id)).toMatchObject({ status: "stopped", error: "Its knight was removed." });
     expect(reopened.claim(his.id)).toBe(true);
   });
 
-  test("the day's allowance for making squires isn't given back; the node's limit counts those still here", () => {
+  test("the day's allowance for making knights isn't given back; the node's limit counts those still here", () => {
     let now = 5 * DAY;
     const store = make(":memory:", () => now);
     store.saveTeammate({ id: "ada", name: "Ada" });
@@ -603,7 +603,7 @@ describe("removing a squire", () => {
     expect(full.saveTeammate({ id: "extra", name: "Extra" }).id).toBe("extra");
   });
 
-  test("a conversation it had with another squire is closed for that squire too: no words, no work, and no turn spent on it", () => {
+  test("a conversation it had with another knight is closed for that knight too: no words, no work, and no turn spent on it", () => {
     const store = make(); setup(store);
     const peers = store.direct("lin", "ada");
     // Ada had written to Lin there, and Lin's reply was still waiting when Ada was removed.
@@ -615,7 +615,7 @@ describe("removing a squire", () => {
     const waiting = store.queued().find((j) => j.teammate === "lin" && j.room === peers.id)!;
     const before = store.teammate("lin")!.turnsToday;
     store.remove("ada");
-    expect(store.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its squire was removed." });
+    expect(store.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its knight was removed." });
     expect(store.claim(waiting.id)).toBe(false);
     expect(store.teammate("lin")!.turnsToday).toBe(before);
     // Nothing new is taken there, from you or from the worker that is still here.
@@ -646,11 +646,11 @@ describe("removing a squire", () => {
     raw.close();
     const reopened = make(path);
     expect(reopened.claim(waiting.id)).toBe(false);
-    expect(reopened.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its squire was removed." });
+    expect(reopened.deliveries(peers.id).find((d) => d.id === waiting.id)).toMatchObject({ status: "stopped", error: "This conversation is kept to read: its knight was removed." });
     expect(reopened.teammate("lin")!.turnsToday).toBe(0);
   });
 
-  test("who made a squire stays on record after its maker is removed", () => {
+  test("who made a knight stays on record after its maker is removed", () => {
     const store = make(); setup(store);
     store.recruit(job("rev"), "ada", "workshop");
     store.remove("ada");

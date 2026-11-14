@@ -6,9 +6,9 @@ import { chat, chooseAgentModels, decide, detectProvider, embed, GatewayTokens, 
 
 /*
  * Coding plans and sign-ins. A coding plan is a subscription whose key is for coding (its terms
- * say so), not for calling the API from any program for anything. Galahad and his squires are
+ * say so), not for calling the API from any program for anything. Galahad and the knights are
  * a coding tool: he calls a plan himself for coding work, under his own name; he lends it to the
- * other coding tools in his squires' VMs through the gateway, each calling as itself; and nothing
+ * other coding tools in the knights' VMs through the gateway, each calling as itself; and nothing
  * else he does (his talk with you, his loops, embeddings, decisions) is handed its key. A
  * subscription's sign-in is not a key at all, and is never sent to an API from here.
  */
@@ -78,7 +78,7 @@ describe("coding plans are presets that say what they are", () => {
 });
 
 describe("coding is what a coding plan is for: he codes on it himself, as himself", () => {
-  test("a quest's or a squire's work goes to the plan first, in the roster's order, under his own name", async () => {
+  test("a quest's or a knight's work goes to the plan first, in the roster's order, under his own name", async () => {
     const { seen, fetch } = recorded();
     const events = await all(chat({ ...mind({ engineer: ["zai-coding/glm-5.3", "own/m"] }), fetch }, { role: "engineer", messages: ask, coding: true }));
     expect(events.map((e) => e.type)).toEqual(["model", "text", "done"]);
@@ -231,7 +231,7 @@ describe("outside coding he never answers with a coding plan", () => {
   });
 });
 
-describe("a coding plan serves the coding tools in his workers' VMs", () => {
+describe("a coding plan serves the coding tools in the knights' VMs", () => {
   test("the harness's models are the engineer's, plans among them, in the roster's order", () => {
     const providers = [
       { id: "zai-coding", kind: "openai", hasKey: true },

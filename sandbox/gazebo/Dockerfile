@@ -24,8 +24,8 @@ COPY gz-check /usr/local/bin/gz-check
 COPY websearch /usr/local/bin/websearch
 RUN chmod 0755 /usr/local/bin/gz-check /usr/local/bin/websearch
 
-# Ubuntu's image already has uid 1000 ("ubuntu"); the squire takes its place.
-RUN userdel --remove ubuntu 2>/dev/null; useradd --uid 1000 --create-home --home-dir /home/squire --shell /bin/bash squire \
+# Ubuntu's image already has uid 1000 ("ubuntu"); the knight takes its place.
+RUN userdel --remove ubuntu 2>/dev/null; useradd --uid 1000 --create-home --home-dir /home/knight --shell /bin/bash knight \
  && mkdir -p /work && chown 1000:1000 /work
 
 USER 1000:1000

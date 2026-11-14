@@ -233,7 +233,7 @@ UNIT
     fi
   fi
 
-  # Sandbox host: build (or refresh, from cache) the squires' image before the node starts.
+  # Sandbox host: build (or refresh, from cache) the knights' image before the node starts.
   if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
     if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/sandbox:1 "$APP/sandbox" >/dev/null; then
       echo "→ sandbox image ready (galahad/sandbox:1)"
@@ -246,7 +246,7 @@ UNIT
       else
         echo "Lab image build failed; sandboxes still work, without the Lab" >&2
       fi
-      # The squires' desktop (a display, a window manager, a browser): made from the image above, a minute or two the first time.
+      # The knights' desktop (a display, a window manager, a browser): made from the image above, a minute or two the first time.
       if runuser -u "$SVC" -- env -i HOME="$SVC_HOME" PATH="$SYSTEM_PATH" docker build -q -t galahad/desktop:1 "$APP/sandbox/desktop" >/dev/null; then
         DESK=$(docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 --mount type=volume,dst=/work \
           --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true --network none galahad/desktop:1 desktop start 2>&1 | tail -1)

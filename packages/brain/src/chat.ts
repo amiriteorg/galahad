@@ -30,7 +30,7 @@ export interface ChatRequest {
   /** Start the role's models at this position (effort: each parallel attempt takes another one first). */
   rotate?: number;
   /**
-   * This answer is coding work: a quest's planner, engineer or reviewer, a squire at its work. A coding plan's
+   * This answer is coding work: a quest's planner, engineer or reviewer, a knight at its work. A coding plan's
    * models may give it (providers.ts); any other answer of his passes them over.
    */
   coding?: boolean;
@@ -168,11 +168,11 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
   const asked = req.model ? [req.model] : roleModels(ctx.store, req.role ?? "planner");
-  // A coding plan's key is for coding (providers.ts): his coding work uses it, and his squires' coding tools through
+  // A coding plan's key is for coding (providers.ts): his coding work uses it, and the knights' coding tools through
   // the gateway. For any other answer its models are passed over without a word, unless they were all there was.
   const own = req.coding ? asked : asked.filter((ref) => !onPlan(ref));
   if (!own.length && asked.length) {
-    yield { type: "error", error: `${asked.join(", ")} ${asked.length === 1 ? "is" : "are"} on a coding plan, whose key is for coding: his quests and his squires' work use it, and he doesn't answer you with it. ${req.model ? "Name" : "Give this role"} a model with a key of its own.` };
+    yield { type: "error", error: `${asked.join(", ")} ${asked.length === 1 ? "is" : "are"} on a coding plan, whose key is for coding: his quests and the knights' work use it, and he doesn't answer you with it. ${req.model ? "Name" : "Give this role"} a model with a key of its own.` };
     return;
   }
   const listed = req.model ? own : await expand(ctx, own);

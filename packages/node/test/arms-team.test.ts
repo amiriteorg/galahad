@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { randomId, sha256B64u } from "@galahad/core";
 import { ArmTokens } from "../src/arms.ts";
 
-test("legacy external tokens cannot impersonate a newly reserved hivemind squire", () => {
+test("legacy external tokens cannot impersonate a newly reserved hivemind knight", () => {
   const db = new Database(":memory:");
   try {
     const arms = new ArmTokens(db);

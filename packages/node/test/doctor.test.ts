@@ -204,7 +204,7 @@ describe("each fault gives its own line and advice", () => {
     expect(checks.some((c) => c.id === "role.engineer.first")).toBe(false);
     const engineer = byId(checks, "role.engineer");
     expect(engineer.state).toBe("ok");
-    expect(engineer.line).toContain("his coding and his squires' tools use zai-coding/glm-5.3");
+    expect(engineer.line).toContain("his coding and the knights' tools use zai-coding/glm-5.3");
     expect(engineer.line).not.toContain("zai-coding/glm-5.3 has what it needs");
     expect(engineer.line).not.toContain("zai-coding/glm-5.3 answered");
     // The engineer's work is all coding: a plan alone can play it, and is asked no word (a word is no coding).
