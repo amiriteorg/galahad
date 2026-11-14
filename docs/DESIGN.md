@@ -259,13 +259,40 @@ These are enforced in code and, where possible, in tests (`packages/node/test/as
 | File | What | Loaded |
 |---|---|---|
 | `/boot.js` | Theme and motion before first paint (~0.3 KB) | Always, blocking, in `<head>` |
-| `/app.js` | The app (~457 KB; ~138 KB as brotli). Script is a small part of a phone's work (style and layout weigh more), so views aren't split out of it | Always; cached by the service worker |
+| `/app.js` | The app (~456 KB; ~137 KB as brotli). Script is a small part of a phone's work (style and layout weigh more: measured below), so views aren't split out of it | Always; cached by the service worker |
 | `/pair.js` | The pairing flow with the invite schema (zod) | Only when a `#pair=` link is opened |
 | `/sw.js` | Offline shell, stale-while-revalidate | Registered on first visit |
 
 Every text file (the page, the scripts, the manifest, the SVG icons) is sent with brotli (quality 9) or gzip when the browser accepts it, compressed on its first request and kept, and carries an `ETag`. Everything is `no-cache` ("ask first"), so a browser or the service worker that already holds this version gets a `304` and no body: opening the installed app costs a revalidation, not the whole app again.
 
 The PWA imports only what it needs from `@galahad/core` through subpath exports (`/bytes`, `/identity`, `/pairing`, `/request-auth`, `/secret-scan`), which keeps zod out of daily use.
+
+### What opening the app costs
+
+`bun apps/web/measure/first-load.ts` measures it, and measures any checkout the same way (`--repo <checkout>`), so a change to the app is shown with its number before and after; `--shots <dir>` also takes screenshots at 390 and 1280 px, light and dark. It starts a throwaway node on loopback (a temp home, stand-in models, a stand-in Docker), gives it five squires, a room, two tasks and two trial runs, pairs a headless Chrome through the real pairing page, and opens Overview and Squires **cold** (nothing cached, no service worker: the first visit after pairing) and **warm** (the service worker holds the shell: every visit after that). It does so on the machine as it is ("laptop", 1280×800) and with the processor slowed 4× on a line of 9 Mbit/s down and 60 ms a request ("phone", 390×844: an emulation, not a phone). *Usable* is the first frame after the page's own content has replaced every loading placeholder.
+
+On 14 November 2026, in Chrome 156 on the owner's Mac (the median of nine loads, with the fastest and the slowest):
+
+| Page · profile · visit | First paint | Usable |
+|---|---|---|
+| Overview · laptop · cold | 28 ms | 72 ms (61–82) |
+| Overview · laptop · warm | 20 ms | 61 ms (54–67) |
+| Squires · laptop · cold | 28 ms | 59 ms (53–69) |
+| Squires · laptop · warm | 24 ms | 48 ms (43–56) |
+| Overview · phone · cold | 176 ms | 640 ms (580–653) |
+| Overview · phone · warm | 120 ms | 419 ms (412–423) |
+| Squires · phone · cold | 176 ms | 558 ms (550–562) |
+| Squires · phone · warm | 116 ms | 389 ms (383–399) |
+
+A first visit to Overview is 26 requests and `/sw.js`, 11 of them to the API. The app's nine files come to 599 KB (188 KB as brotli), and three quarters of that is `/app.js`.
+
+What the numbers say:
+
+- **A first visit waits on round trips, not on the processor.** On the phone profile the main thread works about 130 ms of Overview's 640: layout 53, paint 32, style 17, script 15, parsing 8. The rest is four waits one after another: the page, `/app.js`, `whoami`, then the page's own data.
+- **Script is the small part.** Running `/app.js` takes under 2 ms on the laptop and about 6 ms slowed 4× (Chrome's own trace). Splitting the views out (about three fifths of the file) would shorten only a first visit's download and add a round trip the first time each page is opened; on every later visit `/app.js` comes from the service worker's cache. So it stays one file.
+- **A page at rest should ask nothing of the processor.** Squires costs the main thread about 2.5 ms a second (it asks the node every two seconds); with the animated knights it was about 4.5.
+
+Timings move with the machine's load: measure two checkouts one after the other, and trust a difference only when their ranges don't overlap. Bytes, requests and element counts don't move.
 
 ## Code map
 
@@ -275,9 +302,11 @@ The PWA imports only what it needs from `@galahad/core` through subpath exports 
 | `boot.ts`, `prefs.ts` | Preferences before paint; the only localStorage access |
 | `app.ts`, `shell.ts`, `live.ts`, `screens.ts` | Boot, the shell (routes, nav, palette commands, shortcuts), live polling, full-screen states |
 | `pair.ts` | The pairing flow (its own bundle) |
-| `ui/` | `dom` (element builder, `Scope` lifetimes), `icons`, `controls`, `dialog`, `palette`, `selector`, `toast`, `markdown`, `signal` |
+| `ui/` | `dom` (element builder, `Scope` lifetimes), `icons`, `controls`, `dialog`, `palette`, `selector`, `toast`, `markdown`, `signal`, `avatar` |
 | `lib/` | Pure, unit-tested logic: markdown parser, fuzzy search, time, text helpers |
 | `views/` | One file per destination |
+
+Beside `src/`, and never served: `apps/web/measure/first-load.ts` (what opening the app costs, above) and `apps/web/design/` (the avatar styles side by side, and the script that draws them).
 
 ## Inspirations
 
