@@ -7,6 +7,7 @@ export * from "./team.ts";
 export * from "./team-record.ts";
 export * from "./roundtable.ts";
 export * from "./model-checks.ts";
+export * from "./terminal-input.ts";
 export * from "./quests.ts";
 export * from "./turns.ts";
 export * from "./lookalike.ts";

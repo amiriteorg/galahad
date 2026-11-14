@@ -1,9 +1,8 @@
-import { plainLine, type RouteName, TERMINAL_ID, type TeamSnapshot, type TerminalEvent, type TerminalView } from "@galahad/core";
+import { inputQueue, plainLine, type RouteName, TERMINAL_ID, type TeamSnapshot, type TerminalEvent, type TerminalView } from "@galahad/core";
 
 /*
  * `galahad terminal`: a shell in a knight's VM or a sandbox, on a real terminal, from this one. What you type goes to
- * the node in order, one request at a time, and what you type meanwhile goes next, together; what it shows comes back
- * as it comes. Ctrl-] leaves: a terminal opened here is closed with it, one taken up from elsewhere is left open.
+ * the node in order (core's inputQueue); what it shows comes back as it comes. Ctrl-] leaves: a terminal opened here is closed with it, one taken up from elsewhere is left open.
  */
 
 export interface TerminalApi {
@@ -63,43 +62,25 @@ async function attach(api: TerminalApi, id: string, screen: Screen, opened: bool
   screen.say(`[terminal ${id} · Ctrl-] leaves${opened ? " and closes it" : ", leaving it open"}]`);
   const stop = new AbortController();
   let left = false;
-  let typed = "";
-  let size: { cols: number; rows: number } | null = opened ? null : sizeOf(screen);
-  let sending: Promise<void> | null = null;
   let failed: unknown = null;
-  /** Send what waits (keys typed, a new size), if nothing is on its way; what comes meanwhile goes next. */
-  const flush = (): void => {
-    if (sending || (!typed && !size)) return;
-    const data = typed.slice(0, 65_536);
-    typed = typed.slice(data.length);
-    const input = { terminal: id, ...(data ? { data } : {}), ...(size ? { size } : {}) };
-    size = null;
-    sending = api.call("terminalInput", input).then(
-      () => {
-        sending = null;
-        flush();
-      },
-      (error: unknown) => {
-        sending = null;
-        failed = error;
-        stop.abort();
-      },
-    );
-  };
+  const queue = inputQueue(
+    (input) => api.call("terminalInput", { terminal: id, ...input }),
+    (error) => {
+      failed = error;
+      stop.abort();
+    },
+  );
+  // Taken up from elsewhere, it takes this terminal's size.
+  if (!opened) queue.resize(sizeOf(screen));
   const stopKeys = screen.keys((data) => {
     const at = data.indexOf(LEAVE);
-    typed += at >= 0 ? data.slice(0, at) : data;
-    flush();
+    queue.type(at >= 0 ? data.slice(0, at) : data);
     if (at >= 0) {
       left = true;
       stop.abort();
     }
   });
-  const stopResize = screen.onResize(() => {
-    size = sizeOf(screen);
-    flush();
-  });
-  flush();
+  const stopResize = screen.onResize(() => queue.resize(sizeOf(screen)));
   let code: number | null = null;
   try {
     for await (const event of api.stream<TerminalEvent>("watchTerminal", { terminal: id }, stop.signal)) {
@@ -116,7 +97,7 @@ async function attach(api: TerminalApi, id: string, screen: Screen, opened: bool
     stopResize();
   }
   // What was typed before leaving reaches it first.
-  while (sending) await sending;
+  await queue.idle();
   if (failed && !left && code === null) throw failed;
   if (left) {
     if (opened) await api.call("closeTerminal", { terminal: id }).catch(() => {});
