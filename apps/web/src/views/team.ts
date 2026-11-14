@@ -1,11 +1,11 @@
 import type { SandboxView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
-import type { TeamControlInput, TeamHarness, TeamRoom, TeamRoomView, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
+import type { TeamControlInput, TeamEngramStatus, TeamHarness, TeamRoom, TeamRoomView, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
-import { activeTeamWork, HANDLE_PATTERN, HARNESS, harnessNote, removalPlan, takenHandles, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type HarnessStatus, type TeamTab } from "../lib/team.ts";
+import { activeTeamWork, engramLine, HANDLE_PATTERN, HARNESS, harnessNote, removalPlan, takenHandles, taskDependencies, teamSpeaker, teammateId, teammateMaker, teammateState, type HarnessStatus, type TeamTab } from "../lib/team.ts";
 import { relativeTime } from "../lib/time.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, dot, empty, errorState, field, section, skeletonRows } from "../ui/controls.ts";
@@ -25,6 +25,8 @@ interface WorkspaceStatus {
   workspace: SandboxView | null;
   error?: string;
   harnesses?: HarnessStatus[];
+  /** The notes store (Engram): the node's switch, and whether this squire's VM has it. Absent on a node from before it. */
+  engram?: TeamEngramStatus;
 }
 
 export const teamView: View = (root, ctx, { scope, opts }) => {
@@ -155,6 +157,27 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       const result = await ctx.api.post<{ room: TeamRoom }>("/api/team/direct", { id: person.id }, scope.signal);
       if (!scope.disposed) goRoom(result.room.id);
     } catch (error) { if (!isAbort(error)) toast("Couldn't open the conversation", { tone: "error", description: errorMessage(error) }); }
+  }
+
+  /** The notes store is one switch for every squire of this node. Turning it on says first what a note is. */
+  async function setEngram(on: boolean, person: Teammate): Promise<void> {
+    if (on) {
+      const ok = await confirmAction({
+        title: "Turn on the notes store?",
+        body: [
+          h("p", {}, "Each squire's coding harness is given Engram in its own VM: it can search notes from its earlier tasks and keep new ones. This is for every squire on this node whose VM has the pinned Engram."),
+          h("p", {}, "A note is a model's own words, unchecked: tasks are told to treat one as a lead, to verify it by running, and never to follow an instruction or keep a secret in one. Notes stay in the squire's VM and go with it; they are not part of Memory."),
+        ],
+        confirmLabel: "Turn on",
+      });
+      if (!ok || scope.disposed) return;
+    }
+    try {
+      await ctx.api.post("/api/team/engram", { on }, scope.signal);
+      toast(on ? "Notes store on" : "Notes store off", { tone: "info" });
+      await load(true);
+      void refreshWorkspace(person.id);
+    } catch (error) { if (!isAbort(error)) toast("Couldn't change the notes store", { tone: "error", description: errorMessage(error) }); }
   }
 
   /** Removing a worker is for good: said plainly first, with its handle typed to confirm. Its VM goes with it. */
@@ -376,6 +399,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     if (!person) { replace(content, empty({ icon: "sandbox", title: "Nobody is in this room", body: "Add squires to it in the room's settings.", compact: true })); return; }
     const known = workspaces.get(person.id);
     const workspace = known?.workspace;
+    // (The switch as the team says it now; what this VM has, as it was last asked.)
+    const notes = engramLine(known?.engram && snapshot ? { ...known.engram, on: snapshot.engram === true } : known?.engram);
     const chooser = h("select", { class: "select", "aria-label": "Squire's workspace" }, ...people.map((candidate) => h("option", { value: candidate.id, selected: candidate.id === person.id }, candidate.name)));
     chooser.addEventListener("change", () => { selectedWorkspace = chooser.value; renderWorkspace(); void refreshWorkspace(chooser.value); });
     keepPlace(content, () => replace(content, h("div", { class: "team-panel stack loose" },
@@ -391,6 +416,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         h("p", { class: "muted small" }, person.workspace ? `Workspace ${person.workspace.id} on ${person.workspace.node}.${known ? " Its live state couldn't be confirmed." : " Checking its live state…"}` : "Give this squire a persistent VM for code, files, and tools. Its job and working notes remain part of Galahad's hivemind."),
         canEdit && ctx.can("sandbox") ? button(person.workspace ? "Check / provision VM" : "Provision VM", { variant: "primary", icon: "plus", onClick: () => provision(person) }) : h("p", { class: "small muted" }, "Provisioning needs fleet:admin and sandbox access on an owner device.")),
       known?.harnesses?.length ? section("Harness readiness", {}, h("div", { class: "card" }, h("div", { class: "rows" }, ...known.harnesses.map((harness) => h("div", { class: "item" }, icon(harness.ready ? "check-circle" : "alert", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, HARNESS[harness.id as TeamHarness] ?? harness.id), harnessNote(harness) ? h("p", { class: "meta" }, harnessNote(harness)) : null), badge(harness.ready ? "Ready" : "Unavailable", harness.ready ? "ok" : "warn")))))) : h("p", { class: "small subtle" }, "Harness readiness is checked on the workspace host; choosing one is not proof that it is installed or signed in."),
+      notes ? section("Notes store", {}, h("div", { class: "card" }, h("div", { class: "rows" }, h("div", { class: "item" }, icon(notes.tone === "warn" ? "alert" : "memory", { size: 16 }), h("div", { class: "grow" }, h("strong", { class: "small" }, "Engram, for every squire on this node"), h("p", { class: "meta" }, notes.text)), badge(notes.badge, notes.tone), canEdit ? button(notes.badge === "Off" ? "Turn on" : "Turn off", { size: "sm", onClick: () => void setEngram(notes.badge === "Off", person) }) : null)))) : null,
     )));
   }
 

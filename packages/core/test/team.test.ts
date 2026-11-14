@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TeammateInput, TeamRecruitInput, TeamRemoveInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema } from "../src/team.ts";
+import { TeammateInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema } from "../src/team.ts";
 import { routes } from "../src/api.ts";
 import { defaultAvatar } from "../src/avatar.ts";
 
@@ -102,5 +102,13 @@ describe("team contracts", () => {
     expect(TeamControlInput.safeParse({ action: "stop" }).success).toBe(false);
     expect(TeamControlInput.safeParse({ room: "room", teammate: "ada", action: "stop" }).success).toBe(false);
     expect(TeamControlInput.parse({ teammate: "ada", action: "pause" }).action).toBe("pause");
+  });
+  test("the notes store has one switch, on or off, which takes fleet:admin: nothing else can be said of it (no version, no path, no project)", () => {
+    expect(routes.teamEngram).toMatchObject({ method: "POST", path: "/api/team/engram", scope: "fleet:admin" });
+    expect(TeamEngramInput.parse({ on: true })).toEqual({ on: true });
+    expect(TeamEngramInput.parse({ on: false })).toEqual({ on: false });
+    for (const invalid of [{}, { on: "yes" }, { on: 1 }, { on: true, version: "4.0.0" }, { on: true, project: "x" }, { on: true, dataDir: "/work" }, { on: true, tools: "agent" }]) {
+      expect([invalid, TeamEngramInput.safeParse(invalid).success]).toEqual([invalid, false]);
+    }
   });
 });

@@ -50,6 +50,7 @@ import {
   type Scope,
   type SandboxView,
   type Teammate,
+  type TeamEngramStatus,
   TEAM_GALAHAD,
   TeammateId,
   teamArmLabel,
@@ -72,8 +73,11 @@ import {
 import {
   AGENTS,
   CATALOG,
+  ENGRAM_PROBE,
+  ENGRAM_VERSION,
   agentCleanupCommand,
   chooseAgentModels,
+  engramFound,
   roleModels,
   chat,
   decide,
@@ -1423,6 +1427,7 @@ export function createApp(ctx: AppContext) {
       stopWorker: stopTeamWorker,
       models: (member) => harnessModels(member.harness, leased.get(member.id)).models,
       modelsOutside: (member) => harnessModels(member.harness, leased.get(member.id)).outside,
+      engram: () => ctx.team!.store.engram(),
       memories: (query) => memoryContext(query) ?? "",
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
@@ -1450,6 +1455,7 @@ export function createApp(ctx: AppContext) {
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
     controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
+    teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },
     /* Removing a worker is yours alone (never his: he only adds), and for good. One that has a VM goes only together
      * with it, when you say so and from a device that may destroy a sandbox: the destroy is your own request, approved
      * as that device's. Whether it has one is asked of its host, never assumed: a VM made just before a crash may
@@ -1495,7 +1501,11 @@ export function createApp(ctx: AppContext) {
         const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside);
         harnesses.push({ id, ready, ...(on ? { on } : {}), ...(reason ? { reason } : {}) });
       }
-      return { workspace, harnesses };
+      // The notes store: the node's switch, and whether this VM has the pinned binary (asked as a harness is: of an
+      // idle squire's running VM, by the binary's own word for its version).
+      const engram: TeamEngramStatus = { on: teamOf().store.engram(), pinned: ENGRAM_VERSION };
+      if (!busy && workspace?.status === "running" && member.enabled) Object.assign(engram, engramFound(await execTeam(member, ENGRAM_PROBE, 30, req.signal)));
+      return { workspace, harnesses, engram };
     },
     prepareTeamWorkspace: (input, p) => {
       if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller prepares squire credentials");

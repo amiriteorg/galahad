@@ -583,3 +583,33 @@ describe("removing a squire", () => {
     expect(store.room("workshop")!.members).toEqual(["lin", "rev"]);
   });
 });
+
+describe("the notes store's switch", () => {
+  test("off in a new team and in one from before there was a switch; on is kept across a restart, and the snapshot says it only when it is on", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-engram-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path); setup(store);
+    expect(store.engram()).toBe(false);
+    // What a page or a terminal reads is what it read before: nothing new while it is off.
+    expect("engram" in store.snapshot()).toBe(false);
+    expect(store.setEngram(true)).toBe(true);
+    expect(store.snapshot().engram).toBe(true);
+    close(store);
+    const reopened = make(path);
+    expect(reopened.engram()).toBe(true);
+    expect(reopened.teammates().map((t) => t.id)).toEqual(["ada", "lin"]);
+    expect(reopened.setEngram(false)).toBe(false);
+    expect("engram" in reopened.snapshot()).toBe(false);
+    close(reopened);
+    expect(make(path).engram()).toBe(false);
+    // A team database from before the switch has no such table: it opens, off, with everything it held.
+    const old = join(dir, "old.db");
+    const before = make(old); setup(before); close(before);
+    const raw = new Database(old); raw.exec("DROP TABLE team_settings"); raw.close();
+    const opened = make(old);
+    expect(opened.engram()).toBe(false);
+    expect(opened.teammates().map((t) => t.id)).toEqual(["ada", "lin"]);
+    // Only a yes or a no is ever kept.
+    expect(() => opened.setEngram("yes" as never)).toThrow(TeamError);
+    expect(opened.engram()).toBe(false);
+  });
+});

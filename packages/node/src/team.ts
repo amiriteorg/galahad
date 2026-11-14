@@ -89,6 +89,8 @@ export class TeamService {
     return saved;
   }
   remember(id: string, text: string): Teammate { this.accepting(); const saved = this.store.remember(id, text); this.changed(); return saved; }
+  /** The VMs' notes store, for every squire here: a task reads the switch as it starts, so one that is running is not changed. */
+  setEngram(on: boolean): boolean { this.accepting(); const set = this.store.setEngram(on); this.changed(); return set; }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
     this.steady(id);

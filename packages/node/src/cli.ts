@@ -48,6 +48,9 @@ Squires (his persistent sub-Galahads, their rooms and verified work in VMs; "tea
   squires provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway]
                                     its VM: online (the default) it can reach the internet, gateway only the models
   squires memory <id> [text]         read or replace that squire's notes
+  squires engram [on|off]            the VMs' notes store (Engram): say whether it is on, or turn it on or off.
+                                    On, a squire's harness can search and keep notes in its own VM, where the
+                                    VM's image has the pinned Engram; off (the default), nothing is given
   squires avatar <id> [--form round|armored|hooded] [--color '#rrggbb'] [--accent '#rrggbb']
                   [--eyes oval|round|visor] [--accessory none|plume|ears|crown] [--temperament calm|curious|lively] [--reset]
                                     customize that squire's look, or read its saved appearance

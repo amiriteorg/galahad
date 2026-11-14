@@ -201,3 +201,33 @@ test("squires add --agent claude (or codex) asks the node for that harness, in a
     expect(lines.at(-1)).toBe(`ada · Ada · ${agent} · enabled · 0/40 turns today · VM not provisioned`);
   }
 });
+
+test("squires engram says whether the notes store is on, and turns it on or off by the one route for it", async () => {
+  const lines: string[] = [];
+  const asked: { name: RouteName; input: unknown }[] = [];
+  let on = false;
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name === "team") return { teammates: [], rooms: [], tasks: [], deliveries: [], ...(on ? { engram: true } : {}) } as T;
+      if (name === "teamEngram") { on = (input as { on: boolean }).on; return { engram: on } as T; }
+      throw new Error(`unexpected call: ${name}`);
+    },
+  };
+  const say = (line: string) => lines.push(line);
+  await teamCommand(api, "engram", [], {}, say);
+  expect(lines.at(-1)).toBe("The notes store (Engram) is off: a squire's tasks are given none. Turn it on with: galahad squires engram on");
+  await teamCommand(api, "engram", ["on"], {}, say);
+  expect(asked.at(-1)).toEqual({ name: "teamEngram", input: { on: true } });
+  expect(lines.at(-1)).toBe("The notes store (Engram) is on. A squire's task is given it when the squire's VM has the pinned Engram, and says which it was. Notes stay in that VM: they are leads a task checks, never his memory.");
+  await teamCommand(api, "engram", [], {}, say);
+  expect(lines.at(-1)).toBe("The notes store (Engram) is on: a squire's task is given it where its VM has the pinned Engram (Workspace, in the app, says which). Turn it off with: galahad squires engram off");
+  await teamCommand(api, "engram", ["off"], {}, say);
+  expect(asked.at(-1)).toEqual({ name: "teamEngram", input: { on: false } });
+  expect(lines.at(-1)).toBe("The notes store (Engram) is off. What squires kept stays in each VM, unused, under /work/.memory/engram.");
+  // Anything but on or off is not sent anywhere.
+  const before = asked.length;
+  await expect(teamCommand(api, "engram", ["maybe"], {}, say)).rejects.toThrow(/galahad squires engram \[on\|off\]/);
+  await expect(teamCommand(api, "engram", ["on", "--tools=agent"], {}, say)).rejects.toThrow(/galahad squires engram \[on\|off\]/);
+  expect(asked).toHaveLength(before);
+});

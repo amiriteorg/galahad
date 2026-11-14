@@ -75,12 +75,20 @@ export class TeamStore {
         data TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS team_jobs_queue ON team_jobs(status, seq);
       CREATE INDEX IF NOT EXISTS team_jobs_teammate ON team_jobs(teammate, status);
-      CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);`);
+      CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);
+      CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
   }
 
   close(): void { this.db.close(); }
   private day(): string { return new Date(this.now()).toISOString().slice(0, 10); }
   private turns(teammate: string): number { return this.db.query<{ turns: number }, [string, string]>("SELECT turns FROM team_usage WHERE teammate = ? AND day = ?").get(teammate, this.day())?.turns ?? 0; }
+  /** The VMs' notes store (Engram) for this node's squires: off until you turn it on, and kept across restarts. */
+  engram(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='engram'").get()?.value === "on"; }
+  setEngram(raw: boolean): boolean {
+    const on = teamInput(z.boolean(), raw);
+    this.db.query("INSERT INTO team_settings(key,value) VALUES('engram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
+    return on;
+  }
   /** A worker's record as it is kept, whether or not it was removed. */
   private record(id: string): Teammate | null {
     const row = this.db.query<DocRow, [string]>("SELECT value FROM team_teammates WHERE id = ?").get(id);
@@ -365,7 +373,7 @@ export class TeamStore {
     // Its kept conversations, yours with it first: they are in no other list.
     const direct = this.rooms().filter((room) => room.direct).sort((a, b) => a.members.length - b.members.length);
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
-    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: this.deliveries(), ...(removed.length ? { removed } : {}) };
+    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: this.deliveries(), ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}) };
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {

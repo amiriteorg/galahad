@@ -32,7 +32,7 @@ export function foldLine(line: string, width: number): string[] {
   out.push(`${out.length ? "  " : ""}${rest}`);
   return out;
 }
-const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad squires [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|squire|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -96,6 +96,22 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     if (args.length > 1) await api.call("teamMemory", { id: args[0], text: args.slice(1).join(" ") });
     const state = await api.call<TeamSnapshot>("team");
     const m = state.teammates.find((m) => m.id === args[0]); if (!m) throw new Error("No such squire"); print(plainText(m.memory).trim() || "No notes yet."); return;
+  }
+  // The VMs' notes store (Engram), for every squire of this node: said, or turned on or off (which is yours alone).
+  if (sub === "engram") {
+    if (args.length > 1 || (args.length === 1 && args[0] !== "on" && args[0] !== "off")) throw new Error("usage: galahad squires engram [on|off]");
+    if (!args.length) {
+      const on = (await api.call<TeamSnapshot>("team")).engram === true;
+      print(on
+        ? "The notes store (Engram) is on: a squire's task is given it where its VM has the pinned Engram (Workspace, in the app, says which). Turn it off with: galahad squires engram off"
+        : "The notes store (Engram) is off: a squire's tasks are given none. Turn it on with: galahad squires engram on");
+      return;
+    }
+    const { engram } = await api.call<{ engram: boolean }>("teamEngram", { on: args[0] === "on" });
+    print(engram
+      ? "The notes store (Engram) is on. A squire's task is given it when the squire's VM has the pinned Engram, and says which it was. Notes stay in that VM: they are leads a task checks, never his memory."
+      : "The notes store (Engram) is off. What squires kept stays in each VM, unused, under /work/.memory/engram.");
+    return;
   }
   // (A squire by either word: `teammate` is what the command took before it was called squires.)
   if (["pause", "resume", "stop"].includes(sub) && ["room", "squire", "teammate", "task"].includes(args[0] ?? "")) {

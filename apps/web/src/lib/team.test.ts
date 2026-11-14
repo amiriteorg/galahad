@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask, Teammate } from "@galahad/core/team";
 import { TeamHarness } from "@galahad/core/team";
-import { HANDLE_PATTERN, HARNESS, harnessNote, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
+import { engramLine, HANDLE_PATTERN, HARNESS, harnessNote, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
 
 const person: Teammate = { id: "ada", name: "Ada", instructions: "", role: "engineer", harness: "native", enabled: true, dailyTurns: 4, turnsToday: 1, memory: "", repository: null, workspaceNode: null, workspace: null, createdAt: 1, updatedAt: 1 };
 const task: TeamTask = { id: "task-abcdefghijkl", room: "work", assignee: "ada", title: "Check inputs", goal: "Check", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "chain", createdAt: 1, updatedAt: 1 };
@@ -110,5 +110,20 @@ describe("a squire's coding harness", () => {
     // His own harness has nothing to say, and a node that says nothing of what one runs on (an older one) is shown as before.
     expect(harnessNote({ id: "native", ready: true })).toBeNull();
     expect(harnessNote({ id: "opencode", ready: true })).toBeNull();
+  });
+});
+
+describe("the notes store in a squire's Workspace", () => {
+  const absent = "this VM's image has no Engram 3.7.2 (a VM keeps the image it was made from)";
+  test("its line says the switch and whether this VM has the pinned Engram, and never calls a store ready that isn't there", () => {
+    expect(engramLine({ on: true, pinned: "3.7.2", present: true })).toEqual({ badge: "On", tone: "ok", text: "Engram 3.7.2 is in this VM, and this squire's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted." });
+    expect(engramLine({ on: true, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Not in this VM", tone: "warn", text: `On, but ${absent}. This squire's tasks run without it and say so.` });
+    expect(engramLine({ on: true, pinned: "3.7.2", present: false, reason: "this VM has Engram 3.7.1, not the pinned 3.7.2" })?.badge).toBe("Not in this VM");
+    expect(engramLine({ on: true, pinned: "3.7.2" })).toEqual({ badge: "On", tone: "neutral", text: "On. Whether this VM has Engram 3.7.2 is asked when the squire is idle and its VM is running." });
+    expect(engramLine({ on: false, pinned: "3.7.2", present: true })).toEqual({ badge: "Off", tone: "neutral", text: "Off: tasks are given no notes store. Engram 3.7.2 is in this VM, should you turn it on." });
+    expect(engramLine({ on: false, pinned: "3.7.2", present: false, reason: absent })).toEqual({ badge: "Off", tone: "neutral", text: `Off: tasks are given no notes store. Turned on, it would not reach this squire: ${absent}.` });
+    expect(engramLine({ on: false, pinned: "3.7.2" })).toEqual({ badge: "Off", tone: "neutral", text: "Off: tasks are given no notes store." });
+    // A node from before the switch says nothing of it: there is no line to show.
+    expect(engramLine(undefined)).toBeNull();
   });
 });

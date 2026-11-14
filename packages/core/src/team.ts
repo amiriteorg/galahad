@@ -113,6 +113,23 @@ export type TeamControlInput = z.infer<typeof TeamControlInput>;
 export const TeamRemoveInput = z.strictObject({ id: z.string().min(1).max(32), destroyWorkspace: z.boolean().optional() });
 export type TeamRemoveInput = z.infer<typeof TeamRemoveInput>;
 
+/** The VMs' notes store (Engram: docs/HIVEMIND.md): one switch for all of a node's squires, yours alone to turn, and
+ * off until you do. Nothing else of the store is anyone's to set: its version is the image's, its place and its
+ * tools are the code's, and a squire's project is its repository's name or its own handle. */
+export const TeamEngramInput = z.strictObject({ on: z.boolean() });
+export type TeamEngramInput = z.infer<typeof TeamEngramInput>;
+
+/** What a squire's Workspace is told of the notes store: the node's switch, and whether this VM has the pinned binary. */
+export interface TeamEngramStatus {
+  on: boolean;
+  /** The version the squires' image pins. */
+  pinned: string;
+  /** This VM has it, at that version. Absent: not asked (no running VM, or the squire is at work). */
+  present?: boolean;
+  /** When it hasn't: why, in words. */
+  reason?: string;
+}
+
 export interface Teammate {
   id: string;
   name: string;
@@ -203,6 +220,8 @@ export interface TeamSnapshot {
   /** Workers you removed: their handles stay taken, and their names stay beside what they said. `conversations`:
    * the direct conversations it had (yours with it first), kept to read though no longer among the rooms. */
   removed?: (Pick<Teammate, "id" | "name" | "removedAt"> & { conversations?: string[] })[];
+  /** The notes store's switch, said only when it is on (absent: off, which is also what a node from before it says). */
+  engram?: boolean;
 }
 
 export interface TeamRoomView extends TeamRoom {

@@ -1,4 +1,4 @@
-import type { TeamDelivery, TeamHarness, TeamMessage, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
+import type { TeamDelivery, TeamEngramStatus, TeamHarness, TeamMessage, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 
 export type TeamTab = "chat" | "work" | "workspace";
 export interface TeamLocation { room?: string; teamTab?: TeamTab }
@@ -12,6 +12,22 @@ export interface HarnessStatus { id: string; ready: boolean; on?: string; reason
 
 /** The line under a harness's name: what to do so that it can work, or what it would run on. */
 export const harnessNote = (harness: HarnessStatus): string | null => harness.reason ?? (harness.on ? `Runs on ${harness.on}` : null);
+
+/**
+ * The notes store (Engram) in a squire's Workspace, in a line: the node's switch, and whether this VM has the
+ * pinned binary. A store that isn't in the VM is never called on for it. Null: the node says nothing of one.
+ */
+export function engramLine(status: TeamEngramStatus | undefined): { badge: string; tone: "ok" | "warn" | "neutral"; text: string } | null {
+  if (!status) return null;
+  const engram = `Engram ${status.pinned}`;
+  if (!status.on) {
+    const here = status.present === true ? ` ${engram} is in this VM, should you turn it on.` : status.present === false ? ` Turned on, it would not reach this squire: ${status.reason}.` : "";
+    return { badge: "Off", tone: "neutral", text: `Off: tasks are given no notes store.${here}` };
+  }
+  if (status.present === true) return { badge: "On", tone: "ok", text: `${engram} is in this VM, and this squire's tasks are given it. Notes are a task's own leads, kept in this VM and checked before they are trusted.` };
+  if (status.present === false) return { badge: "Not in this VM", tone: "warn", text: `On, but ${status.reason}. This squire's tasks run without it and say so.` };
+  return { badge: "On", tone: "neutral", text: `On. Whether this VM has ${engram} is asked when the squire is idle and its VM is running.` };
+}
 
 /** Team addresses keep the room when the page is reloaded or shared. */
 export function teamLocation(hash: string): TeamLocation {
