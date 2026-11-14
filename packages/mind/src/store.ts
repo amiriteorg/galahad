@@ -980,6 +980,13 @@ export class MindStore {
         this.putLww(`price:${bodyOf(event, "price.removed").model}`, event, null);
         return null;
       }
+      case "model.checked": {
+        // A model is checked by a full node, which holds the keys to ask it; the latest check stands everywhere.
+        if (!isFullNode(signer)) return "only full nodes check models";
+        const body = bodyOf(event, "model.checked");
+        this.putLww(`modelcheck:${body.model}`, event, body.check as Json);
+        return null;
+      }
       case "compute.calibrated": {
         // A node measures itself: whose calibration it is, is who signed it. Its latest stands.
         if (signer.kind !== "node") return "only nodes calibrate";

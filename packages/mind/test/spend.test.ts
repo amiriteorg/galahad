@@ -90,6 +90,21 @@ describe("prices", () => {
   });
 });
 
+describe("what a model was seen to do", () => {
+  test("the latest check of a model stands on every replica, whichever came first, and what a newer node added is kept", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeA.emit(a, "model.checked", { model: "opencode-go/kimi-k3.1-pro", check: { at: 1, format: { replies: 25, good: 8 } } });
+    storeB.emit(b, "model.checked", { model: "opencode-go/kimi-k3.1-pro", check: { at: 2, format: { replies: 6, good: 2 }, reads: { ok: true, said: "x" }, latencyMs: 800 } });
+    storeA.emit(a, "model.checked", { model: "opencode-go/gpt-6-luna", check: { at: 3, places: { targets: 8, landed: 8, meanErrorPx: 4 } } });
+    syncInto(storeA, storeB);
+    syncInto(storeB, storeA);
+    for (const store of [storeA, storeB]) {
+      expect(store.lww("modelcheck:opencode-go/kimi-k3.1-pro")?.value).toEqual({ at: 2, format: { replies: 6, good: 2 }, reads: { ok: true, said: "x" }, latencyMs: 800 });
+      expect(store.lwwPrefix("modelcheck:").map((e) => e.key)).toEqual(["modelcheck:opencode-go/gpt-6-luna", "modelcheck:opencode-go/kimi-k3.1-pro"]);
+    }
+  });
+});
+
 describe("what a trial spent", () => {
   test("recorded once, beside its trial, by the node that ran it", () => {
     const { a, b, storeA, storeB } = fleet();

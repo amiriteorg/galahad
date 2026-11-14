@@ -21,7 +21,7 @@ import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { chatStateWords } from "@galahad/core";
+import { chatStateWords, checkFacts, type ModelCheck } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import type { BankStatusView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
@@ -99,7 +99,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   run [--providers a,b] -- <cmd>  run a tool (opencode, claude, codex…) on a scoped gateway token
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
-  roster | roster set <role> <provider/model>...
+  roster | roster set <role> <provider/model>... | roster check <provider/model>... [--only format,reads,places]
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] [--detach] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one.
                                   The turn runs on the node: Ctrl-C stops it; a terminal that goes away stops
@@ -872,7 +872,18 @@ Next:
         if (!rest[0] || rest.length < 2) fail("usage: galahad roster set <role> <provider/model>...");
         await admin.call("setRoster", { role: rest[0], models: rest.slice(1) });
       }
-      const { roster, spent = [] } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean }>; spent?: { provider: string; until: number }[] }>("roster");
+      if (sub === "check") {
+        // What each model can do, measured: the quest loop's format, reading a screen, placing a click (about eight calls each).
+        if (!rest.length) fail("usage: galahad roster check <provider/model>... [--only format,reads,places]");
+        const only = typeof flags.only === "string" ? flags.only.split(",").map((p) => p.trim()).filter(Boolean) : [];
+        for (const model of rest) {
+          console.log(dim(`… checking ${model}`));
+          const { check } = await admin.call<{ check: ModelCheck }>("checkModel", { model, ...(only.length ? { parts: only } : {}) });
+          console.log(`  ${model}: ${checkFacts(check).join(" · ") || "nothing could be checked"}`);
+        }
+        return;
+      }
+      const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
       const spentUntilOf = (ref: string) => spent.find((w) => ref.startsWith(`${w.provider}/`));
       for (const [role, spec] of Object.entries(roster)) {
         // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
@@ -883,6 +894,11 @@ Next:
         console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
       }
       for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; its models are passed over until then, and the next on each role answers.`));
+      const checked = Object.entries(checks);
+      if (checked.length) {
+        console.log(`\n  ${bold("Checked")} ${dim("(what each was seen to do: galahad roster check <provider/model>)")}`);
+        for (const [model, check] of checked) console.log(`  ${model}: ${checkFacts(check).join(" · ")} ${dim(`· ${new Date(check.at).toISOString().slice(0, 10)}`)}`);
+      }
       return;
     }
 

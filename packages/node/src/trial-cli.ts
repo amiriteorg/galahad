@@ -176,24 +176,8 @@ export function planParallel(census: Pick<ComputeView, "nodes"> | null, asked: n
   return { parallel, why: parallel < Math.min(asked, jobs) ? `${where} carries ${slots} slots${effort > 1 ? `, ${effort} attempts a trial` : ""}: ${parallel} at once, not ${asked}` : `${slots} slots on ${where}` };
 }
 
-/** This checkout's revision: the deploy's REVISION file, else git, else "unknown". */
-export function galahadRevision(): string {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  try {
-    const rev = readFileSync(join(root, "REVISION"), "utf8").trim();
-    if (/^[0-9a-f]{7,40}$/.test(rev)) return rev;
-  } catch {
-    /* not a deployed release */
-  }
-  try {
-    const git = Bun.spawnSync(["git", "describe", "--always", "--dirty=+dirty", "--abbrev=12"], { cwd: root, stderr: "ignore" });
-    const rev = git.stdout.toString().trim();
-    if (git.exitCode === 0 && rev) return rev.slice(0, 64);
-  } catch {
-    /* no git */
-  }
-  return "unknown";
-}
+export { galahadRevision } from "./revision.ts";
+import { galahadRevision } from "./revision.ts";
 
 const freshSeed = (): number => crypto.getRandomValues(new Uint32Array(1))[0]!;
 

@@ -303,6 +303,11 @@ export const routes = {
   removeProvider: { method: "POST", path: "/api/providers/remove", scope: "brain:write", input: z.strictObject({ id: Name }) },
   providerModels: { method: "POST", path: "/api/providers/models", scope: "mind:read", input: z.strictObject({ id: Name }) },
   roster: { method: "GET", path: "/api/roster", scope: "mind:read", input: null },
+  /**
+   * Check what a model can do (brain/checks.ts): follow the quest loop's format, read a screen, place a click on
+   * one. About eight calls; recorded for every node, which then chooses by it. Yours alone.
+   */
+  checkModel: { method: "POST", path: "/api/models/check", scope: "brain:write", input: z.strictObject({ model: ModelRef, parts: z.array(z.enum(["format", "reads", "places"])).min(1).max(3).optional() }) },
   setRoster: {
     method: "POST",
     path: "/api/roster",

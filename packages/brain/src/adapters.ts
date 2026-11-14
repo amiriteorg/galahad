@@ -13,6 +13,8 @@ export interface CompletionInput {
   fetch?: typeof fetch;
   /** Pictures that go with the last user message, for a model that sees: data, never instructions. */
   images?: ToolImage[];
+  /** Whether the model sees pictures, when that is known (a check said so: checks.ts); absent: seesImages decides. */
+  sees?: boolean;
 }
 
 export class RefusalError extends Error {}
@@ -247,7 +249,7 @@ const READ_DELTA = new Set(["role", "content", "reasoning_content", "tool_calls"
 /** Any OpenAI-compatible endpoint (DeepSeek, Mistral, Cloudflare AI Gateway, Ollama, llama.cpp …), with function calling. */
 export function openAIConversation(input: CompletionInput): Conversation {
   const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
-  const vision = seesImages(input.provider, input.model);
+  const vision = input.sees ?? seesImages(input.provider, input.model);
   // Pictures given with the question go with the last user message, to a model that sees; else in words.
   const asked = messages.findLast((m) => m.role === "user");
   if (input.images?.length && asked && typeof asked.content === "string") {

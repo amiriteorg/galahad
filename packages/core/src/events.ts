@@ -290,6 +290,11 @@ export const Bodies = {
   "price.set": z.strictObject({ model: z.string().min(3).max(256), price: Open }),
   "price.removed": z.strictObject({ model: z.string().min(3).max(256) }),
   /**
+   * What a model was seen to do when it was checked (model-checks.ts: the quest loop's format, reading a screen,
+   * placing a click), so every node chooses by the same evidence. LWW by model; open in the log, read leniently.
+   */
+  "model.checked": z.strictObject({ model: z.string().min(3).max(256), check: Open }),
+  /**
    * What a trial's model calls came to, by role and model (usage.ts TrialSpent): counts as the providers reported
    * them, never a prompt or an answer. Recorded once, by the node that recorded the trial; the first stands.
    */

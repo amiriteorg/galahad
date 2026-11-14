@@ -5,6 +5,7 @@ import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
 import { windowsOf } from "./windows.ts";
+import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { listModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
 
@@ -130,6 +131,9 @@ export const MAX_CONTINUATIONS = 3;
  */
 export const MAX_REFUSAL_RETRIES = 2;
 
+/** What a model was seen to do when it was last checked (core/model-checks.ts); null: never checked. */
+export const checkOf = (store: MindStore, ref: string): ModelCheck | null => readModelCheck(store.lww(`modelcheck:${ref}`)?.value);
+
 /** Expand `<provider>/*` wildcards into the first model that provider serves on this node. */
 async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
   const out: string[] = [];
@@ -197,7 +201,17 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     whyNot.push(`${ref}: ${error.replace(/\s+/g, " ").slice(0, 240)}`);
     return { type: "fallback", from: ref, error };
   };
+  // The quest loop's engineer (coding, no tools, the role's own models): a model that was checked and doesn't follow
+  // its format (one command a reply) is passed over while another can take the turn (checks.ts; evidence, not a label).
+  const loopTurn = !!req.coding && (req.role ?? "planner") === "engineer" && !tools && !req.model;
+  const offFormat = (ref: string) => (loopTurn ? checkOf(ctx.store, ref) : null);
+  const someoneFits = candidates.some((ref) => followsFormat(offFormat(ref)) !== false);
   for (const ref of candidates) {
+    const off = offFormat(ref);
+    if (someoneFits && off?.format && followsFormat(off) === false) {
+      yield passOver(ref, `it doesn't follow the quest loop's command format (commands in ${off.format.good} of ${off.format.replies} replies when it was checked): passed over for this loop`);
+      continue;
+    }
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.
     const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
     let parsed: { provider: string; model: string };
@@ -222,10 +236,13 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield passOver(ref, whyNoKey(parsed.provider));
       continue;
     }
+    // Whether it reads pictures, where a check has said: then that, not the rule of thumb (adapters.ts seesImages).
+    const sees = readsScreens(checkOf(ctx.store, ref));
     const start = () => {
       const fresh = (provider.kind === "anthropic" ? anthropicConversation : openAIConversation)({
         provider,
         model: parsed.model,
+        ...(sees === null ? {} : { sees }),
         system,
         messages: req.messages,
         effort: effortFor(req.role),

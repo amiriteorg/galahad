@@ -1,7 +1,9 @@
 import {
   type ActionView,
   canonical,
+  chooseEyes,
   chooseKnight,
+  readModelCheck,
   type KnightFacts,
   TEAM_OWNER,
   type TeamGiveInput,
@@ -105,6 +107,7 @@ import {
   SIGN_INS,
   signIn,
   windowsOf,
+  checkModel,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -138,6 +141,7 @@ import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamStore } from "./team-store.ts";
 import { harnessReadiness, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
+import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
 
 /**
@@ -1497,11 +1501,16 @@ export function createApp(ctx: AppContext) {
       // covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
       eyes: (member) => {
         const covered = leased.get(member.id) ?? [];
-        for (const ref of roster(ctx.store).eyes?.models ?? []) {
+        const usable = (ref: string) => {
           const at = ref.indexOf("/");
-          if (at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at))) return ref;
-        }
-        return null;
+          return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spent(ref.slice(0, at));
+        };
+        // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses.
+        const checks = ctx.store.lwwPrefix("modelcheck:").flatMap((entry) => {
+          const check = readModelCheck(entry.value);
+          return check ? [{ ref: entry.key.slice("modelcheck:".length), check }] : [];
+        });
+        return chooseEyes(roster(ctx.store).eyes?.models ?? [], checks, usable);
       },
       // What a task changed in its repository, kept on the VM's host as any sandbox's work is (the controller asks; a knight can't).
       keep: async (member, path, label) => {
@@ -1749,8 +1758,24 @@ export function createApp(ctx: AppContext) {
       const plan = planOf(input.id);
       return { models: plan ? [...plan.models] : await listModels(provider) };
     },
-    // (With the plans whose allowance is spent just now, and until when: their models are passed over until then.)
-    roster: () => ({ roster: roster(ctx.store), spent: windowsOf(ctx.store).list() }),
+    // (With the plans whose allowance is spent just now, and until when, and what each checked model was seen to do.)
+    roster: () => ({
+      roster: roster(ctx.store),
+      spent: windowsOf(ctx.store).list(),
+      checks: Object.fromEntries(ctx.store.lwwPrefix("modelcheck:").flatMap((entry) => {
+        const check = readModelCheck(entry.value);
+        return check ? [[entry.key.slice("modelcheck:".length), check]] : [];
+      })),
+    }),
+    checkModel: (input, p) => {
+      // Which models he trusts with what is yours to have measured; it costs your models' allowance.
+      if (!isOwner(p)) throw new HttpError(403, "only you have a model checked");
+      return longRunning((async () => {
+        const check = await checkModel(brainFor(p), input.model, { version: galahadRevision(), ...(input.parts ? { parts: input.parts } : {}) });
+        ctx.store.emit(ctx.identity, "model.checked", { model: input.model, check: JSON.parse(JSON.stringify(check)) });
+        return { model: input.model, check };
+      })());
+    },
     setRoster: (input) => {
       for (const ref of input.models) parseRef(ref);
       ctx.store.emit(ctx.identity, "roster.set", { role: input.role, models: input.models });

@@ -8,6 +8,7 @@ export * from "./providers.ts";
 export * from "./roster.ts";
 export * from "./quest.ts";
 export * from "./windows.ts";
+export * from "./checks.ts";
 export * from "./mcp-connectors.ts";
 export * from "./investigation.ts";
 export * from "./trials.ts";
