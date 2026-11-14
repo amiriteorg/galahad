@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type TeamRoom, type TeamRoomView, type TeamSnapshot } from "@galahad/core";
-import { defaultAvatar } from "@galahad/core/avatar";
+import { defaultAvatar, matchingAccent } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
 
 /* `galahad roundtable` at a terminal, against what the node would answer. */
@@ -133,11 +133,11 @@ test("names, titles and notes a model can write are shown as plain text too", as
 });
 
 test("a new body color brings its matching accent; an accent you name, or chose apart before, is kept", async () => {
-  const sand = { ...defaultAvatar("ada"), color: "#e8c8a5", accent: "#b58b69" };
+  const sand = { ...defaultAvatar("ada"), color: "#e8c8a5", accent: matchingAccent("#e8c8a5") };
   const { api, saved } = node([member("ada", { avatar: sand })]);
   const quiet = () => {};
   await teamCommand(api, "avatar", ["ada"], { color: "#A8C9DB" }, quiet);
-  expect(saved.at(-1)).toEqual({ name: "saveTeammate", input: { id: "ada", name: "Ada", avatar: { ...sand, color: "#a8c9db", accent: "#638cb5" } } });
+  expect(saved.at(-1)).toEqual({ name: "saveTeammate", input: { id: "ada", name: "Ada", avatar: { ...sand, color: "#a8c9db", accent: matchingAccent("#a8c9db") } } });
   await teamCommand(api, "avatar", ["ada"], { color: "#a8c9db", accent: "#112233" }, quiet);
   expect(saved.at(-1)!.input.avatar).toEqual({ ...sand, color: "#a8c9db", accent: "#112233" });
   await teamCommand(api, "avatar", ["ada"], { form: "round" }, quiet);

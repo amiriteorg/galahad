@@ -1,18 +1,18 @@
 #!/usr/bin/env bun
 /*
- * Draws apps/web/design/avatars.html: the three ways a knight can be drawn (src/ui/avatar.ts), side by
- * side at 24, 40 and 96 px, in light and in dark, in every expression, so one can be chosen by eye.
- * One file with nothing to fetch. It is not part of the app: the node serves only what assets.ts names.
+ * Draws apps/web/design/avatars.html: the knights (src/ui/avatar.ts), every body, eyes and headwear, the presets, every
+ * state moving as the app moves it, at 24, 40 and 96 px, on a dark page and a light one. One file with nothing to
+ * fetch. It is not part of the app: the node serves only what assets.ts names.
  *
  *   bun apps/web/design/avatars.ts     writes it again; a test fails when the committed file has drifted
  *
- * The drawings are the app's own function's, and the colours and the avatar's few rules are read out of
- * the app's stylesheet, so the sheet can't show something the app wouldn't.
+ * The drawings and their motion are the app's own function's and stylesheet's, so the sheet can't show something
+ * the app wouldn't.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_EXPRESSIONS, defaultAvatar, type AvatarExpression } from "@galahad/core/avatar";
-import { AVATAR_STYLES, workerAvatar, type AvatarStyle, type WorkerAvatarOptions } from "../src/ui/avatar.ts";
+import { AVATAR_ACCESSORIES, AVATAR_EXPRESSIONS, AVATAR_EYES, AVATAR_FORMS, AVATAR_PALETTES, defaultAvatar, type AvatarExpression, type AvatarProfile } from "@galahad/core/avatar";
+import { KNIGHT_CSS, workerAvatar, type WorkerAvatarOptions } from "../src/ui/avatar.ts";
 
 interface Drawn {
   tag: string;
@@ -45,102 +45,82 @@ function draw(options: WorkerAvatarOptions): string {
   }
 }
 
-const STYLES: Record<AvatarStyle, { title: string; says: string }> = {
-  face: { title: "Face", says: "A round face in the knight's one flat colour: two eyes and a mouth, drawn as a single line. The plainest of the three, and the one the app draws now. Knights are told apart by colour alone, and there are eight colours unless you choose another, so two knights can look the same." },
-  initials: { title: "Initials", says: "The knight's initials in its colour, with the mouth under them. The letters stand where the eyes would be, so only the mouth is left to say how the work goes." },
-  glyph: { title: "Glyph", says: "The same face on one of three shapes (round, square, arched), which follows the profile's form. Shape and colour together tell more knights apart; it is a little less plain." },
-};
-/** The rule is avatarExpression's, in packages/core/src/avatar.ts: the first of these that holds. */
+/** The rule is avatarExpression's, in packages/core/src/avatar.ts (the roster adds asking): the first of these that holds. */
 const MEANS: Record<AvatarExpression, string> = {
-  working: "one of its tasks is running",
-  thinking: "it is writing an answer",
-  resting: "it is paused",
-  waiting: "it has work queued",
-  concerned: "something of its failed or was interrupted in the last 30 seconds",
-  pleased: "a task of its passed its checks in the last 30 seconds",
-  idle: "none of these",
+  thinking: "it is planning (its task's latest line starts “Plan ·” or “Thinking ·”), or writing you an answer: eyes up, thought bubbles",
+  working: "a command of its task is running (“Running ·”), or a step the others don't name: at the keys",
+  reading: "it is reading what the command printed (“Exit N ·”): behind a page, its eyes along the lines",
+  browsing: "it is using its desktop (“Running · desktop …”): at the screen, its eyes on the pointer",
+  checking: "its gates are running, or its work is under review (“Gate i/n ·”, “Review ·”): a lens over it",
+  asking: "it asks your leave for something (an approval waiting in the Inbox): a hand up, an oxblood mark",
+  resting: "it is paused: shut eyes, dimmed",
+  waiting: "it has work queued: an hourglass",
+  concerned: "something of its failed or was interrupted in the last 30 seconds: a worried brow",
+  pleased: "a task of its passed its checks in the last 30 seconds: happy eyes, a hop",
+  idle: "none of these: it blinks, and a curious or lively one glances about or hops",
 };
-const ORDER: AvatarExpression[] = ["working", "thinking", "resting", "waiting", "concerned", "pleased", "idle"];
-const ROSTER: WorkerAvatarOptions[] = [
-  { id: "galahad", name: "Galahad" },
-  { id: "ada", name: "Ada" },
-  { id: "lin", name: "Lin" },
-  { id: "kay", name: "Kay" },
-  { id: "bors", name: "Bors" },
-  { id: "percival", name: "Percival" },
-  { id: "gareth", name: "Gareth Vale" },
-  { id: "mordred", name: "Dark colour", profile: { ...defaultAvatar("mordred"), color: "#22303a" } },
-];
+const ORDER: AvatarExpression[] = ["thinking", "working", "reading", "browsing", "checking", "asking", "resting", "waiting", "concerned", "pleased", "idle"];
 const SIZES = [24, 40, 96];
+const title = (value: string) => value[0]!.toUpperCase() + value.slice(1);
 
 export function avatarSheet(): string {
-  const app = readFileSync(join(import.meta.dir, "../src/index.html"), "utf8").match(/<style>([^]*?)<\/style>/)![1]!;
-  const token = (name: string): string => `--${name}: ${app.match(new RegExp(`--${name}: ([^;]+);`))![1]};`;
-  const tokens = ["bg", "surface", "border", "text", "text-2", "accent", "on-accent", "font-sans"].map(token).join(" ");
-  const rules = app.split("\n").filter((line) => line.trim().startsWith(".worker-avatar")).map((line) => line.trim()).join("\n      ");
-  if (!AVATAR_EXPRESSIONS.every((expression) => ORDER.includes(expression))) throw new Error("an expression is missing from the sheet");
-  /** Expressions a style can't tell apart, said under it: found by comparing the drawings, not claimed. */
-  const alike = (style: AvatarStyle): string => {
-    const drawn = new Map<string, AvatarExpression[]>();
-    for (const expression of ORDER) {
-      const picture = draw({ id: "ada", name: "Ada", expression, style }).replace(/ (aria-label|data-expression)="[^"]*"/g, "");
-      drawn.set(picture, [...(drawn.get(picture) ?? []), expression]);
-    }
-    const twins = [...drawn.values()].filter((group) => group.length > 1).map((group) => group.join(" and "));
-    return twins.length ? `Drawn the same in this style: ${twins.join("; ")}.` : "Each expression has a drawing of its own.";
-  };
-  const panel = (style: AvatarStyle, theme: "light" | "dark"): string => `
-        <div class="panel" style="color-scheme: ${theme}">
-          <h3>${theme === "light" ? "Light" : "Dark"}</h3>
+  if (!AVATAR_EXPRESSIONS.every((expression) => ORDER.includes(expression))) throw new Error("a state is missing from the sheet");
+  const base = defaultAvatar("sheet");
+  const looks = AVATAR_FORMS.flatMap((form, f) => AVATAR_EYES.flatMap((eyes, e) => AVATAR_ACCESSORIES.map((accessory, a): [string, AvatarProfile] => {
+    const palette = AVATAR_PALETTES[(f * 12 + e * 4 + a) % AVATAR_PALETTES.length]!;
+    return [`${title(form)}, ${eyes} eyes${accessory === "none" ? "" : `, ${accessory}`}`, { ...base, form, eyes, accessory, color: palette.color, accent: palette.accent }];
+  })));
+  const presets = AVATAR_PALETTES.map((palette, i) => `<figure>${draw({ id: `sheet-${i}`, name: palette.name, profile: { ...base, form: AVATAR_FORMS[i % 3]!, color: palette.color, accent: palette.accent }, size: 64, still: true })}<figcaption>${palette.name}</figcaption></figure>`).join("");
+  const page = (theme: "dark" | "light") => `
+        <div class="panel ${theme}">
           <table>
             <tr><th></th>${SIZES.map((size) => `<th>${size} px</th>`).join("")}</tr>${ORDER.map((expression) => `
-            <tr><th>${expression}</th>${SIZES.map((size) => `<td>${draw({ id: "ada", name: "Ada", expression, style, size })}</td>`).join("")}</tr>`).join("")}
+            <tr><th>${expression}</th>${SIZES.map((size) => `<td>${draw({ id: "ada", name: "Ada", expression, size })}</td>`).join("")}</tr>`).join("")}
+            <tr><th>Galahad</th>${SIZES.map((size) => `<td>${draw({ id: "galahad", name: "Galahad", size, still: true })}</td>`).join("")}</tr>
           </table>
-          <h4>As a speaker in a conversation, where no expression is drawn</h4>
-          <div class="roster">${ROSTER.map((who) => `<figure>${draw({ ...who, style, still: true })}<figcaption>${escape(who.name)}</figcaption></figure>`).join("")}</div>
-          <div class="roster small">${ROSTER.map((who) => draw({ ...who, style, still: true, size: 24 })).join("")}</div>
         </div>`;
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>The knights' avatars: three styles</title>
+    <title>The knights</title>
     <style>
-      :root { color-scheme: light dark; ${tokens} }
-      body { margin: 0; padding: 24px; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-sans); }
+      body { margin: 0; padding: 24px; background: #0a0a0b; color: #ece6da; font: 14px/1.5 -apple-system, system-ui, sans-serif; }
       main { max-width: 1120px; margin: 0 auto; }
       h1 { font-size: 24px; margin: 0 0 8px; }
-      h2 { font-size: 18px; margin: 40px 0 4px; }
-      h3 { font-size: 13px; margin: 0 0 8px; color: var(--text-2); }
-      h4 { font-size: 12px; font-weight: 500; margin: 16px 0 8px; color: var(--text-2); }
-      p, dl { max-width: 76ch; margin: 0 0 12px; color: var(--text-2); }
+      h2 { font-size: 18px; margin: 36px 0 8px; }
+      p, dl { max-width: 76ch; margin: 0 0 12px; color: #a39e94; }
       dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; }
-      dt { color: var(--text); font-weight: 600; }
+      dt { color: #ece6da; font-weight: 600; }
       dd { margin: 0; }
       code { font-size: 0.92em; }
+      .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 14px; }
+      figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      figcaption { font-size: 12px; text-align: center; color: #a39e94; }
+      .galahad { display: flex; flex-wrap: wrap; gap: 14px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-      .panel { padding: 16px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; }
+      .panel { padding: 16px; border-radius: 12px; } .panel.dark { background: #111113; } .panel.light { background: #f3efe6; color: #16161a; }
       table { border-collapse: collapse; }
-      th { padding: 6px 16px 6px 0; text-align: left; font-size: 12px; font-weight: 500; color: var(--text-2); }
+      th { padding: 6px 16px 6px 0; text-align: left; font-size: 12px; font-weight: 500; opacity: .7; }
       td { padding: 6px 16px 6px 0; vertical-align: middle; }
-      .roster { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 12px; }
-      .roster.small { gap: 8px; }
-      figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-      figcaption { font-size: 11px; color: var(--text-2); }
-      ${rules}
+      ${KNIGHT_CSS.trim().split("\n").join("\n      ")}
     </style>
   </head>
   <body>
     <main>
-      <h1>The knights' avatars: three styles</h1>
-      <p>Three ways to draw a knight, all from the one function in <code>apps/web/src/ui/avatar.ts</code>. Each is shown at 24, 40 and 96 px, in light and in dark, in every expression. Nothing moves in any of them, so they are the same with reduced motion. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier. Galahad is the one in ink with a star.</p>
-      <p>An expression is never a mood. It is what the node says of the knight's work, by this rule, the first that holds:</p>
-      <dl>${ORDER.map((expression) => `<dt>${expression}</dt><dd>${MEANS[expression]}</dd>`).join("")}</dl>${AVATAR_STYLES.map((style) => `
-      <h2>${STYLES[style].title}</h2>
-      <p>${STYLES[style].says} ${alike(style)}</p>
-      <div class="panels">${panel(style, "light")}${panel(style, "dark")}
-      </div>`).join("")}
+      <h1>The knights</h1>
+      <p>Each knight is a little creature built of merged dots, in its colour on a deep tile of the same hue, so it reads the same on any page: from <code>apps/web/src/ui/avatar.ts</code>. Its body, eyes, headwear, colours and how lively it is at rest are its own (Edit knight, or <code>galahad roundtable avatar</code>); Galahad is off-white on navy, with an oxblood plume. Every avatar is named for a screen reader: "Ada · working", or "Ada's avatar" beside something it said earlier, where it stays still.</p>
+      <h2>Every body, eyes and headwear</h2>
+      <div class="looks">${looks.map(([caption, profile], i) => `<figure>${draw({ id: `look-${i}`, name: caption, profile, size: 64, still: true })}<figcaption>${escape(caption)}</figcaption></figure>`).join("")}</div>
+      <h2>The eight presets</h2>
+      <div class="looks">${presets}</div>
+      <h2>What a knight is doing, it acts out</h2>
+      <p>A state is never a mood. It is what the node says of the knight's work, by this rule, the first that holds. Only the mark that starts a task's latest line is read, never the words after it. Nothing moves when the device asks for reduced motion; what it holds still says what it is doing.</p>
+      <dl>${ORDER.map((expression) => `<dt>${expression}</dt><dd>${escape(MEANS[expression])}</dd>`).join("")}</dl>
+      <div class="galahad">${ORDER.map((expression) => `<figure>${draw({ id: "galahad", name: "Galahad", expression, size: 72 })}<figcaption>${expression}</figcaption></figure>`).join("")}</div>
+      <div class="panels" style="margin-top:16px">${page("dark")}${page("light")}
+      </div>
     </main>
   </body>
 </html>

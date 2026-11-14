@@ -1,11 +1,13 @@
 import type { Teammate, TeamTask, TeamDelivery } from "./team.ts";
 
-/** Cosmetic identity only. This module stays schema-free for the PWA and world. */
+/** Cosmetic identity only. This module stays schema-free for the PWA and world. A knight is drawn as a little
+ * creature: its body's shape, its eyes, what it wears on its head, and how lively it is at rest. */
 export const AVATAR_FORMS = ["round", "armored", "hooded"] as const;
 export const AVATAR_EYES = ["oval", "round", "visor"] as const;
 export const AVATAR_ACCESSORIES = ["none", "plume", "ears", "crown"] as const;
 export const AVATAR_TEMPERAMENTS = ["calm", "curious", "lively"] as const;
-export const AVATAR_EXPRESSIONS = ["idle", "thinking", "working", "waiting", "pleased", "concerned", "resting"] as const;
+/** What a knight can be seen doing (avatarExpression); its avatar acts each one out. */
+export const AVATAR_EXPRESSIONS = ["idle", "thinking", "working", "reading", "browsing", "checking", "waiting", "asking", "pleased", "concerned", "resting"] as const;
 export type AvatarExpression = (typeof AVATAR_EXPRESSIONS)[number];
 
 export interface AvatarProfile {
@@ -19,18 +21,18 @@ export interface AvatarProfile {
   temperament: (typeof AVATAR_TEMPERAMENTS)[number];
 }
 
-/** Armor and accent pairs that belong together: the editor's presets, and what an unconfigured worker
- * wears. Each accent is a deeper, soft tone of its armor's own hue. An identity's seeded palette is
- * its place in this list, so the order is kept. */
+/** A knight's colour and its accent (the plume or crown it wears), the accent another tincture so the two stand apart.
+ * The editor's presets, and what an unconfigured knight wears. Galahad's own (off-white, navy, oxblood) is none of
+ * these. An identity's seeded palette is its place in this list, so the order is kept. */
 export const AVATAR_PALETTES = [
-  { name: "Mint", color: "#b9dfd4", accent: "#6d9f90" },
-  { name: "Sand", color: "#e8c8a5", accent: "#b58b69" },
-  { name: "Lilac", color: "#c4b2dc", accent: "#9176b4" },
-  { name: "Sky", color: "#a8c9db", accent: "#638cb5" },
-  { name: "Rose", color: "#e6b1bd", accent: "#b96d8a" },
-  { name: "Moss", color: "#bcd0a6", accent: "#7c9f6c" },
-  { name: "Honey", color: "#e8ce88", accent: "#ba9254" },
-  { name: "Apricot", color: "#f2bb8f", accent: "#d97a60" },
+  { name: "Gold", color: "#d9a43c", accent: "#2fa36b" },
+  { name: "Steel", color: "#b9c8d6", accent: "#2a9d94" },
+  { name: "Violet", color: "#9077de", accent: "#dcd6f2" },
+  { name: "Copper", color: "#c9713b", accent: "#f2b65f" },
+  { name: "Jade", color: "#4fb98a", accent: "#e8c35a" },
+  { name: "Rose", color: "#e07a9a", accent: "#a65bd1" },
+  { name: "Azure", color: "#4f8fe0", accent: "#f0e8d6" },
+  { name: "Crimson", color: "#dd5a52", accent: "#d9d9e0" },
 ] as const;
 
 /** Stable across devices and renames: seed only from the immutable teammate id.
@@ -88,15 +90,33 @@ export function resolveAvatar(id: string, profile?: unknown): AvatarProfile {
 }
 
 export interface AvatarActivity {
-  tasks: readonly Pick<TeamTask, "assignee" | "status" | "verified" | "updatedAt">[];
+  /** `progress`, a task's latest line, where the caller has it: without it a running task is simply at work. */
+  tasks: readonly (Pick<TeamTask, "assignee" | "status" | "verified" | "updatedAt"> & Partial<Pick<TeamTask, "progress">>)[];
   deliveries: readonly Pick<TeamDelivery, "teammate" | "status" | "updatedAt">[];
+}
+
+/**
+ * What a running task is at, from the mark that starts the latest line its run reported (the runner's own, one for
+ * each step: "Plan · ", "Thinking · ", "Running · ", "Exit N · ", "Gate i/n · " and so on; packages/node/src/team-runtime.ts
+ * writes them, and its tests hold the two together). Only the mark is read, never the words after it: a line without
+ * one is work, whatever it says.
+ */
+export function taskStep(progress: string): Extract<AvatarExpression, "thinking" | "working" | "reading" | "browsing" | "checking"> {
+  const line = progress.trimStart();
+  if (line.startsWith("Plan · ") || line.startsWith("Thinking · ")) return "thinking";
+  if (/^Running · desktop(\s|$)/.test(line)) return "browsing";
+  if (line.startsWith("Running · ")) return "working";
+  if (/^Exit -?\d+ · /.test(line)) return "reading";
+  if (/^(Gate \d+\/\d+ · |Gates before the work · |Review · |Submitted for review · )/.test(line) || /^gate[sd]$/.test(line.trimEnd())) return "checking";
+  return "working";
 }
 
 /** Expressions describe observable work, never inferred mood or private text. */
 export function avatarExpression(member: Pick<Teammate, "id" | "enabled">, activity: AvatarActivity, now: number): AvatarExpression {
   const tasks = activity.tasks.filter((task) => task.assignee === member.id);
   const deliveries = activity.deliveries.filter((delivery) => delivery.teammate === member.id);
-  if (tasks.some((task) => task.status === "running")) return "working";
+  const running = tasks.find((task) => task.status === "running");
+  if (running) return taskStep(running.progress ?? "");
   if (deliveries.some((delivery) => delivery.status === "running")) return "thinking";
   if (!member.enabled) return "resting";
   const work = [...tasks, ...deliveries];

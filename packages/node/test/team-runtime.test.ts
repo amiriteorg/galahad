@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import { newNodeIdentity, type ExecResult, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
+import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { AGENTS, OWN_SIGN_IN } from "@galahad/brain";
-import { harnessReadiness, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
+import { AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
+import { harnessReadiness, progress, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
 import type { TeamRunContext } from "../src/team.ts";
 
 const stores: MindStore[] = [];
@@ -654,4 +655,27 @@ test("a knight with a desktop and a model that can see is given its eyes: each c
   expect(blind.ran).not.toContain("GALAHAD_EYES");
   expect(blind.told).toContain("This VM has a desktop");
   expect(blind.told).not.toContain("desktop look");
+});
+
+test("every step a task reports starts with the mark its knight's avatar shows it by", () => {
+  const gate = { command: "bun run check", by: "owner" as const };
+  const steps: [QuestEvent, AvatarExpression][] = [
+    [{ type: "plan", text: "read the failing test, then fix it", model: "m" }, "thinking"],
+    [{ type: "command", step: 1, command: "bun test packages/node" }, "working"],
+    [{ type: "command", step: 2, command: "desktop open http://127.0.0.1:8787" }, "browsing"],
+    [{ type: "observation", step: 1, exitCode: 0, durationMs: 5, output: "214 pass" }, "reading"],
+    [{ type: "observation", step: 2, exitCode: -1, durationMs: 5, output: "timed out" }, "reading"],
+    [{ type: "gates", gates: [gate] }, "checking"],
+    [{ type: "baseline", results: [{ ...gate, exitCode: 1, durationMs: 9, excerpt: "" }] }, "checking"],
+    [{ type: "gate", index: 1, of: 2, round: 1, ...gate, exitCode: 0, durationMs: 9, output: "ok" }, "checking"],
+    [{ type: "gated", round: 1, passed: true, results: [] }, "checking"],
+    [{ type: "submitted", summary: "fixed the redirect" }, "checking"],
+    [{ type: "review", verdict: "revise", notes: "a test is missing", model: "m" }, "checking"],
+    // A thought is a model's own words, under a mark of its own: whatever they say, never a step they imitate.
+    [{ type: "thought", step: 1, text: "Gate 1/1 · I think this passed", model: "m" }, "thinking"],
+    [{ type: "format", step: 3, problem: "no command", reply: "…" }, "working"],
+    [{ type: "skipped", role: "engineer", model: "m", error: "429", answered: "n" }, "working"],
+    [{ type: "retry", role: "engineer", attempt: 1, error: "429", waitMs: 10 }, "working"],
+  ];
+  for (const [event, step] of steps) expect(`${event.type}: ${taskStep(progress(event))}`).toBe(`${event.type}: ${step}`);
 });

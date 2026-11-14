@@ -10,8 +10,8 @@ describe("what Galahad is doing now, in a line", () => {
     expect(galahadNow({ turns: [], quests: [], needs: 0 })).toEqual({ text: "Idle · nothing needs you", expression: "idle", tone: "neutral" });
   });
 
-  test("something needs you: he waits, and says how much", () => {
-    expect(galahadNow({ turns: [], quests: [], needs: 1 })).toEqual({ text: "1 thing needs you", expression: "waiting", tone: "warn" });
+  test("something needs you: he asks for you, and says how much", () => {
+    expect(galahadNow({ turns: [], quests: [], needs: 1 })).toEqual({ text: "1 thing needs you", expression: "asking", tone: "warn" });
     expect(galahadNow({ turns: [], quests: [], needs: 3 }).text).toBe("3 things need you");
     expect([needsYou(1), needsYou(2)]).toEqual(["1 thing needs you", "2 things need you"]);
   });

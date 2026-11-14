@@ -38,5 +38,5 @@ export function galahadNow(input: NowInput): Now {
   else if (input.quests[0]) doing = `Working on: ${input.quests[0].goal.trim().split("\n")[0]}`;
   // The work comes first: a narrow screen cuts the line's end, and the Inbox's badge still counts what needs you.
   const text = doing ? [doing, needs].filter(Boolean).join(" · ") : (needs ?? (input.needs === 0 ? "Idle · nothing needs you" : "Idle"));
-  return { text, expression: here ? "thinking" : doing ? "working" : needs ? "waiting" : "idle", tone: needs ? "warn" : doing ? "accent" : "neutral" };
+  return { text, expression: here ? "thinking" : doing ? "working" : needs ? "asking" : "idle", tone: needs ? "warn" : doing ? "accent" : "neutral" };
 }

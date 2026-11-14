@@ -87,8 +87,10 @@ describe("the roster: each knight, then each room", () => {
 
   test("an approval a knight asked for marks its row, before anything else", () => {
     const asks = [{ by: "arm:team.0123456789.ada", connector: "github", tool: "create_pull_request" }, { by: "arm:team.0123456789.ada", connector: "github", tool: "merge" }, { by: "loop:morning", connector: "mail", tool: "send" }];
-    expect(ada({ tasks: [task("ada", "running")] }, { asks })).toMatchObject({ line: "Asks your leave: github.create_pull_request, and 1 more", needs: true });
+    // Asking is what its face shows too, even over work it has running: only you can move it on.
+    expect(ada({ tasks: [task("ada", "running")] }, { asks })).toMatchObject({ line: "Asks your leave: github.create_pull_request, and 1 more", needs: true, expression: "asking" });
     expect(ada({}, { asks: asks.slice(0, 1) }).line).toBe("Asks your leave: github.create_pull_request");
+    expect(ada({}, { asks: asks.slice(2) }).expression).toBe("idle");
   });
 });
 

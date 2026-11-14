@@ -34,7 +34,7 @@ export interface RosterRow {
   line: string;
   /** Only you can move this on: a failure to read, an approval to give, work waiting on a pause. */
   needs: boolean;
-  /** A knight's face, as its work stands (core's avatarExpression). */
+  /** What a knight's avatar acts out: its work as it stands (core's avatarExpression), or asking when it asks your leave. */
   expression?: AvatarExpression;
   avatar?: unknown;
 }
@@ -79,7 +79,9 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
   const room = snapshot.rooms.find((candidate) => candidate.direct && candidate.members.length === 1 && candidate.members[0] === person.id);
   const jobs: Job[] = [...snapshot.tasks.filter((task) => task.assignee === person.id).map((task) => ({ ...task, task: true as const })), ...snapshot.deliveries.filter((delivery) => delivery.teammate === person.id)];
   const asked = (input.asks ?? []).filter((ask) => knightOfCaller(ask.by) === person.id);
-  const say = (line: string, needs = false): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression: avatarExpression(person, snapshot, input.now), avatar: person.avatar });
+  // Its face says what its line says: asking your leave, over whatever else it has in hand.
+  const expression = asked[0] ? "asking" : avatarExpression(person, snapshot, input.now);
+  const say = (line: string, needs = false): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression, avatar: person.avatar });
 
   // What only you can answer comes first: it is what the row is marked for.
   if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true);

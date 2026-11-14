@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AVATAR_PALETTES, avatarExpression, defaultAvatar, matchingAccent, resolveAvatar, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
+import { AVATAR_ACCESSORIES, AVATAR_EYES, AVATAR_FORMS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, avatarExpression, defaultAvatar, matchingAccent, resolveAvatar, taskStep, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
 import { AvatarProfileSchema } from "../src/team.ts";
 
 const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
@@ -12,9 +12,12 @@ const hue = (hex: string) => {
 };
 const hueApart = (a: string, b: string) => Math.min(Math.abs(hue(a) - hue(b)), 360 - Math.abs(hue(a) - hue(b)));
 
+/** What Ada wears when nobody has chosen for her: pinned, so a change to how defaults are seeded is seen. */
+const ADA_DEFAULT = { v: 1, form: "hooded", color: "#4f8fe0", accent: "#f0e8d6", eyes: "oval", accessory: "crown", temperament: "curious" } as const;
+
 describe("knight appearance", () => {
   test("unconfigured identities have stable, distinct, valid defaults across reads", () => {
-    const ada = { v: 1, form: "hooded", color: "#e8ce88", accent: "#ba9254", eyes: "oval", accessory: "crown", temperament: "curious" } as const;
+    const ada = ADA_DEFAULT;
     expect(defaultAvatar("ada")).toEqual(ada);
     expect(defaultAvatar("lin")).not.toEqual(ada);
     expect(resolveAvatar("ada")).toEqual(ada);
@@ -24,30 +27,47 @@ describe("knight appearance", () => {
     for (const id of ["ada", "lin", "grace", "worker-with-a-long-name", "owner"]) expect(AvatarProfileSchema.safeParse(defaultAvatar(id)).success).toBe(true);
   });
 
-  test("seeded defaults and presets are one coordinated set: a soft accent in the armor's own hue", () => {
+  test("seeded defaults and presets are one set of tinctures: each knight's accent a different tincture from its armour, both plain to see", () => {
     expect(AVATAR_PALETTES.length).toBeGreaterThanOrEqual(6);
     expect(new Set(AVATAR_PALETTES.map((palette) => palette.name)).size).toBe(AVATAR_PALETTES.length);
+    const page = "#0a0a0b";
     for (const { color, accent } of AVATAR_PALETTES) {
-      expect(hueApart(color, accent)).toBeLessThanOrEqual(20);
-      // Soft rather than heavy, and still plain to see on the armor.
-      expect(luminance(accent)).toBeGreaterThanOrEqual(0.2);
-      expect(contrast(color, accent)).toBeGreaterThanOrEqual(1.6);
-      expect(contrast(color, accent)).toBeLessThanOrEqual(2.4);
+      // A plume or a crown must stand apart from the body it sits on: round the hue circle, or clearly lighter or darker.
+      expect(hueApart(color, accent) >= 30 || contrast(color, accent) >= 1.8).toBe(true);
+      // Both are drawn on deep tiles and the app's dark page: neither may sink into them.
+      expect(contrast(color, page)).toBeGreaterThanOrEqual(5);
+      expect(contrast(accent, page)).toBeGreaterThanOrEqual(3);
     }
+    // Two knights given different presets never look alike: their bodies are apart in hue or in lightness.
+    for (const [i, a] of AVATAR_PALETTES.entries()) for (const b of AVATAR_PALETTES.slice(i + 1)) expect(hueApart(a.color, b.color) >= 18 || contrast(a.color, b.color) >= 1.4).toBe(true);
     const seeded = Array.from({ length: 400 }, (_, n) => defaultAvatar(`worker-${n}`));
     for (const { color, accent } of seeded) expect(AVATAR_PALETTES.some((palette) => palette.color === color && palette.accent === accent)).toBe(true);
     expect(new Set(seeded.map((avatar) => avatar.color)).size).toBe(AVATAR_PALETTES.length);
+    // Every form, eyes, accessory and temperament turns up among the defaults.
+    expect(new Set(seeded.map((avatar) => avatar.form))).toEqual(new Set(AVATAR_FORMS));
+    expect(new Set(seeded.map((avatar) => avatar.eyes))).toEqual(new Set(AVATAR_EYES));
+    expect(new Set(seeded.map((avatar) => avatar.accessory))).toEqual(new Set(AVATAR_ACCESSORIES));
+    expect(new Set(seeded.map((avatar) => avatar.temperament))).toEqual(new Set(AVATAR_TEMPERAMENTS));
+  });
+
+  test("every look a profile can name is one the node keeps and the app draws, unchanged", () => {
+    const base = defaultAvatar("ada");
+    for (const form of AVATAR_FORMS) for (const eyes of AVATAR_EYES) for (const accessory of AVATAR_ACCESSORIES) for (const temperament of AVATAR_TEMPERAMENTS) {
+      const profile = { ...base, form, eyes, accessory, temperament };
+      expect(AvatarProfileSchema.safeParse(profile).success).toBe(true);
+      expect(resolveAvatar("ada", profile)).toEqual(profile);
+    }
   });
 
   test("a new armor color brings a matching accent, never the old one from another hue", () => {
     // The pairing that looked wrong: sky-blue armor still wearing the sand palette's brown.
-    const sand = { ...defaultAvatar("ada"), color: "#e8c8a5", accent: "#b58b69" };
+    const sand = { ...defaultAvatar("ada"), color: "#e8c8a5", accent: matchingAccent("#e8c8a5") };
     const blue = withBodyColor(sand, "#AED4ED");
     expect(blue.color).toBe("#aed4ed");
     expect(hueApart(blue.color, blue.accent)).toBeLessThanOrEqual(20);
     expect({ ...blue, color: sand.color, accent: sand.accent }).toEqual(sand);
     // A preset's armor color brings the preset's own accent.
-    expect(withBodyColor(sand, "#a8c9db").accent).toBe("#638cb5");
+    expect(withBodyColor(sand, AVATAR_PALETTES[1]!.color).accent).toBe(AVATAR_PALETTES[1]!.accent);
     // An accent chosen apart from the armor is the owner's choice, and stays.
     const chosen = { ...sand, accent: "#3355aa" };
     expect(withBodyColor(chosen, "#aed4ed").accent).toBe("#3355aa");
@@ -87,7 +107,7 @@ describe("knight appearance", () => {
 describe("expressions from observable work", () => {
   const now = 100_000;
   const member = { id: "ada", enabled: true };
-  const task = (status: AvatarActivity["tasks"][number]["status"], extra: Partial<AvatarActivity["tasks"][number]> = {}) => ({ assignee: "ada", status, verified: false, updatedAt: now, ...extra });
+  const task = (status: AvatarActivity["tasks"][number]["status"], extra: Partial<AvatarActivity["tasks"][number]> = {}) => ({ assignee: "ada", status, verified: false, updatedAt: now, progress: "", ...extra });
   const delivery = (status: AvatarActivity["deliveries"][number]["status"], extra: Partial<AvatarActivity["deliveries"][number]> = {}) => ({ teammate: "ada", status, updatedAt: now, ...extra });
 
   test("running work wins, then pause, queue, recent concern, and verified celebration", () => {
@@ -111,10 +131,38 @@ describe("expressions from observable work", () => {
     expect(avatarExpression(member, { tasks: [task("failed", { updatedAt: now - 30_000 })], deliveries: [] }, now)).toBe("idle");
   });
 
-  test("expression calculation never reads private words or mutates its inputs", () => {
+  test("a running task shows the step its latest line says it is at", () => {
+    const at = (progress: string) => avatarExpression(member, { tasks: [task("running", { progress })], deliveries: [] }, now);
+    expect(at("Plan · read the failing test, then fix the redirect")).toBe("thinking");
+    expect(at("Thinking · the redirect drops the query string")).toBe("thinking");
+    expect(at("Thinking · Exit 0 · a thought that imitates a step")).toBe("thinking");
+    expect(at("Running · bun test packages/node")).toBe("working");
+    expect(at("Running · desktop open https://example.invalid")).toBe("browsing");
+    expect(at("Running · desktop")).toBe("browsing");
+    expect(at("Running · desktopify --all")).toBe("working");
+    expect(at("Exit 0 · 214 pass, 0 fail")).toBe("reading");
+    expect(at("Exit 127 · sh: foo: not found")).toBe("reading");
+    expect(at("Gate 2/3 · exit 0 · bun run check\n2023 pass")).toBe("checking");
+    expect(at("Gates before the work · 1. exit 0 · bun test")).toBe("checking");
+    expect(at("gates")).toBe("checking");
+    expect(at("gated")).toBe("checking");
+    expect(at("Review · pass\nlooks right")).toBe("checking");
+    expect(at("Submitted for review · fixed the redirect")).toBe("checking");
+    expect(at("Notes · Engram 1.0, project ada")).toBe("working");
+    expect(at("")).toBe("working");
+    // The running task decides, whatever else of the knight's waits or has ended.
+    expect(avatarExpression(member, { tasks: [task("failed"), task("running", { progress: "Exit 0 · ok" }), task("queued")], deliveries: [delivery("running")] }, now)).toBe("reading");
+    expect(taskStep("  Plan · indented")).toBe("thinking");
+  });
+
+  test("expression calculation reads only the step a task is at, never its words, and never mutates its inputs", () => {
     const privateText = () => { throw new Error("private text must not be inspected"); };
     const worker = Object.freeze({ ...member, get memory() { return privateText(); }, get instructions() { return privateText(); } });
-    const job = Object.freeze({ ...task("running"), get goal() { return privateText(); }, get progress() { return privateText(); }, get output() { return privateText(); } });
-    expect(avatarExpression(worker, { tasks: Object.freeze([job]), deliveries: Object.freeze([]) }, now)).toBe("working");
+    const job = Object.freeze({ ...task("running", { progress: "Exit 1 · sorry, everything failed and I am upset" }), get goal() { return privateText(); }, get output() { return privateText(); } });
+    expect(avatarExpression(worker, { tasks: Object.freeze([job]), deliveries: Object.freeze([]) }, now)).toBe("reading");
+    // Words that sound like a mood never become one: a line with no step's mark is just work, whatever it says.
+    for (const words of ["I failed, sorry", "Great, all done and verified!", "Waiting for you", "Paused", "Exit · ok", "plan · lower case"]) {
+      expect(avatarExpression(member, { tasks: [task("running", { progress: words })], deliveries: [] }, now)).toBe("working");
+    }
   });
 });

@@ -126,14 +126,15 @@ export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "e
   return { ready: false, models: [], reason: `Put a keyed ${driver.kind === "anthropic" ? "Anthropic-API" : "OpenAI-compatible"} model on the engineer's roster${uncovered}` };
 }
 
-function progress(event: QuestEvent): string {
+/** A task's progress line for one step of its run. Each starts with its step's mark, which the knight's avatar reads (taskStep). */
+export function progress(event: QuestEvent): string {
   switch (event.type) {
     case "plan": return `Plan · ${event.text}`;
     case "command": return `Running · ${event.command}`;
     case "observation": return `Exit ${event.exitCode} · ${event.output}`;
     case "gate": return `Gate ${event.index}/${event.of} · exit ${event.exitCode} · ${event.command}\n${event.output}`;
     case "review": return `Review · ${event.verdict}\n${event.notes}`;
-    case "thought": return event.text;
+    case "thought": return `Thinking · ${event.text}`;
     case "format": return `No command to run · ${event.problem}\n${event.reply}`;
     case "baseline": return `Gates before the work · ${event.results.map((g, i) => `${i + 1}. exit ${g.exitCode} · ${g.command}`).join("\n")}`;
     case "submitted": return `Submitted for review · ${event.summary}`;
