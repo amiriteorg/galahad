@@ -30,8 +30,8 @@
  *   nodes    elements in the page at "usable"
  * and for the first visit: every request, with its bytes on the wire, each of the app's files as
  * the node sends it (raw, gzip, brotli), and where the main thread's time went (script, style,
- * layout, paint, parsing), from Chrome's own trace. For Squires it also says what the page costs
- * while nothing changes: main-thread time per second over ten seconds.
+ * layout, paint, parsing), from Chrome's own trace. For Chat and Squires it also says what the page
+ * costs while nothing changes: main-thread time per second over ten seconds.
  *
  * Timings move with the machine's load: compare two checkouts measured one after the other, and
  * trust a difference only when the ranges don't overlap. Bytes, requests and nodes don't move.
@@ -576,24 +576,30 @@ try {
     }
   }
 
-  // ---------- what Squires costs while nothing changes ----------
+  // ---------- what Chat and Squires cost while nothing changes ----------
   // (On this machine as it is: a slowed processor drops frames, and so hides the work an animation asks for.)
   await setProfile("laptop");
-  await open("#/team", false);
   const work = async (): Promise<Record<string, number>> => Object.fromEntries((await browser.send("Performance.getMetrics", {}, page)).metrics.map((metric: { name: string; value: number }) => [metric.name, metric.value]));
-  await sleep(1500);
-  const before = await work();
-  await sleep(10_000);
-  const after = await work();
-  const perSecond = (metric: string) => Math.round((after[metric]! - before[metric]!) * 1000) / 10;
+  const rest = async (hash: string) => {
+    await open(hash, false);
+    await sleep(1500);
+    const before = await work();
+    await sleep(10_000);
+    const after = await work();
+    const perSecond = (metric: string) => Math.round((after[metric]! - before[metric]!) * 1000) / 10;
+    return {
+      animations: await evaluate<number>(`document.getAnimations().filter((a) => a.playState === "running").length`),
+      mainThread: perSecond("TaskDuration"),
+      script: perSecond("ScriptDuration"),
+      style: perSecond("RecalcStyleDuration"),
+      layout: perSecond("LayoutDuration"),
+    };
+  };
+  const chatAtRest = await rest("#/chat");
   const atRest = {
+    ...(await rest("#/team")),
     avatars: await evaluate<number>(`document.querySelectorAll(".worker-avatar").length`),
     avatarElements: await evaluate<number>(`document.querySelectorAll(".worker-avatar, .worker-avatar *").length`),
-    animations: await evaluate<number>(`document.getAnimations().filter((a) => a.playState === "running").length`),
-    mainThread: perSecond("TaskDuration"),
-    script: perSecond("ScriptDuration"),
-    style: perSecond("RecalcStyleDuration"),
-    layout: perSecond("LayoutDuration"),
   };
 
   // ---------- screenshots ----------
@@ -645,6 +651,7 @@ try {
     firstVisit: { requests: firstVisit.length, api: firstVisit.filter((w) => w.path.startsWith("/api/")).length, bytesOnTheWire: firstVisit.reduce((sum, w) => sum + w.bytes, 0), wire: firstVisit },
     files: [...files, { path: "all of them", raw: total("raw"), gzip: total("gzip"), brotli: total("brotli") }],
     pages: results,
+    chatAtRest,
     squiresAtRest: atRest,
     shots,
   };
@@ -674,6 +681,7 @@ try {
   console.log(table([["page · profile", ...Object.keys(Object.values(results)[0]!.work)], ...Object.entries(results).map(([name, r]) => [name, ...Object.values(r.work).map((n) => n.toFixed(1))])]));
   console.log(`\nSquires at rest (laptop, ten seconds): ${atRest.avatars} avatars of ${atRest.avatarElements} elements, ${atRest.animations} animations running;`);
   console.log(`the main thread works ${atRest.mainThread} ms a second (script ${atRest.script}, style ${atRest.style}, layout ${atRest.layout}).`);
+  console.log(`Chat at rest, a new chat: ${chatAtRest.animations} animations running; the main thread works ${chatAtRest.mainThread} ms a second (script ${chatAtRest.script}, style ${chatAtRest.style}, layout ${chatAtRest.layout}).`);
   if (shots.length) console.log(`\n${shots.length} screenshots in ${resolve(SHOTS!)}`);
   if (JSON_OUT) console.log(`Everything measured: ${resolve(JSON_OUT)}`);
 } finally {
