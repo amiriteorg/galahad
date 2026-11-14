@@ -5,16 +5,19 @@
  *
  *   bun apps/web/measure/first-load.ts                     this checkout
  *   bun apps/web/measure/first-load.ts --repo <checkout>   another one, measured the same way
- *     --runs 9      loads per page, profile and kind (the median is reported, with the fastest and slowest)
+ *     --runs 9      loads per page, profile and kind (the median is reported, with the fastest and slowest);
+ *                   0 measures nothing and only takes the screenshots
  *     --json <file> everything measured, as JSON
- *     --shots <dir> also screenshots: Chat (new, and a kept chat), Squires, a room, its work, Inbox, More, Overview and
- *                   Trials, 390 and 1280 px, light and dark
+ *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable, Galahad's timeline, a knight's
+ *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
+ *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), the Inbox
+ *                   and More. The same addresses on any checkout, so an older app is shown at the same places.
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
- * few squires, a room, tasks and trials, a kept chat, a quest in hand and one thing that needs you,
- * pairs a headless Chrome with it through the real pairing page, and then opens pages the way a
- * browser does:
+ * few knights (one with a desktop in its VM), a room, tasks (running, waiting, verified with kept
+ * changes, failed) and trials, a kept chat, a quest in hand and one thing that needs you, pairs a
+ * headless Chrome with it through the real pairing page, and then opens pages the way a browser does:
  *
  *   cold   nothing cached and no service worker: the first visit after pairing
  *   warm   the service worker holds the shell: every visit after that
@@ -30,7 +33,7 @@
  *   nodes    elements in the page at "usable"
  * and for the first visit: every request, with its bytes on the wire, each of the app's files as
  * the node sends it (raw, gzip, brotli), and where the main thread's time went (script, style,
- * layout, paint, parsing), from Chrome's own trace. For Chat and Squires it also says what the page
+ * layout, paint, parsing), from Chrome's own trace. For Chat and the Roundtable it also says what the page
  * costs while nothing changes: main-thread time per second over ten seconds.
  *
  * Timings move with the machine's load: compare two checkouts measured one after the other, and
@@ -46,7 +49,7 @@ const flag = (name: string): string | undefined => {
   return at < 0 ? undefined : process.argv[at + 1];
 };
 const REPO = resolve(flag("repo") ?? join(dirname(fileURLToPath(import.meta.url)), "../../.."));
-const RUNS = Math.max(1, Number(flag("runs") ?? 9));
+const RUNS = Math.max(0, Number(flag("runs") ?? 9));
 const JSON_OUT = flag("json");
 const SHOTS = flag("shots");
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -150,13 +153,27 @@ class Chrome {
   }
 }
 
+/** What Gawain's desktop shows: a plain stand-in page in a browser's frame (no real site, nothing fetched). */
+const DESKTOP_PAGE = `<!doctype html><html><body style="margin:0;font:15px/1.5 -apple-system,system-ui,sans-serif;color:#1d1d1f;background:#fff">
+<div style="height:44px;background:#dfe1e5;display:flex;align-items:center;gap:10px;padding:0 14px"><span style="width:12px;height:12px;border-radius:50%;background:#bbb"></span><span style="width:12px;height:12px;border-radius:50%;background:#bbb"></span>
+<div style="flex:1;background:#fff;border-radius:16px;padding:5px 16px;color:#444">https://dashboard.example/exports</div></div>
+<div style="display:flex;height:756px"><aside style="width:220px;background:#f3f4f6;padding:28px 20px;color:#555"><b style="color:#111">Example dashboard</b><p>Overview</p><p>Customers</p><p style="color:#111;font-weight:600">Exports</p><p>Settings</p></aside>
+<main style="flex:1;padding:36px 48px"><h1 style="margin:0 0 8px;font-size:28px">Exports</h1><p style="color:#555;margin:0 0 28px">Monthly exports are kept for twelve months.</p>
+<table style="border-collapse:collapse;width:100%;font-size:15px"><tr style="text-align:left;color:#666"><th style="padding:10px 0">Month</th><th>Rows</th><th>Size</th><th></th></tr>
+<tr style="border-top:1px solid #e5e7eb"><td style="padding:14px 0">November 2026</td><td>18,204</td><td>2.1 MB</td><td><span style="background:#111;color:#fff;border-radius:8px;padding:8px 14px">Download CSV</span></td></tr>
+<tr style="border-top:1px solid #e5e7eb"><td style="padding:14px 0">October 2026</td><td>17,880</td><td>2.0 MB</td><td><span style="border:1px solid #ccc;border-radius:8px;padding:8px 14px">Download CSV</span></td></tr>
+<tr style="border-top:1px solid #e5e7eb"><td style="padding:14px 0">September 2026</td><td>16,951</td><td>1.9 MB</td><td><span style="border:1px solid #ccc;border-radius:8px;padding:8px 14px">Download CSV</span></td></tr></table></main></div></body></html>`;
+
 // ---------- what is measured ----------
-// (The first is the page the app opens on: its first visit is the one whose requests and files are listed.)
-const PAGES = [
+// (The first visit to the first one is the one whose requests and files are listed. A wide screen opens on Chat,
+// with the roster beside it; a phone on the roster itself, which is the Roundtable's address. A room is a timeline.)
+// (A kept chat, at its own address, is the same page on any checkout; it is added once the node holds one.)
+const PAGES: { name: string; hash: string }[] = [
   { name: "Chat", hash: "#/chat" },
-  { name: "Squires", hash: "#/team" },
+  { name: "Roundtable", hash: "#/team" },
+  { name: "Room", hash: "#/team?room=forge" },
   { name: "Overview", hash: "#/overview" },
-] as const;
+];
 const PROFILES = {
   laptop: { width: 1280, height: 800, scale: 2, mobile: false, cpu: 1, network: null },
   phone: { width: 390, height: 844, scale: 3, mobile: true, cpu: 4, network: { latency: 60, downloadThroughput: 9e6 / 8, uploadThroughput: 1.5e6 / 8 } },
@@ -183,8 +200,11 @@ function watchPage(): void {
     const main = document.querySelector(".shell main");
     if (!main || main.querySelector(".skeleton")) return false;
     // (A new chat holds a place for your recent chats until the node has said which they are.)
-    if (location.hash.startsWith("#/chat")) return Boolean(main.querySelector(".chat .composer"));
+    // (A kept chat, once its answer is drawn.)
+    if (location.hash.startsWith("#/chat")) return Boolean(main.querySelector(".chat .composer")) && (!location.hash.includes("c=") || Boolean(main.querySelector(".turn.assistant")));
     if (!location.hash.startsWith("#/team")) return Boolean(main.querySelector(".page-head h1"));
+    // (A knight's Workspace: the panel, or on an older app its tab.)
+    if (location.hash.includes("tab=workspace")) return Boolean(main.querySelector(".team-panel"));
     if (location.hash.includes("room=")) return Boolean(main.querySelector(".team-message, .team-task"));
     // (The knights' rows: in the page's own list, or in the roster that is the sidebar and a phone's first screen.)
     return Boolean(document.querySelector(".team-nav-row[data-key], .roster-row[data-key^='person:']"));
@@ -273,9 +293,11 @@ try {
   mind.close();
   home.writeConfig({ v: 1, name: "keep", fleet, port, keystore, advertise: "127.0.0.1" });
   const caps = { os: "linux", arch: "x64", hostname: "keep", cores: 16, cpu: "stand-in", memoryGb: 32, hasBattery: false, gpu: [], docker: true, vm: { kvm: true, tools: ["kata"] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true, vm: true } };
-  // Ada's task stays at its first command until the run ends, so one squire is always working.
+  // Ada's task stays at its first command until the run ends, so one knight is always working; so does a task given to
+  // the Roundtable here. Gareth's gate can't run in its VM. Gawain's VM has a desktop, whose picture is drawn below.
   const docker = fakeDocker();
   let adaAtWork = false;
+  let desktopShot = "";
   const hold = new Promise<void>((release) => held.push(release));
   docker.onExec = async (_container: string, command: string[]) => {
     const text = command.join("\n");
@@ -283,6 +305,9 @@ try {
       adaAtWork = true;
       await hold;
     }
+    if (text.includes("write-give")) await hold;
+    if (text.includes("desktop shot")) return { code: 0, stdout: desktopShot };
+    if (text.includes("gate-fail")) return { code: 1, stdout: "", stderr: "error: connect ECONNREFUSED 127.0.0.1:5432" };
     return { code: 0, stdout: text.includes("gate-") ? "required gate passed" : "command completed" };
   };
   // The browser comes in as a phone does behind `tailscale serve`: through the proxied port.
@@ -331,7 +356,7 @@ try {
   };
 
   // ---------- stand-in models, and what the pages show ----------
-  // Percival's answer never comes while the run lasts, so one squire is always thinking.
+  // Percival's answer never comes while the run lasts, so one knight is always thinking.
   model = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -341,10 +366,15 @@ try {
       const turns = body.messages.filter((message) => message.role !== "system");
       if (JSON.stringify(turns).includes("Take your time")) await hold;
       let text = "Understood. I will take the part that is mine and say when it is done.";
-      if (JSON.stringify(turns[0] ?? "").includes("TASK_")) {
+      const goal = JSON.stringify(turns[0] ?? "");
+      if (goal.includes("TASK_")) {
         text = "1. Make the change.\n2. Run the required gate.\nDone when: the gate and independent review pass.";
-        if (body.model === "engineer") text = turns.some((message) => message.role === "assistant") ? "DONE\nVerified." : "```sh\nprintf done > result.txt # write-sync\n```";
-        else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
+        const write = goal.includes("TASK_KEEP") ? "write-keep" : goal.includes("TASK_GIVE") ? "write-give" : "write-sync";
+        if (body.model === "engineer") {
+          if (goal.includes("TASK_FAIL")) text = "GIVE UP\nThe gate needs a Postgres this VM does not have: `bun test db/` exits 1 before any work, with ECONNREFUSED on 127.0.0.1:5432. Nothing in the workspace can start one; a task that brings the database up first would.";
+          else if (goal.includes("TASK_KEEP") && turns.some((message) => message.role === "assistant")) text = "DONE\nThe importer reads ISO 8601 dates and the old day-first form; four new tests cover both, and the gate passes.";
+          else text = turns.some((message) => message.role === "assistant") ? "DONE\nVerified." : `\`\`\`sh\nprintf done > result.txt # ${write}\n\`\`\``;
+        } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
       }
       return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
     },
@@ -352,15 +382,20 @@ try {
   await until("the node's calibration", () => started.store.lww(`calibration:${started.identity.id}`) !== null);
   await admin("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` });
   for (const role of ["planner", "engineer", "reviewer", "swift"]) await admin("setRoster", { role, models: [`stand-in/${role}`] });
-  const squires = [
+  const knights = [
     { id: "ada", name: "Ada", role: "engineer", instructions: "Builds the sync engine and keeps its tests green." },
     { id: "lin", name: "Lin", role: "engineer", instructions: "Owns the PWA: fast, plain and legible." },
     { id: "kay", name: "Kay", role: "planner", instructions: "Breaks large work into tasks that can be checked." },
     { id: "bors", name: "Bors", role: "reviewer", instructions: "Reviews what the others ship, independently.", enabled: false },
     { id: "percival", name: "Percival", role: "planner", instructions: "Researches the questions the others park." },
+    { id: "gareth", name: "Gareth", role: "engineer", instructions: "Keeps the database layer and its migrations honest." },
+    { id: "gawain", name: "Gawain", role: "engineer", instructions: "Works the web through a browser: signs in, downloads, checks pages." },
   ];
-  for (const squire of squires) await admin("saveTeammate", squire);
-  const idle = async () => !(await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate !== "percival" && (d.status === "queued" || d.status === "running"));
+  for (const knight of knights) await admin("saveTeammate", knight);
+  // Room for every knight's VM at once: by default the stand-in machine's ceiling (half of it) allows two sandboxes.
+  await admin("setComputeLimit", { node: started.identity.id, cores: 16, memoryGb: 32, sandboxes: 6 });
+  const idle = async () => !(await admin("team")).deliveries.some((d: { status: string; teammate: string }) => !["percival", "ada"].includes(d.teammate) && (d.status === "queued" || d.status === "running"));
+  const ended = (id: string) => async () => !["queued", "running"].includes((await admin("team")).tasks.find((t: { id: string }) => t.id === id)?.status ?? "queued");
   await admin("saveTeamRoom", { id: "forge", name: "Forge", members: ["ada", "lin", "kay"], turnBudget: 3 });
   await admin("postTeamMessage", { room: "forge", text: "Plan the release together: who takes the sync engine, who takes the app, and what proves each is done?" });
   await until("the room's conversation", idle);
@@ -370,6 +405,29 @@ try {
   const { room: direct } = await admin("directTeammate", { id: "percival" });
   await admin("postTeamMessage", { room: direct.id, text: "Take your time: what do other agents do about context rot?" });
   await until("Percival to start thinking", async () => (await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate === "percival" && d.status === "running"));
+  // Each knight's own conversation with you, and in it: Ada asked while she works (her task is in the Forge), Kay's task
+  // verified with its changes kept, Gareth's given up, Gawain's VM made with a desktop.
+  const own: Record<string, string> = {};
+  for (const id of ["ada", "kay", "gareth", "gawain"]) own[id] = (await admin("directTeammate", { id })).room.id;
+  await admin("postTeamMessage", { room: own.ada, text: "How is the sync fix going? Say what the gate prints when you have it." });
+  await admin("postTeamMessage", { room: own.gawain, text: "Once your VM has its desktop, can you fetch this month's export from the dashboard?" });
+  await until("Gawain's reply", idle);
+  const kept = (await admin("createTeamTask", { room: own.kay, assignee: "kay", title: "The importer reads ISO dates", goal: "TASK_KEEP: make the importer read ISO 8601 dates as well as the day-first form, with tests.", dependsOn: [], gates: ["bun test importer # gate-keep"] })).task;
+  await until("Kay's task to end", ended(kept.id), 45_000);
+  const failing = (await admin("createTeamTask", { room: own.gareth, assignee: "gareth", title: "Migrations run on a fresh database", goal: "TASK_FAIL: make every migration run on a fresh database, with a test.", dependsOn: [], gates: ["bun test db/ # gate-fail"] })).task;
+  await until("Gareth's task to end", ended(failing.id), 45_000);
+  await admin("provisionTeammate", { id: "gawain", desktop: true });
+  // Kay's task kept what it changed: a real artifact on this node (its patch), named on the task as the runner names it
+  // when a repository's changes are kept. (The stand-in Docker has no repository to diff.)
+  const patch = "diff --git a/src/importer.ts b/src/importer.ts\n--- a/src/importer.ts\n+++ b/src/importer.ts\n@@ -12,3 +12,6 @@\n-  const [d, m, y] = text.split(\"/\");\n+  if (/^\\d{4}-\\d{2}-\\d{2}/.test(text)) return new Date(text);\n+  const [d, m, y] = text.split(\"/\");\n";
+  const artifact = await started.artifacts.save(async (_sandbox: string, _from: string, dest: string) => {
+    writeFileSync(join(dest, "changes.patch"), patch);
+    return { files: [{ path: "changes.patch", size: patch.length, sha256: new Bun.CryptoHasher("sha256").update(patch).digest("hex") }], bytes: patch.length, skipped: [] };
+  }, { sandbox: (await admin("team")).teammates.find((knight: { id: string }) => knight.id === "kay").workspace.id, path: `/work/out/tasks/${kept.id}`, label: `${kept.title} · kay · verified` });
+  const { Database } = await import("bun:sqlite");
+  const teamDb = new Database(join(home.dir, "team.db"));
+  teamDb.query("UPDATE team_jobs SET data = json_set(data, '$.changes', json(?)) WHERE id = ?").run(JSON.stringify({ artifact: artifact.id, files: 3, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }), kept.id);
+  teamDb.close();
   const problems = [
     { problem: "rlc-step", title: "Step response of a series RLC circuit", domain: "electrical" },
     { problem: "beam-deflection", title: "Deflection of a loaded cantilever", domain: "mechanical" },
@@ -407,6 +465,7 @@ try {
   const conversation = /"(cv_[A-Za-z0-9_-]{22})"/.exec(await asked.text())?.[1];
   if (!asked.ok || !conversation) throw new Error(`the kept chat wasn't made: ${asked.status}`);
   await until("the kept chat's turn to end", async () => (await admin("turns")).turns.length === 0);
+  PAGES.push({ name: "Kept chat", hash: `#/chat?c=${conversation}` });
   await admin("questProgress", { quest: "measure-1", goal: "Make sync resume after a dropped connection", state: "working", plan: "1. Reproduce the drop.\n2. Resume from the last acknowledged entry.\n3. Run the gate.", step: 3, maxSteps: 30, doing: "bun test packages/link", revisions: 0, gates: [{ command: "bun test packages/link", by: "owner", exitCode: null }] });
   await admin("requestSecret", { name: "github-token", purpose: "To open the pull request for the sync fix." });
   const team = await admin("team");
@@ -467,6 +526,12 @@ try {
     await browser.send("Page.navigate", { url }, page);
   };
   const quiet = (ms: number) => until("the network to go quiet", () => Date.now() - lastTraffic > ms && [...wire.values()].every((entry) => entry.done), 30_000);
+
+  // Gawain's desktop shows a stand-in page, drawn here once at the desktop's own size (1280×800) as the JPEG its VM sends.
+  await browser.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, page);
+  await navigate(`data:text/html;charset=utf-8,${encodeURIComponent(DESKTOP_PAGE)}`);
+  await sleep(400);
+  desktopShot = (await browser.send("Page.captureScreenshot", { format: "jpeg", quality: 72 }, page)).data;
 
   // The real pairing page: the code it shows is compared with the node's before anything is approved.
   const invite = await admin("createInvite", { kind: "client", origin, scopes: core.CLIENT_DEFAULT_SCOPES });
@@ -565,6 +630,7 @@ try {
     for (const target of PAGES) {
       const cold: Load[] = [];
       const warm: Load[] = [];
+      if (!RUNS) continue;
       for (let run = 0; run < RUNS; run++) {
         await forget();
         cold.push(await open(target.hash, true));
@@ -578,7 +644,7 @@ try {
     }
   }
 
-  // ---------- what Chat and Squires cost while nothing changes ----------
+  // ---------- what Chat and the Roundtable cost while nothing changes ----------
   // (On this machine as it is: a slowed processor drops frames, and so hides the work an animation asks for.)
   await setProfile("laptop");
   const work = async (): Promise<Record<string, number>> => Object.fromEntries((await browser.send("Performance.getMetrics", {}, page)).metrics.map((metric: { name: string; value: number }) => [metric.name, metric.value]));
@@ -597,50 +663,94 @@ try {
       layout: perSecond("LayoutDuration"),
     };
   };
-  const chatAtRest = await rest("#/chat");
-  const atRest = {
-    ...(await rest("#/team")),
-    avatars: await evaluate<number>(`document.querySelectorAll(".worker-avatar").length`),
-    avatarElements: await evaluate<number>(`document.querySelectorAll(".worker-avatar, .worker-avatar *").length`),
-  };
+  const chatAtRest = RUNS ? await rest("#/chat") : null;
+  const atRest = RUNS
+    ? {
+        ...(await rest("#/team")),
+        avatars: await evaluate<number>(`document.querySelectorAll(".worker-avatar").length`),
+        avatarElements: await evaluate<number>(`document.querySelectorAll(".worker-avatar, .worker-avatar *").length`),
+      }
+    : null;
 
   // ---------- screenshots ----------
+  // (The same addresses on any checkout: an older app is shown at the same places. Each waits for what it is there to show.)
   const shots: string[] = [];
   if (SHOTS) {
     mkdirSync(SHOTS, { recursive: true });
     await setProfile("laptop");
     const views: { name: string; hash: string; wait?: string }[] = [
-      { name: "chat", hash: "#/chat" },
-      { name: "chat-kept", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
-      { name: "squires", hash: "#/team" },
-      { name: "room", hash: "#/team?room=forge" },
-      { name: "room-work", hash: "#/team?room=forge&tab=work" },
+      { name: "roundtable", hash: "#/team" },
+      { name: "galahad", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
+      { name: "ada-running-task", hash: `#/team?room=${own.ada}` },
+      { name: "kay-kept-changes", hash: `#/team?room=${own.kay}&tab=work`, wait: ".team-task" },
+      { name: "gareth-failed-task", hash: `#/team?room=${own.gareth}&tab=work`, wait: ".team-task" },
+      { name: "forge-work", hash: "#/team?room=forge&tab=work", wait: ".team-task" },
+      { name: "gawain-workspace-desktop", hash: `#/team?room=${own.gawain}&tab=workspace`, wait: ".team-panel .card, .desktop-shot img[data-shown]" },
       { name: "inbox", hash: "#/inbox" },
       { name: "more", hash: "#/more" },
-      { name: "overview", hash: "#/overview" },
-      { name: "trials", hash: "#/trials" },
     ];
-    for (const theme of ["light", "dark"]) {
+    const sizes = [[390, 844, true], [1280, 800, false]] as const;
+    const shoot = async (name: string, width: number, theme: string): Promise<void> => {
+      const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, page);
+      const file = join(SHOTS, `${name}-${width}-${theme}.png`);
+      writeFileSync(file, Buffer.from(data, "base64"));
+      shots.push(file);
+    };
+    const look = async (theme: string, width: number, height: number, mobile: boolean): Promise<void> => {
       await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] }, page);
-      for (const [width, height, mobile] of [[390, 844, true], [1280, 800, false]] as const) {
-        await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }, page);
-        await browser.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }, page);
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }, page);
+      await browser.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }, page);
+    };
+    for (const theme of ["light", "dark"]) {
+      for (const [width, height, mobile] of sizes) {
+        await look(theme, width, height, mobile);
         for (const view of views) {
           // A new chat, not the kept one the last round left open (the app comes back to that one).
           await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
           await open(view.hash, false);
-          if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`));
-          await sleep(400);
-          const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, page);
-          const file = join(SHOTS, `${view.name}-${width}-${theme}.png`);
-          writeFileSync(file, Buffer.from(data, "base64"));
-          shots.push(file);
+          if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`), 20_000).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
+          // (A running task's lines, and a desktop's picture, arrive a moment after the page.)
+          await sleep(view.name.includes("running") || view.name.includes("desktop") ? 2500 : 500);
+          await shoot(view.name, width, theme);
+        }
+      }
+    }
+    // A task given to the Roundtable, through the page's own form, where the app has one: who took it and why. Last, as it
+    // gives Gawain work; stopped again after each, so each is given to the same Roundtable.
+    giving: for (const theme of ["light", "dark"]) {
+      for (const [width, height, mobile] of sizes) {
+        await look(theme, width, height, mobile);
+        await open("#/team", false);
+        if (!(await evaluate<boolean>(`Boolean(document.querySelector("[data-give]"))`))) {
+          console.error("this app has no way to give a task to the Roundtable: no screenshot of it");
+          break giving;
+        }
+        await evaluate(`document.querySelector("[data-give]").click()`);
+        await until("the give sheet", () => evaluate(`Boolean(document.querySelector("dialog[open] textarea[name=goal]"))`));
+        await evaluate(`(() => {
+          const sheet = document.querySelector("dialog[open]");
+          const set = (field, value) => { field.value = value; field.dispatchEvent(new Event("input", { bubbles: true })); };
+          set(sheet.querySelector("textarea[name=goal]"), "TASK_GIVE: open the dashboard and download this month's export as CSV, then say how many rows it has.");
+          set(sheet.querySelector("input[name=title]"), "This month's export");
+          set(sheet.querySelector("textarea[name=gates]"), "test -s export.csv");
+          const desktop = sheet.querySelector("input[name=desktop]");
+          if (desktop && !desktop.checked) desktop.click();
+          sheet.querySelector("button[type=submit]").click();
+        })()`);
+        await until("who took it", () => evaluate(`Boolean(document.querySelector("dialog[open] .give-result"))`));
+        await sleep(400);
+        await shoot("give-to-the-roundtable", width, theme);
+        await evaluate(`document.querySelector("dialog[open]")?.close()`);
+        for (const given of (await admin("team")).tasks.filter((task: { givenBy?: string; status: string }) => task.givenBy && (task.status === "queued" || task.status === "running"))) {
+          await admin("controlTeam", { task: given.id, action: "stop" }).catch(() => {});
         }
       }
     }
   }
 
   // ---------- the report ----------
+  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured (--runs 0).`);
+  else {
   // (The browser fetches /sw.js itself, outside what the protocol shows of the page and the worker: it is counted here.)
   const files = await Promise.all([...new Set([...firstVisit.filter((w) => !w.path.startsWith("/api/") && !w.path.startsWith("/link/")).map((w) => w.path), "/sw.js"])].map(sizeOf));
   const total = (key: "raw" | "gzip" | "brotli") => files.reduce((sum, file) => sum + file[key], 0);
@@ -654,7 +764,7 @@ try {
     files: [...files, { path: "all of them", raw: total("raw"), gzip: total("gzip"), brotli: total("brotli") }],
     pages: results,
     chatAtRest,
-    squiresAtRest: atRest,
+    roundtableAtRest: atRest,
     shots,
   };
   if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify(report, null, 2)}\n`);
@@ -666,10 +776,10 @@ try {
     return rows.map((row) => row.map((cell, column) => (column ? cell.padStart(widths[column]!) : cell.padEnd(widths[column]!))).join("  ")).join("\n");
   };
   console.log(`\nThe PWA at ${report.revision} (${REPO}), in ${report.chrome}, ${RUNS} loads each.`);
-  console.log(`Squires' faces while it was measured: ${Object.entries(faces).map(([id, face]) => `${id} ${face}`).join(", ")}.\n`);
+  console.log(`The knights' faces while it was measured: ${Object.entries(faces).map(([id, face]) => `${id} ${face}`).join(", ")}.\n`);
   console.log("The app's files on a first visit, as the node sends them:");
   console.log(table([["file", "raw", "gzip", "brotli"], ...report.files.map((f) => [f.path, kb(f.raw), kb(f.gzip), kb(f.brotli)])]));
-  console.log(`\nA first visit to ${PAGES[0].name}: ${report.firstVisit.requests} requests seen, and /sw.js (${firstVisit.filter((w) => w.by === "page").length} by the page, ${firstVisit.filter((w) => w.by === "service worker").length} by the service worker; ${report.firstVisit.api} of them to the API),`);
+  console.log(`\nA first visit to ${PAGES[0]!.name}: ${report.firstVisit.requests} requests seen, and /sw.js (${firstVisit.filter((w) => w.by === "page").length} by the page, ${firstVisit.filter((w) => w.by === "service worker").length} by the service worker; ${report.firstVisit.api} of them to the API),`);
   console.log(`${kb(report.firstVisit.bytesOnTheWire)} on the wire with their headers (this Chrome was sent: ${[...new Set(firstVisit.filter((w) => w.encoding).map((w) => w.encoding))].join(", ") || "nothing compressed"}).\n`);
   const rows = [["page · profile · visit", "paint", "shell", "usable", "blocked", "elements", "requests", "on the wire"]];
   for (const [name, kinds] of Object.entries(results)) {
@@ -681,11 +791,12 @@ try {
   console.log(table(rows));
   console.log("\nThe main thread's work on a first visit, up to usable (ms, the median of three traced loads):");
   console.log(table([["page · profile", ...Object.keys(Object.values(results)[0]!.work)], ...Object.entries(results).map(([name, r]) => [name, ...Object.values(r.work).map((n) => n.toFixed(1))])]));
-  console.log(`\nSquires at rest (laptop, ten seconds): ${atRest.avatars} avatars of ${atRest.avatarElements} elements, ${atRest.animations} animations running;`);
-  console.log(`the main thread works ${atRest.mainThread} ms a second (script ${atRest.script}, style ${atRest.style}, layout ${atRest.layout}).`);
-  console.log(`Chat at rest, a new chat: ${chatAtRest.animations} animations running; the main thread works ${chatAtRest.mainThread} ms a second (script ${chatAtRest.script}, style ${chatAtRest.style}, layout ${chatAtRest.layout}).`);
+  console.log(`\nThe Roundtable at rest (laptop, ten seconds): ${atRest!.avatars} avatars of ${atRest!.avatarElements} elements, ${atRest!.animations} animations running;`);
+  console.log(`the main thread works ${atRest!.mainThread} ms a second (script ${atRest!.script}, style ${atRest!.style}, layout ${atRest!.layout}).`);
+  console.log(`Chat at rest: ${chatAtRest!.animations} animations running; the main thread works ${chatAtRest!.mainThread} ms a second (script ${chatAtRest!.script}, style ${chatAtRest!.style}, layout ${chatAtRest!.layout}).`);
   if (shots.length) console.log(`\n${shots.length} screenshots in ${resolve(SHOTS!)}`);
   if (JSON_OUT) console.log(`Everything measured: ${resolve(JSON_OUT)}`);
+  }
 } finally {
   await tidy();
 }
