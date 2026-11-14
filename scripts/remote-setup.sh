@@ -397,13 +397,19 @@ UNIT
     command -v docker >/dev/null || return 0
     docker ps --filter label=dev.galahad=1 --format '{{.Label "dev.galahad.quest"}}' 2>/dev/null | grep -c -E '^(q-|inv-|arm\.loop\.)' || true
   }
+  # A knight's task runs in its own VM, which is always there: ask the node (as it runs now) which are running.
+  # (A restart interrupts them and holds their rooms; on 14 November 2026 a deploy did, mid-review.)
+  running_tasks() {
+    [[ -x /usr/local/bin/galahad ]] || { echo 0; return; }
+    timeout 30 /usr/local/bin/galahad roundtable 2>/dev/null | grep -c -E '^task-[a-z0-9_-]+ · running · ' || true
+  }
   WAITED=0
-  while [[ $(running_quests) -gt 0 && $WAITED -lt 1800 ]]; do
-    [[ $WAITED == 0 ]] && echo "→ waiting for $(running_quests) running quest(s) to finish before restarting the node (up to 30 min)"
+  while [[ $(( $(running_quests) + $(running_tasks) )) -gt 0 && $WAITED -lt 1800 ]]; do
+    [[ $WAITED == 0 ]] && echo "→ waiting for $(running_quests) running quest(s) and $(running_tasks) knight task(s) to finish before restarting the node (up to 30 min)"
     sleep 15
     WAITED=$((WAITED + 15))
   done
-  [[ $(running_quests) -gt 0 ]] && echo "$(running_quests) quest(s) still running after 30 min; restarting anyway (they'll be cut off)" >&2
+  [[ $(( $(running_quests) + $(running_tasks) )) -gt 0 ]] && echo "$(running_quests) quest(s) and $(running_tasks) knight task(s) still running after 30 min; restarting anyway (they'll be cut off: a knight's task is interrupted and its room held)" >&2
   systemctl restart galahad.service
   if [[ $EXPOSE != 0 ]]; then
     # `tailscale serve` blocks while waiting for Serve/HTTPS to be enabled for the
