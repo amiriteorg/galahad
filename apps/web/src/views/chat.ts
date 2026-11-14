@@ -970,10 +970,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   scope.add(nodeTurns.subscribe(renderNow));
   scope.add(ctx.live.inboxCount.subscribe(renderNow));
   scope.add(ctx.live.inboxLoaded.subscribe(renderNow));
-  if (ctx.can("mind:read")) {
-    void lookQuests();
-    scope.interval(() => void lookQuests(), 15_000);
-  }
+  if (ctx.can("mind:read")) scope.interval(() => void lookQuests(), 15_000);
   // The minute "stops by itself in …" names moves on while he works.
   const ticking = setInterval(() => live && syncComposer(), 30_000);
   scope.add(() => clearInterval(ticking));
@@ -1268,6 +1265,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         /* roster needs mind:read; the default roles still work */
       });
   }
+  // Asked last: a browser sends only so many requests at once, and your chats come before his line.
+  if (ctx.can("mind:read")) void lookQuests();
 };
 
 /** The shell's "answering…" pill: visible from every page while a reply streams. */
