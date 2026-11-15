@@ -37,10 +37,34 @@ struct Vectors: Decodable {
         let headers: [String: String]
     }
 
+    struct Canonical: Decodable {
+        let value: [String: String]
+        let canonical: String
+    }
+
+    struct Pairing: Decodable {
+        struct Decode: Decodable { let text: String; let invite: Invite? }
+        struct Proof: Decodable { let name: String; let canonical: String; let proof: String }
+        struct Code: Decodable { let fleet: String; let device: String; let sas: String }
+        let secretText: String
+        let invite: Invite
+        let token: String
+        let url: String
+        let decode: [Decode]
+        let device: String
+        let proofs: [Proof]
+        let sas: String
+        let codes: [Code]
+        let statusProof: String
+        let approvalProof: String
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
     let requests: [Request]
+    let canonical: [Canonical]
+    let pairing: Pairing
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {
