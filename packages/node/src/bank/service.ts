@@ -50,18 +50,30 @@ const SessionFile = z.object({
   invalid_since: z.string().optional(),
 });
 
+/** What setup needs to be told: no bank or country is assumed. Said in words, never quoting what was given. */
+const BANK_NAME = 'the bank\'s name as Enable Banking lists it: --aspsp "<bank>"';
+const BANK_COUNTRY = "the bank's two-letter country code, in capitals: --country <XX>";
+
 export const BankConfig = z.strictObject({
   appId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "the application ID (a UUID)"),
   keyPath: z.string().max(1024).refine((p) => isAbsolute(p), "an absolute path"),
   redirectUrl: z.string().max(500).url().refine((u) => u.startsWith("https://"), "an https:// URL, exactly as registered with Enable Banking"),
-  aspsp: z.string().min(1).max(100).default("Lunar"),
-  country: z.string().regex(/^[A-Z]{2}$/).default("DK"),
+  /** The bank, by the name Enable Banking lists it under (GET /aspsps), and its country: yours to give. */
+  aspsp: z.string({ error: BANK_NAME }).min(1, BANK_NAME).max(100),
+  country: z.string({ error: BANK_COUNTRY }).regex(/^[A-Z]{2}$/, BANK_COUNTRY),
   /** Consent length asked for; less if the bank allows less. */
   consentDays: z.number().int().min(1).max(180).default(89),
   /** Background fetches per account per rolling 24 hours. */
   budgetPerDay: z.number().int().min(1).max(24).default(4),
 });
 export type BankConfig = z.infer<typeof BankConfig>;
+
+/** A config checked: what is wrong said as each field and why, never quoting the input. */
+function checked(input: unknown): BankConfig {
+  const parsed = BankConfig.safeParse(input);
+  if (!parsed.success) throw new Error(parsed.error.issues.map((i) => `${i.path.join(".") || "config"}: ${i.message}`).join("; "));
+  return parsed.data;
+}
 
 interface Session {
   session_id: string;
@@ -150,7 +162,7 @@ export class BankService {
 
   config(): BankConfig | null {
     if (!existsSync(this.path("config.json"))) return null;
-    return BankConfig.parse(JSON.parse(readFileSync(this.path("config.json"), "utf8")));
+    return checked(JSON.parse(readFileSync(this.path("config.json"), "utf8")));
   }
 
   /**
@@ -159,7 +171,7 @@ export class BankService {
    */
   problem(): string | null {
     if ((this.o.platform ?? process.platform) === "win32") return "bank access runs on Linux or macOS nodes only: file permissions can't be enforced here";
-    if (!existsSync(this.path("config.json"))) return "not set up: galahad bank setup --app-id <uuid> --key <path to the .pem> --redirect-url <url>";
+    if (!existsSync(this.path("config.json"))) return "not set up: galahad bank setup --app-id <uuid> --key <path to the .pem> --redirect-url <url> --aspsp \"<bank>\" --country <XX>";
     let config: BankConfig;
     try {
       config = this.config()!;
@@ -201,7 +213,7 @@ export class BankService {
 
   /** You, at a terminal on this node: what to use. Validated; written private. */
   setup(input: z.input<typeof BankConfig>): BankConfig {
-    const config = BankConfig.parse(input);
+    const config = checked(input);
     this.ensureDir();
     rmSync(this.path("config.json"), { force: true });
     writePrivate(this.path("config.json"), JSON.stringify(config, null, 2));

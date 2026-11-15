@@ -565,12 +565,13 @@ bun galahad projects
 
 ## 13. Your bank, read-only
 
-Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, MitID) is in [BANK](BANK.md). In short, on the node that holds it:
+Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, linking your bank) is in [BANK](BANK.md). In short, on the node that holds it:
 
 ```sh
 galahad bank setup --app-id <application id> \
   --key /var/lib/galahad/.galahad/bank/enablebanking.pem \
-  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback
+  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback \
+  --aspsp "<bank>" --country <XX>
 galahad bank status
 galahad arms grant claude-code bank:read     # one agent may read it
 ```

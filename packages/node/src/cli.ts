@@ -260,6 +260,9 @@ Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
 
 Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
   bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
+             --aspsp "<bank>" --country <XX>
+                                  the bank by the name Enable Banking lists it under, and its country
+                                  (try Enable Banking's sandbox first: --aspsp "Mock ASPSP" --country FI)
   bank status | bank connect | bank complete | bank disconnect
                                   connect gives the bank's link (or use the PWA: Bank → Connect);
                                   complete takes the URL the bank sent you back to, in a hidden prompt
@@ -1451,12 +1454,12 @@ Evidence: galahad artifact ${i!.artifact}`));
             appId: str("app-id") ?? "",
             keyPath: str("key") ?? "",
             redirectUrl: str("redirect-url") ?? "",
-            ...(str("country") ? { country: str("country") } : {}),
-            ...(str("aspsp") ? { aspsp: str("aspsp") } : {}),
+            aspsp: str("aspsp") ?? "",
+            country: str("country") ?? "",
           });
           console.log(`Bank set up: app ${config.appId}, ${config.aspsp} (${config.country}), consent ${config.consentDays} days, callback ${config.redirectUrl}`);
         } catch (error) {
-          fail(`bank setup: ${(error as Error).message}\nusage: galahad bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback`);
+          fail(`bank setup: ${(error as Error).message}\nusage: galahad bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback --aspsp "<bank>" --country <XX>`);
         }
         const problem = service.problem();
         console.log(problem ? `${bold("Not ready yet:")} ${problem}` : "Key and files are private to this node's user. Next: galahad bank connect (or the PWA: Bank → Connect).");

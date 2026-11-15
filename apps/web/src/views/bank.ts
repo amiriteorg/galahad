@@ -52,7 +52,7 @@ export const bankView: View = (root, ctx, { scope }) => {
     const ok = await confirmAction({
       title: "Authorise Galahad at your bank?",
       body: [
-        h("p", {}, "You'll go to the bank's page (MitID) to allow read-only access to your accounts' balances and transactions for 89 days. Nothing can move money."),
+        h("p", {}, "You'll go to your bank's page to sign in and allow read-only access to your accounts' balances and transactions for 89 days. Nothing can move money."),
         h("p", { class: "small muted" }, "Do this in the browser that finishes it: the bank sends you back here, to this device. On an iPhone, use Safari (paired), not the Home Screen app, which can't receive the return."),
       ],
       confirmLabel: "Go to the bank",

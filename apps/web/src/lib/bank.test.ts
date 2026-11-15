@@ -5,7 +5,7 @@ import { budgetLabel, consentLeft, offReason, readBankCallback } from "./bank.ts
 const status = (over: Partial<BankStatusView> = {}): BankStatusView => ({
   configured: true,
   problem: null,
-  aspsp: "Lunar",
+  aspsp: "Mock ASPSP",
   accounts: [],
   validUntil: null,
   daysRemaining: null,

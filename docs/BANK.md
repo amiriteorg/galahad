@@ -1,6 +1,6 @@
 # Bank
 
-Galahad can read your own bank accounts' balances and transactions, read-only, through [Enable Banking](https://enablebanking.com) (account information under PSD2: AIS). Only you can authorise it: at the bank, with MitID, from a browser paired with Galahad, for 89 days at a time. Only the agents you choose can read it, through four narrow tools. Nothing here can move money.
+Galahad can read your own bank accounts' balances and transactions, read-only, through [Enable Banking](https://enablebanking.com) (account information under PSD2: AIS). Only you can authorise it: at your bank, with its own sign-in, from a browser paired with Galahad, for 89 days at a time. Only the agents you choose can read it, through four narrow tools. Nothing here can move money.
 
 | Who | Can | Can't |
 |---|---|---|
@@ -48,19 +48,20 @@ Never paste the private key anywhere: not into chat, an issue or a ticket. Galah
 
 ### 3. Activate it by linking your accounts
 
-In the application: **Activate by linking accounts** → Lunar → MitID. Choose **Personal** for your personal accounts. A restricted production application only ever sees the accounts linked here (a business account would be a second application or connection later). The application turns *Active (restricted)*. Copy its **application ID** (a UUID).
+In the application: **Activate by linking accounts** → your bank → its sign-in. Choose **Personal** for your personal accounts. A restricted production application only ever sees the accounts linked here (a business account would be a second application or connection later). The application turns *Active (restricted)*. Copy its **application ID** (a UUID).
 
 ### 4. Tell Galahad
 
-On ultra:
+On the node that will hold it:
 
 ```sh
 galahad bank setup --app-id <application id> \
   --key /var/lib/galahad/.galahad/bank/enablebanking.pem \
-  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback
+  --redirect-url https://<node>.<tailnet>.ts.net:8443/bank/callback \
+  --aspsp "<bank>" --country <XX>
 ```
 
-`--aspsp` (default `Lunar`) and `--country` (default `DK`) choose the bank. Setup writes `bank/config.json` (mode 600) and checks the files at once: it says *Not ready yet* if the key is readable by anyone else or belongs to another user.
+`--aspsp` and `--country` choose the bank: its name exactly as Enable Banking lists it, and its two-letter country code (both required; no bank is assumed). To try it all first without a real bank, use Enable Banking's sandbox bank: `--aspsp "Mock ASPSP" --country FI`. Setup writes `bank/config.json` (mode 600) and checks the files at once: it says *Not ready yet* if the key is readable by anyone else or belongs to another user.
 
 ### 5. Let your browser see the Bank page
 
@@ -72,8 +73,8 @@ galahad grant <device> bank:read     # several matches? it lists them: name the 
 
 ## Authorise (and every 89 days)
 
-1. Open Galahad in **Safari** on the iPhone (the paired browser, not the Home Screen app, which can't receive the bank's return), then **Bank → Connect Lunar**.
-2. Confirm, and you go to the bank: approve with MitID. The consent is for 89 days, or less if the bank allows less.
+1. Open Galahad in **Safari** on the iPhone (the paired browser, not the Home Screen app, which can't receive the bank's return), then **Bank → Connect** (it names your bank).
+2. Confirm, and you go to the bank: sign in there and approve. The consent is for 89 days, or less if the bank allows less.
 3. The bank sends you back to `/bank/callback`. Galahad takes the code out of the address bar at once, checks the state, and shows **Connected**: the number of accounts, their IBANs masked to the last four, and the expiry.
 
 The authorisation must finish within 15 minutes, in the browser that started it, and only once: a second try, another state or a late return is refused, and you start again.
@@ -171,7 +172,7 @@ Files are created with mode 600 from the start, written to a temporary file and 
 | Secrets in logs, errors or answers | Errors carry only the HTTP status and Enable Banking's error code, never the body; the audit log has no amounts, names, IBANs, codes or session; answers never include the session id; a broken session or config file is reported as broken, never quoted (a JSON parser's message would quote it), in an answer or a log | `bank.test.ts` |
 | Requests redirected or sent elsewhere | Fixed origin `https://api.enablebanking.com`, TLS, redirects refused, 30 s timeout, 8 MB cap | |
 | Hammering the bank gets the consent blocked | Cache, a budget of 4 per account a day, 6 hours' pause after a 429, never a retry loop | `bank.test.ts` |
-| An expired or revoked consent | Mapped to `reauthorization_required` ("ask the human to re-authorize"); nothing more goes to the bank until you do. It's taken as ended only when the bank's error code says the session is over, or when the bank refused a fetch (401 or 403) and the session, asked once (`GET /sessions/{id}`, already on the allowlist), says it ended or is gone. Any other refusal is a temporary failure: the agent is told to try later, and the consent stands, so a passing refusal never costs you a new MitID authorisation | `bank.test.ts` |
+| An expired or revoked consent | Mapped to `reauthorization_required` ("ask the human to re-authorize"); nothing more goes to the bank until you do. It's taken as ended only when the bank's error code says the session is over, or when the bank refused a fetch (401 or 403) and the session, asked once (`GET /sessions/{id}`, already on the allowlist), says it ended or is gone. Any other refusal is a temporary failure: the agent is told to try later, and the consent stands, so a passing refusal never costs you a new authorisation at the bank | `bank.test.ts` |
 
 **Not defended against:** anyone who is the node's user or root on ultra can read the key and the session. The `galahad` user has sudo (your choice), so the key is as safe as that account and root. Galahad's own quests run in microVM sandboxes without access to the node's home, and agents reach the bank only through their MCP tools.
 
@@ -191,14 +192,14 @@ Files are created with mode 600 from the start, written to a temporary file and 
 
 Everything was built and tested against a stand-in for Enable Banking with a throwaway key; no real key, session or bank was used. These rest on Enable Banking's documentation and will show on the first real connection:
 
-1. Lunar is listed as `Lunar` for `DK` in `/aspsps`. If not, `connect` names the close matches; set `--aspsp` to the right one.
-2. Lunar allows at least 89 days. If it allows less, Galahad asks for what it allows, less an hour.
+1. Your bank is listed under the name you gave for its country in `/aspsps`. If not, `connect` names the close matches; set `--aspsp` to the right one.
+2. Your bank allows at least 89 days. If it allows less, Galahad asks for what it allows, less an hour.
 3. The bank's return carries `code` and `state` as query parameters; an `error` comes back the same way.
 4. Expired, closed and revoked sessions come back as 401, 403 or one of the documented codes (`EXPIRED_SESSION`, `REVOKED_SESSION`…). Any 401 or 403 is treated as one.
 5. The limit on background fetches is 4 per account per day, and a 429 or `ASPSP_RATE_LIMIT_EXCEEDED` signals it.
-6. Transactions page with `continuation_key`. *Confirmed for the fields Lunar fills:* id, booking date, status, direction, amount and payment text on every transaction, the other party on most; it leaves value date, reference, note and balance after empty.
+6. Transactions page with `continuation_key`. *Confirmed for the fields the first real bank fills:* id, booking date, status, direction, amount and payment text on every transaction, the other party on most; it leaves value date, reference, note and balance after empty.
 7. `DELETE /sessions/{id}` ends the consent at the bank.
 
-Confirmed by the first real connection (10 November 2026): 1 to 3. Enable Banking accepted the application's JWT; Lunar is listed as `Lunar` for `DK` (personal), allows 180 days and requires no PSU headers; the PWA finished the authorisation from the bank's return.
+Confirmed by the first real connection (10 November 2026): 1 to 3. Enable Banking accepted the application's JWT; the bank was listed under its name for its country (personal), allowed 180 days and required no PSU headers; the PWA finished the authorisation from the bank's return.
 
 Verified on ultra: the callback page is served; an agent granted `bank:read` gets exactly the four bank tools over `tailscale ssh root@ultra galahad mcp --arm …`, and one without it gets none; the file-mode checks run on Linux.
