@@ -176,6 +176,29 @@ struct Vectors: Decodable {
         let numbers: [Number]
     }
 
+    struct Timelines: Decodable {
+        struct Card: Decodable {
+            struct Badge: Decodable { let text: String; let tone: String }
+            struct End: Decodable { let why: String?; let said: String? }
+            let id: String
+            let badge: Badge
+            let end: End?
+            let actions: [String]
+            let given: String?
+            let kept: String?
+        }
+
+        let messages: [TeamMessage]
+        let tasks: [TeamTask]
+        /// The timeline's keys: a knight's own room, a shared one, and the words since a moment.
+        let knight: [String]
+        let room: [String]
+        let sinceAt: Double
+        let since: [String]
+        let speakers: [String]
+        let cards: [Card]
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
@@ -188,6 +211,7 @@ struct Vectors: Decodable {
     let chats: ChatList
     let markdown: [MarkdownCase]
     let blocks: BlockCases
+    let timelines: Timelines
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {

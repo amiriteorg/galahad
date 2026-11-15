@@ -53,20 +53,27 @@ struct TeamRoom: Decodable, Sendable {
 }
 
 struct TeamTask: Decodable, Sendable {
-    struct Changes: Decodable, Sendable { let files: Int }
+    struct Changes: Decodable, Sendable { let files: Int; let artifact: String? }
     let id: String
     let room: String
     let assignee: String
     let title: String
     let goal: String
     let dependsOn: [String]
+    /// The commands that prove it done.
+    var gates: [String]? = nil
     /// queued · running · done · failed · stopped · interrupted
     let status: String
     let verified: Bool
     let progress: String
+    /// What the knight said of it when it ended, then the review's lines.
+    var output: String? = nil
     let error: String?
+    var createdAt: Double? = nil
     let updatedAt: Double
     let changes: Changes?
+    /// Who gave it to the Roundtable rather than to a knight by name (owner or galahad).
+    var givenBy: String? = nil
 }
 
 /// A knight's reply on its way (or how it went).

@@ -3987,5 +3987,414 @@
         "text": "0.05"
       }
     ]
+  },
+  "timelines": {
+    "messages": [
+      {
+        "id": "msg-1",
+        "room": "dm-ada",
+        "speaker": "owner",
+        "speakerName": "",
+        "text": "Can you make sync resume after a drop?",
+        "createdAt": 1763192800000,
+        "chainId": "chain-m-1"
+      },
+      {
+        "id": "msg-2",
+        "room": "dm-ada",
+        "speaker": "ada",
+        "speakerName": "Ada",
+        "text": "On it. I'll keep the gate green.",
+        "createdAt": 1763192860000,
+        "chainId": "chain-m-2"
+      },
+      {
+        "id": "msg-3",
+        "room": "dm-ada",
+        "speaker": "galahad",
+        "speakerName": "",
+        "text": "Ada, the release is Monday.",
+        "createdAt": 1763194300000,
+        "chainId": "chain-m-3"
+      },
+      {
+        "id": "msg-4",
+        "room": "dm-ada",
+        "speaker": "system",
+        "speakerName": "",
+        "text": "Ada was given a task by the Roundtable.",
+        "createdAt": 1763194600000,
+        "chainId": "chain-m-4"
+      },
+      {
+        "id": "msg-5",
+        "room": "dm-ada",
+        "speaker": "owner",
+        "speakerName": "",
+        "text": "Thanks!",
+        "createdAt": 1763199400000,
+        "chainId": "chain-m-5"
+      },
+      {
+        "id": "msg-6",
+        "room": "dm-ada",
+        "speaker": "bors",
+        "speakerName": "",
+        "text": "",
+        "createdAt": 1763199700000,
+        "chainId": "chain-m-6"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-sync00000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The sync task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "done",
+        "verified": true,
+        "progress": "",
+        "output": "Sync now resumes from the last acknowledged event.\n\nReview: PASS",
+        "error": null,
+        "chainId": "chain-sync",
+        "createdAt": 1763194600000,
+        "updatedAt": 1763198200000,
+        "changes": {
+          "artifact": "art_bbbbbbbbbbbbbbbbbbbbbb",
+          "files": 2,
+          "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+        }
+      },
+      {
+        "id": "task-run000000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The run task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "running",
+        "verified": false,
+        "progress": "Running · bun test packages/link\nmore",
+        "output": "",
+        "error": null,
+        "chainId": "chain-run",
+        "createdAt": 1763198200000,
+        "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-same00000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The same task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "queued",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-same",
+        "createdAt": 1763198200000,
+        "updatedAt": 1763198200000,
+        "givenBy": "owner"
+      },
+      {
+        "id": "task-old000000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The old task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "failed",
+        "verified": false,
+        "progress": "",
+        "output": "Review: FAIL",
+        "error": "gave-up",
+        "chainId": "chain-old",
+        "createdAt": 1763188000000,
+        "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-cut000000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The cut task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "interrupted",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-cut",
+        "createdAt": 1763196400000,
+        "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-halt00000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The halt task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "stopped",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": "stopped",
+        "chainId": "chain-halt",
+        "createdAt": 1763197600000,
+        "updatedAt": 1763198200000,
+        "givenBy": "galahad"
+      },
+      {
+        "id": "task-half00000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The half task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "done",
+        "verified": false,
+        "progress": "",
+        "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "error": null,
+        "chainId": "chain-half",
+        "createdAt": 1763198800000,
+        "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-elsewhere000",
+        "room": "room-wckd",
+        "assignee": "bea",
+        "title": "The elsewhere task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "running",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-elsewhere",
+        "createdAt": 1763199100000,
+        "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-roomwork0000",
+        "room": "dm-ada",
+        "assignee": "bea",
+        "title": "The roomwork task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "queued",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-roomwork",
+        "createdAt": 1763199280000,
+        "updatedAt": 1763198200000
+      }
+    ],
+    "knight": [
+      "task:task-old000000000",
+      "msg-1",
+      "msg-2",
+      "msg-3",
+      "msg-4",
+      "task:task-sync00000000",
+      "task:task-cut000000000",
+      "task:task-halt00000000",
+      "task:task-same00000000",
+      "task:task-run000000000",
+      "task:task-half00000000",
+      "msg-5",
+      "msg-6"
+    ],
+    "room": [
+      "task:task-old000000000",
+      "msg-1",
+      "msg-2",
+      "msg-3",
+      "msg-4",
+      "task:task-sync00000000",
+      "task:task-cut000000000",
+      "task:task-halt00000000",
+      "task:task-same00000000",
+      "task:task-run000000000",
+      "task:task-half00000000",
+      "task:task-roomwork0000",
+      "msg-5",
+      "msg-6"
+    ],
+    "sinceAt": 1763194000000,
+    "since": [
+      "msg-1",
+      "msg-2",
+      "msg-3",
+      "msg-4",
+      "task:task-sync00000000",
+      "task:task-cut000000000",
+      "task:task-halt00000000",
+      "task:task-same00000000",
+      "task:task-run000000000",
+      "task:task-half00000000",
+      "msg-5",
+      "msg-6"
+    ],
+    "speakers": [
+      "You",
+      "Ada",
+      "Galahad",
+      "The Roundtable",
+      "You",
+      "bors"
+    ],
+    "cards": [
+      {
+        "id": "task-sync00000000",
+        "badge": {
+          "text": "Verified",
+          "tone": "ok"
+        },
+        "end": {
+          "why": null,
+          "said": "Sync now resumes from the last acknowledged event."
+        },
+        "actions": [],
+        "given": null,
+        "kept": "2 files changed"
+      },
+      {
+        "id": "task-run000000000",
+        "badge": {
+          "text": "Running",
+          "tone": "accent"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": null,
+        "kept": null
+      },
+      {
+        "id": "task-same00000000",
+        "badge": {
+          "text": "Queued",
+          "tone": "neutral"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": "Given to the Roundtable by you",
+        "kept": null
+      },
+      {
+        "id": "task-old000000000",
+        "badge": {
+          "text": "Failed",
+          "tone": "danger"
+        },
+        "end": {
+          "why": "It gave up.",
+          "said": null
+        },
+        "actions": [
+          "resume",
+          "again"
+        ],
+        "given": null,
+        "kept": null
+      },
+      {
+        "id": "task-cut000000000",
+        "badge": {
+          "text": "Interrupted",
+          "tone": "warn"
+        },
+        "end": {
+          "why": "Interrupted. Review it before resuming.",
+          "said": null
+        },
+        "actions": [
+          "resume",
+          "again"
+        ],
+        "given": null,
+        "kept": null
+      },
+      {
+        "id": "task-halt00000000",
+        "badge": {
+          "text": "Stopped",
+          "tone": "neutral"
+        },
+        "end": {
+          "why": "It stopped before the work was done.",
+          "said": null
+        },
+        "actions": [
+          "resume",
+          "again"
+        ],
+        "given": "Given to the Roundtable by Galahad",
+        "kept": null
+      },
+      {
+        "id": "task-half00000000",
+        "badge": {
+          "text": "Not verified",
+          "tone": "warn"
+        },
+        "end": {
+          "why": "The work was not independently verified.",
+          "said": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        },
+        "actions": [
+          "again"
+        ],
+        "given": null,
+        "kept": null
+      },
+      {
+        "id": "task-elsewhere000",
+        "badge": {
+          "text": "Running",
+          "tone": "accent"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": null,
+        "kept": null
+      },
+      {
+        "id": "task-roomwork0000",
+        "badge": {
+          "text": "Queued",
+          "tone": "neutral"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": null,
+        "kept": null
+      }
+    ]
   }
 }

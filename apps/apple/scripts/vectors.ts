@@ -17,6 +17,9 @@ import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
+import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
+import { givenLine, keptChanges, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
+import { teamSpeaker } from "../../web/src/lib/team.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
@@ -477,6 +480,42 @@ const blocks = {
   numbers: numbers.map((n) => ({ n, text: core.compactNumber(n) })),
 };
 
+// ---- a knight's timeline: its words and its work, in order (lib/timeline.ts, lib/task-card.ts, lib/team.ts) -----------
+const said = (id: string, speaker: string, text: string, minutesAgo: number, speakerName = ""): core.TeamMessage => ({
+  id: `msg-${id}`, room: "dm-ada", speaker, speakerName, text, createdAt: at(minutesAgo), chainId: `chain-m-${id}`,
+});
+const adaMessages = [
+  said("1", "owner", "Can you make sync resume after a drop?", 120),
+  said("2", "ada", "On it. I'll keep the gate green.", 119, "Ada"),
+  said("3", "galahad", "Ada, the release is Monday.", 95),
+  said("4", "system", "Ada was given a task by the Roundtable.", 90),
+  said("5", "owner", "Thanks!", 10),
+  said("6", "bors", "", 5),
+];
+const adaTasks = [
+  task("sync", "ada", "done", { verified: true, createdAt: at(90), output: "Sync now resumes from the last acknowledged event.\n\nReview: PASS", changes: { artifact: `art_${"b".repeat(22)}`, files: 2, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" } }),
+  task("run", "ada", "running", { createdAt: at(30), progress: "Running · bun test packages/link\nmore" }),
+  task("same", "ada", "queued", { createdAt: at(30), givenBy: "owner" }),
+  task("old", "ada", "failed", { createdAt: at(200), error: "gave-up", output: "Review: FAIL" }),
+  task("cut", "ada", "interrupted", { createdAt: at(60) }),
+  task("halt", "ada", "stopped", { createdAt: at(40), error: "stopped", givenBy: "galahad" }),
+  task("half", "ada", "done", { createdAt: at(20), verified: false, output: "x".repeat(1200) }),
+  task("elsewhere", "bea", "running", { createdAt: at(15), room: "room-wckd" }),
+  task("roomwork", "bea", "queued", { createdAt: at(12), room: "dm-ada" }),
+];
+const adaRoom = { id: "dm-ada", direct: true, members: ["ada"] };
+const sharedRoom = { id: "dm-ada", direct: false, members: ["ada", "bea"] };
+const timelines = {
+  messages: adaMessages,
+  tasks: adaTasks,
+  knight: timeline(adaMessages, timelineTasks(adaRoom, adaTasks)).map((item) => item.key),
+  room: timeline(adaMessages, timelineTasks(sharedRoom, adaTasks)).map((item) => item.key),
+  sinceAt: at(100),
+  since: timeline(adaMessages, timelineTasks(adaRoom, adaTasks), { since: at(100) }).map((item) => item.key),
+  speakers: adaMessages.map((message) => teamSpeaker(message, snapshot.teammates)),
+  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null })),
+};
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -492,6 +531,7 @@ const vectors = {
   chats,
   markdown,
   blocks,
+  timelines,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {
