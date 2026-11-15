@@ -53,14 +53,14 @@ async function renderPngs(): Promise<void> {
       ["apps/web/src/apple-touch-icon.png", maskableIcon(HELM_FULL, 0.72), 180, "#0a0a0b"],
     ];
     // A drawing makes a heavy PNG: where ImageMagick is installed, each icon is cut to a 256-colour palette (a quarter
-    // of the bytes, the same to the eye); without it, the full-colour render is kept.
+    // of the bytes, the same to the eye) and its metadata stripped; without it, the full-colour render is kept.
     const magick = Bun.which("magick");
     for (const [path, tree, size, background] of pngs) {
       const out = join(work, `${size}-${pngs.findIndex((p) => p[0] === path)}.png`);
       await screenshot(browser, work, toSvg(tree), size, background, out);
       if (magick) {
         const small = `${out}.8.png`;
-        const quantised = Bun.spawnSync([magick, out, "-dither", "FloydSteinberg", "-colors", "256", `PNG8:${small}`], { stdout: "ignore", stderr: "ignore" });
+        const quantised = Bun.spawnSync([magick, out, "-strip", "-dither", "FloydSteinberg", "-colors", "256", `PNG8:${small}`], { stdout: "ignore", stderr: "ignore" });
         if (quantised.exitCode === 0 && existsSync(small)) copyFileSync(small, out);
       }
       copyFileSync(out, at(path));
