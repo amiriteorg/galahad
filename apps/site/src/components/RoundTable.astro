@@ -1,0 +1,19 @@
+---
+/*
+ * The Round Table as the hall's plan draws it: the mark's own geometry (src/lib/roundtable.ts), drawn as furniture is
+ * on a plan, in hairlines. Galahad's seat, the Siege Perilous, is the deeper chair at the top, in his red.
+ */
+import { ROUNDTABLE, seat, turn } from "../lib/roundtable.ts";
+
+const { table, chair, siege, seats } = ROUNDTABLE;
+const inner = table.r - table.width / 2;
+const outer = table.r + table.width / 2;
+---
+
+<svg class="round-table" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <circle class="rt-top" cx="12" cy="12" r={table.r} stroke-width={table.width} />
+  <circle class="rt-edge" cx="12" cy="12" r={outer} />
+  <circle class="rt-edge" cx="12" cy="12" r={inner} />
+  {seats.map((deg) => <rect class="rt-chair" {...seat(chair, false)} transform={turn(deg)} />)}
+  <rect class="rt-siege" {...seat(siege, true)} />
+</svg>

@@ -1,16 +1,23 @@
 {
-  // galahad.bot: the project site. A Worker serving static assets only (no code runs).
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // galahad.sh, the project site (galahad.bot serves it too): Astro's static pages (dist/) and one small Worker that
+  // hands the installer to `curl -fsSL https://galahad.sh | bash`. Only the root and /install run it; every other
+  // path is a static file.
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "galahad-site",
-  // The account that holds the galahad.bot zone.
+  // The account that holds the galahad.sh and galahad.bot zones.
   "account_id": "0f555f1dabb5cf4e16b44d5843d2a8e5",
   "compatibility_date": "2026-10-01",
+  "main": "./src/worker.ts",
   "assets": {
-    "directory": "./public",
+    "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "html_handling": "auto-trailing-slash"
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/", "/install"]
   },
   "routes": [
+    { "pattern": "galahad.sh", "custom_domain": true },
+    { "pattern": "www.galahad.sh", "custom_domain": true },
     { "pattern": "galahad.bot", "custom_domain": true },
     { "pattern": "www.galahad.bot", "custom_domain": true }
   ],

@@ -1,0 +1,1939 @@
+/*
+ * galahad.sh: the plan of a place you own, drawn in Galahad's ink. Walls are solid ink, partitions thinner, furniture
+ * and dimensions in hairlines; the only colours are the drawings' own, Galahad's red for his seat and what needs you,
+ * and green, amber and red where they mean a state. The app's tokens (docs/DESIGN.md), the system's own type.
+ */
+
+:root {
+  color-scheme: light dark;
+  --paper: #fafafa;
+  --floor: #ffffff;
+  --ink: #0a0a0b;
+  --ink-2: #52525a;
+  --ink-3: #696971;
+  --rule: #d4d4d8;
+  --hush: #f3f3f4;
+  --grid: rgb(10 10 12 / 0.045);
+  --grid-major: rgb(10 10 12 / 0.075);
+  --on-ink: #ffffff;
+  --siege: #c4141b;
+  --ok: #137a43;
+  --needs: #c4141b;
+  --other: #8b8b94;
+  --wall: 10px;
+  --part: 2px;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --gutter: clamp(16px, 4vw, 40px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #08080a;
+    --floor: #0d0d0f;
+    --ink: #ededef;
+    --ink-2: #a1a1a9;
+    --ink-3: #8b8b94;
+    --rule: #2e2e33;
+    --hush: #17171a;
+    --grid: rgb(255 255 255 / 0.035);
+    --grid-major: rgb(255 255 255 / 0.06);
+    --on-ink: #0a0a0b;
+    --siege: #ee2c36;
+    --ok: #4cc38a;
+    --needs: #ff7a7a;
+    --other: #62626b;
+  }
+}
+
+/* ---------- the page ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scrollbar-color: var(--ink-3) var(--paper);
+  scroll-behavior: smooth;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  caret-color: var(--ink);
+}
+
+/* A short page keeps its title block at the foot of the window. */
+main {
+  flex: 1;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+img {
+  display: block;
+}
+
+.wrap {
+  width: 100%;
+  max-width: calc(1200px + 2 * var(--gutter));
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 10;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: var(--on-ink);
+  text-decoration: none;
+}
+
+.skip:focus {
+  top: 12px;
+}
+
+/* ---------- the bar ---------- */
+
+.bar {
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.mark {
+  flex: none;
+  display: block;
+}
+
+.mark-siege {
+  fill: var(--siege);
+}
+
+.bar nav {
+  display: flex;
+  gap: clamp(14px, 3vw, 28px);
+  font-size: 15px;
+}
+
+.bar nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+.bar nav a:hover,
+.bar nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .bar nav a:nth-child(-n + 2) {
+    display: none;
+  }
+}
+
+/* ---------- the sheet: the first view ---------- */
+
+.sheet {
+  padding: clamp(24px, 3vw, 32px) 0 clamp(48px, 6vw, 72px);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:
+    120px 120px,
+    120px 120px,
+    24px 24px,
+    24px 24px;
+  background-position: center top;
+  border-bottom: 1px solid var(--rule);
+}
+
+h1 {
+  max-width: 17ch;
+  font-size: clamp(2.375rem, 1.5rem + 2.6vw, 4rem);
+  font-weight: 650;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.lede {
+  max-width: 56ch;
+  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* ---------- the plan ---------- */
+
+/*
+ * The sheet's title stands over the plan on a phone. From 640 px it is set in the hall, as a drawing's title is: the
+ * building shares the plan's rows and columns (subgrid), so the title takes the hall's left while the building's
+ * rooms, table, vault and door keep their places.
+ */
+.plan {
+  --vault-h: 104px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sheet-head {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 36px;
+}
+
+.sheet-head h1 {
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.building {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: var(--wall) solid var(--ink);
+  background: var(--floor);
+}
+
+.room-name {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+}
+
+.room-vm {
+  max-width: 100%;
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.room-line {
+  font-size: 13px;
+  line-height: 1.38;
+  color: var(--ink-2);
+}
+
+/* The front door. On a phone the front faces you, at the top: an opening in the wall with its double doors standing
+   open, and the install line just inside. From 640 px the door stands in the front wall itself. */
+.front {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 0 8px 22px;
+}
+
+.front-gap {
+  position: absolute;
+  top: calc(-1 * var(--wall));
+  left: 50%;
+  width: 104px;
+  height: var(--wall);
+  translate: -50% 0;
+  background: var(--floor);
+}
+
+.front-swing {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 52px);
+  width: 52px;
+  height: 52px;
+}
+
+.front-swing-r {
+  left: 50%;
+  transform: scaleX(-1);
+}
+
+.door-frame {
+  position: relative;
+  max-width: 100%;
+  margin-top: 66px;
+}
+
+.front-note {
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+/* The rooms: a grid on ink, so the gaps between rooms are the partitions. */
+.rooms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--part);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--ink);
+  border-block: var(--part) solid var(--ink);
+}
+
+.room {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px 14px;
+  background: var(--floor);
+}
+
+.room .knight {
+  width: 76px;
+  height: 76px;
+  margin: 6px 0 4px;
+  align-self: center;
+}
+
+.room[data-tone="needs"] .room-line,
+.room[data-tone="ok"] .room-line {
+  color: var(--ink);
+}
+
+.room[data-tone="needs"] .room-line::before,
+.room[data-tone="ok"] .room-line::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--needs);
+}
+
+.room[data-tone="ok"] .room-line::before {
+  background: var(--ok);
+}
+
+/* A room's door into the hall below it: a gap in its wall, and the door standing open. */
+.door,
+.room-swing {
+  display: none;
+  position: absolute;
+  left: 18px;
+}
+
+.door {
+  bottom: calc(-1 * var(--part));
+  width: 30px;
+  height: var(--part);
+  background: var(--floor);
+}
+
+.room-swing {
+  top: calc(100% + var(--part));
+  width: 30px;
+  height: 30px;
+}
+
+.swing {
+  overflow: visible;
+  fill: none;
+  stroke: var(--ink);
+}
+
+.swing-leaf {
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.swing-arc {
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Every room on the hall has its door: on a phone the last row, on a tablet the second, on a wide screen all six. */
+@media (max-width: 639px) {
+  .room:nth-child(n + 5) :is(.door, .room-swing) {
+    display: block;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1079px) {
+  .room:nth-child(n + 4) :is(.door, .room-swing) {
+    display: block;
+  }
+}
+
+@media (min-width: 1080px) {
+  .room :is(.door, .room-swing) {
+    display: block;
+  }
+}
+
+/* The hall: the Round Table, Galahad standing just behind his seat. The seat's far edge is a twenty-fourth of the
+   table's width down (ROUNDTABLE: at 1 of 24 units) and his feet are 95 % of the way down his 112 px drawing, so for
+   his feet to stop 4 px short of it the table sits (110.4 - width / 24) px under his head. */
+.hall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 30px 18px 28px;
+}
+
+.table-place {
+  position: relative;
+  width: 180px;
+  padding-top: 103px;
+}
+
+.round-table {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.rt-top {
+  fill: none;
+  stroke: var(--hush);
+}
+
+.rt-edge,
+.rt-chair {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+}
+
+.rt-chair {
+  fill: var(--floor);
+}
+
+.rt-siege {
+  fill: var(--siege);
+}
+
+.table-place .knight {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  translate: -50% 0;
+}
+
+.hall-label {
+  max-width: 30ch;
+  text-align: center;
+}
+
+.vault {
+  position: relative;
+  margin: 0 18px 26px;
+  padding: 16px 16px 18px 58px;
+  border: 6px double var(--ink);
+}
+
+.vault .lock {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* Detail callouts: a letter in a circle where a detail drawing below enlarges the place. */
+.callout {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--floor);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+
+.callout:hover,
+.callout:focus-visible {
+  background: var(--ink);
+  color: var(--floor);
+}
+
+.callout-room,
+.callout-proof {
+  top: 10px;
+  right: 10px;
+}
+
+/* On the vault's own wall, clear of its words. */
+.callout-vault {
+  top: -17px;
+  right: 18px;
+}
+
+.callout-scale {
+  bottom: calc(-14px - var(--wall) / 2);
+  right: calc(-14px - var(--wall) / 2);
+}
+
+.callout-front {
+  top: -14px;
+  right: -14px;
+}
+
+/* Your phone, outside the house, on a signed line. */
+.annex {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.annex-line {
+  width: 0;
+  height: 36px;
+  border-left: 1.5px dashed var(--ink-3);
+}
+
+.phone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 300px;
+  padding: 14px 44px 14px 14px;
+  border: 1px solid var(--rule);
+  background: var(--floor);
+}
+
+.phone-plan {
+  flex: none;
+  width: 30px;
+  height: 54px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.callout-phone {
+  top: 10px;
+  right: 10px;
+}
+
+.plan-caption {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 64ch;
+  margin-top: 28px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.north {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  fill: var(--ink);
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+
+.north circle {
+  fill: none;
+}
+
+@media (min-width: 640px) {
+  .plan {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* The title, set in the hall's left: clear of the wall, below the doors' swings (30 px), and over the vault, which
+     keeps the hall's corner below it. */
+  .sheet-head {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 56px 28px calc(var(--vault-h) + 40px) calc(var(--wall) + 28px);
+  }
+
+  .building {
+    grid-column: 1 / 3;
+    grid-row: 1 / 4;
+    grid-template-columns: subgrid;
+    grid-template-rows: subgrid;
+    margin-bottom: 104px;
+  }
+
+  .rooms {
+    grid-column: 1 / 3;
+    grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 0;
+  }
+
+  .hall {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 28px 28px 40px 12px;
+  }
+
+  .table-place {
+    width: 220px;
+    padding-top: 101px;
+  }
+
+  .vault {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: end;
+    justify-self: start;
+    width: min(320px, 100% - 56px);
+    height: var(--vault-h);
+    margin: 0 0 30px 28px;
+  }
+
+  .front {
+    grid-column: 1 / 3;
+    grid-row: 3;
+    padding: 0 16px;
+  }
+
+  .front-gap,
+  .front-swing {
+    display: none;
+  }
+
+  /* The door stands in the front wall, a little floor round it so the wall stops short of it on either side; the
+     note about it is set outside, under the door. */
+  .door-frame {
+    translate: 0 calc(50% + var(--wall) / 2);
+    margin: -42px 0 0;
+  }
+
+  .front-note {
+    position: absolute;
+    top: calc(100% + var(--wall) + 46px);
+    left: 50%;
+    width: min(100%, 520px);
+    translate: -50% 0;
+  }
+
+  .callout-scale {
+    top: calc(-14px - var(--wall) / 2);
+    bottom: auto;
+  }
+
+  .callout-front {
+    top: 50%;
+    right: auto;
+    left: calc(100% + 18px);
+    translate: 0 -50%;
+  }
+
+  .annex {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+
+  .plan-caption {
+    grid-column: 1 / -1;
+    grid-row: 5;
+  }
+}
+
+@media (min-width: 1080px) {
+  .plan {
+    grid-template-columns: minmax(0, 1fr) auto 210px;
+  }
+
+  .rooms {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .annex {
+    grid-column: 3;
+    grid-row: 1 / 4;
+    align-self: center;
+    flex-direction: row;
+    margin: 0;
+  }
+
+  .annex-line {
+    width: 28px;
+    height: 0;
+    border-left: 0;
+    border-top: 1.5px dashed var(--ink-3);
+  }
+
+  .phone {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .plan-caption {
+    grid-row: 4;
+    margin-top: 0;
+  }
+}
+
+/* ---------- the knights (the app's own way: ui/avatar.ts) ---------- */
+
+.knight {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 84px;
+  height: 84px;
+}
+
+.knight.kn-s {
+  width: 40px;
+  height: 40px;
+}
+
+.knight.kn-l {
+  width: 112px;
+  height: 112px;
+}
+
+.knight.kn-xl {
+  width: 176px;
+  height: 176px;
+}
+
+.knight img,
+.knight .kn-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.knight img {
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.knight .kn-live {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.knight :is(.kn-eye, .kn-ask, .kn-look) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.knight .kn-ask {
+  transform-origin: 20% 100%;
+}
+
+.knight .kn-look {
+  transform: translate(calc(var(--lx, 0) * 1px), calc(var(--ly, 0) * 1px));
+  transition: transform 220ms var(--ease-out);
+}
+
+@keyframes kn-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.08);
+  }
+}
+
+.knight:not([data-expression="pleased"], [data-expression="resting"]) .kn-eye {
+  animation: kn-blink 5.3s infinite;
+}
+
+.knight.kn-t1 .kn-eye {
+  animation-delay: -1.1s;
+}
+.knight.kn-t2 .kn-eye {
+  animation-delay: -2.3s;
+}
+.knight.kn-t3 .kn-eye {
+  animation-delay: -3.4s;
+}
+.knight.kn-t4 .kn-eye {
+  animation-delay: -4.2s;
+}
+
+@keyframes kn-glance {
+  0%,
+  56%,
+  100% {
+    transform: translate(0, 0);
+  }
+  60%,
+  70% {
+    transform: translate(-5px, -1px);
+  }
+  74%,
+  84% {
+    transform: translate(5px, -1px);
+  }
+  88% {
+    transform: translate(0, 0);
+  }
+}
+
+.knight[data-expression="idle"] .kn-gaze {
+  animation: kn-glance 8.5s ease-in-out infinite;
+}
+
+.knight.kn-t1 .kn-gaze {
+  animation-delay: -1.7s;
+}
+.knight.kn-t2 .kn-gaze {
+  animation-delay: -3.1s;
+}
+.knight.kn-t3 .kn-gaze {
+  animation-delay: -4.9s;
+}
+.knight.kn-t4 .kn-gaze {
+  animation-delay: -6.2s;
+}
+
+@keyframes kn-work {
+  0%,
+  18% {
+    transform: translate(-4px, 0);
+  }
+  25%,
+  43% {
+    transform: translate(-1px, 0);
+  }
+  50%,
+  68% {
+    transform: translate(2px, 0);
+  }
+  75%,
+  93% {
+    transform: translate(4px, 1px);
+  }
+  100% {
+    transform: translate(-4px, 0);
+  }
+}
+
+.knight[data-expression="working"] .kn-gaze {
+  animation: kn-work 2.8s ease-in-out infinite;
+}
+
+@keyframes kn-read {
+  0% {
+    transform: translate(-5px, -1px);
+  }
+  26% {
+    transform: translate(5px, -1px);
+  }
+  32% {
+    transform: translate(-5px, 2px);
+  }
+  58% {
+    transform: translate(5px, 2px);
+  }
+  64% {
+    transform: translate(-5px, 4px);
+  }
+  90% {
+    transform: translate(5px, 4px);
+  }
+  100% {
+    transform: translate(-5px, -1px);
+  }
+}
+
+.knight[data-expression="reading"] .kn-gaze {
+  animation: kn-read 3.4s ease-in-out infinite;
+}
+
+@keyframes kn-follow {
+  0%,
+  100% {
+    transform: translate(-5px, 0);
+  }
+  30%,
+  45% {
+    transform: translate(5px, -1px);
+  }
+  70%,
+  85% {
+    transform: translate(0, 2px);
+  }
+}
+
+.knight[data-expression="browsing"] .kn-gaze {
+  animation: kn-follow 3s ease-in-out infinite;
+}
+
+@keyframes kn-scan {
+  0%,
+  100% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+.knight[data-expression="checking"] .kn-gaze {
+  animation: kn-scan 2.6s ease-in-out infinite;
+}
+
+/* Once the pointer moves, the knights who aren't busy stop glancing about and look at it instead. */
+html[data-looking] .knight[data-follow] .kn-gaze {
+  animation: none;
+}
+
+/* The page's one moment: as it opens, the knights open their eyes, one room after another. */
+@keyframes kn-wake {
+  from {
+    transform: scaleY(0.08);
+  }
+}
+
+.sheet .knight .kn-look {
+  animation: kn-wake 420ms var(--ease-out) 260ms backwards;
+}
+
+.rooms .room:nth-child(2) .kn-look {
+  animation-delay: 340ms;
+}
+.rooms .room:nth-child(3) .kn-look {
+  animation-delay: 420ms;
+}
+.rooms .room:nth-child(4) .kn-look {
+  animation-delay: 500ms;
+}
+.rooms .room:nth-child(5) .kn-look {
+  animation-delay: 580ms;
+}
+.rooms .room:nth-child(6) .kn-look {
+  animation-delay: 660ms;
+}
+.table-place .kn-look {
+  animation-delay: 780ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .knight,
+  .knight * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---------- details: each drawn larger, under a drawing title ---------- */
+
+.detail {
+  padding: clamp(64px, 8vw, 104px) 0 0;
+}
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 28px;
+  border-bottom: 3px solid var(--ink);
+  box-shadow: 0 5px 0 -4px var(--ink);
+}
+
+.bubble {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.detail-text {
+  display: grid;
+  gap: 16px;
+  max-width: 62ch;
+}
+
+.detail-text.wide {
+  max-width: 70ch;
+  margin-bottom: 40px;
+}
+
+.more {
+  font-weight: 550;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 32px;
+}
+
+.detail-grid .detail-title {
+  margin-bottom: 0;
+}
+
+.detail-drawing {
+  min-width: 0;
+}
+
+.drawing-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+@media (min-width: 960px) {
+  .detail-grid {
+    grid-template-columns: 5fr 7fr;
+    column-gap: 64px;
+    align-items: start;
+  }
+
+  .detail-grid .detail-title {
+    grid-column: 1 / -1;
+  }
+
+  .detail-grid.flip {
+    align-items: center;
+  }
+
+  .detail-grid.flip .detail-text {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .detail-grid.flip .detail-drawing {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
+/* A: a knight's room, enlarged. */
+.big-room-walls {
+  position: relative;
+  display: grid;
+  gap: 24px;
+  justify-items: center;
+  padding: 28px 24px;
+  border: var(--wall) solid var(--ink);
+  background: var(--floor);
+}
+
+/* Its door to the hall: an opening in the bottom wall, the door standing open outward. */
+.big-room-door {
+  position: absolute;
+  right: 40px;
+  bottom: calc(-1 * var(--wall));
+  width: 44px;
+  height: var(--wall);
+  background: var(--floor);
+}
+
+.big-room-swing {
+  position: absolute;
+  top: calc(100% + var(--wall));
+  right: 40px;
+  width: 44px;
+  height: 44px;
+  transform: scaleX(-1);
+}
+
+.big-room .drawing-note {
+  margin-top: 16px;
+  max-width: calc(100% - 110px);
+}
+
+.fixtures {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.fixtures li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.fixtures b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.fixtures svg {
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (min-width: 560px) {
+  .big-room-walls {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    padding: 32px;
+    gap: 32px;
+  }
+}
+
+/* B: one task's life, as a line with its stations. */
+.sequence {
+  position: relative;
+  display: grid;
+  gap: 28px;
+  margin: 0 0 56px;
+  padding: 0 0 0 28px;
+  list-style: none;
+}
+
+.sequence::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  bottom: 10px;
+  border-left: 2px solid var(--ink);
+}
+
+.card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  left: -28px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.card[data-tone="needs"]::before {
+  border-color: var(--needs);
+  background: var(--needs);
+}
+
+.card[data-tone="ok"]::before {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.badge svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-tone="needs"] > .badge {
+  color: var(--needs);
+}
+
+[data-tone="ok"] > .badge {
+  color: var(--ok);
+}
+
+.card-title {
+  font-weight: 650;
+}
+
+.card-line {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.card-line code {
+  white-space: nowrap;
+}
+
+.card-line.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fake-button {
+  padding: 4px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.fake-button.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+@media (min-width: 860px) {
+  .sequence {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 32px;
+    padding: 30px 0 0;
+  }
+
+  .sequence::before {
+    left: 6px;
+    right: 6px;
+    top: 7px;
+    bottom: auto;
+    border-left: 0;
+    border-top: 2px solid var(--ink);
+  }
+
+  .card::before {
+    left: 0;
+    top: -30px;
+  }
+}
+
+/* Schedules: the tables a set of drawings keeps beside the plans. */
+.schedule {
+  overflow-x: auto;
+}
+
+.schedule table,
+.footprints {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.schedule caption {
+  caption-side: top;
+  max-width: 78ch;
+  padding-bottom: 14px;
+  text-align: left;
+  color: var(--ink-2);
+}
+
+.schedule caption b {
+  color: var(--ink);
+}
+
+.schedule thead th {
+  padding: 0 16px 8px 0;
+  border-bottom: 2px solid var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink-3);
+}
+
+.schedule tbody th,
+.schedule td {
+  padding: 12px 16px 12px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+  text-align: left;
+}
+
+.schedule tbody th {
+  font-weight: 600;
+}
+
+.schedule td {
+  color: var(--ink-2);
+}
+
+.schedule td.num {
+  color: var(--ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule.doors tbody th {
+  min-width: 150px;
+}
+
+.schedule.doors td:nth-child(2) {
+  min-width: 130px;
+}
+
+/* On a phone each door stands as a block of its own: the door, who passes, and its lock under it. */
+@media (max-width: 639px) {
+  .schedule.doors :is(table, tbody, tr, th, td) {
+    display: block;
+  }
+
+  .schedule.doors thead {
+    display: none;
+  }
+
+  .schedule.doors caption {
+    display: block;
+    width: 100%;
+  }
+
+  .schedule.doors tr {
+    padding: 12px 0 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .schedule.doors :is(tbody th, td) {
+    min-width: 0;
+    padding: 2px 0 0;
+    border: 0;
+  }
+
+  .schedule.doors td:nth-child(2)::before {
+    content: "Who passes: ";
+    color: var(--ink-3);
+  }
+}
+
+.schedule-note {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+.schedule-note a {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+/* D: footprints drawn to one scale. */
+.footprints tbody tr {
+  transition: background-color 120ms var(--ease-out);
+}
+
+.footprints tbody tr:hover {
+  background: var(--hush);
+}
+
+.footprints th,
+.footprints td {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+  text-align: left;
+}
+
+.footprints tbody th {
+  width: 34%;
+  padding-right: 20px;
+  font-weight: 650;
+}
+
+.fp-name {
+  display: block;
+}
+
+.fp-of {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+/* Each footprint is a dimension string, as a plan measures a wall: a line between two witness lines, a 45° tick at
+   each end, its figure beside it. Galahad's in ink, the others' lighter; all on the one scale drawn under them. */
+.fp-dim {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fp-dim > svg {
+  flex: none;
+  overflow: visible;
+}
+
+.fp-dim line {
+  stroke: var(--ink-3);
+  stroke-width: 1.25px;
+}
+
+.fp-dim .fp-tick {
+  stroke-width: 1.75px;
+}
+
+tr[data-ours] .fp-dim line {
+  stroke: var(--ink);
+  stroke-width: 2px;
+}
+
+.fp-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+tr[data-ours] .fp-value {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.footprints .fp-scale th,
+.footprints .fp-scale td {
+  padding-top: 20px;
+  border-bottom: 0;
+}
+
+.footprints tbody tr.fp-scale:hover {
+  background: none;
+}
+
+.scale-bar {
+  display: block;
+  overflow: visible;
+}
+
+.scale-bar rect {
+  stroke: var(--ink);
+  stroke-width: 1px;
+}
+
+.scale-solid {
+  fill: var(--ink);
+}
+
+.scale-open {
+  fill: var(--floor);
+}
+
+.scale-bar text {
+  fill: var(--ink-3);
+  font: 12px var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* On a phone each figure is set over its line, as a plan writes a dimension, so the longest leaves the row no wider. */
+@media (max-width: 640px) {
+  .footprints tbody th {
+    width: 42%;
+  }
+
+  .fp-dim {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 0;
+  }
+}
+
+/* E: the app, on a phone drawn to the plan's wall. */
+.handset {
+  width: min(100%, 330px);
+  margin-inline: auto;
+  padding: 12px;
+  border: var(--wall) solid var(--ink);
+  border-radius: 44px;
+  background: var(--floor);
+}
+
+.handset-screen {
+  display: grid;
+  gap: 4px;
+  padding: 18px 10px 14px;
+  border-radius: 30px;
+  background: var(--paper);
+  align-content: start;
+}
+
+.handset-title {
+  padding: 0 8px 10px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.handset .row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.handset .row > span {
+  display: grid;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.handset .row b {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.handset .row .needs {
+  color: var(--needs);
+}
+
+.handset-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--floor);
+  font-weight: 600;
+}
+
+.handset-card .badge {
+  color: var(--needs);
+}
+
+/* F: the front door, close up. */
+.entrance {
+  padding-bottom: clamp(72px, 10vw, 120px);
+}
+
+.install {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  max-width: 100%;
+}
+
+.install-command {
+  min-width: 0;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.install-prompt {
+  opacity: 0.55;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.install-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 550 13px/1 var(--sans);
+  cursor: pointer;
+  transition: scale 120ms var(--ease-out);
+}
+
+.install-copy[hidden] {
+  display: none;
+}
+
+.install-copy:active {
+  scale: 0.97;
+}
+
+.install-copy svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.install-copy[data-done] svg {
+  visibility: hidden;
+}
+
+.install-door {
+  position: relative;
+  z-index: 1;
+  padding: 14px 14px 14px 20px;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+/* Standing in the front wall, the door keeps a little floor round it, so the wall stops short of it on either side. */
+@media (min-width: 640px) {
+  .install-door {
+    box-shadow: 0 0 0 10px var(--floor);
+  }
+}
+
+.install-door .install-copy:focus-visible {
+  outline-color: var(--on-ink);
+}
+
+.install-plain {
+  width: fit-content;
+  margin-bottom: 36px;
+  padding: 18px 18px 18px 22px;
+  border: 2px solid var(--ink);
+  background: var(--floor);
+}
+
+.install-plain .install-command {
+  font-size: clamp(14px, 1.2vw + 10px, 18px);
+}
+
+@media (max-width: 420px) {
+  .install-command,
+  .install-plain .install-command {
+    font-size: 12.5px;
+  }
+
+  .install-door,
+  .install-plain {
+    padding: 12px;
+  }
+}
+
+/* A command that may wrap breaks only between its words, never at a word's own hyphens. */
+.nb {
+  white-space: nowrap;
+}
+
+@media (max-width: 350px) {
+  .install-command {
+    white-space: normal;
+  }
+}
+
+.steps {
+  display: grid;
+  gap: 10px;
+  max-width: 70ch;
+  margin: 0 0 32px;
+  padding-left: 1.4em;
+}
+
+.steps li::marker {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.entrance-notes {
+  display: grid;
+  gap: 14px;
+  max-width: 70ch;
+  margin-bottom: 28px;
+  color: var(--ink-2);
+}
+
+.entrance-notes code {
+  color: var(--ink);
+}
+
+.sha code {
+  overflow-wrap: anywhere;
+  font-size: 0.8em;
+}
+
+/* ---------- reading pages: the Oath, the 404 ---------- */
+
+.reading {
+  max-width: calc(68ch + 2 * var(--gutter));
+  padding-block: clamp(48px, 8vw, 96px);
+}
+
+.reading h1 {
+  max-width: 18ch;
+  margin-bottom: 28px;
+  font-size: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem);
+}
+
+.reading h2 {
+  margin: 48px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink);
+  font-size: 1.5rem;
+}
+
+.reading p,
+.reading ul,
+.reading ol {
+  margin: 0 0 16px;
+}
+
+.reading li {
+  margin-bottom: 8px;
+}
+
+.reading li::marker {
+  color: var(--ink-3);
+}
+
+.reading table {
+  width: 100%;
+  margin: 8px 0 20px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.reading th,
+.reading td {
+  padding: 10px 14px 10px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reading thead th {
+  border-bottom: 2px solid var(--ink);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.reading em {
+  color: var(--ink-2);
+}
+
+.lost p {
+  max-width: 52ch;
+}
+
+.dead-end {
+  display: block;
+  width: 200px;
+  height: auto;
+  margin-bottom: 36px;
+  overflow: visible;
+  fill: none;
+  stroke: var(--ink);
+}
+
+.dead-end .poche {
+  fill: var(--ink);
+  stroke: none;
+}
+
+/* ---------- the title block ---------- */
+
+.title-block {
+  padding: 0 0 clamp(32px, 6vw, 56px);
+}
+
+.tb {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 3px solid var(--ink);
+  background: var(--ink);
+  gap: 1px;
+}
+
+.tb > div {
+  padding: 14px 16px;
+  background: var(--paper);
+}
+
+/* Two to a row on a narrow screen: a last cell on its own takes the row, so no ink shows through beside it. */
+@media (max-width: 899px) {
+  .tb > div:last-child:nth-child(even) {
+    grid-column: 1 / -1;
+  }
+}
+
+.tb dt {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.tb dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.tb .tb-project {
+  grid-column: 1 / -1;
+}
+
+.tb-project dd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.tb-project dd > span {
+  display: grid;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.tb-project b {
+  font-size: 15px;
+  color: var(--ink);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 900px) {
+  .tb {
+    grid-template-columns: 2.2fr repeat(5, minmax(0, 1fr));
+  }
+
+  .tb .tb-project {
+    grid-column: auto;
+  }
+}

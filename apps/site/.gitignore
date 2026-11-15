@@ -1,0 +1,4 @@
+.astro/
+.wrangler/
+# Design-review captures (impeccable): local evidence, never committed.
+.impeccable/review/

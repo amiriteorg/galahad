@@ -1,0 +1,14 @@
+---
+/*
+ * A door as a plan draws it, standing open: the leaf at a right angle to its wall, and the arc its edge sweeps. Hinged
+ * at the top left, opening down; the stylesheet turns it for other walls.
+ */
+interface Props {
+  class?: string;
+}
+---
+
+<svg class:list={["swing", Astro.props.class]} viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+  <path class="swing-leaf" d="M1 0V35" />
+  <path class="swing-arc" d="M36 1A35 35 0 0 1 1 36" />
+</svg>

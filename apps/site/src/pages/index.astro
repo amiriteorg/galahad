@@ -1,0 +1,449 @@
+---
+import Base from "../layouts/Base.astro";
+import Install from "../components/Install.astro";
+import Knight from "../components/Knight.astro";
+import RoundTable from "../components/RoundTable.astro";
+import Swing from "../components/Swing.astro";
+import { BUN_VERSION, INSTALLER_SHA256, REPO, SIZE, TRIALS, compact, doc } from "../lib/facts.ts";
+
+/* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
+   with one line of it as the app's roster says it. Illustrative, and the caption says so. */
+const rooms = [
+  { art: "lancelot", name: "Lancelot", vm: "1 CPU, 2 GB", expression: "checking", line: "Running gate 3 of 4: bun test", label: "Lancelot, running its gates" },
+  { art: "percival", name: "Percival", vm: "1 CPU, 2 GB", expression: "reading", line: "Reading why the upload test fails", label: "Percival, reading" },
+  { art: "gawain", name: "Gawain", vm: "1 CPU, 2 GB", expression: "asking", line: "Asks you to approve “Bump zod to 4.2”", tone: "needs", label: "Gawain, asking for your approval" },
+  { art: "kay", name: "Kay", vm: "2 CPU, 4 GB, desktop", expression: "browsing", line: "In its browser, trying the checkout", label: "Kay, using its desktop" },
+  { art: "bors", name: "Bors", vm: "1 CPU, 2 GB", expression: "pleased", line: "Verified: the flaky test is fixed", tone: "ok", label: "Bors, its task verified" },
+  { art: "gareth", name: "Gareth", vm: "1 CPU, 2 GB", expression: "resting", line: "Paused by you", label: "Gareth, paused" },
+] as const;
+const follows = (expression: string) => expression === "idle" || expression === "asking" || expression === "pleased";
+
+/* Section D draws every footprint to one scale: the longest takes 80 % of the row, and the scale bar under them is cut
+   at every 250,000 lines on the same scale. */
+const widest = Math.max(...SIZE.rows.map((row) => row.lines));
+const along = (lines: number) => `${((lines / widest) * 80).toFixed(2)}%`;
+const STEP = 250_000;
+const marks = Array.from({ length: Math.floor((widest * 1.05) / STEP) + 1 }, (_, i) => i * STEP);
+
+const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
+---
+
+<Base
+  title="Galahad: knights that work on machines you own"
+  description="Galahad is a lean, open-source agent. His knights each work in a VM of their own on your hardware, and a task is done only when its gates pass and an independent reviewer accepts it. Install it in one line."
+  path="/"
+>
+  <section class="sheet" aria-labelledby="title">
+    <div class="wrap">
+      <div class="plan">
+        <header class="sheet-head">
+          <h1 id="title">Knights that work on machines you own.</h1>
+          <p class="lede">
+            Galahad is a lean, open-source agent for coding and long projects. He gives the work to persistent knights,
+            each in a VM of its own on your hardware, and calls a task done only when its gates pass and a reviewer who
+            didn't do it accepts the change.
+          </p>
+        </header>
+
+        <div class="building" role="group" aria-labelledby="plan-caption">
+          <div class="front">
+            <span class="front-gap" aria-hidden="true"></span>
+            <Swing class="front-swing" />
+            <Swing class="front-swing front-swing-r" />
+            <div class="door-frame">
+              <Install />
+              <a class="callout callout-front" href="#install" aria-label="Detail F: the front door">F</a>
+            </div>
+            <p class="front-note">
+              For macOS and Linux, never as root. <a href="/install">Read the script</a> first, or{" "}
+              <a href="#install">see each step</a>.
+            </p>
+          </div>
+
+          <ol class="rooms" aria-label="The knights' rooms">
+            {
+              rooms.map((room, i) => (
+                <li class="room" data-tone={"tone" in room ? room.tone : undefined}>
+                  <p class="room-name">{room.name}</p>
+                  <p class="room-vm">
+                    <span class="sr-only">Its VM: </span>
+                    {room.vm}
+                  </p>
+                  <Knight art={room.art} label={room.label} expression={room.expression} follow={follows(room.expression)} />
+                  <p class="room-line">{room.line}</p>
+                  <span class="door" aria-hidden="true" />
+                  <Swing class="room-swing" />
+                  {i === 0 && (
+                    <a class="callout callout-room" href="#knight" aria-label="Detail A: a knight's room">
+                      A
+                    </a>
+                  )}
+                  {room.art === "bors" && (
+                    <a class="callout callout-proof" href="#proof" aria-label="Detail B: how work is verified">
+                      B
+                    </a>
+                  )}
+                </li>
+              ))
+            }
+          </ol>
+
+          <div class="hall">
+            <div class="table-place">
+              <RoundTable />
+              <Knight art="galahad" label="Galahad, at the Round Table" size="l" follow />
+            </div>
+            <div class="hall-label">
+              <p class="room-name">The Round Table</p>
+              <p class="room-line">Galahad gives out the work here and answers you; the knights talk it over together.</p>
+            </div>
+          </div>
+
+          <div class="vault">
+            <svg class="lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2" /><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" /><path d="M12 14.5v2.5" /></svg>
+            <p class="room-name">Vault</p>
+            <p class="room-line">Your keys, sealed to your devices. No model ever sees one.</p>
+            <a class="callout callout-vault" href="#locks" aria-label="Detail C: the locks">C</a>
+          </div>
+
+          <a class="callout callout-scale" href="#scale" aria-label="Detail D: drawn to scale">D</a>
+        </div>
+
+        <div class="annex">
+          <span class="annex-line" aria-hidden="true"></span>
+          <div class="phone">
+            <svg class="phone-plan" viewBox="0 0 40 72" aria-hidden="true" focusable="false"><rect x="1" y="1" width="38" height="70" rx="8" /><path d="M16 5.5h8" /></svg>
+            <div>
+              <p class="room-name">Your phone</p>
+              <p class="room-line">Paired with a six-digit code. Every request it sends is signed.</p>
+            </div>
+            <a class="callout callout-phone" href="#phone" aria-label="Detail E: from your phone">E</a>
+          </div>
+        </div>
+
+        <p class="plan-caption" id="plan-caption">
+          <svg class="north" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10.5" /><path d="M12 4.5 15.5 17 12 14.5 8.5 17Z" /></svg>
+          <span>An example Roundtable, drawn from above: six knights, each in a VM of its own, around the hall where Galahad sits. The work shown is illustrative.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail" id="knight" aria-labelledby="knight-title">
+    <div class="wrap detail-grid">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">A</span>
+        <h2 id="knight-title">A knight keeps its room between tasks.</h2>
+      </header>
+      <div class="detail-text">
+        <p>
+          A knight is not a helper that forgets when the task ends. It has a name and a job, a timeline of everything you
+          said to it and every task it took, notes it keeps for itself, and a VM of its own: its own kernel, disk and
+          processes, on a Linux machine of yours with KVM.
+        </p>
+        <p>
+          Give it a task by talking to it, or give one to the Roundtable and the knight best suited takes it. Watch its
+          screen and take it over, or open a terminal into its VM, from the app or the command line.
+        </p>
+        <p class="more"><a href={doc("ROUNDTABLE")}>How the Roundtable works</a></p>
+      </div>
+      <div class="detail-drawing big-room">
+        <div class="big-room-walls">
+          <Knight art="lancelot" label="Lancelot, at work in its room" size="xl" expression="working" />
+          <ul class="fixtures">
+            <li>
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="3" y="5" width="26" height="17" rx="2" /><path d="M11 27h10M16 22v5" /></svg>
+              <span><b>Its desktop</b>, when you give it one: watch it, and take it over.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="3" y="6" width="26" height="20" rx="2" /><path d="m9 13 4 3-4 3M15 19h7" /></svg>
+              <span><b>A terminal</b> into its VM, for you and for the vendors' own sign-ins.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M4 7h24M4 16h24M4 25h24" /><path d="M8 7v-3M14 16v-3M21 25v-3M24 7v-3" /></svg>
+              <span><b>Its notes</b>, kept between tasks: what it learned, and the story of each room.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M4 28V4h10" /><path d="M4 28h24" /><path d="M14 4a24 24 0 0 1 14 24" /></svg>
+              <span><b>Its door to the hall</b>: its timeline, and the rooms where it talks with other knights.</span>
+            </li>
+          </ul>
+          <span class="big-room-door" aria-hidden="true"></span>
+          <Swing class="big-room-swing" />
+        </div>
+        <p class="drawing-note">Lancelot's room, enlarged.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail" id="proof" aria-labelledby="proof-title">
+    <div class="wrap">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">B</span>
+        <h2 id="proof-title">Nothing is done until it is verified.</h2>
+      </header>
+      <div class="detail-text wide">
+        <p>
+          A task carries its gates: the commands that must pass. Each is tried before the work starts, so one that
+          already passes proves nothing. When the knight is finished, the gates run, and a reviewer who did not do the
+          work is shown the diff and what the gates printed. Only then is the task verified. Work a knight proposes waits
+          for you.
+        </p>
+      </div>
+
+      <ol class="sequence" aria-label="One task, from proposal to verified">
+        <li class="card" data-tone="needs">
+          <span class="badge">Waiting for you</span>
+          <p class="card-title">Bump zod to 4.2</p>
+          <p class="card-line">Gawain proposes it, with its gates: <code>bun test</code>, <code>tsc</code>.</p>
+          <p class="card-actions" aria-hidden="true"><span class="fake-button primary">Approve</span><span class="fake-button">Decline</span></p>
+        </li>
+        <li class="card" data-tone="ink">
+          <span class="badge">Running</span>
+          <p class="card-title">Bump zod to 4.2</p>
+          <p class="card-line mono">Gate 1/2 · bun test<br />412 pass, 0 fail</p>
+          <p class="card-line">In Gawain's VM, with its own disk.</p>
+        </li>
+        <li class="card" data-tone="ink">
+          <span class="badge">Under review</span>
+          <p class="card-title">Bump zod to 4.2</p>
+          <p class="card-line">A reviewer that didn't write the change reads the diff and the gates' output.</p>
+        </li>
+        <li class="card" data-tone="ok">
+          <span class="badge"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m3.5 8.5 3 3 6-7" /></svg>Verified</span>
+          <p class="card-title">Bump zod to 4.2</p>
+          <p class="card-line">Both gates passed after the work, and the reviewer accepted it.</p>
+        </li>
+      </ol>
+
+      <div class="schedule trials">
+        <table>
+          <caption>
+            <b>Trials, {TRIALS.date}.</b> Eight seeded tasks in a small repository: a bug upstream of its symptom, a
+            slow function, a refactor, a written spec, messy data, a race, and two honesty tests. Hidden tests grade the
+            result afterwards, in a fresh sandbox Galahad never had. The same eight, run twice that day, at two revisions.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              {TRIALS.runs.map((run) => <th scope="col">Revision <code>{run}</code></th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              TRIALS.rows.map((row) => (
+                <tr>
+                  <th scope="row">{"href" in row ? <a href={row.href}>{row.what}</a> : row.what}</th>
+                  {row.values.map((value) => (
+                    <td class="num">{value}</td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="schedule-note">
+          With the {TRIALS.models}. Every number is the trial runner's own record, kept on the node.{" "}
+          <a href={doc("TRIALS")}>How the trials work</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail" id="locks" aria-labelledby="locks-title">
+    <div class="wrap">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">C</span>
+        <h2 id="locks-title">Every door locks, and you hold the keys.</h2>
+      </header>
+      <div class="detail-text wide">
+        <p>
+          Galahad runs on your machines and holds your keys, so every way in is locked and every way out asks you. Each
+          lock below is in the code, with tests that hold it.
+        </p>
+      </div>
+      <div class="schedule doors">
+        <table>
+          <caption><b>Door schedule.</b> Who may pass, and the lock on the door.</caption>
+          <thead>
+            <tr><th scope="col">Door</th><th scope="col">Who passes</th><th scope="col">The lock</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Your phone to your node</th>
+              <td>A device you paired</td>
+              <td>Six digits compared on both screens; the device's key never leaves it (on iPhone, the Secure Enclave). Every request is signed, and each route has its own scope.</td>
+            </tr>
+            <tr>
+              <th scope="row">A new machine to your fleet</th>
+              <td>A machine you invited</td>
+              <td>An invite and the same six digits, then your approval a second time, because a machine receives the vault.</td>
+            </tr>
+            <tr>
+              <th scope="row">Your keys to a provider</th>
+              <td>The vault</td>
+              <td>Sealed to your devices, each key pinned to the one address it may go to. No model, and no knight, ever sees one.</td>
+            </tr>
+            <tr>
+              <th scope="row">A knight's VM to the world</th>
+              <td>The knight</td>
+              <td>The internet, or only the model gateway if you choose. Either way the VM holds just a scoped, revocable gateway token, and never a key that can push to GitHub.</td>
+            </tr>
+            <tr>
+              <th scope="row">Anything outward or destructive</th>
+              <td>The oath gate</td>
+              <td>A push, a message, a delete waits for your approval, sent at most once. No answer means no.</td>
+            </tr>
+            <tr>
+              <th scope="row">Your Claude or ChatGPT plan</th>
+              <td>Claude Code or Codex, in a knight's VM</td>
+              <td>You sign in there, through the vendor's own flow. Galahad never holds, reads or relays the sign-in.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="schedule-note">Read <a href={doc("SECURITY")}>the security model</a> and <a href="/oath/">the Oath</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail" id="scale" aria-labelledby="scale-title">
+    <div class="wrap">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">D</span>
+        <h2 id="scale-title">Drawn to the same scale.</h2>
+      </header>
+      <div class="detail-text wide">
+        <p>
+          A codebase you can read is one you can trust and change. Here are four agents' footprints, each dimensioned by
+          its source: lines of code with the tests left out, counted on {SIZE.date}.
+        </p>
+      </div>
+      <table class="footprints">
+        <caption class="sr-only">Lines of source, tests left out, by project</caption>
+        <thead class="sr-only">
+          <tr><th scope="col">Project</th><th scope="col">Lines</th></tr>
+        </thead>
+        <tbody>
+          {
+            SIZE.rows.map((row) => (
+              <tr data-ours={row.ours ? "" : undefined}>
+                <th scope="row">
+                  <span class="fp-name">{row.name}</span>
+                  <span class="fp-of">{row.of}</span>
+                </th>
+                <td>
+                  <span class="fp-dim">
+                    <svg width={along(row.lines)} height="28" aria-hidden="true" focusable="false">
+                      <line class="fp-line" x1="0" y1="18" x2="100%" y2="18" />
+                      <line class="fp-witness" x1="0" y1="8" x2="0" y2="28" />
+                      <svg x="100%" overflow="visible"><line class="fp-witness" x1="0" y1="8" x2="0" y2="28" /></svg>
+                      <line class="fp-tick" x1="-4" y1="22" x2="4" y2="14" />
+                      <svg x="100%" overflow="visible"><line class="fp-tick" x1="-4" y1="22" x2="4" y2="14" /></svg>
+                    </svg>
+                    <span class="fp-value">
+                      <span aria-hidden="true">{compact(row.lines)}</span>
+                      <span class="sr-only">{row.exact ? `${row.lines.toLocaleString("en-US")} lines` : `about ${compact(row.lines)} lines`}</span>
+                    </span>
+                  </span>
+                </td>
+              </tr>
+            ))
+          }
+          <tr class="fp-scale" aria-hidden="true">
+            <th scope="row"><span class="fp-of">Scale, in lines</span></th>
+            <td>
+              <svg class="scale-bar" width="100%" height="34" focusable="false">
+                {marks.slice(0, -1).map((at, i) => <rect class={i % 2 ? "scale-open" : "scale-solid"} x={along(at)} y="4" width={along(STEP)} height="6" />)}
+                {marks.map((at, i) => <text x={along(at)} y="28" text-anchor={i === 0 ? "start" : "middle"}>{compact(at)}</text>)}
+              </svg>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="schedule-note">
+        Counted with <code>git ls-files</code> and <code>wc -l</code>: TypeScript, JavaScript, Python and Swift files,
+        test files and fixtures left out. Galahad at <a href={`${REPO}/commit/${SIZE.commit}`}><code>{SIZE.commit}</code></a>;
+        Hermes Agent at version 0.21 (it has grown since); Rakazo and OpenMausBot from their main branches that day, to
+        the thousand.
+      </p>
+    </div>
+  </section>
+
+  <section class="detail" id="phone" aria-labelledby="phone-title">
+    <div class="wrap detail-grid flip">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">E</span>
+        <h2 id="phone-title">The Roundtable, in your pocket.</h2>
+      </header>
+      <div class="detail-text">
+        <p>
+          The app shows every knight and what it is doing, and what waits for you. Approve a task with one tap, give one
+          by talking to a knight, watch its screen or take it over. It installs from your node as a web app; an iPhone app
+          is in testing.
+        </p>
+        <p class="more"><a href={doc("GETTING-STARTED")}>Pair your phone</a></p>
+      </div>
+      <div class="detail-drawing">
+        <div class="handset" aria-label="The app's Roundtable, an example" role="img">
+          <div class="handset-screen" aria-hidden="true">
+            <p class="handset-title">Roundtable</p>
+            <div class="row">
+              <Knight art="galahad" label="" size="s" />
+              <span><b>Galahad</b><span class="needs">1 thing needs you</span></span>
+            </div>
+            <div class="row">
+              <Knight art="gawain" label="" size="s" expression="asking" />
+              <span><b>Gawain</b><span>Asks you: Bump zod to 4.2</span></span>
+            </div>
+            <div class="row">
+              <Knight art="lancelot" label="" size="s" expression="checking" />
+              <span><b>Lancelot</b><span>Gate 3 of 4: bun test</span></span>
+            </div>
+            <div class="row">
+              <Knight art="bors" label="" size="s" expression="pleased" />
+              <span><b>Bors</b><span>Verified: the flaky test is fixed</span></span>
+            </div>
+            <div class="handset-card">
+              <span class="badge">Waiting for you</span>
+              <p>Bump zod to 4.2</p>
+              <p class="card-actions"><span class="fake-button primary">Approve</span><span class="fake-button">Decline</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail entrance" id="install" aria-labelledby="install-title">
+    <div class="wrap">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">F</span>
+        <h2 id="install-title">The front door: one line.</h2>
+      </header>
+      <Install variant="plain" />
+      <ol class="steps">
+        <li>Fetches Galahad, the newest commit on main, from GitHub.</li>
+        <li>Installs its own Bun {BUN_VERSION}, checked against its checksum, in <code>~/.local/share/galahad</code>. A Bun of yours is left alone.</li>
+        <li>Puts the <code>galahad</code> command in <code>~/.local/bin</code>.</li>
+        <li>Founds a fleet on this machine, or joins yours with <code>--join</code> and an invite.</li>
+        <li>Keeps the node running as a service of yours: launchd on a Mac, systemd on Linux.</li>
+        <li>Publishes the app on your tailnet when Tailscale is here, and shows the code to pair your phone.</li>
+      </ol>
+      <div class="entrance-notes">
+        <p>
+          Nothing runs as root and nothing is written outside your home. Run it again to update. To see each change
+          before it is made:{" "}
+          <code>{PLAN.split(" ").map((word, i) => <>{i > 0 && " "}<span class="nb">{word}</span></>)}</code>
+        </p>
+        <p>
+          Knights work in VMs, so they need a Linux machine with Docker and KVM;{" "}
+          <a href={doc("GETTING-STARTED")}>Getting started</a> sets one up.
+        </p>
+        <p class="sha">
+          The script is <a href="/install">galahad.sh/install</a>, SHA-256 <code>{INSTALLER_SHA256}</code>.
+        </p>
+      </div>
+      <p class="more"><a href={REPO}>The source on GitHub</a></p>
+    </div>
+  </section>
+</Base>

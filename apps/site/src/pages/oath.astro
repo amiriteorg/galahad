@@ -1,0 +1,19 @@
+---
+/*
+ * The Oath, as docs/OATH.md has it: read from the document at build time, so the site never says a different oath.
+ */
+import Base from "../layouts/Base.astro";
+import { Content } from "../../../../docs/OATH.md";
+import { doc } from "../lib/facts.ts";
+---
+
+<Base
+  title="The Oath of Galahad"
+  description="What Galahad and every knight is bound by: his character and duties, creating is free and deleting asks, your keys, and the limits no instruction overrides."
+  path="/oath/"
+>
+  <article class="wrap reading">
+    <Content />
+    <p class="more"><a href={doc("OATH")}>The Oath in the repository</a>, with its history.</p>
+  </article>
+</Base>

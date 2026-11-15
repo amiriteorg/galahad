@@ -1,0 +1,81 @@
+---
+/*
+ * Every page of galahad.sh: the head, the site's bar, and the title block a plan carries in its corner, here at the foot.
+ */
+import "../styles/site.css";
+import icon from "../../../web/src/icon-192.png";
+import Mark from "../components/Mark.astro";
+import { COMMIT, DOCS, REPO } from "../lib/facts.ts";
+
+interface Props {
+  title: string;
+  description: string;
+  /** The page's path on galahad.sh, for its canonical address. */
+  path: string;
+}
+const { title, description, path } = Astro.props;
+const canonical = new URL(path, "https://galahad.sh").href;
+const home = path === "/" ? "" : "/";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:type" content="website" />
+    <link rel="canonical" href={canonical} />
+    {/* The app's icon, the Roundtable: drawn for browsers that take SVG, rendered for the rest. */}
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href={icon.src} type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="bar">
+      <div class="wrap bar-row">
+        <a class="brand" href="/" aria-label="Galahad, home">
+          <Mark size={26} />
+          <span>Galahad</span>
+        </a>
+        <nav aria-label="Site">
+          <a href={`${home}#proof`}>Proof</a>
+          <a href={`${home}#locks`}>Security</a>
+          <a href="/oath/" aria-current={path === "/oath/" ? "page" : undefined}>The Oath</a>
+          <a href={REPO}>GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="title-block">
+      <div class="wrap">
+        <dl class="tb">
+          <div class="tb-project">
+            <dt class="sr-only">Project</dt>
+            <dd>
+              <Mark size={36} />
+              <span><b>Galahad</b><span>A lean agent whose knights work on machines you own.</span></span>
+            </dd>
+          </div>
+          <div><dt>Licence</dt><dd><a href={`${REPO}/blob/main/LICENSE`}>Apache-2.0</a></dd></div>
+          <div><dt>Source</dt><dd><a href={REPO}>github.com/<wbr />amiriteorg/<wbr />galahad</a></dd></div>
+          <div><dt>Read</dt><dd><a href={DOCS}>The docs</a>, <a href="/oath/">the Oath</a></dd></div>
+          {COMMIT && <div><dt>Drawn from</dt><dd><a href={`${REPO}/commit/${COMMIT}`}><code>{COMMIT}</code></a></dd></div>}
+          <div><dt>Made by</dt><dd>Amirite, 2026</dd></div>
+        </dl>
+      </div>
+    </footer>
+    <script>
+      import "../scripts/site.ts";
+    </script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+---
+/*
+ * The install line: the page's one primary action. Without script it is selectable text; with script, Copy appears.
+ */
+import { INSTALL } from "../lib/facts.ts";
+
+interface Props {
+  /** "door": the front door of the plan, in ink. "plain": the line on its own, in the install section. */
+  variant?: "door" | "plain";
+}
+const { variant = "door" } = Astro.props;
+---
+
+<div class:list={["install", `install-${variant}`]}>
+  <code class="install-command"><span class="install-prompt" aria-hidden="true">$ </span>{INSTALL}</code>
+  <button class="install-copy" type="button" data-copy={INSTALL} hidden>
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.25" y="5.25" width="8" height="8" rx="1.5" /><path d="M10.75 5.25V3.75A1.5 1.5 0 0 0 9.25 2.25H3.75A1.5 1.5 0 0 0 2.25 3.75V9.25A1.5 1.5 0 0 0 3.75 10.75H5.25" /></svg>
+    <span data-copy-label>Copy</span>
+  </button>
+</div>

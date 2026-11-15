@@ -10,7 +10,7 @@
 #  site-gate  ┘
 #  sandbox    real-Docker sandbox tests; opt-in via the repo variable SANDBOX_TESTS=true (GitHub's runner
 #             has Docker and no KVM: the microVM cases are skipped there)
-#  site       on main, after everything passes: deploy galahad.bot (when CLOUDFLARE_API_TOKEN exists)
+#  site       on main, after everything passes: deploy galahad.sh (and galahad.bot) when CLOUDFLARE_API_TOKEN exists
 #
 # Hardening: read-only token, actions pinned to commit SHAs, no pull_request_target,
 # credentials not persisted in the checkout, superseded runs cancelled.
@@ -90,7 +90,15 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
-      - run: bun apps/site/scripts/check.ts
+      # Astro builds on Node (22.23 or later), which a runner may not have.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+        working-directory: apps/site
+      # Build the site, then check what it would serve (scripts/check.ts).
+      - run: bun run check
+        working-directory: apps/site
 
   sandbox:
     name: Sandbox (real Docker)
@@ -112,7 +120,7 @@ jobs:
           GALAHAD_DOCKER_TESTS: "1"
 
   site:
-    name: Deploy galahad.bot
+    name: Deploy galahad.sh
     needs: [typecheck, test, bench, site-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -125,7 +133,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
-      # wrangler runs on Node (22 or later), which a runner may not have.
+      # Astro and wrangler run on Node (22.23 or later), which a runner may not have.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -142,5 +150,5 @@ jobs:
             echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the site deploy."
             exit 0
           fi
-          bun scripts/check.ts
+          bun run check
           ./node_modules/.bin/wrangler deploy

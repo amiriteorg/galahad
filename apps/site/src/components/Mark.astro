@@ -1,0 +1,19 @@
+---
+/*
+ * The site's mark: the Roundtable, the app's icon without its tile (assets/icon.svg is the favicon): the ring and the
+ * knights' chairs in ink, Galahad's seat in his red, so it holds on a light page and a dark one.
+ */
+import { ROUNDTABLE, seat, turn } from "../lib/roundtable.ts";
+
+interface Props {
+  size: number;
+}
+const { size } = Astro.props;
+const { table, chair, siege, seats } = ROUNDTABLE;
+---
+
+<svg class="mark" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" focusable="false">
+  <circle cx="12" cy="12" r={table.r} fill="none" stroke="currentColor" stroke-width={table.width} />
+  <g fill="currentColor">{seats.map((deg) => <rect {...seat(chair, false)} transform={turn(deg)} />)}</g>
+  <rect class="mark-siege" {...seat(siege, true)} />
+</svg>
