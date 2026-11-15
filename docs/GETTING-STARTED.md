@@ -1,6 +1,6 @@
 # Getting started
 
-This guide sets up the target layout: your **Windows laptop** (`wkp-minaltan`) plus one **beefy Linux server** on the same tailnet, with Docker and VMs. Both run a Galahad node and share one mind.
+This guide sets up the target layout: your **Windows laptop** plus one **beefy Linux server** on the same tailnet, with Docker and VMs. Both run a Galahad node and share one mind.
 
 ## 0. Prerequisites (both machines)
 
@@ -45,7 +45,7 @@ New-NetFirewallRule -DisplayName "Galahad (tailnet)" -Direction Inbound -Protoco
 bun galahad expose     # runs: tailscale serve --bg --https=443 http://127.0.0.1:7778 (use --https 8443 if 443 is taken)
 ```
 
-The PWA is now at `https://wkp-minaltan.<your-tailnet>.ts.net/`, reachable only from your tailnet, over HTTPS with a real certificate.
+The PWA is now at `https://<this-machine>.<your-tailnet>.ts.net/`, reachable only from your tailnet, over HTTPS with a real certificate.
 
 > The PWA's build, serving, pairing protocol and signed API calls are tested, and it has paired and run in a real browser (headless Edge, November 2026). Please report anything that looks off.
 
@@ -96,11 +96,11 @@ The script is idempotent. It works on Linux (a systemd user service) and macOS (
 
 ```sh
 # a new fleet whose first node is the server
-scripts/deploy.sh wmd@ultra --found camelot --name ultra
+scripts/deploy.sh you@server --found camelot --name server
 # or: add the server to an existing fleet
-scripts/deploy.sh wmd@ultra --join "$(bun galahad invite --no-wait | grep -o 'gi1\.[A-Za-z0-9_-]*')" --name ultra
+scripts/deploy.sh you@server --join "$(bun galahad invite --no-wait | grep -o 'gi1\.[A-Za-z0-9_-]*')" --name server
 # later: ship the current commit to the node, test it there, restart it
-scripts/deploy.sh wmd@ultra
+scripts/deploy.sh you@server
 ```
 
 What a deploy does:
@@ -114,7 +114,7 @@ What a deploy does:
 
 You need SSH access to the server first. Pick one:
 
-- **Tailscale SSH (no keys to manage):** run `sudo tailscale set --ssh` on the server once, then deploy with `GALAHAD_SSH="tailscale ssh" scripts/deploy.sh wmd@ultra …`.
+- **Tailscale SSH (no keys to manage):** run `sudo tailscale set --ssh` on the server once, then deploy with `GALAHAD_SSH="tailscale ssh" scripts/deploy.sh you@server …`.
 - **An SSH key:** add the laptop's public key to `~/.ssh/authorized_keys` on the server.
 
 ### By hand

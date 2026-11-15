@@ -7,8 +7,8 @@
 # repoint the symlink + restart); the current release and the two before it are kept.
 #
 # usage:
-#   scripts/deploy.sh <ssh-target> --found camelot [--name ultra]   first node of a new fleet
-#   scripts/deploy.sh <ssh-target> --join <invite> [--name ultra]   join an existing fleet
+#   scripts/deploy.sh <ssh-target> --found camelot [--name server]  first node of a new fleet
+#   scripts/deploy.sh <ssh-target> --join <invite> [--name server]  join an existing fleet
 #   scripts/deploy.sh <ssh-target>                                  update an existing node
 # root targets only (Galahad then runs as a dedicated `galahad` user, never as root):
 #   --sudo              give the galahad user passwordless sudo, with every command logged
