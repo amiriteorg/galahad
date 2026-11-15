@@ -789,7 +789,7 @@
       dialog.palette::backdrop { background: var(--overlay); opacity: 0; transition: opacity var(--d-1) var(--ease-out); }
       dialog.palette.shown::backdrop { opacity: 1; }
       @media (max-width: 639px) { dialog.palette { margin-top: calc(var(--safe-top) + 12px); max-height: 70dvh; } }
-      .palette-input { display: flex; align-items: center; gap: 10px; padding: 0 var(--sp-4); height: 54px; border-bottom: 1px solid var(--border); }
+      .palette-input { display: flex; flex: none; align-items: center; gap: 10px; padding: 0 var(--sp-4); height: 54px; border-bottom: 1px solid var(--border); }
       .palette-input input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: var(--fs-16); }
       /* The field is focused whenever the palette is open: an ink rule under it says so. */
       .palette-input:focus-within { box-shadow: inset 0 -2px 0 var(--focus); }

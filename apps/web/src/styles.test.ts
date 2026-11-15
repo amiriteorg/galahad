@@ -101,4 +101,11 @@ describe("the stylesheet", () => {
     };
     expect(unringed.filter((field) => !focusStyled(field))).toEqual([]);
   });
+
+  test("the palette's field keeps its height however long the list under it", () => {
+    // The palette is a column with a height cap, and what may shrink in one does: with every command listed, it squeezed
+    // the field from 54 px to 27 px, the text against its top and the focus line under it (seen in Chrome, 15 Nov).
+    const keeps = rules.some((r) => r.selectors.includes(".palette-input") && /(?:^|;)\s*(?:flex\s*:\s*none|flex-shrink\s*:\s*0)\s*(?:;|$)/.test(r.body));
+    expect(keeps).toBe(true);
+  });
 });
