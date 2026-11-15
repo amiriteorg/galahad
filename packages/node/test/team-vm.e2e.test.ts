@@ -170,7 +170,8 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
     expect(trail.task).toEqual({ id: alpha.id, status: "done" });
     expect(trail.more).toBe(false);
     const said = trail.entries.map((entry) => entry.text.split("\n")[0]!);
-    expect(said[0]).toStartWith("Plan · ");
+    // (With the notes store on, as it is unless turned off, a task first says whether its VM has Engram.)
+    expect(said.filter((line) => !line.startsWith("Notes · "))[0]).toStartWith("Plan · ");
     expect(said.some((line) => line.startsWith("Running · ") && line.includes("write-alpha"))).toBe(true);
     expect(said.some((line) => line.startsWith("Gate 1/1 · exit 0"))).toBe(true);
     expect(said.some((line) => line.startsWith("Review · pass"))).toBe(true);
@@ -250,7 +251,7 @@ test("harness readiness says what each would run on: a vendor's tool on its own 
   }
 }, 15000);
 
-test("the notes store is one switch, the owner's: off until it is turned on, a task is given it only in a VM that has the pinned Engram, and says which it was", async () => {
+test("the notes store is one switch, the owner's: on unless turned off, a task is given it only in a VM that has the pinned Engram, and says which it was", async () => {
   const workspace = async () => (await api<{ engram: TeamEngramStatus }>("teamWorkspace", { id: "ada" })).engram;
   const absent = "this VM's image has no Engram 3.7.2 (a VM keeps the image it was made from)";
   const vm = `galahad-sbx-${(await snapshot()).teammates.find((member) => member.id === "ada")!.workspace!.id}`;
@@ -262,22 +263,7 @@ test("the notes store is one switch, the owner's: off until it is turned on, a t
     return { task: await task(made.id), told: JSON.stringify(prompts.slice(asked).filter((body) => body.model !== "reviewer")), reviewer: JSON.stringify(prompts.slice(asked).filter((body) => body.model === "reviewer")), ran: events.slice(ran).filter((event) => event.kind === "exec" && event.target === vm).map((event) => event.text) };
   };
   try {
-    // As every node is until its owner says otherwise.
-    expect("engram" in (await snapshot())).toBe(false);
-    expect(await workspace()).toEqual({ on: false, pinned: "3.7.2", present: false, reason: absent });
-    const off = await work();
-    expect(off.task).toMatchObject({ status: "done", verified: true });
-    expect(off.task.output).not.toContain("Notes:");
-    expect(off.told).not.toMatch(/Notes store|engram/i);
-    expect(off.ran.some((text) => /engram/i.test(text))).toBe(false);
-
-    // Turning it on is the owner's, from a device that may command the Roundtable: one that can only read them may not.
-    const reader = await pairDevice("reader", ["chat", "sandbox"]);
-    expect((await reader("teamEngram", { on: true })).status).toBe(403);
-    expect("engram" in (await snapshot())).toBe(false);
-    const commander = await pairDevice("notes-commander", ["chat", "fleet:admin"]);
-    const turned = await commander("teamEngram", { on: true });
-    expect([turned.status, await turned.json()]).toEqual([200, { engram: true }]);
+    // As every node is until its owner says otherwise: on (the owner's word, 15 November 2026).
     expect((await snapshot()).engram).toBe(true);
 
     // On, in a VM made from an image without it: the task runs as it always did, and says so where it stays.
@@ -287,6 +273,27 @@ test("the notes store is one switch, the owner's: off until it is turned on, a t
     expect(without.task.output).toEndWith(`\nNotes: none: ${absent}`);
     expect(without.told).not.toMatch(/Notes store/);
     expect(without.ran.filter((text) => /engram/i.test(text))).toHaveLength(1);
+
+    // Turning it off is the owner's, from a device that may command the Roundtable: one that can only read them may not.
+    const reader = await pairDevice("reader", ["chat", "sandbox"]);
+    expect((await reader("teamEngram", { on: false })).status).toBe(403);
+    expect((await snapshot()).engram).toBe(true);
+    const commander = await pairDevice("notes-commander", ["chat", "fleet:admin"]);
+    const turned = await commander("teamEngram", { on: false });
+    expect([turned.status, await turned.json()]).toEqual([200, { engram: false }]);
+    expect("engram" in (await snapshot())).toBe(false);
+
+    // Off: nothing asks the VM about the store, and what the engineer is told and runs is what it always was.
+    expect(await workspace()).toEqual({ on: false, pinned: "3.7.2", present: false, reason: absent });
+    const off = await work();
+    expect(off.task).toMatchObject({ status: "done", verified: true });
+    expect(off.task.output).not.toContain("Notes:");
+    expect(off.told).not.toMatch(/Notes store|engram/i);
+    expect(off.ran.some((text) => /engram/i.test(text))).toBe(false);
+    // On again, the same way.
+    const back = await commander("teamEngram", { on: true });
+    expect([back.status, await back.json()]).toEqual([200, { engram: true }]);
+    expect((await snapshot()).engram).toBe(true);
 
     // On, in a VM that has the pinned version: the engineer is told how to treat its notes, and its shell is given the store.
     engramSays = { code: 0, stdout: "engram 3.7.2\n" };

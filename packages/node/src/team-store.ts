@@ -86,8 +86,8 @@ export class TeamStore {
   close(): void { this.db.close(); }
   private day(): string { return new Date(this.now()).toISOString().slice(0, 10); }
   private turns(teammate: string): number { return this.db.query<{ turns: number }, [string, string]>("SELECT turns FROM team_usage WHERE teammate = ? AND day = ?").get(teammate, this.day())?.turns ?? 0; }
-  /** The VMs' notes store (Engram) for this node's knights: off until you turn it on, and kept across restarts. */
-  engram(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='engram'").get()?.value === "on"; }
+  /** The VMs' notes store (Engram) for this node's knights: on unless you turned it off, and kept across restarts. */
+  engram(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='engram'").get()?.value !== "off"; }
   setEngram(raw: boolean): boolean {
     const on = teamInput(z.boolean(), raw);
     this.db.query("INSERT INTO team_settings(key,value) VALUES('engram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");

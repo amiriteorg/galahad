@@ -660,31 +660,36 @@ describe("removing a knight", () => {
 });
 
 describe("the notes store's switch", () => {
-  test("off in a new team and in one from before there was a switch; on is kept across a restart, and the snapshot says it only when it is on", () => {
+  test("on unless you turned it off: in a new team and in one from before there was a switch; your off is kept across a restart, and the snapshot says it only when it is on", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-engram-")); dirs.push(dir); const path = join(dir, "team.db");
     const store = make(path); setup(store);
-    expect(store.engram()).toBe(false);
-    // What a page or a terminal reads is what it read before: nothing new while it is off.
-    expect("engram" in store.snapshot()).toBe(false);
-    expect(store.setEngram(true)).toBe(true);
+    // You asked for the knights to have it (15 November 2026): a team that never said no has it.
+    expect(store.engram()).toBe(true);
     expect(store.snapshot().engram).toBe(true);
+    expect(store.setEngram(false)).toBe(false);
+    expect("engram" in store.snapshot()).toBe(false);
     close(store);
+    // Your no is kept across a restart, and a yes after it too.
     const reopened = make(path);
-    expect(reopened.engram()).toBe(true);
+    expect(reopened.engram()).toBe(false);
     expect(reopened.teammates().map((t) => t.id)).toEqual(["ada", "lin"]);
-    expect(reopened.setEngram(false)).toBe(false);
-    expect("engram" in reopened.snapshot()).toBe(false);
+    expect(reopened.setEngram(true)).toBe(true);
     close(reopened);
-    expect(make(path).engram()).toBe(false);
-    // A team database from before the switch has no such table: it opens, off, with everything it held.
+    expect(make(path).engram()).toBe(true);
+    // A team database from before the switch has no such table: it opens, on, with everything it held.
     const old = join(dir, "old.db");
     const before = make(old); setup(before); close(before);
     const raw = new Database(old); raw.exec("DROP TABLE team_settings"); raw.close();
     const opened = make(old);
-    expect(opened.engram()).toBe(false);
+    expect(opened.engram()).toBe(true);
     expect(opened.teammates().map((t) => t.id)).toEqual(["ada", "lin"]);
+    // One where you had said no (as "off", the value the switch has always kept) stays off.
+    const said = join(dir, "said-no.db");
+    const no = make(said); setup(no); close(no);
+    const rawNo = new Database(said); rawNo.exec("INSERT OR REPLACE INTO team_settings(key,value) VALUES('engram','off')"); rawNo.close();
+    expect(make(said).engram()).toBe(false);
     // Only a yes or a no is ever kept.
     expect(() => opened.setEngram("yes" as never)).toThrow(TeamError);
-    expect(opened.engram()).toBe(false);
+    expect(opened.engram()).toBe(true);
   });
 });

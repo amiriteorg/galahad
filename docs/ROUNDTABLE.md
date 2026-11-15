@@ -91,7 +91,7 @@ These notes live in the controller's team database. They are not another persona
 
 Recalled memories and working notes are written into a task's instructions before it starts. Nothing in a knight's VM can ask for more in the middle of a task: the VM cannot reach the node. The notes store is for that. [Engram](https://github.com/Gentleman-Programming/engram) (3.7.2, MIT) is one static binary in the knights' image that keeps titled notes in a SQLite file on the knight's own disk, `/work/.memory/engram`, and answers the harness over stdio. What goes there is what a command can check again about a repository: build and test commands, a flaky test, where things are, a convention.
 
-**It is off until you turn it on**, with one switch for every knight of the node:
+**It is on unless you turn it off** (since 15 November 2026, at the owner's word; it was off until turned on), with one switch for every knight of the node:
 
 ```sh
 bun galahad roundtable engram        # says whether it is on
@@ -131,7 +131,7 @@ Each tool starts the server itself, as a child, for the length of its run: `engr
 
 **Wiping it** is `rm -rf /work/.memory/engram` in a terminal in the knight's VM (**Workspace → Open terminal**, or `bun galahad terminal <knight>`). Turning the switch off leaves the store where it is, unused. Removing a knight with its VM destroys it with everything else in `/work`.
 
-What to know before turning it on: anything the harness reads (a repository file, a web page in an online VM, a tool's output) can talk it into saving a note, and Engram accepts any note from any writer. A false note then stands for every later task of that knight until it is wiped; the briefing's rule and the gates and independent reviewer, which never see the store, are what limit the harm. Engram redacts only what is wrapped in `<private>` tags, so a note that quotes a token keeps it in plain text for as long as the store lives. It never prunes. And it costs context: the four tool definitions are about 2,200 tokens in every model request of a run on a harness that loads them whole (OpenCode, Hermes and Codex were seen to offer them through a tool search or a catalogue instead), plus the briefing's paragraph. Whether the notes repay that is not known: [TRIALS](TRIALS.md#does-the-harness-help-) has an `engram` variant that measures the cost on the engineer's own loop, and nothing yet measures a second visit to the same repository.
+What to know about having it on: anything the harness reads (a repository file, a web page in an online VM, a tool's output) can talk it into saving a note, and Engram accepts any note from any writer. A false note then stands for every later task of that knight until it is wiped; the briefing's rule and the gates and independent reviewer, which never see the store, are what limit the harm. Engram redacts only what is wrapped in `<private>` tags, so a note that quotes a token keeps it in plain text for as long as the store lives. It never prunes. And it costs context: the four tool definitions are about 2,200 tokens in every model request of a run on a harness that loads them whole (OpenCode, Hermes and Codex were seen to offer them through a tool search or a catalogue instead), plus the briefing's paragraph. Whether the notes repay that is not known: [TRIALS](TRIALS.md#does-the-harness-help-) has an `engram` variant that measures the cost on the engineer's own loop, and nothing yet measures a second visit to the same repository.
 
 ## Persistent VM workspaces
 
