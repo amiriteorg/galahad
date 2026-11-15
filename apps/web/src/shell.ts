@@ -208,7 +208,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const tabbar = h(
     "nav",
     { class: "tabbar", "aria-label": "Sections" },
-    ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.id === "team" ? "mark" : spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
+    ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
   );
 
   const shell = h("div", { class: "shell" }, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar);

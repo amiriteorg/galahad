@@ -12,7 +12,7 @@
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { appIcon, crestFile, flatMark, maskableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
+import { appIcon, crestFile, flatMark, maskableIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
@@ -25,6 +25,7 @@ const HELM_FULL = dataUrl("apps/web/design/galahad-helm.webp");
 export const BRAND_SVGS: Record<string, () => SvgNode> = {
   "assets/icon.svg": () => appIcon(HELM),
   "assets/galahad-mark.svg": () => flatMark(),
+  "assets/roundtable.svg": () => roundtableIcon(),
   "apps/web/src/icon-maskable.svg": () => maskableIcon(HELM),
   "apps/site/public/icon.svg": () => appIcon(HELM),
   "apps/site/public/crest-white.svg": () => crestFile(HELM),

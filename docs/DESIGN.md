@@ -25,7 +25,8 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 | `assets/galahad-mark.svg` | The flat mark in `currentColor`: the silhouette, the cross and the slit holes in it |
 | `apps/site/public/crest-{white,black}.svg` | The drawn helm, for the site's header and crest (it reads on a light page and a dark one) |
 | `ui/emblem.ts` → `emblem()` | The drawn helm inline in the PWA, on no tile: its own ink line holds it in either theme; the boot screen shows it too |
-| `icon("mark")` | The flat silhouette on the 24 px grid, for menus and the tab bar (Galahad's voice: chat, requests, trust) |
+| `icon("mark")` | The flat silhouette on the 24 px grid, for menus (Galahad's voice: chat, requests, trust) |
+| `icon("roundtable")`, `assets/roundtable.svg` | The Roundtable's icon: the Round Table from above as a floor plan draws it, a ring and six chairs, the Siege Perilous at the top (Galahad's seat) the deeper chair and the one in his red (`--siege`: `#8e1820`, `#d4262f` on black). Pixel-true at 24 px; one definition, `ROUNDTABLE` in `brand.ts`. On the phone's tab bar, the Roundtable's place and its page |
 
 Regenerate with `bun scripts/brand.ts` (SVGs) or `bun scripts/brand.ts --png` (also the PNGs, rendered by headless Chromium). Tests pin the silhouette to the icon grid, the icons' tile and safe zone, that the SVGs carry the helm the app serves and fetch nothing, and that no committed file drifts.
 

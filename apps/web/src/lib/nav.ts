@@ -30,7 +30,7 @@ interface PlaceSpec {
 const LIST = [
   { id: "chat", label: "Chat", icon: "chat", under: "primary", scope: "chat", key: "c", keywords: ["galahad", "counsel", "ask", "talk", "history", "conversations", "home"], about: "" },
   // (Its address stays #/team, and #/roundtable is the same page. Its older names still find it.)
-  { id: "team", label: "Roundtable", icon: "fleet", under: "primary", scope: "chat", key: "h", keywords: ["knights", "roundtable", "give", "rooms", "messages", "tasks", "coordination", "team", "squires", "hermes"], about: "" },
+  { id: "team", label: "Roundtable", icon: "roundtable", under: "primary", scope: "chat", key: "h", keywords: ["knights", "roundtable", "give", "rooms", "messages", "tasks", "coordination", "team", "squires", "hermes"], about: "" },
   // (What needs you shows on the row it belongs to; the Inbox is where all of it is answered.)
   { id: "inbox", label: "Inbox", icon: "inbox", under: "work", scope: null, key: "i", keywords: ["approvals", "pairing", "requests", "actions", "notices", "oath"], about: "Everything that needs you, to answer" },
   { id: "more", label: "More", icon: "more", under: null, scope: null, key: ".", keywords: ["everything", "all", "index", "menu"], about: "" },

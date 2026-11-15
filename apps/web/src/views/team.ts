@@ -384,7 +384,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       h(
         "div",
         { class: "team-welcome" },
-        icon("fleet", { size: 36 }),
+        icon("roundtable", { size: 36 }),
         h("h2", {}, snapshot?.teammates.length ? "The Roundtable" : "Seat your first knight"),
         h("p", {}, snapshot?.teammates.length ? "Your knights sit at one table, Galahad first among them. Give a task to the Roundtable and the knight best suited to it takes it, and says why; or talk with one directly, and bring several into a room." : "Galahad is your primary knight, and the others are his fellows, none beneath him. Give a knight a name, a lasting job and a workspace of its own."),
         canEdit
@@ -466,7 +466,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
 
   function failed(error: unknown): void {
     if (scope.disposed || isAbort(error)) return;
-    if (!snapshot || (roomId && !room)) replace(content, isUnavailable(error) ? empty({ icon: "fleet", title: "The Roundtable isn't available here", body: "This node doesn't seat knights yet.", actions: button("Try again", { onClick: () => void load(true) }) }) : errorState("Couldn't reach the Roundtable", error, () => void load(true)));
+    if (!snapshot || (roomId && !room)) replace(content, isUnavailable(error) ? empty({ icon: "roundtable", title: "The Roundtable isn't available here", body: "This node doesn't seat knights yet.", actions: button("Try again", { onClick: () => void load(true) }) }) : errorState("Couldn't reach the Roundtable", error, () => void load(true)));
     else {
       notice.hidden = false;
       replace(notice, icon("offline", { size: 14 }), h("span", { class: "grow" }, "Updates paused. What you see may be out of date."), button("Retry", { size: "sm", onClick: () => void load(true) }));

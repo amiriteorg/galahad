@@ -83,6 +83,8 @@
         /* Galahad's oxblood: what waits on you, and only that */
         --oxblood: light-dark(#a8373a, #ec8285);
         --oxblood-soft: light-dark(rgb(168 55 58 / 0.09), rgb(236 130 133 / 0.12));
+        /* Galahad's seat at the Round Table (icon("roundtable")): a deeper red, deep enough on black too */
+        --siege: light-dark(#8e1820, #d4262f);
 
         /* Semantic tones (status, trust, verdict, network risk): the only colour, kept for meaning */
         --ok: light-dark(#137a43, #4cc38a);
@@ -156,6 +158,7 @@
       h1, h2, h3, h4, p { margin: 0; }
       img, svg { display: block; }
       svg.icon { flex: none; }
+      svg.icon .icon-siege { fill: var(--siege); }
       ::selection { background: color-mix(in srgb, var(--accent-fill) 28%, transparent); }
       :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-sm); }
       [hidden] { display: none !important; }
