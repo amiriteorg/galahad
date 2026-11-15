@@ -36,6 +36,16 @@ export function pushState(env: PushEnv): PushState {
 export const isIos = (nav: { userAgent: string; platform?: string; maxTouchPoints?: number }): boolean =>
   /iPhone|iPad|iPod/.test(nav.userAgent) || (nav.platform === "MacIntel" && (nav.maxTouchPoints ?? 0) > 1);
 
+/**
+ * What the welcome screen says before pairing. An iPhone in Safari: put Galahad on the Home Screen first and pair it
+ * there (the app there keeps its own key, apart from Safari's, and only it can be notified), or it's paired twice. An
+ * installed app: it pairs on its own, by a pasted invite (links open in the browser). Anything else pairs where it is.
+ */
+export function pairingNote(env: { ios: boolean; standalone: boolean }): "home-screen-first" | "pair-this-app" | null {
+  if (env.standalone) return "pair-this-app";
+  return env.ios ? "home-screen-first" : null;
+}
+
 export const WHAT_IS_SENT = "A short title and one line, with where it opens: a finding that needs you, an approval that's waiting, that he has finished or has a question. It's encrypted to this browser, so the push service that carries it can't read it. Never a key, never anything about the bank, never a model's own words.";
 
 export const PUSH_STATE_TEXT: Record<PushState, string> = {

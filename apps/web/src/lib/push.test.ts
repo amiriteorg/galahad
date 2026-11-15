@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NOTIFY_DEFAULTS } from "@galahad/core/notify";
-import { clockProblem, isIos, keyBytes, perDayProblem, type PushEnv, pushState, quietLine, readOpenMessage, sameKey, todayLine } from "./push.ts";
+import { clockProblem, isIos, keyBytes, pairingNote, perDayProblem, type PushEnv, pushState, quietLine, readOpenMessage, sameKey, todayLine } from "./push.ts";
 
 /* Notifications on this device: the state it's in, and the checks the Settings fields make. */
 
@@ -32,6 +32,17 @@ describe("which state this device is in", () => {
     expect(isIos({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 5 })).toBe(true);
     expect(isIos({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 0 })).toBe(false);
     expect(isIos({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/141.0" })).toBe(false);
+  });
+});
+
+describe("before pairing", () => {
+  test("an iPhone in Safari is told to put Galahad on the Home Screen first; the app there, that it pairs on its own", () => {
+    // In Safari: the Home Screen app keeps its own key, so pairing the tab first would mean pairing twice.
+    expect(pairingNote({ ios: true, standalone: false })).toBe("home-screen-first");
+    expect(pairingNote({ ios: true, standalone: true })).toBe("pair-this-app");
+    expect(pairingNote({ ios: false, standalone: true })).toBe("pair-this-app");
+    // A desktop browser, or Android's, pairs where it is.
+    expect(pairingNote({ ios: false, standalone: false })).toBeNull();
   });
 });
 

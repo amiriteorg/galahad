@@ -1,4 +1,5 @@
 import { greeting } from "./lib/time.ts";
+import { isIos, pairingNote } from "./lib/push.ts";
 import { shortId } from "./lib/text.ts";
 import { button, callout, copyField } from "./ui/controls.ts";
 import { confirmAction } from "./ui/dialog.ts";
@@ -68,17 +69,24 @@ export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | nul
         button("Continue", { variant: "primary", type: "submit", block: true }),
       )
     : null;
+  const note = pairingNote({ ios: isIos(navigator), standalone: installed() });
   replace(
     root,
     solo(
       hero(`${greeting()}.`, installed() ? "This app isn't part of your fleet yet." : "This browser isn't part of your fleet yet. Pairing takes a minute and needs one of your nodes."),
-      installed()
+      note === "pair-this-app"
         ? callout(
             "info",
             "An app on your Home Screen keeps its own key, apart from the browser's, so it pairs on its own even if the browser already did. Links open in the browser, not here: paste the invite below instead.",
             { title: "Pair this app itself" },
           )
-        : null,
+        : note === "home-screen-first"
+          ? callout(
+              "info",
+              "Tap Share, then Add to Home Screen, and open Galahad from there to pair it. The app on your Home Screen keeps its own key, apart from Safari's, and only it can get notifications: paired here first, you'd pair it twice.",
+              { title: "On an iPhone, add it to your Home Screen first" },
+            )
+          : null,
       h(
         "section",
         { class: "card", "aria-label": "How to pair" },
