@@ -47,6 +47,8 @@ struct MainView: View {
         }
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
+            // Back in the app: the chat on screen as the node holds it now (an answer it was watching may have gone on).
+            await session.chat.resume(with: session.client)
             while !Task.isCancelled {
                 await session.refresh()
                 try? await Task.sleep(for: .seconds(5))

@@ -1355,5 +1355,1261 @@
         "needs": 0
       }
     ]
+  },
+  "threads": [
+    {
+      "name": "kept",
+      "messages": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "What's on today?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "stand-in/planner"
+            },
+            {
+              "kind": "archive",
+              "entries": [
+                {
+                  "id": "ar_1",
+                  "title": "Calendar",
+                  "kind": "note",
+                  "trust": "trusted"
+                },
+                {
+                  "id": "ar_2",
+                  "title": "Mail",
+                  "kind": "mail",
+                  "trust": "untrusted"
+                }
+              ]
+            },
+            {
+              "kind": "tool",
+              "id": "t1",
+              "name": "recall",
+              "title": "Searching memory",
+              "input": "{\"q\":\"today\"}",
+              "ok": true,
+              "summary": "2 found"
+            },
+            {
+              "kind": "tool",
+              "id": "t2",
+              "name": "web_search",
+              "title": "Searching the web",
+              "input": "{\"q\":\"x\"}",
+              "ok": false,
+              "summary": "refused"
+            }
+          ],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 3,
+          "role": "user",
+          "content": "And tomorrow?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 4,
+          "role": "assistant",
+          "content": "",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "a/b"
+            },
+            {
+              "kind": "fallback",
+              "from": "a/b",
+              "error": "429"
+            }
+          ],
+          "status": "error",
+          "error": "Every model on the roster failed.",
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 5,
+          "role": "user",
+          "content": "Try again",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 6,
+          "role": "assistant",
+          "content": "Halfway",
+          "model": "stand-in/planner",
+          "steps": [],
+          "status": "stopped",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 7,
+          "role": "user",
+          "content": "Go on",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 8,
+          "role": "assistant",
+          "content": "First part",
+          "model": "stand-in/planner",
+          "steps": [],
+          "status": "steered",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        }
+      ],
+      "question": null,
+      "events": [],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What's on today?",
+          "status": "done",
+          "error": null,
+          "sid": 1,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "status": "done",
+          "error": null,
+          "sid": 2,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Read 2 archived entries",
+              "detail": "[ar_1] Calendar · [ar_2] Mail (untrusted)",
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Searching memory",
+              "detail": "{\"q\":\"today\"} → 2 found",
+              "state": "done",
+              "tool": "t1"
+            },
+            {
+              "text": "Searching the web",
+              "detail": "{\"q\":\"x\"} → refused",
+              "state": "warn",
+              "tool": "t2"
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "And tomorrow?",
+          "status": "done",
+          "error": null,
+          "sid": 3,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "status": "error",
+          "error": "Every model on the roster failed.",
+          "sid": 4,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with a/b",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "a/b didn't answer",
+              "detail": "429",
+              "state": "warn",
+              "tool": null
+            },
+            {
+              "text": "Couldn't answer",
+              "detail": "Every model on the roster failed.",
+              "state": "error",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Try again",
+          "status": "done",
+          "error": null,
+          "sid": 5,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "Halfway",
+          "status": "stopped",
+          "error": null,
+          "sid": 6,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Stopped",
+              "detail": null,
+              "state": "warn",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Go on",
+          "status": "done",
+          "error": null,
+          "sid": 7,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "First part",
+          "status": "steered",
+          "error": null,
+          "sid": 8,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Your message reached him here",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "asked",
+      "messages": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "What's on today?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "stand-in/planner"
+            },
+            {
+              "kind": "archive",
+              "entries": [
+                {
+                  "id": "ar_1",
+                  "title": "Calendar",
+                  "kind": "note",
+                  "trust": "trusted"
+                },
+                {
+                  "id": "ar_2",
+                  "title": "Mail",
+                  "kind": "mail",
+                  "trust": "untrusted"
+                }
+              ]
+            },
+            {
+              "kind": "tool",
+              "id": "t1",
+              "name": "recall",
+              "title": "Searching memory",
+              "input": "{\"q\":\"today\"}",
+              "ok": true,
+              "summary": "2 found"
+            },
+            {
+              "kind": "tool",
+              "id": "t2",
+              "name": "web_search",
+              "title": "Searching the web",
+              "input": "{\"q\":\"x\"}",
+              "ok": false,
+              "summary": "refused"
+            }
+          ],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        }
+      ],
+      "question": "And the weather?",
+      "events": [
+        {
+          "type": "turn",
+          "id": "tn_1",
+          "conversation": "cv_1",
+          "answer": 9,
+          "role": "planner",
+          "startedAt": 1763200000000,
+          "deadline": 1763201800000,
+          "replay": false
+        },
+        {
+          "type": "conversation",
+          "id": "cv_1",
+          "title": "Today",
+          "project": null
+        },
+        {
+          "type": "model",
+          "ref": "stand-in/planner"
+        },
+        {
+          "type": "tool",
+          "id": "t3",
+          "name": "web_search",
+          "title": "Searching the web",
+          "input": "{\"q\":\"weather\"}"
+        },
+        {
+          "type": "tool_result",
+          "id": "t3",
+          "name": "web_search",
+          "ok": true,
+          "summary": "3 results"
+        },
+        {
+          "type": "text",
+          "text": "Dry "
+        },
+        {
+          "type": "text",
+          "text": "and cold."
+        },
+        {
+          "type": "usage",
+          "ref": "stand-in/planner",
+          "usage": null
+        },
+        {
+          "type": "done",
+          "ref": "stand-in/planner"
+        },
+        null
+      ],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What's on today?",
+          "status": "done",
+          "error": null,
+          "sid": 1,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "status": "done",
+          "error": null,
+          "sid": 2,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Read 2 archived entries",
+              "detail": "[ar_1] Calendar · [ar_2] Mail (untrusted)",
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Searching memory",
+              "detail": "{\"q\":\"today\"} → 2 found",
+              "state": "done",
+              "tool": "t1"
+            },
+            {
+              "text": "Searching the web",
+              "detail": "{\"q\":\"x\"} → refused",
+              "state": "warn",
+              "tool": "t2"
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "And the weather?",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "Dry and cold.",
+          "status": "done",
+          "error": null,
+          "sid": 9,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Searching the web",
+              "detail": "{\"q\":\"weather\"} → 3 results",
+              "state": "done",
+              "tool": "t3"
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fallback-then-error",
+      "messages": [],
+      "question": "Hi",
+      "events": [
+        {
+          "type": "model",
+          "ref": "a/b"
+        },
+        {
+          "type": "fallback",
+          "from": "a/b",
+          "error": "429 slow down"
+        },
+        {
+          "type": "model",
+          "ref": "c/d"
+        },
+        {
+          "type": "error",
+          "error": "Every model on the roster failed."
+        },
+        null
+      ],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Hi",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "status": "error",
+          "error": "Every model on the roster failed.",
+          "sid": null,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "a/b didn't answer",
+              "detail": "429 slow down",
+              "state": "warn",
+              "tool": null
+            },
+            {
+              "text": "Thinking with c/d",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Couldn't answer",
+              "detail": "Every model on the roster failed.",
+              "state": "error",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "attached",
+      "messages": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "What's on today?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "stand-in/planner"
+            },
+            {
+              "kind": "archive",
+              "entries": [
+                {
+                  "id": "ar_1",
+                  "title": "Calendar",
+                  "kind": "note",
+                  "trust": "trusted"
+                },
+                {
+                  "id": "ar_2",
+                  "title": "Mail",
+                  "kind": "mail",
+                  "trust": "untrusted"
+                }
+              ]
+            },
+            {
+              "kind": "tool",
+              "id": "t1",
+              "name": "recall",
+              "title": "Searching memory",
+              "input": "{\"q\":\"today\"}",
+              "ok": true,
+              "summary": "2 found"
+            },
+            {
+              "kind": "tool",
+              "id": "t2",
+              "name": "web_search",
+              "title": "Searching the web",
+              "input": "{\"q\":\"x\"}",
+              "ok": false,
+              "summary": "refused"
+            }
+          ],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 3,
+          "role": "user",
+          "content": "Plan the week",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 4,
+          "role": "assistant",
+          "content": "Mon",
+          "model": "stand-in/planner",
+          "steps": [],
+          "status": "streaming",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": null
+        }
+      ],
+      "question": null,
+      "events": [
+        {
+          "type": "turn",
+          "id": "tn_1",
+          "conversation": "cv_1",
+          "answer": 4,
+          "role": "planner",
+          "startedAt": 1763200000000,
+          "deadline": 1763201800000,
+          "replay": true
+        },
+        {
+          "type": "model",
+          "ref": "stand-in/planner"
+        },
+        {
+          "type": "text",
+          "text": "Monday: "
+        },
+        {
+          "type": "tool",
+          "id": "t4",
+          "name": "calendar",
+          "title": "Reading your calendar",
+          "input": ""
+        },
+        {
+          "type": "tool_result",
+          "id": "t4",
+          "name": "calendar",
+          "ok": false,
+          "summary": "no access"
+        },
+        {
+          "type": "steer",
+          "text": "Skip Friday"
+        },
+        {
+          "type": "text",
+          "text": "Done."
+        },
+        {
+          "type": "stopped",
+          "reason": "you"
+        },
+        null
+      ],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What's on today?",
+          "status": "done",
+          "error": null,
+          "sid": 1,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "status": "done",
+          "error": null,
+          "sid": 2,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Read 2 archived entries",
+              "detail": "[ar_1] Calendar · [ar_2] Mail (untrusted)",
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Searching memory",
+              "detail": "{\"q\":\"today\"} → 2 found",
+              "state": "done",
+              "tool": "t1"
+            },
+            {
+              "text": "Searching the web",
+              "detail": "{\"q\":\"x\"} → refused",
+              "state": "warn",
+              "tool": "t2"
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Plan the week",
+          "status": "done",
+          "error": null,
+          "sid": 3,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "Monday: ",
+          "status": "steered",
+          "error": null,
+          "sid": 4,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Reading your calendar",
+              "detail": "no access",
+              "state": "warn",
+              "tool": "t4"
+            },
+            {
+              "text": "Your message reached him here",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Skip Friday",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "status": "stopped",
+          "error": null,
+          "sid": null,
+          "steps": [
+            {
+              "text": "Thinking with stand-in/planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Stopped by you",
+              "detail": null,
+              "state": "warn",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cut",
+      "messages": [],
+      "question": "Long one",
+      "events": [
+        {
+          "type": "turn",
+          "id": "tn_1",
+          "conversation": "cv_1",
+          "answer": 2,
+          "role": "planner",
+          "startedAt": 1763200000000,
+          "deadline": 1763201800000,
+          "replay": false
+        },
+        {
+          "type": "model",
+          "ref": "x/y"
+        },
+        {
+          "type": "text",
+          "text": "Part"
+        },
+        "The connection to the node dropped."
+      ],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Long one",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "Part",
+          "status": "error",
+          "error": "The connection to the node dropped.",
+          "sid": 2,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Thinking with x/y",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Couldn't answer",
+              "detail": "The connection to the node dropped.",
+              "state": "error",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "steered-before-words",
+      "messages": [],
+      "question": "Go",
+      "events": [
+        {
+          "type": "model",
+          "ref": "x/y"
+        },
+        {
+          "type": "steer",
+          "text": "Actually, stop"
+        },
+        {
+          "type": "text",
+          "text": "OK."
+        },
+        null
+      ],
+      "role": "planner",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Go",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "user",
+          "content": "Actually, stop",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": []
+        },
+        {
+          "role": "assistant",
+          "content": "OK.",
+          "status": "done",
+          "error": null,
+          "sid": null,
+          "steps": [
+            {
+              "text": "Thinking with x/y",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "chats": {
+    "now": 1763200000000,
+    "list": [
+      {
+        "id": "pinned-old",
+        "title": "pinned-old",
+        "project": null,
+        "role": "planner",
+        "pinned": true,
+        "createdAt": 1759743999000,
+        "updatedAt": 1759744000000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "just-now",
+        "title": "just-now",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1763199939000,
+        "updatedAt": 1763199940000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "this-morning",
+        "title": "this-morning",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1763164859000,
+        "updatedAt": 1763164860000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "yesterday",
+        "title": "yesterday",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1763161199000,
+        "updatedAt": 1763161200000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "five-days",
+        "title": "five-days",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1762767999000,
+        "updatedAt": 1762768000000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "seven-days",
+        "title": "seven-days",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1762646398999,
+        "updatedAt": 1762646399999,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      },
+      {
+        "id": "last-month",
+        "title": "last-month",
+        "project": null,
+        "role": "planner",
+        "pinned": false,
+        "createdAt": 1760521599000,
+        "updatedAt": 1760521600000,
+        "count": 2,
+        "bank": false,
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null
+      }
+    ],
+    "groups": [
+      {
+        "label": "Pinned",
+        "ids": [
+          "pinned-old"
+        ]
+      },
+      {
+        "label": "Today",
+        "ids": [
+          "just-now",
+          "this-morning"
+        ]
+      },
+      {
+        "label": "Yesterday",
+        "ids": [
+          "yesterday"
+        ]
+      },
+      {
+        "label": "This week",
+        "ids": [
+          "five-days"
+        ]
+      },
+      {
+        "label": "Earlier",
+        "ids": [
+          "seven-days",
+          "last-month"
+        ]
+      }
+    ],
+    "states": [
+      {
+        "state": "done",
+        "queued": 0,
+        "held": null,
+        "needs": null,
+        "words": ""
+      },
+      {
+        "state": "working",
+        "queued": 0,
+        "held": null,
+        "needs": null,
+        "words": "Working"
+      },
+      {
+        "state": "working",
+        "queued": 2,
+        "held": null,
+        "needs": null,
+        "words": "Working · 2 queued"
+      },
+      {
+        "state": "waiting",
+        "queued": 0,
+        "held": null,
+        "needs": {
+          "approvals": 1,
+          "keys": 0,
+          "question": false
+        },
+        "words": "Needs you: an approval"
+      },
+      {
+        "state": "waiting",
+        "queued": 1,
+        "held": "stopped",
+        "needs": {
+          "approvals": 2,
+          "keys": 1,
+          "question": true
+        },
+        "words": "Needs you: 2 approvals and a key · 1 queued, held (you stopped him)"
+      },
+      {
+        "state": "waiting",
+        "queued": 0,
+        "held": null,
+        "needs": {
+          "approvals": 0,
+          "keys": 0,
+          "question": true
+        },
+        "words": "Needs you: an answer"
+      },
+      {
+        "state": "waiting",
+        "queued": 0,
+        "held": null,
+        "needs": null,
+        "words": "Needs you: a look"
+      },
+      {
+        "state": "queued",
+        "queued": 1,
+        "held": null,
+        "needs": null,
+        "words": "1 queued"
+      },
+      {
+        "state": "queued",
+        "queued": 3,
+        "held": "restart",
+        "needs": null,
+        "words": "3 queued, held (the node restarted)"
+      },
+      {
+        "state": "queued",
+        "queued": 1,
+        "held": "device",
+        "needs": null,
+        "words": "1 queued, held (the device that queued the next one is no longer paired, or may not see this chat)"
+      },
+      {
+        "state": "queued",
+        "queued": 2,
+        "held": "error",
+        "needs": null,
+        "words": "2 queued, held (the turn before them failed)"
+      },
+      {
+        "state": "stopped",
+        "queued": 0,
+        "held": null,
+        "needs": null,
+        "words": "Stopped"
+      },
+      {
+        "state": "failed",
+        "queued": 0,
+        "held": null,
+        "needs": null,
+        "words": "Failed"
+      }
+    ]
   }
 }

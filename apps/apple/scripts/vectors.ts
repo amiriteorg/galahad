@@ -15,7 +15,12 @@ import { dirname, join } from "node:path";
 import * as core from "../../../packages/core/src/index.ts";
 import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
+import { groupConversations } from "../../web/src/lib/chats.ts";
+import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
+import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
+// The chats list groups at midnight: UTC here, and in the Swift tests, whatever this machine's own zone is.
+process.env.TZ = "UTC";
 const OUT = join(import.meta.dir, "../GalahadTests/Fixtures/core-vectors.json");
 // The noble the core is built on (its own dependency), for the one thing core leaves to the browser: signing as a phone.
 const { p256 } = (await import(Bun.resolveSync("@noble/curves/nist.js", join(import.meta.dir, "../../../packages/core/src")))) as typeof import("../../../packages/core/node_modules/@noble/curves/nist.js");
@@ -250,6 +255,155 @@ const roundtable = {
   ],
 };
 
+// ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
+const stored = (id: number, role: "user" | "assistant", content: string, extra: Partial<core.StoredMessage> = {}): core.StoredMessage => ({
+  id,
+  role,
+  content,
+  model: role === "assistant" ? "stand-in/planner" : null,
+  steps: [],
+  status: "done",
+  error: null,
+  createdAt: NOW - 60_000,
+  endedAt: NOW - 30_000,
+  ...extra,
+});
+const kept: core.StoredMessage[] = [
+  stored(1, "user", "What's on today?"),
+  stored(2, "assistant", "The dentist at nine, then **the release**.", {
+    steps: [
+      { kind: "model", ref: "stand-in/planner" },
+      { kind: "archive", entries: [{ id: "ar_1", title: "Calendar", kind: "note", trust: "trusted" }, { id: "ar_2", title: "Mail", kind: "mail", trust: "untrusted" }] },
+      { kind: "tool", id: "t1", name: "recall", title: "Searching memory", input: '{"q":"today"}', ok: true, summary: "2 found" },
+      { kind: "tool", id: "t2", name: "web_search", title: "Searching the web", input: '{"q":"x"}', ok: false, summary: "refused" },
+    ],
+  }),
+  stored(3, "user", "And tomorrow?"),
+  stored(4, "assistant", "", { status: "error", error: "Every model on the roster failed.", steps: [{ kind: "model", ref: "a/b" }, { kind: "fallback", from: "a/b", error: "429" }] }),
+  stored(5, "user", "Try again"),
+  stored(6, "assistant", "Halfway", { status: "stopped" }),
+  stored(7, "user", "Go on"),
+  stored(8, "assistant", "First part", { status: "steered" }),
+];
+type ThreadTurn = import("../../web/src/lib/turns.ts").Turn;
+const shown = (turns: ThreadTurn[]) =>
+  turns.map((t) => ({
+    role: t.role,
+    content: t.content,
+    status: t.status,
+    error: t.error ?? null,
+    sid: t.sid ?? null,
+    steps: t.steps.map((s) => ({ text: s.text, detail: s.detail ?? null, state: s.state, tool: s.tool ?? null })),
+  }));
+const freshThread = (): import("../../web/src/lib/turns.ts").Thread => ({ turns: [], nextId: 1, target: null, base: null });
+/** A thread from kept messages, then events (null: the stream ends; a string: the watching was cut with it). */
+function play(messages: core.StoredMessage[], role: string, question: string | null, events: (core.ChatStreamEvent | null | string)[]) {
+  const thread = freshThread();
+  for (const m of messages) thread.turns.push(turnOf(m, role, thread.nextId++));
+  if (question !== null) beginTurn(thread, question, role, NOW);
+  for (const event of events) {
+    if (event === null) endTurn(thread, NOW);
+    else if (typeof event === "string") failTurn(thread, event, NOW);
+    else applyEvent(thread, event, NOW);
+  }
+  return shown(thread.turns);
+}
+const turnEvent = (answer: number | null, replay: boolean): core.ChatStreamEvent => ({ type: "turn", id: "tn_1", conversation: "cv_1", answer, role: "planner", startedAt: NOW, deadline: NOW + 1_800_000, replay });
+const streamed: { name: string; messages: core.StoredMessage[]; question: string | null; events: (core.ChatStreamEvent | null | string)[] }[] = [
+  { name: "kept", messages: kept, question: null, events: [] },
+  {
+    name: "asked",
+    messages: kept.slice(0, 2),
+    question: "And the weather?",
+    events: [
+      turnEvent(9, false),
+      { type: "conversation", id: "cv_1", title: "Today", project: null },
+      { type: "model", ref: "stand-in/planner" },
+      { type: "tool", id: "t3", name: "web_search", title: "Searching the web", input: '{"q":"weather"}' },
+      { type: "tool_result", id: "t3", name: "web_search", ok: true, summary: "3 results" },
+      { type: "text", text: "Dry " },
+      { type: "text", text: "and cold." },
+      { type: "usage", ref: "stand-in/planner", usage: null },
+      { type: "done", ref: "stand-in/planner" },
+      null,
+    ],
+  },
+  {
+    name: "fallback-then-error",
+    messages: [],
+    question: "Hi",
+    events: [{ type: "model", ref: "a/b" }, { type: "fallback", from: "a/b", error: "429 slow down" }, { type: "model", ref: "c/d" }, { type: "error", error: "Every model on the roster failed." }, null],
+  },
+  {
+    name: "attached",
+    // Loaded while he was answering: the kept answer as it stood, then the node replays the turn from its start.
+    messages: [...kept.slice(0, 2), stored(3, "user", "Plan the week"), stored(4, "assistant", "Mon", { status: "streaming", endedAt: null })],
+    question: null,
+    events: [
+      turnEvent(4, true),
+      { type: "model", ref: "stand-in/planner" },
+      { type: "text", text: "Monday: " },
+      { type: "tool", id: "t4", name: "calendar", title: "Reading your calendar", input: "" },
+      { type: "tool_result", id: "t4", name: "calendar", ok: false, summary: "no access" },
+      { type: "steer", text: "Skip Friday" },
+      { type: "text", text: "Done." },
+      { type: "stopped", reason: "you" },
+      null,
+    ],
+  },
+  { name: "cut", messages: [], question: "Long one", events: [turnEvent(2, false), { type: "model", ref: "x/y" }, { type: "text", text: "Part" }, "The connection to the node dropped."] },
+  { name: "steered-before-words", messages: [], question: "Go", events: [{ type: "model", ref: "x/y" }, { type: "steer", text: "Actually, stop" }, { type: "text", text: "OK." }, null] },
+];
+const threads = streamed.map((s) => ({ ...s, role: "planner", turns: play(s.messages, "planner", s.question, s.events) }));
+
+// ---- the chats list: pinned first, then by when each was last active (lib/chats.ts), at midnight UTC -----------------
+const DAY = 86_400_000;
+const summary = (id: string, updatedAt: number, pinned = false): core.ConversationSummary => ({
+  id,
+  title: id,
+  project: null,
+  role: "planner",
+  pinned,
+  createdAt: updatedAt - 1000,
+  updatedAt,
+  count: 2,
+  bank: false,
+  state: "done",
+  queued: 0,
+  held: null,
+  needs: null,
+});
+const chatList = [
+  summary("pinned-old", NOW - 40 * DAY, true),
+  summary("just-now", NOW - 60_000),
+  summary("this-morning", NOW - (NOW % DAY) + 60_000),
+  summary("yesterday", NOW - (NOW % DAY) - 3_600_000),
+  summary("five-days", NOW - 5 * DAY),
+  summary("seven-days", NOW - (NOW % DAY) - 6 * DAY - 1),
+  summary("last-month", NOW - 31 * DAY),
+];
+const stateCases: Pick<core.ConversationSummary, "state" | "queued" | "held" | "needs">[] = [
+  { state: "done", queued: 0, held: null, needs: null },
+  { state: "working", queued: 0, held: null, needs: null },
+  { state: "working", queued: 2, held: null, needs: null },
+  { state: "waiting", queued: 0, held: null, needs: { approvals: 1, keys: 0, question: false } },
+  { state: "waiting", queued: 1, held: "stopped", needs: { approvals: 2, keys: 1, question: true } },
+  { state: "waiting", queued: 0, held: null, needs: { approvals: 0, keys: 0, question: true } },
+  { state: "waiting", queued: 0, held: null, needs: null },
+  { state: "queued", queued: 1, held: null, needs: null },
+  { state: "queued", queued: 3, held: "restart", needs: null },
+  { state: "queued", queued: 1, held: "device", needs: null },
+  { state: "queued", queued: 2, held: "error", needs: null },
+  { state: "stopped", queued: 0, held: null, needs: null },
+  { state: "failed", queued: 0, held: null, needs: null },
+];
+const chats = {
+  now: NOW,
+  list: chatList,
+  groups: groupConversations(chatList, NOW).map((g) => ({ label: g.label, ids: g.items.map((c) => c.id) })),
+  states: stateCases.map((c) => ({ ...c, words: chatStateWords(c) })),
+};
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -261,6 +415,8 @@ const vectors = {
   pairing,
   looks,
   roundtable,
+  threads,
+  chats,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

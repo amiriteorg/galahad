@@ -13,63 +13,70 @@ struct ChatRequest: Encodable, Sendable {
 }
 
 /**
- * Your conversation with Galahad, as this app shows it. A message starts a turn the node owns, and his answer streams
- * into its bubble as it comes (apps/web/src/lib/turns.ts reads the same events): what he's at shows as its steps, named
- * as the PWA names them. Leaving the screen ends the watching, never the turn; Stop asks the node to stop it.
+ * Your conversation with Galahad, as this app shows it. A chat is kept on the node: opening one shows what it holds,
+ * and when he is still answering in it, the app attaches to his turn, which the node replays from its start and then
+ * streams live. A message starts (or continues) a turn the node owns; his answer streams into its bubble as it comes,
+ * with what he's at as its steps (`ChatThread`, the PWA's lib/turns.ts). Leaving a chat ends the watching, never the
+ * turn; Stop asks the node to stop it.
  */
 @MainActor @Observable final class ChatModel {
-    struct Step: Identifiable, Equatable {
-        enum State: Equatable { case active, done, warn }
-        let id: String
-        var text: String
-        /// One of his tools, rather than a stage of the answer.
-        var tool: Bool
-        var state: State
-    }
-
-    struct Message: Identifiable, Equatable {
-        enum Role: Equatable { case you, galahad }
-        enum Status: Equatable { case streaming, done, stopped, failed(String) }
-        let id = UUID()
-        let role: Role
-        var text: String
-        var steps: [Step] = []
-        var status = Status.done
-    }
-
-    /// The role his answers come from (the PWA's default).
-    let role = "planner"
-    private(set) var messages: [Message] = []
-    /// The kept chat this is (nil until the node has said).
+    /// The role his answers come from (the PWA's default), until a kept chat says its own.
+    private(set) var role = "planner"
+    private(set) var thread = ChatThread()
+    /// The kept chat on screen (nil: a new one, until the node keeps it).
     private(set) var conversation: String?
+    private(set) var title: String?
     /// The turn under way, by its id on the node.
     private(set) var turn: String?
+    /// A chat is being read from the node.
+    private(set) var loading = false
+    /// Why the chat couldn't be read.
+    private(set) var problem: String?
     var draft = ""
     private var live: Task<Void, Never>?
-    private var failure: String?
+    /// The watch whose events the chat on screen takes.
+    private var watching: UUID?
+    /// Galahad's latest chat has been looked for since the app opened (his row opens it).
+    private var opened = false
 
     var answering: Bool { live != nil }
     /// What his answer is at: its last step (nil when he has only just started).
-    var step: String? { messages.last { $0.role == .galahad }?.steps.last?.text }
+    var step: String? { thread.turns.last { $0.role == .assistant }?.steps.last?.text }
+
+    /// His row opens his latest chat, once; after that the chat on screen stays until you choose another.
+    func openLatest(with client: NodeClient) async {
+        guard !opened, conversation == nil, thread.isEmpty, live == nil else { return }
+        opened = true
+        struct Listed: Decodable { let conversations: [ConversationSummary] }
+        guard let latest = try? await Chats.mostRecent(client.get("/api/conversations", as: Listed.self).conversations) else { return }
+        await open(latest.id, with: client)
+    }
+
+    /// A kept chat, as the node holds it; if he is answering in it, his turn is watched from where it stands.
+    func open(_ id: String, with client: NodeClient) async {
+        leave()
+        opened = true
+        loading = true
+        defer { loading = false }
+        struct Get: Encodable { let id: String }
+        struct Got: Decodable { let conversation: ConversationDetail }
+        do {
+            let detail = try await client.post("/api/conversations/get", Get(id: id), as: Got.self).conversation
+            (conversation, title, role, problem, turn) = (detail.id, detail.title, detail.role, nil, nil)
+            thread = ChatThread(kept: detail.messages, role: detail.role)
+            if let running = detail.turn { attach(running.id, with: client) }
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
 
     func send(with client: NodeClient) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard live == nil, !text.isEmpty else { return }
         draft = ""
-        messages.append(Message(role: .you, text: text))
-        messages.append(Message(role: .galahad, text: "", status: .streaming))
-        failure = nil
+        thread.begin(question: text, role: role)
         let request = ChatRequest(role: role, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text)])
-        live = Task {
-            do {
-                for try await event in client.events("/api/chat", request) { apply(event) }
-                end(nil)
-            } catch is CancellationError {
-                end(nil)
-            } catch {
-                end(error.localizedDescription)
-            }
-        }
+        watch(client.events("/api/chat", request))
     }
 
     /// Asks the node to stop the turn under way; the stream then says it stopped, and ends.
@@ -84,57 +91,64 @@ struct ChatRequest: Encodable, Sendable {
     /// A new chat. The one before stays kept on the node.
     func startNew() {
         guard live == nil else { return }
-        messages = []
-        conversation = nil
+        thread = ChatThread()
+        (conversation, title, problem, role) = (nil, nil, nil, "planner")
+        opened = true
     }
 
-    private func apply(_ event: ChatEvent) {
-        guard let index = messages.lastIndex(where: { $0.role == .galahad }) else { return }
-        switch event {
-        case .turn(let id, let kept):
-            turn = id
-            if let kept { conversation = kept }
-            add(index, Step(id: "asked", text: "Asked as \(role)", tool: false, state: .done))
-        case .conversation(let id, _):
-            conversation = id
-        case .model(let ref):
-            add(index, Step(id: "model-\(ref)", text: "Thinking with \(ref)", tool: false, state: .active))
-        case .text(let text):
-            if !(messages[index].steps.last.map { $0.text == "Answering" && $0.state == .active } ?? false) {
-                add(index, Step(id: "answering-\(messages[index].steps.count)", text: "Answering", tool: false, state: .active))
+    /// The chat on screen was deleted: what's left is a new one.
+    func forget(_ id: String) {
+        guard conversation == id else { return }
+        leave()
+        startNew()
+    }
+
+    /// A turn already under way: the node replays it from its start, then streams the rest.
+    private func attach(_ id: String, with client: NodeClient) {
+        struct Attach: Encodable { let turn: String }
+        turn = id
+        watch(client.events("/api/turns/attach", Attach(turn: id)))
+    }
+
+    private func watch(_ events: AsyncThrowingStream<ChatEvent, any Error>) {
+        // Each watch is its own: one that was left (another chat opened) says nothing more to the chat on screen.
+        let watch = UUID()
+        watching = watch
+        live = Task {
+            do {
+                for try await event in events {
+                    guard watching == watch else { return }
+                    switch event {
+                    case .turn(let id, let kept, _, _, _):
+                        turn = id
+                        if let kept { conversation = kept }
+                    case .conversation(let id, let named):
+                        (conversation, title) = (id, named)
+                    default: break
+                    }
+                    thread.apply(event)
+                }
+                guard watching == watch, !Task.isCancelled else { return }
+                thread.end()
+            } catch {
+                // Leaving the chat ends the watching, never the turn: what it has said so far stays as it stands.
+                guard watching == watch, !Task.isCancelled, !(error is CancellationError) else { return }
+                // The watching was cut (the app was away, the network dropped), not the turn: coming back finds it again.
+                thread.fail(error.localizedDescription)
             }
-            messages[index].text += text
-        case .tool(let id, let title):
-            add(index, Step(id: "tool-\(id)", text: title, tool: true, state: .active))
-        case .toolResult(let id, let ok, _):
-            if let at = messages[index].steps.firstIndex(where: { $0.id == "tool-\(id)" }) { messages[index].steps[at].state = ok ? .done : .warn }
-        case .stopped:
-            messages[index].status = .stopped
-        case .error(let message):
-            failure = message
-        case .done, .other:
-            break
+            guard watching == watch else { return }
+            (live, turn, watching) = (nil, nil, nil)
         }
     }
 
-    /// A new step; the one before it, if still under way, is over.
-    private func add(_ index: Int, _ step: Step) {
-        if let last = messages[index].steps.indices.last, messages[index].steps[last].state == .active, !messages[index].steps[last].tool {
-            messages[index].steps[last].state = .done
-        }
-        messages[index].steps.append(step)
+    /// Back in the app, or after the watching was cut: the chat on screen as the node holds it now.
+    func resume(with client: NodeClient) async {
+        guard let conversation, live == nil, !loading else { return }
+        await open(conversation, with: client)
     }
 
-    /// The stream ended: the answer it was writing is settled (done, or failed with why).
-    private func end(_ error: String?) {
-        live = nil
-        turn = nil
-        guard let index = messages.lastIndex(where: { $0.role == .galahad }), messages[index].status == .streaming else { return }
-        if let why = failure ?? error {
-            messages[index].status = .failed(why)
-        } else {
-            messages[index].status = .done
-            if let last = messages[index].steps.indices.last, messages[index].steps[last].state == .active { messages[index].steps[last].state = .done }
-        }
+    private func leave() {
+        live?.cancel()
+        (live, watching) = (nil, nil)
     }
 }

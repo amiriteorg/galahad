@@ -200,44 +200,70 @@ struct SSEReader {
 /// What a chat answer sends as it goes (core's `ChatStreamEvent`), as far as this app reads it; anything else is kept
 /// by its type, so a newer node's events pass by harmlessly.
 enum ChatEvent: Equatable, Sendable {
-    /// First in a turn the node owns: its id, and the kept chat it belongs to.
-    case turn(id: String, conversation: String?)
+    /// First in a turn the node owns: its id, the kept chat it belongs to, the kept message its first answer is, the
+    /// role it answers as, and whether what follows first is what already happened (attaching to it later).
+    case turn(id: String, conversation: String?, answer: Int?, role: String, replay: Bool)
     /// The kept chat this answer belongs to (first, when it's new).
     case conversation(id: String, title: String)
     case model(String)
     case text(String)
-    /// He calls one of his tools.
-    case tool(id: String, title: String)
+    /// He calls one of his tools: `input` is a short summary of the arguments.
+    case tool(id: String, name: String, title: String, input: String)
     case toolResult(id: String, ok: Bool, summary: String)
+    /// Archived entries he was given as context for this answer.
+    case archive([ArchiveEntry])
+    /// A model didn't answer, and the next on the roster was asked.
+    case fallback(from: String, error: String)
+    /// A message of yours reached him while he worked: what follows answers it, in the same turn.
+    case steer(String)
     case stopped(reason: String)
     case error(String)
-    case done
+    case done(ref: String)
     case other(String)
+
+    struct ArchiveEntry: Decodable, Equatable, Sendable {
+        let id: String
+        let title: String
+        let kind: String
+        let trust: String
+    }
 
     init?(json: String) {
         struct Frame: Decodable {
             let type: String
             let id: String?
             let conversation: String?
+            let answer: Int?
+            let role: String?
+            let replay: Bool?
             let title: String?
+            let name: String?
+            let input: String?
             let ref: String?
             let text: String?
             let ok: Bool?
             let summary: String?
+            let entries: [ArchiveEntry]?
+            let from: String?
             let reason: String?
             let error: String?
         }
         guard let frame = try? JSONDecoder().decode(Frame.self, from: Data(json.utf8)) else { return nil }
         switch (frame.type, frame) {
-        case ("turn", let f): guard let id = f.id else { return nil }; self = .turn(id: id, conversation: f.conversation)
+        case ("turn", let f):
+            guard let id = f.id else { return nil }
+            self = .turn(id: id, conversation: f.conversation, answer: f.answer, role: f.role ?? "planner", replay: f.replay ?? false)
         case ("conversation", let f): guard let id = f.id else { return nil }; self = .conversation(id: id, title: f.title ?? "")
         case ("model", let f): self = .model(f.ref ?? "")
         case ("text", let f): guard let text = f.text else { return nil }; self = .text(text)
-        case ("tool", let f): self = .tool(id: f.id ?? "", title: f.title ?? "")
+        case ("tool", let f): self = .tool(id: f.id ?? "", name: f.name ?? "", title: f.title ?? "", input: f.input ?? "")
         case ("tool_result", let f): self = .toolResult(id: f.id ?? "", ok: f.ok ?? false, summary: f.summary ?? "")
+        case ("archive", let f): self = .archive(f.entries ?? [])
+        case ("fallback", let f): self = .fallback(from: f.from ?? "", error: f.error ?? "")
+        case ("steer", let f): guard let text = f.text else { return nil }; self = .steer(text)
         case ("stopped", let f): self = .stopped(reason: f.reason ?? "")
         case ("error", let f): self = .error(f.error ?? "Something went wrong.")
-        case ("done", _): self = .done
+        case ("done", let f): self = .done(ref: f.ref ?? "")
         default: self = .other(frame.type)
         }
     }

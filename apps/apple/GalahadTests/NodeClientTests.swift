@@ -76,15 +76,19 @@ struct NodeClientTests {
     }
 
     @Test func chatEventsAreReadByTheirTypeAndUnknownOnesKept() {
-        #expect(ChatEvent(json: #"{"type":"turn","id":"tn_1","conversation":null,"answer":null,"role":"planner","startedAt":1,"deadline":2,"replay":false}"#) == .turn(id: "tn_1", conversation: nil))
+        #expect(ChatEvent(json: #"{"type":"turn","id":"tn_1","conversation":null,"answer":null,"role":"planner","startedAt":1,"deadline":2,"replay":false}"#) == .turn(id: "tn_1", conversation: nil, answer: nil, role: "planner", replay: false))
+        #expect(ChatEvent(json: #"{"type":"turn","id":"tn_2","conversation":"cv_1","answer":7,"role":"engineer","startedAt":1,"deadline":2,"replay":true}"#) == .turn(id: "tn_2", conversation: "cv_1", answer: 7, role: "engineer", replay: true))
         #expect(ChatEvent(json: #"{"type":"conversation","id":"cv_1","title":"Hello","project":null}"#) == .conversation(id: "cv_1", title: "Hello"))
         #expect(ChatEvent(json: #"{"type":"model","ref":"stand-in/planner"}"#) == .model("stand-in/planner"))
         #expect(ChatEvent(json: #"{"type":"text","text":"Hi"}"#) == .text("Hi"))
-        #expect(ChatEvent(json: #"{"type":"tool","id":"t1","name":"recall","title":"Searching memory","input":"q"}"#) == .tool(id: "t1", title: "Searching memory"))
+        #expect(ChatEvent(json: #"{"type":"tool","id":"t1","name":"recall","title":"Searching memory","input":"q"}"#) == .tool(id: "t1", name: "recall", title: "Searching memory", input: "q"))
         #expect(ChatEvent(json: #"{"type":"tool_result","id":"t1","name":"recall","ok":false,"summary":"nothing"}"#) == .toolResult(id: "t1", ok: false, summary: "nothing"))
-        #expect(ChatEvent(json: #"{"type":"stopped","reason":"owner"}"#) == .stopped(reason: "owner"))
+        #expect(ChatEvent(json: #"{"type":"archive","entries":[{"id":"ar_1","title":"Notes","kind":"note","trust":"trusted"}]}"#) == .archive([.init(id: "ar_1", title: "Notes", kind: "note", trust: "trusted")]))
+        #expect(ChatEvent(json: #"{"type":"fallback","from":"a/b","error":"429"}"#) == .fallback(from: "a/b", error: "429"))
+        #expect(ChatEvent(json: #"{"type":"steer","text":"Skip it"}"#) == .steer("Skip it"))
+        #expect(ChatEvent(json: #"{"type":"stopped","reason":"you"}"#) == .stopped(reason: "you"))
         #expect(ChatEvent(json: #"{"type":"error","error":"no model"}"#) == .error("no model"))
-        #expect(ChatEvent(json: #"{"type":"done","ref":"x"}"#) == .done)
+        #expect(ChatEvent(json: #"{"type":"done","ref":"x"}"#) == .done(ref: "x"))
         #expect(ChatEvent(json: #"{"type":"usage","ref":"x","usage":null}"#) == .other("usage"))
         #expect(ChatEvent(json: "not json") == nil)
     }

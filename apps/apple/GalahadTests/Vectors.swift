@@ -77,6 +77,48 @@ struct Vectors: Decodable {
         let needs: [Needs]
     }
 
+    struct Thread: Decodable {
+        struct Turn: Decodable, Equatable {
+            let role: String
+            let content: String
+            let status: String
+            let error: String?
+            let sid: Int?
+            let steps: [Step]
+        }
+
+        struct Step: Decodable, Equatable {
+            let text: String
+            let detail: String?
+            let state: String
+            let tool: String?
+        }
+
+        let name: String
+        let role: String
+        let messages: [StoredMessage]
+        let question: String?
+        /// Each a stream event; null: the stream ends; a string: the watching was cut with it.
+        let events: [JSONValue]
+        let turns: [Turn]
+    }
+
+    struct ChatList: Decodable {
+        struct Group: Decodable { let label: String; let ids: [String] }
+        struct State: Decodable {
+            let state: String
+            let queued: Int
+            let held: String?
+            let needs: ConversationSummary.Needs?
+            let words: String
+        }
+
+        let now: Double
+        let list: [ConversationSummary]
+        let groups: [Group]
+        let states: [State]
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
@@ -85,6 +127,8 @@ struct Vectors: Decodable {
     let pairing: Pairing
     let looks: [Look]
     let roundtable: Roundtable
+    let threads: [Thread]
+    let chats: ChatList
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {

@@ -5,15 +5,23 @@ import SwiftUI
 struct ChatView: View {
     let session: Session
     @FocusState private var composing: Bool
+    @State private var listing = false
 
     private var chat: ChatModel { session.chat }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                if chat.messages.isEmpty { welcome }
-                ForEach(chat.messages) { message in
-                    MessageRow(message: message)
+                if chat.thread.isEmpty {
+                    if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) } else { welcome }
+                }
+                if let problem = chat.problem {
+                    Label("This chat couldn't be read: \(problem)", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color.siege)
+                }
+                ForEach(chat.thread.turns) { turn in
+                    MessageRow(turn: turn)
                 }
             }
             .padding(.horizontal)
@@ -33,22 +41,39 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text("Galahad").font(.headline)
-                    Text(session.galahad.text)
+                    Text(chat.title ?? session.galahad.text)
                         .font(.caption)
-                        .foregroundStyle(session.galahad.tone == .warn ? Color.siege : .secondary)
+                        .foregroundStyle(chat.title == nil && session.galahad.tone == .warn ? Color.siege : .secondary)
                         .lineLimit(1)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    listing = true
+                } label: {
+                    Label("Chats", systemImage: "clock.arrow.circlepath")
+                }
+                .accessibilityIdentifier("chats")
                 Button {
                     chat.startNew()
                     composing = true
                 } label: {
                     Label("New chat", systemImage: "square.and.pencil")
                 }
-                .disabled(chat.answering || chat.messages.isEmpty)
+                .disabled(chat.answering || chat.thread.isEmpty)
             }
         }
+        .sheet(isPresented: $listing) {
+            ChatsView(session: session) { id in
+                listing = false
+                Task { await chat.open(id, with: session.client) }
+            } startNew: {
+                listing = false
+                chat.startNew()
+                composing = true
+            }
+        }
+        .task { await chat.openLatest(with: session.client) }
     }
 
     private var welcome: some View {
@@ -66,33 +91,33 @@ struct ChatView: View {
     }
 }
 
-/// One message: yours on the right in the ink, his on the left beside his drawing, with what he's doing above it.
+/// One message: yours on the right in the ink, his on the left beside his drawing, with what he did above it.
 struct MessageRow: View {
-    let message: ChatModel.Message
+    let turn: ChatThread.Turn
 
     var body: some View {
-        switch message.role {
-        case .you:
+        switch turn.role {
+        case .user:
             HStack {
                 Spacer(minLength: 56)
-                Text(message.text)
+                Text(turn.content)
                     .foregroundStyle(Color.onAccent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Color.ink, in: .rect(cornerRadius: 20, style: .continuous))
                     .textSelection(.enabled)
             }
-        case .galahad:
+        case .assistant:
             HStack(alignment: .top, spacing: 10) {
                 Portrait(drawing: "galahad", size: 34)
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(message.steps.filter(\.tool)) { step in
+                    ForEach(Array(turn.steps.enumerated()).filter { $0.element.tool != nil }, id: \.offset) { _, step in
                         Label(step.text, systemImage: step.state == .active ? "gearshape" : step.state == .done ? "checkmark.circle" : "exclamationmark.circle")
                             .font(.caption)
-                            .foregroundStyle(step.state == .warn ? Color.siege : .secondary)
+                            .foregroundStyle(step.state == .warn || step.state == .error ? Color.siege : .secondary)
                     }
-                    if !message.text.isEmpty {
-                        Text(Self.markdown(message.text))
+                    if !turn.content.isEmpty {
+                        Text(Self.markdown(turn.content))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(.fill.tertiary, in: .rect(cornerRadius: 20, style: .continuous))
@@ -107,18 +132,20 @@ struct MessageRow: View {
     }
 
     @ViewBuilder private var footer: some View {
-        switch message.status {
+        switch turn.status {
         case .streaming:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text(message.steps.last?.text ?? "Starting")
+                Text(turn.steps.last?.text ?? "Starting")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-        case .failed(let why):
-            Label("Couldn't answer: \(why)", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Color.siege)
+        case .error:
+            Label("Couldn't answer: \(turn.error ?? "no reason given")", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Color.siege)
         case .stopped:
-            Label("Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
+            Label(turn.steps.last { $0.state == .warn && $0.tool == nil }?.text ?? "Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
+        case .steered:
+            Label("Your message reached him here", systemImage: "arrow.turn.down.right").font(.caption).foregroundStyle(.secondary)
         case .done:
             EmptyView()
         }
