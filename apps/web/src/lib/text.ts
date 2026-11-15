@@ -109,6 +109,25 @@ export function roleParts(models: readonly string[], presets: readonly KeyPreset
   return { own: models.filter((ref) => !onPlan(ref)), plans: models.filter(onPlan) };
 }
 
+/** What a provider needs once a key for it is sealed under `secretName`: the request that points it at the key (null:
+ * nothing, or nothing this device may do), and what to say of it (null: nothing to say). A known preset is configured
+ * from its own settings; one already configured is pointed at the new key. */
+export function providerSetup(
+  data: { providers: readonly { id: string; kind: string; baseUrl: string; secret: string | null }[]; presets: readonly (KeyPreset & { baseUrl?: string; note?: string })[] },
+  providerId: string,
+  secretName: string,
+  mayConfigure: boolean,
+): { request: { id: string; kind?: string; baseUrl?: string; secret: string } | null; say: string | null } {
+  if (!mayConfigure) return { request: null, say: null };
+  const existing = data.providers.find((p) => p.id === providerId);
+  if (existing?.secret === secretName) return { request: null, say: null };
+  if (existing) return { request: { id: providerId, kind: existing.kind, baseUrl: existing.baseUrl, secret: secretName }, say: `${providerId} now uses this key.` };
+  const preset = data.presets.find((p) => p.id === providerId);
+  if (!preset) return { request: null, say: null };
+  if (!preset.baseUrl) return { request: null, say: preset.note ?? `Add ${providerId}'s base URL on the Models page to start using it.` };
+  return { request: { id: providerId, secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
+}
+
 /** Longest matching key prefix wins (sk-orca- beats sk-). A subscription's sign-in is no provider's key. */
 export function detectProvider(key: string, presets: KeyPreset[], signIns?: readonly SignInForm[]): string | null {
   if (detectSignIn(key, signIns)) return null;

@@ -17,6 +17,8 @@ import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
+import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
+import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
@@ -327,6 +329,21 @@ const knightForms = {
   ].map((c) => ({ ...c, temperament: core.resolveAvatar(c.id, c.avatar).temperament })),
 };
 
+// ---- keys and the providers they are for (the PWA's own lib/text.ts, over the node's real presets) -----------------------
+const fakeKeys = ["sk-ant-api03-FAKE-for-tests", "sk-ant-oat01-FAKE-for-tests", "sk-or-v1-FAKE", "sk-orca-FAKE", "sk-kimi-FAKE", "sk-sp-FAKE", "gsk_FAKE", "plain-FAKE", ""];
+const configured = [{ id: "openrouter", kind: "openai" as const, baseUrl: "https://openrouter.ai/api/v1", secret: "openrouter", label: null, hasKey: true }];
+const keys = {
+  presets: PRESETS,
+  signIns: SIGN_INS,
+  providers: configured,
+  detected: fakeKeys.map((key) => ({ key, provider: detectProvider(key, PRESETS, SIGN_INS), signIn: detectSignIn(key, SIGN_INS) })),
+  plans: PRESETS.map((preset) => ({ id: preset.id, line: planLine(preset) })),
+  setups: [
+    ["anthropic", "anthropic", true], ["zai-coding", "zai-coding", true], ["opencode-go", "opencode-go", true], ["openrouter", "openrouter", true],
+    ["openrouter", "openrouter-2", true], ["verda", "verda", true], ["cloudflare-ai", "cf", true], ["mine", "mine", true], ["anthropic", "anthropic", false],
+  ].map(([provider, secret, may]) => ({ provider, secret, may, ...providerSetup({ providers: configured, presets: PRESETS }, provider as string, secret as string, may as boolean) })),
+};
+
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
 const stored = (id: number, role: "user" | "assistant", content: string, extra: Partial<core.StoredMessage> = {}): core.StoredMessage => ({
   id,
@@ -600,6 +617,7 @@ const vectors = {
   roundtable,
   rooms,
   knightForms,
+  keys,
   threads,
   chats,
   markdown,

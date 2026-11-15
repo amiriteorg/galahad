@@ -30,6 +30,10 @@ Ask Galahad anything with "show" in it, and the stand-in answers with everything
 list, a quote, a table, code, a chart, figures, a plan's steps, a page and choices to tap. A message with "Take your
 time" is never answered, so a turn stays running to leave and come back to.
 
+It also seats a room of two (Kay and Gareth), who answer you there. Ask a knight to "propose" something and its
+stand-in proposes a task with its tool, so its card comes up to approve. Keys (More → Keys) recognise a pasted key's
+provider or coding plan the PWA's way, refuse a subscription's sign-in, and keep a copy on the iPhone only when asked.
+
 ## TestFlight
 
 `scripts/testflight.sh` archives the app for devices, signs it for your team (Xcode's automatic signing makes the

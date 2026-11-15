@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { fuzzyMatch, rank } from "./fuzzy.ts";
 import { type Block, type Inline, inlineText, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
 import { describeSchedule, scheduleProblem } from "./schedule.ts";
-import { detectProvider, detectSignIn, matchRanges, parseCommand, planLine, roleParts } from "./text.ts";
+import { detectProvider, detectSignIn, matchRanges, parseCommand, planLine, providerSetup, roleParts } from "./text.ts";
 import { countdown, duration, hlcMs, minutesLabel, relativeTime } from "./time.ts";
 
 const text = (v: string): Inline => ({ t: "text", v });
@@ -181,6 +181,22 @@ describe("text helpers", () => {
     );
     expect(planLine({ id: "anthropic" })).toBeNull();
     expect(planLine(undefined)).toBeNull();
+  });
+
+  test("a sealed key's provider is configured from its preset, pointed at the new key when it exists, and left alone otherwise", () => {
+    const data = {
+      providers: [{ id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", secret: "openrouter" }],
+      presets: [{ id: "anthropic", baseUrl: "https://api.anthropic.com" }, { id: "zai-coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", plan: { name: "GLM Coding Plan", says: "", terms: "", models: [] } }, { id: "verda", note: "Verda needs your own base URL." }, { id: "cloudflare-ai" }],
+    };
+    expect(providerSetup(data, "anthropic", "anthropic", true)).toEqual({ request: { id: "anthropic", secret: "anthropic" }, say: "anthropic is configured and ready." });
+    expect(providerSetup(data, "zai-coding", "zai-coding", true).say).toContain("GLM Coding Plan is a coding plan");
+    expect(providerSetup(data, "openrouter", "openrouter", true)).toEqual({ request: null, say: null });
+    expect(providerSetup(data, "openrouter", "openrouter-2", true)).toEqual({ request: { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", secret: "openrouter-2" }, say: "openrouter now uses this key." });
+    expect(providerSetup(data, "verda", "verda", true)).toEqual({ request: null, say: "Verda needs your own base URL." });
+    expect(providerSetup(data, "cloudflare-ai", "cf", true)).toEqual({ request: null, say: "Add cloudflare-ai's base URL on the Models page to start using it." });
+    expect(providerSetup(data, "mine", "mine", true)).toEqual({ request: null, say: null });
+    // A device that may not configure providers seals the key and nothing else.
+    expect(providerSetup(data, "anthropic", "anthropic", false)).toEqual({ request: null, say: null });
   });
 
   test("a role's models as he uses them: his own in order, and the plans that do coding", () => {

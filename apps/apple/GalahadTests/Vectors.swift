@@ -102,6 +102,19 @@ struct Vectors: Decodable {
         let temperaments: [Temperament]
     }
 
+    struct KeyCases: Decodable {
+        struct Detected: Decodable { let key: String; let provider: String?; let signIn: ProvidersView.SignIn? }
+        struct PlanLine: Decodable { let id: String; let line: String? }
+        struct Request: Decodable, Equatable { let id: String; let kind: String?; let baseUrl: String?; let secret: String }
+        struct Setup: Decodable { let provider: String; let secret: String; let may: Bool; let request: Request?; let say: String? }
+        let presets: [ProvidersView.Preset]
+        let signIns: [ProvidersView.SignInForm]
+        let providers: [ProvidersView.Provider]
+        let detected: [Detected]
+        let plans: [PlanLine]
+        let setups: [Setup]
+    }
+
     struct Thread: Decodable {
         struct Turn: Decodable, Equatable {
             let role: String
@@ -235,6 +248,7 @@ struct Vectors: Decodable {
     let roundtable: Roundtable
     let rooms: Rooms
     let knightForms: KnightForms
+    let keys: KeyCases
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]

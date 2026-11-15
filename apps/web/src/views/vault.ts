@@ -1,6 +1,6 @@
 import type { ProviderView, SecretRequestView, SecretView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { detectProvider, detectSignIn, planLine, type SignInForm } from "../lib/text.ts";
+import { detectProvider, detectSignIn, planLine, providerSetup, type SignInForm } from "../lib/text.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { PresetView } from "../types.ts";
 import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonRows } from "../ui/controls.ts";
@@ -39,18 +39,9 @@ async function loadProviders(ctx: Ctx): Promise<ProvidersResponse> {
 }
 
 async function ensureProviderConfigured(ctx: Ctx, data: ProvidersResponse, providerId: string, secretName: string): Promise<string | null> {
-  if (!ctx.can("brain:write")) return null;
-  const preset = data.presets.find((p) => p.id === providerId);
-  const existing = data.providers.find((p) => p.id === providerId);
-  if (existing?.secret === secretName) return null;
-  if (existing) {
-    await ctx.api.post("/api/providers", { id: providerId, kind: existing.kind, baseUrl: existing.baseUrl, secret: secretName });
-    return `${providerId} now uses this key.`;
-  }
-  if (!preset) return null;
-  if (!preset.baseUrl) return preset.note ?? `Add ${providerId}'s base URL on the Models page to start using it.`;
-  await ctx.api.post("/api/providers", { id: providerId, secret: secretName });
-  return planLine(preset) ?? `${providerId} is configured and ready.`;
+  const { request, say } = providerSetup(data, providerId, secretName, ctx.can("brain:write"));
+  if (request) await ctx.api.post("/api/providers", request);
+  return say;
 }
 
 /** Seals a value into the vault, then wires up the provider if it's a known preset. */
