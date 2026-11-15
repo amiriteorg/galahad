@@ -74,6 +74,12 @@ describe("the stylesheet", () => {
     }
   });
 
+  test("a double tap never zooms the page (pinching still does), and holding a tab or a button brings up no link preview", () => {
+    const declares = (selector: string, declaration: RegExp) => all.some((rule) => rule.media.length === 0 && rule.selectors.includes(selector) && declaration.test(rule.body));
+    expect(declares("html", /touch-action:\s*manipulation/)).toBe(true);
+    for (const control of [".tab", ".btn", ".sidebar a"]) expect([control, declares(control, /-webkit-touch-callout:\s*none/)]).toEqual([control, true]);
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {
