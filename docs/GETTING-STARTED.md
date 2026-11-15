@@ -85,12 +85,12 @@ Nothing is needed on the server: the node makes its own key the first time a dev
 ```sh
 bun galahad notify                         # the devices he can reach, what he tells you, quiet hours, what was sent today
 bun galahad notify test                    # one test notification to every device (notify test phone: to one)
-bun galahad notify quiet 22:00-07:00       # quiet hours, Denmark's time unless --tz says otherwise (notify quiet off)
+bun galahad notify quiet 22:00-07:00       # quiet hours, in the node's own time zone unless --tz says otherwise (notify quiet off)
 bun galahad notify limit 12                # at most this many a day, the last two kept for alerts; one message says when it's reached
 bun galahad notify off phone               # stop notifying a device (it's turned on again from that device)
 ```
 
-What a notification holds is a short title, one line and where it opens, encrypted to that browser: the push service that carries it (Apple's for an iPhone) can't read it. Never a key, never anything about the bank, never a model's own words. Quiet hours (22:00 to 07:00 in Denmark by default) hold everything but an alert until morning, then one message says what waited. A turn you're watching on another device isn't pushed. If a test doesn't arrive, `bun galahad doctor` has a line for it, and the app's Settings says what the push service answered. A browser whose push service isn't Apple's, Google's, Mozilla's or Microsoft's is refused until you allow its host on the node (`GALAHAD_PUSH_HOSTS=push.example.org`).
+What a notification holds is a short title, one line and where it opens, encrypted to that browser: the push service that carries it (Apple's for an iPhone) can't read it. Never a key, never anything about the bank, never a model's own words. Quiet hours (22:00 to 07:00 by default, in the node's own time zone until you set one: a server that keeps UTC reads them in UTC, so give yours with `--tz`) hold everything but an alert until morning, then one message says what waited. A turn you're watching on another device isn't pushed. If a test doesn't arrive, `bun galahad doctor` has a line for it, and the app's Settings says what the push service answered. A browser whose push service isn't Apple's, Google's, Mozilla's or Microsoft's is refused until you allow its host on the node (`GALAHAD_PUSH_HOSTS=push.example.org`).
 
 ## 4. Add the server
 

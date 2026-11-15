@@ -70,6 +70,8 @@ export class NotifyStore {
   constructor(
     path: string,
     private readonly now: () => number = Date.now,
+    /** The node's own time zone: quiet hours are read in it until you set one. */
+    private readonly zone: string = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   ) {
     if (path !== ":memory:" && !existsSync(path)) closeSync(openSync(path, "wx", 0o600));
     this.db = new Database(path);
@@ -135,11 +137,11 @@ export class NotifyStore {
 
   prefs(): NotifyPrefs {
     const row = this.db.query<{ v: string }, []>("SELECT v FROM settings WHERE k = 'prefs'").get();
-    if (!row) return readNotifyPrefs(null);
+    if (!row) return readNotifyPrefs(null, this.zone);
     try {
-      return readNotifyPrefs(JSON.parse(row.v));
+      return readNotifyPrefs(JSON.parse(row.v), this.zone);
     } catch {
-      return readNotifyPrefs(null);
+      return readNotifyPrefs(null, this.zone);
     }
   }
 

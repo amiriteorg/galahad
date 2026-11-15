@@ -237,7 +237,7 @@ Notifications (he comes to you: Web Push to your own paired devices, encrypted t
   notify test [device]            one test notification, to every device or the one named
   notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question (all on)
   notify quiet [on|off|HH:MM-HH:MM] [--tz Europe/Copenhagen]
-                                  quiet hours (22:00-07:00, Denmark's time): everything but an alert waits,
+                                  quiet hours (22:00-07:00, the node's own time zone until you give one): everything but an alert waits,
                                   then one message says what waited
   notify limit <n>                at most n a day (12), the last two kept for alerts; when ordinary news reaches
                                   the limit, one message says so

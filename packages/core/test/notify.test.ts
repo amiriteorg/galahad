@@ -157,25 +157,28 @@ describe("when he speaks, and when he stays silent", () => {
     expect(plan([{ ...done, key: "journal:2026-11-12", kind: "journal" as never }]).send).toEqual([]);
   });
 
-  test("quiet hours (22:00 to 07:00 in Denmark) hold everything but alerts; when they end, what waited is told together", () => {
+  // (Quiet hours read in Copenhagen's time: a zone with summer time, set as you would set yours.)
+  const copenhagen: NotifyPrefs = { ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/Copenhagen" } };
+
+  test("quiet hours (22:00 to 07:00, here in Copenhagen's time) hold everything but alerts; when they end, what waited is told together", () => {
     // 23:30 in Copenhagen (winter: UTC+1).
     const night = at("2026-11-12T22:30:00Z");
     const warn = item("notice:disk");
     const approval = item("action:a", { kind: "approval" });
     const alert = item("notice:vault", { alert: true });
-    expect(plan([warn, approval], { now: night })).toEqual({ send: [], waiting: "quiet" });
-    expect(plan([warn, approval, alert], { now: night })).toEqual({ send: [alert], waiting: "quiet" });
+    expect(plan([warn, approval], { now: night, prefs: copenhagen })).toEqual({ send: [], waiting: "quiet" });
+    expect(plan([warn, approval, alert], { now: night, prefs: copenhagen })).toEqual({ send: [alert], waiting: "quiet" });
     // 07:00 exactly: they've ended, and everything that waited goes as one message.
     const morning = at("2026-11-13T06:00:00Z");
-    const woke = plan([warn, approval], { now: morning, told: new Map() });
+    const woke = plan([warn, approval], { now: morning, told: new Map(), prefs: copenhagen });
     expect(woke.send).toEqual([warn, approval]);
     expect(notifyMessage(woke.send)).toMatchObject({ kind: "summary", title: "Galahad: 2 things", body: "1 thing needs you, 1 approval is waiting.", open: "inbox" });
     // 06:59 is still quiet.
-    expect(plan([warn], { now: morning - 60_000 }).send).toEqual([]);
+    expect(plan([warn], { now: morning - 60_000, prefs: copenhagen }).send).toEqual([]);
   });
 
-  test("quiet hours follow Denmark's clock through summer time, another zone, a same-day window, and off", () => {
-    const quiet = NOTIFY_DEFAULTS.quiet;
+  test("quiet hours follow the zone's clock through summer time, another zone, a same-day window, and off", () => {
+    const quiet = copenhagen.quiet;
     // Summer: Copenhagen is UTC+2, so 22:00 there is 20:00 UTC.
     expect(inQuietHours(quiet, at("2026-07-01T20:00:00Z"))).toBe(true);
     expect(inQuietHours(quiet, at("2026-07-01T19:59:00Z"))).toBe(false);
@@ -349,10 +352,20 @@ describe("settings and what a device hands over", () => {
     // (`journal`: a switch an older version stored for a kind that's gone; it's read past like any other stranger.)
     expect(readNotifyPrefs({ kinds: { journal: true, finished: false, approval: "yes", extra: true }, quiet: { from: "25:00", to: "06:30", tz: "Nowhere/Land" }, perDay: 999 })).toEqual({
       kinds: { ...NOTIFY_DEFAULTS.kinds, finished: false },
-      quiet: { on: true, from: "22:00", to: "06:30", tz: "Europe/Copenhagen" },
+      quiet: { on: true, from: "22:00", to: "06:30", tz: "UTC" },
       perDay: 12,
     });
-    expect(NOTIFY_DEFAULTS).toMatchObject({ kinds: { "needs-you": true, approval: true, finished: true, question: true }, quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" } });
+    expect(NOTIFY_DEFAULTS).toMatchObject({ kinds: { "needs-you": true, approval: true, finished: true, question: true }, quiet: { on: true, from: "22:00", to: "07:00", tz: "UTC" } });
+  });
+
+  test("quiet hours are read in the node's own time zone until you set one: no fleet's default says where its owner lives", () => {
+    // The zone the node passes (its own), and UTC when it has none to give.
+    expect(readNotifyPrefs(null, "Asia/Tokyo").quiet.tz).toBe("Asia/Tokyo");
+    expect(readNotifyPrefs(null).quiet.tz).toBe("UTC");
+    expect(readNotifyPrefs(null, "Not/AZone").quiet.tz).toBe("UTC");
+    // A zone already stored (set from the app or a terminal, as before this changed) stays as it was.
+    expect(readNotifyPrefs({ quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" } }, "Asia/Tokyo").quiet.tz).toBe("Europe/Copenhagen");
+    expect(readNotifyPrefs({ quiet: { tz: "Nowhere/Land" } }, "Asia/Tokyo").quiet.tz).toBe("Asia/Tokyo");
   });
 
   test("what the node takes is checked at the door", () => {

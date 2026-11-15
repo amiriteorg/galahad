@@ -128,3 +128,14 @@ describe("what couldn't be told in time", () => {
     expect(h.sent).toEqual([]);
   });
 });
+
+describe("quiet hours' time zone", () => {
+  test("until you set one, the node's own; a zone you set is kept, whatever the node's", () => {
+    const tokyo = new NotifyStore(":memory:", Date.now, "Asia/Tokyo");
+    expect(tokyo.prefs().quiet.tz).toBe("Asia/Tokyo");
+    tokyo.setPrefs({ ...tokyo.prefs(), quiet: { ...tokyo.prefs().quiet, tz: "America/Chicago" } });
+    expect(tokyo.prefs().quiet.tz).toBe("America/Chicago");
+    // Without one given, the store asks the machine it runs on.
+    expect(new NotifyStore(":memory:").prefs().quiet.tz).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  });
+});

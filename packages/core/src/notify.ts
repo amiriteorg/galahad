@@ -45,16 +45,19 @@ export interface NotifyPrefs {
 }
 
 export const NOTIFY_PER_DAY = { min: 1, max: 50, default: 12 } as const;
+/** Quiet hours are read in the node's own time zone until you set one (readNotifyPrefs' `zone`); UTC where it has none. */
 export const NOTIFY_DEFAULTS: NotifyPrefs = {
   kinds: { "needs-you": true, approval: true, finished: true, question: true },
-  quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" },
+  quiet: { on: true, from: "22:00", to: "07:00", tz: "UTC" },
   perDay: NOTIFY_PER_DAY.default,
 };
 
 export const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Stored preferences, read leniently: whatever doesn't read as a setting is the default. */
-export function readNotifyPrefs(raw: unknown): NotifyPrefs {
+/** Stored preferences, read leniently: whatever doesn't read as a setting is the default. `zone`: the node's own time zone,
+ * which quiet hours are read in until you set one. */
+export function readNotifyPrefs(raw: unknown, zone: string = NOTIFY_DEFAULTS.quiet.tz): NotifyPrefs {
+  const ownZone = isTimeZone(zone) ? zone : NOTIFY_DEFAULTS.quiet.tz;
   const r = (raw && typeof raw === "object" ? raw : {}) as { kinds?: Record<string, unknown>; quiet?: Record<string, unknown>; perDay?: unknown };
   const kinds = { ...NOTIFY_DEFAULTS.kinds };
   for (const kind of NOTIFY_KINDS) if (typeof r.kinds?.[kind] === "boolean") kinds[kind] = r.kinds[kind] as boolean;
@@ -66,7 +69,7 @@ export function readNotifyPrefs(raw: unknown): NotifyPrefs {
       on: typeof q.on === "boolean" ? q.on : NOTIFY_DEFAULTS.quiet.on,
       from: clock(q.from, NOTIFY_DEFAULTS.quiet.from),
       to: clock(q.to, NOTIFY_DEFAULTS.quiet.to),
-      tz: typeof q.tz === "string" && isTimeZone(q.tz) ? q.tz : NOTIFY_DEFAULTS.quiet.tz,
+      tz: typeof q.tz === "string" && isTimeZone(q.tz) ? q.tz : ownZone,
     },
     perDay: typeof r.perDay === "number" && Number.isInteger(r.perDay) && r.perDay >= NOTIFY_PER_DAY.min && r.perDay <= NOTIFY_PER_DAY.max ? r.perDay : NOTIFY_DEFAULTS.perDay,
   };
