@@ -27,6 +27,8 @@ struct ChatView: View {
         }
         .navigationTitle("Galahad")
         .navigationBarTitleDisplayMode(.inline)
+        // A conversation has the screen to itself, as in Messages.
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
@@ -77,7 +79,7 @@ struct MessageRow: View {
                     .foregroundStyle(Color.onAccent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: .rect(cornerRadius: 20, style: .continuous))
+                    .background(Color.ink, in: .rect(cornerRadius: 20, style: .continuous))
                     .textSelection(.enabled)
             }
         case .galahad:
@@ -154,14 +156,15 @@ struct Composer: View {
                     .buttonBorderShape(.circle)
                     .accessibilityLabel("Stop Galahad answering")
                 } else {
+                    let empty = chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button {
                         chat.send(with: client)
                     } label: {
-                        Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(Color.onAccent).frame(width: 30, height: 30)
+                        Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(empty ? Color.secondary : Color.onAccent).frame(width: 30, height: 30)
                     }
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.circle)
-                    .disabled(chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(empty)
                     .accessibilityLabel("Send")
                     .accessibilityIdentifier("send")
                 }

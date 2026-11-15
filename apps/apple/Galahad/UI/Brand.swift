@@ -8,6 +8,9 @@ import UIKit
  */
 
 extension Color {
+    /// The ink, the app's accent: the black tile on light, the cream on dark. Set as the tint at the root, since the
+    /// system's controls took system blue from the asset catalog's accent alone (seen on iOS 26.1).
+    static let ink = Color(.accent)
     /// Galahad's red: what needs you, and his seat at the Round Table.
     static let siege = Color(.siege)
     /// What is written on the ink (the accent): cream on the black tile, black on the cream.
@@ -60,13 +63,17 @@ struct RoundtableMark: View {
     }
 }
 
-/// The app's icon, as the app draws it: the Roundtable on the black tile, as appIcon() seats it.
+/// The app's icon, as the app draws it: the Roundtable on the black tile, as appIcon() seats it, with appIcon()'s faint
+/// white edge (a pixel wide here), which keeps the tile apart from a black page.
 struct AppTile: View {
     var size: CGFloat = 88
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous).fill(Color.tile)
+            RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous)
+                .fill(Color.tile)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 1 / displayScale)
             Image(.roundtable).resizable().scaledToFit().padding(size * 0.11).environment(\.colorScheme, .dark)
         }
         .frame(width: size, height: size)

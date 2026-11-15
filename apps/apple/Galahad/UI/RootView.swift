@@ -23,6 +23,7 @@ struct RootView: View {
                 }
             }
         }
+        .tint(.ink)
         .task { app.start() }
     }
 }
