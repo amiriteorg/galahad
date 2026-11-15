@@ -458,6 +458,8 @@ export function handShared(text: string): void {
 
 /** "New chat" from anywhere. A kept chat stays in your history; a temporary one can be brought back once. */
 export function startNewChat(): void {
+  // Asked for before any chat was shown: the one open last isn't brought back when the chat first is.
+  restored = true;
   if (!thread.turns.length) return;
   const wasTemporary = temporary && !current;
   const restore = newConversation();
