@@ -83,7 +83,7 @@ export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | nul
         : note === "home-screen-first"
           ? callout(
               "info",
-              "Tap Share, then Add to Home Screen, and open Galahad from there to pair it. The app on your Home Screen keeps its own key, apart from Safari's, and only it can get notifications: paired here first, you'd pair it twice.",
+              "In Safari, tap Share (in the ⋯ menu on iOS 26), then Add to Home Screen (under More if it isn't listed), and open Galahad from there to pair it. The app on your Home Screen keeps its own key, apart from Safari's, and only it can get notifications: paired here first, you'd pair it twice.",
               { title: "On an iPhone, add it to your Home Screen first" },
             )
           : null,

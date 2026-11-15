@@ -50,7 +50,7 @@ export const WHAT_IS_SENT = "A short title and one line, with where it opens: a 
 
 export const PUSH_STATE_TEXT: Record<PushState, string> = {
   unsupported: "This browser can't receive notifications from a web app.",
-  "home-screen": "On iPhone and iPad, notifications work once Galahad is on your Home Screen: tap Share, then Add to Home Screen, and open Galahad from there.",
+  "home-screen": "On iPhone and iPad, notifications work once Galahad is on your Home Screen: in Safari, tap Share (in the ⋯ menu on iOS 26), then Add to Home Screen, and open Galahad from there.",
   blocked: "Notifications are blocked for this site in your browser's settings. Allow them there, then turn this on.",
   off: "Off. Your browser asks you once, when you turn this on.",
   on: "On: he can reach this device when the app is closed.",

@@ -71,7 +71,7 @@ Until you turn this on, everything he has for you waits in the Inbox. With it, a
 
 **On an iPhone or iPad** (iOS 16.4 or later):
 
-1. Open the app's address in Safari, tap **Share**, then **Add to Home Screen**. iOS delivers notifications only to a web app on the Home Screen, never to a Safari tab.
+1. Open the app's address in Safari, tap **Share** (on iOS 26 it's in the **⋯** menu), then **Add to Home Screen** (under **More** if it isn't listed; leave **Open as Web App** on). iOS delivers notifications only to a web app on the Home Screen, never to a Safari tab.
 2. Open **Galahad** from the Home Screen. If it asks to be paired, pair it as above (paste the invite): the Home Screen app is its own device.
 3. **Settings → Notifications**, turn on **Notifications on this device**, and allow them when iOS asks. It asks only from that tap.
 4. Tap **Send a test**. It should arrive within a few seconds.
