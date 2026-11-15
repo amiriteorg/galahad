@@ -24,12 +24,15 @@ describe("the mark: Galahad's helm as the owner drew it", () => {
     expect(MARK_PATH.match(/M/g)!.length).toBeGreaterThanOrEqual(3);
   });
 
-  test("the app icon is the Roundtable on a black tile: its ring and chairs in the light ink, Galahad's seat in the red that holds on black", () => {
+  test("the app icon is the Roundtable on a white tile: its ring and chairs in black, Galahad's seat in the red that holds on white", () => {
+    // The owner's, 15 Nov: "the white background with the black table and red".
     const icon = walk(appIcon());
-    expect(icon.find((node) => node.tag === "rect")!.attrs).toMatchObject({ ...TILE, fill: INK.tile });
-    expect(icon.find((node) => node.tag === "circle")!.attrs).toMatchObject({ stroke: INK.light, "stroke-width": ROUNDTABLE.table.width });
-    expect(icon.filter((node) => node.tag === "rect" && node.attrs.fill === INK.siegeOnDark)).toHaveLength(1);
-    expect(icon.find((node) => node.tag === "g" && node.attrs.fill === INK.light)!.children).toHaveLength(ROUNDTABLE.seats.length);
+    expect(icon.find((node) => node.tag === "rect")!.attrs).toMatchObject({ ...TILE, fill: INK.paper });
+    expect(icon.find((node) => node.tag === "circle")!.attrs).toMatchObject({ stroke: INK.tile, "stroke-width": ROUNDTABLE.table.width });
+    expect(icon.filter((node) => node.tag === "rect" && node.attrs.fill === INK.siege)).toHaveLength(1);
+    expect(icon.find((node) => node.tag === "g" && node.attrs.fill === INK.tile)!.children).toHaveLength(ROUNDTABLE.seats.length);
+    // The full-bleed form a Home Screen shows is the same: white, the table in black.
+    expect(walk(maskableIcon()).find((node) => node.tag === "rect")!.attrs.fill).toBe(INK.paper);
     // Drawn, never a picture: crisp at a favicon's 16 px and a Home Screen's 180.
     expect(icon.some((node) => node.tag === "image")).toBe(false);
   });

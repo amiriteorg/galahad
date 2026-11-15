@@ -1,15 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
   <title>Galahad</title>
-  <rect width="1024" height="1024" fill="#0a0a0b"/>
+  <rect width="1024" height="1024" fill="#ffffff"/>
   <g transform="translate(204.8 204.8) scale(25.599999999999998)">
-    <circle cx="12" cy="12" r="5.25" stroke="#f8ebdc" stroke-width="1.5"/>
-    <g fill="#f8ebdc">
+    <circle cx="12" cy="12" r="5.25" stroke="#0a0a0b" stroke-width="1.5"/>
+    <g fill="#0a0a0b">
       <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(240 12 12)"/>
       <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(300 12 12)"/>
       <rect x="10" y="20" width="4" height="2" rx="1"/>
       <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(60 12 12)"/>
       <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(120 12 12)"/>
     </g>
-    <rect x="10" y="1" width="4" height="3" rx="1" fill="#ee2c36"/>
+    <rect x="10" y="1" width="4" height="3" rx="1" fill="#c4141b"/>
   </g>
 </svg>

@@ -13,9 +13,10 @@
  * the even-odd rule. */
 export const MARK_PATH = "M11.8 1.59C11.8 1.63 11.43 1.7 10.97 1.73C7.57 2 4.45 4 3.59 6.48C3.06 8 2.48 12.66 2.24 17.21C2.16 18.86 2.22 19.11 2.93 19.77C4.15 20.92 7.17 21.98 9.98 22.26C10.37 22.29 10.7 22.37 10.7 22.41C10.7 22.46 11.29 22.5 12 22.5C12.72 22.5 13.3 22.46 13.3 22.41C13.3 22.37 13.63 22.29 14.03 22.25C17.13 21.95 20.89 20.5 21.62 19.32C21.9 18.87 21.9 18.35 21.61 15.57C20.79 7.86 20.6 6.68 19.98 5.45C19.02 3.56 16.08 1.94 13.23 1.74C12.72 1.7 12.3 1.63 12.3 1.59C12.3 1.54 12.19 1.5 12.05 1.5C11.91 1.5 11.8 1.54 11.8 1.59ZM14.27 3.25C14.49 3.32 14.49 3.33 14.1 3.78C13.52 4.43 13.33 5.16 13.2 7.12C13.15 8.02 13.1 9.14 13.1 9.62C13.1 10.67 12.79 10.57 16.2 10.66C19.03 10.73 19.23 10.7 19.86 10.09C20.04 9.92 20.2 9.83 20.24 9.88C20.29 9.96 20.5 13.76 20.5 14.65L20.5 14.94L20.08 14.53C19.49 13.97 19.19 13.84 18.15 13.71C17.16 13.59 14.56 13.56 13.71 13.67L13.17 13.73L13.23 16.49C13.29 19.7 13.35 20 14.05 20.78L14.51 21.29L14.03 21.37C13.41 21.47 10.82 21.47 10.07 21.37L9.49 21.28L9.94 20.79C10.69 19.96 10.9 18.79 10.9 15.5L10.9 13.73L10.53 13.66C9.94 13.57 6.74 13.59 5.79 13.7C4.73 13.82 4.32 13.99 3.73 14.53L3.27 14.95L3.34 13.85C3.37 13.24 3.45 12.06 3.52 11.22L3.63 9.69L4.04 10.08C4.69 10.71 4.87 10.73 7.94 10.66C9.43 10.62 10.73 10.56 10.83 10.53C11.01 10.48 11.01 10.36 10.95 8.37C10.85 5.2 10.69 4.46 9.93 3.68L9.57 3.31L9.96 3.25C10.18 3.22 10.42 3.17 10.5 3.15C10.76 3.09 14.04 3.17 14.27 3.25ZM6.54 11.2C5.56 11.25 5.03 11.33 4.78 11.44C4.2 11.72 4.03 12.36 4.41 12.84L4.62 13.1L7.78 13.08L10.95 13.05L10.98 12.07L11.01 11.1L9.48 11.12C8.64 11.12 7.32 11.16 6.54 11.2ZM13.1 12.1L13.1 13.1L16.11 13.1C17.9 13.1 19.19 13.06 19.3 13C19.87 12.7 19.7 11.72 19.03 11.44C18.64 11.27 16.31 11.11 14.33 11.1L13.1 11.1L13.1 12.1Z";
 
-/** The app tile's black, the inks the flat mark is drawn in on the website, and Galahad's seat's red: the red of the
- * cross on his helm in the owner's drawing, a touch brighter, so it holds on white and on black. */
-export const INK = { tile: "#0a0a0b", light: "#f8ebdc", dark: "#141416", siege: "#c4141b", siegeOnDark: "#ee2c36" } as const;
+/** Galahad's black (the app's ink, and the table on his icon), the icon's white tile, the inks the flat mark is drawn
+ * in on the website, and Galahad's seat's red: the red of the cross on his helm in the owner's drawing, a touch
+ * brighter, so it holds on white and on black. */
+export const INK = { tile: "#0a0a0b", paper: "#ffffff", light: "#f8ebdc", dark: "#141416", siege: "#c4141b", siegeOnDark: "#ee2c36" } as const;
 
 /**
  * The Roundtable's icon: the Round Table from above, as a floor plan draws one, on the 24-unit icon grid. The table is a
@@ -73,23 +74,24 @@ function roundtableShapes(ink: string, seat: string): SvgNode[] {
 const table = (side: number, ink: string, seat: string, cx = 512, cy = 512): SvgNode =>
   n("g", { transform: `translate(${cx - side / 2} ${cy - side / 2}) scale(${side / 24})` }, ...roundtableShapes(ink, seat));
 
-/** The app icon (and favicon): the Roundtable in light ink on a black tile, transparent at its corners, Galahad's seat
- * in the red that holds on black. Drawn, never a picture: crisp from a tab's 16 px to a Home Screen's 180. */
+/** The app icon (and favicon): the Roundtable in black on a white tile (the owner's, 15 Nov), transparent at its
+ * corners, Galahad's seat in the red that holds on white. Drawn, never a picture: crisp from a tab's 16 px to a Home
+ * Screen's 180. A faint edge keeps the white tile on a white page (a light browser's tabs). */
 export function appIcon(): SvgNode {
   const { x, y, width, height, rx } = TILE;
   return root(
     "48 48 928 928",
     "Galahad",
-    n("rect", { x, y, width, height, rx, fill: INK.tile }),
-    table(width * 0.78, INK.light, INK.siegeOnDark),
-    n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#ffffff", "stroke-opacity": 0.12, "stroke-width": 2 }),
+    n("rect", { x, y, width, height, rx, fill: INK.paper }),
+    table(width * 0.78, INK.tile, INK.siege),
+    n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#000000", "stroke-opacity": 0.1, "stroke-width": 2 }),
   );
 }
 
 /** Full bleed for platform masks (Android adaptive icons, iOS's Home Screen): the Roundtable in the centre, where every
  * mask keeps it. */
 export function maskableIcon(scale = 0.6): SvgNode {
-  return root("0 0 1024 1024", "Galahad", n("rect", { width: 1024, height: 1024, fill: INK.tile }), table(1024 * scale, INK.light, INK.siegeOnDark));
+  return root("0 0 1024 1024", "Galahad", n("rect", { width: 1024, height: 1024, fill: INK.paper }), table(1024 * scale, INK.tile, INK.siege));
 }
 
 /** The flat, single-colour mark (currentColor). */

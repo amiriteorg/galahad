@@ -13,7 +13,7 @@
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { appIcon, crestFile, flatMark, maskableIcon, monoIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
+import { appIcon, crestFile, flatMark, INK, maskableIcon, monoIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
@@ -48,9 +48,9 @@ async function renderPngs(): Promise<void> {
     const pngs: [string, SvgNode, number, string][] = [
       ["apps/web/src/icon-192.png", appIcon(), 192, "transparent"],
       ["apps/web/src/icon-512.png", appIcon(), 512, "transparent"],
-      ["apps/web/src/icon-maskable-512.png", maskableIcon(), 512, "#0a0a0b"],
+      ["apps/web/src/icon-maskable-512.png", maskableIcon(), 512, INK.paper],
       // iOS rounds the corners itself, so the touch icon is full bleed with a larger table.
-      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.76), 180, "#0a0a0b"],
+      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.76), 180, INK.paper],
       // A notification's badge: one colour and its alpha, kept as rendered (a palette would make its edge jagged).
       ["apps/web/src/icon-mono-96.png", monoIcon(), 96, "transparent"],
     ];

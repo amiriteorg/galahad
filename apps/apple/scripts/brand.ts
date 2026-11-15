@@ -72,16 +72,16 @@ if (!browser || !magick) throw new Error("Rendering the icon takes a Chromium-fa
 const work = mkdtempSync(join(tmpdir(), "galahad-apple-brand-"));
 try {
   const page = join(work, "icon.html");
-  writeFileSync(page, `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${INK.tile}}svg{display:block;width:1024px;height:1024px}</style>${toSvg(fullBleed(appIcon()))}`);
+  writeFileSync(page, `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${INK.paper}}svg{display:block;width:1024px;height:1024px}</style>${toSvg(fullBleed(appIcon()))}`);
   const shot = join(work, "shot.png");
   const proc = Bun.spawn([browser, "--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions", `--user-data-dir=${join(work, "profile")}`, "--hide-scrollbars", "--window-size=1024,1024", `--screenshot=${shot}`, `file://${page}`], { stdout: "ignore", stderr: "ignore" });
   const timer = setTimeout(() => proc.kill(), 30_000);
   await proc.exited;
   clearTimeout(timer);
   if (!existsSync(shot)) throw new Error("the browser did not render the icon");
-  // Opaque, as iOS wants an icon: the tile's black under anything the render left transparent, and no metadata.
+  // Opaque, as iOS wants an icon: the tile's white under anything the render left transparent, and no metadata.
   const flat = join(work, "flat.png");
-  const done = Bun.spawnSync([magick, shot, "-background", INK.tile, "-alpha", "remove", "-alpha", "off", "-strip", "-resize", "1024x1024!", `PNG24:${flat}`]);
+  const done = Bun.spawnSync([magick, shot, "-background", INK.paper, "-alpha", "remove", "-alpha", "off", "-strip", "-resize", "1024x1024!", `PNG24:${flat}`]);
   if (done.exitCode !== 0 || !existsSync(flat)) throw new Error(`ImageMagick couldn't flatten the icon: ${done.stderr.toString()}`);
   mkdirSync(join(ASSETS, "AppIcon.appiconset"), { recursive: true });
   copyFileSync(flat, join(ASSETS, "AppIcon.appiconset/AppIcon.png"));
