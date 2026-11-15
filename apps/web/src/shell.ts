@@ -176,7 +176,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", icon("roundtable", { size: 22 })), collapse),
+    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", icon("roundtable", { size: 28 })), collapse),
     h(
       "button",
       { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
@@ -194,7 +194,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topbar = h(
     "header",
     { class: "topbar" },
-    homeLink("brand-mini", icon("roundtable", { size: 22 })),
+    homeLink("brand-mini", icon("roundtable", { size: 28 })),
     topTitle,
     h(
       "div",
