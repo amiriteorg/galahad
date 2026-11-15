@@ -48,7 +48,7 @@ struct RoomView: View {
                     case .message(let message):
                         TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: look(of: message), named: true)
                     case .task(let task):
-                        TaskCardView(task: task) { action in act(action, on: task) }
+                        TaskCardView(task: task, proposer: task.proposedBy.map { session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
                     }
                 }
                 if !writing.isEmpty {
@@ -157,6 +157,8 @@ struct RoomView: View {
 
     private func act(_ action: TaskCard.Action, on task: TeamTask) {
         switch action {
+        case .approve: Task { await room.control(task, "approve", with: session.client) }
+        case .decline: Task { await room.control(task, "stop", with: session.client) }
         case .stop: stopping = task
         case .resume: Task { await room.control(task, "resume", with: session.client) }
         case .again: Task { await room.giveAgain(task, with: session.client) }

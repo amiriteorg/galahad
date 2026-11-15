@@ -175,6 +175,7 @@ export function avatarExpression(member: Pick<Teammate, "id" | "enabled">, activ
   if (deliveries.some((delivery) => delivery.status === "running")) return "thinking";
   if (!member.enabled) return "resting";
   const work = [...tasks, ...deliveries];
+  if (tasks.some((task) => task.status === "proposed")) return "asking";
   if (work.some((job) => job.status === "queued")) return "waiting";
   const recent = (at: number) => now >= at && now - at < 30_000;
   if (work.some((job) => (job.status === "failed" || job.status === "interrupted") && recent(job.updatedAt))) return "concerned";

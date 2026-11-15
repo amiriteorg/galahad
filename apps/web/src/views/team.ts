@@ -168,7 +168,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     if (action === "again") {
       const where = snapshot?.rooms.find((candidate) => candidate.id === task.room) ?? room;
       if (where) giveTask(ctx, where, giveAgain(task));
-    } else void control({ task: task.id, action });
+    } else void control({ task: task.id, action: action === "decline" ? "stop" : action });
   }
 
   function taskEl(task: TeamTask): HTMLElement {
@@ -182,6 +182,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       room: room!.id,
       roomName,
       assignee: room!.direct ? null : nameOf(task.assignee),
+      proposer: task.proposedBy ? nameOf(task.proposedBy) : null,
       dependencies: taskDependencies(task, snapshot?.tasks ?? []),
       prices,
       canAct: canChat,

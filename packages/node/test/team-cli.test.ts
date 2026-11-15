@@ -363,3 +363,16 @@ test("roundtable give puts a task to the Roundtable: it says who takes it and wh
   await expect(teamCommand(api, "give", [], {}, () => {})).rejects.toThrow(/usage: galahad roundtable give/);
 });
 
+
+test("a task a knight proposed is said to be waiting for you, and approved or declined by its id", async () => {
+  const lines: string[] = [];
+  const calls: { name: RouteName; input: unknown }[] = [];
+  const proposed = { id: "task-abcdefghijkl", room: "forge", assignee: "ada", title: "Draft the notes", goal: "g", dependsOn: [], gates: [], status: "proposed", verified: false, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, proposedBy: "ada" };
+  const api = { async call<T>(name: RouteName, input?: unknown): Promise<T> { if (name === "team") return { teammates: [member("ada")], rooms: [], tasks: [proposed], deliveries: [] } as T; calls.push({ name, input }); return {} as T; } };
+  await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
+  expect(lines).toContain("task-abcdefghijkl · proposed · ada · Draft the notes · proposed by ada: galahad roundtable approve task-abcdefghijkl");
+  await teamCommand(api, "approve", ["task-abcdefghijkl"], {}, (line) => lines.push(line));
+  await teamCommand(api, "decline", ["task-abcdefghijkl"], {}, (line) => lines.push(line));
+  expect(calls).toEqual([{ name: "controlTeam", input: { action: "approve", task: "task-abcdefghijkl" } }, { name: "controlTeam", input: { action: "stop", task: "task-abcdefghijkl" } }]);
+  expect(lines.slice(-2)).toEqual(["approved: task task-abcdefghijkl", "declined: task task-abcdefghijkl"]);
+});

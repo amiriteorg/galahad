@@ -150,6 +150,15 @@ const stream = (text: string, delayMs: number): Response => {
     { headers: { "content-type": "text/event-stream" } },
   );
 };
+/** A tool call, streamed as an OpenAI-compatible model streams one. */
+const toolCall = (name: string, args: unknown): Response =>
+  new Response(
+    [
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_dev_1", type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    ].map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+    { headers: { "content-type": "text/event-stream" } },
+  );
 const model = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -168,8 +177,13 @@ const model = Bun.serve({
       } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
       return stream(text, 0);
     }
-    // A knight in a conversation answers you, by name, and lets its fellows' words pass ([SILENT]).
-    const knight = /You are (\w+) \(/.exec(JSON.stringify(body.messages ?? ""))?.[1];
+    // A knight in a conversation answers you, by name, and lets its fellows' words pass ([SILENT]). Asked to propose
+    // something, it proposes a task with its tool, then says so.
+    const [, knight, handle] = /You are (\w+) \(([a-z][a-z0-9-]*)\)/.exec(JSON.stringify(body.messages ?? "")) ?? [];
+    if (knight && /\bpropose\b/i.test(JSON.stringify(turns.at(-1) ?? "")) && !turns.some((message) => message.role === "tool")) {
+      return toolCall("delegate_task", { assignee: handle, title: "Draft the 0.4 release notes", goal: "TASK_KEEP: draft the release notes from the merged pull requests, as notes.md.", gates: ["test -f notes.md # gate-keep"] });
+    }
+    if (knight && turns.some((message) => message.role === "tool")) return stream("I've written it up as a task: approve it and I'll start.", 0);
     if (knight) {
       const last = [...JSON.stringify(turns.at(-1) ?? "").matchAll(/\\"speaker\\":\\"([a-z-]+)\\"/g)].at(-1)?.[1];
       return stream(last === "owner" ? (KNIGHT_SAYS[knight] ?? "Understood. I will take the part that is mine and say when it is done.") : "[SILENT]", 0);

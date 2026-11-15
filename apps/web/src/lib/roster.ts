@@ -60,6 +60,17 @@ function trouble(job: Job | undefined, who: string | null): string | null {
   return job.task ? withWhy(`Failed: ${titled(job)}`, job.error) : withWhy(who ? `${who} couldn't reply` : "Couldn't reply", job.error);
 }
 
+/** Tasks a knight proposed that wait for your approval, the latest first. */
+const proposals = (jobs: Job[]): (TeamTask & { task: true })[] =>
+  (jobs.filter((job) => job.task && job.status === "proposed") as (TeamTask & { task: true })[]).sort((a, b) => b.updatedAt - a.updatedAt);
+
+/** What waits for your approval, in a line: who proposes it (`by` names them, null: the row's own knight), and what. */
+function proposing(proposed: TeamTask[], by: (id: string) => string | null): string {
+  const latest = proposed[0]!;
+  const who = latest.proposedBy ? by(latest.proposedBy) : null;
+  return `${who ? `${who} proposes` : "Proposes"} ${titled(latest)}${proposed.length > 1 ? `, and ${proposed.length - 1} more` : ""}`;
+}
+
 /** How a task ended, when that is the latest thing to say. */
 function ended(task: TeamTask): string {
   if (task.status === "stopped") return `Stopped: ${titled(task)}`;
@@ -79,12 +90,14 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
   const room = snapshot.rooms.find((candidate) => candidate.direct && candidate.members.length === 1 && candidate.members[0] === person.id);
   const jobs: Job[] = [...snapshot.tasks.filter((task) => task.assignee === person.id).map((task) => ({ ...task, task: true as const })), ...snapshot.deliveries.filter((delivery) => delivery.teammate === person.id)];
   const asked = (input.asks ?? []).filter((ask) => knightOfCaller(ask.by) === person.id);
-  // Its face says what its line says: asking your leave, over whatever else it has in hand.
-  const expression = asked[0] ? "asking" : avatarExpression(person, snapshot, input.now);
+  const proposed = proposals(jobs);
+  // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
+  const expression = asked[0] || proposed[0] ? "asking" : avatarExpression(person, snapshot, input.now);
   const say = (line: string, needs = false): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression, avatar: person.avatar });
 
   // What only you can answer comes first: it is what the row is marked for.
   if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true);
+  if (proposed[0]) return say(proposing(proposed, (id) => (id === person.id ? null : snapshot.teammates.find((other) => other.id === id)?.name ?? id)), true);
   const running = jobs.find((job) => job.status === "running" && job.task);
   if (running?.task) return say(firstLine(running.progress) ? `${running.title} · ${firstLine(running.progress)}` : `Working on ${titled(running)}`);
   if (jobs.some((job) => job.status === "running")) return say("Writing a reply");
@@ -114,6 +127,9 @@ function roomRow(room: TeamRoom, input: RosterInput): RosterRow {
   const nameOf = (id: string): string => snapshot.teammates.find((person) => person.id === id)?.name ?? id;
   const jobs: Job[] = [...snapshot.tasks.filter((task) => task.room === room.id).map((task) => ({ ...task, task: true as const })), ...snapshot.deliveries.filter((delivery) => delivery.room === room.id)];
   const say = (line: string, needs = false): RosterRow => ({ key: `room:${room.id}`, kind: "room", id: room.id, name: room.name, room: room.id, line, needs });
+
+  const proposed = proposals(jobs);
+  if (proposed[0]) return say(proposing(proposed, nameOf), true);
 
   const working = jobs.filter((job) => job.status === "running" && job.task) as (TeamTask & { task: true })[];
   if (working[0]) return say(`${working.length > 1 ? `${working.length} at work` : nameOf(working[0].assignee)} · ${working[0].title}`);

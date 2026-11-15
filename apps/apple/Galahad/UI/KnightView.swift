@@ -47,7 +47,7 @@ struct KnightView: View {
                     case .message(let message):
                         TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: message.speaker == "galahad" ? "galahad" : look)
                     case .task(let task):
-                        TaskCardView(task: task) { action in act(action, on: task) }
+                        TaskCardView(task: task, proposer: task.proposedBy.map { session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
                     }
                 }
                 if room.writing {
@@ -134,6 +134,8 @@ struct KnightView: View {
 
     private func act(_ action: TaskCard.Action, on task: TeamTask) {
         switch action {
+        case .approve: Task { await room.control(task, "approve", with: session.client) }
+        case .decline: Task { await room.control(task, "stop", with: session.client) }
         case .stop: stopping = task
         case .resume: Task { await room.control(task, "resume", with: session.client) }
         case .again: Task { await room.giveAgain(task, with: session.client) }
@@ -189,9 +191,12 @@ struct TeamBubble: View {
     }
 }
 
-/// A task where it was given: what it is, where it stands, how it ended and why, what it kept, and what you can do.
+/// A task where it was given: what it is, where it stands, how it ended and why, what it kept, and what you can do. One
+/// a knight proposed waits for you here, with Approve and Decline.
 struct TaskCardView: View {
     let task: TeamTask
+    /// The name of the knight that proposed it, when one did.
+    var proposer: String? = nil
     let act: (TaskCard.Action) -> Void
 
     private var badge: (text: String, tone: TaskCard.Tone) { TaskCard.badge(task) }
@@ -212,7 +217,17 @@ struct TaskCardView: View {
                 .padding(.vertical, 3)
                 .background(color(badge.tone).opacity(0.12), in: .capsule)
             }
+            if let proposed = TaskCard.proposed(task, proposer: proposer) { Text(proposed).font(.caption).foregroundStyle(.secondary) }
             if let given = TaskCard.given(task) { Text(given).font(.caption).foregroundStyle(.secondary) }
+            if task.status == "proposed" {
+                Text(task.goal).font(.callout).lineLimit(6).fixedSize(horizontal: false, vertical: true)
+                if let gates = task.gates, !gates.isEmpty {
+                    Label("Done when \(gates.joined(separator: " · ")) pass\(gates.count == 1 ? "es" : "")", systemImage: "checkmark.seal")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
             if task.status == "running", !Roster.firstLine(task.progress).isEmpty {
                 Text(Roster.firstLine(task.progress)).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
             }
@@ -231,10 +246,17 @@ struct TaskCardView: View {
             if !actions.isEmpty {
                 HStack(spacing: 8) {
                     ForEach(actions, id: \.rawValue) { action in
-                        Button(action == .stop ? "Stop" : action == .resume ? "Resume" : "Give again") { act(action) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .tint(action == .stop ? Color.siege : .ink)
+                        if action == .approve {
+                            Button("Approve") { act(action) }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.regular)
+                                .tint(.ink)
+                        } else {
+                            Button(Self.label[action] ?? action.rawValue) { act(action) }
+                                .buttonStyle(.bordered)
+                                .controlSize(action == .decline ? .regular : .small)
+                                .tint(action == .stop ? Color.siege : .ink)
+                        }
                     }
                 }
                 .padding(.top, 2)
@@ -246,8 +268,11 @@ struct TaskCardView: View {
         .accessibilityElement(children: .contain)
     }
 
+    private static let label: [TaskCard.Action: String] = [.decline: "Decline", .stop: "Stop", .resume: "Resume", .again: "Give again"]
+
     private var symbol: String {
         switch task.status {
+        case "proposed": "hand.raised"
         case "running": "hammer"
         case "queued": "clock"
         case "done": task.verified ? "checkmark.seal.fill" : "checkmark.circle"

@@ -20,7 +20,7 @@ import { toast } from "../ui/toast.ts";
  * (ctx.live.team) and asks for it again once the node has taken the change.
  */
 
-export const WORK_TONE = { queued: "neutral", running: "accent", done: "ok", failed: "danger", stopped: "neutral", interrupted: "warn" } as const;
+export const WORK_TONE = { proposed: "accent", queued: "neutral", running: "accent", done: "ok", failed: "danger", stopped: "neutral", interrupted: "warn" } as const;
 
 /** Shared editor mechanics: validation/errors stay in the sheet, and duplicate submits are blocked. */
 function editor(ctx: Ctx, title: string, description: string, fields: Child[], saveLabel: string, save: () => Promise<void>): void {

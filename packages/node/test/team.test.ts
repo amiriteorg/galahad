@@ -67,7 +67,7 @@ describe("knights converse through the node", () => {
 });
 
 describe("Galahad seats and briefs knights", () => {
-  test("a knight that needs another makes one: it joins the room and takes work there, all within the one bounded chain", async () => {
+  test("a knight that needs another makes one: it joins the room within the one bounded chain, and the work given it there waits for your approval", async () => {
     const heard: string[] = [];
     const recruited: string[] = [];
     const { store, service } = setup({
@@ -85,11 +85,14 @@ describe("Galahad seats and briefs knights", () => {
     expect(store.teammate("rev")).toMatchObject({ createdBy: "ada", instructionsBy: "ada", enabled: true, instructions: "Review Ada's diffs independently." });
     expect(recruited).toEqual(["rev by ada"]);
     expect(store.room("workshop")!.members).toEqual(["ada", "rev"]);
-    expect(store.tasks("workshop").map((task) => [task.assignee, task.status, task.chainId])).toEqual([["rev", "done", asked.chainId]]);
+    expect(store.tasks("workshop").map((task) => [task.assignee, task.status, task.proposedBy, task.chainId])).toEqual([["rev", "proposed", "ada", asked.chainId]]);
     // Rev hears Ada's reply in the room it joined, in the same chain: nothing of this started a budget of its own.
     expect(heard).toContain("rev");
     expect(store.deliveries().every((delivery) => delivery.chainId === asked.chainId)).toBe(true);
     expect(store.teammates().reduce((sum, t) => sum + t.turnsToday, 0)).toBeLessThanOrEqual(6);
+    // Approved, Rev does it.
+    service.control({ task: store.tasks("workshop")[0]!.id, action: "approve" }); await service.settled();
+    expect(store.tasks("workshop").map((task) => [task.assignee, task.status])).toEqual([["rev", "done"]]);
   });
   test("making knights is held to the day's allowance and to a turn's actions; one who may no longer act makes none", async () => {
     const outcomes: string[] = [];
@@ -230,12 +233,47 @@ describe("task orchestration", () => {
     expect(started).toEqual(["First", "Second", "Join"]);
     expect(store.task(c.id)).toMatchObject({ status: "done", verified: true });
   });
-  test("delegated tasks inherit identity, room and causal budget", async () => {
+  test("delegated tasks inherit identity, room and conversation, and spend none of its budget while they wait for you", async () => {
     const { store, service } = setup({ respond: async (_teammate, _room, _history, context) => { context.delegate({ assignee: "lin", title: "Check", goal: "Check", gates: ["bun test"] }); return ""; } }, 1);
     const owner = service.post({ room: "workshop", text: "Delegate." });
     service.start(); await service.settled();
     expect(store.tasks()).toHaveLength(1);
-    expect(store.tasks()[0]).toMatchObject({ room: "workshop", assignee: "lin", chainId: owner.chainId, status: "stopped", gates: ["bun test"] });
+    expect(store.tasks()[0]).toMatchObject({ room: "workshop", assignee: "lin", chainId: owner.chainId, status: "proposed", gates: ["bun test"] });
+  });
+  test("a task a knight writes from a conversation waits for your approval: it runs once you approve it, and declining stops it", async () => {
+    const ran: string[] = [];
+    const { store, service } = setup({
+      respond: async (teammate, _room, _history, context) => {
+        if (teammate.id === "ada") { context.delegate({ assignee: "ada", title: "Draft the notes", goal: "Draft the release notes.", gates: ["test -f notes.md"] }); context.delegate({ assignee: "lin", title: "Check migrations", goal: "Run every migration." }); }
+        return "";
+      },
+      executeTask: async (_teammate, task) => { ran.push(task.title); return { verified: true, output: "Verified" }; },
+    });
+    const asked = service.post({ room: "workshop", text: "Get the release ready." });
+    service.start(); await service.settled();
+    const [lin, ada] = store.tasks("workshop");
+    expect([ada, lin].map((task) => [task!.title, task!.status, task!.proposedBy, task!.chainId])).toEqual([["Draft the notes", "proposed", "ada", asked.chainId], ["Check migrations", "proposed", "ada", asked.chainId]]);
+    // A proposal is work in sight, never work in hand: nothing ran.
+    expect(ran).toEqual([]);
+    expect(store.queued()).toHaveLength(0);
+    service.control({ task: ada!.id, action: "approve" });
+    service.control({ task: lin!.id, action: "stop" });
+    await service.settled();
+    expect(ran).toEqual(["Draft the notes"]);
+    expect(store.task(ada!.id)).toMatchObject({ status: "done", verified: true, proposedBy: "ada" });
+    // Approved, it is yours: it runs in a chain of its own, not on what was left of the conversation's.
+    expect(store.task(ada!.id)!.chainId).not.toBe(asked.chainId);
+    expect(store.task(lin!.id)).toMatchObject({ status: "stopped", error: "Declined by you." });
+    // Only a proposal is approved, and only once.
+    expect(() => service.control({ task: ada!.id, action: "approve" })).toThrow("isn't waiting for your approval");
+  });
+  test("tasks you give run at once: only a knight's waits for you", async () => {
+    const { store, service } = setup();
+    const given = service.createTask({ room: "workshop", assignee: "ada", title: "Yours", goal: "Yours" });
+    expect(given.status).toBe("queued");
+    expect(given.proposedBy).toBeUndefined();
+    service.start(); await service.settled();
+    expect(store.task(given.id)?.status).toBe("done");
   });
   test("an unverified result fails and never releases its dependents", async () => {
     const calls: string[] = [];

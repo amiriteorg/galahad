@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -53,7 +53,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
     // (Money is at your prices, asked for only when a task here has a record to price.)
     const prices: Prices = state.tasks.some((t) => t.record) ? (await api.call<{ prices: Prices }>("prices").catch(() => ({ prices: {} }))).prices : {};
-    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}${taskChangesLine(t)}`);
+    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}${taskChangesLine(t)}${t.status === "proposed" && t.proposedBy ? ` · proposed by ${t.proposedBy}: galahad roundtable approve ${t.id}` : ""}`);
     if (!state.teammates.length) print("Create a knight with galahad roundtable add <id> --name <name>, or open the Roundtable in the app.");
     return;
   }
@@ -164,6 +164,10 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     return;
   }
   // (A knight by either word: `teammate` is what the command took before it was called knights.)
+  // A task a knight proposed: it runs once you approve it; declined, it never runs.
+  if ((sub === "approve" || sub === "decline") && args[0]) {
+    await api.call("controlTeam", { action: sub === "approve" ? "approve" : "stop", task: args[0] }); print(`${sub === "approve" ? "approved" : "declined"}: task ${args[0]}`); return;
+  }
   if (["pause", "resume", "stop"].includes(sub) && ["room", "knight", "squire", "teammate", "task"].includes(args[0] ?? "")) {
     await api.call("controlTeam", { action: sub, [args[0] === "knight" || args[0] === "squire" ? "teammate" : args[0]!]: args[1] }); print(`${sub}: ${args[0]} ${args[1]}`); return;
   }

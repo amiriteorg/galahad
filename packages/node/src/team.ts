@@ -170,6 +170,11 @@ export class TeamService {
     if (input.room) this.store.requireRoom(input.room);
     if (input.teammate) { this.store.requireTeammate(input.teammate); this.steady(input.teammate); }
     if (input.task && !this.store.task(input.task)) throw new TeamError(404, "No such team task.");
+    if (input.action === "approve") {
+      this.store.approve(input.task!);
+      this.changed(); this.kick();
+      return this.snapshot();
+    }
     if (input.action === "resume") {
       // A callback may still be winding down its VM command. It cannot be overlapped by a retry.
       if ([...this.active.values()].some((a) => selected(a.job, select))) throw new TeamError(409, "This work is still stopping. Wait for its current command to finish.");

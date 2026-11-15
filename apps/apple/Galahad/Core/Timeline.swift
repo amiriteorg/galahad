@@ -53,7 +53,7 @@ enum Timeline {
     static func items(messages: [TeamMessage], tasks: [TeamTask], since: Double? = nil) -> [Item] {
         var shown = tasks
         if let since {
-            shown = tasks.filter { task in (task.createdAt ?? 0) >= since || task.status == "queued" || task.status == "running" }
+            shown = tasks.filter { task in (task.createdAt ?? 0) >= since || ["proposed", "queued", "running"].contains(task.status) }
         }
         // The node lists tasks latest first: turned round, two given at the same moment keep the order they were given in.
         let all: [Item] = messages.map { Item.message($0) } + shown.reversed().map { Item.task($0) }
@@ -88,11 +88,12 @@ enum Timeline {
 /// it, what can be done with it, who gave it to the Roundtable, and what it kept.
 enum TaskCard {
     enum Tone: String, Sendable { case ok, warn, danger, accent, neutral }
-    enum Action: String, Sendable { case stop, resume, again }
+    enum Action: String, Sendable { case approve, decline, stop, resume, again }
 
     /// Where it stands, toned as status is everywhere: green only for verified work.
     static func badge(_ task: TeamTask) -> (text: String, tone: Tone) {
         switch task.status {
+        case "proposed": ("Waiting for you", .accent)
         case "queued": ("Queued", .neutral)
         case "running": ("Running", .accent)
         case "done": task.verified ? ("Verified", .ok) : ("Not verified", .warn)
@@ -114,7 +115,7 @@ enum TaskCard {
 
     /// How it ended: why it wasn't verified (nil: it was), and what the knight said of it. Nil for work still in hand.
     static func end(_ task: TeamTask) -> (why: String?, said: String?)? {
-        if task.status == "queued" || task.status == "running" { return nil }
+        if ["proposed", "queued", "running"].contains(task.status) { return nil }
         let output = task.output ?? ""
         let summary = Markdown.trim(output.components(separatedBy: "\n\nReview:")[0])
         let units = Array(summary.utf16)
@@ -126,8 +127,9 @@ enum TaskCard {
         return (why, said)
     }
 
-    /// Work in hand stopped; work that ended unverified resumed or given again.
+    /// A proposal approved or declined; work in hand stopped; work that ended unverified resumed or given again.
     static func actions(_ task: TeamTask) -> [Action] {
+        if task.status == "proposed" { return [.approve, .decline] }
         if task.status == "queued" || task.status == "running" { return [.stop] }
         if task.status == "done" { return task.verified ? [] : [.again] }
         return [.resume, .again]
@@ -140,6 +142,12 @@ enum TaskCard {
         case "galahad": "Given to the Roundtable by Galahad"
         default: nil
         }
+    }
+
+    /// Who wrote it, when a knight did (nil: you or Galahad gave it); `proposer` is that knight's name.
+    static func proposed(_ task: TeamTask, proposer: String?) -> String? {
+        guard let by = task.proposedBy else { return nil }
+        return task.status == "proposed" ? "\(proposer ?? by) proposes this: it starts when you approve it" : "Proposed by \(proposer ?? by)"
     }
 
     /// What it kept of its changes (nil: nothing kept).

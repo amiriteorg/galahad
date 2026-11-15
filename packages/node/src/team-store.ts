@@ -256,7 +256,8 @@ export class TeamStore {
     this.db.query("INSERT INTO team_chains(id,budget) VALUES(?,?)").run(chain, room.turnBudget);
     return chain;
   }
-  private pending(): number { return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM team_jobs WHERE status IN ('queued','running')").get()!.n; }
+  /** Work in sight: running, waiting its turn, or proposed and waiting for you. All of it is bounded together. */
+  private pending(): number { return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM team_jobs WHERE status IN ('proposed','queued','running')").get()!.n; }
   private roomMember(room: TeamRoom, teammate: string): void {
     this.requireTeammate(teammate);
     if (!room.members.includes(teammate)) throw new TeamError(403, "That knight is not a member of this room.");
@@ -301,10 +302,10 @@ export class TeamStore {
     const count = Math.max(1, Math.min(TEAM_LIMITS.history, Math.trunc(limit) || TEAM_LIMITS.history));
     return this.db.query<MessageRow, [string, number]>("SELECT * FROM team_messages WHERE room = ? ORDER BY seq DESC LIMIT ?").all(room, count).reverse().map(messageOf);
   }
-  private insertJob(kind: JobRow["kind"], room: string, teammate: string, chain: string, data: unknown): string {
+  private insertJob(kind: JobRow["kind"], room: string, teammate: string, chain: string, data: unknown, status: "queued" | "proposed" = "queued"): string {
     const key = id(kind === "task" ? "task" : "delivery");
     const at = this.now();
-    this.db.query("INSERT INTO team_jobs(id,kind,room,teammate,chain_id,status,data,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,?,?)").run(key, kind, room, teammate, chain, JSON.stringify(data), at, at);
+    this.db.query("INSERT INTO team_jobs(id,kind,room,teammate,chain_id,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(key, kind, room, teammate, chain, status, JSON.stringify(data), at, at);
     return key;
   }
   createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string } = {}): TeamTask {
@@ -326,14 +327,16 @@ export class TeamStore {
         throw new TeamError(429, `Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day, which is his allowance. The owner can give more at the Roundtable.`);
       }
       const chain = by.chainId ?? this.chain(room);
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}) });
+      // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval.
+      const proposed = by.teammate ? { proposedBy: by.teammate } : {};
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
       return this.task(key)!;
     })();
   }
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output" | "record" | "givenBy">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }
@@ -341,13 +344,13 @@ export class TeamStore {
    * uses the status index; the history query walks recent sequence numbers, not a full-history sort. */
   private listedJobs(kind: JobRow["kind"], room?: string): JobRow[] {
     const active = room
-      ? this.db.query<JobRow, [string, string]>("SELECT * FROM team_jobs WHERE kind=? AND room=? AND status IN ('running','queued') ORDER BY status='running' DESC,seq DESC LIMIT 512").all(kind, room)
-      : this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE kind=? AND status IN ('running','queued') ORDER BY status='running' DESC,seq DESC LIMIT 512").all(kind);
+      ? this.db.query<JobRow, [string, string]>("SELECT * FROM team_jobs WHERE kind=? AND room=? AND status IN ('running','queued','proposed') ORDER BY status='running' DESC,seq DESC LIMIT 512").all(kind, room)
+      : this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE kind=? AND status IN ('running','queued','proposed') ORDER BY status='running' DESC,seq DESC LIMIT 512").all(kind);
     const remaining = 512 - active.length;
     if (remaining <= 0) return active;
     const recent = room
-      ? this.db.query<JobRow, [string, string, number]>("SELECT * FROM team_jobs WHERE kind=? AND room=? AND status NOT IN ('running','queued') ORDER BY seq DESC LIMIT ?").all(kind, room, remaining)
-      : this.db.query<JobRow, [string, number]>("SELECT * FROM team_jobs WHERE kind=? AND status NOT IN ('running','queued') ORDER BY seq DESC LIMIT ?").all(kind, remaining);
+      ? this.db.query<JobRow, [string, string, number]>("SELECT * FROM team_jobs WHERE kind=? AND room=? AND status NOT IN ('running','queued','proposed') ORDER BY seq DESC LIMIT ?").all(kind, room, remaining)
+      : this.db.query<JobRow, [string, number]>("SELECT * FROM team_jobs WHERE kind=? AND status NOT IN ('running','queued','proposed') ORDER BY seq DESC LIMIT ?").all(kind, remaining);
     return [...active, ...recent];
   }
   tasks(room?: string): TeamTask[] {
@@ -451,7 +454,7 @@ export class TeamStore {
   }
   finish(key: string, status: Exclude<TeamWorkStatus, "queued" | "running">, error: string | null = null, result?: { verified: boolean; output: string; record?: TeamTaskRecord; changes?: TeamTaskChanges }): void {
     const row = this.jobRow(key);
-    if (!row || (row.status !== "queued" && row.status !== "running")) return;
+    if (!row || (row.status !== "queued" && row.status !== "running" && row.status !== "proposed")) return;
     const data = JSON.parse(row.data);
     if (row.kind === "task") {
       data.verified = status === "done" && result?.verified === true;
@@ -480,6 +483,19 @@ export class TeamStore {
   enable(id: string, enabled: boolean): Teammate { return this.putTeammate({ ...this.requireTeammate(id), enabled, updatedAt: this.now() }); }
   stopQueued(select: TeamSelection): void {
     for (const job of this.queued()) if (matches(job, select)) this.finish(job.id, "stopped", "Stopped by you.");
+    // A proposal you stop is declined: it never ran.
+    for (const row of this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='proposed' ORDER BY seq").all()) if (matches(jobOf(row), select)) this.finish(row.id, "stopped", "Declined by you.");
+  }
+  /** A task a knight proposed, approved by you: it waits its turn like one you gave, in a chain of its own. */
+  approve(task: string): TeamTask {
+    return this.db.transaction(() => {
+      const row = this.jobRow(task);
+      if (!row || row.kind !== "task") throw new TeamError(404, "No such team task.");
+      if (row.status !== "proposed") throw new TeamError(409, "That task isn't waiting for your approval.");
+      if (!this.teammate(row.teammate)) throw new TeamError(410, "That task's knight was removed. Give the work to another knight.");
+      this.db.query("UPDATE team_jobs SET status='queued',chain_id=?,updated_at=? WHERE id=? AND status='proposed'").run(this.chain(this.requireRoom(row.room)), this.now(), row.id);
+      return this.task(row.id)!;
+    })();
   }
   /** Explicit owner resume is the only way interrupted or stopped work becomes runnable again. */
   resume(select: TeamSelection): void {

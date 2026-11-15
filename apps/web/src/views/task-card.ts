@@ -3,7 +3,7 @@ import { taskRecordFacts } from "@galahad/core/team-record";
 import type { Price } from "@galahad/core/spend";
 import { type Api, isAbort } from "../api.ts";
 import type { Ctx } from "../context.ts";
-import { givenLine, keptChanges, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
 import { relativeTime } from "../lib/time.ts";
 import { emptyTrail, takeTrail, type Trail, trailNext, type TrailPage, trailTail } from "../lib/trail.ts";
 import { badge, button, callout, dot } from "../ui/controls.ts";
@@ -129,6 +129,8 @@ export interface CardOptions {
   roomName(id: string): string;
   /** Whose the task is, in a room (a knight's own timeline needn't say). */
   assignee: string | null;
+  /** The name of the knight that proposed it, when one did. */
+  proposer: string | null;
   dependencies: { id: string; title: string; satisfied: boolean }[];
   prices: Record<string, Price> | null;
   /** This device may stop, resume and give tasks. */
@@ -141,6 +143,8 @@ export interface CardOptions {
 }
 
 const ACTION = {
+  approve: { label: "Approve", icon: "check" },
+  decline: { label: "Decline", icon: "x" },
   stop: { label: "Stop", icon: "stop" },
   resume: { label: "Resume", icon: "play" },
   again: { label: "Give again…", icon: "retry" },
@@ -150,7 +154,7 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
   const state = taskBadge(task);
   const end = taskEnd(task);
   const kept = keptChanges(task);
-  const meta = [givenLine(task), task.room !== o.room ? `in ${o.roomName(task.room)}` : null, o.assignee].filter(Boolean).join(" · ");
+  const meta = [proposedLine(task, o.proposer), givenLine(task), task.room !== o.room ? `in ${o.roomName(task.room)}` : null, o.assignee].filter(Boolean).join(" · ");
   const waiting = task.status === "queued" ? o.dependencies.filter((dependency) => !dependency.satisfied) : [];
   return h(
     "article",
@@ -191,7 +195,7 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
       "div",
       { class: "task-foot" },
       h("span", { class: "tiny subtle grow" }, `${task.status === "queued" || task.status === "running" ? "Given" : "Ended"} ${relativeTime(task.status === "queued" || task.status === "running" ? task.createdAt : task.updatedAt)}`),
-      ...(o.canAct ? taskActions(task).map((action) => button(ACTION[action].label, { variant: "ghost", size: "sm", icon: ACTION[action].icon, onClick: () => o.act(action) })) : []),
+      ...(o.canAct ? taskActions(task).map((action) => button(ACTION[action].label, { variant: action === "approve" ? "primary" : "ghost", size: "sm", icon: ACTION[action].icon, onClick: () => o.act(action) })) : []),
     ),
   );
 }

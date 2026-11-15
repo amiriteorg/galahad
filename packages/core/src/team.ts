@@ -113,12 +113,14 @@ export const TeamGiveInput = z.strictObject({
 });
 export type TeamGiveInput = z.infer<typeof TeamGiveInput>;
 
+/** `approve`: a task a knight proposed starts (a task only); `stop` declines one. */
 export const TeamControlInput = z.strictObject({
   room: TeamRoomId.optional(),
   teammate: TeammateId.optional(),
   task: TeamTaskId.optional(),
-  action: z.enum(["pause", "resume", "stop"]),
-}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, knight or task");
+  action: z.enum(["pause", "resume", "stop", "approve"]),
+}).refine((input) => [input.room, input.teammate, input.task].filter(Boolean).length === 1, "choose exactly one room, knight or task")
+  .refine((input) => input.action !== "approve" || Boolean(input.task), "only a task is approved");
 export type TeamControlInput = z.infer<typeof TeamControlInput>;
 
 /** Removing a worker, which is yours alone. A worker that has a VM is removed only together with it, and only
@@ -193,7 +195,8 @@ export interface TeamMessage {
   chainId: string;
 }
 
-export type TeamWorkStatus = "queued" | "running" | "done" | "failed" | "stopped" | "interrupted";
+/** `proposed`: a task a knight wrote, waiting for your approval before it may run. */
+export type TeamWorkStatus = "proposed" | "queued" | "running" | "done" | "failed" | "stopped" | "interrupted";
 
 export interface TeamDelivery {
   id: string;
@@ -257,6 +260,9 @@ export interface TeamTask {
   changes?: TeamTaskChanges;
   /** Who gave it to the Roundtable rather than to a knight by name (TEAM_OWNER or TEAM_GALAHAD); absent: given to a knight by name. */
   givenBy?: string;
+  /** The knight that wrote it, in a conversation: it was proposed to you, and ran only once you approved it. Absent: you
+   * or Galahad gave it. */
+  proposedBy?: string;
 }
 
 /** One line of what a task did, as it happened: its number in order (from 1), when, and the line (redacted, cut if long). */

@@ -94,6 +94,18 @@ describe("the roster: each knight, then each room", () => {
   });
 });
 
+describe("a task a knight proposed", () => {
+  test("marks its knight's row with what waits for your approval, and its face asks", () => {
+    const proposal = task("ada", "proposed", { proposedBy: "ada", title: "Draft the notes" });
+    expect(ada({ tasks: [proposal] })).toMatchObject({ line: "Proposes “Draft the notes”", needs: true, expression: "asking" });
+    expect(ada({ tasks: [proposal, task("ada", "proposed", { id: "task-adaproposed2", proposedBy: "ada", title: "Older", updatedAt: 5 })] }).line).toBe("Proposes “Draft the notes”, and 1 more");
+    // One another knight proposed for it says who.
+    expect(rows({ teammates: [person("ada"), person("kay")], tasks: [task("ada", "proposed", { proposedBy: "kay", title: "Check it" })] }).find((row) => row.id === "ada")!.line).toBe("Kay proposes “Check it”");
+    // Asking your leave still comes first.
+    expect(ada({ tasks: [proposal] }, { asks: [{ by: "arm:team.0123456789.ada", connector: "github", tool: "merge" }] }).line).toBe("Asks your leave: github.merge");
+  });
+});
+
 describe("a room's row", () => {
   const forge = (input: Partial<RosterInput["snapshot"]>, more: Partial<Omit<RosterInput, "snapshot">> = {}) =>
     rows({ teammates: [person("ada"), person("lin")], rooms: [room("forge", ["ada", "lin"], { name: "Forge", ...(input.rooms?.[0] ?? {}) })], tasks: input.tasks ?? [], deliveries: input.deliveries ?? [] }, more).find((row) => row.kind === "room")!;
@@ -110,6 +122,7 @@ describe("a room's row", () => {
     expect(forge({ tasks: [task("ada", "interrupted", { room: "forge" })] })).toMatchObject({ line: "Interrupted: “Fix the importer” · review it before resuming", needs: true });
     expect(forge({ rooms: [room("forge", [], { paused: true })] })).toMatchObject({ line: "Paused", needs: false });
     expect(forge({ rooms: [room("forge", [], { paused: true })], tasks: [task("ada", "queued", { room: "forge" })] })).toMatchObject({ line: "Paused · 1 waiting", needs: true });
+    expect(forge({ tasks: [task("ada", "running", { room: "forge" }), task("lin", "proposed", { room: "forge", proposedBy: "lin", title: "Ship it" })] })).toMatchObject({ line: "Lin proposes “Ship it”", needs: true });
     // Work in another room is not this room's.
     expect(forge({ tasks: [task("ada", "failed", { room: "elsewhere" })] })).toMatchObject({ line: "Ada, Lin", needs: false });
   });

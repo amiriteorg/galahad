@@ -56,6 +56,8 @@ His knights answer on the Roundtable page, in their own time, not inside the ans
 
 An owner message in a room queues a reply for every member without needing an `@` mention; so does one Galahad writes there himself. A knight can respond, send a brokered DM to another knight, send to a room it belongs to, delegate a task in the current room, or make a new knight for it. These actions retain the initiating conversation's allowance. Knights may remain silent when they have nothing useful to add.
 
+**Giving a knight work is talking to it.** Ask in plain words ("could you draft the release notes?") and the knight writes the work up as a task: a title, the goal, and the commands that prove it done. It reaches you as a card in the conversation, marked **Waiting for you**, with **Approve** and **Decline**, and the knight's row at the Roundtable is marked until you answer. Nothing runs until you approve; approved, it runs in its own allowance like a task you gave, and its card says who proposed it. Declined, it never runs, and its card says so (you can still take it up later with **Resume**). The same holds for work one knight writes for another. Tasks you give yourself, and Galahad's from your conversation with him, start at once. In the terminal: `galahad roundtable` lists a proposal with its id, and `galahad roundtable approve TASK_ID` or `decline TASK_ID` answers it.
+
 ```sh
 bun galahad roundtable chat ROOM_ID "Agree on the smallest change and its verification."
 bun galahad roundtable chat ROOM_ID

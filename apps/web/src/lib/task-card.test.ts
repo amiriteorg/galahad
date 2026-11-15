@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask } from "@galahad/core/team";
-import { givenLine, keptChanges, taskActions, taskBadge, taskEnd } from "./task-card.ts";
+import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "./task-card.ts";
 
 const task = (status: TeamTask["status"], more: Partial<TeamTask> = {}): TeamTask => ({ id: "task-abcdefghijkl", room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", dependsOn: [], gates: ["bun test"], status, verified: status === "done", progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...more });
 /** A task's output as the runner writes it: the knight's summary, then the review and where it worked. */
@@ -82,5 +82,21 @@ describe("who gave a task to the Roundtable, and what it kept", () => {
     expect(keptChanges(task("done", { changes }))).toEqual({ text: "3 files changed", artifact: "art_AAAAAAAAAAAAAAAAAAAAAA" });
     expect(keptChanges(task("done", { changes: { ...changes, files: 1 } }))!.text).toBe("1 file changed");
     expect(keptChanges(task("done"))).toBeNull();
+  });
+});
+
+describe("a task a knight proposed", () => {
+  test("waits for you: approved, it runs; declined, it never does", () => {
+    const proposal = task("proposed", { proposedBy: "kay" });
+    expect(taskBadge(proposal)).toEqual({ text: "Waiting for you", tone: "accent" });
+    expect(taskEnd(proposal)).toBeNull();
+    expect(taskActions(proposal)).toEqual(["approve", "decline"]);
+    expect(proposedLine(proposal, "Kay")).toBe("Kay proposes this: it starts when you approve it");
+    // Approved, it is work like any other, and says who proposed it.
+    expect(proposedLine(task("running", { proposedBy: "kay" }), "Kay")).toBe("Proposed by Kay");
+    expect(proposedLine(task("running", { proposedBy: "gone" }), null)).toBe("Proposed by gone");
+    // Declined, it says so, and it may still be taken up.
+    expect(taskEnd(task("stopped", { proposedBy: "kay", error: "Declined by you.", verified: false }))).toEqual({ why: "Declined by you.", said: null });
+    expect(proposedLine(task("queued"), null)).toBeNull();
   });
 });

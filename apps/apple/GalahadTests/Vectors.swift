@@ -211,6 +211,7 @@ struct Vectors: Decodable {
             let actions: [String]
             let given: String?
             let kept: String?
+            let proposed: String?
         }
 
         let messages: [TeamMessage]

@@ -62,6 +62,8 @@ enum Roster {
         let jobs = snapshot.tasks.filter { $0.room == room.id }.map(Job.task) + snapshot.deliveries.filter { $0.room == room.id }.map(Job.delivery)
         let say = { (line: String, needs: Bool) in RoomRow(id: room.id, name: room.name, members: room.members, line: line, needs: needs) }
 
+        if let line = proposing(jobs, by: nameOf) { return say(line, true) }
+
         let working = jobs.compactMap { $0.status == "running" ? $0.task : nil }
         if let first = working.first { return say("\(working.count > 1 ? "\(working.count) at work" : nameOf(first.assignee)) · \(first.title)", false) }
         let writing = jobs.compactMap { job -> TeamDelivery? in if case .delivery(let d) = job, d.status == "running" { d } else { nil } }
@@ -93,6 +95,7 @@ enum Roster {
         if let ask = asked.first {
             return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true)
         }
+        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true) }
         if let running = jobs.first(where: { $0.status == "running" && $0.task != nil })?.task {
             let progress = firstLine(running.progress)
             return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false)
@@ -135,6 +138,17 @@ enum Roster {
         guard let job, job.status == "failed" || job.status == "interrupted" else { return nil }
         if job.status == "interrupted" { return "Interrupted: \(job.task.map(titled) ?? (who.map { "\($0)'s reply" } ?? "a reply")) · review it before resuming" }
         return job.task.map { withWhy("Failed: \(titled($0))", job.error) } ?? withWhy(who.map { "\($0) couldn't reply" } ?? "Couldn't reply", job.error)
+    }
+
+    /// What waits for your approval, in a line: who proposes the latest (`by` names them, nil: the row's own knight), and
+    /// how many more there are (lib/roster.ts' `proposing`). Nil: nothing waits.
+    private static func proposing(_ jobs: [Job], by: (String) -> String?) -> String? {
+        let proposed = jobs.compactMap { $0.status == "proposed" ? $0.task : nil }.enumerated().sorted { a, b in
+            a.element.updatedAt != b.element.updatedAt ? a.element.updatedAt > b.element.updatedAt : a.offset < b.offset
+        }.map(\.element)
+        guard let latest = proposed.first else { return nil }
+        let who = latest.proposedBy.flatMap(by)
+        return "\(who.map { "\($0) proposes" } ?? "Proposes") \(titled(latest))\(proposed.count > 1 ? ", and \(proposed.count - 1) more" : "")"
     }
 
     /// How a task ended, when that is the latest thing to say.

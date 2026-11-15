@@ -18,7 +18,7 @@ import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
-import { givenLine, keptChanges, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
@@ -217,6 +217,8 @@ const snapshot: core.TeamSnapshot = {
     knight("lou", "Lou"),
     knight("max", "Max"),
     knight("ned", "Ned", { enabled: false }),
+    knight("oz", "Oz"),
+    knight("pip", "Pip"),
   ],
   rooms: ["ada", "bea", "cy", "fay", "gus", "kit", "lou", "max", "ned"].map(direct),
   tasks: [
@@ -230,6 +232,9 @@ const snapshot: core.TeamSnapshot = {
     task("halt", "kit", "interrupted"),
     task("stop", "lou", "stopped"),
     task("held", "ned", "queued"),
+    task("ask", "oz", "proposed", { proposedBy: "oz" }),
+    task("ask2", "oz", "proposed", { proposedBy: "oz", updatedAt: at(40) }),
+    task("askpip", "pip", "proposed", { proposedBy: "ada" }),
   ],
   deliveries: [delivery("busy", "bea", "running"), delivery("think", "eve", "queued"), delivery("old", "jo", "failed", { error: "Model unavailable", updatedAt: at(2) })],
 };
@@ -275,6 +280,7 @@ const roomsSnapshot: core.TeamSnapshot = {
     { id: "held", name: "Held", members: ["ada", "bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
     { id: "rest", name: "Rest", members: ["bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
     { id: "quiet", name: "Quiet", members: ["ada", "bea", "gone"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(2) },
+    { id: "asks", name: "Asks", members: ["ada", "bea"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(2) },
   ],
   tasks: [
     task("studio1", "ada", "running", inRoom("studio")),
@@ -283,6 +289,8 @@ const roomsSnapshot: core.TeamSnapshot = {
     task("failed1", "ada", "failed", { ...inRoom("failed"), error: "No Postgres here.\nMore." }),
     task("held1", "ada", "queued", inRoom("held")),
     task("held2", "bea", "queued", inRoom("held")),
+    task("asks1", "ada", "running", inRoom("asks")),
+    task("asks2", "bea", "proposed", { ...inRoom("asks"), proposedBy: "bea" }),
   ],
   deliveries: [
     delivery("c1", "ada", "running", inRoom("chatter")),
@@ -562,6 +570,9 @@ const adaTasks = [
   task("half", "ada", "done", { createdAt: at(20), verified: false, output: "x".repeat(1200) }),
   task("elsewhere", "bea", "running", { createdAt: at(15), room: "room-wckd" }),
   task("roomwork", "bea", "queued", { createdAt: at(12), room: "dm-ada" }),
+  task("ask", "ada", "proposed", { createdAt: at(150), proposedBy: "ada" }),
+  task("asked", "ada", "running", { createdAt: at(8), proposedBy: "bea" }),
+  task("declined", "ada", "stopped", { createdAt: at(7), proposedBy: "ada", error: "Declined by you." }),
 ];
 const adaRoom = { id: "dm-ada", direct: true, members: ["ada"] };
 const sharedRoom = { id: "dm-ada", direct: false, members: ["ada", "bea"] };
@@ -573,7 +584,7 @@ const timelines = {
   sinceAt: at(100),
   since: timeline(adaMessages, timelineTasks(adaRoom, adaTasks), { since: at(100) }).map((item) => item.key),
   speakers: adaMessages.map((message) => teamSpeaker(message, snapshot.teammates)),
-  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null })),
+  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null) })),
 };
 
 // ---- the file ----------------------------------------------------------------------------------------------------------

@@ -85,6 +85,8 @@ struct TeamTask: Decodable, Sendable {
     let changes: Changes?
     /// Who gave it to the Roundtable rather than to a knight by name (owner or galahad).
     var givenBy: String? = nil
+    /// The knight that proposed it in a conversation; while its status is `proposed` it waits for your approval.
+    var proposedBy: String? = nil
 }
 
 /// A knight's reply on its way (or how it went).

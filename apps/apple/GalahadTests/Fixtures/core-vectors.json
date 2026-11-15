@@ -786,6 +786,38 @@
           "memory": "",
           "createdAt": 1763164000000,
           "updatedAt": 1763164000000
+        },
+        {
+          "id": "oz",
+          "name": "Oz",
+          "instructions": "Oz keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "pip",
+          "name": "Pip",
+          "instructions": "Pip keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
         }
       ],
       "rooms": [
@@ -1075,6 +1107,60 @@
           "chainId": "chain-held",
           "createdAt": 1763194600000,
           "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-ask000000000",
+          "room": "dm-oz",
+          "assignee": "oz",
+          "title": "The ask task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-ask",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "proposedBy": "oz"
+        },
+        {
+          "id": "task-ask200000000",
+          "room": "dm-oz",
+          "assignee": "oz",
+          "title": "The ask2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-ask2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763197600000,
+          "proposedBy": "oz"
+        },
+        {
+          "id": "task-askpip000000",
+          "room": "dm-pip",
+          "assignee": "pip",
+          "title": "The askpip task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-askpip",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "proposedBy": "ada"
         }
       ],
       "deliveries": [
@@ -1199,6 +1285,16 @@
       {
         "id": "ned",
         "line": "Paused · 1 waiting",
+        "needs": true
+      },
+      {
+        "id": "oz",
+        "line": "Proposes “The ask task”, and 1 more",
+        "needs": true
+      },
+      {
+        "id": "pip",
+        "line": "Ada proposes “The askpip task”",
         "needs": true
       }
     ],
@@ -1343,7 +1439,9 @@
           "kit",
           "lou",
           "max",
-          "ned"
+          "ned",
+          "oz",
+          "pip"
         ],
         "needs": 3
       },
@@ -1547,6 +1645,19 @@
           "paused": false,
           "createdAt": 1763164000000,
           "updatedAt": 1763199880000
+        },
+        {
+          "id": "asks",
+          "name": "Asks",
+          "members": [
+            "ada",
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199880000
         }
       ],
       "tasks": [
@@ -1651,6 +1762,41 @@
           "chainId": "chain-held2",
           "createdAt": 1763194600000,
           "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-asks10000000",
+          "room": "asks",
+          "assignee": "ada",
+          "title": "The asks1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-asks1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-asks20000000",
+          "room": "asks",
+          "assignee": "bea",
+          "title": "The asks2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-asks2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "proposedBy": "bea"
         }
       ],
       "deliveries": [
@@ -1716,6 +1862,11 @@
         "id": "quiet",
         "line": "Ada, Bea, gone",
         "needs": false
+      },
+      {
+        "id": "asks",
+        "line": "Bea proposes “The asks2 task”",
+        "needs": true
       },
       {
         "id": "held",
@@ -5253,10 +5404,65 @@
         "chainId": "chain-roomwork",
         "createdAt": 1763199280000,
         "updatedAt": 1763198200000
+      },
+      {
+        "id": "task-ask000000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The ask task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "proposed",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-ask",
+        "createdAt": 1763191000000,
+        "updatedAt": 1763198200000,
+        "proposedBy": "ada"
+      },
+      {
+        "id": "task-asked0000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The asked task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "running",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-asked",
+        "createdAt": 1763199520000,
+        "updatedAt": 1763198200000,
+        "proposedBy": "bea"
+      },
+      {
+        "id": "task-declined0000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The declined task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "stopped",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": "Declined by you.",
+        "chainId": "chain-declined",
+        "createdAt": 1763199580000,
+        "updatedAt": 1763198200000,
+        "proposedBy": "ada"
       }
     ],
     "knight": [
       "task:task-old000000000",
+      "task:task-ask000000000",
       "msg-1",
       "msg-2",
       "msg-3",
@@ -5268,10 +5474,13 @@
       "task:task-run000000000",
       "task:task-half00000000",
       "msg-5",
+      "task:task-asked0000000",
+      "task:task-declined0000",
       "msg-6"
     ],
     "room": [
       "task:task-old000000000",
+      "task:task-ask000000000",
       "msg-1",
       "msg-2",
       "msg-3",
@@ -5284,10 +5493,13 @@
       "task:task-half00000000",
       "task:task-roomwork0000",
       "msg-5",
+      "task:task-asked0000000",
+      "task:task-declined0000",
       "msg-6"
     ],
     "sinceAt": 1763194000000,
     "since": [
+      "task:task-ask000000000",
       "msg-1",
       "msg-2",
       "msg-3",
@@ -5299,6 +5511,8 @@
       "task:task-run000000000",
       "task:task-half00000000",
       "msg-5",
+      "task:task-asked0000000",
+      "task:task-declined0000",
       "msg-6"
     ],
     "speakers": [
@@ -5322,7 +5536,8 @@
         },
         "actions": [],
         "given": null,
-        "kept": "2 files changed"
+        "kept": "2 files changed",
+        "proposed": null
       },
       {
         "id": "task-run000000000",
@@ -5335,7 +5550,8 @@
           "stop"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-same00000000",
@@ -5348,7 +5564,8 @@
           "stop"
         ],
         "given": "Given to the Roundtable by you",
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-old000000000",
@@ -5365,7 +5582,8 @@
           "again"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-cut000000000",
@@ -5382,7 +5600,8 @@
           "again"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-halt00000000",
@@ -5399,7 +5618,8 @@
           "again"
         ],
         "given": "Given to the Roundtable by Galahad",
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-half00000000",
@@ -5415,7 +5635,8 @@
           "again"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-elsewhere000",
@@ -5428,7 +5649,8 @@
           "stop"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
       },
       {
         "id": "task-roomwork0000",
@@ -5441,7 +5663,55 @@
           "stop"
         ],
         "given": null,
-        "kept": null
+        "kept": null,
+        "proposed": null
+      },
+      {
+        "id": "task-ask000000000",
+        "badge": {
+          "text": "Waiting for you",
+          "tone": "accent"
+        },
+        "end": null,
+        "actions": [
+          "approve",
+          "decline"
+        ],
+        "given": null,
+        "kept": null,
+        "proposed": "Ada proposes this: it starts when you approve it"
+      },
+      {
+        "id": "task-asked0000000",
+        "badge": {
+          "text": "Running",
+          "tone": "accent"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": null,
+        "kept": null,
+        "proposed": "Proposed by bea"
+      },
+      {
+        "id": "task-declined0000",
+        "badge": {
+          "text": "Stopped",
+          "tone": "neutral"
+        },
+        "end": {
+          "why": "Declined by you.",
+          "said": null
+        },
+        "actions": [
+          "resume",
+          "again"
+        ],
+        "given": null,
+        "kept": null,
+        "proposed": "Proposed by Ada"
       }
     ]
   }

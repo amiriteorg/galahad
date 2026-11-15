@@ -14,7 +14,7 @@ export type TimelineItem = { kind: "message"; key: string; at: number; message: 
  */
 export function timeline(messages: readonly TeamMessage[], tasks: readonly TeamTask[], options: { since?: number } = {}): TimelineItem[] {
   const said: TimelineItem[] = messages.map((message) => ({ kind: "message", key: message.id, at: message.createdAt, message }));
-  const shown = options.since === undefined ? tasks : tasks.filter((task) => task.createdAt >= options.since! || task.status === "queued" || task.status === "running");
+  const shown = options.since === undefined ? tasks : tasks.filter((task) => task.createdAt >= options.since! || task.status === "proposed" || task.status === "queued" || task.status === "running");
   // (The node lists tasks latest first: turned round, two given at the same moment keep the order they were given in.)
   const given: TimelineItem[] = [...shown].reverse().map((task) => ({ kind: "task", key: `task:${task.id}`, at: task.createdAt, task }));
   // A stable sort: at the same moment, the words come before the work they asked for.
