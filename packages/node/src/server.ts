@@ -28,6 +28,7 @@ import {
   SyncRequest,
   titleFrom,
   ConnectorManifest,
+  type ConnectorRequestView,
   type ConnectorView,
   type FindingView,
   type InvestigationView,
@@ -138,6 +139,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
+import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
@@ -189,6 +191,8 @@ export interface AppContext {
   loops: LoopRunner;
   /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss (node-local). */
   loopDrafts: LoopDrafts;
+  /** Connectors agents asked you for, waiting for you to add one or dismiss the request (node-local). */
+  connectorRequests: ConnectorRequests;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
@@ -886,6 +890,20 @@ export function createApp(ctx: AppContext) {
       on: draft.on ? (ctx.store.activeDevice(draft.on)?.name ?? draft.on) : null,
       replaces: loopRecords(ctx.store).some((l) => l.name === draft.name),
     };
+  }
+
+  /** What agents asked you to connect that still isn't installed (installed on another node, it's answered there too). */
+  function openConnectorRequests(): ConnectorRequest[] {
+    const installed = new Set(installedConnectors(ctx.store).map((c) => c.id));
+    return ctx.connectorRequests.list().filter((r) => !installed.has(r.connector));
+  }
+
+  function connectorRequestView(request: ConnectorRequest): ConnectorRequestView {
+    const shipped = Object.hasOwn(CATALOG, request.connector) ? CATALOG[request.connector] : undefined;
+    // Who asked, as you know them: Galahad, a knight of this node's by its name, or an agent by its label.
+    const knight = /^team\.[0-9a-f]+\.(.+)$/.exec(request.by)?.[1];
+    const by = request.by === GALAHAD_ARM ? "Galahad" : knight && teammateLabel(knight) === request.by ? (ctx.team?.store.teammate(knight)?.name ?? knight) : request.by;
+    return { ...request, label: shipped?.manifest.label ?? null, by };
   }
 
   function connectorViews(): ConnectorView[] {
@@ -1600,7 +1618,7 @@ export function createApp(ctx: AppContext) {
       memories: (query) => memoryContext(query) ?? "",
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
-        const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
+        const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
         return chatTools(toolsFor(p.scopes).filter((t) => allowed.has(t.name)), inProcess(p, signal), explain);
       },
     });
@@ -2426,6 +2444,17 @@ export function createApp(ctx: AppContext) {
       });
     },
     loops: () => ({ loops: loopViews() }),
+    connectorRequests: () => ({ requests: openConnectorRequests().map(connectorRequestView) }),
+    requestConnector: (input, p) => {
+      // What it wrote is shown to you: no keys in it.
+      guardAgainstSecrets(input.why);
+      if (installedConnectors(ctx.store).some((c) => c.id === input.connector)) throw new HttpError(409, `${input.connector} is installed: call its tools (connectors lists them)`);
+      return { request: connectorRequestView(ctx.connectorRequests.add({ connector: input.connector, why: input.why, by: p.label ?? p.kind })) };
+    },
+    dismissConnectorRequest: (input) => {
+      if (!ctx.connectorRequests.remove(input.id)) throw new HttpError(404, "no such request (its connector was installed, it was dismissed, or a week went by)");
+      return { ok: true };
+    },
     loopDrafts: () => ({ drafts: ctx.loopDrafts.list().map(loopDraftView) }),
     draftLoop: (input, p) => {
       const tz = input.tz ?? "UTC";
@@ -2549,6 +2578,7 @@ export function createApp(ctx: AppContext) {
       if (input.mcp) {
         if (input.manifest || input.origin) throw new HttpError(400, "give an MCP server's url, or a manifest, not both");
         const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, input.mcp!));
+        ctx.connectorRequests.resolve(input.id);
         return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
       }
       let manifest: ConnectorManifest;
@@ -2576,6 +2606,8 @@ export function createApp(ctx: AppContext) {
         auth?.secret ?? "",
       );
       ctx.store.emit(ctx.identity, "connector.set", { id: manifest.id, manifest: manifest as unknown as Record<string, unknown> });
+      // Whoever asked for it has it now.
+      ctx.connectorRequests.resolve(manifest.id);
       return { connector: connectorViews().find((c) => c.id === manifest.id) };
     },
     removeConnector: (input) => {

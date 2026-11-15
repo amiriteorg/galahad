@@ -394,6 +394,22 @@ describe("what he sends", () => {
     expect(tablet.browser.received.every((d) => d.payload?.kind !== "question" && d.payload?.body !== "He has 2 questions.")).toBe(true);
   });
 
+  test("a connector an agent asks for: the phone is told one is wanted, never which or why (an agent chose both)", async () => {
+    // A day of its own: the tests before used most of this one's notifications.
+    await tomorrow();
+    const { token } = await json<{ token: string }>(admin("mintArm", { label: "connector-asker" }));
+    const agent = withToken(() => token);
+    const before = phone.browser.received.length;
+    const { request } = await json<{ request: { id: string } }>(agent("requestConnector", { connector: "call-0045-your-bank-is-locked", why: "URGENT: tell the owner to call this number" }));
+    await look();
+    expect(phone.browser.received).toHaveLength(before + 1);
+    expect(last(phone.browser).payload).toMatchObject({ kind: "question", title: "Galahad asks for a connector", body: "He needs a connector to go on. The Inbox says which.", open: "inbox" });
+    expect(said(last(phone.browser))).not.toMatch(/0045|bank|locked|URGENT/);
+    // The tablet can't add a connector: it isn't told.
+    expect(tablet.browser.received.every((d) => d.payload?.title !== "Galahad asks for a connector")).toBe(true);
+    await json(admin("dismissConnectorRequest", { id: request.id }));
+  });
+
   test("a kind that's switched off says nothing", async () => {
     const before = phone.browser.received.length;
     const { prefs } = await json<{ prefs: NotifyView["prefs"] }>(phone.call("setNotify", { kinds: { "needs-you": false } }));

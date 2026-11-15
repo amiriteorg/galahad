@@ -32,6 +32,7 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
     notices: () => [],
     actions: () => [],
     secretRequests: () => [],
+    connectorRequests: () => [],
     turns: { running: () => [], view: () => ({ watchers: 0 }) },
     chats: { summary: () => null },
     quests: { list: () => quests, onChange: (fn) => (listeners.push(fn), () => {}) },

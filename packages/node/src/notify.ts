@@ -1,5 +1,6 @@
 import {
   actionItem,
+  connectorItem,
   inQuietHours,
   isP256Point,
   fromB64u,
@@ -60,6 +61,8 @@ export interface NotifySources {
   actions(): { id: string; connector: string; tool: string; state: string; requestedAt: string; expires: number }[];
   /** The keys he's waiting for, by name. */
   secretRequests(): string[];
+  /** The connectors agents asked for and you haven't added, by request id. */
+  connectorRequests(): string[];
   turns: { running(): LiveTurn[]; view(turn: LiveTurn, watchable: boolean): { watchers: number } };
   chats: { summary(id: string): KeptSummary | null };
   quests: { list(): QuestView[]; onChange(fn: () => void): () => void };
@@ -233,6 +236,7 @@ export class NotifyService {
     for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires }, now));
     for (const name of safely("key requests", () => this.o.sources.secretRequests())) out.push(secretItem(name));
+    for (const id of safely("connector requests", () => this.o.sources.connectorRequests())) out.push(connectorItem(id));
     return out.filter((item): item is NotifyItem => item !== null);
   }
 

@@ -1,9 +1,9 @@
-import type { ArgValue, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
+import type { ArgValue, ConnectorRequestView, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
 import { plural } from "../lib/text.ts";
-import { duration } from "../lib/time.ts";
+import { duration, relativeTime } from "../lib/time.ts";
 import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonBlock, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
@@ -28,6 +28,54 @@ import { vaultChanged } from "./vault.ts";
 
 /** Bumped whenever a connector is installed or removed, or its key changes. */
 export const connectorsChanged = signal(0);
+
+/**
+ * A connector an agent asked you for, in the Inbox and in the chat it was asked in. Asking installs nothing: adding it
+ * is yours, where it's added (one Galahad ships, at its Install; any other, as an MCP server).
+ */
+export function connectorRequestCard(ctx: Ctx, request: ConnectorRequestView): HTMLElement {
+  const name = request.label ?? request.connector;
+  const note = h("div");
+  const add = button(request.label ? `Add ${request.label}` : "Add as an MCP server", {
+    variant: "primary",
+    icon: "plus",
+    onClick: () => ctx.navigate("connectors", { intent: request.label ? `install:${request.connector}` : "add-mcp" }),
+  });
+  const dismiss = button("Dismiss", { icon: "x" });
+  dismiss.addEventListener("click", () =>
+    void busy(dismiss, async () => {
+      try {
+        await ctx.api.post("/api/connectors/requests/dismiss", { id: request.id });
+        toast("Dismissed", { tone: "info", description: "Nothing was added." });
+      } catch (error) {
+        replace(note, callout("danger", errorMessage(error), { title: "Couldn't dismiss it" }));
+      }
+      await ctx.live.refreshConnectorRequests();
+    }),
+  );
+  return h(
+    "article",
+    { class: "card accent", "aria-label": `${request.by} asks for ${name}` },
+    h(
+      "div",
+      { class: "card-body stack" },
+      h(
+        "div",
+        { class: "row top" },
+        h("span", { class: "avatar agent" }, icon("plug", { size: 16 })),
+        h(
+          "div",
+          { class: "grow stack tight" },
+          h("strong", {}, `${request.by} asks for ${name}`),
+          h("p", { class: "small" }, request.why),
+          h("p", { class: "tiny subtle", title: new Date(request.at).toLocaleString() }, `Asked ${relativeTime(request.at)}. Asking installs nothing: it waits for you to add it.`),
+        ),
+      ),
+      ctx.can("brain:write") ? h("div", { class: "row wrap" }, add, dismiss) : null,
+      note,
+    ),
+  );
+}
 
 export const KEY_STATE: Record<string, { label: string; tone: Tone; icon: IconName; explain: string }> = {
   "none-needed": { label: "no key needed", tone: "neutral", icon: "check", explain: "It works without a key." },
@@ -443,7 +491,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
     : null;
   return h(
     "article",
-    { class: "card", "aria-label": c.label },
+    { class: "card", "aria-label": c.label, "data-connector": c.id },
     h(
       "div",
       { class: "card-body stack" },
@@ -608,6 +656,14 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
       if (signed) showOrders();
       if (arrived === "add-mcp" && ctx.can("brain:write")) openAddMcp(ctx, connectors, deps);
       else if (arrived === "catalog") requestAnimationFrame(() => availableSection.scrollIntoView({ block: "start", behavior: "smooth" }));
+      else if (arrived?.startsWith("install:")) {
+        // From an agent's request: to the one asked for, its Install ready.
+        const card = availableBox.querySelector<HTMLElement>(`[data-connector="${CSS.escape(arrived.slice(8))}"]`);
+        requestAnimationFrame(() => {
+          (card ?? availableSection).scrollIntoView({ block: "center", behavior: "smooth" });
+          card?.querySelector<HTMLButtonElement>("button[type=submit]")?.focus({ preventScroll: true });
+        });
+      }
       arrived = null;
     } catch (error) {
       if (!scope.disposed) replace(installedBox, errorState("Couldn't load connectors", error, () => void refresh()));
@@ -639,7 +695,8 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
     ),
   );
 
-  scope.add(connectorsChanged.subscribe(() => void refresh()));
+  // A connector installed answers whoever asked for it: their request leaves the Inbox at once.
+  scope.add(connectorsChanged.subscribe(() => (void refresh(), void ctx.live.refreshConnectorRequests())));
   scope.add(vaultChanged.subscribe(() => void refresh()));
   scope.add(ordersChanged.subscribe(() => void refreshOrders()));
   if (read) scope.interval(() => void refreshOrders(), 15_000);

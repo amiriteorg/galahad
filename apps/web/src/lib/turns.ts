@@ -73,24 +73,34 @@ export interface Step {
   toolName?: string;
 }
 
-/** The keys he asked for in these turns (his request_secret steps, by the name each named), once each, in the order he asked. */
-export function keysAskedIn(turns: Turn[]): string[] {
-  const names: string[] = [];
+/** One argument of a tool's steps in these turns, each value that fits `shape` once, in the order he asked. */
+function askedIn(turns: Turn[], toolName: string, argument: string, shape: RegExp): string[] {
+  const values: string[] = [];
   for (const turn of turns) {
     for (const step of turn.steps) {
-      if (step.toolName !== "request_secret" || !step.detail) continue;
+      if (step.toolName !== toolName || !step.detail) continue;
       // The step's detail is the tool's arguments as JSON, then " → " and what it answered.
       const end = step.detail.indexOf("} → ");
-      let name: unknown;
+      let value: unknown;
       try {
-        name = (JSON.parse(end >= 0 ? step.detail.slice(0, end + 1) : step.detail) as { name?: unknown }).name;
+        value = (JSON.parse(end >= 0 ? step.detail.slice(0, end + 1) : step.detail) as Record<string, unknown>)[argument];
       } catch {
         continue;
       }
-      if (typeof name === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(name) && !names.includes(name)) names.push(name);
+      if (typeof value === "string" && shape.test(value) && !values.includes(value)) values.push(value);
     }
   }
-  return names;
+  return values;
+}
+
+/** The keys he asked for in these turns (his request_secret steps, by the name each named), once each, in the order he asked. */
+export function keysAskedIn(turns: Turn[]): string[] {
+  return askedIn(turns, "request_secret", "name", /^[A-Za-z0-9._:-]{1,128}$/);
+}
+
+/** The connectors he asked for in these turns (his connector_request steps, by the connector each named), once each, in order. */
+export function connectorsAskedIn(turns: Turn[]): string[] {
+  return askedIn(turns, "connector_request", "connector", /^[a-z][a-z0-9-]{0,39}$/);
 }
 
 export interface Turn {

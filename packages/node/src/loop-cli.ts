@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorView, type FindingView, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorRequestView, type ConnectorView, type FindingView, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -262,6 +262,25 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         if (c.problem) console.log(`      ${bold(c.problem)}`);
       }
       console.log(dim("\n  galahad connector add <id> · galahad connector tools <id> · galahad connector call <id>.<tool> --arg k=v"));
+      const { requests } = await api.call<{ requests: ConnectorRequestView[] }>("connectorRequests").catch(() => ({ requests: [] as ConnectorRequestView[] }));
+      if (requests.length) console.log(bold(`  ${requests.length} asked for by an agent: galahad connector requests`));
+      return;
+    }
+    case "requests": {
+      const { requests } = await api.call<{ requests: ConnectorRequestView[] }>("connectorRequests");
+      if (!requests.length) console.log("No agent is asking for a connector. When one needs a service it doesn't have, its request waits here.");
+      for (const request of requests) {
+        console.log(`  ${bold(request.id)}  ${bold(request.label ?? request.connector)}, asked by ${request.by}`);
+        console.log(`  ${" ".repeat(request.id.length)}  ${dim(`why: ${request.why}`)}`);
+        console.log(`  ${" ".repeat(request.id.length)}  ${dim(request.label ? `add it: galahad connector add ${request.connector}` : `not one Galahad ships: add it as an MCP server (galahad connector add ${request.connector} --mcp <url>) or from a manifest`)}`);
+      }
+      if (requests.length) console.log(dim("Dismiss one: galahad connector dismiss <id>"));
+      return;
+    }
+    case "dismiss": {
+      if (!rest[0]) throw new Error("usage: galahad connector dismiss <request id> (galahad connector requests lists them)");
+      await api.call("dismissConnectorRequest", { id: rest[0] });
+      console.log("Dismissed. Nothing was added.");
       return;
     }
     case "add": {
@@ -389,7 +408,7 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       return;
     }
     default:
-      throw new Error("usage: galahad connector ls | add | refresh | rm | tools | call");
+      throw new Error("usage: galahad connector ls | add | refresh | rm | tools | call | requests | dismiss");
   }
 }
 

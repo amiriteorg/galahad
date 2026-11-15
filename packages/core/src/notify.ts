@@ -25,7 +25,7 @@ export const NOTIFY_KIND_INFO: Record<NotifyKind, { label: string; hint: string;
   "needs-you": { label: "Something needs you", hint: "A warning or an alert from his heartbeat: once per finding, not again while it stands.", on: true },
   approval: { label: "An approval is waiting", hint: "Something he or an agent wants to send or delete, filed for your answer.", on: true },
   finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed, said as it is.", on: true },
-  question: { label: "He has a question", hint: "An answer that ends by asking you, or a key he needs.", on: true },
+  question: { label: "He has a question", hint: "An answer that ends by asking you, or a key or connector he needs.", on: true },
 };
 
 export interface QuietHours {
@@ -166,6 +166,15 @@ export function actionItem(a: { id: string; connector: string; tool: string; sta
 export function secretItem(name: string): NotifyItem | null {
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(name)) return null;
   return { key: `secret:${name}`, kind: "question", alert: false, title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there.", open: "inbox", needs: ["vault:read"] };
+}
+
+/**
+ * A connector an agent asked for (requestConnector). Like a key's request it says neither which nor why: an agent chose
+ * both, and a connector's name is words enough to say something. The Inbox says which.
+ */
+export function connectorItem(id: string): NotifyItem | null {
+  if (!/^cr_[A-Za-z0-9_-]{22}$/.test(id)) return null;
+  return { key: `connector:${id}`, kind: "question", alert: false, title: "Galahad asks for a connector", body: "He needs a connector to go on. The Inbox says which.", open: "inbox", needs: ["brain:write"] };
 }
 
 /** Words of your own (a chat's title, a quest's goal) as a notification may show them: not when they speak of the bank, or look like a secret. */

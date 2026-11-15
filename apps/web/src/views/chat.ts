@@ -10,7 +10,7 @@ import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
@@ -26,6 +26,7 @@ import { openAside } from "./chat-aside.ts";
 import { queuePanel } from "./chat-queue.ts";
 import { openInHand } from "./in-hand.ts";
 import { openAddKey, secretRequestCard } from "./vault.ts";
+import { connectorRequestCard } from "./connectors.ts";
 
 /*
  * Chat. A turn runs on the node, not in this page: the page starts it and watches
@@ -44,7 +45,7 @@ function toolIcon(name: string): IconName {
   if (name.startsWith("connector")) return "plug";
   if (name.startsWith("artifact")) return "archive";
   if (name.startsWith("archive_")) return "library";
-  const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", loop_draft: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key", note_idea: "lightbulb" };
+  const icons: Record<string, IconName> = { recall: "memory", remember: "memory", web_search: "globe", fleet: "fleet", place: "fleet", loops: "repeat", loop_draft: "repeat", notices: "inbox", ledger: "activity", decide: "compass", request_secret: "key", connector_request: "plug", note_idea: "lightbulb" };
   return icons[name] ?? "zap";
 }
 /** A step's icon: a tool's own, or the step's. */
@@ -902,6 +903,26 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     replace(keyAsks, ...waiting.map((request) => secretRequestCard(ctx, request)));
   }
 
+  // A connector he asked for in this chat: its card here, above the message box, as well as in the Inbox. Drawn again
+  // only when which requests wait changes.
+  const connectorAsks = h("div", { class: "composer-alerts" });
+  let shownConnectorAsks = "";
+  const lookedConnectors = new Set<string>();
+  function syncConnectorAsks(): void {
+    const asked = connectorsAskedIn(thread.turns);
+    const waiting = ctx.live.connectorRequests.value.filter((request) => asked.includes(request.connector));
+    // Asked just now: the Inbox is asked at once, not at its next look.
+    const fresh = asked.filter((id) => !lookedConnectors.has(id) && !waiting.some((request) => request.connector === id));
+    if (fresh.length && ctx.can("mind:read")) {
+      for (const id of fresh) lookedConnectors.add(id);
+      void ctx.live.refreshConnectorRequests();
+    }
+    const signature = waiting.map((request) => request.id).join(",");
+    if (signature === shownConnectorAsks) return;
+    shownConnectorAsks = signature;
+    replace(connectorAsks, ...waiting.map((request) => connectorRequestCard(ctx, request)));
+  }
+
   function syncComposer(): void {
     const busy = live !== null;
     const has = Boolean(input.value.trim()) && !blocked;
@@ -918,6 +939,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     queueButton.classList.toggle("primary", canQueue && enter === "queue");
     input.placeholder = busy ? (canQueue ? "Steer him, or queue what's next…" : "Steer him…") : "Ask Galahad…";
     syncKeyAsks();
+    syncConnectorAsks();
     panel.render({ queue, held, steering, busy, deadline: live?.deadline ?? null });
     // He's working in this chat on a turn this device may not watch (it may read the bank): said, with Stop.
     const other = unwatchable && !live ? unwatchable.id : "";
@@ -1299,13 +1321,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       h("div", { class: "chat-head" }, back, who, inbox, options.el),
       subHead,
       threadEl,
-      h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, keyAsks, panel.el, form),
+      h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, keyAsks, connectorAsks, panel.el, form),
     ),
   );
 
   changed.add(onChange);
   scope.add(() => changed.delete(onChange));
   scope.add(ctx.live.secretRequests.subscribe(syncKeyAsks));
+  scope.add(ctx.live.connectorRequests.subscribe(syncConnectorAsks));
   // Arriving for one chat, or to start one in a project.
   if (opts.conversation && opts.conversation !== current?.id) {
     openConversation(ctx.api, opts.conversation).catch((error: unknown) => toast("Couldn't open that chat", { tone: "error", description: errorMessage(error) }));

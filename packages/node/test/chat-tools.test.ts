@@ -377,7 +377,7 @@ describe("one answer's tools", () => {
     const unclassified = TOOLS.filter((t) => !t.flow && !t.routes.every((r) => routes[r].scope === "mind:read" || r === "whoami")).map((t) => t.name);
     expect(unclassified.sort()).toEqual(["sandbox_destroy"]);
     const flow = (name: string) => TOOLS.find((t) => t.name === name)!.flow;
-    for (const name of ["remember", "request_secret", "sandbox_save", "sandbox_create"]) expect(flow(name)).toBe("record");
+    for (const name of ["remember", "request_secret", "connector_request", "sandbox_save", "sandbox_create"]) expect(flow(name)).toBe("record");
   });
 
   test("a bank call that failed brought no data: the web stays available", async () => {
@@ -390,7 +390,7 @@ describe("one answer's tools", () => {
     const tools = chatTools(TOOLS, api, explain);
     const only = (name: string) => tools.readOnly?.({ id: "x", name, input: {} });
     for (const name of ["recall", "fleet", "ledger", "notices", "archive_search"]) expect(`${name}: ${only(name)}`).toBe(`${name}: true`);
-    for (const name of ["remember", "sandbox_run", "connector_call", "note_idea", "request_secret"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
+    for (const name of ["remember", "sandbox_run", "connector_call", "connector_request", "note_idea", "request_secret"]) expect(`${name}: ${only(name)}`).toBe(`${name}: false`);
     // A tool that isn't his is nothing he may run twice.
     expect(only("vault_read")).toBe(false);
   });
@@ -547,5 +547,53 @@ describe("loops he drafts when you ask for one", () => {
     expect((await call("draftLoop", { ...prCheck, tz: "Mars/Olympus" }, admin)).status).toBe(400);
     expect((await call("draftLoop", { ...prCheck, task: { kind: "quest", goal: "Use ghp_0123456789abcdefghijklmnopqrstuvwxyzAB to push", network: "online" } }, admin)).status).toBe(422);
     expect((await call("draftLoop", { ...prCheck, task: { kind: "launch-rockets" } }, admin)).status).toBe(400);
+  });
+});
+
+describe("connectors an agent asks you for", () => {
+  const json = async (response: Response) => {
+    const body = await response.json();
+    expect([response.status, body]).toMatchObject([200, {}]);
+    return body as any;
+  };
+
+  test("asked in chat, he asks you for one he lacks: it waits with who asked, which and why, and installing it answers it", async () => {
+    const admin = home.adminToken();
+    script = [callTool("connector_request", { connector: "cloudflare", why: "To check the DNS records you asked about." }), say("I've asked you for the Cloudflare connector.")];
+    const events = await ask(admin, "Are my DNS records right?");
+    expect(events.find((e) => e.type === "tool_result")).toMatchObject({ name: "connector_request", ok: true });
+    expect(bodies[1].messages.at(-1).content).toContain("Asked for Cloudflare: it waits in the user's Inbox");
+    const { requests } = await json(await call("connectorRequests", null, admin));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ connector: "cloudflare", label: "Cloudflare", why: "To check the DNS records you asked about.", by: "Galahad" });
+    expect(requests[0].id).toMatch(/^cr_[A-Za-z0-9_-]{22}$/);
+    // Asking installed nothing.
+    expect((await json(await call("connectors", null, admin))).connectors.find((c: { id: string }) => c.id === "cloudflare").installed).toBe(false);
+    // You install it: whoever asked has it, and nothing waits.
+    await json(await call("setConnector", { id: "cloudflare" }, admin));
+    expect((await json(await call("connectorRequests", null, admin))).requests).toEqual([]);
+    // Installed, it isn't asked for: it's called.
+    expect((await call("requestConnector", { connector: "cloudflare", why: "Again." }, admin)).status).toBe(409);
+    await json(await call("removeConnector", { id: "cloudflare" }, admin));
+  });
+
+  test("an agent may ask, never dismiss; a service Galahad doesn't ship is asked for by a name, and asked again, the newer ask stands", async () => {
+    const admin = home.adminToken();
+    const { token } = (await (await call("mintArm", { label: "asker" }, admin)).json()) as { token: string };
+    await json(await call("requestConnector", { connector: "slack", why: "To post the release notes." }, token));
+    await json(await call("requestConnector", { connector: "slack", why: "To read the support channel." }, token));
+    const slack = (await json(await call("connectorRequests", null, admin))).requests.filter((r: { connector: string }) => r.connector === "slack");
+    expect(slack).toHaveLength(1);
+    expect(slack[0]).toMatchObject({ label: null, why: "To read the support channel.", by: "asker" });
+    expect((await call("dismissConnectorRequest", { id: slack[0].id }, token)).status).toBe(403);
+    // You dismiss it, once.
+    await json(await call("dismissConnectorRequest", { id: slack[0].id }, admin));
+    expect((await call("dismissConnectorRequest", { id: slack[0].id }, admin)).status).toBe(404);
+  });
+
+  test("what it's for is shown to you, so it holds no key; and a connector's name is only a name", async () => {
+    const admin = home.adminToken();
+    expect((await call("requestConnector", { connector: "slack", why: "Sign in with ghp_0123456789abcdefghijklmnopqrstuvwxyzAB" }, admin)).status).toBe(422);
+    expect((await call("requestConnector", { connector: "Call 555 now", why: "x" }, admin)).status).toBe(400);
   });
 });

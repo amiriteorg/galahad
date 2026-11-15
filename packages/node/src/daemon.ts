@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity } from "@galahad/core";
-import { type BrainContext, GatewayTokens, pinLegacyKeys } from "@galahad/brain";
+import { type BrainContext, GatewayTokens, installedConnectors, pinLegacyKeys } from "@galahad/brain";
 import { UsageStore } from "./usage.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
@@ -34,6 +34,7 @@ import { loopNotice } from "./heartbeat.ts";
 import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
+import { ConnectorRequests } from "./connector-requests.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
@@ -403,6 +404,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       });
   };
   const loopDrafts = new LoopDrafts(local);
+  const connectorRequests = new ConnectorRequests(local);
   const loops = new LoopRunner({
     store,
     identity,
@@ -444,6 +446,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       notices: () => store.lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:").flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
       actions: () => connectors.actions(),
       secretRequests: () => vault.requests().map((r) => r.name),
+      connectorRequests: () => {
+        const installed = new Set(installedConnectors(store).map((c) => c.id));
+        return connectorRequests.list().filter((r) => !installed.has(r.connector)).map((r) => r.id);
+      },
       turns,
       chats,
       quests,
@@ -513,6 +519,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     loops,
     loopDrafts,
+    connectorRequests,
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,

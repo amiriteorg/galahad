@@ -10,6 +10,7 @@ import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO, deviceName } from "./activity.ts";
+import { connectorRequestCard } from "./connectors.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
 import { describeTask, findingRow, loopsChanged } from "./loops.ts";
 import { openOrderFromAction } from "./orders.ts";
@@ -256,6 +257,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const pairingsBox = h("div", { class: "stack" });
   const requestsBox = h("div", { class: "stack" });
   const draftsBox = h("div", { class: "stack" });
+  const connectorsBox = h("div", { class: "stack" });
   const actionsBox = h("div", { class: "stack" });
   const noticesBox = h("div", { class: "card" });
   const historyRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
@@ -375,8 +377,15 @@ export const inboxView: View = (root, ctx, { scope }) => {
     renderAllClear();
   };
 
+  const renderConnectorRequests = () => {
+    const requests = ctx.live.connectorRequests.value;
+    replace(connectorsBox, ...requests.map((r) => connectorRequestCard(ctx, r)));
+    connectorsSection.hidden = !requests.length;
+    renderAllClear();
+  };
+
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.connectorRequests.value.length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -391,7 +400,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
             empty({
               icon: "check-circle",
               title: "Nothing needs you",
-              body: "When a device asks to join, Galahad needs a credential or wants to do something his oath says to ask about, or the heartbeat spots trouble, it waits here.",
+              body: "When a device asks to join, Galahad needs a credential or a connector, or wants to do something his oath says to ask about, or the heartbeat spots trouble, it waits here.",
               actions: admin ? button("Pair a device", { icon: "plus", onClick: () => openInvite(ctx, "client") }) : null,
             }),
           )
@@ -411,6 +420,12 @@ export const inboxView: View = (root, ctx, { scope }) => {
     actionsBox,
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);
+  const connectorsSection = section(
+    "Connectors asked for",
+    { actions: h("a", { href: "#/connectors", class: "btn ghost sm" }, "Connectors", icon("chevron-right", { size: 14 })) },
+    h("p", { class: "tiny subtle" }, "A service Galahad or a knight needs and doesn't have. Asking installs nothing; once you add it, every one of them can use it."),
+    connectorsBox,
+  );
   const draftsSection = section(
     "Loops Galahad drafted",
     { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) },
@@ -432,6 +447,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       pairingsSection,
       actionsSection,
       requestsSection,
+      connectorsSection,
       draftsSection,
       noticesSection,
       read ? history : null,
@@ -442,12 +458,14 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.pairings.subscribe(renderPairings));
   scope.add(ctx.live.secretRequests.subscribe(renderRequests));
   scope.add(ctx.live.loopDrafts.subscribe(renderDrafts));
+  scope.add(ctx.live.connectorRequests.subscribe(renderConnectorRequests));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();
   renderRequests();
   renderDrafts();
+  renderConnectorRequests();
   renderActions();
   renderNotices();
   void ctx.live.refreshInbox();

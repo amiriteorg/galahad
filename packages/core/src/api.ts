@@ -166,6 +166,19 @@ export const LoopDraftInput = z.strictObject({
 });
 
 /**
+ * A connector an agent asked you for (Galahad, a knight, an agent over MCP): one Galahad ships that isn't installed, or
+ * a service he doesn't have at all. Like a key's request it waits in your Inbox, and in the chat it was asked in, with
+ * who asked and what for; it never installs anything, and it goes once that connector is installed or you dismiss it.
+ * Kept on the node it was asked on, never in the mind's log; a week unanswered and it's gone.
+ */
+export const ConnectorRequestId = z.string().regex(/^cr_[A-Za-z0-9_-]{22}$/);
+export const ConnectorRequestInput = z.strictObject({
+  connector: ConnectorId,
+  /** What it's for, in a line: shown with the request. */
+  why: z.string().min(1).max(500),
+});
+
+/**
  * Kinds of task this version no longer has, and what each was. A fleet's mind may still hold a loop with one:
  * it never runs, and every surface that lists it says its task no longer exists (loops.ts' loopRecords).
  */
@@ -616,6 +629,11 @@ export const routes = {
     }),
   },
   removeConnector: { method: "POST", path: "/api/connectors/remove", scope: "brain:write", input: z.strictObject({ id: ConnectorId }) },
+  /** What agents asked you to connect (ConnectorRequestInput): each waits until that connector is installed or you dismiss it. */
+  connectorRequests: { method: "GET", path: "/api/connectors/requests", scope: "mind:read", input: null },
+  /** An agent asking for a connector it doesn't have. Asking installs nothing: you add it, from the request. */
+  requestConnector: { method: "POST", path: "/api/connectors/requests", scope: "connect", input: ConnectorRequestInput },
+  dismissConnectorRequest: { method: "POST", path: "/api/connectors/requests/dismiss", scope: "brain:write", input: z.strictObject({ id: ConnectorRequestId }) },
   callConnector: {
     method: "POST",
     path: "/api/connectors/call",
@@ -1083,6 +1101,20 @@ export interface LoopView {
   last: LoopRunView | null;
   /** Known only on the node that runs it. */
   running: boolean | null;
+}
+
+export interface ConnectorRequestView {
+  id: string;
+  /** The connector asked for. */
+  connector: string;
+  /** Its name, when Galahad ships it (adding it is then a tap); null for a service he doesn't have yet. */
+  label: string | null;
+  why: string;
+  /** Who asked: Galahad, a knight by name, or an agent's label. */
+  by: string;
+  at: number;
+  /** Unanswered by then, and it's gone. */
+  expires: number;
 }
 
 export interface LoopDraftView {

@@ -251,6 +251,7 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
                                   a remote MCP server: its tools are listed once; you choose their classes
   connector refresh <id> [--class tool=class …]   list an MCP server's tools again (your classes stay)
   connector call <id>.<tool> [--arg key=value …] [--why "…"]
+  connector requests | connector dismiss <id>      what an agent asked you to connect (it never installs one)
   secret set <name> --connector <id>                    a connector's key, pinned to its origin
   action ls [--all] | action approve <id> [--note …] | action deny <id>
 

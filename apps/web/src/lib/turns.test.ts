@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatStreamEvent, StoredMessage } from "@galahad/core";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
 
 const fresh = (): Thread => ({ turns: [], nextId: 1, target: null, base: null });
 const shape = (thread: Thread) => thread.turns.map((t) => [t.role, t.content, t.status]);
@@ -249,5 +249,21 @@ describe("keys he asked for in a chat", () => {
     expect(keysAskedIn([turn([other])])).toEqual([]);
     expect(keysAskedIn([turn([{ ...asked("ok"), detail: '{"purpose":"a \\"name\\":\\"trick\\""}' }])])).toEqual([]);
     expect(keysAskedIn([])).toEqual([]);
+  });
+});
+
+describe("connectors he asked for in a chat", () => {
+  const turn = (steps: Step[]): Turn => ({ id: 1, role: "assistant", content: "", steps, status: "done", fallbacks: 0, startedAt: 0 });
+  const asked = (connector: string): Step => ({ icon: "plug", text: "Ask the user for a connector", detail: `{"connector":"${connector}","why":"To read the invoices"} → Asked for ${connector}.`, state: "done", tool: `call_${connector}`, toolName: "connector_request" });
+
+  test("each connector named by his connector_request steps, once, in the order he asked", () => {
+    expect(connectorsAskedIn([turn([asked("gmail")]), turn([asked("slack"), asked("gmail")])])).toEqual(["gmail", "slack"]);
+  });
+
+  test("only his requests' connectors: a call to one, or a name no connector can have, isn't a request", () => {
+    const call: Step = { icon: "plug", text: "Call a connector tool", detail: '{"connector":"github","tool":"issues"}', state: "done", tool: "call_x", toolName: "connector_call" };
+    expect(connectorsAskedIn([turn([call])])).toEqual([]);
+    expect(connectorsAskedIn([turn([asked("Not A Connector")])])).toEqual([]);
+    expect(connectorsAskedIn([])).toEqual([]);
   });
 });

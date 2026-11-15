@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   actionItem,
   alertReserve,
+  connectorItem,
   conversationFromHash,
   GENERIC_NOTIFICATION,
   inQuietHours,
@@ -102,6 +103,14 @@ describe("what a notification may say", () => {
     expect(planted.body).toBe("He needs a key to go on. The Inbox says which; he learns only that it's there.");
     expect(planted.body).toBe(secretItem("github")!.body);
     expect(secretItem("bad name with spaces")).toBeNull();
+  });
+
+  test("a connector an agent asked for: that one is wanted, never which or why (an agent chose both), for devices that can add one", () => {
+    const item = connectorItem("cr_AAAAAAAAAAAAAAAAAAAAAA")!;
+    expect(item).toMatchObject({ key: "connector:cr_AAAAAAAAAAAAAAAAAAAAAA", kind: "question", title: "Galahad asks for a connector", body: "He needs a connector to go on. The Inbox says which.", open: "inbox", needs: ["brain:write"] });
+    // Every request reads the same: nothing of which, or why.
+    expect(connectorItem("cr_BBBBBBBBBBBBBBBBBBBBBB")).toMatchObject({ title: item.title, body: item.body });
+    expect(connectorItem("call-0045-your-bank-is-locked")).toBeNull();
   });
 
   test("a turn that ended unwatched: finished, couldn't finish, a question; a bank chat without its title, only for devices that may read the bank", () => {
