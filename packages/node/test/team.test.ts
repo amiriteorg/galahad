@@ -24,6 +24,24 @@ describe("knights converse through the node", () => {
     expect(store.messages("workshop")).toHaveLength(1);
     expect(store.deliveries().every((d) => d.status === "done")).toBe(true);
   });
+  test("a message that names knights with @ reaches only them; one that names nobody here reaches everyone", async () => {
+    const heard: string[] = [];
+    const { service } = setup({ respond: async (teammate) => { heard.push(teammate.id); return ""; } });
+    service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada", "lin", "sam"] });
+    service.start();
+    const expected: [string, string[]][] = [
+      ["@lin, check the parser.", ["lin"]],
+      ["@Ada and @SAM: the release?", ["ada", "sam"]],
+      ["Everyone: the release?", ["ada", "lin", "sam"]],
+      ["@bors is not here: who takes it?", ["ada", "lin", "sam"]],
+      ["mail me at a@lin.example", ["ada", "lin", "sam"]],
+    ];
+    for (const [text, hearers] of expected) {
+      heard.length = 0;
+      service.post({ room: "workshop", text }); await service.settled();
+      expect([text, heard.sort()]).toEqual([text, hearers]);
+    }
+  });
   test("ordinary replies preserve identity and conversation ping-pong stops at the shared budget", async () => {
     const { store, service } = setup({ respond: async (teammate) => `I am ${teammate.name}.` }, 3);
     service.post({ room: "workshop", text: "Discuss." }); service.start(); await service.settled();

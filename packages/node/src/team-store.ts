@@ -41,6 +41,17 @@ export interface TeamSelection { room?: string; teammate?: string; task?: string
 const messageOf = (r: MessageRow): TeamMessage => ({ id: r.id, room: r.room, speaker: r.speaker, speakerName: r.speaker_name, text: r.text, createdAt: r.created_at, chainId: r.chain_id });
 const jobOf = (r: JobRow): TeamJob => ({ id: r.id, kind: r.kind, room: r.room, teammate: r.teammate, chainId: r.chain_id, status: r.status, createdAt: r.created_at });
 const id = (prefix: string): string => `${prefix}-${randomId(9).toLowerCase()}`;
+/**
+ * The knights a message names with @: by handle, by name, or by the first word of its name (case aside), each once and
+ * in the room's order. An @ inside a word (an address) names nobody.
+ */
+export function mentioned(text: string, members: readonly Pick<Teammate, "id" | "name">[]): string[] {
+  const said = new Set([...text.normalize("NFKC").matchAll(/(?<![\p{L}\p{N}_.@])@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu)].map((match) => match[1]!.toLowerCase()));
+  if (!said.size) return [];
+  const call = (name: string) => name.normalize("NFKC").toLowerCase();
+  return members.filter((member) => said.has(member.id) || said.has(call(member.name).replace(/\s+/g, "")) || said.has(call(member.name).split(/\s+/)[0] ?? "")).map((member) => member.id);
+}
+
 /** A new worker's daily allowance, whoever makes it: yours to change. */
 const DAILY_TURNS = 40;
 const DAY = 24 * 3_600_000;
@@ -299,7 +310,9 @@ export class TeamStore {
       for (const member of room.members) this.requireTeammate(member);
       if (by.teammate && !by.chainId) throw new TeamError(403, "A knight message must belong to its current conversation.");
       if (by.chainId && !this.db.query("SELECT id FROM team_chains WHERE id = ?").get(by.chainId)) throw new TeamError(404, "No such conversation chain.");
-      const recipients = room.members.filter((member) => member !== by.teammate);
+      // Those it names with @ (by handle or name) hear it; one that names nobody here reaches everyone.
+      const named = mentioned(input.text, room.members.map((member) => this.requireTeammate(member)));
+      const recipients = (named.length ? named : room.members).filter((member) => member !== by.teammate);
       if (this.pending() + recipients.length > TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
       // His own words never fill it: half is always left for yours, however much of his waits in held rooms.
       if (by.galahad && this.pending() + recipients.length > TEAM_LIMITS.pending / 2) throw new TeamError(429, "Half the team queue is waiting work already. Let some of it finish before writing to them again.");
