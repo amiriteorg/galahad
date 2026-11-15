@@ -303,6 +303,88 @@ describe("task orchestration", () => {
   });
 });
 
+describe("work a planned restart cuts off", () => {
+  const MINUTE = 60_000;
+  /** A store on a clock of the test's own, with Ada in the workshop, and a runner that ends only when it is cut off. */
+  function restartable() {
+    const clock = { now: 1_000_000 };
+    const store = new TeamStore(":memory:", () => clock.now);
+    store.saveTeammate({ id: "ada", name: "Ada" });
+    store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"], turnBudget: 8 });
+    const runs: string[] = [];
+    const node = () => {
+      const service = new TeamService({ store, respond: async () => "", restartWaitMs: 16 * MINUTE, shutdownGraceMs: 1, tickMs: 2, executeTask: async (_teammate, task, context) => {
+        runs.push(task.id);
+        return new Promise((resolve) => context.signal.addEventListener("abort", () => resolve({ verified: false, output: "Cut off." }), { once: true }));
+      } });
+      fixtures.push({ store, service });
+      return service;
+    };
+    return { clock, store, runs, node };
+  }
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  test("waits out its VM command's deadline, holding the knight's other work, then is taken up again by itself, once", async () => {
+    const { clock, store, runs, node } = restartable();
+    const before = node();
+    const task = before.createTask({ room: "workshop", assignee: "ada", title: "Long job", goal: "Long job" });
+    const next = before.createTask({ room: "workshop", assignee: "ada", title: "Next", goal: "Next" });
+    before.start(); await until(() => store.task(task.id)?.status === "running");
+    await before.stop();
+    expect(store.task(task.id)?.status).toBe("interrupted");
+    expect(store.task(task.id)?.error).toMatch(/picks up again by itself .*at most 16 minutes after the restart/);
+    expect(store.room("workshop")?.paused).toBe(false);
+
+    // Back up a minute later: its last command may still be running in Ada's VM, so nothing of hers starts.
+    clock.now += MINUTE;
+    const after = node(); after.start(); await tick();
+    expect([store.task(task.id)?.status, store.task(next.id)?.status, runs.length]).toEqual(["interrupted", "queued", 1]);
+
+    // Its deadline passed: taken up again, ahead of what was given after it, with a line saying why.
+    clock.now += 16 * MINUTE;
+    await until(() => runs.length === 2);
+    expect(runs).toEqual([task.id, task.id]);
+    expect(store.trail(task.id).entries.map((entry) => entry.text)).toContain("Taken up again by itself after Galahad restarted.");
+
+    // Cut off a second time: it waits for you now, its room held, however long the node is up.
+    await after.stop();
+    expect(store.task(task.id)?.error).toMatch(/again\. It was taken up once by itself already, so it waits for you/);
+    expect(store.room("workshop")?.paused).toBe(true);
+    clock.now += 60 * MINUTE;
+    node().start(); await tick();
+    expect([store.task(task.id)?.status, runs.length]).toEqual(["interrupted", 2]);
+  });
+
+  test("waits for you instead, once you pause or stop it, its knight or its room before it is taken up", async () => {
+    for (const select of [{ teammate: "ada" }, { room: "workshop" }] as const) {
+      for (const action of ["pause", "stop"] as const) {
+        const { clock, store, runs, node } = restartable();
+        const before = node();
+        const task = before.createTask({ room: "workshop", assignee: "ada", title: "Long job", goal: "Long job" });
+        before.start(); await until(() => store.task(task.id)?.status === "running");
+        await before.stop();
+        const after = node(); after.start();
+        after.control({ ...select, action });
+        clock.now += 20 * MINUTE; await tick();
+        expect([action, store.task(task.id)?.status, store.task(task.id)?.error, runs.length]).toEqual([action, action === "pause" ? "interrupted" : "stopped", action === "pause" ? "Paused by you." : "Stopped by you.", 1]);
+      }
+    }
+  });
+
+  test("a crash leaves no such mark: what it cut off waits for you, its room held", async () => {
+    const { clock, store, runs, node } = restartable();
+    const before = node();
+    const task = before.createTask({ room: "workshop", assignee: "ada", title: "Long job", goal: "Long job" });
+    before.start(); await until(() => store.task(task.id)?.status === "running");
+    // (No stop(): the process died. The next start finds the job still marked running.)
+    clock.now += 60 * MINUTE;
+    const after = new TeamService({ store, respond: async () => "", executeTask: async () => ({ verified: true, output: "Never" }), tickMs: 2 });
+    fixtures.push({ store, service: after });
+    after.start(); await tick();
+    expect([store.task(task.id)?.status, store.task(task.id)?.error, store.room("workshop")?.paused, runs.length]).toEqual(["interrupted", "The node stopped during this work. Review it before resuming.", true, 1]);
+  });
+});
+
 describe("stopping, interruption and resource bounds", () => {
   test("a runner settling after bounded shutdown never touches the closed database or observers", async () => {
     const finish = deferred<{ verified: boolean; output: string }>(); let changes = 0;

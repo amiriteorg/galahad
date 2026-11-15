@@ -117,6 +117,8 @@ print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['g
  */
 export const TEAM_TASK_COMMANDS = 40;
 export const TEAM_TASK_MINUTES = 45;
+/** The longest any one command of a knight's may run in its VM, which kills it there at that (`timeout --signal=KILL`). */
+export const TEAM_COMMAND_SECONDS = 900;
 
 /** What a harness would run on in a knight's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
@@ -367,7 +369,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // A temporary directory of the task's own, on the workspace: a sandbox's /tmp is mounted noexec, so a test that
       // writes a script there and runs it fails with exit 126 (and with it a gate that passes everywhere else).
       const temp = `/work/.tmp/${task.id}`;
-      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && ${sees ? `export GALAHAD_EYES=${quote(sees)} && ` : ""}cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, 900), ctx.signal);
+      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && ${sees ? `export GALAHAD_EYES=${quote(sees)} && ` : ""}cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, TEAM_COMMAND_SECONDS), ctx.signal);
       let agent;
       if (teammate.harness !== "native") {
         const driver = AGENTS[teammate.harness];

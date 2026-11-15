@@ -148,7 +148,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamStore } from "./team-store.ts";
-import { harnessReadiness, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
+import { harnessReadiness, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
@@ -1670,7 +1670,7 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad seated a knight, in your conversation with him" : `the knight ${made.createdBy} seated another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, onRecruit });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
     ctx.team.service.start();
   }
 

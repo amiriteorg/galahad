@@ -474,12 +474,15 @@ export class TeamStore {
     const data = { ...JSON.parse(row.data), progress: teamOutput(text, TEAM_LIMITS.progress) };
     this.db.transaction(() => {
       this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), at, key);
-      // Its trail: each line as it happened, numbered in order, kept after the task has ended. Bounded: a line is cut
-      // to TRAIL.text, and once a task has more than TRAIL.keep lines the oldest go (the numbers stay as written).
-      const n = (this.db.query<{ n: number | null }, [string]>("SELECT MAX(n) AS n FROM team_trail WHERE task=?").get(key)?.n ?? 0) + 1;
-      this.db.query("INSERT INTO team_trail(task,n,at,text) VALUES(?,?,?,?)").run(key, n, at, teamOutput(text, TRAIL.text));
-      if (n > TRAIL.keep) this.db.query("DELETE FROM team_trail WHERE task=? AND n<=?").run(key, n - TRAIL.keep);
+      this.trailLine(key, at, text);
     })();
+  }
+  /** Its trail: each line as it happened, numbered in order, kept after the task has ended. Bounded: a line is cut to
+   * TRAIL.text, and once a task has more than TRAIL.keep lines the oldest go (the numbers stay as written). */
+  private trailLine(key: string, at: number, text: string): void {
+    const n = (this.db.query<{ n: number | null }, [string]>("SELECT MAX(n) AS n FROM team_trail WHERE task=?").get(key)?.n ?? 0) + 1;
+    this.db.query("INSERT INTO team_trail(task,n,at,text) VALUES(?,?,?,?)").run(key, n, at, teamOutput(text, TRAIL.text));
+    if (n > TRAIL.keep) this.db.query("DELETE FROM team_trail WHERE task=? AND n<=?").run(key, n - TRAIL.keep);
   }
   /** What a task did, as it happened: its lines after number `after` (0: from the first kept), a page at a time; `more`: there are further lines. */
   trail(task: string, after = 0): { entries: TeamTrailEntry[]; more: boolean } {
@@ -503,7 +506,66 @@ export class TeamStore {
     }
     this.db.query("UPDATE team_jobs SET status=?,data=?,error=?,updated_at=? WHERE id=?").run(status, JSON.stringify(data), error ? teamOutput(error, 2000) : null, this.now(), key);
   }
-  /** In-flight side effects are never replayed by merely reopening a node. */
+  /**
+   * Work a planned restart (a deploy, an update: the node stopped on purpose) cut off: interrupted, and taken up again by
+   * itself after `until`, when whatever it was running in its knight's VM has surely met its own deadline there. That
+   * happens once: cut off a second time, it waits for you, its room held, as work a crash cut off does (`recover`).
+   */
+  interruptForRestart(key: string, until: number, minutes: number): void {
+    this.db.transaction(() => {
+      const row = this.jobRow(key);
+      if (!row || row.status !== "running") return;
+      const data = JSON.parse(row.data);
+      const again = data.restart?.resumed === true;
+      data.restart = again ? { resumed: true } : { until };
+      const error = again
+        ? "Galahad restarted during this work again. It was taken up once by itself already, so it waits for you: review it before resuming."
+        : `Galahad restarted during this work. It picks up again by itself once the command it was running has surely ended: at most ${minutes} minutes after the restart.`;
+      this.db.query("UPDATE team_jobs SET status='interrupted',data=?,error=?,updated_at=? WHERE id=?").run(JSON.stringify(data), error, this.now(), key);
+      if (again) this.pauseRoom(row.room, true);
+    })();
+  }
+  /** Knights with work a restart cut off that isn't due yet: nothing else of theirs starts before it, in the same VM. */
+  restartWaits(): Set<string> {
+    const now = this.now();
+    const waiting = new Set<string>();
+    for (const row of this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='interrupted'").all()) {
+      const until = JSON.parse(row.data).restart?.until;
+      if (typeof until === "number" && until > now) waiting.add(row.teammate);
+    }
+    return waiting;
+  }
+  /** Work a restart cut off whose wait is over, queued again where it stood in line, with a line on its trail saying why.
+   * A removed knight's never is, and a paused knight's or a closed room's waits for you. Returns how many. */
+  resumeRestarted(): number {
+    return this.db.transaction(() => {
+      const now = this.now();
+      let taken = 0;
+      for (const row of this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='interrupted' ORDER BY seq").all()) {
+        const data = JSON.parse(row.data);
+        if (typeof data.restart?.until !== "number" || data.restart.until > now) continue;
+        const room = this.room(row.room);
+        if (!room || this.closed(room) || !this.teammate(row.teammate)?.enabled) continue;
+        data.restart = { resumed: true };
+        this.db.query("UPDATE team_jobs SET status='queued',error=NULL,chain_id=?,data=?,updated_at=? WHERE id=?").run(this.chain(room), JSON.stringify(data), now, row.id);
+        if (row.kind === "task") this.trailLine(row.id, now, "Taken up again by itself after Galahad restarted.");
+        taken++;
+      }
+      return taken;
+    })();
+  }
+  /** You paused or stopped work (or its knight, or its room) while it waited to be taken up after a restart: it won't be. */
+  holdRestarts(select: TeamSelection, status: "interrupted" | "stopped", error: string): void {
+    this.db.transaction(() => {
+      for (const row of this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='interrupted'").all()) {
+        const data = JSON.parse(row.data);
+        if (typeof data.restart?.until !== "number" || !matches(jobOf(row), select)) continue;
+        delete data.restart;
+        this.db.query("UPDATE team_jobs SET status=?,error=?,data=?,updated_at=? WHERE id=?").run(status, teamOutput(error, 2000), JSON.stringify(data), this.now(), row.id);
+      }
+    })();
+  }
+  /** In-flight side effects are never replayed by merely reopening a node: work a crash cut off waits for you. */
   recover(): void {
     this.db.transaction(() => {
       const running = this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='running'").all();
@@ -531,7 +593,8 @@ export class TeamStore {
       return this.task(row.id)!;
     })();
   }
-  /** Explicit owner resume is the only way interrupted or stopped work becomes runnable again. */
+  /** Your resume makes interrupted or stopped work runnable again (the one other way: a planned restart's own work, once,
+   * by itself: resumeRestarted). */
   resume(select: TeamSelection): void {
     this.db.transaction(() => {
       const found = this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status IN ('interrupted','stopped','failed') ORDER BY seq").all().filter((r) => matches(jobOf(r), select) && (select.task || r.status === "interrupted"));

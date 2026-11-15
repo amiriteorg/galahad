@@ -33,6 +33,11 @@ export interface TeamServiceOptions {
   taskTimeoutMs?: number;
   /** Shutdown waits this long for callbacks to settle, then leaves their persisted state interrupted. */
   shutdownGraceMs?: number;
+  /** How long work a planned restart cut off waits before it is taken up again by itself: until whatever it was running
+   * in its knight's VM has surely met its own deadline there (team-runtime's TEAM_COMMAND_SECONDS). Absent: at once. */
+  restartWaitMs?: number;
+  /** How often the controller looks again at what has come due (a daily budget, work a restart cut off): 15 s. */
+  tickMs?: number;
   onChange?(): void;
   /** A knight seated by Galahad (in your conversation) or by another knight (in its room): for the record. */
   onRecruit?(made: Teammate): void;
@@ -140,9 +145,10 @@ export class TeamService {
     if (this.running) return;
     if (this.stopping) throw new TeamError(409, "This team controller has stopped.");
     this.store.recover();
+    this.store.resumeRestarted();
     this.running = true;
-    // A daily budget can become available while nobody has the page open.
-    this.timer = setInterval(() => { if (this.active.size) this.changed(); this.kick(); }, 15_000);
+    // A daily budget can become available while nobody has the page open, and work a restart cut off comes due.
+    this.timer = setInterval(() => { if (this.store.resumeRestarted() || this.active.size) this.changed(); this.kick(); }, this.options.tickMs ?? 15_000);
     this.kick();
   }
 
@@ -155,10 +161,17 @@ export class TeamService {
     this.running = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    for (const active of this.active.values()) this.store.pauseRoom(active.job.room, true);
-    this.cancel({}, "interrupted", "The node stopped during this work. Review it before resuming.");
-    // A runner that ignores cancellation keeps its teammate's lock until it really ends.
-    // Shutdown itself is bounded, and the persisted interrupted job will never silently replay.
+    // The node is stopping on purpose (a deploy, an update): what it cuts off is taken up again after the restart, once,
+    // when its VM command has surely ended (TeamStore.interruptForRestart). A crash leaves no such mark (recover()).
+    const wait = this.options.restartWaitMs ?? 0;
+    for (const active of this.active.values()) {
+      this.store.interruptForRestart(active.job.id, this.store.now() + wait, Math.max(1, Math.ceil(wait / 60_000)));
+      if (active.timer) clearTimeout(active.timer);
+      active.timer = null;
+      active.controller.abort(new Error("The node is restarting."));
+    }
+    this.changed();
+    // A runner that ignores cancellation keeps its teammate's lock until it really ends. Shutdown itself is bounded.
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([Promise.all([...this.active.values()].map((a) => a.done)), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.options.shutdownGraceMs ?? 10_000); })]);
     if (timer) clearTimeout(timer);
@@ -194,6 +207,7 @@ export class TeamService {
       if (input.teammate) this.store.enable(input.teammate, false);
       const state = input.action === "pause" ? "interrupted" : "stopped";
       this.cancel(select, state, input.action === "pause" ? "Paused by you." : "Stopped by you.");
+      this.store.holdRestarts(select, state, input.action === "pause" ? "Paused by you." : "Stopped by you.");
       if (input.action === "stop" || input.task) this.store.stopQueued(select);
     }
     this.changed(); this.kick();
@@ -263,9 +277,11 @@ export class TeamService {
   }
   private pump(): void {
     if (!this.running) return;
+    // A knight whose cut-off work waits out a restart may still have its last command running in its VM.
+    const waiting = this.store.restartWaits();
     for (const job of this.store.queued()) {
       if (this.active.size >= this.concurrency) break;
-      if (this.active.has(job.teammate) || !this.store.claim(job.id)) continue;
+      if (this.active.has(job.teammate) || waiting.has(job.teammate) || !this.store.claim(job.id)) continue;
       this.launch(job);
     }
   }
