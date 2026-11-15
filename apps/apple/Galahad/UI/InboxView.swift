@@ -212,7 +212,8 @@ struct KeyRequestRow: View {
             }
             if session.can("vault:write") {
                 HStack(spacing: 10) {
-                    // (No content type: an API key is no password of yours for AutoFill to offer or keep.)
+                    // (No password content type: an API key is no password of yours for AutoFill to keep. iOS still
+                    // offers its Passwords bar on any secure field.)
                     SecureField("Paste the key", text: $value)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
