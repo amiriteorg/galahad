@@ -3,12 +3,15 @@ import SwiftUI
 /// Where a row of the Roundtable leads.
 enum Route: Hashable {
     case galahad
+    case knight(String)
 }
 
 /// The Roundtable: Galahad first, then every knight, each with its drawing and one line of what it is doing, marked in
 /// Galahad's red when only you can move it on (lib/roster.ts says what each line is).
 struct RoundtableView: View {
     let session: Session
+    /// On an iPad, the row whose page the detail column shows; on an iPhone a row is pushed instead.
+    var selection: Binding<Route?>? = nil
     @State private var query = ""
 
     private var knights: [RosterRow] {
@@ -19,7 +22,7 @@ struct RoundtableView: View {
     }
 
     var body: some View {
-        List {
+        List(selection: selection) {
             if let trouble = session.trouble {
                 Section { TroubleRow(trouble: trouble) }
             }
@@ -30,7 +33,7 @@ struct RoundtableView: View {
             }
             Section {
                 ForEach(knights) { row in
-                    KnightRow(row: row, look: look(of: row))
+                    NavigationLink(value: Route.knight(row.id)) { KnightRow(row: row, look: look(of: row)) }
                 }
             } header: {
                 if !knights.isEmpty { Text("Knights") }
@@ -43,11 +46,6 @@ struct RoundtableView: View {
             }
         }
         .navigationTitle("Roundtable")
-        .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .galahad: ChatView(session: session)
-            }
-        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { RoundtableMark(size: 28) }
                 .sharedBackgroundVisibility(.hidden)
