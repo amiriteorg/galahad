@@ -49,6 +49,20 @@ export const ToolClass = z.enum(["read", "create", "modify", "outward", "delete"
 export const NATIVE_TOOLS = {
   /** Commit a quest's kept changes on a new branch and open a pull request (GitHub's Git Data API). */
   "github.ship": "https://api.github.com",
+  /** Mail (the node's mail.ts): a search reads each message's headers; a message is read as its words; a reply is
+   *  drafted in its thread; nothing comes back as raw MIME. */
+  "gmail.search": "https://gmail.googleapis.com",
+  "gmail.read": "https://gmail.googleapis.com",
+  "gmail.draft": "https://gmail.googleapis.com",
+  "gmail.send": "https://gmail.googleapis.com",
+  "gmail.archive": "https://gmail.googleapis.com",
+  "gmail.trash": "https://gmail.googleapis.com",
+  "outlook.search": "https://graph.microsoft.com",
+  "outlook.read": "https://graph.microsoft.com",
+  "outlook.draft": "https://graph.microsoft.com",
+  "outlook.send": "https://graph.microsoft.com",
+  "outlook.archive": "https://graph.microsoft.com",
+  "outlook.trash": "https://graph.microsoft.com",
 } as const;
 export type NativeName = keyof typeof NATIVE_TOOLS;
 const NativeName = z.enum(Object.keys(NATIVE_TOOLS) as [NativeName, ...NativeName[]]);

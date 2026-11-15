@@ -22,6 +22,18 @@ const page = { type: "integer", description: "which page of results (from 1)" } 
 const number = { type: "integer", required: true } as const;
 const account = { type: "string", pattern: "[a-f0-9]{32}", required: true, description: "Cloudflare account id" } as const;
 const bucketName = { type: "string", pattern: "[a-z0-9][a-z0-9-]{1,61}[a-z0-9]", required: true } as const;
+// Mail: the words to search with, how many, a message's id as search gives it, and what a message says.
+const query = { type: "string", description: "the words to search with" } as const;
+const limit = { type: "integer", description: "how many messages (at most 25)" } as const;
+const gmailId = { type: "string", pattern: "[A-Za-z0-9_-]{6,64}", required: true, description: "the message's id, as search gives it" } as const;
+const outlookId = { type: "string", pattern: "[A-Za-z0-9=_+/-]{6,512}", required: true, description: "the message's id, as search gives it" } as const;
+const compose = {
+  to: { type: "string", required: true, description: "addresses, comma-separated" },
+  cc: { type: "string", description: "addresses, comma-separated" },
+  subject: { type: "string", description: "its subject (a reply's is its message's, with Re:)" },
+  body: { type: "string", required: true, description: "its words, plain text" },
+  replyTo: { type: "string", pattern: "[A-Za-z0-9=_+/-]{6,512}", description: "the id of the message it answers" },
+} as const;
 
 export const CATALOG: Record<string, CatalogEntry> = {
   github: {
@@ -265,6 +277,46 @@ export const CATALOG: Record<string, CatalogEntry> = {
           class: "outward",
         },
       },
+    },
+  },
+  gmail: {
+    keyHelp: "it signs in with Google, through an app you register once in Google Cloud (docs/MAIL.md says how)",
+    manifest: {
+      id: "gmail",
+      label: "Gmail",
+      description: "Your mail at Google: search, read, draft, archive; sending and trashing ask you first. Galahad's alone, and what it reads stays in the answer that read it, as the bank's data does.",
+      origin: "https://gmail.googleapis.com",
+      auth: { secret: "gmail", scheme: "oauth", oauth: { provider: "google", scopes: ["https://www.googleapis.com/auth/gmail.modify", "openid", "email"] } },
+      tools: {
+        search: { description: "Find messages, with Gmail's own search words (from:anna is:unread newer_than:7d); without any, the inbox's latest.", native: "gmail.search", method: "GET", path: "/gmail/v1/users/me/messages", params: { query, limit }, class: "read" },
+        read: { description: "One message: who, when, its subject, its words and what it has attached.", native: "gmail.read", method: "GET", path: "/gmail/v1/users/me/messages/{id}", params: { id: gmailId }, class: "read" },
+        draft: { description: "A draft in your Drafts, unsent: a new message, or a reply (replyTo) in its thread.", native: "gmail.draft", method: "POST", path: "/gmail/v1/users/me/drafts", params: compose, class: "create" },
+        send: { description: "Send a message, or a reply (replyTo) in its thread. Others read it: Galahad asks first.", native: "gmail.send", method: "POST", path: "/gmail/v1/users/me/messages/send", params: compose, class: "outward" },
+        archive: { description: "Out of the inbox, into All Mail (back any time).", native: "gmail.archive", method: "POST", path: "/gmail/v1/users/me/messages/{id}/modify", params: { id: gmailId }, class: "modify" },
+        trash: { description: "Into Trash, where Gmail keeps it 30 days. Galahad asks first.", native: "gmail.trash", method: "POST", path: "/gmail/v1/users/me/messages/{id}/trash", params: { id: gmailId }, class: "delete" },
+      },
+      access: { only: "galahad", allowed: [] },
+      private: true,
+    },
+  },
+  outlook: {
+    keyHelp: "it signs in with Microsoft, through an app you register once in Microsoft Entra (docs/MAIL.md says how)",
+    manifest: {
+      id: "outlook",
+      label: "Outlook",
+      description: "Your mail at Microsoft (Outlook.com, Microsoft 365): search, read, draft, archive; sending and trashing ask you first. Galahad's alone, and what it reads stays in the answer that read it, as the bank's data does.",
+      origin: "https://graph.microsoft.com",
+      auth: { secret: "outlook", scheme: "oauth", oauth: { provider: "microsoft", scopes: ["offline_access", "openid", "email", "profile", "User.Read", "Mail.ReadWrite", "Mail.Send"] } },
+      tools: {
+        search: { description: "Find messages by their words; without any, the inbox's latest.", native: "outlook.search", method: "GET", path: "/v1.0/me/messages", params: { query, limit }, class: "read" },
+        read: { description: "One message: who, when, its subject, its words and whether it has attachments.", native: "outlook.read", method: "GET", path: "/v1.0/me/messages/{id}", params: { id: outlookId }, class: "read" },
+        draft: { description: "A draft in your Drafts, unsent: a new message, or a reply (replyTo) in its conversation.", native: "outlook.draft", method: "POST", path: "/v1.0/me/messages", params: compose, class: "create" },
+        send: { description: "Send a message, or a reply (replyTo) in its conversation. Others read it: Galahad asks first.", native: "outlook.send", method: "POST", path: "/v1.0/me/sendMail", params: compose, class: "outward" },
+        archive: { description: "Out of the inbox, into Archive (back any time).", native: "outlook.archive", method: "POST", path: "/v1.0/me/messages/{id}/move", params: { id: outlookId }, class: "modify" },
+        trash: { description: "Into Deleted Items. Galahad asks first.", native: "outlook.trash", method: "POST", path: "/v1.0/me/messages/{id}/move", params: { id: outlookId }, class: "delete" },
+      },
+      access: { only: "galahad", allowed: [] },
+      private: true,
     },
   },
 };

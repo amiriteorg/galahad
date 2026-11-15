@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity } from "@galahad/core";
 import { type BrainContext, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
 import { UsageStore } from "./usage.ts";
+import { gmailNatives, outlookNatives } from "./mail.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
@@ -361,7 +362,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts) } });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), ...gmailNatives, ...outlookNatives } });
   const taskDeps: LoopTaskDeps = {
     bank,
     store,

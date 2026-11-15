@@ -123,7 +123,7 @@ afterAll(async () => {
 describe("connectors", () => {
   test("the catalog is listed, a manifest of your own installs, and an invalid one is refused with why", async () => {
     const before = (await admin<{ connectors: ConnectorView[] }>("connectors")).body.connectors;
-    expect(before.map((c) => c.id)).toEqual(["cloudflare", "github", "home-assistant"]);
+    expect(before.map((c) => c.id)).toEqual(["cloudflare", "github", "gmail", "home-assistant", "outlook"]);
     expect(before.every((c) => !c.installed)).toBe(true);
 
     const bad = await admin("setConnector", { id: "forge", manifest: { ...manifest(), tools: { x: { description: "x", method: "DELETE", path: "/x", class: "read" } } } });
@@ -140,7 +140,7 @@ describe("connectors", () => {
   test("every connector Galahad ships installs, and so does one more GitHub owner: the vault name a manifest gives is a name, not a key", async () => {
     // Cloudflare and Home Assistant were refused as "a password assignment": the check for pasted keys read
     // "secret":"cloudflare" (the name of its vault entry) as one. GitHub only passed because its name is short.
-    for (const [id, extra] of [["cloudflare", {}], ["home-assistant", { origin: "http://homeassistant.local:8123" }]] as const) {
+    for (const [id, extra] of [["cloudflare", {}], ["home-assistant", { origin: "http://homeassistant.local:8123" }], ["gmail", {}], ["outlook", {}]] as const) {
       const installed = await admin("setConnector", { id, ...extra });
       expect([id, installed.status, installed.body.error]).toEqual([id, 200, undefined]);
       await admin("removeConnector", { id });

@@ -394,7 +394,10 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
           : { id: rest[0], ...(str(flags, "origin") ? { origin: str(flags, "origin") } : {}) },
       );
       console.log(`Installed ${connector.label} (${connector.tools.length} tools) for ${connector.origin}.`);
-      if (connector.secret && connector.key !== "ready") {
+      if (connector.oauth) {
+        // It signs in as you: the app you registered, then your sign-in (docs/MAIL.md for mail).
+        console.log(`It signs in as you: galahad connector app ${connector.id} --client-id <id>, then galahad connector signin ${connector.id}${connector.keyHelp ? dim(`\n  (${connector.keyHelp})`) : ""}`);
+      } else if (connector.secret && connector.key !== "ready") {
         console.log(`Its key${connector.key === "optional-missing" ? " (optional; public reads work without it)" : ""}: galahad secret set ${connector.secret} --connector ${connector.id}${connector.keyHelp ? dim(`\n  (${connector.keyHelp})`) : ""}`);
       }
       return;

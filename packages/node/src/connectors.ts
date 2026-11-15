@@ -202,7 +202,12 @@ export class ConnectorService {
       if (request.kind === "native") {
         const native = this.o.natives?.[request.native];
         if (!native) throw new ConnectorCallError(501, `${request.native} isn't available on this node`);
-        return await native(manifest, request.args, (step) => sendConnectorRequest(ctx, manifest, step));
+        // Whatever a native asks to send goes to the connector's own origin, or nowhere: its key is pinned there.
+        const own = new URL(manifest.origin).origin;
+        return await native(manifest, request.args, (step) => {
+          if (new URL(step.url).origin !== own) throw new ConnectorError(`refusing a request off ${manifest.label}'s origin`);
+          return sendConnectorRequest(ctx, manifest, step);
+        });
       }
       return request.kind === "mcp" ? await callMcpTool(ctx, manifest, request) : await sendConnectorRequest(ctx, manifest, request);
     } catch (error) {
