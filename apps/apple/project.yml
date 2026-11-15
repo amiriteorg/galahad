@@ -1,0 +1,73 @@
+# Galahad's native Apple app: a SwiftUI client for a Galahad node, for iPhone and iPad.
+# XcodeGen writes Galahad.xcodeproj and Galahad/Info.plist from this file; neither is committed (README.md).
+name: Galahad
+options:
+  bundleIdPrefix: org.amirite
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+targets:
+  Galahad:
+    type: application
+    platform: iOS
+    sources:
+      - path: Galahad
+      # The knights as the owner drew them: the PWA's own files, bundled as they are (never copied, redrawn or recoloured).
+      - path: ../web/src/knights
+        type: folder
+        buildPhase: resources
+    info:
+      path: Galahad/Info.plist
+      properties:
+        CFBundleDisplayName: Galahad
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # A node on this machine or the local network answers over plain HTTP; everywhere else ATS holds.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+  GalahadTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: GalahadTests
+    dependencies:
+      - target: Galahad
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.tests
+schemes:
+  Galahad:
+    build:
+      targets:
+        Galahad: all
+        GalahadTests: [test]
+    test:
+      targets:
+        - GalahadTests

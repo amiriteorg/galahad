@@ -1,0 +1,5 @@
+# Written by XcodeGen from project.yml.
+Galahad.xcodeproj/
+Galahad/Info.plist
+# xcodebuild -derivedDataPath build
+build/

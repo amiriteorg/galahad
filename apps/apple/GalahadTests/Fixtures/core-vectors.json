@@ -1,0 +1,1359 @@
+{
+  "about": "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
+  "auth": {
+    "domain": "galahad-req/v1",
+    "headers": {
+      "device": "x-galahad-device",
+      "ts": "x-galahad-ts",
+      "nonce": "x-galahad-nonce",
+      "sig": "x-galahad-sig"
+    },
+    "maxSkewMs": 60000
+  },
+  "base64url": {
+    "encode": [
+      {
+        "hex": "",
+        "b64u": ""
+      },
+      {
+        "hex": "00",
+        "b64u": "AA"
+      },
+      {
+        "hex": "0001",
+        "b64u": "AAE"
+      },
+      {
+        "hex": "000102",
+        "b64u": "AAEC"
+      },
+      {
+        "hex": "fbff",
+        "b64u": "-_8"
+      },
+      {
+        "hex": "fbffbf",
+        "b64u": "-_-_"
+      },
+      {
+        "hex": "3e3ffeff",
+        "b64u": "Pj_-_w"
+      },
+      {
+        "hex": "47616c61686164",
+        "b64u": "R2FsYWhhZA"
+      }
+    ],
+    "decode": [
+      {
+        "text": "",
+        "hex": ""
+      },
+      {
+        "text": "AA",
+        "hex": "00"
+      },
+      {
+        "text": "AAE",
+        "hex": "0001"
+      },
+      {
+        "text": "AAEC",
+        "hex": "000102"
+      },
+      {
+        "text": "-_8",
+        "hex": "fbff"
+      },
+      {
+        "text": "A",
+        "hex": null
+      },
+      {
+        "text": "AB+C",
+        "hex": null
+      },
+      {
+        "text": "AB/C",
+        "hex": null
+      },
+      {
+        "text": "AB==",
+        "hex": null
+      },
+      {
+        "text": "AB C",
+        "hex": null
+      },
+      {
+        "text": "ABCDE",
+        "hex": null
+      }
+    ]
+  },
+  "identity": {
+    "scalarHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "publicKey": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+    "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q"
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/whoami",
+      "ts": "1763200000000",
+      "nonce": "AAECAwQFBgcICQoL",
+      "body": "",
+      "bodySha256": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+      "signingInput": "galahad-req/v1\nGET\n/api/whoami\n1763200000000\nAAECAwQFBgcICQoL\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+      "signature": "v1hqxlbspukeju9pazJCUUiHL8e6W4O2oHnbVLwgk1ZjCwWmPpe0CMU4qOg_qr-e8ICz36ssLt61XTxvGq5-Dw",
+      "signatureHighS": "v1hqxlbspukeju9pazJCUUiHL8e6W4O2oHnbVLwgk1ac9PpYwWhL-DrHVxfAVUBgzGZGzfvrb6Y-XI5T4bSnQg",
+      "signatureDer": "MEUCIQC_WGrGVuym6R6O72lrMkJRSIcvx7pbg7agedtUvCCTVgIgYwsFpj6XtAjFOKjoP6q_nvCAs9-rLC7etV08bxqufg8",
+      "headers": {
+        "x-galahad-device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "x-galahad-ts": "1763200000000",
+        "x-galahad-nonce": "AAECAwQFBgcICQoL",
+        "x-galahad-sig": "v1hqxlbspukeju9pazJCUUiHL8e6W4O2oHnbVLwgk1ZjCwWmPpe0CMU4qOg_qr-e8ICz36ssLt61XTxvGq5-Dw"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/team?probe=1",
+      "ts": "1763200000001",
+      "nonce": "nonce-for-tests1",
+      "body": "",
+      "bodySha256": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+      "signingInput": "galahad-req/v1\nGET\n/api/team?probe=1\n1763200000001\nnonce-for-tests1\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+      "signature": "1__vo7RKlzkhoAhJHmd6xvOYSc1L5JE6XPUArbpXcAlhgz2jRG_9b7Rsp7hpTnRG4xudJXWf_em-_ZMlJqkTgg",
+      "signatureHighS": "1__vo7RKlzkhoAhJHmd6xvOYSc1L5JE6XPUArbpXcAmefMJbu5ACkUuTWEeWsYu42ctdiDF3oJs0vDed1boRzw",
+      "signatureDer": "MEUCIQDX_--jtEqXOSGgCEkeZ3rG85hJzUvkkTpc9QCtuldwCQIgYYM9o0Rv_W-0bKe4aU50RuMbnSV1n_3pvv2TJSapE4I",
+      "headers": {
+        "x-galahad-device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "x-galahad-ts": "1763200000001",
+        "x-galahad-nonce": "nonce-for-tests1",
+        "x-galahad-sig": "1__vo7RKlzkhoAhJHmd6xvOYSc1L5JE6XPUArbpXcAlhgz2jRG_9b7Rsp7hpTnRG4xudJXWf_em-_ZMlJqkTgg"
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/chat",
+      "ts": "1763200000002",
+      "nonce": "AAAAAAAAAAAAAAAA",
+      "body": "{\"role\":\"planner\",\"save\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hvad så, Galahad? 🛡️ «quoted» \\\\ \\n\"}]}",
+      "bodySha256": "pFPE4v6a_gwHI-swGmknLnyK-7WvYLPTTodyy7Orlfw",
+      "signingInput": "galahad-req/v1\nPOST\n/api/chat\n1763200000002\nAAAAAAAAAAAAAAAA\npFPE4v6a_gwHI-swGmknLnyK-7WvYLPTTodyy7Orlfw",
+      "signature": "LBcjx21SblgQ2Rm2qHm15K6kReCLCdUvk_dmmSQ0ytV45AMY2HcbsOYe_zhmfwkQvTayIaXxWP2ExCI0pH0srQ",
+      "signatureHighS": "LBcjx21SblgQ2Rm2qHm15K6kReCLCdUvk_dmmSQ0ytWHG_zmJ4jkUBnhAMeZgPbu_7BIjAEmRYdu9aiOV-X4pA",
+      "signatureDer": "MEQCICwXI8dtUm5YENkZtqh5teSupEXgiwnVL5P3ZpkkNMrVAiB45AMY2HcbsOYe_zhmfwkQvTayIaXxWP2ExCI0pH0srQ",
+      "headers": {
+        "x-galahad-device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "x-galahad-ts": "1763200000002",
+        "x-galahad-nonce": "AAAAAAAAAAAAAAAA",
+        "x-galahad-sig": "LBcjx21SblgQ2Rm2qHm15K6kReCLCdUvk_dmmSQ0ytV45AMY2HcbsOYe_zhmfwkQvTayIaXxWP2ExCI0pH0srQ"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/secrets",
+      "ts": "1763200000003",
+      "nonce": "_-_-_-_-_-_-_-_-",
+      "body": "{\"name\":\"github-token\",\"value\":\"not-a-real-key\"}",
+      "bodySha256": "wR50_T5yuM3yd1dH-OVP14U5519Alc_9MvF1W_yj2Kc",
+      "signingInput": "galahad-req/v1\nPOST\n/api/secrets\n1763200000003\n_-_-_-_-_-_-_-_-\nwR50_T5yuM3yd1dH-OVP14U5519Alc_9MvF1W_yj2Kc",
+      "signature": "c6wU8yjCDykjPyPMUrVd3wcwa4KiNLeFE394sUuD2vF_nL6pGbah-Sj24aCas1h6G0xi1jq_gNbWz4XDgbxpGg",
+      "signatureHighS": "c6wU8yjCDykjPyPMUrVd3wcwa4KiNLeFE394sUuD2vGAY0FV5kleB9cJHl9lTKeFoZqX12xYHa4c6kT_eqa8Nw",
+      "signatureDer": "MEQCIHOsFPMowg8pIz8jzFK1Xd8HMGuCojS3hRN_eLFLg9rxAiB_nL6pGbah-Sj24aCas1h6G0xi1jq_gNbWz4XDgbxpGg",
+      "headers": {
+        "x-galahad-device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "x-galahad-ts": "1763200000003",
+        "x-galahad-nonce": "_-_-_-_-_-_-_-_-",
+        "x-galahad-sig": "c6wU8yjCDykjPyPMUrVd3wcwa4KiNLeFE394sUuD2vF_nL6pGbah-Sj24aCas1h6G0xi1jq_gNbWz4XDgbxpGg"
+      }
+    }
+  ],
+  "canonical": [
+    {
+      "value": {
+        "kind": "client",
+        "name": "Galahad app on iPhone",
+        "invite": "abc",
+        "device": "c_x"
+      },
+      "canonical": "{\"device\":\"c_x\",\"invite\":\"abc\",\"kind\":\"client\",\"name\":\"Galahad app on iPhone\"}"
+    },
+    {
+      "value": {
+        "b": "quote \" backslash \\ slash /",
+        "a": "tab \t newline \n return \r backspace \b formfeed \f"
+      },
+      "canonical": "{\"a\":\"tab \\t newline \\n return \\r backspace \\b formfeed \\f\",\"b\":\"quote \\\" backslash \\\\ slash /\"}"
+    },
+    {
+      "value": {
+        "z": "nul \u0000 one \u0001 unit separator \u001f delete ",
+        "y": "line   paragraph  "
+      },
+      "canonical": "{\"y\":\"line   paragraph  \",\"z\":\"nul \\u0000 one \\u0001 unit separator \\u001f delete \"}"
+    },
+    {
+      "value": {
+        "name": "Will’s “iPad” æøå 🛡️",
+        "Name": "upper sorts first",
+        "": "empty key"
+      },
+      "canonical": "{\"\":\"empty key\",\"Name\":\"upper sorts first\",\"name\":\"Will’s “iPad” æøå 🛡️\"}"
+    }
+  ],
+  "pairing": {
+    "secretText": "fake-invite-secret-for-tests-001",
+    "invite": {
+      "v": 1,
+      "e": "http://127.0.0.1:7777",
+      "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+      "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+      "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+      "k": "client"
+    },
+    "token": "gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+    "url": "http://127.0.0.1:7778/#pair=gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+    "decode": [
+      {
+        "text": "gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "http://127.0.0.1:7778/#pair=gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "  https://keep.example.ts.net/#pair=gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9\n",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "https://keep.example.ts.net/?pair=gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "https://keep.example.ts.net/#x=1&pair=gi1.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6Im5vZGUifQ",
+        "invite": {
+          "v": 1,
+          "e": "http://127.0.0.1:7777",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "node"
+        }
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cHM6Ly9rZWVwLmV4YW1wbGUudHMubmV0IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6ImNsaWVudCJ9",
+        "invite": {
+          "v": 1,
+          "e": "https://keep.example.ts.net",
+          "f": "x4wOIxNFrxMurjycLm_FmsUf0eA8CVrtfhpvNW5oygI",
+          "i": "ZmFrZS1pbnZpdGUtaWQwMQ",
+          "s": "ZmFrZS1pbnZpdGUtc2VjcmV0LWZvci10ZXN0cy0wMDE",
+          "k": "client"
+        }
+      },
+      {
+        "text": "gi2.eyJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQiLCJzIjoiWm1GclpTMXBiblpwZEdVdGMyVmpjbVYwTFdadmNpMTBaWE4wY3kwd01ERSIsInYiOjF9",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6ImNsaWVudCIsIngiOjF9",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsImsiOiJjbGllbnQifQ",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoyLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6ImNsaWVudCJ9",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoibm90IGEgdXJsIiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6ImNsaWVudCJ9",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6InRvby1zaG9ydCIsImkiOiJabUZyWlMxcGJuWnBkR1V0YVdRd01RIiwicyI6IlptRnJaUzFwYm5acGRHVXRjMlZqY21WMExXWnZjaTEwWlhOMGN5MHdNREUiLCJrIjoiY2xpZW50In0",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJabUZyWlMxcGJuWnBkR1V0YzJWamNtVjBMV1p2Y2kxMFpYTjBjeTB3TURFIiwiayI6InBob25lIn0",
+        "invite": null
+      },
+      {
+        "text": "gi1.eyJ2IjoxLCJlIjoiaHR0cDovLzEyNy4wLjAuMTo3Nzc3IiwiZiI6Ing0d09JeE5GcnhNdXJqeWNMbV9GbXNVZjBlQThDVnJ0Zmhwdk5XNW95Z0kiLCJpIjoiWm1GclpTMXBiblpwZEdVdGFXUXdNUSIsInMiOiJub3QgYmFzZTY0dXJsISIsImsiOiJjbGllbnQifQ",
+        "invite": null
+      },
+      {
+        "text": "gi1.bm90IGpzb24",
+        "invite": null
+      },
+      {
+        "text": "gi1.@@@",
+        "invite": null
+      },
+      {
+        "text": "hello",
+        "invite": null
+      },
+      {
+        "text": "",
+        "invite": null
+      }
+    ],
+    "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+    "proofs": [
+      {
+        "name": "Galahad app on iPhone",
+        "canonical": "{\"device\":\"c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q\",\"invite\":\"ZmFrZS1pbnZpdGUtaWQwMQ\",\"kind\":\"client\",\"name\":\"Galahad app on iPhone\"}",
+        "proof": "_WHlSf4oL1PT32oXsbQR-qjnHaknCb_xv8A55nK6BBw"
+      },
+      {
+        "name": "Will’s “iPad” \\ 🛡️",
+        "canonical": "{\"device\":\"c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q\",\"invite\":\"ZmFrZS1pbnZpdGUtaWQwMQ\",\"kind\":\"client\",\"name\":\"Will’s “iPad” \\\\ 🛡️\"}",
+        "proof": "e8_5ek4h_WCBnyFkxbkgMyb4oShx1zZws1XzycE1QBc"
+      }
+    ],
+    "sas": "996 817",
+    "codes": [
+      {
+        "fleet": "fleet-0",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "243 766"
+      },
+      {
+        "fleet": "fleet-1",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "722 246"
+      },
+      {
+        "fleet": "fleet-2",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "762 582"
+      },
+      {
+        "fleet": "fleet-3",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "484 158"
+      },
+      {
+        "fleet": "fleet-4",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "667 264"
+      },
+      {
+        "fleet": "fleet-5",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "419 123"
+      },
+      {
+        "fleet": "fleet-22",
+        "device": "c_BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+        "sas": "044 297"
+      }
+    ],
+    "statusProof": "JteSiiFfBYmA0YZcZXr_FeueMwx_x-s99dezdQp82FM",
+    "approvalProof": "FiKcGU30jAKLk4F_cI1T1EaU0k_FBPJEvDr1RDCn7dY"
+  },
+  "looks": [
+    {
+      "id": "ada",
+      "name": "Ada",
+      "look": "palamedes"
+    },
+    {
+      "id": "lin",
+      "name": "Lin",
+      "look": "kay"
+    },
+    {
+      "id": "gareth",
+      "name": "Gareth",
+      "look": "gareth"
+    },
+    {
+      "id": "x1",
+      "name": "gareth the bold",
+      "look": "gareth"
+    },
+    {
+      "id": "x2",
+      "name": "Sir Kay",
+      "look": "tristan"
+    },
+    {
+      "id": "x3",
+      "name": "  Percival  ",
+      "look": "percival"
+    },
+    {
+      "id": "x4",
+      "name": "LANCELOT",
+      "look": "lancelot"
+    },
+    {
+      "id": "x5",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "round",
+        "color": "#be7153",
+        "accent": "#6b4536",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "bors"
+    },
+    {
+      "id": "x6",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "armored",
+        "color": "#BE7153",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "bors"
+    },
+    {
+      "id": "x7",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "armored",
+        "color": "#4f8fe0",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "lancelot"
+    },
+    {
+      "id": "x8",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "armored",
+        "color": "#123456",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "palamedes"
+    },
+    {
+      "id": "x9",
+      "name": "Gareth",
+      "avatar": {
+        "v": 1,
+        "form": "armored",
+        "color": "#d9a43c",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "gareth"
+    },
+    {
+      "id": "x10",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "armored",
+        "color": "#be7153",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm",
+        "extra": true
+      },
+      "look": "bors"
+    },
+    {
+      "id": "x11",
+      "name": "Ada",
+      "avatar": {
+        "v": "1",
+        "form": "armored",
+        "color": "#be7153",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "bedivere"
+    },
+    {
+      "id": "x12",
+      "name": "Ada",
+      "avatar": {
+        "v": 1,
+        "form": "square",
+        "color": "#be7153",
+        "accent": "#2fa36b",
+        "eyes": "oval",
+        "accessory": "none",
+        "temperament": "calm"
+      },
+      "look": "kay"
+    },
+    {
+      "id": "percival-2",
+      "name": "Nobody",
+      "look": "percival"
+    },
+    {
+      "id": "zz",
+      "name": "",
+      "look": "palamedes"
+    }
+  ],
+  "roundtable": {
+    "now": 1763200000000,
+    "snapshot": {
+      "teammates": [
+        {
+          "id": "ada",
+          "name": "Ada",
+          "instructions": "Ada keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "bea",
+          "name": "Bea",
+          "instructions": "Bea keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "cy",
+          "name": "Cy",
+          "instructions": "Cy keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "dot",
+          "name": "Dot",
+          "instructions": "Dot keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": false,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "eve",
+          "name": "Eve",
+          "instructions": "Eve keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 40,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "fay",
+          "name": "Fay",
+          "instructions": "Fay keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "gus",
+          "name": "Gus",
+          "instructions": "Gus keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "hal",
+          "name": "Hal",
+          "instructions": "Hal keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000,
+          "createdBy": "galahad"
+        },
+        {
+          "id": "ivy",
+          "name": "Ivy",
+          "instructions": "Ivy keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000,
+          "createdBy": "hal"
+        },
+        {
+          "id": "jo",
+          "name": "Jo",
+          "instructions": "",
+          "role": "reviewer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "kit",
+          "name": "Kit",
+          "instructions": "Kit keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "lou",
+          "name": "Lou",
+          "instructions": "Lou keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "max",
+          "name": "Max",
+          "instructions": "Max keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "ned",
+          "name": "Ned",
+          "instructions": "Ned keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": false,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        }
+      ],
+      "rooms": [
+        {
+          "id": "dm-ada",
+          "name": "ada",
+          "members": [
+            "ada"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-bea",
+          "name": "bea",
+          "members": [
+            "bea"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-cy",
+          "name": "cy",
+          "members": [
+            "cy"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-fay",
+          "name": "fay",
+          "members": [
+            "fay"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-gus",
+          "name": "gus",
+          "members": [
+            "gus"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-kit",
+          "name": "kit",
+          "members": [
+            "kit"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-lou",
+          "name": "lou",
+          "members": [
+            "lou"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-max",
+          "name": "max",
+          "members": [
+            "max"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-ned",
+          "name": "ned",
+          "members": [
+            "ned"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task-run000000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The run task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Running · bun test packages/link\nmore",
+          "output": "",
+          "error": null,
+          "chainId": "chain-run",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-sync00000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The sync task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-sync",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763197000000
+        },
+        {
+          "id": "task-plain0000000",
+          "room": "dm-bea",
+          "assignee": "bea",
+          "title": "The plain task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-plain",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-keep00000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The keep task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-keep",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "changes": {
+            "artifact": "art_aaaaaaaaaaaaaaaaaaaaaa",
+            "files": 3,
+            "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+          }
+        },
+        {
+          "id": "task-fail00000000",
+          "room": "dm-fay",
+          "assignee": "fay",
+          "title": "The fail task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": "The gate needs a Postgres this VM doesn't have.\nDetails follow.",
+          "chainId": "chain-fail",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-wait00000000",
+          "room": "dm-gus",
+          "assignee": "gus",
+          "title": "The wait task",
+          "goal": "Do it well.",
+          "dependsOn": [
+            "task-blocker00000"
+          ],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-wait",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-blocker00000",
+          "room": "dm-max",
+          "assignee": "max",
+          "title": "The blocker task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-blocker",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-halt00000000",
+          "room": "dm-kit",
+          "assignee": "kit",
+          "title": "The halt task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "interrupted",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-halt",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-stop00000000",
+          "room": "dm-lou",
+          "assignee": "lou",
+          "title": "The stop task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "stopped",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-stop",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-held00000000",
+          "room": "dm-ned",
+          "assignee": "ned",
+          "title": "The held task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-held",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        }
+      ],
+      "deliveries": [
+        {
+          "id": "delivery-busy",
+          "room": "dm-bea",
+          "teammate": "bea",
+          "trigger": "message",
+          "chainId": "chain-d-busy",
+          "status": "running",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-think",
+          "room": "dm-eve",
+          "teammate": "eve",
+          "trigger": "message",
+          "chainId": "chain-d-think",
+          "status": "queued",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-old",
+          "room": "dm-jo",
+          "teammate": "jo",
+          "trigger": "message",
+          "chainId": "chain-d-old",
+          "status": "failed",
+          "error": "Model unavailable",
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199880000
+        }
+      ]
+    },
+    "asks": [
+      {
+        "by": "arm:team.0123456789.max",
+        "connector": "forge",
+        "tool": "post"
+      },
+      {
+        "by": "arm:team.0123456789.max",
+        "connector": "forge",
+        "tool": "bucket.delete"
+      },
+      {
+        "by": "loop:morning",
+        "connector": "github",
+        "tool": "comment"
+      }
+    ],
+    "rows": [
+      {
+        "id": "ada",
+        "line": "The run task · Running · bun test packages/link",
+        "needs": false
+      },
+      {
+        "id": "bea",
+        "line": "Working on “The plain task”",
+        "needs": false
+      },
+      {
+        "id": "cy",
+        "line": "Verified: “The keep task” · 3 files kept",
+        "needs": false
+      },
+      {
+        "id": "dot",
+        "line": "Paused",
+        "needs": false
+      },
+      {
+        "id": "eve",
+        "line": "Daily allowance spent · 1 waiting",
+        "needs": true
+      },
+      {
+        "id": "fay",
+        "line": "Failed: “The fail task” · The gate needs a Postgres this VM doesn't have.",
+        "needs": true
+      },
+      {
+        "id": "gus",
+        "line": "Waiting for “The blocker task”",
+        "needs": false
+      },
+      {
+        "id": "hal",
+        "line": "Made by Galahad · Hal keeps the build green.",
+        "needs": false
+      },
+      {
+        "id": "ivy",
+        "line": "Made by Hal · Ivy keeps the build green.",
+        "needs": false
+      },
+      {
+        "id": "jo",
+        "line": "Couldn't reply · Model unavailable",
+        "needs": true
+      },
+      {
+        "id": "kit",
+        "line": "Interrupted: “The halt task” · review it before resuming",
+        "needs": true
+      },
+      {
+        "id": "lou",
+        "line": "Stopped: “The stop task”",
+        "needs": false
+      },
+      {
+        "id": "max",
+        "line": "Asks your leave: forge.post, and 1 more",
+        "needs": true
+      },
+      {
+        "id": "ned",
+        "line": "Paused · 1 waiting",
+        "needs": true
+      }
+    ],
+    "galahad": [
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": null
+        },
+        "text": "Idle",
+        "expression": "idle",
+        "tone": "neutral"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": 0
+        },
+        "text": "Idle · nothing needs you",
+        "expression": "idle",
+        "tone": "neutral"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": 1
+        },
+        "text": "1 thing needs you",
+        "expression": "asking",
+        "tone": "warn"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": 3
+        },
+        "text": "3 things need you",
+        "expression": "asking",
+        "tone": "warn"
+      },
+      {
+        "input": {
+          "step": null,
+          "turns": [],
+          "quests": [],
+          "needs": 2
+        },
+        "text": "Starting · 2 things need you",
+        "expression": "thinking",
+        "tone": "warn"
+      },
+      {
+        "input": {
+          "step": "Reading packages/link/src/sync.ts",
+          "turns": [],
+          "quests": [],
+          "needs": null
+        },
+        "text": "Reading packages/link/src/sync.ts",
+        "expression": "thinking",
+        "tone": "accent"
+      },
+      {
+        "input": {
+          "turns": [
+            {
+              "title": "The release plan"
+            }
+          ],
+          "quests": [],
+          "needs": 1
+        },
+        "text": "Working in “The release plan” · 1 thing needs you",
+        "expression": "working",
+        "tone": "warn"
+      },
+      {
+        "input": {
+          "turns": [
+            {
+              "title": null
+            }
+          ],
+          "quests": [],
+          "needs": 0
+        },
+        "text": "Working in a temporary chat",
+        "expression": "working",
+        "tone": "accent"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [
+            {
+              "goal": "Make sync resume\nafter a drop"
+            }
+          ],
+          "needs": null
+        },
+        "text": "Working on: Make sync resume",
+        "expression": "working",
+        "tone": "accent"
+      },
+      {
+        "input": {
+          "turns": [
+            {
+              "title": "A"
+            }
+          ],
+          "quests": [
+            {
+              "goal": "B"
+            }
+          ],
+          "needs": 4
+        },
+        "text": "Working on 2 things · 4 things need you",
+        "expression": "working",
+        "tone": "warn"
+      }
+    ],
+    "needs": [
+      {
+        "inbox": 5,
+        "knights": [
+          "ada",
+          "bea",
+          "cy",
+          "dot",
+          "eve",
+          "fay",
+          "gus",
+          "hal",
+          "ivy",
+          "jo",
+          "kit",
+          "lou",
+          "max",
+          "ned"
+        ],
+        "needs": 3
+      },
+      {
+        "inbox": 1,
+        "knights": [
+          "max"
+        ],
+        "needs": 0
+      }
+    ]
+  }
+}
