@@ -3483,5 +3483,509 @@
       "source": "",
       "blocks": []
     }
-  ]
+  ],
+  "blocks": {
+    "charts": [
+      {
+        "text": "{\"type\":\"line\",\"title\":\"Tokens a task\",\"unit\":\"k\",\"labels\":[\"Mon\",\"Tue\",\"Wed\"],\"series\":[{\"name\":\"Before\",\"values\":[442,430,451]},{\"name\":\"After\",\"values\":[258,null,262]}]}",
+        "read": {
+          "ok": true,
+          "value": {
+            "type": "line",
+            "title": "Tokens a task",
+            "unit": "k",
+            "labels": [
+              "Mon",
+              "Tue",
+              "Wed"
+            ],
+            "series": [
+              {
+                "name": "Before",
+                "values": [
+                  442,
+                  430,
+                  451
+                ]
+              },
+              {
+                "name": "After",
+                "values": [
+                  258,
+                  null,
+                  262
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "text": "{\"labels\":[\"A\",\"B\"],\"series\":[{\"values\":[1,2]}]}",
+        "read": {
+          "ok": true,
+          "value": {
+            "type": "line",
+            "title": null,
+            "unit": null,
+            "labels": [
+              "A",
+              "B"
+            ],
+            "series": [
+              {
+                "name": "Value",
+                "values": [
+                  1,
+                  2
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "text": "{\"type\":\"stacked\",\"title\":\"  Spend\\n by   role \",\"labels\":[\"Q1\",\"Q2\"],\"series\":[{\"name\":\"Plan\",\"values\":[3,4]},{\"name\":\"Build\",\"values\":[5,6]}]}",
+        "read": {
+          "ok": true,
+          "value": {
+            "type": "stacked",
+            "title": "Spend by role",
+            "unit": null,
+            "labels": [
+              "Q1",
+              "Q2"
+            ],
+            "series": [
+              {
+                "name": "Plan",
+                "values": [
+                  3,
+                  4
+                ]
+              },
+              {
+                "name": "Build",
+                "values": [
+                  5,
+                  6
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "text": "{\"type\":\"bar\",\"labels\":[1,\"Two\",\"  three  \"],\"series\":[{\"name\":\"x\",\"values\":[1,2,3]},{\"values\":[4,5,6]}]}",
+        "read": {
+          "ok": true,
+          "value": {
+            "type": "bar",
+            "title": null,
+            "unit": null,
+            "labels": [
+              "1",
+              "Two",
+              "three"
+            ],
+            "series": [
+              {
+                "name": "x",
+                "values": [
+                  1,
+                  2,
+                  3
+                ]
+              },
+              {
+                "name": "Series 2",
+                "values": [
+                  4,
+                  5,
+                  6
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "text": "{\"type\":\"pie\",\"labels\":[\"a\"],\"series\":[{\"values\":[1]}]}",
+        "read": {
+          "ok": false,
+          "why": "its type is one of line, area, bar, stacked"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[],\"series\":[]}",
+        "read": {
+          "ok": false,
+          "why": "it needs labels: what each value is for (a month, a name)"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"a\",\"b\"],\"series\":[{\"values\":[1]}]}",
+        "read": {
+          "ok": false,
+          "why": "series 1 has 1 values for 2 labels"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"a\"],\"series\":[{\"values\":[\"7\"]}]}",
+        "read": {
+          "ok": false,
+          "why": "series 1 has a value that isn't a number (null leaves a gap)"
+        }
+      },
+      {
+        "text": "{\"type\":\"stacked\",\"labels\":[\"a\"],\"series\":[{\"values\":[-1]}]}",
+        "read": {
+          "ok": false,
+          "why": "a stacked chart's values are parts of a whole: none below zero"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"a\"],\"series\":[{\"name\":\"Same\",\"values\":[1]},{\"name\":\"same\",\"values\":[2]}]}",
+        "read": {
+          "ok": false,
+          "why": "two series are called same"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"a\"],\"series\":[{\"values\":[null]}]}",
+        "read": {
+          "ok": false,
+          "why": "it has no values"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"d0\",\"d1\",\"d2\",\"d3\",\"d4\",\"d5\",\"d6\",\"d7\",\"d8\",\"d9\",\"d10\",\"d11\",\"d12\",\"d13\",\"d14\",\"d15\",\"d16\",\"d17\",\"d18\",\"d19\",\"d20\",\"d21\",\"d22\",\"d23\",\"d24\",\"d25\",\"d26\",\"d27\",\"d28\",\"d29\",\"d30\",\"d31\",\"d32\",\"d33\",\"d34\",\"d35\",\"d36\",\"d37\",\"d38\",\"d39\",\"d40\",\"d41\",\"d42\",\"d43\",\"d44\",\"d45\",\"d46\",\"d47\",\"d48\",\"d49\",\"d50\",\"d51\",\"d52\",\"d53\",\"d54\",\"d55\",\"d56\",\"d57\",\"d58\",\"d59\",\"d60\"],\"series\":[{\"values\":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]}]}",
+        "read": {
+          "ok": false,
+          "why": "at most 60 labels: more is a table"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"labels\":[\"a\"],\"series\":[{\"name\":\"s0\",\"values\":[0]},{\"name\":\"s1\",\"values\":[1]},{\"name\":\"s2\",\"values\":[2]},{\"name\":\"s3\",\"values\":[3]},{\"name\":\"s4\",\"values\":[4]},{\"name\":\"s5\",\"values\":[5]},{\"name\":\"s6\",\"values\":[6]}]}",
+        "read": {
+          "ok": false,
+          "why": "at most 6 series: fold the rest into one called Other"
+        }
+      },
+      {
+        "text": "{\"type\":\"line\",\"title\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"unit\":\"kilometres an hour\",\"labels\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"series\":[{\"name\":\"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\",\"values\":[1.5]}]}",
+        "read": {
+          "ok": true,
+          "value": {
+            "type": "line",
+            "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+            "unit": "kilometres…",
+            "labels": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+            ],
+            "series": [
+              {
+                "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn…",
+                "values": [
+                  1.5
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "text": "not json",
+        "read": {
+          "ok": false,
+          "why": "it isn't valid JSON"
+        }
+      },
+      {
+        "text": "[1,2]",
+        "read": {
+          "ok": false,
+          "why": "a chart is an object with type, labels and series"
+        }
+      }
+    ],
+    "stats": [
+      {
+        "text": "[{\"label\":\"Read from a cache\",\"value\":\"73%\",\"delta\":71,\"note\":\"since Monday\",\"good\":\"up\"},{\"label\":\"Cost a task\",\"value\":0.54,\"unit\":\"$\",\"delta\":-0.51,\"good\":\"down\"}]",
+        "read": {
+          "ok": true,
+          "value": [
+            {
+              "label": "Read from a cache",
+              "value": "73%",
+              "unit": null,
+              "delta": 71,
+              "note": "since Monday",
+              "good": "up"
+            },
+            {
+              "label": "Cost a task",
+              "value": 0.54,
+              "unit": "$",
+              "delta": -0.51,
+              "note": null,
+              "good": "down"
+            }
+          ]
+        }
+      },
+      {
+        "text": "{\"stats\":[{\"label\":\"Tests\",\"value\":2120},{\"label\":\"Skipped\",\"value\":13,\"delta\":0,\"good\":\"sideways\"}]}",
+        "read": {
+          "ok": true,
+          "value": [
+            {
+              "label": "Tests",
+              "value": 2120,
+              "unit": null,
+              "delta": null,
+              "note": null,
+              "good": null
+            },
+            {
+              "label": "Skipped",
+              "value": 13,
+              "unit": null,
+              "delta": 0,
+              "note": null,
+              "good": null
+            }
+          ]
+        }
+      },
+      {
+        "text": "[{\"label\":\"x\"}]",
+        "read": {
+          "ok": false,
+          "why": "figure 1 needs a label and a value"
+        }
+      },
+      {
+        "text": "[]",
+        "read": {
+          "ok": false,
+          "why": "figures are a list of {label, value}"
+        }
+      },
+      {
+        "text": "[{\"label\":\"l0\",\"value\":0},{\"label\":\"l1\",\"value\":1},{\"label\":\"l2\",\"value\":2},{\"label\":\"l3\",\"value\":3},{\"label\":\"l4\",\"value\":4},{\"label\":\"l5\",\"value\":5},{\"label\":\"l6\",\"value\":6}]",
+        "read": {
+          "ok": false,
+          "why": "at most 6 figures"
+        }
+      },
+      {
+        "text": "[{\"label\":\"Infinite\",\"value\":null,\"delta\":\"3\"}]",
+        "read": {
+          "ok": false,
+          "why": "figure 1 needs a label and a value"
+        }
+      }
+    ],
+    "choices": [
+      {
+        "text": "[\"Ship it\",\"Hold until Monday\"]",
+        "read": {
+          "ok": true,
+          "value": [
+            "Ship it",
+            "Hold until Monday"
+          ]
+        }
+      },
+      {
+        "text": "{\"options\":[\"Yes\",\" yes \",\"No\",3]}",
+        "read": {
+          "ok": true,
+          "value": [
+            "Yes",
+            "No",
+            "3"
+          ]
+        }
+      },
+      {
+        "text": "[\"Only one\"]",
+        "read": {
+          "ok": false,
+          "why": "at least two choices"
+        }
+      },
+      {
+        "text": "[\"c0\",\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"c6\"]",
+        "read": {
+          "ok": false,
+          "why": "at most 6 choices"
+        }
+      },
+      {
+        "text": "\"text\"",
+        "read": {
+          "ok": false,
+          "why": "choices are a list of short answers"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "text": "[{\"text\":\"Read the failing test\",\"state\":\"done\"},{\"text\":\"Fix the parser\",\"state\":\"doing\"},{\"text\":\"Ship it\",\"state\":\"todo\"},\"A bare line\",{\"text\":\"Odd\",\"state\":\"maybe\"}]",
+        "read": {
+          "ok": true,
+          "value": [
+            {
+              "text": "Read the failing test",
+              "state": "done"
+            },
+            {
+              "text": "Fix the parser",
+              "state": "doing"
+            },
+            {
+              "text": "Ship it",
+              "state": "todo"
+            },
+            {
+              "text": "A bare line",
+              "state": "todo"
+            },
+            {
+              "text": "Odd",
+              "state": "todo"
+            }
+          ]
+        }
+      },
+      {
+        "text": "{\"steps\":[{\"text\":\"failed one\",\"state\":\"failed\"},{\"text\":\"skipped one\",\"state\":\"skipped\"}]}",
+        "read": {
+          "ok": true,
+          "value": [
+            {
+              "text": "failed one",
+              "state": "failed"
+            },
+            {
+              "text": "skipped one",
+              "state": "skipped"
+            }
+          ]
+        }
+      },
+      {
+        "text": "[{\"state\":\"done\"}]",
+        "read": {
+          "ok": false,
+          "why": "step 1 needs its text"
+        }
+      },
+      {
+        "text": "[]",
+        "read": {
+          "ok": false,
+          "why": "steps are a list of {text, state}"
+        }
+      }
+    ],
+    "artifacts": [
+      {
+        "text": "<!doctype html><title>Q3 &amp; plans</title><p>Hi</p>",
+        "xs": null,
+        "ok": true,
+        "why": null,
+        "title": "Q3 & plans"
+      },
+      {
+        "text": "no tags here",
+        "xs": null,
+        "ok": false,
+        "why": "a page is HTML",
+        "title": null
+      },
+      {
+        "text": null,
+        "xs": 200001,
+        "ok": false,
+        "why": "a page is at most 200K characters",
+        "title": null
+      },
+      {
+        "text": "<title>  spaced\n title </title>",
+        "xs": null,
+        "ok": true,
+        "why": null,
+        "title": "spaced title"
+      }
+    ],
+    "numbers": [
+      {
+        "n": 0,
+        "text": "0"
+      },
+      {
+        "n": 7,
+        "text": "7"
+      },
+      {
+        "n": 7.256,
+        "text": "7.26"
+      },
+      {
+        "n": 42.25,
+        "text": "42.3"
+      },
+      {
+        "n": 999.5,
+        "text": "1,000"
+      },
+      {
+        "n": 1284,
+        "text": "1,284"
+      },
+      {
+        "n": 9999,
+        "text": "9,999"
+      },
+      {
+        "n": 10000,
+        "text": "10K"
+      },
+      {
+        "n": 12900,
+        "text": "12.9K"
+      },
+      {
+        "n": 999999,
+        "text": "1M"
+      },
+      {
+        "n": 1000000,
+        "text": "1M"
+      },
+      {
+        "n": 4200000,
+        "text": "4.2M"
+      },
+      {
+        "n": -15500,
+        "text": "-15.5K"
+      },
+      {
+        "n": 2500000000,
+        "text": "2.5B"
+      },
+      {
+        "n": 7000000000000,
+        "text": "7T"
+      },
+      {
+        "n": 0.054,
+        "text": "0.05"
+      }
+    ]
+  }
 }

@@ -79,6 +79,13 @@ struct ChatRequest: Encodable, Sendable {
         watch(client.events("/api/chat", request))
     }
 
+    /// A choice he offered, tapped: sent as your reply, through the message box's own checks.
+    func reply(_ text: String, with client: NodeClient) {
+        guard live == nil else { return }
+        draft = text
+        send(with: client)
+    }
+
     /// Asks the node to stop the turn under way; the stream then says it stopped, and ends.
     func stop(with client: NodeClient) {
         guard let turn else { live?.cancel(); return }

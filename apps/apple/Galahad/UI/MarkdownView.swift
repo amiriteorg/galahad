@@ -32,8 +32,13 @@ private struct BlockView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, 2)
-        case .code(let lang, let text, _):
-            CodeBlock(lang: lang, text: text)
+        case .code(let lang, let text, let open):
+            // A block his answer shows beyond words (a chart, figures, choices, steps, a page); any other language is code.
+            if let kind = Blocks.Kind(rawValue: lang.lowercased()) {
+                AnswerBlock(kind: kind, text: text, open: open)
+            } else {
+                CodeBlock(lang: lang, text: text)
+            }
         case .list(let ordered, let start, let items):
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
@@ -63,7 +68,7 @@ private struct BlockView: View {
 }
 
 /// Code, as written: monospaced, scrolled sideways rather than wrapped, and copied whole.
-private struct CodeBlock: View {
+struct CodeBlock: View {
     let lang: String
     let text: String
     @State private var copied = false

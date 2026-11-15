@@ -8,6 +8,7 @@ struct ChatView: View {
     @State private var listing = false
 
     private var chat: ChatModel { session.chat }
+    private var latestAnswer: Int? { chat.thread.turns.last { $0.role == .assistant }?.id }
 
     var body: some View {
         ScrollView {
@@ -24,6 +25,9 @@ struct ChatView: View {
                 }
                 ForEach(chat.thread.turns) { turn in
                     MessageRow(turn: turn)
+                        .environment(\.answerLive, turn.status == .streaming)
+                        // Choices he offered are yours to tap on his latest finished answer only.
+                        .environment(\.choose, turn.id == latestAnswer && turn.status == .done && !chat.answering ? { text in chat.reply(text, with: session.client) } : nil)
                 }
             }
             .padding(.horizontal)

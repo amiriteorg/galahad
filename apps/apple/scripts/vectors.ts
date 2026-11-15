@@ -428,6 +428,55 @@ const markdownCases = [
 ];
 const markdown = markdownCases.map((source) => ({ source, blocks: parseMarkdown(source) }));
 
+// ---- what an answer may show beyond words: core's readers (blocks.ts) ------------------------------------------------
+const chartCases = [
+  JSON.stringify({ type: "line", title: "Tokens a task", unit: "k", labels: ["Mon", "Tue", "Wed"], series: [{ name: "Before", values: [442, 430, 451] }, { name: "After", values: [258, null, 262] }] }),
+  JSON.stringify({ labels: ["A", "B"], series: [{ values: [1, 2] }] }),
+  JSON.stringify({ type: "stacked", title: "  Spend\n by   role ", labels: ["Q1", "Q2"], series: [{ name: "Plan", values: [3, 4] }, { name: "Build", values: [5, 6] }] }),
+  JSON.stringify({ type: "bar", labels: [1, "Two", "  three  "], series: [{ name: "x", values: [1, 2, 3] }, { values: [4, 5, 6] }] }),
+  JSON.stringify({ type: "pie", labels: ["a"], series: [{ values: [1] }] }),
+  JSON.stringify({ type: "line", labels: [], series: [] }),
+  JSON.stringify({ type: "line", labels: ["a", "b"], series: [{ values: [1] }] }),
+  JSON.stringify({ type: "line", labels: ["a"], series: [{ values: ["7"] }] }),
+  JSON.stringify({ type: "stacked", labels: ["a"], series: [{ values: [-1] }] }),
+  JSON.stringify({ type: "line", labels: ["a"], series: [{ name: "Same", values: [1] }, { name: "same", values: [2] }] }),
+  JSON.stringify({ type: "line", labels: ["a"], series: [{ values: [null] }] }),
+  JSON.stringify({ type: "line", labels: Array.from({ length: 61 }, (_, i) => `d${i}`), series: [{ values: Array.from({ length: 61 }, () => 1) }] }),
+  JSON.stringify({ type: "line", labels: ["a"], series: Array.from({ length: 7 }, (_, i) => ({ name: `s${i}`, values: [i] })) }),
+  JSON.stringify({ type: "line", title: "x".repeat(90), unit: "kilometres an hour", labels: ["a".repeat(40)], series: [{ name: "n".repeat(40), values: [1.5] }] }),
+  "not json",
+  "[1,2]",
+];
+const statsCases = [
+  JSON.stringify([{ label: "Read from a cache", value: "73%", delta: 71, note: "since Monday", good: "up" }, { label: "Cost a task", value: 0.54, unit: "$", delta: -0.51, good: "down" }]),
+  JSON.stringify({ stats: [{ label: "Tests", value: 2120 }, { label: "Skipped", value: 13, delta: 0, good: "sideways" }] }),
+  JSON.stringify([{ label: "x" }]),
+  JSON.stringify([]),
+  JSON.stringify(Array.from({ length: 7 }, (_, i) => ({ label: `l${i}`, value: i }))),
+  JSON.stringify([{ label: "Infinite", value: 1e400, delta: "3" }]),
+];
+const choiceCases = [JSON.stringify(["Ship it", "Hold until Monday"]), JSON.stringify({ options: ["Yes", " yes ", "No", 3] }), JSON.stringify(["Only one"]), JSON.stringify(Array.from({ length: 7 }, (_, i) => `c${i}`)), JSON.stringify("text")];
+const stepCases = [
+  JSON.stringify([{ text: "Read the failing test", state: "done" }, { text: "Fix the parser", state: "doing" }, { text: "Ship it", state: "todo" }, "A bare line", { text: "Odd", state: "maybe" }]),
+  JSON.stringify({ steps: [{ text: "failed one", state: "failed" }, { text: "skipped one", state: "skipped" }] }),
+  JSON.stringify([{ state: "done" }]),
+  JSON.stringify([]),
+];
+// A page past the limit is written down as how many x's it holds (the test makes it), not as 200,000 characters here.
+const artifactCases: (string | { xs: number })[] = ["<!doctype html><title>Q3 &amp; plans</title><p>Hi</p>", "no tags here", { xs: 200_001 }, "<title>  spaced\n title </title>"];
+const numbers = [0, 7, 7.256, 42.25, 999.5, 1284, 9999, 10_000, 12_900, 999_999, 1_000_000, 4_200_000, -15_500, 2.5e9, 7e12, 0.054];
+const blocks = {
+  charts: chartCases.map((text) => ({ text, read: core.readChart(text) })),
+  stats: statsCases.map((text) => ({ text, read: core.readStats(text) })),
+  choices: choiceCases.map((text) => ({ text, read: core.readChoices(text) })),
+  steps: stepCases.map((text) => ({ text, read: core.readSteps(text) })),
+  artifacts: artifactCases.map((item) => {
+    const read = core.readArtifact(typeof item === "string" ? item : `<p>${"x".repeat(item.xs)}</p>`);
+    return { text: typeof item === "string" ? item : null, xs: typeof item === "string" ? null : item.xs, ok: read.ok, why: read.ok ? null : read.why, title: read.ok ? core.artifactTitle(read.value) : null };
+  }),
+  numbers: numbers.map((n) => ({ n, text: core.compactNumber(n) })),
+};
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -442,6 +491,7 @@ const vectors = {
   threads,
   chats,
   markdown,
+  blocks,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

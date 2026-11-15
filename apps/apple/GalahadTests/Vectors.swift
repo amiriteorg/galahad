@@ -125,6 +125,57 @@ struct Vectors: Decodable {
         let blocks: [JSONValue]
     }
 
+    struct BlockCases: Decodable {
+        /// Core's answer: { ok: true, value } or { ok: false, why }.
+        enum Read<T: Decodable & Sendable>: Decodable, Sendable {
+            case ok(T)
+            case no(String)
+            private enum Keys: String, CodingKey { case ok, value, why }
+            init(from decoder: any Decoder) throws {
+                let c = try decoder.container(keyedBy: Keys.self)
+                self = try c.decode(Bool.self, forKey: .ok) ? .ok(try c.decode(T.self, forKey: .value)) : .no(try c.decode(String.self, forKey: .why))
+            }
+        }
+
+        struct Chart: Decodable {
+            struct Series: Decodable { let name: String; let values: [Double?] }
+            let type: String
+            let title: String?
+            let unit: String?
+            let labels: [String]
+            let series: [Series]
+        }
+
+        struct Stat: Decodable {
+            let label: String
+            let value: JSONValue
+            let unit: String?
+            let delta: Double?
+            let note: String?
+            let good: String?
+        }
+
+        struct Step: Decodable { let text: String; let state: String }
+        struct Case<T: Decodable & Sendable>: Decodable, Sendable { let text: String; let read: Read<T> }
+        struct Page: Decodable {
+            /// The page, or (past the size limit) how many x's its paragraph holds.
+            let text: String?
+            let xs: Int?
+            let ok: Bool
+            let why: String?
+            let title: String?
+            var page: String { text ?? "<p>\(String(repeating: "x", count: xs ?? 0))</p>" }
+        }
+        struct Number: Decodable { let n: Double; let text: String }
+
+        let charts: [Case<Chart>]
+        let stats: [Case<[Stat]>]
+        let choices: [Case<[String]>]
+        let steps: [Case<[Step]>]
+        let artifacts: [Page]
+        let numbers: [Number]
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
@@ -136,6 +187,7 @@ struct Vectors: Decodable {
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]
+    let blocks: BlockCases
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {

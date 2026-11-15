@@ -26,6 +26,10 @@ bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-dev    # from the reposito
 Paste the link into the app and press Ask to join. The node prints the code the request shows; compare it with the
 app's, then approve as the node's owner would: `echo 482913 > /tmp/galahad-dev/approve` (the code, its digits only).
 
+Ask Galahad anything with "show" in it, and the stand-in answers with everything an answer can hold: headings, a
+list, a quote, a table, code, a chart, figures, a plan's steps, a page and choices to tap. A message with "Take your
+time" is never answered, so a turn stays running to leave and come back to.
+
 ## What the tests are held to
 
 The Swift tests read `GalahadTests/Fixtures/core-vectors.json`: test vectors made by `packages/core` itself (and the

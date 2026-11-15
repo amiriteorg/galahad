@@ -7,7 +7,8 @@
  * It seats knights at work (one running a task, one thinking, one whose task was verified, one whose task failed, one
  * paused), has an agent ask your leave for an outward call, and has Galahad ask for a key. Then it makes a client invite
  * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
- * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, choices).
+ * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, a page,
+ * choices).
  *
  * Pairing waits for you as a node does: the app's request is printed with its code, and approved only once you write
  * that code into <dir>/approve (`echo 482913 > <dir>/approve`), having compared it with the app's.
@@ -120,6 +121,10 @@ const SHOWN = [
   "",
   "```steps",
   JSON.stringify([{ text: "Read the failing test", state: "done" }, { text: "Fix the parser", state: "doing" }, { text: "Ship it", state: "todo" }]),
+  "```",
+  "",
+  "```artifact",
+  "<!doctype html><title>Release board</title><style>body{font:16px system-ui;margin:16px;color:#222}h1{font-size:20px}button{font:inherit;padding:8px 14px}</style><h1>Release board</h1><p id=state>3 of 4 checks are green.</p><button onclick=\"document.getElementById('state').textContent='Its script ran.'\">Run its script</button>",
   "```",
   "",
   "Shall I go ahead?",
