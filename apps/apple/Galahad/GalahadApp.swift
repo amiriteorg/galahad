@@ -4,7 +4,7 @@ import SwiftUI
 struct GalahadApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("Galahad")
+            RootView()
         }
     }
 }
