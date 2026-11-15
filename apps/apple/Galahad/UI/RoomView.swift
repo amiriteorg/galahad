@@ -135,7 +135,7 @@ struct RoomView: View {
         VStack(spacing: 12) {
             HStack(spacing: -14) {
                 ForEach(members.prefix(5)) { member in
-                    Portrait(drawing: AvatarLook.of(id: member.id, name: member.name, profile: member.avatar), size: 72)
+                    Portrait(drawing: AvatarLook.of(id: member.id, name: member.name, profile: member.avatar), size: 72, expression: session.rows.first { $0.id == member.id }?.expression ?? "idle", id: member.id, temper: AvatarLook.temperament(id: member.id, profile: member.avatar))
                 }
             }
             Text(name).font(.title2.bold())

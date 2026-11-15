@@ -63,7 +63,7 @@ struct KnightEditor: View {
             Form {
                 Section {
                     VStack(spacing: 14) {
-                        Portrait(drawing: look, size: 120)
+                        Portrait(drawing: look, size: 120, expression: "idle", id: handle, temper: AvatarLook.temperament(id: handle, profile: existing?.avatar))
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 ForEach(AvatarLook.looks, id: \.id) { each in

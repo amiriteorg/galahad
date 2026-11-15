@@ -126,7 +126,7 @@ struct KnightView: View {
 
     private var welcome: some View {
         VStack(spacing: 12) {
-            Portrait(drawing: look, size: 120)
+            Portrait(drawing: look, size: 120, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: knight?.avatar))
             Text(name).font(.title2.bold())
             Text("Say something to \(name), or give it a task: it works in its own workspace, and its commands and an independent review say whether the work is done.")
                 .font(.subheadline)
@@ -431,7 +431,7 @@ private struct KnightAbout: View {
                 if let knight {
                     Section {
                         HStack(spacing: 16) {
-                            Portrait(drawing: look, size: 96)
+                            Portrait(drawing: look, size: 96, expression: row?.expression ?? "idle", id: knight.id, temper: AvatarLook.temperament(id: knight.id, profile: knight.avatar))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(knight.name).font(.title2.bold())
                                 Text(knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)

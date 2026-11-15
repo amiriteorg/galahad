@@ -19,6 +19,7 @@ import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
+import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
@@ -242,7 +243,7 @@ const snapshot: core.TeamSnapshot = {
   deliveries: [delivery("busy", "bea", "running"), delivery("think", "eve", "queued"), delivery("old", "jo", "failed", { error: "Model unavailable", updatedAt: at(2) })],
 };
 const asks = [{ by: `arm:team.0123456789.max`, connector: "forge", tool: "post" }, { by: `arm:team.0123456789.max`, connector: "forge", tool: "bucket.delete" }, { by: "loop:morning", connector: "github", tool: "comment" }];
-const rows = rosterRows({ snapshot, asks, now: NOW }).filter((row) => row.kind === "knight").map((row) => ({ id: row.id, line: row.line, needs: row.needs }));
+const rows = rosterRows({ snapshot, asks, now: NOW }).filter((row) => row.kind === "knight").map((row) => ({ id: row.id, line: row.line, needs: row.needs, expression: row.expression ?? null }));
 const nows: NowInput[] = [
   { turns: [], quests: [], needs: null },
   { turns: [], quests: [], needs: 0 },
@@ -359,6 +360,14 @@ const desktop = {
     { shot: { mediaType: "image/jpeg", data: "" }, width: 1280, height: 800 },
     { shot: { mediaType: "image/jpeg", data: "/9j/4AAQ" }, width: 0, height: 800 },
   ].map((view) => ({ view, shown: shotSource(view) !== null })),
+};
+
+// ---- the knights' live eyes (the PWA's own lib/knight-eyes.ts and core's taskStep) ------------------------------------
+const eyes = {
+  canvas: CANVAS,
+  art: Object.fromEntries(Object.entries(ART).map(([art, { eyes: pair }]) => [art, pair.map(([x, y, r, slit]) => ({ x, y, r, slit }))])),
+  shown: Object.fromEntries(Object.entries(SHOWN).map(([expression, { eyes: shape, gaze }]) => [expression, { eyes: shape, gaze }])),
+  steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
 };
 
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
@@ -636,6 +645,7 @@ const vectors = {
   knightForms,
   keys,
   desktop,
+  eyes,
   threads,
   chats,
   markdown,

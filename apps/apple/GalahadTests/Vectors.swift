@@ -67,9 +67,10 @@ struct Vectors: Decodable {
     }
 
     struct Roundtable: Decodable {
-        struct Row: Decodable { let id: String; let line: String; let needs: Bool }
+        struct Row: Decodable { let id: String; let line: String; let needs: Bool; let expression: String? }
         struct Now: Decodable { let input: GalahadWork; let text: String; let tone: String }
         struct Needs: Decodable { let inbox: Int; let knights: [String]; let needs: Int }
+        let now: Double
         let snapshot: TeamSnapshot
         let asks: [Ask]
         let rows: [Row]
@@ -126,6 +127,16 @@ struct Vectors: Decodable {
         let unshown: XY?
         let addresses: [Address]
         let shots: [Shot]
+    }
+
+    struct EyeCases: Decodable {
+        struct Eye: Decodable { let x: Double; let y: Double; let r: Double; let slit: String }
+        struct Shown: Decodable { let eyes: String; let gaze: [Double] }
+        struct Step: Decodable { let line: String; let step: String }
+        let canvas: Double
+        let art: [String: [Eye]]
+        let shown: [String: Shown]
+        let steps: [Step]
     }
 
     struct Thread: Decodable {
@@ -263,6 +274,7 @@ struct Vectors: Decodable {
     let knightForms: KnightForms
     let keys: KeyCases
     let desktop: DesktopCases
+    let eyes: EyeCases
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]

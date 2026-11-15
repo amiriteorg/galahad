@@ -84,7 +84,7 @@ struct ChatView: View {
 
     private var welcome: some View {
         VStack(spacing: 12) {
-            Portrait(drawing: "galahad", size: 150)
+            Portrait(drawing: "galahad", size: 150, expression: chat.answering ? "thinking" : "idle", id: "galahad")
             Text("Ask Galahad").font(.title2.bold())
             Text("He answers with his tools at hand, within what this device may do. What you say here is kept on your node.")
                 .font(.subheadline)

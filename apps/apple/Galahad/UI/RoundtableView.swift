@@ -41,12 +41,12 @@ struct RoundtableView: View {
             }
             if query.isEmpty {
                 Section {
-                    NavigationLink(value: Route.galahad) { GalahadRow(now: session.galahad) }
+                    NavigationLink(value: Route.galahad) { GalahadRow(now: session.galahad, expression: session.chat.answering ? "thinking" : session.galahad.tone == .warn ? "asking" : "idle") }
                 }
             }
             Section {
                 ForEach(knights) { row in
-                    NavigationLink(value: Route.knight(row.id)) { KnightRow(row: row, look: look(of: row)) }
+                    NavigationLink(value: Route.knight(row.id)) { KnightRow(row: row, look: look(of: row), temper: AvatarLook.temperament(id: row.id, profile: session.teammate(row.id)?.avatar)) }
                 }
             } header: {
                 if !knights.isEmpty { Text("Knights") }
@@ -110,10 +110,12 @@ struct RoundtableView: View {
 
 struct GalahadRow: View {
     let now: GalahadNow
+    /// What his face shows: thinking while he answers, asking while something waits for you.
+    var expression = "idle"
 
     var body: some View {
         HStack(spacing: 14) {
-            Portrait(drawing: "galahad", size: 56)
+            Portrait(drawing: "galahad", size: 56, expression: expression, id: "galahad")
             VStack(alignment: .leading, spacing: 3) {
                 Text("Galahad").font(.headline)
                 Text(now.text)
@@ -132,10 +134,11 @@ struct GalahadRow: View {
 struct KnightRow: View {
     let row: RosterRow
     let look: String
+    var temper = "calm"
 
     var body: some View {
         HStack(spacing: 14) {
-            Portrait(drawing: look, size: 48)
+            Portrait(drawing: look, size: 48, expression: row.expression, id: row.id, temper: temper)
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.name).font(.headline)
                 Text(row.line)

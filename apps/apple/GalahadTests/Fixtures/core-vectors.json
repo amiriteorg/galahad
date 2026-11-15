@@ -1220,82 +1220,98 @@
       {
         "id": "ada",
         "line": "The run task · Running · bun test packages/link",
-        "needs": false
+        "needs": false,
+        "expression": "working"
       },
       {
         "id": "bea",
         "line": "Working on “The plain task”",
-        "needs": false
+        "needs": false,
+        "expression": "working"
       },
       {
         "id": "cy",
         "line": "Verified: “The keep task” · 3 files kept",
-        "needs": false
+        "needs": false,
+        "expression": "idle"
       },
       {
         "id": "dot",
         "line": "Paused",
-        "needs": false
+        "needs": false,
+        "expression": "resting"
       },
       {
         "id": "eve",
         "line": "Daily allowance spent · 1 waiting",
-        "needs": true
+        "needs": true,
+        "expression": "waiting"
       },
       {
         "id": "fay",
         "line": "Failed: “The fail task” · The gate needs a Postgres this VM doesn't have.",
-        "needs": true
+        "needs": true,
+        "expression": "idle"
       },
       {
         "id": "gus",
         "line": "Waiting for “The blocker task”",
-        "needs": false
+        "needs": false,
+        "expression": "waiting"
       },
       {
         "id": "hal",
         "line": "Made by Galahad · Hal keeps the build green.",
-        "needs": false
+        "needs": false,
+        "expression": "idle"
       },
       {
         "id": "ivy",
         "line": "Made by Hal · Ivy keeps the build green.",
-        "needs": false
+        "needs": false,
+        "expression": "idle"
       },
       {
         "id": "jo",
         "line": "Couldn't reply · Model unavailable",
-        "needs": true
+        "needs": true,
+        "expression": "idle"
       },
       {
         "id": "kit",
         "line": "Interrupted: “The halt task” · review it before resuming",
-        "needs": true
+        "needs": true,
+        "expression": "idle"
       },
       {
         "id": "lou",
         "line": "Stopped: “The stop task”",
-        "needs": false
+        "needs": false,
+        "expression": "idle"
       },
       {
         "id": "max",
         "line": "Asks your leave: forge.post, and 1 more",
-        "needs": true
+        "needs": true,
+        "expression": "asking"
       },
       {
         "id": "ned",
         "line": "Paused · 1 waiting",
-        "needs": true
+        "needs": true,
+        "expression": "resting"
       },
       {
         "id": "oz",
         "line": "Proposes “The ask task”, and 1 more",
-        "needs": true
+        "needs": true,
+        "expression": "asking"
       },
       {
         "id": "pip",
         "line": "Ada proposes “The askpip task”",
-        "needs": true
+        "needs": true,
+        "expression": "asking"
       }
     ],
     "galahad": [
@@ -3189,6 +3205,324 @@
           "height": 800
         },
         "shown": false
+      }
+    ]
+  },
+  "eyes": {
+    "canvas": 768,
+    "art": {
+      "galahad": [
+        {
+          "x": 281,
+          "y": 293,
+          "r": 13.7,
+          "slit": "#342015"
+        },
+        {
+          "x": 483,
+          "y": 294,
+          "r": 13.6,
+          "slit": "#331e13"
+        }
+      ],
+      "black-knight": [
+        {
+          "x": 230,
+          "y": 282,
+          "r": 12.8,
+          "slit": "#271b12"
+        },
+        {
+          "x": 428,
+          "y": 282,
+          "r": 13.6,
+          "slit": "#251a11"
+        }
+      ],
+      "kay": [
+        {
+          "x": 271,
+          "y": 304,
+          "r": 12.8,
+          "slit": "#24170c"
+        },
+        {
+          "x": 444,
+          "y": 304,
+          "r": 12.8,
+          "slit": "#25170c"
+        }
+      ],
+      "gaheris": [
+        {
+          "x": 278,
+          "y": 291,
+          "r": 13.7,
+          "slit": "#2a1e17"
+        },
+        {
+          "x": 484,
+          "y": 290,
+          "r": 13.7,
+          "slit": "#2b1e17"
+        }
+      ],
+      "percival": [
+        {
+          "x": 222,
+          "y": 303,
+          "r": 12.3,
+          "slit": "#33261d"
+        },
+        {
+          "x": 360,
+          "y": 300,
+          "r": 12.9,
+          "slit": "#2a1f17"
+        }
+      ],
+      "palamedes": [
+        {
+          "x": 300,
+          "y": 325,
+          "r": 10.9,
+          "slit": "#2b1e15"
+        },
+        {
+          "x": 467,
+          "y": 325,
+          "r": 11,
+          "slit": "#2b1e15"
+        }
+      ],
+      "gawain": [
+        {
+          "x": 228,
+          "y": 377,
+          "r": 18.2,
+          "slit": "#2c2114"
+        },
+        {
+          "x": 401,
+          "y": 377,
+          "r": 18.8,
+          "slit": "#2a1f13"
+        }
+      ],
+      "tristan": [
+        {
+          "x": 243,
+          "y": 300,
+          "r": 15.3,
+          "slit": "#2a2018"
+        },
+        {
+          "x": 415,
+          "y": 300,
+          "r": 15.4,
+          "slit": "#2a2019"
+        }
+      ],
+      "lancelot": [
+        {
+          "x": 239,
+          "y": 300,
+          "r": 12.3,
+          "slit": "#231a14"
+        },
+        {
+          "x": 375,
+          "y": 300,
+          "r": 12.4,
+          "slit": "#221913"
+        }
+      ],
+      "bedivere": [
+        {
+          "x": 236,
+          "y": 295,
+          "r": 12.2,
+          "slit": "#211b12"
+        },
+        {
+          "x": 376,
+          "y": 293,
+          "r": 12.2,
+          "slit": "#211a12"
+        }
+      ],
+      "bors": [
+        {
+          "x": 296,
+          "y": 258,
+          "r": 11.9,
+          "slit": "#2b1f16"
+        },
+        {
+          "x": 455,
+          "y": 258,
+          "r": 12,
+          "slit": "#291e15"
+        }
+      ],
+      "gareth": [
+        {
+          "x": 236,
+          "y": 350,
+          "r": 18.6,
+          "slit": "#2f1f14"
+        },
+        {
+          "x": 429,
+          "y": 350,
+          "r": 18.7,
+          "slit": "#2d1e13"
+        }
+      ]
+    },
+    "shown": {
+      "idle": {
+        "eyes": "open",
+        "gaze": [
+          0,
+          0
+        ]
+      },
+      "thinking": {
+        "eyes": "open",
+        "gaze": [
+          0.4,
+          -0.32
+        ]
+      },
+      "working": {
+        "eyes": "open",
+        "gaze": [
+          -0.1,
+          0.34
+        ]
+      },
+      "reading": {
+        "eyes": "open",
+        "gaze": [
+          0,
+          0.22
+        ]
+      },
+      "browsing": {
+        "eyes": "open",
+        "gaze": [
+          0,
+          0.22
+        ]
+      },
+      "checking": {
+        "eyes": "open",
+        "gaze": [
+          0,
+          0.28
+        ]
+      },
+      "waiting": {
+        "eyes": "open",
+        "gaze": [
+          -0.38,
+          -0.3
+        ]
+      },
+      "asking": {
+        "eyes": "wide",
+        "gaze": [
+          0,
+          0
+        ]
+      },
+      "pleased": {
+        "eyes": "happy",
+        "gaze": [
+          0,
+          0
+        ]
+      },
+      "concerned": {
+        "eyes": "low",
+        "gaze": [
+          0,
+          0.3
+        ]
+      },
+      "resting": {
+        "eyes": "shut",
+        "gaze": [
+          0,
+          0
+        ]
+      }
+    },
+    "steps": [
+      {
+        "line": "Plan · read the code",
+        "step": "thinking"
+      },
+      {
+        "line": "Thinking · which test",
+        "step": "thinking"
+      },
+      {
+        "line": "Running · desktop open https://x",
+        "step": "browsing"
+      },
+      {
+        "line": "Running · desktop",
+        "step": "browsing"
+      },
+      {
+        "line": "Running · bun test",
+        "step": "working"
+      },
+      {
+        "line": "Exit 0 · 12 passed",
+        "step": "reading"
+      },
+      {
+        "line": "Exit -1 · killed",
+        "step": "reading"
+      },
+      {
+        "line": "Gate 1/2 · bun test",
+        "step": "checking"
+      },
+      {
+        "line": "Gates before the work · 2",
+        "step": "checking"
+      },
+      {
+        "line": "Review · PASS",
+        "step": "checking"
+      },
+      {
+        "line": "Submitted for review · now",
+        "step": "checking"
+      },
+      {
+        "line": "gates",
+        "step": "checking"
+      },
+      {
+        "line": "gated",
+        "step": "checking"
+      },
+      {
+        "line": "  Running · ls",
+        "step": "working"
+      },
+      {
+        "line": "Something else",
+        "step": "working"
+      },
+      {
+        "line": "",
+        "step": "working"
       }
     ]
   },

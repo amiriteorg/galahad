@@ -23,6 +23,8 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     let line: String
     /// Only you can move this on: a failure to read, an approval to give, work waiting on a pause.
     let needs: Bool
+    /// What its face shows (KnightEyes): asking when it asks your leave or your approval, else what it is doing.
+    var expression = "idle"
 }
 
 /// A room of the Roundtable: its knights' conversation together, and one line of where it stands (lib/roster.ts' room row).
@@ -45,9 +47,9 @@ enum Roster {
         max(0, inbox - asks.filter { knights.contains(knightOfCaller($0.by) ?? "") }.count)
     }
 
-    /// Every knight, as the node lists them.
-    static func rows(snapshot: TeamSnapshot, asks: [Ask]) -> [RosterRow] {
-        snapshot.teammates.map { row(for: $0, in: snapshot, asks: asks) }
+    /// Every knight, as the node lists them. `now`: what "just now" is, in milliseconds, for a face that has just been pleased or concerned.
+    static func rows(snapshot: TeamSnapshot, asks: [Ask], now: Double = Date.now.timeIntervalSince1970 * 1000) -> [RosterRow] {
+        snapshot.teammates.map { row(for: $0, in: snapshot, asks: asks, now: now) }
     }
 
     /// Every room that isn't a knight's own conversation with you, the latest spoken in first.
@@ -85,11 +87,14 @@ enum Roster {
         var task: TeamTask? { if case .task(let t) = self { t } else { nil } }
     }
 
-    private static func row(for person: Teammate, in snapshot: TeamSnapshot, asks: [Ask]) -> RosterRow {
+    private static func row(for person: Teammate, in snapshot: TeamSnapshot, asks: [Ask], now: Double) -> RosterRow {
         let room = snapshot.rooms.first { $0.direct && $0.members == [person.id] }
         let jobs = snapshot.tasks.filter { $0.assignee == person.id }.map(Job.task) + snapshot.deliveries.filter { $0.teammate == person.id }.map(Job.delivery)
         let asked = asks.filter { knightOfCaller($0.by) == person.id }
-        let say = { (line: String, needs: Bool) in RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs) }
+        // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
+        let asking = !asked.isEmpty || jobs.contains { $0.status == "proposed" && $0.task != nil }
+        let expression = asking ? "asking" : KnightEyes.expression(of: person, in: snapshot, now: now)
+        let say = { (line: String, needs: Bool) in RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression) }
 
         // What only you can answer comes first: it is what the row is marked for.
         if let ask = asked.first {
