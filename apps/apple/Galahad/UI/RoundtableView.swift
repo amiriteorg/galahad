@@ -13,6 +13,7 @@ struct RoundtableView: View {
     /// On an iPad, the row whose page the detail column shows; on an iPhone a row is pushed instead.
     var selection: Binding<Route?>? = nil
     @State private var query = ""
+    @State private var giving = false
 
     private var knights: [RosterRow] {
         let rows = session.rows
@@ -49,7 +50,13 @@ struct RoundtableView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { RoundtableMark(size: 28) }
                 .sharedBackgroundVisibility(.hidden)
+            // The Roundtable's own work: given to it, the knight best suited takes it.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { giving = true } label: { Label("Give the Roundtable a task", systemImage: "hammer") }
+                    .disabled(!session.can("fleet:admin") || session.rows.isEmpty)
+            }
         }
+        .sheet(isPresented: $giving) { GiveSheet(session: session) }
         .searchable(text: $query, prompt: "Knights")
         .refreshable { await session.refresh() }
         .overlay {

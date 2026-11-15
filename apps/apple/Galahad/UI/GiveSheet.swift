@@ -1,0 +1,145 @@
+import SwiftUI
+
+/// The node's answer to a task given to the Roundtable (the PWA's `Given`): who took it and why, and how each of the
+/// others stood.
+struct Given: Decodable, Sendable {
+    struct Task: Decodable, Sendable { let id: String; let room: String }
+    struct Choice: Decodable, Sendable { let id: String; let name: String; let reasons: [String] }
+    struct Considered: Decodable, Sendable { let id: String; let name: String; let eligible: Bool; let why: [String] }
+    let task: Task
+    let choice: Choice
+    let considered: [Considered]
+}
+
+/// A task given to the Roundtable rather than to a knight: the knight best suited to it takes it, and the sheet then
+/// says who, why, and how each of the others stood (the PWA's give).
+struct GiveSheet: View {
+    let session: Session
+    @Environment(\.dismiss) private var dismiss
+    @State private var goal = ""
+    @State private var title = ""
+    @State private var gates = ""
+    @State private var desktop = false
+    @State private var repository = ""
+    @State private var working = false
+    @State private var problem: String?
+    @State private var given: Given?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let given { taken(given) } else { form }
+            }
+            .navigationTitle(given == nil ? "Give the Roundtable a task" : "Given")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if given == nil {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Give") { Task { await give() } }
+                            .disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working)
+                    }
+                } else {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+            }
+        }
+    }
+
+    private var form: some View {
+        Form {
+            Section {
+                TextField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
+            } header: {
+                Text("Goal")
+            } footer: {
+                Text("The knight best suited to it takes it: one that's free, with what the work needs.")
+            }
+            Section("Title") { TextField("A concrete result (from the goal, if left empty)", text: $title) }
+            Section {
+                TextField("bun run check", text: $gates, axis: .vertical)
+                    .lineLimit(2...8)
+                    .font(.body.monospaced())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Done when these pass")
+            } footer: {
+                Text("One shell command a line, up to 16. They run in the knight's workspace.")
+            }
+            Section("It needs") {
+                Toggle("A desktop (a browser, an app with windows)", isOn: $desktop)
+                TextField("A repository (owner/name or a URL)", text: $repository)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            if let problem {
+                Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
+            }
+        }
+    }
+
+    private func taken(_ given: Given) -> some View {
+        List {
+            Section {
+                HStack(spacing: 14) {
+                    Portrait(drawing: look(given.choice.id, given.choice.name), size: 56)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(given.choice.name) took it").font(.headline)
+                        Text(given.choice.reasons.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            } footer: {
+                Text("It's in \(given.choice.name)'s timeline now, where it was given.")
+            }
+            let others = given.considered.filter { $0.id != given.choice.id }
+            if !others.isEmpty {
+                Section("The others") {
+                    ForEach(others, id: \.id) { knight in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(knight.name).font(.subheadline.weight(.semibold))
+                            Text("\(knight.eligible ? "" : "can't take it: ")\(knight.why.joined(separator: " · "))")
+                                .font(.caption)
+                                .foregroundStyle(knight.eligible ? Color.secondary : Color.siege)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func look(_ id: String, _ name: String) -> String {
+        AvatarLook.of(id: id, name: name, profile: session.teammate(id)?.avatar)
+    }
+
+    private func give() async {
+        let commands: [String]
+        switch KnightRoom.gates(from: gates) {
+        case .failure(let error):
+            problem = error.message
+            return
+        case .success(let list): commands = list
+        }
+        struct Needs: Encodable { var desktop: Bool?; var repository: String? }
+        struct Give: Encodable { let goal: String; var title: String?; var gates: [String]?; var needs: Needs? }
+        let repo = repository.trimmingCharacters(in: .whitespacesAndNewlines)
+        let named = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needs = Needs(desktop: desktop ? true : nil, repository: repo.isEmpty ? nil : repo)
+        let input = Give(
+            goal: goal.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: named.isEmpty ? nil : named,
+            gates: commands.isEmpty ? nil : commands,
+            needs: needs.desktop == nil && needs.repository == nil ? nil : needs
+        )
+        working = true
+        defer { working = false }
+        do {
+            given = try await session.client.post("/api/team/give", input, as: Given.self)
+            problem = nil
+            await session.refresh()
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
