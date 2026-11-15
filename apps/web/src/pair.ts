@@ -2,7 +2,7 @@ import { fromB64u } from "@galahad/core/bytes";
 import { approvalProof, decodeInvite, type Invite, pairProof, type PairRequestFields, proofMatches, sasCode, statusProof } from "@galahad/core/pairing";
 import { ApiError, apiFor, nodeReachable, pairPost } from "./api.ts";
 import { errorMessage } from "./context.ts";
-import { type BrowserIdentity, forgetIdentity, saveIdentity } from "./identity.ts";
+import { type BrowserIdentity, forgetIdentity, runningAsApp, saveIdentity } from "./identity.ts";
 import { hero, renderPairFailed, solo, trustStrip } from "./screens.ts";
 import { button, callout, sasCode as sasDigits } from "./ui/controls.ts";
 import { h, replace } from "./ui/dom.ts";
@@ -226,7 +226,7 @@ export function renderPairing(root: HTMLElement, identity: BrowserIdentity, invi
   replace(
     root,
     solo(
-      hero("Join the fleet", "This browser gets its own key. It can sign, but it can never be read out, not even by this page."),
+      hero("Join the fleet", `${runningAsApp() ? "This app" : "This browser"} gets its own key. It can sign, but it can never be read out, not even by this page.`),
       h(
         "form",
         { class: "card", onsubmit: (event: Event) => void request(event) },

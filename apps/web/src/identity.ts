@@ -77,8 +77,12 @@ export async function forgetIdentity(): Promise<void> {
   await tx("readwrite", (s) => s.delete(KEY));
 }
 
-export function defaultDeviceName(): string {
-  const ua = navigator.userAgent;
+/** Running as an installed app (from the Home Screen, or installed from the browser), not in a browser tab. */
+export const runningAsApp = (): boolean => matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+
+/** What a new device is called until you name it: the browser and the device, or for an installed app (a device of its
+ * own, apart from the browser it was added from) the app. */
+export function defaultDeviceName(ua: string = navigator.userAgent, app: boolean = runningAsApp()): string {
   const platform = /iPhone/.test(ua)
     ? "iPhone"
     : /iPad/.test(ua)
@@ -101,7 +105,7 @@ export function defaultDeviceName(): string {
         : /Safari\//.test(ua)
           ? "Safari"
           : "Browser";
-  return `${browser} on ${platform}`;
+  return `${app ? "Galahad app" : browser} on ${platform}`;
 }
 
 export async function createIdentity(name = defaultDeviceName()): Promise<BrowserIdentity> {

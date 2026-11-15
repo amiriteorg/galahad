@@ -6,7 +6,7 @@ import { confirmAction } from "./ui/dialog.ts";
 import { type Child, h, replace } from "./ui/dom.ts";
 import { emblem } from "./ui/emblem.ts";
 import { icon } from "./ui/icons.ts";
-import { type BrowserIdentity, forgetIdentity } from "./identity.ts";
+import { type BrowserIdentity, forgetIdentity, runningAsApp } from "./identity.ts";
 
 /*
  * Full-screen states outside the app shell: welcome (unpaired), revoked,
@@ -25,7 +25,7 @@ export function trustStrip(): HTMLElement {
   return h(
     "div",
     { class: "trust-strip" },
-    h("span", {}, icon("key"), "Key never leaves this browser"),
+    h("span", {}, icon("key"), "Key never leaves this device"),
     h("span", {}, icon("shield-check"), "You approve every device"),
     h("span", {}, icon("vault"), "Secrets stay in the vault"),
   );
@@ -42,7 +42,7 @@ export function inviteFrom(text: string): string | null {
 }
 
 /** Running as an app added to the Home Screen (which keeps its own storage, apart from the browser's). */
-const installed = () => matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+const installed = runningAsApp;
 
 export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | null, onInvite?: (invite: string) => void): void {
   document.title = "Welcome · Galahad";

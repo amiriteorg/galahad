@@ -77,3 +77,23 @@ describe("this browser's key", () => {
     failOpens = 0;
   });
 });
+
+describe("a new device's name", () => {
+  const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1";
+  const ANDROID = "Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36";
+  const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+
+  test("a browser tab is named for the browser and the device", async () => {
+    const { defaultDeviceName } = await import("./identity.ts");
+    expect(defaultDeviceName(IPHONE, false)).toBe("Safari on iPhone");
+    expect(defaultDeviceName(ANDROID, false)).toBe("Chrome on Android");
+    expect(defaultDeviceName(MAC, false)).toBe("Chrome on Mac");
+  });
+
+  test("an installed app is its own device, and named as the app: never the browser it was added from", async () => {
+    const { defaultDeviceName } = await import("./identity.ts");
+    expect(defaultDeviceName(IPHONE, true)).toBe("Galahad app on iPhone");
+    expect(defaultDeviceName(ANDROID, true)).toBe("Galahad app on Android");
+    expect(defaultDeviceName(MAC, true)).toBe("Galahad app on Mac");
+  });
+});
