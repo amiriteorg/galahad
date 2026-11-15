@@ -88,6 +88,11 @@ describe("the stylesheet", () => {
     expect(all.some((rule) => rule.media.length === 0 && rule.selectors.includes(':root[data-keyboard="open"]') && /--safe-bottom:\s*0px/.test(rule.body))).toBe(true);
   });
 
+  test("what a finger presses answers at once: the knights' cards and rows, the sidebar, the rail and More's rows look pressed", () => {
+    const pressed = (selector: string) => all.some((rule) => rule.selectors.some((s) => s === `${selector}:active`));
+    for (const control of [".roster-row", ".nav-item", ".rail-item", ".rows > a.item", ".suggestion"]) expect([control, pressed(control)]).toEqual([control, true]);
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {

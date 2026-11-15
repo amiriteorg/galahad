@@ -472,6 +472,14 @@
       .rows > .item-button { width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--border); font: inherit; color: inherit; cursor: pointer; align-items: center; }
       .rows > .item-button:first-child { border-top: 0; }
       .rows > .item-button:hover { background: var(--surface-2); }
+      /* Pressed: what a finger is on answers at once, before the tap lands (app.ts gives iOS the touch listener it
+         needs to show :active at all). */
+      .rows > a.item { color: inherit; text-decoration: none; transition: background-color var(--d-1) var(--ease-out); }
+      .rows > a.item:active, .rows > .item-button:active { background: var(--surface-3); }
+      .roster-row:active, .nav-item:active, .rail-item:active { background: var(--surface-3); }
+      .roster-row, .suggestion { transition: background-color var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out); }
+      .suggestion:active { transform: scale(0.97); }
+      @media (max-width: 959px) { .shell[data-pane="roster"] .roster-row:active { transform: scale(0.98); } }
       /* A whole row that goes to a place (More's index, a node on the Overview). */
       .rows > a.item { color: inherit; text-decoration: none; }
       .rows > a.item:hover { background: var(--surface-2); }

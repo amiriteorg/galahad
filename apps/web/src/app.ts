@@ -28,6 +28,8 @@ let unreachable = 0;
 
 /** Once per page: theme colour, service worker and its "new version" message. */
 function init(): void {
+  // iOS shows a control's pressed look (:active) only where something listens for touches: this listens, and does nothing.
+  document.addEventListener("touchstart", () => {}, { passive: true });
   syncThemeColor();
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncThemeColor);
   if (!("serviceWorker" in navigator) || !isSecureContext) return;
