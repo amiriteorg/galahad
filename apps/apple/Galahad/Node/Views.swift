@@ -41,6 +41,15 @@ struct Teammate: Decodable, Sendable, Identifiable {
     let avatar: JSONValue?
     /// Who made it: `owner` (also what its absence means), `galahad`, or the knight that did.
     let createdBy: String?
+    /// Whose words its job is: `owner`, `galahad`, or the knight that made it (absent: yours).
+    var instructionsBy: String? = nil
+    /// Its VM, once it has one; `workspaceNode`, the host chosen for one being made.
+    var workspace: Workspace? = nil
+    var workspaceNode: String? = nil
+    /// Its own working notes.
+    var memory: String? = nil
+
+    struct Workspace: Decodable, Sendable, Equatable { let node: String; let id: String }
 }
 
 struct TeamRoom: Decodable, Sendable {
@@ -48,6 +57,8 @@ struct TeamRoom: Decodable, Sendable {
     let name: String
     let members: [String]
     let direct: Bool
+    /// Replies its knights may give to one thing you say, handoffs between them included.
+    var turnBudget: Int? = nil
     let paused: Bool
     let updatedAt: Double
 }

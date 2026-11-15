@@ -4,6 +4,7 @@ import SwiftUI
 enum Route: Hashable {
     case galahad
     case knight(String)
+    case room(String)
 }
 
 /// The Roundtable: Galahad first, then every knight, each with its drawing and one line of what it is doing, marked in
@@ -12,12 +13,23 @@ struct RoundtableView: View {
     let session: Session
     /// On an iPad, the row whose page the detail column shows; on an iPhone a row is pushed instead.
     var selection: Binding<Route?>? = nil
+    /// Opens a page: one just made, say (on an iPhone it is pushed; on an iPad it is shown beside).
+    var open: (Route) -> Void = { _ in }
     @State private var query = ""
     @State private var giving = false
+    @State private var seating = false
+    @State private var gathering = false
+
+    private var words: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var knights: [RosterRow] {
         let rows = session.rows
-        let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty else { return rows }
+        return rows.filter { $0.name.localizedStandardContains(words) || $0.line.localizedStandardContains(words) }
+    }
+
+    private var rooms: [RoomRow] {
+        let rows = session.roomRows
         guard !words.isEmpty else { return rows }
         return rows.filter { $0.name.localizedStandardContains(words) || $0.line.localizedStandardContains(words) }
     }
@@ -42,7 +54,14 @@ struct RoundtableView: View {
                 if let problem = session.teamProblem {
                     Text(problem)
                 } else if session.team != nil, session.rows.isEmpty {
-                    Text("No other knights yet. Seat one from a terminal or the PWA: a name, a lasting job and a workspace of its own.")
+                    Text("No other knights yet. Seat one with +: a name, a lasting job and a workspace of its own.")
+                }
+            }
+            if !rooms.isEmpty {
+                Section("Rooms") {
+                    ForEach(rooms) { row in
+                        NavigationLink(value: Route.room(row.id)) { RoomRowView(row: row, looks: looks(of: row)) }
+                    }
                 }
             }
         }
@@ -55,8 +74,20 @@ struct RoundtableView: View {
                 Button { giving = true } label: { Label("Give the Roundtable a task", systemImage: "hammer") }
                     .disabled(!session.can("fleet:admin") || session.rows.isEmpty)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { seating = true } label: { Label("New knight", systemImage: "person.badge.plus") }
+                    Button { gathering = true } label: { Label("New room", systemImage: "bubble.left.and.bubble.right") }
+                        .disabled(session.rows.isEmpty)
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .disabled(!session.can("fleet:admin") || session.team == nil)
+            }
         }
         .sheet(isPresented: $giving) { GiveSheet(session: session) }
+        .sheet(isPresented: $seating) { KnightEditor(session: session) { open(.knight($0.id)) } }
+        .sheet(isPresented: $gathering) { RoomEditor(session: session) { open(.room($0.id)) } }
         .searchable(text: $query, prompt: "Knights")
         .refreshable { await session.refresh() }
         .overlay {
@@ -67,6 +98,13 @@ struct RoundtableView: View {
     private func look(of row: RosterRow) -> String {
         let knight = session.teammate(row.id)
         return AvatarLook.of(id: row.id, name: row.name, profile: knight?.avatar)
+    }
+
+    private func looks(of row: RoomRow) -> [String] {
+        row.members.map { id in
+            let knight = session.teammate(id)
+            return AvatarLook.of(id: id, name: knight?.name ?? id, profile: knight?.avatar)
+        }
     }
 }
 

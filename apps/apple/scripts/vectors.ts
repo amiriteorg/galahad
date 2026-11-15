@@ -19,7 +19,7 @@ import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
-import { teamSpeaker } from "../../web/src/lib/team.ts";
+import { removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
@@ -257,6 +257,66 @@ const roundtable = {
     { inbox: 5, knights: snapshot.teammates.map((t) => t.id), needs: galahadNeeds(5, asks, snapshot.teammates.map((t) => t.id)) },
     { inbox: 1, knights: ["max"], needs: galahadNeeds(1, asks, ["max"]) },
   ],
+};
+
+// ---- the Roundtable's rooms (the PWA's own roster), in a Roundtable of their own ----------------------------------------
+const inRoom = (room: string) => ({ room });
+const roomsSnapshot: core.TeamSnapshot = {
+  teammates: [knight("ada", "Ada"), knight("bea", "Bea"), knight("cy", "Cy")],
+  rooms: [
+    { ...direct("ada"), updatedAt: at(1) },
+    { id: "studio", name: "Studio", members: ["ada", "bea"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(9) },
+    { id: "pair", name: "Pair", members: ["ada", "cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(8) },
+    { id: "chatter", name: "Chatter", members: ["ada", "bea", "cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(7) },
+    { id: "talk", name: "Talk", members: ["bea"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(7) },
+    { id: "broken", name: "Broken", members: ["cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(6) },
+    { id: "cut", name: "Cut", members: ["cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(5) },
+    { id: "failed", name: "Failed", members: ["ada"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(4) },
+    { id: "held", name: "Held", members: ["ada", "bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
+    { id: "rest", name: "Rest", members: ["bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
+    { id: "quiet", name: "Quiet", members: ["ada", "bea", "gone"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(2) },
+  ],
+  tasks: [
+    task("studio1", "ada", "running", inRoom("studio")),
+    task("pair1", "ada", "running", inRoom("pair")),
+    task("pair2", "cy", "running", inRoom("pair")),
+    task("failed1", "ada", "failed", { ...inRoom("failed"), error: "No Postgres here.\nMore." }),
+    task("held1", "ada", "queued", inRoom("held")),
+    task("held2", "bea", "queued", inRoom("held")),
+  ],
+  deliveries: [
+    delivery("c1", "ada", "running", inRoom("chatter")),
+    delivery("c2", "bea", "running", inRoom("chatter")),
+    delivery("t1", "bea", "running", inRoom("talk")),
+    delivery("b1", "cy", "failed", { ...inRoom("broken"), error: "Model unavailable\nretry later" }),
+    delivery("x1", "cy", "interrupted", inRoom("cut")),
+  ],
+};
+const rooms = {
+  snapshot: roomsSnapshot,
+  rows: rosterRows({ snapshot: roomsSnapshot, asks: [], now: NOW }).filter((row) => row.kind === "room").map((row) => ({ id: row.id, line: row.line, needs: row.needs })),
+};
+
+// ---- seating and keeping knights (the PWA's forms) --------------------------------------------------------------------
+const knightForms = {
+  handles: [
+    ["Ada", []], ["Owner", []], ["Galahad", []], ["System", ["system-2"]], ["Áda", ["ada", "ada-2"]], ["123", []], ["研究", []],
+    ["  Sir   Lancelot du Lac!! ", []], ["Ünïcödé Ñame", []], ["-x-", []], ["A".repeat(40), []], ["a very long name that goes on and on and on", []],
+    ["", []], ["🛡️ Shield", []], ["ﬁne ﬂow", []], ["İstanbul", []], ["Straße", []], ["ada", ["ada", "ada-2", "ada-3"]],
+  ].map(([name, taken]) => ({ name: name as string, taken: taken as string[], handle: teammateId(name as string, taken as string[]) })),
+  removals: [
+    { workspace: false, workspaceNode: false, maySandbox: true },
+    { workspace: false, workspaceNode: false, maySandbox: false },
+    { workspace: true, workspaceNode: true, maySandbox: true },
+    { workspace: true, workspaceNode: true, maySandbox: false },
+    { workspace: false, workspaceNode: true, maySandbox: true },
+    { workspace: false, workspaceNode: true, maySandbox: false },
+  ].map((c) => ({ ...c, id: "ada", name: "Ada", plan: removalPlan({ id: "ada", name: "Ada", workspace: c.workspace ? { node: "n1", id: "0123456789" } : null, workspaceNode: c.workspaceNode ? "n1" : null }, { sandbox: c.maySandbox }) })),
+  profiles: core.AVATAR_LOOKS.flatMap((look) => core.AVATAR_TEMPERAMENTS.map((temperament) => ({ look: look.id, temperament, profile: core.lookProfile(look.id, temperament) }))),
+  temperaments: [
+    { id: "ada" }, { id: "bors" }, { id: "x" }, { id: "knight-123" }, { id: "percival-2" },
+    { id: "ada", avatar: core.lookProfile("bors", "lively") }, { id: "ada", avatar: { ...core.lookProfile("bors", "curious"), extra: 1 } },
+  ].map((c) => ({ ...c, temperament: core.resolveAvatar(c.id, c.avatar).temperament })),
 };
 
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
@@ -527,6 +587,8 @@ const vectors = {
   pairing,
   looks,
   roundtable,
+  rooms,
+  knightForms,
   threads,
   chats,
   markdown,

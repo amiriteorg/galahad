@@ -1,0 +1,148 @@
+import Foundation
+
+/*
+ * Seating and keeping knights and rooms, as the PWA's forms do it (apps/web/src/views/team-forms.ts, lib/team.ts and
+ * core's avatar.ts): a new knight's handle from its name, the look it is saved with, what removing one does, and the
+ * shapes the node takes. The node checks everything again; these only say it here first, the PWA's way.
+ */
+
+/// `POST /api/team/teammates`: a knight as you save it (core's `TeammateInput`).
+struct KnightInput: Encodable, Sendable, Equatable {
+    var id: String
+    var name: String
+    var instructions: String
+    /// Nil clears it: sent as null, never left out, so an emptied field is emptied on the node too.
+    var repository: String?
+    var harness: String
+    var role: String
+    var enabled: Bool
+    var dailyTurns: Int
+    /// The drawing it wears (`AvatarLook.profile`).
+    var avatar: AvatarProfile
+
+    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, enabled, dailyTurns, avatar }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(instructions, forKey: .instructions)
+        try c.encode(repository, forKey: .repository)
+        try c.encode(harness, forKey: .harness)
+        try c.encode(role, forKey: .role)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(dailyTurns, forKey: .dailyTurns)
+        try c.encode(avatar, forKey: .avatar)
+    }
+}
+
+/// A knight's look as the node saves it (core's `AvatarProfile`): the drawing's colour names the drawing.
+struct AvatarProfile: Codable, Sendable, Equatable {
+    var v = 1
+    let form: String
+    let color: String
+    let accent: String
+    var eyes = "oval"
+    var accessory = "none"
+    let temperament: String
+}
+
+/// `POST /api/team/rooms`: a room as you save it (core's `TeamRoomInput`); `id` and `direct` only when it exists.
+struct RoomInput: Encodable, Sendable, Equatable {
+    var id: String?
+    var name: String
+    var members: [String]
+    var direct: Bool?
+    var turnBudget: Int
+}
+
+enum Knights {
+    /// The harnesses a knight can work in, as they are named to you (the PWA's HARNESS), in its order.
+    static let harnesses: [(id: String, name: String)] = [("native", "Galahad"), ("opencode", "OpenCode"), ("hermes", "Hermes Agent"), ("claude", "Claude Code"), ("codex", "Codex")]
+
+    /// The model roles a knight may answer as: the usual four, then your Models page's, then its own (the PWA's order).
+    static func roles(known: [String], current: String?) -> [String] {
+        var seen = Set<String>()
+        return (["engineer", "planner", "reviewer", "swift"] + known + (current.map { [$0] } ?? [])).filter { seen.insert($0).inserted }
+    }
+
+    /// A new knight's handle, from its name: lowercase letters, digits and hyphens, never a reserved one or one taken
+    /// (lib/team.ts' `teammateId`). It stays the same when the knight is renamed.
+    static func handle(name: String, taken: [String]) -> String {
+        let folded = String(String.UnicodeScalarView(name.decomposedStringWithCompatibilityMapping.unicodeScalars.filter { !(0x300...0x36F).contains($0.value) }))
+        var cleaned = ""
+        var dash = false
+        for scalar in folded.lowercased().unicodeScalars {
+            if ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) {
+                cleaned.unicodeScalars.append(scalar)
+                dash = false
+            } else if !dash {
+                cleaned += "-"
+                dash = true
+            }
+        }
+        cleaned = String(cleaned.drop { $0 == "-" }.reversed().drop { $0 == "-" }.reversed())
+        let start = cleaned.first.map { ("a"..."z").contains($0) } == true ? cleaned : "knight-\(cleaned)"
+        var base = String(start.prefix(28))
+        while base.hasSuffix("-") { base.removeLast() }
+        if base.isEmpty { base = "knight" }
+        let used = Set(taken + ["owner", "system", "galahad"])
+        if !used.contains(base) { return base }
+        var suffix = 2
+        while used.contains("\(base)-\(suffix)") { suffix += 1 }
+        return "\(base)-\(suffix)"
+    }
+
+    /// A handle as the node takes one: a lowercase letter, then at most 31 lowercase letters, digits or hyphens.
+    static func isHandle(_ text: String) -> Bool { text.wholeMatch(of: #/[a-z][a-z0-9\-]{0,31}/#) != nil }
+
+    /// What removing a knight does, said before you do it, and whether its VM goes with it (lib/team.ts' `removalPlan`).
+    /// `blocked`: why this device can't (a knight with a VM goes only with it, which takes a device that may manage sandboxes).
+    struct Removal: Equatable, Sendable {
+        let blocked: String?
+        let lines: [String]
+        let destroyWorkspace: Bool
+    }
+
+    static func removal(id: String, name: String, workspace: Bool, workspaceNode: Bool, maySandbox: Bool) -> Removal {
+        let lines = [
+            "\(name) leaves every room and does no more work. What \(name) said stays where it was said, and its direct conversations are kept.",
+            "The handle \(id) is never used again, so nothing new inherits its history.",
+        ]
+        if !workspace && !workspaceNode { return Removal(blocked: nil, lines: lines + ["This can't be undone."], destroyWorkspace: false) }
+        if !maySandbox { return Removal(blocked: "\(name) has a VM, and removing \(name) destroys it. That takes a device that may manage sandboxes; this one may not.", lines: lines, destroyWorkspace: true) }
+        let vm = workspace ? "\(name)'s VM is destroyed with it, and everything in its /work." : "A VM was being made for \(name): if there is one, it is destroyed with it, and everything in its /work."
+        return Removal(blocked: nil, lines: lines + ["\(vm) This can't be undone."], destroyWorkspace: true)
+    }
+}
+
+extension AvatarLook {
+    /// Each drawing's helmet shape and its accent (core's `AVATAR_LOOKS` and `matchingAccent`), for saving a look.
+    private static let saved: [String: (form: String, accent: String)] = [
+        "kay": ("hooded", "#dab188"), "gaheris": ("armored", "#4a2b2d"), "percival": ("armored", "#a46d91"),
+        "palamedes": ("armored", "#493237"), "gawain": ("round", "#404032"), "tristan": ("armored", "#636371"),
+        "lancelot": ("armored", "#5c6a87"), "bedivere": ("armored", "#667367"), "bors": ("round", "#6b4536"),
+        "gareth": ("round", "#cb9226"),
+    ]
+
+    /// The drawings' names, as they were drawn (core's `AVATAR_LOOKS`).
+    static func title(_ look: String) -> String { look.prefix(1).uppercased() + look.dropFirst() }
+
+    /// A look as the node saves it (core's `lookProfile`): the drawing's colour names it.
+    static func profile(look: String, temperament: String) -> AvatarProfile {
+        let chosen = looks.first { $0.id == look } ?? looks[0]
+        let kept = saved[chosen.id] ?? ("armored", chosen.color)
+        return AvatarProfile(form: kept.form, color: chosen.color, accent: kept.accent, temperament: temperament)
+    }
+
+    /// How lively a knight is at rest: its saved profile's word, else the one its handle seeds (core's `resolveAvatar`).
+    static func temperament(id: String, profile: JSONValue?) -> String {
+        if savedColor(profile) != nil, case .object(let p)? = profile, case .string(let word)? = p["temperament"] { return word }
+        // core's defaultAvatar: the handle's seed, then one draw each for palette, form, eyes and headwear before this one.
+        var seed: UInt32 = 2_166_136_261
+        for unit in id.utf16 { seed = (seed ^ UInt32(unit)) &* 16_777_619 }
+        let next = { (count: UInt32) -> UInt32 in seed = seed &* 1_664_525 &+ 1_013_904_223; return seed % count }
+        _ = (next(8), next(3), next(3), next(4))
+        return ["calm", "curious", "lively"][Int(next(3))]
+    }
+}

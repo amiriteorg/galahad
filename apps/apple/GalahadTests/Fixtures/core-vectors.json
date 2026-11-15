@@ -1356,6 +1356,1054 @@
       }
     ]
   },
+  "rooms": {
+    "snapshot": {
+      "teammates": [
+        {
+          "id": "ada",
+          "name": "Ada",
+          "instructions": "Ada keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "bea",
+          "name": "Bea",
+          "instructions": "Bea keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "cy",
+          "name": "Cy",
+          "instructions": "Cy keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        }
+      ],
+      "rooms": [
+        {
+          "id": "dm-ada",
+          "name": "ada",
+          "members": [
+            "ada"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199940000
+        },
+        {
+          "id": "studio",
+          "name": "Studio",
+          "members": [
+            "ada",
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199460000
+        },
+        {
+          "id": "pair",
+          "name": "Pair",
+          "members": [
+            "ada",
+            "cy"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199520000
+        },
+        {
+          "id": "chatter",
+          "name": "Chatter",
+          "members": [
+            "ada",
+            "bea",
+            "cy"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199580000
+        },
+        {
+          "id": "talk",
+          "name": "Talk",
+          "members": [
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199580000
+        },
+        {
+          "id": "broken",
+          "name": "Broken",
+          "members": [
+            "cy"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199640000
+        },
+        {
+          "id": "cut",
+          "name": "Cut",
+          "members": [
+            "cy"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "failed",
+          "name": "Failed",
+          "members": [
+            "ada"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199760000
+        },
+        {
+          "id": "held",
+          "name": "Held",
+          "members": [
+            "ada",
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": true,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199820000
+        },
+        {
+          "id": "rest",
+          "name": "Rest",
+          "members": [
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": true,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199820000
+        },
+        {
+          "id": "quiet",
+          "name": "Quiet",
+          "members": [
+            "ada",
+            "bea",
+            "gone"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199880000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task-studio100000",
+          "room": "studio",
+          "assignee": "ada",
+          "title": "The studio1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-studio1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-pair10000000",
+          "room": "pair",
+          "assignee": "ada",
+          "title": "The pair1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-pair1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-pair20000000",
+          "room": "pair",
+          "assignee": "cy",
+          "title": "The pair2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-pair2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-failed100000",
+          "room": "failed",
+          "assignee": "ada",
+          "title": "The failed1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": "No Postgres here.\nMore.",
+          "chainId": "chain-failed1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-held10000000",
+          "room": "held",
+          "assignee": "ada",
+          "title": "The held1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-held1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-held20000000",
+          "room": "held",
+          "assignee": "bea",
+          "title": "The held2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-held2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        }
+      ],
+      "deliveries": [
+        {
+          "id": "delivery-c1",
+          "room": "chatter",
+          "teammate": "ada",
+          "trigger": "message",
+          "chainId": "chain-d-c1",
+          "status": "running",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-c2",
+          "room": "chatter",
+          "teammate": "bea",
+          "trigger": "message",
+          "chainId": "chain-d-c2",
+          "status": "running",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-t1",
+          "room": "talk",
+          "teammate": "bea",
+          "trigger": "message",
+          "chainId": "chain-d-t1",
+          "status": "running",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-b1",
+          "room": "broken",
+          "teammate": "cy",
+          "trigger": "message",
+          "chainId": "chain-d-b1",
+          "status": "failed",
+          "error": "Model unavailable\nretry later",
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-x1",
+          "room": "cut",
+          "teammate": "cy",
+          "trigger": "message",
+          "chainId": "chain-d-x1",
+          "status": "interrupted",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        }
+      ]
+    },
+    "rows": [
+      {
+        "id": "quiet",
+        "line": "Ada, Bea, gone",
+        "needs": false
+      },
+      {
+        "id": "held",
+        "line": "Paused · 2 waiting",
+        "needs": true
+      },
+      {
+        "id": "rest",
+        "line": "Paused",
+        "needs": false
+      },
+      {
+        "id": "failed",
+        "line": "Failed: “The failed1 task” · No Postgres here.",
+        "needs": true
+      },
+      {
+        "id": "cut",
+        "line": "Interrupted: Cy's reply · review it before resuming",
+        "needs": true
+      },
+      {
+        "id": "broken",
+        "line": "Cy couldn't reply · Model unavailable",
+        "needs": true
+      },
+      {
+        "id": "chatter",
+        "line": "Ada, Bea are writing",
+        "needs": false
+      },
+      {
+        "id": "talk",
+        "line": "Bea is writing",
+        "needs": false
+      },
+      {
+        "id": "pair",
+        "line": "2 at work · The pair1 task",
+        "needs": false
+      },
+      {
+        "id": "studio",
+        "line": "Ada · The studio1 task",
+        "needs": false
+      }
+    ]
+  },
+  "knightForms": {
+    "handles": [
+      {
+        "name": "Ada",
+        "taken": [],
+        "handle": "ada"
+      },
+      {
+        "name": "Owner",
+        "taken": [],
+        "handle": "owner-2"
+      },
+      {
+        "name": "Galahad",
+        "taken": [],
+        "handle": "galahad-2"
+      },
+      {
+        "name": "System",
+        "taken": [
+          "system-2"
+        ],
+        "handle": "system-3"
+      },
+      {
+        "name": "Áda",
+        "taken": [
+          "ada",
+          "ada-2"
+        ],
+        "handle": "ada-3"
+      },
+      {
+        "name": "123",
+        "taken": [],
+        "handle": "knight-123"
+      },
+      {
+        "name": "研究",
+        "taken": [],
+        "handle": "knight"
+      },
+      {
+        "name": "  Sir   Lancelot du Lac!! ",
+        "taken": [],
+        "handle": "sir-lancelot-du-lac"
+      },
+      {
+        "name": "Ünïcödé Ñame",
+        "taken": [],
+        "handle": "unicode-name"
+      },
+      {
+        "name": "-x-",
+        "taken": [],
+        "handle": "x"
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "taken": [],
+        "handle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "name": "a very long name that goes on and on and on",
+        "taken": [],
+        "handle": "a-very-long-name-that-goes-o"
+      },
+      {
+        "name": "",
+        "taken": [],
+        "handle": "knight"
+      },
+      {
+        "name": "🛡️ Shield",
+        "taken": [],
+        "handle": "shield"
+      },
+      {
+        "name": "ﬁne ﬂow",
+        "taken": [],
+        "handle": "fine-flow"
+      },
+      {
+        "name": "İstanbul",
+        "taken": [],
+        "handle": "istanbul"
+      },
+      {
+        "name": "Straße",
+        "taken": [],
+        "handle": "stra-e"
+      },
+      {
+        "name": "ada",
+        "taken": [
+          "ada",
+          "ada-2",
+          "ada-3"
+        ],
+        "handle": "ada-4"
+      }
+    ],
+    "removals": [
+      {
+        "workspace": false,
+        "workspaceNode": false,
+        "maySandbox": true,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": null,
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history.",
+            "This can't be undone."
+          ],
+          "destroyWorkspace": false
+        }
+      },
+      {
+        "workspace": false,
+        "workspaceNode": false,
+        "maySandbox": false,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": null,
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history.",
+            "This can't be undone."
+          ],
+          "destroyWorkspace": false
+        }
+      },
+      {
+        "workspace": true,
+        "workspaceNode": true,
+        "maySandbox": true,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": null,
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history.",
+            "Ada's VM is destroyed with it, and everything in its /work. This can't be undone."
+          ],
+          "destroyWorkspace": true
+        }
+      },
+      {
+        "workspace": true,
+        "workspaceNode": true,
+        "maySandbox": false,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": "Ada has a VM, and removing Ada destroys it. That takes a device that may manage sandboxes; this one may not.",
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history."
+          ],
+          "destroyWorkspace": true
+        }
+      },
+      {
+        "workspace": false,
+        "workspaceNode": true,
+        "maySandbox": true,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": null,
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history.",
+            "A VM was being made for Ada: if there is one, it is destroyed with it, and everything in its /work. This can't be undone."
+          ],
+          "destroyWorkspace": true
+        }
+      },
+      {
+        "workspace": false,
+        "workspaceNode": true,
+        "maySandbox": false,
+        "id": "ada",
+        "name": "Ada",
+        "plan": {
+          "blocked": "Ada has a VM, and removing Ada destroys it. That takes a device that may manage sandboxes; this one may not.",
+          "lines": [
+            "Ada leaves every room and does no more work. What Ada said stays where it was said, and its direct conversations are kept.",
+            "The handle ada is never used again, so nothing new inherits its history."
+          ],
+          "destroyWorkspace": true
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "look": "kay",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "hooded",
+          "color": "#f9e9d9",
+          "accent": "#dab188",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "kay",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "hooded",
+          "color": "#f9e9d9",
+          "accent": "#dab188",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "kay",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "hooded",
+          "color": "#f9e9d9",
+          "accent": "#dab188",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "gaheris",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9c494f",
+          "accent": "#4a2b2d",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "gaheris",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9c494f",
+          "accent": "#4a2b2d",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "gaheris",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9c494f",
+          "accent": "#4a2b2d",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "percival",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#d5adc7",
+          "accent": "#a46d91",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "percival",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#d5adc7",
+          "accent": "#a46d91",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "percival",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#d5adc7",
+          "accent": "#a46d91",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "palamedes",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#945764",
+          "accent": "#493237",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "palamedes",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#945764",
+          "accent": "#493237",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "palamedes",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#945764",
+          "accent": "#493237",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "gawain",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#84845e",
+          "accent": "#404032",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "gawain",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#84845e",
+          "accent": "#404032",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "gawain",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#84845e",
+          "accent": "#404032",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "tristan",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#999aab",
+          "accent": "#636371",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "tristan",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#999aab",
+          "accent": "#636371",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "tristan",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#999aab",
+          "accent": "#636371",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "lancelot",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#93a2c0",
+          "accent": "#5c6a87",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "lancelot",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#93a2c0",
+          "accent": "#5c6a87",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "lancelot",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#93a2c0",
+          "accent": "#5c6a87",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "bedivere",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9dac9e",
+          "accent": "#667367",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "bedivere",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9dac9e",
+          "accent": "#667367",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "bedivere",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "armored",
+          "color": "#9dac9e",
+          "accent": "#667367",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "bors",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#be7153",
+          "accent": "#6b4536",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "bors",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#be7153",
+          "accent": "#6b4536",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "bors",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#be7153",
+          "accent": "#6b4536",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      },
+      {
+        "look": "gareth",
+        "temperament": "calm",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#fbc866",
+          "accent": "#cb9226",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "calm"
+        }
+      },
+      {
+        "look": "gareth",
+        "temperament": "curious",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#fbc866",
+          "accent": "#cb9226",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious"
+        }
+      },
+      {
+        "look": "gareth",
+        "temperament": "lively",
+        "profile": {
+          "v": 1,
+          "form": "round",
+          "color": "#fbc866",
+          "accent": "#cb9226",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        }
+      }
+    ],
+    "temperaments": [
+      {
+        "id": "ada",
+        "temperament": "curious"
+      },
+      {
+        "id": "bors",
+        "temperament": "curious"
+      },
+      {
+        "id": "x",
+        "temperament": "lively"
+      },
+      {
+        "id": "knight-123",
+        "temperament": "lively"
+      },
+      {
+        "id": "percival-2",
+        "temperament": "curious"
+      },
+      {
+        "id": "ada",
+        "avatar": {
+          "v": 1,
+          "form": "round",
+          "color": "#be7153",
+          "accent": "#6b4536",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "lively"
+        },
+        "temperament": "lively"
+      },
+      {
+        "id": "ada",
+        "avatar": {
+          "v": 1,
+          "form": "round",
+          "color": "#be7153",
+          "accent": "#6b4536",
+          "eyes": "oval",
+          "accessory": "none",
+          "temperament": "curious",
+          "extra": 1
+        },
+        "temperament": "curious"
+      }
+    ]
+  },
   "threads": [
     {
       "name": "kept",

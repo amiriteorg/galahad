@@ -65,12 +65,13 @@ enum Place: Hashable {
 struct PhoneTabs: View {
     let app: AppModel
     let session: Session
+    @State private var path: [Route] = []
 
     var body: some View {
         TabView {
             Tab("Roundtable", systemImage: "person.3") {
-                NavigationStack {
-                    RoundtableView(session: session)
+                NavigationStack(path: $path) {
+                    RoundtableView(session: session) { path.append($0) }
                         .navigationDestination(for: Route.self) { RouteView(session: session, route: $0) }
                 }
             }
@@ -104,7 +105,7 @@ struct SplitPlaces: View {
             }
         } content: {
             switch place ?? .roundtable {
-            case .roundtable: RoundtableView(session: session, selection: $route)
+            case .roundtable: RoundtableView(session: session, selection: $route) { route = $0 }
             case .inbox: InboxView(session: session)
             case .more: MoreView(app: app, session: session)
             }
@@ -123,6 +124,7 @@ struct RouteView: View {
         switch route {
         case .galahad: ChatView(session: session)
         case .knight(let id): KnightView(session: session, id: id)
+        case .room(let id): RoomView(session: session, id: id)
         }
     }
 }

@@ -7,7 +7,10 @@ import Observation
  * give it a task and it works in its own workspace until its gates and an independent review say whether it is done.
  */
 @MainActor @Observable final class KnightRoom {
+    /// The knight whose own conversation this is; empty for a room of several.
     let knight: String
+    /// A room of several, by its id: it is never made here, only read.
+    private let fixed: String?
     /// The room as the node last answered.
     private(set) var view: TeamRoomView?
     /// Why the room couldn't be read or a word not sent.
@@ -17,6 +20,13 @@ import Observation
 
     init(knight: String) {
         self.knight = knight
+        fixed = nil
+    }
+
+    /// A room of several knights, as the Roundtable lists it.
+    init(room: String) {
+        knight = ""
+        fixed = room
     }
 
     /// Its replies on their way: the knight is writing.
@@ -28,8 +38,8 @@ import Observation
     /// The room on the node: the one the Roundtable knows, or the knight's own, made now if it has none yet.
     func load(room known: String?, with client: NodeClient) async {
         do {
-            var id = known ?? view?.id
-            if id == nil {
+            var id = known ?? view?.id ?? fixed
+            if id == nil, !knight.isEmpty {
                 struct Direct: Encodable { let id: String }
                 struct Made: Decodable { struct Room: Decodable { let id: String }; let room: Room }
                 id = try await client.post("/api/team/direct", Direct(id: knight), as: Made.self).room.id
@@ -58,11 +68,11 @@ import Observation
         }
     }
 
-    /// A task for this knight: what it should do, and the commands that prove it done.
-    func give(title: String, goal: String, gates: [String], dependsOn: [String] = [], with client: NodeClient) async throws {
-        guard let room = view?.id else { throw NodeError(status: 0, message: "The knight's room isn't open yet.") }
+    /// A task for this knight (in a room of several, for `assignee`): what it should do, and the commands that prove it done.
+    func give(title: String, goal: String, gates: [String], dependsOn: [String] = [], assignee: String? = nil, with client: NodeClient) async throws {
+        guard let room = view?.id else { throw NodeError(status: 0, message: "The conversation isn't open yet.") }
         struct Task: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String] }
-        _ = try await client.post("/api/team/tasks", Task(room: room, assignee: knight, title: title, goal: goal, dependsOn: dependsOn, gates: gates), as: JSONValue.self)
+        _ = try await client.post("/api/team/tasks", Task(room: room, assignee: assignee ?? knight, title: title, goal: goal, dependsOn: dependsOn, gates: gates), as: JSONValue.self)
         await load(room: room, with: client)
     }
 

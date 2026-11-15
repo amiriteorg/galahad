@@ -77,6 +77,31 @@ struct Vectors: Decodable {
         let needs: [Needs]
     }
 
+    struct Rooms: Decodable {
+        struct Row: Decodable { let id: String; let line: String; let needs: Bool }
+        let snapshot: TeamSnapshot
+        let rows: [Row]
+    }
+
+    struct KnightForms: Decodable {
+        struct Handle: Decodable { let name: String; let taken: [String]; let handle: String }
+        struct Removal: Decodable {
+            struct Plan: Decodable { let blocked: String?; let lines: [String]; let destroyWorkspace: Bool }
+            let id: String
+            let name: String
+            let workspace: Bool
+            let workspaceNode: Bool
+            let maySandbox: Bool
+            let plan: Plan
+        }
+        struct Profile: Decodable { let look: String; let temperament: String; let profile: AvatarProfile }
+        struct Temperament: Decodable { let id: String; let avatar: JSONValue?; let temperament: String }
+        let handles: [Handle]
+        let removals: [Removal]
+        let profiles: [Profile]
+        let temperaments: [Temperament]
+    }
+
     struct Thread: Decodable {
         struct Turn: Decodable, Equatable {
             let role: String
@@ -207,6 +232,8 @@ struct Vectors: Decodable {
     let pairing: Pairing
     let looks: [Look]
     let roundtable: Roundtable
+    let rooms: Rooms
+    let knightForms: KnightForms
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]

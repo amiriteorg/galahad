@@ -50,6 +50,8 @@ import Observation
     }
 
     func teammate(_ id: String) -> Teammate? { team?.teammates.first { $0.id == id } }
+    func room(_ id: String) -> TeamRoom? { team?.rooms.first { $0.id == id } }
+    var roomRows: [RoomRow] { team.map { Roster.roomRows(snapshot: $0) } ?? [] }
 
     /// A node, by name where this device knows it: its own node's, else the start of its id.
     func nodeName(of id: String) -> String {
@@ -104,6 +106,48 @@ import Observation
         struct Answer: Encodable { let invite: String; let device: String }
         _ = try await client.post(approve ? "/api/pairings/approve" : "/api/pairings/reject", Answer(invite: pairing.invite, device: pairing.device), as: JSONValue.self)
         await refresh()
+    }
+
+    // MARK: Seating and keeping knights and rooms (yours alone: the node takes these from an owner's device)
+
+    /// A knight saved, new or changed; the Roundtable is asked again after.
+    @discardableResult
+    func save(knight: KnightInput) async throws -> Teammate {
+        struct Saved: Decodable { let teammate: Teammate }
+        let saved = try await client.post("/api/team/teammates", knight, as: Saved.self).teammate
+        await refresh()
+        return saved
+    }
+
+    /// A room saved, new or changed.
+    @discardableResult
+    func save(room: RoomInput) async throws -> TeamRoom {
+        struct Saved: Decodable { let room: TeamRoom }
+        let saved = try await client.post("/api/team/rooms", room, as: Saved.self).room
+        await refresh()
+        return saved
+    }
+
+    /// Pause, resume or stop a room's work, or a knight's (one of the two).
+    func control(room: String? = nil, knight: String? = nil, _ action: String) async throws {
+        struct Control: Encodable { let room: String?; let teammate: String?; let action: String }
+        _ = try await client.post("/api/team/control", Control(room: room, teammate: knight, action: action), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// A knight taken off the Roundtable for good; its VM goes with it only when `destroyWorkspace` says so.
+    func remove(knight: String, destroyWorkspace: Bool) async throws {
+        struct Remove: Encodable { let id: String; let destroyWorkspace: Bool? }
+        _ = try await client.post("/api/team/remove", Remove(id: knight, destroyWorkspace: destroyWorkspace ? true : nil), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// The model roles your Models page has, each with whether a model answers for it (nil: this device may not read them).
+    func roles() async -> [String: Bool]? {
+        struct Role: Decodable { let models: [JSONValue]? }
+        struct Roster: Decodable { let roster: [String: Role] }
+        guard can("mind:read"), let roster = try? await client.get("/api/roster", as: Roster.self).roster else { return nil }
+        return roster.mapValues { !($0.models ?? []).isEmpty }
     }
 
     /// The lists the node answers with, each under its own name.

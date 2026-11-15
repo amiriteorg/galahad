@@ -11,6 +11,7 @@ struct KnightView: View {
     @State private var about = false
     @State private var stopping: TeamTask?
     @FocusState private var composing: Bool
+    @Environment(\.dismiss) private var leave
 
     init(session: Session, id: String) {
         self.session = session
@@ -70,7 +71,7 @@ struct KnightView: View {
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
             if knight != nil {
-                KnightComposer(room: room, name: name, client: session.client, composing: $composing)
+                RoomComposer(room: room, name: name, client: session.client, composing: $composing)
             }
         }
         .navigationTitle(name)
@@ -96,12 +97,12 @@ struct KnightView: View {
             }
         }
         .sheet(isPresented: $giving) {
-            GiveTaskSheet(name: name) { title, goal, gates in
+            GiveTaskSheet(name: name) { title, goal, gates, _ in
                 try await room.give(title: title, goal: goal, gates: gates, with: session.client)
             }
         }
         .sheet(isPresented: $about) {
-            if let knight { KnightAbout(knight: knight, row: row, look: look) }
+            KnightAbout(session: session, id: id, row: row, look: look) { leave() }
         }
         .confirmationDialog("Stop this task?", isPresented: .init(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .visible, presenting: stopping) { task in
             Button("Stop it", role: .destructive) { Task { await room.control(task, "stop", with: session.client) } }
@@ -144,11 +145,12 @@ struct KnightView: View {
 }
 
 /// A word in a knight's room: yours on the right in the ink, the knight's and Galahad's on the left beside their
-/// drawings, the Roundtable's own notes in the middle.
-private struct TeamBubble: View {
+/// drawings, the Roundtable's own notes in the middle. `named`: in a room of several, every knight's name is said.
+struct TeamBubble: View {
     let message: TeamMessage
     let speaker: String
     let look: String
+    var named = false
 
     var body: some View {
         switch message.speaker {
@@ -172,7 +174,7 @@ private struct TeamBubble: View {
             HStack(alignment: .top, spacing: 10) {
                 Portrait(drawing: look, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
-                    if message.speaker == "galahad" { Text(speaker).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+                    if named || message.speaker == "galahad" { Text(speaker).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
                     MarkdownView(message.text)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -265,9 +267,10 @@ struct TaskCardView: View {
     }
 }
 
-/// The message box at the foot of a knight's page.
-private struct KnightComposer: View {
+/// The message box at the foot of a conversation: a knight's own, or a room's.
+struct RoomComposer: View {
     @Bindable var room: KnightRoom
+    /// Who it goes to, as the box and its button say: a knight's name, or the room's.
     let name: String
     let client: NodeClient
     var composing: FocusState<Bool>.Binding
@@ -299,21 +302,35 @@ private struct KnightComposer: View {
 }
 
 /// Giving a knight a task: a concrete result, what it should do and what proves it done, and the commands that check it.
-private struct GiveTaskSheet: View {
+/// In a room of several, `members` are those it may go to: you choose one.
+struct GiveTaskSheet: View {
     let name: String
-    let give: (String, String, [String]) async throws -> Void
+    var members: [(id: String, name: String)] = []
+    let give: (String, String, [String], String?) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var goal = ""
     @State private var gates = ""
+    @State private var assignee = ""
     @State private var working = false
     @State private var problem: String?
 
-    private var ready: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var ready: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (members.isEmpty || !assignee.isEmpty)
+    }
+    /// Whose workspace the commands run in.
+    private var worker: String { members.first { $0.id == assignee }?.name ?? name }
 
     var body: some View {
         NavigationStack {
             Form {
+                if !members.isEmpty {
+                    Section("Who takes it") {
+                        Picker("Knight", selection: $assignee) {
+                            ForEach(members, id: \.id) { member in Text(member.name).tag(member.id) }
+                        }
+                    }
+                }
                 Section("Title") { TextField("A concrete result", text: $title) }
                 Section("Goal") {
                     TextField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
@@ -327,13 +344,13 @@ private struct GiveTaskSheet: View {
                 } header: {
                     Text("Done when these pass")
                 } footer: {
-                    Text("One shell command a line, up to 16. They run in \(name)'s workspace; they and an independent reviewer decide whether the work is verified.")
+                    Text("One shell command a line, up to 16. They run in \(worker)'s workspace; they and an independent reviewer decide whether the work is verified.")
                 }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
                 }
             }
-            .navigationTitle("Give \(name) a task")
+            .navigationTitle(members.isEmpty ? "Give \(name) a task" : "Give a task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -341,6 +358,7 @@ private struct GiveTaskSheet: View {
                     Button("Give") { Task { await submit() } }.disabled(!ready || working)
                 }
             }
+            .onAppear { if assignee.isEmpty { assignee = members.first?.id ?? "" } }
         }
     }
 
@@ -351,7 +369,7 @@ private struct GiveTaskSheet: View {
             working = true
             defer { working = false }
             do {
-                try await give(title.trimmingCharacters(in: .whitespacesAndNewlines), goal.trimmingCharacters(in: .whitespacesAndNewlines), commands)
+                try await give(title.trimmingCharacters(in: .whitespacesAndNewlines), goal.trimmingCharacters(in: .whitespacesAndNewlines), commands, members.isEmpty ? nil : assignee)
                 dismiss()
             } catch {
                 problem = error.localizedDescription
@@ -360,40 +378,154 @@ private struct GiveTaskSheet: View {
     }
 }
 
-/// What a knight is and how its day stands.
+/// What a knight is and how its day stands, and what you may change: its settings, whether it works, whether it stays.
 private struct KnightAbout: View {
-    let knight: Teammate
+    let session: Session
+    let id: String
     let row: RosterRow?
     let look: String
+    /// It was taken off the Roundtable: its page closes too.
+    let removed: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var removing = false
+    @State private var working = false
+    @State private var problem: String?
+
+    private var knight: Teammate? { session.teammate(id) }
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack(spacing: 16) {
-                        Portrait(drawing: look, size: 96)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(knight.name).font(.title2.bold())
-                            Text(knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
-                            if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.siege : .primary) }
+                if let knight {
+                    Section {
+                        HStack(spacing: 16) {
+                            Portrait(drawing: look, size: 96)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(knight.name).font(.title2.bold())
+                                Text(knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
+                                if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.siege : .primary) }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    if !knight.instructions.isEmpty {
+                        Section("Its job") { Text(knight.instructions) }
+                    }
+                    Section("Today") {
+                        LabeledContent("State", value: knight.enabled ? "At the table" : "Paused")
+                        LabeledContent("Turns", value: "\(knight.turnsToday) of \(knight.dailyTurns)")
+                        LabeledContent("Harness", value: KnightView.harness[knight.harness] ?? knight.harness)
+                        LabeledContent("Its VM", value: knight.workspace != nil ? "Yes" : knight.workspaceNode != nil ? "Being made" : "None yet")
+                        if let repository = knight.repository { LabeledContent("Repository") { Text(repository).font(.footnote.monospaced()) } }
+                    }
+                    if session.can("fleet:admin") {
+                        Section {
+                            Button { editing = true } label: { Label("Edit \(knight.name)", systemImage: "slider.horizontal.3") }
+                            Button { Task { await setWorking(!knight.enabled) } } label: {
+                                Label(knight.enabled ? "Pause \(knight.name)" : "Let \(knight.name) work again", systemImage: knight.enabled ? "pause.circle" : "play.circle")
+                            }
+                            .disabled(working)
+                        } footer: {
+                            Text(knight.enabled ? "Paused, it takes no new work, and what it is doing now stops where it is." : "It takes up what waited for it.")
+                        }
+                        Section {
+                            Button("Remove \(knight.name) from the Roundtable", role: .destructive) { removing = true }
                         }
                     }
-                    .padding(.vertical, 4)
-                }
-                if !knight.instructions.isEmpty {
-                    Section("Its job") { Text(knight.instructions) }
-                }
-                Section("Today") {
-                    LabeledContent("State", value: knight.enabled ? "At the table" : "Paused")
-                    LabeledContent("Turns", value: "\(knight.turnsToday) of \(knight.dailyTurns)")
-                    LabeledContent("Harness", value: KnightView.harness[knight.harness] ?? knight.harness)
-                    if let repository = knight.repository { LabeledContent("Repository") { Text(repository).font(.footnote.monospaced()) } }
+                    if let problem {
+                        Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
+                    }
+                } else {
+                    ContentUnavailableView("Not at the table", systemImage: "person.slash", description: Text("This knight isn't on the Roundtable any more."))
                 }
             }
-            .navigationTitle(knight.name)
+            .navigationTitle(knight?.name ?? "Knight")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .sheet(isPresented: $editing) {
+                if let knight { KnightEditor(session: session, existing: knight) }
+            }
+            .sheet(isPresented: $removing) {
+                if let knight {
+                    RemoveKnightSheet(session: session, knight: knight) {
+                        dismiss()
+                        removed()
+                    }
+                }
+            }
+        }
+    }
+
+    private func setWorking(_ on: Bool) async {
+        working = true
+        defer { working = false }
+        do {
+            try await session.control(knight: id, on ? "resume" : "pause")
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// Taking a knight off the Roundtable, for good: what that does said first (lib/team.ts' removal plan), and its handle
+/// typed to say you mean it.
+private struct RemoveKnightSheet: View {
+    let session: Session
+    let knight: Teammate
+    let done: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var typed = ""
+    @State private var working = false
+    @State private var problem: String?
+
+    private var plan: Knights.Removal {
+        Knights.removal(id: knight.id, name: knight.name, workspace: knight.workspace != nil, workspaceNode: knight.workspaceNode != nil, maySandbox: session.can("sandbox"))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ForEach(plan.lines, id: \.self) { Text($0) }
+                }
+                if let blocked = plan.blocked {
+                    Section { Label(blocked, systemImage: "lock.fill").foregroundStyle(Color.siege) }
+                } else {
+                    Section {
+                        TextField(knight.id, text: $typed)
+                            .font(.body.monospaced())
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("remove-handle")
+                    } header: {
+                        Text("Type \(knight.id) to remove \(knight.name)")
+                    }
+                    Section {
+                        Button(plan.destroyWorkspace ? "Remove and destroy its VM" : "Remove \(knight.name)", role: .destructive) { Task { await remove() } }
+                            .disabled(typed != knight.id || working)
+                    }
+                }
+                if let problem {
+                    Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
+                }
+            }
+            .navigationTitle("Remove \(knight.name)?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+    }
+
+    private func remove() async {
+        working = true
+        defer { working = false }
+        do {
+            try await session.remove(knight: knight.id, destroyWorkspace: plan.destroyWorkspace)
+            dismiss()
+            done()
+        } catch {
+            problem = error.localizedDescription
         }
     }
 }

@@ -168,7 +168,13 @@ const model = Bun.serve({
       } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
       return stream(text, 0);
     }
-    // Galahad himself answers with his tools at hand; a knight's reply in a room comes quickly.
+    // A knight in a conversation answers you, by name, and lets its fellows' words pass ([SILENT]).
+    const knight = /You are (\w+) \(/.exec(JSON.stringify(body.messages ?? ""))?.[1];
+    if (knight) {
+      const last = [...JSON.stringify(turns.at(-1) ?? "").matchAll(/\\"speaker\\":\\"([a-z-]+)\\"/g)].at(-1)?.[1];
+      return stream(last === "owner" ? (KNIGHT_SAYS[knight] ?? "Understood. I will take the part that is mine and say when it is done.") : "[SILENT]", 0);
+    }
+    // Galahad himself answers with his tools at hand.
     const asked = JSON.stringify(turns.filter((message) => message.role === "user").at(-1) ?? "");
     if (Array.isArray(body.tools) && body.tools.length) return stream(/\bshow\b/i.test(asked) ? SHOWN : GALAHAD, /\bshow\b/i.test(asked) ? 15 : 70);
     return stream("Understood. I will take the part that is mine and say when it is done.", 0);
@@ -178,6 +184,12 @@ servers.push(model);
 // Where the agent's outward call would go, were it approved.
 const upstream = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ ok: true }) });
 servers.push(upstream);
+
+// What each knight says to you in a room, in the stand-in's voice.
+const KNIGHT_SAYS: Record<string, string> = {
+  Kay: "I'll take the release notes: I can draft them from the merged pull requests and hand you a list to check.",
+  Gareth: "I'll check that every migration in 0.4 runs on a fresh database before the notes go out.",
+};
 
 // ---------- start ----------
 const proxyPort = freePort();
@@ -243,6 +255,10 @@ await until("Kay's task to end", ended(kept.id));
 const failing = (await admin("createTeamTask", { room: own.gareth, assignee: "gareth", title: "Migrations run on a fresh database", goal: "TASK_FAIL: make every migration run on a fresh database, with a test.", dependsOn: [], gates: ["bun test db/ # gate-fail"] })).task;
 await until("Gareth's task to end", ended(failing.id));
 await admin("postTeamMessage", { room: own.percival, text: "Take your time: what do other agents do about context rot?" });
+// A room of several: Kay and Gareth, answering you there.
+const studio = (await admin("saveTeamRoom", { name: "Release room", members: ["kay", "gareth"], turnBudget: 6 })).room;
+await admin("postTeamMessage", { room: studio.id, text: "Who takes the release notes for 0.4?" });
+await until("the room's replies", async () => (await admin("teamRoom", { id: studio.id })).messages.length >= 3);
 await until("Percival to start thinking", async () => (await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate === "percival" && d.status === "running"));
 
 // ---------- what needs you ----------

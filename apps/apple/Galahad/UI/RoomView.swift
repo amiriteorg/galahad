@@ -1,0 +1,204 @@
+import SwiftUI
+
+/// A room of several knights: what each of them and you said there and the work given in it, in the order it happened,
+/// with the message box below (the PWA's room timeline). Its settings, its pause and giving one of them a task are in
+/// the toolbar's menu.
+struct RoomView: View {
+    let session: Session
+    let id: String
+    @State private var room: KnightRoom
+    @State private var giving = false
+    @State private var editing = false
+    @State private var stopping: TeamTask?
+    @State private var problem: String?
+    @FocusState private var composing: Bool
+
+    init(session: Session, id: String) {
+        self.session = session
+        self.id = id
+        _room = State(initialValue: KnightRoom(room: id))
+    }
+
+    private var info: TeamRoom? { session.room(id) }
+    private var row: RoomRow? { session.roomRows.first { $0.id == id } }
+    private var name: String { room.view?.name ?? info?.name ?? "Room" }
+    private var paused: Bool { info?.paused ?? room.view?.paused ?? false }
+    private var members: [Teammate] { (room.view?.members ?? info?.members ?? []).compactMap { session.teammate($0) } }
+
+    private var items: [Timeline.Item] {
+        guard let view = room.view else { return [] }
+        return Timeline.items(messages: view.messages, tasks: Timeline.tasks(room: (view.id, view.direct, view.members), all: view.tasks))
+    }
+
+    /// Who is writing a reply now, by name.
+    private var writing: [String] {
+        (room.view?.deliveries ?? []).filter { $0.status == "queued" || $0.status == "running" }.map { session.teammate($0.teammate)?.name ?? $0.teammate }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if info == nil, room.view == nil, room.problem == nil {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
+                } else if items.isEmpty, room.view != nil {
+                    welcome
+                }
+                ForEach(items) { item in
+                    switch item {
+                    case .message(let message):
+                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: look(of: message), named: true)
+                    case .task(let task):
+                        TaskCardView(task: task) { action in act(action, on: task) }
+                    }
+                }
+                if !writing.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini)
+                        Text("\(writing.joined(separator: ", ")) \(writing.count > 1 ? "are" : "is") writing…")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 44)
+                }
+                if let problem = problem ?? room.problem {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+        }
+        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                if paused {
+                    Label("Paused: nobody here takes new work until you resume the room.", systemImage: "pause.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                }
+                RoomComposer(room: room, name: name, client: session.client, composing: $composing)
+            }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text(name).font(.headline)
+                    Text(row?.line ?? members.map(\.name).joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(row?.needs == true ? Color.siege : .secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: 240)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { giving = true } label: { Label("Give a task", systemImage: "hammer") }
+                        .disabled(room.view == nil || members.isEmpty)
+                    Button { editing = true } label: { Label("Room settings", systemImage: "slider.horizontal.3") }
+                        .disabled(info == nil)
+                    Button { Task { await setPaused(!paused) } } label: {
+                        Label(paused ? "Resume the room" : "Pause the room", systemImage: paused ? "play.circle" : "pause.circle")
+                    }
+                } label: {
+                    Label("Room", systemImage: "ellipsis.circle")
+                }
+                .disabled(!session.can("fleet:admin"))
+            }
+        }
+        .sheet(isPresented: $giving) {
+            GiveTaskSheet(name: name, members: members.map { ($0.id, $0.name) }) { title, goal, gates, assignee in
+                try await room.give(title: title, goal: goal, gates: gates, assignee: assignee, with: session.client)
+            }
+        }
+        .sheet(isPresented: $editing) {
+            if let info { RoomEditor(session: session, existing: info) }
+        }
+        .confirmationDialog("Stop this task?", isPresented: .init(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .visible, presenting: stopping) { task in
+            Button("Stop it", role: .destructive) { Task { await room.control(task, "stop", with: session.client) } }
+        } message: { task in
+            Text("“\(task.title)” stops where it is. What it changed so far stays in its knight's workspace.")
+        }
+        .task(id: id) {
+            while !Task.isCancelled {
+                await room.load(room: id, with: session.client)
+                try? await Task.sleep(for: .seconds(writing.isEmpty ? 4 : 2))
+            }
+        }
+    }
+
+    private var welcome: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: -14) {
+                ForEach(members.prefix(5)) { member in
+                    Portrait(drawing: AvatarLook.of(id: member.id, name: member.name, profile: member.avatar), size: 72)
+                }
+            }
+            Text(name).font(.title2.bold())
+            Text("Say something to the room: \(ListFormatter.localizedString(byJoining: members.map(\.name))) hear it, and each answers when it has something to add. They can also hand work to each other.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 40)
+        .padding(.horizontal, 24)
+    }
+
+    private func look(of message: TeamMessage) -> String {
+        if message.speaker == "galahad" { return "galahad" }
+        let knight = session.teammate(message.speaker)
+        return AvatarLook.of(id: message.speaker, name: knight?.name ?? message.speakerName, profile: knight?.avatar)
+    }
+
+    private func act(_ action: TaskCard.Action, on task: TeamTask) {
+        switch action {
+        case .stop: stopping = task
+        case .resume: Task { await room.control(task, "resume", with: session.client) }
+        case .again: Task { await room.giveAgain(task, with: session.client) }
+        }
+    }
+
+    private func setPaused(_ pause: Bool) async {
+        do {
+            try await session.control(room: id, pause ? "pause" : "resume")
+            problem = nil
+            await room.load(room: id, with: session.client)
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// A room on the Roundtable: who is in it, its name, and one line of where it stands.
+struct RoomRowView: View {
+    let row: RoomRow
+    let looks: [String]
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                ForEach(Array(looks.prefix(3).enumerated()), id: \.offset) { index, look in
+                    Portrait(drawing: look, size: 30)
+                        .offset(x: CGFloat(index - min(looks.count, 3) / 2) * 12, y: index % 2 == 0 ? -6 : 6)
+                }
+            }
+            .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.name).font(.headline)
+                Text(row.line)
+                    .font(.subheadline)
+                    .foregroundStyle(row.needs ? Color.siege : .secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            if row.needs { NeedsMark() }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+}

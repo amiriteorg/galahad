@@ -25,6 +25,15 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     let needs: Bool
 }
 
+/// A room of the Roundtable: its knights' conversation together, and one line of where it stands (lib/roster.ts' room row).
+struct RoomRow: Sendable, Equatable, Identifiable {
+    let id: String
+    let name: String
+    let members: [String]
+    let line: String
+    let needs: Bool
+}
+
 enum Roster {
     /// The knight that filed an approval (`arm:team.<controller>.<handle>`), or nil when someone else asked.
     static func knightOfCaller(_ by: String) -> String? {
@@ -39,6 +48,29 @@ enum Roster {
     /// Every knight, as the node lists them.
     static func rows(snapshot: TeamSnapshot, asks: [Ask]) -> [RosterRow] {
         snapshot.teammates.map { row(for: $0, in: snapshot, asks: asks) }
+    }
+
+    /// Every room that isn't a knight's own conversation with you, the latest spoken in first.
+    static func roomRows(snapshot: TeamSnapshot) -> [RoomRow] {
+        snapshot.rooms.filter { !$0.direct }.enumerated().sorted { a, b in
+            a.element.updatedAt != b.element.updatedAt ? a.element.updatedAt > b.element.updatedAt : a.offset < b.offset
+        }.map { roomRow(for: $0.element, in: snapshot) }
+    }
+
+    private static func roomRow(for room: TeamRoom, in snapshot: TeamSnapshot) -> RoomRow {
+        let nameOf = { (id: String) in snapshot.teammates.first { $0.id == id }?.name ?? id }
+        let jobs = snapshot.tasks.filter { $0.room == room.id }.map(Job.task) + snapshot.deliveries.filter { $0.room == room.id }.map(Job.delivery)
+        let say = { (line: String, needs: Bool) in RoomRow(id: room.id, name: room.name, members: room.members, line: line, needs: needs) }
+
+        let working = jobs.compactMap { $0.status == "running" ? $0.task : nil }
+        if let first = working.first { return say("\(working.count > 1 ? "\(working.count) at work" : nameOf(first.assignee)) · \(first.title)", false) }
+        let writing = jobs.compactMap { job -> TeamDelivery? in if case .delivery(let d) = job, d.status == "running" { d } else { nil } }
+        if !writing.isEmpty { return say("\(writing.map { nameOf($0.teammate) }.joined(separator: ", ")) \(writing.count > 1 ? "are" : "is") writing", false) }
+        let last = latest(of: jobs)
+        if let wrong = trouble(last, who: last.flatMap { job in if case .delivery(let d) = job { nameOf(d.teammate) } else { nil } }) { return say(wrong, true) }
+        let waiting = jobs.filter { $0.status == "queued" }.count
+        if room.paused { return say(waiting > 0 ? "Paused · \(waiting) waiting" : "Paused", waiting > 0) }
+        return say(room.members.map(nameOf).joined(separator: ", "), false)
     }
 
     private enum Job {
@@ -97,11 +129,12 @@ enum Roster {
         jobs.reduce(nil) { latest, job in latest.map { job.updatedAt > $0.updatedAt ? job : $0 } ?? job }
     }
 
-    /// Work that went wrong and waits to be read, in a line (nil: it didn't, or it was a stop of your own).
-    private static func trouble(_ job: Job?) -> String? {
+    /// Work that went wrong and waits to be read, in a line (nil: it didn't, or it was a stop of your own). `who`: in a
+    /// room, the knight whose reply it was.
+    private static func trouble(_ job: Job?, who: String? = nil) -> String? {
         guard let job, job.status == "failed" || job.status == "interrupted" else { return nil }
-        if job.status == "interrupted" { return "Interrupted: \(job.task.map(titled) ?? "a reply") · review it before resuming" }
-        return job.task.map { withWhy("Failed: \(titled($0))", job.error) } ?? withWhy("Couldn't reply", job.error)
+        if job.status == "interrupted" { return "Interrupted: \(job.task.map(titled) ?? (who.map { "\($0)'s reply" } ?? "a reply")) · review it before resuming" }
+        return job.task.map { withWhy("Failed: \(titled($0))", job.error) } ?? withWhy(who.map { "\($0) couldn't reply" } ?? "Couldn't reply", job.error)
     }
 
     /// How a task ended, when that is the latest thing to say.
@@ -207,7 +240,7 @@ enum AvatarLook {
 
     /// A saved profile's colour (lowercased) when it is exactly a profile's seven fields, each valid (core's
     /// `isAvatarProfile`); anything else is old or malformed, and names no colour.
-    private static func savedColor(_ profile: JSONValue?) -> String? {
+    static func savedColor(_ profile: JSONValue?) -> String? {
         guard case .object(let p)? = profile, Set(p.keys) == ["v", "form", "color", "accent", "eyes", "accessory", "temperament"],
               p["v"] == .number(1), case .string(let color)? = p["color"], case .string(let accent)? = p["accent"], isHex(color), isHex(accent),
               oneOf(p["form"], ["round", "armored", "hooded"]), oneOf(p["eyes"], ["oval", "round", "visor"]),
