@@ -1,0 +1,148 @@
+import Foundation
+
+/*
+ * What the node answers, as far as this app reads it (`packages/core/src/api.ts`, `team.ts` and `turns.ts`). Fields a
+ * newer node adds are passed over; a time is milliseconds since 1970 unless it says it is an HLC.
+ */
+
+/// `GET /api/whoami`: this device as the node knows it.
+struct WhoAmI: Decodable, Sendable, Equatable {
+    let device: String
+    let kind: String
+    let scopes: [String]
+    let node: String
+    let nodeName: String
+    let fleet: String?
+    let fleetName: String?
+}
+
+/// `GET /api/team`: the Roundtable's knights, their conversations and their work, in one snapshot.
+struct TeamSnapshot: Decodable, Sendable {
+    var teammates: [Teammate]
+    var rooms: [TeamRoom]
+    var tasks: [TeamTask]
+    var deliveries: [TeamDelivery]
+    var removed: [Removed]?
+
+    struct Removed: Decodable, Sendable { let id: String; let name: String }
+}
+
+struct Teammate: Decodable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let instructions: String
+    let role: String
+    let harness: String
+    let enabled: Bool
+    let dailyTurns: Int
+    let turnsToday: Int
+    let repository: String?
+    /// The saved look, checked field by field before it names a drawing (`AvatarLook`).
+    let avatar: JSONValue?
+    /// Who made it: `owner` (also what its absence means), `galahad`, or the knight that did.
+    let createdBy: String?
+}
+
+struct TeamRoom: Decodable, Sendable {
+    let id: String
+    let name: String
+    let members: [String]
+    let direct: Bool
+    let paused: Bool
+    let updatedAt: Double
+}
+
+struct TeamTask: Decodable, Sendable {
+    struct Changes: Decodable, Sendable { let files: Int }
+    let id: String
+    let room: String
+    let assignee: String
+    let title: String
+    let goal: String
+    let dependsOn: [String]
+    /// queued · running · done · failed · stopped · interrupted
+    let status: String
+    let verified: Bool
+    let progress: String
+    let error: String?
+    let updatedAt: Double
+    let changes: Changes?
+}
+
+/// A knight's reply on its way (or how it went).
+struct TeamDelivery: Decodable, Sendable {
+    let id: String
+    let room: String
+    let teammate: String
+    let status: String
+    let error: String?
+    let updatedAt: Double
+}
+
+/// `GET /api/actions`: what his oath made him ask about. Only a waiting one is yours to answer.
+struct ActionView: Decodable, Sendable, Identifiable, Equatable {
+    let id: String
+    let connector: String
+    let tool: String
+    let args: [String: JSONValue]
+    /// read · create · modify · outward · delete
+    let kind: String
+    let target: String
+    /// Who asked: `arm:…`, `loop:…`, `node:…`, `you`.
+    let by: String
+    let why: String?
+    let node: String
+    /// An HLC.
+    let requestedAt: String
+    /// Unanswered by then, and it's no.
+    let expires: Double
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, connector, tool, args, kind = "class", target, by, why, node, requestedAt, expires, state
+    }
+
+    func waiting(at now: Date = .now) -> Bool { state == "waiting" && expires > now.timeIntervalSince1970 * 1000 }
+}
+
+/// `GET /api/secret-requests`: a key Galahad asked for. He learns that it exists, never what it is.
+struct SecretRequestView: Decodable, Sendable, Identifiable, Equatable {
+    let name: String
+    let provider: String?
+    let purpose: String
+    /// An HLC.
+    let requestedAt: String
+    let requestedBy: String
+    var id: String { name }
+}
+
+/// `GET /api/pairings`: a device asking to join, with the code it shows.
+struct PairingView: Decodable, Sendable, Identifiable, Equatable {
+    let invite: String
+    let device: String
+    let name: String
+    let kind: String
+    let sas: String
+    let requestedAt: Double
+    let conflict: Bool
+    var id: String { "\(invite):\(device)" }
+}
+
+/// `GET /api/turns`: what the node is answering now.
+struct TurnView: Decodable, Sendable, Equatable {
+    let id: String
+    let conversation: String?
+    let title: String?
+    let step: String?
+}
+
+/// `GET /api/quests`: a quest in hand.
+struct QuestView: Decodable, Sendable, Equatable {
+    let goal: String
+}
+
+/// The millisecond time an HLC (`<15-digit ms>.<6-digit counter>`) was taken at, or nil.
+func hlcDate(_ hlc: String) -> Date? {
+    guard let ms = Double(hlc.split(separator: ".").first ?? ""), ms > 0 else { return nil }
+    return Date(timeIntervalSince1970: ms / 1000)
+}
