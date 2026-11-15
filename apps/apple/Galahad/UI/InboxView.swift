@@ -71,7 +71,7 @@ struct ApprovalRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(action.connector).\(action.tool)").font(.headline.monospaced())
                 if let why = action.why, !why.isEmpty { Text(why).font(.subheadline) }
-                Text("Asked by \(Approval.askedBy(action.by)) · expires \(Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative))")
+                Text("Asked by \(Approval.askedBy(action.by)) · expires in \(Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -125,7 +125,7 @@ struct ApprovalSheet: View {
                     LabeledContent("Where it goes") { Text(action.target).font(.footnote.monospaced()).multilineTextAlignment(.trailing) }
                     LabeledContent("Asked by", value: Approval.askedBy(action.by))
                     LabeledContent("Sent from", value: node)
-                    LabeledContent("Expires") { Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative) }
+                    LabeledContent("Expires in") { Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative) }
                 }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
@@ -212,10 +212,10 @@ struct KeyRequestRow: View {
             }
             if session.can("vault:write") {
                 HStack(spacing: 10) {
+                    // (No content type: an API key is no password of yours for AutoFill to offer or keep.)
                     SecureField("Paste the key", text: $value)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textContentType(.password)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 9)
                         .background(.fill.tertiary, in: .rect(cornerRadius: 12, style: .continuous))
@@ -223,7 +223,7 @@ struct KeyRequestRow: View {
                         .onSubmit(seal)
                         .accessibilityIdentifier("key-\(request.name)")
                     Button(action: seal) {
-                        if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(Color.onAccent) }
+                        if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(value.isEmpty ? Color.secondary : Color.onAccent) }
                     }
                     .buttonStyle(.glassProminent)
                     .disabled(value.isEmpty || sealing)
