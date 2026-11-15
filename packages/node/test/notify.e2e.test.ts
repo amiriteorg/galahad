@@ -148,6 +148,16 @@ const tomorrow = async () => {
   await daemon.notify.tick();
 };
 const last = (b: StandInBrowser) => b.received.at(-1)!;
+/**
+ * What a notification says, its tag left out. A tag is a salted digest of the item's key (core's `tagOf`), so it never
+ * carries a word, but its letters are random and may spell "42" or "oath": a check of what is said must not trip on
+ * them (one did, on "t-bm3jtD42gHElmGWqBulkI4"). That the tag is only a digest is checked here instead.
+ */
+const said = (delivery: { text: string }): string => {
+  const { tag, ...words } = JSON.parse(delivery.text) as Record<string, unknown>;
+  expect(String(tag)).toMatch(/^(t-[A-Za-z0-9_-]{22}|summary|limit)$/);
+  return JSON.stringify(words);
+};
 
 let phone: Paired;
 let tablet: Paired;
@@ -342,7 +352,7 @@ describe("what he sends", () => {
     expect(told).toHaveLength(3);
     for (const delivery of told) {
       expect(delivery.payload).toMatchObject({ kind: "needs-you", title: "Galahad: this needs you", body: "Something in your Inbox needs you.", open: "inbox" });
-      expect(delivery.text.toLowerCase()).not.toMatch(/bank|consent|sk-ant|fakefake|evil|oath/);
+      expect(said(delivery).toLowerCase()).not.toMatch(/bank|consent|sk-ant|fakefake|evil|oath/);
     }
     for (const key of ["bank-consent:n_test", "connector-broken:x", "review:1"]) clearNotice(key);
     await look();
@@ -357,7 +367,7 @@ describe("what he sends", () => {
     expect(phone.browser.received).toHaveLength(before + 1);
     const delivery = last(phone.browser);
     expect(delivery.payload).toMatchObject({ kind: "approval", title: "Galahad asks your approval", body: "forge.post is waiting for your answer in the Inbox.", open: "inbox" });
-    expect(delivery.text).not.toMatch(/quarterly|42|bank said/);
+    expect(said(delivery)).not.toMatch(/quarterly|42|bank said/);
     expect(delivery.headers.urgency).toBe("high");
     // Answered: nothing more is said about it.
     await json(phone.call("decideAction", { id: asked.action, approve: false }));
@@ -375,11 +385,11 @@ describe("what he sends", () => {
     // Both at one look: one message, with not a word of theirs.
     expect(phone.browser.received).toHaveLength(before + 1);
     expect(last(phone.browser).payload).toMatchObject({ kind: "summary", body: "He has 2 questions." });
-    expect(last(phone.browser).text).not.toMatch(/0045|bank|locked|URGENT|second-one/);
+    expect(said(last(phone.browser))).not.toMatch(/0045|bank|locked|URGENT|second-one/);
     await json(agent("requestSecret", { name: "third.one", purpose: "and another" }));
     await look();
     expect(last(phone.browser).payload).toMatchObject({ kind: "question", title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there." });
-    expect(last(phone.browser).text).not.toContain("third");
+    expect(said(last(phone.browser))).not.toContain("third");
     // The tablet may not read the vault's names: it isn't told.
     expect(tablet.browser.received.every((d) => d.payload?.kind !== "question" && d.payload?.body !== "He has 2 questions.")).toBe(true);
   });
@@ -606,7 +616,7 @@ describe("a chat turn nobody is watching", () => {
     // The tablet may not chat: it isn't told about a chat it couldn't open.
     expect(tablet.browser.received.every((d) => d.payload?.kind !== "finished")).toBe(true);
     // Not a word of the answer left the node.
-    expect(last(phone.browser).text).not.toMatch(/three sizes|Working on it/);
+    expect(said(last(phone.browser))).not.toMatch(/three sizes|Working on it/);
   });
 
   test("watched to its end: nothing is sent (you saw it)", async () => {
