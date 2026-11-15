@@ -30,6 +30,26 @@ Ask Galahad anything with "show" in it, and the stand-in answers with everything
 list, a quote, a table, code, a chart, figures, a plan's steps, a page and choices to tap. A message with "Take your
 time" is never answered, so a turn stays running to leave and come back to.
 
+## TestFlight
+
+`scripts/testflight.sh` archives the app for devices, signs it for your team (Xcode's automatic signing makes the
+distribution certificate and profile with the key, the first time) and uploads it to App Store Connect, where
+TestFlight offers it to your testers once Apple has processed it. It needs:
+
+- an App Store Connect API team key with the Admin role (Users and Access → Integrations → App Store Connect API):
+  its `.p8` file, its key ID and its issuer ID. The script keeps nothing of it: give it the path of a file you delete
+  afterwards;
+- your team id, given when you run it and never committed;
+- the app in App Store Connect (Apps → New App, bundle ID `org.amirite.galahad`): Apple's API can't make one.
+
+```sh
+TEAM_ID=… ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=/path/to/AuthKey.p8 apps/apple/scripts/testflight.sh
+```
+
+Each upload is a new build, numbered by the time (UTC, `yyyymmddHHMM`). `Galahad/PrivacyInfo.xcprivacy` says what the
+App Store asks: the app tracks no one and collects nothing, and the one "required reason" API it uses is UserDefaults,
+for the node it paired with.
+
 ## What the tests are held to
 
 The Swift tests read `GalahadTests/Fixtures/core-vectors.json`: test vectors made by `packages/core` itself (and the
