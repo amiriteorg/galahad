@@ -1015,7 +1015,9 @@
         .shell[data-route="chat"] main.view { padding-bottom: 0; }
       }
       /* The on-screen keyboard is up (iOS keeps the page full height under it): the tab bar steps aside
-         and the composer sits on the keyboard instead of a tab bar's height above it. */
+         and the composer sits on the keyboard instead of a tab bar's height above it, and nothing keeps
+         clear the home indicator's strip, which the keyboard covers. */
+      :root[data-keyboard="open"] { --safe-bottom: 0px; }
       :root[data-keyboard="open"] .tabbar { display: none; }
       :root[data-keyboard="open"] .composer-wrap { bottom: 0; }
       :root[data-keyboard="open"] main.view, :root[data-keyboard="open"] .shell[data-route="chat"] main.view { padding-bottom: var(--sp-3); }

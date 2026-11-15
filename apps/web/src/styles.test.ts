@@ -83,6 +83,11 @@ describe("the stylesheet", () => {
     }
   });
 
+  test("with the keyboard up, nothing keeps clear the home indicator's strip: the keyboard covers it", () => {
+    // Seen in the iOS 26.1 simulator: the chat's message box stood the inset's 34 px above the keyboard.
+    expect(all.some((rule) => rule.media.length === 0 && rule.selectors.includes(':root[data-keyboard="open"]') && /--safe-bottom:\s*0px/.test(rule.body))).toBe(true);
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {
