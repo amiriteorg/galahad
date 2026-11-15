@@ -17,6 +17,15 @@ struct MoreView: View {
                     LabeledContent("May") { Text(scopes.joined(separator: ", ")).font(.footnote.monospaced()).multilineTextAlignment(.trailing) }
                 }
             }
+            if session.can("vault:read") {
+                Section {
+                    NavigationLink { KeysView(session: session) } label: {
+                        Label("Keys", systemImage: "key")
+                    }
+                } footer: {
+                    Text("Sealed for your full nodes, each pinned to the one address it may go to; no model ever sees one.")
+                }
+            }
             Section("Its node") {
                 LabeledContent("Node", value: session.whoami?.nodeName ?? session.node.nodeName ?? "—")
                 LabeledContent("Fleet", value: session.whoami?.fleetName ?? session.node.fleetName ?? "—")
