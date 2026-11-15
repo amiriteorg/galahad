@@ -507,6 +507,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   scope.interval(() => void load(), 2000);
   scope.add(ctx.live.team.subscribe(() => draw()));
   scope.add(ctx.live.teamProblem.subscribe((error) => error && failed(error)));
+  // The room as it was last read this session, at once (api.peek); the fresh one is drawn only if it differs.
+  if (roomId) room = ctx.api.peek<TeamRoomView>("/api/team/room", { id: roomId }) ?? null;
   void load();
   draw();
 };

@@ -81,8 +81,45 @@ export interface Bytes {
   type: string;
 }
 
+/**
+ * The POSTs that change nothing: they leave what the places showed as it was (and keep their own answers), where any
+ * other POST forgets it all. Every route whose scope is a reading one, and these few that read under another scope:
+ * the doctor (it changes nothing), watching a turn, opening a kept chat, listing sandboxes, a task's trail and a room.
+ * api.test.ts holds the list to the routes. Kept here, not read from the routes, so the app's bundle carries no schema.
+ */
+export const READS_UNDER_OTHER_SCOPES = ["/api/doctor", "/api/turns/attach", "/api/conversations/get", "/api/sandboxes/list", "/api/team/trail", "/api/team/room"] as const;
+export const READING_POSTS: ReadonlySet<string> = new Set([
+  ...READS_UNDER_OTHER_SCOPES,
+  "/api/team/overview",
+  "/api/memories/search",
+  "/api/providers/models",
+  "/api/place",
+  "/api/loops/runs",
+  "/api/heartbeat",
+  "/api/usage",
+  "/api/bank/balances",
+  "/api/bank/transactions",
+  "/api/artifacts/file",
+  "/api/archive/search",
+  "/api/archive/entry",
+  "/api/archive/file",
+  "/api/skills/get",
+  "/api/notify/subscribe",
+  "/api/notify/unsubscribe",
+  "/api/notify/test",
+]);
+
+/** At most this many places' last answers are kept. */
+const KEPT_ANSWERS = 64;
+
 export interface Api {
   get<T>(path: string, signal?: AbortSignal): Promise<T>;
+  /**
+   * What this address answered last this session, for a GET or a POST that changes nothing (by what it was asked):
+   * undefined when nothing yet, or something changed since. A place shows it at once on a revisit and asks again;
+   * anything you change through a POST forgets it all.
+   */
+  peek<T>(path: string, body?: unknown): T | undefined;
   post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   /** A POST whose answer is bytes (an artifact's file), not JSON. */
   bytes(path: string, body: unknown, signal?: AbortSignal): Promise<Bytes>;
@@ -115,18 +152,59 @@ export function apiFor(identity: BrowserIdentity): Api {
       }
     }
   }
-  const events = (path: string, body: unknown, signal: AbortSignal) => stream<ChatStreamEvent>(path, body, signal);
+  // What each address answered last (api.peek), forgotten whole by anything that changes something.
+  const kept = new Map<string, unknown>();
+  const keyOf = (path: string, body?: unknown) => (body === undefined ? path : `${path} ${JSON.stringify(body)}`);
+  const keep = (key: string, answer: unknown) => {
+    kept.delete(key);
+    kept.set(key, answer);
+    if (kept.size > KEPT_ANSWERS) kept.delete(kept.keys().next().value!);
+  };
+  const reading = (path: string) => READING_POSTS.has(path.split("?")[0]!);
+  const changing = (path: string) => {
+    if (!reading(path)) kept.clear();
+  };
+  // A read asked for with no signal (ahead of a tap: lib/prefetch.ts) while it's on its way is shared by whoever asks
+  // for the same; one asked for with a signal, which may end it, is never shared.
+  const flying = new Map<string, Promise<unknown>>();
+  const share = <T>(key: string, signal: AbortSignal | undefined, ask: () => Promise<T>): Promise<T> => {
+    const on = flying.get(key);
+    if (on) return on as Promise<T>;
+    const asking = ask();
+    if (!signal) {
+      flying.set(key, asking);
+      void asking.finally(() => flying.get(key) === asking && flying.delete(key)).catch(() => {});
+    }
+    return asking;
+  };
+  const events = (path: string, body: unknown, signal: AbortSignal) => {
+    changing(path);
+    return stream<ChatStreamEvent>(path, body, signal);
+  };
   return {
-    async get<T>(path: string, signal?: AbortSignal) {
-      return (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
+    get<T>(path: string, signal?: AbortSignal) {
+      const key = keyOf(path);
+      return share(key, signal, async () => {
+        const answer = (await (await signedFetch(identity, "GET", path, undefined, signal)).json()) as T;
+        keep(key, answer);
+        return answer;
+      });
     },
-    async post<T>(path: string, body: unknown = {}, signal?: AbortSignal) {
-      const payload = await (await signedFetch(identity, "POST", path, body, signal)).json();
-      const late = lateError(payload);
-      if (late) throw late;
-      return payload as T;
+    peek: <T>(path: string, body?: unknown) => kept.get(keyOf(path, body)) as T | undefined,
+    post<T>(path: string, body: unknown = {}, signal?: AbortSignal) {
+      const send = async () => {
+        const payload = await (await signedFetch(identity, "POST", path, body, signal)).json();
+        const late = lateError(payload);
+        if (late) throw late;
+        if (reading(path)) keep(keyOf(path, body), payload);
+        return payload as T;
+      };
+      if (reading(path)) return share(keyOf(path, body), signal, send);
+      changing(path);
+      return send();
     },
     async bytes(path: string, body: unknown, signal?: AbortSignal) {
+      changing(path);
       const response = await signedFetch(identity, "POST", path, body, signal);
       return { data: new Uint8Array(await response.arrayBuffer()), type: response.headers.get("content-type") ?? "application/octet-stream" };
     },

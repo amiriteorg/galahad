@@ -128,6 +128,12 @@ export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
     if (!scope.disposed) render();
   }
 
+  // Its last quick look this session, at once (api.peek), while it looks again.
+  const last = readDoctorReport(ctx.api.peek<unknown>("/api/doctor", { quick: true }));
+  if (last) {
+    report = last;
+    render();
+  }
   void run({ quick: true });
   return el;
 }

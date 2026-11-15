@@ -162,6 +162,14 @@ const keptChanged = new Set<() => void>();
 /** (One asking at a time: whoever asks meanwhile waits for the same answer.) */
 let keptAsking: Promise<void> | null = null;
 function refreshKept(api: Api): Promise<void> {
+  // What they were this session, at once (api.peek: asked for ahead of a tap, or earlier), while they're asked again.
+  if (kept === null) {
+    const last = api.peek<{ conversations: ConversationSummary[] }>("/api/conversations");
+    if (last) {
+      kept = last.conversations;
+      for (const fn of keptChanged) fn();
+    }
+  }
   keptAsking ??= (async () => {
     try {
       kept = (await api.get<{ conversations: ConversationSummary[] }>("/api/conversations")).conversations;

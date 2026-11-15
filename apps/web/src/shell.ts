@@ -26,6 +26,7 @@ import { keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
 import { badgeMessage, type Badging, showBadge } from "./lib/badge.ts";
+import { readsFor } from "./lib/prefetch.ts";
 import { syncPush } from "./views/notifications.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -265,6 +266,19 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     window.addEventListener("orientationchange", () => (fullHeight = 0), { signal: lifetime.signal });
     lifetime.signal.addEventListener("abort", () => delete document.documentElement.dataset.keyboard);
   }
+
+  // Warm what the first moves need once the page has settled: Galahad's kept chats, so a first visit to Chat is instant.
+  if (can("chat")) setTimeout(() => !lifetime.signal.aborted && chatsForPalette(base.api, { chat: true, read: false }), 600);
+  // A press on a link to a place asks for what that place reads first, a tap's length before the tap (lib/prefetch.ts).
+  const visibleIds = visible.map((place) => place.id);
+  const ahead = (event: Event) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href^="#/"]') : null;
+    if (!link) return;
+    for (const read of readsFor(link.getAttribute("href") ?? "", visibleIds)) {
+      (typeof read === "string" ? base.api.get(read) : base.api.post(read.post, read.body)).catch(() => {});
+    }
+  };
+  document.addEventListener("pointerdown", ahead, { capture: true, passive: true, signal: lifetime.signal });
 
   // ---------- live chrome ----------
   live.inboxCount.watch((n) => {

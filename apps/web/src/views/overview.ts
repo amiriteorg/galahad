@@ -109,6 +109,22 @@ export const overviewView: View = (root, ctx, { scope }) => {
     }
   }
 
+  function showLedger(entries: LedgerEntry[]): void {
+    if (scope.disposed) return;
+    // Nothing new since the last look: leave the cards as they are.
+    const seen = ledgerSignature(entries);
+    if (seen === ledgerSeen) return;
+    ledgerSeen = seen;
+    const latest = [...entries].sort((a, b) => (a.hlc < b.hlc ? 1 : -1)).slice(0, 8);
+    replace(autonomyBox, autonomyCard(entries));
+    replace(
+      recent,
+      latest.length
+        ? h("div", { class: "timeline" }, ...latest.map((e) => ledgerItem(ctx, e, true)))
+        : empty({ icon: "activity", title: "Quiet so far", body: "What Galahad creates, changes or sends will show up here.", compact: true }),
+    );
+  }
+
   async function loadLedger(): Promise<void> {
     if (ledgerMissing) return;
     if (!ctx.can("mind:read")) {
@@ -116,20 +132,10 @@ export const overviewView: View = (root, ctx, { scope }) => {
       return;
     }
     try {
-      const { entries } = await ctx.api.get<{ entries: LedgerEntry[] }>("/api/ledger", scope.signal);
-      if (scope.disposed) return;
-      // Nothing new since the last look: leave the cards as they are.
-      const seen = ledgerSignature(entries);
-      if (seen === ledgerSeen) return;
-      ledgerSeen = seen;
-      const latest = [...entries].sort((a, b) => (a.hlc < b.hlc ? 1 : -1)).slice(0, 8);
-      replace(autonomyBox, autonomyCard(entries));
-      replace(
-        recent,
-        latest.length
-          ? h("div", { class: "timeline" }, ...latest.map((e) => ledgerItem(ctx, e, true)))
-          : empty({ icon: "activity", title: "Quiet so far", body: "What Galahad creates, changes or sends will show up here.", compact: true }),
-      );
+      // What it showed last time this session, at once (api.peek); then the fresh answer.
+      const last = ledgerSeen ? null : ctx.api.peek<{ entries: LedgerEntry[] }>("/api/ledger");
+      if (last) showLedger(last.entries);
+      showLedger((await ctx.api.get<{ entries: LedgerEntry[] }>("/api/ledger", scope.signal)).entries);
     } catch (error) {
       if (scope.disposed) return;
       ledgerSeen = "";

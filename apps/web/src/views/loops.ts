@@ -750,6 +750,18 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
     if (pending.size || ++tick % 3 === 0) void refresh();
     if (tick % 5 === 0) void refreshSelf();
   }, 3000);
+  // What this page showed last time, at once (api.peek); the fresh answers replace it only if something changed.
+  const lastLoops = ctx.api.peek<{ loops: LoopView[] }>("/api/loops");
+  if (lastLoops) {
+    loops = lastLoops.loops;
+    signature = JSON.stringify(lastLoops.loops);
+    render();
+  }
+  const lastSelf = ctx.api.peek<SelfActionView>("/api/self-action");
+  if (lastSelf) {
+    selfSignature = JSON.stringify(lastSelf);
+    renderSelf(lastSelf);
+  }
   void refresh();
   void refreshSelf();
   if (opts.intent === "add-loop") openLoopSheet(ctx);
