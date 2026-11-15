@@ -183,7 +183,7 @@ export function confirmAction(options: ConfirmOptions): Promise<boolean> {
     const cancel = h("button", { class: "btn", type: "button", onclick: () => decide(false) }, options.cancelLabel ?? "Cancel");
     const inputId = nextId("confirm");
     const typed = options.typeToConfirm
-      ? h("input", { class: "input mono", id: inputId, type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off" })
+      ? h("input", { class: "input mono", id: inputId, type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off" })
       : null;
     typed?.addEventListener("input", () => {
       confirm.disabled = typed.value !== options.typeToConfirm;

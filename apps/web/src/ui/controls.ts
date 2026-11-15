@@ -366,7 +366,7 @@ export function chipInput(options: { id?: string; placeholder?: string; max?: nu
   clear(): void;
 } {
   const tags: string[] = [];
-  const input = h("input", { type: "text", id: options.id ?? nextId("chips"), autocomplete: "off", spellcheck: "false", placeholder: options.placeholder ?? "" });
+  const input = h("input", { type: "text", id: options.id ?? nextId("chips"), autocomplete: "off", autocorrect: "off", spellcheck: "false", placeholder: options.placeholder ?? "" });
   const el = h("div", { class: "chip-input" }, input);
   el.addEventListener("click", () => input.focus());
   const render = () => {

@@ -101,7 +101,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     onInput: () => sync(),
     scale: ["15 min", "7 d"],
   });
-  const image = h("input", { class: "input mono", type: "text", placeholder: "default image", autocomplete: "off", spellcheck: "false", autocapitalize: "off" });
+  const image = h("input", { class: "input mono", type: "text", placeholder: "default image", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off" });
   const quest = h("input", { class: "input", type: "text", placeholder: "e.g. try the new parser on untrusted samples", autocomplete: "off", maxlength: 200 });
   const where = h(
     "select",
@@ -263,7 +263,7 @@ const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "
 
 export function openConsole(ctx: Ctx, sandbox: SandboxView, on: string | null): void {
   const out = h("div", { class: "console-out", role: "log", "aria-live": "polite", tabindex: 0 });
-  const input = h("input", { type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "aria-label": "Command", placeholder: "ls -la" });
+  const input = h("input", { type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", "aria-label": "Command", placeholder: "ls -la" });
   const run = button("Run", { size: "sm", icon: "play", type: "submit" });
   const history: string[] = [];
   let cursor = 0;

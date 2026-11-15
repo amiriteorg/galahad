@@ -66,7 +66,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
   function openRole(role: string, spec: RoleSpec): void {
     let models = [...spec.models];
     const list = h("div", { class: "reorder", role: "list", "aria-label": `Models for ${role}` });
-    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": `Add a model to ${role}` });
+    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": `Add a model to ${role}` });
     const save = button("Save", { variant: "primary", icon: "check" });
 
     function render(focus?: string): void {
@@ -278,10 +278,10 @@ export const modelsView: View = (root, ctx, { scope }) => {
 };
 
 function openAddProvider(ctx: Ctx, presets: PresetView[], onDone: () => Promise<void>): void {
-  const id = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. verda" });
+  const id = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. verda" });
   const preset = h("select", { class: "select" }, h("option", { value: "" }, "No preset"), ...presets.map((p) => h("option", { value: p.id }, p.id)));
-  const url = h("input", { class: "input mono", type: "url", autocomplete: "off", spellcheck: "false", placeholder: "https://…/v1" });
-  const secret = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "defaults to the id", maxlength: 128 });
+  const url = h("input", { class: "input mono", type: "url", autocomplete: "off", autocorrect: "off", spellcheck: "false", placeholder: "https://…/v1" });
+  const secret = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", placeholder: "defaults to the id", maxlength: 128 });
   const label = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 128 });
   let kind: "openai" | "anthropic" = "openai";
   const kindControl = segmented(

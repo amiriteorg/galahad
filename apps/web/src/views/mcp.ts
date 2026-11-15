@@ -216,11 +216,11 @@ export async function refreshMcp(ctx: Ctx, c: ConnectorView, deps: McpDeps): Pro
 
 /** Add an MCP server: its address, a name, how its key is sent; then its key if it needs one, then its tools. */
 export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps): void {
-  const address = h("input", { class: "input mono", type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "https://mcp.example.com/mcp" });
-  const id = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", maxlength: 40, placeholder: "e.g. tracker" });
+  const address = h("input", { class: "input mono", type: "url", inputmode: "url", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "https://mcp.example.com/mcp" });
+  const id = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 40, placeholder: "e.g. tracker" });
   const label = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 64, placeholder: "e.g. Tracker" });
-  const header = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", maxlength: 64, placeholder: "x-api-key" });
-  const only = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "search, createIssue" });
+  const header = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 64, placeholder: "x-api-key" });
+  const only = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "search, createIssue" });
   let idEdited = false;
   let auth: "none" | "bearer" | "header" = "none";
 

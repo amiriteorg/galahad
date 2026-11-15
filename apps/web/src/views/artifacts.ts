@@ -285,7 +285,7 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
 
 /** Keep a running sandbox's work (a folder under /work, by default /work/out) after it's gone. */
 export function openKeepWork(ctx: Ctx, sandbox: SandboxView, on: string | null): void {
-  const folder = h("input", { class: "input mono", type: "text", value: "/work/out", autocomplete: "off", spellcheck: "false", autocapitalize: "off", maxlength: 256 });
+  const folder = h("input", { class: "input mono", type: "text", value: "/work/out", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 256 });
   const label = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 200, placeholder: sandbox.quest || sandbox.name });
   const status = h("div");
   const keep = button("Keep it", { variant: "primary", type: "submit", icon: "archive" });

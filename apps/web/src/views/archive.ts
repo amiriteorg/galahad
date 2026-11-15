@@ -93,7 +93,7 @@ function list(title: string, items: string[]): HTMLElement | null {
 function openDelete(ctx: Ctx, entry: ArchiveEntryView, done: () => void): void {
   const name = deleteName(entry);
   const reason = h("textarea", { class: "textarea", id: "archive-reason", rows: 2, maxlength: 500, placeholder: "Why it should go" });
-  const confirm = h("input", { class: "input", id: "archive-confirm", autocomplete: "off", spellcheck: "false", placeholder: name });
+  const confirm = h("input", { class: "input", id: "archive-confirm", autocomplete: "off", autocorrect: "off", spellcheck: "false", placeholder: name });
   const status = h("div");
   const go = button("Delete for good", { variant: "danger-solid", type: "submit", icon: "trash" });
   const form = h(
@@ -390,7 +390,7 @@ export const archiveView: View = (root, ctx, { scope, opts }) => {
   const results = h("div", { class: "card", id: "archive-results", "aria-busy": "true" }, skeletonRows(6, { avatar: true }));
   const statusBox = h("div", { class: "card" }, skeletonRows(6));
   const countLabel = h("span", { class: "count-label tnum", role: "status" });
-  const search = h("input", { class: "input", type: "search", id: "archive-q", placeholder: "Search the archive by words or meaning", "aria-label": "Search the archive", "aria-controls": "archive-results", autocomplete: "off", spellcheck: "false", value: opts.query ?? "" });
+  const search = h("input", { class: "input", type: "search", id: "archive-q", placeholder: "Search the archive by words or meaning", "aria-label": "Search the archive", "aria-controls": "archive-results", autocomplete: "off", autocorrect: "off", spellcheck: "false", value: opts.query ?? "" });
 
   const picker = selector({
     label: "Filter the archive",

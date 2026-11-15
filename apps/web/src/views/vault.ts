@@ -84,7 +84,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
   }
   const secret = secretInput({ id: "key-value" });
   const providerSelect = h("select", { class: "select", id: "key-provider" }, h("option", { value: "" }, "Choose a provider…"));
-  const name = h("input", { class: "input mono", type: "text", id: "key-name", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. anthropic", value: options.name ?? "" });
+  const name = h("input", { class: "input mono", type: "text", id: "key-name", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. anthropic", value: options.name ?? "" });
   const label = h("input", { class: "input", type: "text", id: "key-label", autocomplete: "off", placeholder: "e.g. personal account", maxlength: 128 });
   const detected = h("div", { class: "row wrap", style: "min-height:24px", "aria-live": "polite" });
   const status = h("div");

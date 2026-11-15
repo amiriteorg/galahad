@@ -130,6 +130,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     class: "input mono",
     type: "text",
     autocomplete: "off",
+    autocorrect: "off",
     spellcheck: "false",
     autocapitalize: "off",
     maxlength: 40,
@@ -140,9 +141,9 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   const label = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 128, placeholder: "e.g. Morning briefing", value: existing?.label ?? "" });
 
   // When
-  const schedule = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", maxlength: 128, value: existing?.schedule ?? "every 30m" });
+  const schedule = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 128, value: existing?.schedule ?? "every 30m" });
   const zones = h("datalist", { id: nextId("zones") }, ...timeZones().map((z) => h("option", { value: z })));
-  const tz = h("input", { class: "input", type: "text", list: zones.id, autocomplete: "off", spellcheck: "false", autocapitalize: "off", maxlength: 64, value: existing?.tz ?? browserZone() });
+  const tz = h("input", { class: "input", type: "text", list: zones.id, autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 64, value: existing?.tz ?? browserZone() });
   const preview = h("span", { "aria-live": "polite" });
   const presetChips = PRESETS.map((preset) => {
     const chip = h("button", { class: "chip", type: "button", "aria-pressed": "false" }, preset.label);
@@ -204,7 +205,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   );
   syncNet();
   // Gates: "done means this command passes", one shell command a line.
-  const gatesField = h("textarea", { class: "textarea mono", rows: 2, spellcheck: false, autocapitalize: "off", autocomplete: "off", placeholder: "e.g. test -s /work/out/summary.md" });
+  const gatesField = h("textarea", { class: "textarea mono", rows: 2, autocorrect: "off", spellcheck: false, autocapitalize: "off", autocomplete: "off", placeholder: "e.g. test -s /work/out/summary.md" });
   if (task0?.kind === "quest" && task0.gates?.length) gatesField.value = task0.gates.join("\n");
   const questPanel = h(
     "div",

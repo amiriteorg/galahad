@@ -89,7 +89,7 @@ export function desktopViewer(ctx: Ctx, person: Pick<Teammate, "id" | "name">, v
   });
 
   // (Text with a URL keyboard, not type=url: the browser would refuse a bare host, which desktopAddress takes as https.)
-  const address = h("input", { class: "input", name: "address", type: "text", inputmode: "url", maxlength: 2000, placeholder: "An address to open", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "aria-label": `An address for ${person.name}'s browser` });
+  const address = h("input", { class: "input", name: "address", type: "text", inputmode: "url", maxlength: 2000, placeholder: "An address to open", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", "aria-label": `An address for ${person.name}'s browser` });
   const addressProblem = h("p", { class: "tiny", role: "status" });
   const open = h(
     "form",

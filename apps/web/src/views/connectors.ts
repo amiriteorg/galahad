@@ -83,7 +83,7 @@ export function argFields(tool: ConnectorToolView, initial: Record<string, unkno
     const numeric = kind === "integer" || kind === "number";
     const json = kind === "json";
     const control = json
-      ? h("textarea", { class: "textarea mono", rows: 3, spellcheck: "false", autocapitalize: "off" })
+      ? h("textarea", { class: "textarea mono", rows: 3, autocorrect: "off", spellcheck: "false", autocapitalize: "off" })
       : !numeric && LONG_TEXT.test(name)
       ? h("textarea", { class: "textarea", rows: 4, spellcheck: "true" })
       : h("input", {
@@ -92,6 +92,7 @@ export function argFields(tool: ConnectorToolView, initial: Record<string, unkno
           inputmode: kind === "integer" ? "numeric" : numeric ? "decimal" : null,
           step: kind === "integer" ? 1 : numeric ? "any" : null,
           autocomplete: "off",
+          autocorrect: "off",
           spellcheck: "false",
           autocapitalize: "off",
         });
@@ -346,7 +347,7 @@ function installBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
   if (c.installed || !ctx.can("brain:write")) return null;
   const status = h("div");
   const origin = c.needsOrigin
-    ? h("input", { class: "input mono", type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "http://homeassistant.local:8123" })
+    ? h("input", { class: "input mono", type: "url", inputmode: "url", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "http://homeassistant.local:8123" })
     : null;
   const install = button("Install", { variant: "primary", size: "sm", type: "submit", icon: "plus" });
   return h(

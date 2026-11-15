@@ -108,6 +108,7 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
     id: "memory-q",
     placeholder: "Search the shared mind",
     autocomplete: "off",
+    autocorrect: "off",
     spellcheck: "false",
     "aria-controls": "memory-results",
     value: opts.query ?? "",

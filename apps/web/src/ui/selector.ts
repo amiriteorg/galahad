@@ -121,6 +121,7 @@ export function selector(config: SelectorConfig): Selector {
           placeholder: config.placeholder ?? "Type to filter…",
           autocomplete: "off",
           autocapitalize: "off",
+          autocorrect: "off",
           spellcheck: "false",
           enterkeyhint: "done",
         })

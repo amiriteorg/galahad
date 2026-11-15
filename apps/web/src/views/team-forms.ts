@@ -55,7 +55,7 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
   const known = await roles(ctx);
   const snapshot = ctx.live.team.value;
   const name = h("input", { class: "input", required: true, maxlength: 80, value: existing?.name ?? "", placeholder: "e.g. Ada", autocomplete: "off" });
-  const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", spellcheck: "false" });
+  const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", autocorrect: "off", spellcheck: "false" });
   let idEdited = Boolean(existing);
   id.addEventListener("input", () => { idEdited = true; });
   name.addEventListener("input", () => { if (!idEdited) id.value = teammateId(name.value, takenHandles(snapshot)); });

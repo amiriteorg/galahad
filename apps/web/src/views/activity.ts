@@ -107,7 +107,7 @@ export const activityView: View = (root, ctx, { scope }) => {
   // there already would jump when the timeline settles to its real height.
   const autonomyBox = h("div");
   const countLabel = h("span", { class: "count-label tnum" });
-  const search = h("input", { class: "input", type: "search", placeholder: "Search activity", "aria-label": "Search activity", autocomplete: "off", spellcheck: "false" });
+  const search = h("input", { class: "input", type: "search", placeholder: "Search activity", "aria-label": "Search activity", autocomplete: "off", autocorrect: "off", spellcheck: "false" });
 
   const counts = () => {
     const byClass = new Map<string, number>();

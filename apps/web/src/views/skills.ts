@@ -82,7 +82,7 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
   const title = h("input", { class: "input", id: "skill-title", maxlength: SKILL_LIMITS.title, placeholder: "What kind of work this is", autocomplete: "off" });
   const whenTo = h("textarea", { class: "textarea", id: "skill-when", rows: 2, maxlength: SKILL_LIMITS.when, placeholder: "When he should reach for it" });
   const steps = h("textarea", { class: "textarea", id: "skill-steps", rows: 6, placeholder: "One step a line, in plain words" });
-  const proof = h("textarea", { class: "textarea mono", id: "skill-proof", rows: 3, placeholder: "bun test => 0 fail", spellcheck: "false" });
+  const proof = h("textarea", { class: "textarea mono", id: "skill-proof", rows: 3, placeholder: "bun test => 0 fail", autocorrect: "off", spellcheck: "false" });
   const pitfalls = h("textarea", { class: "textarea", id: "skill-pitfalls", rows: 3, placeholder: "One a line: what goes wrong, and how to tell" });
   const inputs: Record<keyof SkillForm, HTMLInputElement | HTMLTextAreaElement> = { title, when: whenTo, steps, proof, pitfalls };
   for (const key of Object.keys(inputs) as (keyof SkillForm)[]) inputs[key].value = form[key];

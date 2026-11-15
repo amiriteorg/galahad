@@ -46,7 +46,7 @@ const installed = () => matchMedia("(display-mode: standalone)").matches || (nav
 
 export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | null, onInvite?: (invite: string) => void): void {
   document.title = "Welcome · Galahad";
-  const field = h("input", { class: "input", type: "url", id: "invite-link", placeholder: "https://…#pair=gi1.…", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+  const field = h("input", { class: "input", type: "url", id: "invite-link", placeholder: "https://…#pair=gi1.…", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false" });
   const problem = h("div", { class: "hint", "aria-live": "polite" });
   const pasteForm = onInvite
     ? h(

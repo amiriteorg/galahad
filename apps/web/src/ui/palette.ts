@@ -47,6 +47,7 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
     "aria-label": "Search commands and pages",
     placeholder: "Search or jump to…",
     autocomplete: "off",
+    autocorrect: "off",
     spellcheck: "false",
     value: initialQuery,
   });

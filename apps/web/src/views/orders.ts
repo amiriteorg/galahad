@@ -90,6 +90,7 @@ export function argEditor(
       type: "text",
       value: row.value,
       autocomplete: "off",
+      autocorrect: "off",
       spellcheck: "false",
       autocapitalize: "off",
       readonly: options.locked ?? false,
@@ -254,7 +255,7 @@ function orderForm(options: {
   const days = daysControl(sync);
 
   let only = true;
-  const callersInput = h("input", { class: "input mono", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: "Any of Galahad's agents" });
+  const callersInput = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "Any of Galahad's agents" });
   callersInput.addEventListener("input", sync);
   const who = (): { callers: string[] | null } | { problem: string } =>
     options.who.kind === "only" ? { callers: only ? [options.who.caller] : null } : parseCallers(callersInput.value);
@@ -325,7 +326,7 @@ export function openOrderFromAction(
   const status = h("div");
   const sign = button(destructive ? "Approve delete and sign" : "Approve and sign", { variant: destructive ? "danger-solid" : "primary", type: "submit", icon: "check" });
   const typedId = nextId("confirm");
-  const typed = destructive ? h("input", { class: "input mono", id: typedId, type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off" }) : null;
+  const typed = destructive ? h("input", { class: "input mono", id: typedId, type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off" }) : null;
   if (typed) {
     sign.disabled = true;
     typed.addEventListener("input", () => (sign.disabled = typed.value !== options.confirmName));
