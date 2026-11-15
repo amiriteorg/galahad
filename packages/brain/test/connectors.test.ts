@@ -48,6 +48,33 @@ describe("the connector catalog", () => {
   });
 });
 
+describe("GitHub: pull requests and CI", () => {
+  const github = ConnectorManifest.parse(CATALOG.github!.manifest);
+  const url = (tool: string, args: Record<string, string | number>) => buildRequest(github, tool, args).url;
+
+  test("a pull request, its files, reviews and line comments, and a commit's checks with what they reported, are his to read", () => {
+    const pr = { owner: "amiriteorg", repo: "galahad", number: 12 };
+    expect(url("pull", pr)).toBe("https://api.github.com/repos/amiriteorg/galahad/pulls/12");
+    expect(url("pull.files", { ...pr, per_page: 100 })).toBe("https://api.github.com/repos/amiriteorg/galahad/pulls/12/files?per_page=100");
+    expect(url("pull.reviews", pr)).toBe("https://api.github.com/repos/amiriteorg/galahad/pulls/12/reviews");
+    expect(url("pull.comments", pr)).toBe("https://api.github.com/repos/amiriteorg/galahad/pulls/12/comments");
+    // A branch with a slash in it is one path segment.
+    expect(url("checks", { owner: "amiriteorg", repo: "galahad", ref: "galahad/units" })).toBe("https://api.github.com/repos/amiriteorg/galahad/commits/galahad%2Funits/check-runs");
+    expect(url("check.annotations", { owner: "amiriteorg", repo: "galahad", check_run_id: 4242 })).toBe("https://api.github.com/repos/amiriteorg/galahad/check-runs/4242/annotations");
+    expect(url("run.jobs", { owner: "amiriteorg", repo: "galahad", run_id: 99 })).toBe("https://api.github.com/repos/amiriteorg/galahad/actions/runs/99/jobs");
+    for (const tool of ["pull", "pull.files", "pull.reviews", "pull.comments", "checks", "check.annotations", "run.jobs"]) expect([tool, github.tools[tool]!.class]).toEqual([tool, "read"]);
+  });
+
+  test("a review others see asks first, and never approves: that stays yours", () => {
+    const review = github.tools["pull.review"]!;
+    expect(review.class).toBe("outward");
+    expect(() => buildRequest(github, "pull.review", { owner: "o", repo: "r", number: 1, event: "APPROVE", body: "fine" })).toThrow();
+    const built = buildRequest(github, "pull.review", { owner: "o", repo: "r", number: 1, event: "REQUEST_CHANGES", body: "The migration drops a column the importer still reads." });
+    expect(built).toMatchObject({ method: "POST", url: "https://api.github.com/repos/o/r/pulls/1/reviews" });
+    expect(JSON.parse(built.body!)).toEqual({ event: "REQUEST_CHANGES", body: "The migration drops a column the importer still reads." });
+  });
+});
+
 describe("sending a request", () => {
   test("the key is injected only when it was pinned to this origin, for this connector", async () => {
     const v = vault();
