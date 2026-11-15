@@ -75,7 +75,7 @@ struct JoinView: View {
                     if model.stage == .asking { ProgressView().tint(Color.onAccent) }
                     Text("Ask to join").fontWeight(.semibold)
                 }
-                .foregroundStyle(Color.onAccent)
+                .foregroundStyle(model.canAsk || model.stage == .asking ? Color.onAccent : Color.secondary)
                 .frame(maxWidth: .infinity, minHeight: 34)
             }
             .buttonStyle(.glassProminent)
