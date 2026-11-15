@@ -250,7 +250,35 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
   );
 
-  const shell = h("div", { class: "shell" }, rail, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar, railTip);
+  // Quick (a phone's): asking Galahad and giving a task, floating at the bottom right over every place but a timeline
+  // (which has its own composer). One action this device may take is taken at once; two are offered from it.
+  const quickActions = [
+    can("chat") ? { label: "Ask Galahad", icon: "chat" as const, run: () => (startNewChat(), ctx.navigate("chat")) } : null,
+    can("fleet:admin") && can("chat") ? { label: "Give a task", icon: "layers" as const, run: () => giveToRoundtable(ctx) } : null,
+  ].filter((action) => action !== null);
+  const quickMenu = h("div", { class: "quick-menu", role: "menu", hidden: true });
+  // While it's open, what's behind it dims a little (as a phone's own menus do); a tap there closes it, and goes no further.
+  const quickScrim = h("div", { class: "quick-scrim", hidden: true, "aria-hidden": "true", onclick: () => closeQuick() });
+  const fab = h("button", { class: "fab", type: "button", "aria-label": quickActions.length > 1 ? "Ask Galahad or give a task" : (quickActions[0]?.label ?? ""), "aria-haspopup": quickActions.length > 1 ? "menu" : null, "aria-expanded": "false" }, icon("plus", { size: 24 }));
+  const quick = h("div", { class: "quick", hidden: quickActions.length === 0 }, quickScrim, quickMenu, fab);
+  const closeQuick = () => {
+    quickMenu.hidden = quickScrim.hidden = true;
+    fab.setAttribute("aria-expanded", "false");
+  };
+  fab.addEventListener("click", (event) => {
+    if (quickActions.length === 1) return quickActions[0]!.run();
+    if (!quickMenu.hidden) return closeQuick();
+    replace(quickMenu, ...quickActions.map((action) => h("button", { class: "quick-item", type: "button", role: "menuitem", onclick: () => (closeQuick(), action.run()) }, icon(action.icon, { size: 18 }), h("span", {}, action.label))));
+    quickMenu.hidden = quickScrim.hidden = false;
+    fab.setAttribute("aria-expanded", "true");
+    // Opened from a keyboard (a click with no pointer behind it), its first choice takes the focus; a finger's tap leaves it.
+    if (event.detail === 0) (quickMenu.firstElementChild as HTMLElement | null)?.focus({ preventScroll: true });
+  });
+  document.addEventListener("pointerdown", (event) => !quickMenu.hidden && !(event.target instanceof Node && quick.contains(event.target)) && closeQuick(), { capture: true, signal: lifetime.signal });
+  document.addEventListener("keydown", (event) => event.key === "Escape" && !quickMenu.hidden && (closeQuick(), fab.focus()), { signal: lifetime.signal });
+  window.addEventListener("hashchange", closeQuick, { signal: lifetime.signal });
+
+  const shell = h("div", { class: "shell" }, rail, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar, quick, railTip);
   replace(root, shell);
 
   // ---------- the on-screen keyboard ----------
