@@ -74,6 +74,8 @@ Until you turn this on, everything he has for you waits in the Inbox. With it, a
 3. **Settings → Notifications**, turn on **Notifications on this device**, and allow them when iOS asks. It asks only from that tap.
 4. Tap **Send a test**. It should arrive within a few seconds.
 
+Galahad's icon on the Home Screen then shows how many things wait for you: exactly, as of the last time the app was open, plus one for each new thing he has told you about since.
+
 **In a desktop browser** (Edge, Chrome, Firefox, Safari): step 3 and 4 are the same; nothing needs installing.
 
 Nothing is needed on the server: the node makes its own key the first time a device turns this on, and keeps it beside its device keys. From a terminal on the node:

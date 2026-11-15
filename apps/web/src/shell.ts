@@ -25,6 +25,7 @@ import { homeOf, type Place, placesFor, routeOf, tabOf, tabsOf } from "./lib/nav
 import { keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
+import { badgeMessage, type Badging, showBadge } from "./lib/badge.ts";
 import { syncPush } from "./views/notifications.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -243,6 +244,18 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     document.title = document.title.replace(/^\(\d+\+?\) /, "");
     if (n) document.title = `(${n}) ${document.title}`;
   });
+  // The number on the app's icon: what waits in the Inbox, once it has been read (lib/badge.ts). The service worker
+  // is told it too, and counts on from there the pushes that come while the app is closed.
+  const toIcon = () => {
+    if (!live.inboxLoaded.value) return;
+    const n = live.inboxCount.value;
+    void showBadge(navigator as Badging, n);
+    if (isSecureContext && "serviceWorker" in navigator) {
+      navigator.serviceWorker.ready.then((registration) => registration.active?.postMessage(badgeMessage(n))).catch(() => {});
+    }
+  };
+  live.inboxCount.subscribe(toIcon);
+  live.inboxLoaded.watch(toIcon);
   live.fleet.watch((fleet) => {
     if (!fleet) {
       replace(fleetPill, dot(null), h("span", {}, base.whoami.fleetName ?? "fleet"));

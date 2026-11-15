@@ -1,4 +1,5 @@
 import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, type NotifyPayload, notifyUrl, readNotifyPayload } from "@galahad/core/notify-payload";
+import { afterPush, badgeCount, type BadgeState, type Badging, NO_BADGE, readBadgeMessage, readBadgeState, showBadge } from "./lib/badge.ts";
 
 /*
  * Service worker: keeps the app shell available offline, and shows what Galahad
@@ -34,6 +35,11 @@ interface PushEventLike extends ExtendableEventLike {
   data: { json(): unknown } | null;
 }
 
+/** A message from an open page of the app. */
+interface MessageEventLike extends ExtendableEventLike {
+  data: unknown;
+}
+
 interface NotificationEventLike extends ExtendableEventLike {
   notification: { close(): void; data: unknown };
 }
@@ -52,7 +58,9 @@ interface ServiceWorkerScope {
   addEventListener(type: "fetch", listener: (event: FetchEventLike) => void): void;
   addEventListener(type: "push", listener: (event: PushEventLike) => void): void;
   addEventListener(type: "notificationclick", listener: (event: NotificationEventLike) => void): void;
+  addEventListener(type: "message", listener: (event: MessageEventLike) => void): void;
   skipWaiting(): Promise<void>;
+  navigator: Badging;
   registration: { showNotification(title: string, options: Record<string, unknown>): Promise<void> };
   clients: { claim(): Promise<void>; matchAll(options: { type: "window"; includeUncontrolled?: boolean }): Promise<WindowClientLike[]>; openWindow(url: string): Promise<unknown> };
 }
@@ -178,7 +186,42 @@ async function showPush(event: PushEventLike): Promise<void> {
     badge: "/icon-192.png",
     data: { open: shown.open, ...(shown.conversation ? { conversation: shown.conversation } : {}) },
   });
+  await countOnIcon(shown);
 }
+
+/*
+ * The number on the app's icon (lib/badge.ts): an open page sets it, and tells the worker its count; a push
+ * about something new that waits for you adds one. Kept with the shell, so it lasts from one push to the next.
+ */
+const BADGE_KEY = "/badge.json";
+
+async function badgeState(): Promise<BadgeState> {
+  try {
+    return readBadgeState(await (await (await caches.open(VERSION)).match(BADGE_KEY))?.json());
+  } catch {
+    return NO_BADGE;
+  }
+}
+
+const keepBadge = async (state: BadgeState): Promise<void> =>
+  (await caches.open(VERSION)).put(BADGE_KEY, new Response(JSON.stringify(state), { headers: { "content-type": "application/json" } }));
+
+async function countOnIcon(shown: NotifyPayload): Promise<void> {
+  try {
+    const before = await badgeState();
+    const after = afterPush(before, shown);
+    if (after === before) return;
+    await keepBadge(after);
+    await showBadge(sw.navigator, badgeCount(after));
+  } catch {
+    /* the count is a nicety: the notification is already shown */
+  }
+}
+
+sw.addEventListener("message", (event) => {
+  const count = readBadgeMessage(event.data);
+  if (count !== null) event.waitUntil(keepBadge({ base: count, tags: [] }).catch(() => {}));
+});
 
 async function openFromNotification(data: unknown): Promise<void> {
   const target = readTarget(data);

@@ -21,6 +21,9 @@ const pages: Record<string, () => Response> = {
 };
 
 const saved = { addEventListener: globalThis.addEventListener, location: (globalThis as any).location, caches: (globalThis as any).caches, fetch: globalThis.fetch, registration: (globalThis as any).registration, clients: (globalThis as any).clients };
+const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+/** The numbers the worker put on the app's icon (0: cleared). */
+const badges: number[] = [];
 let onFetch: (event: unknown) => void = () => {};
 /** Every listener the worker registered, by event. */
 const listeners = new Map<string, (event: any) => void>();
@@ -50,6 +53,7 @@ beforeAll(async () => {
   (globalThis as any).registration = { showNotification: async (title: string, options: Record<string, any>) => void shown.push({ title, options }) };
   (globalThis as any).clients = { claim: async () => {}, matchAll: async () => windows, openWindow: async (url: string) => void opened.push(url) };
   (globalThis as any).location = new URL(`${ORIGIN}/`);
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { setAppBadge: async (n: number) => void badges.push(n), clearAppBadge: async () => void badges.push(0) } });
   (globalThis as any).caches = { open: async () => cache, keys: async () => [], delete: async () => true };
   (globalThis as any).fetch = async (request: { url: string }) => (pages[new URL(request.url).pathname] ?? (() => new Response("no", { status: 404 })))();
   // A worker script, not a module: loaded for its listeners.
@@ -59,6 +63,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   Object.assign(globalThis, { addEventListener: saved.addEventListener, location: saved.location, caches: saved.caches, fetch: saved.fetch, registration: saved.registration, clients: saved.clients });
+  if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator);
 });
 
 /** Opens a URL in a tab: the page the worker answers with, once everything it started is done. */
@@ -176,6 +181,34 @@ describe("he comes to you: a push becomes a notification", () => {
       },
     });
     expect(shown.map((s) => s.title)).toEqual(["Galahad"]);
+  });
+});
+
+describe("the number on the app's icon", () => {
+  test("starts from the count a page last set, and a push about something new that waits for you adds one", async () => {
+    badges.length = 0;
+    await dispatch("message", { data: { type: "galahad:badge", count: 2 } });
+    await push({ v: 1, kind: "approval", title: "Galahad: approve this?", body: "Push to main", open: "inbox", tag: "t-approval0123456789abcd" });
+    expect(badges).toEqual([3]);
+    // The same thing told again, and news that doesn't wait for you, add nothing.
+    await push({ v: 1, kind: "approval", title: "Galahad: approve this?", body: "Push to main", open: "inbox", tag: "t-approval0123456789abcd" });
+    await push(finished);
+    expect(badges).toEqual([3]);
+    // A push that can't be read is still something that needs you.
+    await push({ kind: "advert" });
+    expect(badges).toEqual([3, 4]);
+    // A page that has seen the Inbox sets it again: the next push counts from there.
+    await dispatch("message", { data: { type: "galahad:badge", count: 0 } });
+    await push({ v: 1, kind: "question", title: "Galahad asks", body: "Which branch?", open: "chat", conversation: CHAT, tag: "t-question0123456789abcd" });
+    expect(badges).toEqual([3, 4, 1]);
+  });
+
+  test("a message that isn't a page's count changes nothing", async () => {
+    await dispatch("message", { data: { type: "galahad:badge", count: 5 } });
+    for (const data of [{ type: "galahad:badge", count: -1 }, { type: "galahad:badge", count: "9" }, { type: "something-else", count: 9 }, null]) await dispatch("message", { data });
+    badges.length = 0;
+    await push({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "low on disk", open: "inbox", tag: "t-needsyou0123456789abcd" });
+    expect(badges).toEqual([6]);
   });
 });
 
