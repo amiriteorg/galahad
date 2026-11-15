@@ -23,3 +23,14 @@ check them in CI or before a commit:
 bun apps/apple/scripts/vectors.ts           # from the repository's root
 bun apps/apple/scripts/vectors.ts --check   # exits 1 if the file isn't what core makes now
 ```
+
+## Galahad's accents
+
+The app is Apple's own components; what is Galahad's comes from the PWA, never copied by hand:
+
+- **The knights** are the owner's drawings, `apps/web/src/knights/*.webp`, bundled as they are (`project.yml`): never
+  redrawn, recoloured, outlined or moved.
+- **The icon, the Roundtable's mark and the colours** (Galahad's red for what needs you and his seat, the cream ink,
+  the black tile) are written from `apps/web/src/brand.ts` by `bun apps/apple/scripts/brand.ts`, which renders
+  `appIcon()` with headless Chrome and ImageMagick. iOS rounds an icon's corners itself, so the icon is the tile edge
+  to edge, with the Roundtable seated as `appIcon()` seats it.
