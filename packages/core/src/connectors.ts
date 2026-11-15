@@ -116,6 +116,29 @@ export const ConnectorAuth = z.strictObject({
   optional: z.boolean().optional(),
 });
 
+/** An agent as a connector's access names it: its label (Galahad's own is galahad; a knight's, team.…). */
+export const AgentLabel = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+
+/**
+ * Who may call a connector beyond you, your loops and your quests. Absent, every agent: Galahad, the knights, agents
+ * over MCP. "galahad": Galahad himself and the agents you allowed, by label; any other asks first (connector_request).
+ */
+export const ConnectorAccess = z.strictObject({
+  only: z.literal("galahad"),
+  allowed: z.array(AgentLabel).max(64),
+});
+export type ConnectorAccess = z.infer<typeof ConnectorAccess>;
+
+/**
+ * Whether a caller may use a connector: `by` as a connector call names its caller (arm:<label>, node:<name> for your
+ * loops, quest for your quests). You are never asked this: a call of yours is yours.
+ */
+export function mayCall(access: ConnectorAccess | undefined, by: string): boolean {
+  if (!access || !by.startsWith("arm:")) return true;
+  const label = by.slice(4);
+  return label === "galahad" || access.allowed.includes(label);
+}
+
 export const ConnectorManifest = z
   .strictObject({
     id: Id,
@@ -141,6 +164,12 @@ export const ConnectorManifest = z
       })
       .optional(),
     tools: z.record(ToolName, z.union([ConnectorTool, McpTool])),
+    access: ConnectorAccess.optional(),
+    /**
+     * What it reads is yours alone (mail): once its data is in an answer, nothing that could carry it out of Galahad, or
+     * write it into the shared mind, runs for the rest of that answer, its own tools aside (as for the bank).
+     */
+    private: z.boolean().optional(),
   })
   .superRefine((manifest, issue) => {
     const tools = Object.entries(manifest.tools);

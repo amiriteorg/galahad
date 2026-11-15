@@ -87,6 +87,8 @@ export interface GalahadTool {
 export interface ToolResult {
   text: string;
   images?: ToolImage[];
+  /** It holds what a private connector read (mail): the connector, whose own tools alone may run after it (chatTools). */
+  private?: string;
 }
 
 const resultText = (r: string | ToolResult): string => (typeof r === "string" ? r : r.text);
@@ -467,7 +469,11 @@ export const TOOLS: GalahadTool[] = [
             return `  - ${t.name}(${params.join(", ")})${t.asks ? ` [${t.class}: asks the user]` : ` [${t.class}]`}: ${t.description}${standing.join("")}`;
           });
           const key = c.key === "ready" || c.key === "none-needed" ? "" : ` (key: ${c.key})`;
-          return `${c.id}: ${c.label}, ${c.origin}${key}\n${tools.join("\n")}`;
+          const rules = [
+            c.access ? "Galahad's alone, and the agents your liege allowed: refused, ask to use it with connector_request" : null,
+            c.private ? "private: once you've read it, nothing else that could carry it out runs in this answer, its own tools aside" : null,
+          ].filter(Boolean);
+          return `${c.id}: ${c.label}, ${c.origin}${key}${rules.length ? `\n  (${rules.join("; ")})` : ""}\n${tools.join("\n")}`;
         })
         .join("\n\n")}${more}`;
     },
@@ -504,7 +510,7 @@ export const TOOLS: GalahadTool[] = [
     routes: ["callConnector"],
     flow: "egress",
     async run(api, { connector, tool: name, args, why }) {
-      const outcome = await api.call<{ status: string; action?: string; target: string; order?: { label: string }; result?: { status: number; body: string; truncated: boolean } }>(
+      const outcome = await api.call<{ status: string; action?: string; target: string; order?: { label: string }; result?: { status: number; body: string; truncated: boolean }; private?: boolean }>(
         "callConnector",
         { connector, tool: name, ...(args ? { args } : {}), ...(why ? { why } : {}) },
       );
@@ -513,7 +519,8 @@ export const TOOLS: GalahadTool[] = [
       }
       const result = outcome.result!;
       const under = outcome.order ? `Sent under the user's standing order "${outcome.order.label}" (action ${outcome.action}).\n` : "";
-      return `${under}${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}\n${clip(result.body)}`;
+      const text = `${under}${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}\n${clip(result.body)}`;
+      return outcome.private ? { text, private: connector } : text;
     },
   }),
 
@@ -1047,17 +1054,18 @@ const REFUSED: Record<"egress" | "record", string> = {
 
 /**
  * The tools for one chat answer: checked input, outcomes instead of exceptions, and
- * one rule across calls: once the user's private data (the bank) is in the answer,
- * nothing that can carry data out of Galahad, or write it into the shared mind,
- * runs for the rest of it.
+ * one rule across calls: once the user's private data (the bank, or a private
+ * connector's such as their mail) is in the answer, nothing that can carry data out of
+ * Galahad, or write it into the shared mind, runs for the rest of it. Mail's own tools
+ * aside: a reply drafted from it stays in that mailbox, and sending one still asks.
  */
 export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string, opts: { tag?: string } = {}): ChatTools {
   const byName = new Map(tools.map((t) => [t.name, t]));
-  let privateIn = false;
+  let held: { what: "bank" } | { what: "connector"; id: string } | null = null;
   return {
     specs: tools.map((t) => ({
       name: t.name,
-      description: t.flow === "egress" || t.flow === "record" ? `${t.description} Refused once the user's bank data is in the answer.` : t.description,
+      description: t.flow === "egress" || t.flow === "record" ? `${t.description} Refused once the user's bank data is in the answer, or their mail (that mailbox's own tools aside).` : t.description,
       inputSchema: schemaOf(t),
     })),
     describe: (call: ToolCall) => {
@@ -1070,12 +1078,11 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
     async run(call) {
       const t = byName.get(call.name);
       if (!t) return { content: `There's no tool named ${call.name} here.`, isError: true, summary: "no such tool" };
-      if ((t.flow === "egress" || t.flow === "record") && privateIn) {
-        return {
-          content: `Refused: the user's bank data is in this answer, and ${REFUSED[t.flow]}. Answer from what you have; the user can ask for it in a new message.`,
-          isError: true,
-          summary: "refused: bank data is in this answer",
-        };
+      const into = t.name === "connector_call" && call.input && typeof call.input === "object" ? (call.input as { connector?: unknown }).connector : undefined;
+      if ((t.flow === "egress" || t.flow === "record") && held && !(held.what === "connector" && into === held.id)) {
+        return held.what === "bank"
+          ? { content: `Refused: the user's bank data is in this answer, and ${REFUSED[t.flow]}. Answer from what you have; the user can ask for it in a new message.`, isError: true, summary: "refused: bank data is in this answer" }
+          : { content: `Refused: the user's mail (${held.id}) is in this answer, and ${REFUSED[t.flow]}. Only ${held.id}'s own tools still run (a reply drafted there stays there; sending asks the user). Answer from what you have; the user can ask for more in a new message.`, isError: true, summary: "refused: mail is in this answer" };
       }
       const parsed = z.object(t.input).safeParse(call.input ?? {});
       if (!parsed.success) {
@@ -1088,7 +1095,8 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
         const result = await t.run(api, parsed.data);
         const text = resultText(result);
         const images = typeof result === "string" ? undefined : result.images;
-        if (t.flow === "private") privateIn = true;
+        if (t.flow === "private") held = { what: "bank" };
+        else if (typeof result !== "string" && result.private && !held) held = { what: "connector", id: result.private };
         const first = text.split("\n").find((l) => l.trim()) ?? "";
         const summary = /^[[{]/.test(first.trim()) ? `${text.length} characters of data` : first.length > 140 ? `${first.slice(0, 139)}…` : first;
         const content =

@@ -155,6 +155,32 @@ describe("connectors", () => {
     expect(pasted.status).toBe(422);
   });
 
+  test("one that's Galahad's alone (mail): another agent asks first; you allow it, it may; you stop it, it asks again", async () => {
+    const mailbox = { ...manifest("mailbox"), label: "Mailbox", auth: { secret: "mailbox", scheme: "bearer" }, access: { only: "galahad", allowed: [] }, private: true };
+    expect((await admin("setConnector", { id: "mailbox", manifest: mailbox })).status).toBe(200);
+    const listed = (await admin<{ connectors: ConnectorView[] }>("connectors")).body.connectors.find((c) => c.id === "mailbox")!;
+    expect(listed).toMatchObject({ access: { only: "galahad", allowed: [] }, private: true });
+    const refused = await arm("callConnector", { connector: "mailbox", tool: "me" });
+    expect([refused.status, refused.body.error]).toEqual([403, "Mailbox is Galahad's alone: ask your liege to let you use it (connector_request), and use it once they do"]);
+    // It asks to use it: the request says so, and who.
+    expect((await arm("requestConnector", { connector: "mailbox", why: "To read the invoice you forwarded." })).status).toBe(200);
+    const asked = (await admin<{ requests: { connector: string; access: boolean; agent: string; id: string }[] }>("connectorRequests")).body.requests.find((r) => r.connector === "mailbox")!;
+    expect(asked).toMatchObject({ access: true, agent: "test-arm" });
+    // An agent can't let itself in.
+    expect((await arm("setConnectorAccess", { id: "mailbox", agent: "test-arm", allow: true })).status).toBe(403);
+    expect((await admin("setConnectorAccess", { id: "mailbox", agent: "test-arm", allow: true })).status).toBe(200);
+    expect((await admin<{ requests: { connector: string }[] }>("connectorRequests")).body.requests.some((r) => r.connector === "mailbox")).toBe(false);
+    // Allowed, it gets past who may: here only to its missing key (424), never to "Galahad's alone" (403).
+    expect((await arm("callConnector", { connector: "mailbox", tool: "me" })).status).toBe(424);
+    expect((await admin("setConnectorAccess", { id: "mailbox", agent: "test-arm", allow: false })).status).toBe(200);
+    expect((await arm("callConnector", { connector: "mailbox", tool: "me" })).status).toBe(403);
+    // You are never asked: a call of yours is yours.
+    expect((await admin("callConnector", { connector: "mailbox", tool: "me" })).status).not.toBe(403);
+    // Every agent may use one that isn't anybody's alone: nothing to allow.
+    expect((await admin("setConnectorAccess", { id: "forge", agent: "test-arm", allow: true })).status).toBe(400);
+    await admin("removeConnector", { id: "mailbox" });
+  });
+
   test("without its key a call fails, sends nothing, and files a secret request", async () => {
     const response = await admin("callConnector", { connector: "forge", tool: "me" });
     expect(response.status).toBe(424);

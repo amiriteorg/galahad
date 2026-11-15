@@ -15,6 +15,7 @@ import {
   findSecrets,
   MAX_CLOCK_DRIFT_MS,
   MAX_ORDER_DAYS,
+  mayCall,
   type NativeName,
   type NodeIdentity,
   orderCovers,
@@ -60,7 +61,7 @@ import type { LedgerEntryInput } from "@galahad/sandbox";
 export type Caller = { kind: "owner"; device: string } | { kind: "agent"; by: string; quest?: string };
 
 export type CallOutcome =
-  | { status: "done"; class: string; target: string; result: ConnectorResult; order?: { id: string; label: string }; action?: string }
+  | { status: "done"; class: string; target: string; result: ConnectorResult; order?: { id: string; label: string }; action?: string; private?: true }
   | { status: "asked"; action: string; class: string; target: string; expires: number };
 
 type StoredOrder = OrderTerms & { id: string; revoked: boolean; signedHlc: string; via?: string };
@@ -118,6 +119,10 @@ export class ConnectorService {
 
   async call(input: { connector: string; tool: string; args?: Record<string, ArgValue>; why?: string }, caller: Caller): Promise<CallOutcome> {
     const manifest = this.manifest(input.connector);
+    // One that's Galahad's alone (mail): him, you, your loops and quests, and the agents you allowed; any other asks first.
+    if (caller.kind === "agent" && !mayCall(manifest.access, caller.by)) {
+      throw new ConnectorCallError(403, `${manifest.label} is Galahad's alone: ask your liege to let you use it (connector_request), and use it once they do`);
+    }
     const args = ConnectorArgs.parse(input.args ?? {});
     // Arguments leave this machine (and approvals replicate in plaintext): no keys in them, however deep.
     if (argStrings(args).some((text) => findSecrets(text).length)) {
@@ -180,7 +185,7 @@ export class ConnectorService {
       quest,
       detail: `${caller.kind === "owner" ? "by you" : `by ${caller.by}`} · ${excerpt(result, 300)}`.slice(0, 2000),
     });
-    return { status: "done", class: request.class, target: request.target, result };
+    return { status: "done", class: request.class, target: request.target, result, ...(manifest.private ? { private: true as const } : {}) };
   }
 
   private async send(manifest: ConnectorManifest, request: ConnectorRequest): Promise<ConnectorResult> {

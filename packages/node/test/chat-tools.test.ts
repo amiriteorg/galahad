@@ -337,6 +337,39 @@ describe("one answer's tools", () => {
     expect(tools.specs.find((s) => s.name === "web_search")!.description).toContain("Refused once the user's bank data is in the answer");
   });
 
+  test("once mail is in the answer, only that mailbox's own tools run: nothing else that can carry it out, nor anything that writes it into the mind", async () => {
+    // A node whose gmail is private (mail) and whose github isn't; the real connector_call tool.
+    const sent: { connector: string; tool: string }[] = [];
+    const node: ToolApi = {
+      call: async <T,>(name: string, input?: unknown) => {
+        const { connector, tool } = input as { connector: string; tool: string };
+        if (name === "callConnector") sent.push({ connector, tool });
+        return { status: "done", target: `${connector}.${tool}`, result: { status: 200, body: "From: a friend. Your code is 123456.", truncated: false }, ...(connector === "gmail" ? { private: true } : {}) } as T;
+      },
+      bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
+    };
+    const connectorCall = TOOLS.find((t) => t.name === "connector_call")!;
+    const tools = chatTools([connectorCall, TOOLS.find((t) => t.name === "remember")!, fake("web_search", "egress", async () => "results")], node, explain);
+    expect((await tools.run({ id: "1", name: "connector_call", input: { connector: "github", tool: "issues" } })).isError).toBeUndefined();
+    expect((await tools.run({ id: "2", name: "connector_call", input: { connector: "gmail", tool: "search" } })).isError).toBeUndefined();
+    for (const [name, input] of [["web_search", { q: "123456" }], ["remember", { text: "The code is 123456" }], ["connector_call", { connector: "github", tool: "issue.create" }]] as const) {
+      expect([name, await tools.run({ id: name, name, input })]).toMatchObject([name, { isError: true, summary: "refused: mail is in this answer" }]);
+    }
+    // A reply drafted from it stays in that mailbox (and sending one still asks the user, as every outward call does).
+    expect((await tools.run({ id: "3", name: "connector_call", input: { connector: "gmail", tool: "draft" } })).isError).toBeUndefined();
+    expect(sent).toEqual([{ connector: "github", tool: "issues" }, { connector: "gmail", tool: "search" }, { connector: "gmail", tool: "draft" }]);
+    // The next answer starts clean.
+    expect((await chatTools([fake("web_search", "egress", async () => "results")], node, explain).run({ id: "4", name: "web_search", input: {} })).isError).toBeUndefined();
+  });
+
+  test("the bank read after mail holds the stricter rule: not even the mailbox runs", async () => {
+    const node: ToolApi = { call: async <T,>() => ({ status: "done", target: "gmail.search", result: { status: 200, body: "mail", truncated: false }, private: true }) as T, bytes: async () => ({ bytes: new Uint8Array(), type: "" }) };
+    const tools = chatTools([TOOLS.find((t) => t.name === "connector_call")!, fake("bank_balances", "private", async () => "{}")], node, explain);
+    await tools.run({ id: "1", name: "connector_call", input: { connector: "gmail", tool: "search" } });
+    await tools.run({ id: "2", name: "bank_balances", input: {} });
+    expect(await tools.run({ id: "3", name: "connector_call", input: { connector: "gmail", tool: "draft" } })).toMatchObject({ isError: true, summary: "refused: bank data is in this answer" });
+  });
+
   test("once bank data is in the answer, nothing that writes into the shared mind runs either", async () => {
     // The real tools, against an API that only records which routes were reached (and answers with empty lists).
     const reached: string[] = [];

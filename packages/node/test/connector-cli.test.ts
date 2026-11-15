@@ -4,8 +4,9 @@ import { connectorCommand } from "../src/loop-cli.ts";
 
 /* `galahad connector requests` and `connector dismiss` at a terminal, against what the node would answer. */
 
-const github: ConnectorRequestView = { id: "cr_AAAAAAAAAAAAAAAAAAAAAA", connector: "github", label: "GitHub", why: "To read the failing checks on your pull request.", by: "Kay", at: 1, expires: 2 };
-const slack: ConnectorRequestView = { id: "cr_BBBBBBBBBBBBBBBBBBBBBB", connector: "slack", label: null, why: "To post the release notes.", by: "Galahad", at: 1, expires: 2 };
+const github: ConnectorRequestView = { id: "cr_AAAAAAAAAAAAAAAAAAAAAA", connector: "github", access: false, agent: "team.0a1b2c3d4e.kay", label: "GitHub", why: "To read the failing checks on your pull request.", by: "Kay", at: 1, expires: 2 };
+const slack: ConnectorRequestView = { id: "cr_BBBBBBBBBBBBBBBBBBBBBB", connector: "slack", access: false, agent: "galahad", label: null, why: "To post the release notes.", by: "Galahad", at: 1, expires: 2 };
+const gmail: ConnectorRequestView = { id: "cr_CCCCCCCCCCCCCCCCCCCCCC", connector: "gmail", access: true, agent: "team.0a1b2c3d4e.kay", label: "Gmail", why: "To find the invoice you forwarded.", by: "Kay", at: 1, expires: 2 };
 
 function node(requests: ConnectorRequestView[] = [github, slack]) {
   const asked: { name: RouteName; input: unknown }[] = [];
@@ -49,3 +50,13 @@ test("with none asked it says so; dismissing one sends its id and adds nothing",
   expect(asked.at(-1)).toEqual({ name: "dismissConnectorRequest", input: { id: github.id } });
   await expect(connectorCommand(api, "dismiss", [], {})).rejects.toThrow(/usage: galahad connector dismiss <request id>/);
 });
+
+test("an agent asking to use one that's Galahad's alone: who, which and why, and the line that lets them", async () => {
+  const { api, asked } = node([gmail]);
+  const text = (await printed(() => connectorCommand(api, "requests", [], {}))).join("\n");
+  expect(text).toContain("cr_CCCCCCCCCCCCCCCCCCCCCC  Gmail, Kay asks to use it");
+  expect(text).toContain("let them: galahad connector allow gmail team.0a1b2c3d4e.kay");
+  await printed(() => connectorCommand({ ...api, call: async <T,>(name: RouteName, input?: unknown) => (asked.push({ name, input }), { connector: { label: "Gmail" } } as T) }, "allow", ["gmail", "team.0a1b2c3d4e.kay"], {}));
+  expect(asked.at(-1)).toEqual({ name: "setConnectorAccess", input: { id: "gmail", agent: "team.0a1b2c3d4e.kay", allow: true } });
+});
+

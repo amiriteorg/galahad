@@ -252,6 +252,7 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
   connector refresh <id> [--class tool=class …]   list an MCP server's tools again (your classes stay)
   connector call <id>.<tool> [--arg key=value …] [--why "…"]
   connector requests | connector dismiss <id>      what an agent asked you to connect (it never installs one)
+  connector allow|disallow <id> <agent>           let an agent use a connector that's Galahad's alone (mail), or stop it
   secret set <name> --connector <id>                    a connector's key, pinned to its origin
   action ls [--all] | action approve <id> [--note …] | action deny <id>
 

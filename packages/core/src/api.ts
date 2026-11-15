@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConnectorArgs, ToolName } from "./connectors.ts";
+import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
@@ -634,6 +634,13 @@ export const routes = {
   /** An agent asking for a connector it doesn't have. Asking installs nothing: you add it, from the request. */
   requestConnector: { method: "POST", path: "/api/connectors/requests", scope: "connect", input: ConnectorRequestInput },
   dismissConnectorRequest: { method: "POST", path: "/api/connectors/requests/dismiss", scope: "brain:write", input: z.strictObject({ id: ConnectorRequestId }) },
+  /** Let an agent use a connector that's Galahad's alone, or stop it again. It answers that agent's request for it. */
+  setConnectorAccess: {
+    method: "POST",
+    path: "/api/connectors/access",
+    scope: "brain:write",
+    input: z.strictObject({ id: ConnectorId, agent: AgentLabel, allow: z.boolean() }),
+  },
   callConnector: {
     method: "POST",
     path: "/api/connectors/call",
@@ -1107,6 +1114,10 @@ export interface ConnectorRequestView {
   id: string;
   /** The connector asked for. */
   connector: string;
+  /** It's installed, and this asks to use it: it's Galahad's alone and the asker isn't allowed yet. */
+  access: boolean;
+  /** The asker's label, as a connector's access names it. */
+  agent: string;
   /** Its name, when Galahad ships it (adding it is then a tap); null for a service he doesn't have yet. */
   label: string | null;
   why: string;
@@ -1199,6 +1210,10 @@ export interface ConnectorView {
   needsOrigin: boolean;
   problem: string | null;
   tools: ConnectorToolView[];
+  /** Galahad's alone (and the agents you allowed, by label), when it isn't every agent's. */
+  access: { only: "galahad"; allowed: string[] } | null;
+  /** What it reads stays in the answer that read it (mail), as the bank's data does. */
+  private: boolean;
 }
 
 /**

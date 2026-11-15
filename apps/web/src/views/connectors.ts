@@ -36,11 +36,27 @@ export const connectorsChanged = signal(0);
 export function connectorRequestCard(ctx: Ctx, request: ConnectorRequestView): HTMLElement {
   const name = request.label ?? request.connector;
   const note = h("div");
-  const add = button(request.label ? `Add ${request.label}` : "Add as an MCP server", {
-    variant: "primary",
-    icon: "plus",
-    onClick: () => ctx.navigate("connectors", { intent: request.label ? `install:${request.connector}` : "add-mcp" }),
-  });
+  const add = request.access
+    ? button(`Allow ${request.by}`, {
+        variant: "primary",
+        icon: "check",
+        onClick: (event) =>
+          void busy(event.currentTarget as HTMLButtonElement, async () => {
+            try {
+              await ctx.api.post("/api/connectors/access", { id: request.connector, agent: request.agent, allow: true });
+              connectorsChanged.update((n) => n + 1);
+              toast(`${request.by} may use ${name} now`, { tone: "ok", description: "You can stop it again on Connectors." });
+            } catch (error) {
+              replace(note, callout("danger", errorMessage(error), { title: "Couldn't allow it" }));
+            }
+            await ctx.live.refreshConnectorRequests();
+          }),
+      })
+    : button(request.label ? `Add ${request.label}` : "Add as an MCP server", {
+        variant: "primary",
+        icon: "plus",
+        onClick: () => ctx.navigate("connectors", { intent: request.label ? `install:${request.connector}` : "add-mcp" }),
+      });
   const dismiss = button("Dismiss", { icon: "x" });
   dismiss.addEventListener("click", () =>
     void busy(dismiss, async () => {
@@ -66,9 +82,14 @@ export function connectorRequestCard(ctx: Ctx, request: ConnectorRequestView): H
         h(
           "div",
           { class: "grow stack tight" },
-          h("strong", {}, `${request.by} asks for ${name}`),
+          h("strong", {}, request.access ? `${request.by} asks to use ${name}` : `${request.by} asks for ${name}`),
           h("p", { class: "small" }, request.why),
-          h("p", { class: "tiny subtle", title: new Date(request.at).toLocaleString() }, `Asked ${relativeTime(request.at)}. Asking installs nothing: it waits for you to add it.`),
+          h(
+            "p",
+            { class: "tiny subtle", title: new Date(request.at).toLocaleString() },
+            `Asked ${relativeTime(request.at)}. `,
+            request.access ? `${name} is Galahad's alone: allowed, ${request.by} may read it too, until you stop it.` : "Asking installs nothing: it waits for you to add it.",
+          ),
         ),
       ),
       ctx.can("brain:write") ? h("div", { class: "row wrap" }, add, dismiss) : null,
@@ -438,6 +459,46 @@ function installBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
   );
 }
 
+/** Who may use it, when it's Galahad's alone (mail), and whether what it reads stays in the answer that read it. */
+function accessBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
+  if (!c.access && !c.private) return null;
+  const allowed = c.access?.allowed ?? [];
+  const stop = (agent: string) =>
+    void ctx.api
+      .post("/api/connectors/access", { id: c.id, agent, allow: false })
+      .then(() => {
+        connectorsChanged.update((n) => n + 1);
+        toast(`${agentName(agent)} may not use ${c.label} any more`, { tone: "ok", description: "It asks first again." });
+      })
+      .catch((error: unknown) => toast("Couldn't change it", { tone: "error", description: errorMessage(error) }));
+  return h(
+    "div",
+    { class: "stack tight" },
+    c.access
+      ? h(
+          "p",
+          { class: "small" },
+          icon("shield-check", { size: 13 }),
+          " Galahad's alone",
+          allowed.length ? ", and " : ": a knight or another agent asks you first.",
+          ...allowed.map((agent, i) => [
+            i ? ", " : "",
+            h("span", { class: "strong" }, agentName(agent)),
+            c.installed && ctx.can("brain:write") ? h("button", { class: "btn ghost sm icon-only", type: "button", "aria-label": `Stop ${agentName(agent)} using it`, title: "Stop", onclick: () => stop(agent) }, icon("x", { size: 12 })) : null,
+          ]),
+          allowed.length ? "." : null,
+        )
+      : null,
+    c.private ? h("p", { class: "tiny subtle" }, "What it reads stays in the answer that read it: nothing else that could carry it out runs after it, as for your bank.") : null,
+  );
+}
+
+/** An agent as you know it: a knight by its id (team.<tag>.kay is Kay), anything else by its label. */
+const agentName = (label: string): string => {
+  const knight = /^team\.[0-9a-f]+\.(.+)$/.exec(label)?.[1];
+  return knight ? knight.charAt(0).toUpperCase() + knight.slice(1) : label;
+};
+
 async function remove(ctx: Ctx, c: ConnectorView): Promise<void> {
   const ok = await confirmAction({
     title: `Remove ${c.label}?`,
@@ -524,6 +585,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
       ),
       c.description ? h("p", { class: "small muted" }, c.description) : null,
       c.problem ? callout("warn", c.problem) : null,
+      accessBlock(ctx, c),
       keyBlock(ctx, c, mcp && !c.tools.length ? () => void refreshMcp(ctx, c, deps) : undefined),
       installBlock(ctx, c),
       mcp

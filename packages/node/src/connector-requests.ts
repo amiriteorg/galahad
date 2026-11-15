@@ -15,6 +15,8 @@ export const MOST_REQUESTS = 20;
 export interface ConnectorRequest {
   id: string;
   connector: string;
+  /** It's installed and Galahad's alone: this asks to use it (connector access), not for it to be added. */
+  access: boolean;
   why: string;
   /** Who asked: the asker's label (galahad, a knight's, an agent's) or its kind. */
   by: string;
@@ -27,10 +29,13 @@ export class ConnectorRequests {
     db.exec("CREATE TABLE IF NOT EXISTS connector_requests (id TEXT PRIMARY KEY, at INTEGER NOT NULL, expires INTEGER NOT NULL, data TEXT NOT NULL)");
   }
 
-  /** Keeps a new request (one for a service already asked for replaces the older) and gives it its id. */
+  /**
+   * Keeps a new request and gives it its id. One for a service already asked for replaces the older; asking to use one,
+   * the same agent's older ask.
+   */
   add(request: Omit<ConnectorRequest, "id" | "at" | "expires">, now = Date.now()): ConnectorRequest {
     this.sweep(now);
-    this.resolve(request.connector, now);
+    for (const old of this.list(now).filter((r) => r.connector === request.connector && r.access === request.access && (!r.access || r.by === request.by))) this.remove(old.id);
     const kept: ConnectorRequest = { ...request, id: `cr_${randomBytes(16).toString("base64url").slice(0, 22)}`, at: now, expires: now + REQUEST_TTL_MS };
     this.db.query("INSERT INTO connector_requests (id, at, expires, data) VALUES (?, ?, ?, ?)").run(kept.id, kept.at, kept.expires, JSON.stringify(kept));
     const extra = this.list(now).length - MOST_REQUESTS;
@@ -53,7 +58,12 @@ export class ConnectorRequests {
 
   /** Answered: the connector was installed. How many requests for it went. */
   resolve(connector: string, now = Date.now()): number {
-    return this.list(now).filter((r) => r.connector === connector && this.remove(r.id)).length;
+    return this.list(now).filter((r) => r.connector === connector && !r.access && this.remove(r.id)).length;
+  }
+
+  /** Answered: the agent may use the connector now. */
+  resolveAccess(connector: string, agent: string, now = Date.now()): number {
+    return this.list(now).filter((r) => r.connector === connector && r.access && r.by === agent && this.remove(r.id)).length;
   }
 
   private sweep(now: number): void {

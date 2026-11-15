@@ -270,11 +270,24 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       const { requests } = await api.call<{ requests: ConnectorRequestView[] }>("connectorRequests");
       if (!requests.length) console.log("No agent is asking for a connector. When one needs a service it doesn't have, its request waits here.");
       for (const request of requests) {
-        console.log(`  ${bold(request.id)}  ${bold(request.label ?? request.connector)}, asked by ${request.by}`);
-        console.log(`  ${" ".repeat(request.id.length)}  ${dim(`why: ${request.why}`)}`);
-        console.log(`  ${" ".repeat(request.id.length)}  ${dim(request.label ? `add it: galahad connector add ${request.connector}` : `not one Galahad ships: add it as an MCP server (galahad connector add ${request.connector} --mcp <url>) or from a manifest`)}`);
+        const pad = " ".repeat(request.id.length);
+        console.log(`  ${bold(request.id)}  ${bold(request.label ?? request.connector)}, ${request.access ? `${request.by} asks to use it` : `asked by ${request.by}`}`);
+        console.log(`  ${pad}  ${dim(`why: ${request.why}`)}`);
+        const how = request.access
+          ? `let them: galahad connector allow ${request.connector} ${request.agent}`
+          : request.label
+            ? `add it: galahad connector add ${request.connector}`
+            : `not one Galahad ships: add it as an MCP server (galahad connector add ${request.connector} --mcp <url>) or from a manifest`;
+        console.log(`  ${pad}  ${dim(how)}`);
       }
       if (requests.length) console.log(dim("Dismiss one: galahad connector dismiss <id>"));
+      return;
+    }
+    case "allow":
+    case "disallow": {
+      if (!rest[0] || !rest[1]) throw new Error(`usage: galahad connector ${sub} <id> <agent> (an agent's label, as galahad connector requests shows it)`);
+      const { connector } = await api.call<{ connector: ConnectorView }>("setConnectorAccess", { id: rest[0], agent: rest[1], allow: sub === "allow" });
+      console.log(sub === "allow" ? `${rest[1]} may use ${connector.label} now.` : `${rest[1]} may not use ${connector.label} any more: it asks first.`);
       return;
     }
     case "dismiss": {
@@ -408,7 +421,7 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       return;
     }
     default:
-      throw new Error("usage: galahad connector ls | add | refresh | rm | tools | call | requests | dismiss");
+      throw new Error("usage: galahad connector ls | add | refresh | rm | tools | call | requests | dismiss | allow | disallow");
   }
 }
 

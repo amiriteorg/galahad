@@ -33,6 +33,7 @@ import {
   type FindingView,
   type InvestigationView,
   isMcpTool,
+  mayCall,
   Preregistration,
   randomId,
   redact,
@@ -894,8 +895,9 @@ export function createApp(ctx: AppContext) {
 
   /** What agents asked you to connect that still isn't installed (installed on another node, it's answered there too). */
   function openConnectorRequests(): ConnectorRequest[] {
-    const installed = new Set(installedConnectors(ctx.store).map((c) => c.id));
-    return ctx.connectorRequests.list().filter((r) => !installed.has(r.connector));
+    const installed = new Map(installedConnectors(ctx.store).map((c) => [c.id, c.manifest]));
+    // A request to add one goes once it's installed; one to use it, once the asker may.
+    return ctx.connectorRequests.list().filter((r) => (r.access ? installed.has(r.connector) && !mayCall(installed.get(r.connector)!.access, `arm:${r.by}`) : !installed.has(r.connector)));
   }
 
   function connectorRequestView(request: ConnectorRequest): ConnectorRequestView {
@@ -903,7 +905,8 @@ export function createApp(ctx: AppContext) {
     // Who asked, as you know them: Galahad, a knight of this node's by its name, or an agent by its label.
     const knight = /^team\.[0-9a-f]+\.(.+)$/.exec(request.by)?.[1];
     const by = request.by === GALAHAD_ARM ? "Galahad" : knight && teammateLabel(knight) === request.by ? (ctx.team?.store.teammate(knight)?.name ?? knight) : request.by;
-    return { ...request, label: shipped?.manifest.label ?? null, by };
+    const label = installedConnector(ctx.store, request.connector)?.label ?? shipped?.manifest.label ?? null;
+    return { ...request, access: Boolean(request.access), agent: request.by, label, by };
   }
 
   function connectorViews(): ConnectorView[] {
@@ -947,6 +950,8 @@ export function createApp(ctx: AppContext) {
         needsOrigin: !!catalog?.needsOrigin,
         problem: mine?.problem ?? null,
         tools,
+        access: manifest?.access ? { only: manifest.access.only, allowed: [...manifest.access.allowed] } : null,
+        private: Boolean(manifest?.private),
       };
     });
   }
@@ -2448,8 +2453,21 @@ export function createApp(ctx: AppContext) {
     requestConnector: (input, p) => {
       // What it wrote is shown to you: no keys in it.
       guardAgainstSecrets(input.why);
-      if (installedConnectors(ctx.store).some((c) => c.id === input.connector)) throw new HttpError(409, `${input.connector} is installed: call its tools (connectors lists them)`);
-      return { request: connectorRequestView(ctx.connectorRequests.add({ connector: input.connector, why: input.why, by: p.label ?? p.kind })) };
+      const installed = installedConnector(ctx.store, input.connector);
+      // Installed: call it, unless it's Galahad's alone and the asker isn't allowed: then this asks to use it.
+      const access = Boolean(installed) && p.kind === "arm" && !mayCall(installed!.access, `arm:${p.label}`);
+      if (installed && !access) throw new HttpError(409, `${input.connector} is installed: call its tools (connectors lists them)`);
+      return { request: connectorRequestView(ctx.connectorRequests.add({ connector: input.connector, access, why: input.why, by: p.label ?? p.kind })) };
+    },
+    setConnectorAccess: (input) => {
+      const manifest = installedConnector(ctx.store, input.id);
+      if (!manifest) throw new HttpError(404, `${input.id} isn't installed`);
+      if (!manifest.access) throw new HttpError(400, `every agent may use ${manifest.label} already`);
+      if (input.agent === GALAHAD_ARM) throw new HttpError(400, `${manifest.label} is Galahad's: he always may`);
+      const allowed = input.allow ? [...new Set([...manifest.access.allowed, input.agent])] : manifest.access.allowed.filter((a) => a !== input.agent);
+      ctx.store.emit(ctx.identity, "connector.set", { id: manifest.id, manifest: { ...manifest, access: { ...manifest.access, allowed } } as unknown as Record<string, unknown> });
+      if (input.allow) ctx.connectorRequests.resolveAccess(manifest.id, input.agent);
+      return { connector: connectorViews().find((c) => c.id === manifest.id) };
     },
     dismissConnectorRequest: (input) => {
       if (!ctx.connectorRequests.remove(input.id)) throw new HttpError(404, "no such request (its connector was installed, it was dismissed, or a week went by)");
