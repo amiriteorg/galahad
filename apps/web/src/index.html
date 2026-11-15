@@ -215,7 +215,6 @@
       .topbar .title { font-weight: 600; font-size: var(--fs-15); letter-spacing: -0.01em; transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out); }
       .topbar .title.tucked { opacity: 0; transform: translateY(4px); }
       .topbar .brand-mini { display: flex; align-items: center; gap: var(--sp-2); }
-      .topbar .brand-mini .emblem { --em-size: 24px; }
       main.view {
         flex: 1; width: 100%; outline: none;
         padding: var(--sp-5) calc(var(--sp-4) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-8)) calc(var(--sp-4) + var(--safe-left));
@@ -254,7 +253,6 @@
       }
       .sidebar-head { display: flex; align-items: center; gap: var(--sp-2); height: 40px; padding: 0 var(--sp-1) 0 var(--sp-2); margin-bottom: var(--sp-2); }
       .wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; min-width: 0; }
-      .wordmark span { font-weight: 650; font-size: var(--fs-12); letter-spacing: 0.2em; text-transform: uppercase; }
       .emblem { flex: none; display: inline-block; width: var(--em-size, 24px); height: var(--em-size, 24px); }
       .emblem img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none; }
       .search-trigger {
@@ -280,7 +278,6 @@
       @media (min-width: 960px) {
         :root[data-sidebar="collapsed"] .sidebar .label,
         :root[data-sidebar="collapsed"] .sidebar .kbds,
-        :root[data-sidebar="collapsed"] .sidebar .wordmark span,
         :root[data-sidebar="collapsed"] .sidebar .roster-text,
         :root[data-sidebar="collapsed"] .sidebar .roster-label,
         :root[data-sidebar="collapsed"] .sidebar .roster-note,

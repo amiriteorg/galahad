@@ -9,7 +9,6 @@ import type { AnyScope, WhoAmI } from "./types.ts";
 import { button, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
-import { emblem } from "./ui/emblem.ts";
 import { icon } from "./ui/icons.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
@@ -177,7 +176,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", emblem({ size: 22 }), h("span", {}, "Galahad")), collapse),
+    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", icon("roundtable", { size: 22 })), collapse),
     h(
       "button",
       { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
@@ -195,7 +194,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const topbar = h(
     "header",
     { class: "topbar" },
-    homeLink("brand-mini", emblem({ size: 24 })),
+    homeLink("brand-mini", icon("roundtable", { size: 22 })),
     topTitle,
     h(
       "div",
