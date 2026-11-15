@@ -214,9 +214,12 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     return a;
   };
   const places = railOf(visible);
+  // At its head, Add: the palette, on everything this device may add (a key, an MCP server, a connector, a loop…).
+  const railAdd = h("button", { class: "rail-item rail-add", type: "button", "aria-label": "Add…", "data-tip": "Add…", "data-keys": isMac() ? "⌘K" : "Ctrl K", onclick: () => ctx.palette("Add ") }, icon("plus", { size: 18 }));
   const rail = h(
     "nav",
     { class: "rail", "aria-label": "Places" },
+    h("div", { class: "rail-group" }, railAdd),
     ...places.groups.map((group) => h("div", { class: "rail-group" }, ...group.map(railLink))),
     h("div", { class: "rail-group rail-foot" }, ...places.foot.map(railLink)),
   );
@@ -402,7 +405,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       }));
       const actions: Command[] = [];
       if (can("chat")) actions.push({ id: "new-chat", label: "New chat", group: "Actions", icon: "chat", keywords: ["clear", "conversation"], run: () => (startNewChat(), ctx.navigate("chat")) });
-      if (can("vault:write")) actions.push({ id: "add-key", label: "Add a key to the vault", group: "Actions", icon: "key", keywords: ["api key", "secret", "seal"], run: () => openAddKey(ctx) });
+      if (can("vault:write")) actions.push({ id: "add-key", label: "Add an API key", group: "Actions", icon: "key", keywords: ["vault", "secret", "seal", "token", "credential"], run: () => openAddKey(ctx) });
+      if (can("brain:write")) actions.push({ id: "add-mcp", label: "Add an MCP server", group: "Actions", icon: "plug", keywords: ["mcp", "tools", "server", "connect"], run: () => ctx.navigate("connectors", { intent: "add-mcp" }) });
+      if (can("brain:write")) actions.push({ id: "add-connector", label: "Add a connector", group: "Actions", icon: "plug", keywords: ["github", "cloudflare", "home assistant", "install", "service"], run: () => ctx.navigate("connectors", { intent: "catalog" }) });
       if (can("fleet:admin") && can("chat")) actions.push({ id: "give", label: "Give a task to the Roundtable", group: "Actions", icon: "layers", keywords: ["task", "knights", "delegate", "best suited", "assign"], run: () => giveToRoundtable(ctx) });
       if (can("fleet:admin")) {
         actions.push({ id: "invite-client", label: "Pair a phone or browser", group: "Actions", icon: "phone", keywords: ["invite", "device", "add"], run: () => openInvite(ctx, "client") });

@@ -513,7 +513,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
   );
 }
 
-export const connectorsView: View = (root, ctx, { scope }) => {
+export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const installedBox = h("div", { class: "grid wide" }, skeletonBlock(320), skeletonBlock(320));
   const availableBox = h("div", { class: "grid wide" });
   const note = h("div");
@@ -521,9 +521,9 @@ export const connectorsView: View = (root, ctx, { scope }) => {
     changed: () => connectorsChanged.update((n) => n + 1),
     keyField: (c, onSealed) => keyBlock(ctx, c, onSealed),
   };
-  const addMcp = ctx.can("brain:write") ? button("Add an MCP server", { size: "sm", variant: "ghost", icon: "plus", onClick: () => openAddMcp(ctx, connectors, deps) }) : null;
+  const addMcp = ctx.can("brain:write") ? button("Add an MCP server", { size: "sm", icon: "plus", onClick: () => openAddMcp(ctx, connectors, deps) }) : null;
   const installedSection = section("Installed", { actions: addMcp }, installedBox);
-  const availableSection = section("Available", {}, availableBox);
+  const availableSection = section("Available", { id: "connectors-available" }, availableBox);
   const read = ctx.can("mind:read");
   const admin = ctx.can("fleet:admin");
   const ordersBox = h("div", { class: "stack" }, skeletonBlock(96));
@@ -596,6 +596,8 @@ export const connectorsView: View = (root, ctx, { scope }) => {
     }
   }
 
+  // Arrived to add something (the palette's "Add an MCP server", "Add a connector"): once, when the list is in.
+  let arrived = opts.intent ?? null;
   async function refresh(): Promise<void> {
     try {
       const [list, signed] = await Promise.all([loadConnectors(ctx, scope.signal), fetchOrders()]);
@@ -604,6 +606,9 @@ export const connectorsView: View = (root, ctx, { scope }) => {
       if (signed) orders = signed;
       keepPlace(root, () => render(list));
       if (signed) showOrders();
+      if (arrived === "add-mcp" && ctx.can("brain:write")) openAddMcp(ctx, connectors, deps);
+      else if (arrived === "catalog") requestAnimationFrame(() => availableSection.scrollIntoView({ block: "start", behavior: "smooth" }));
+      arrived = null;
     } catch (error) {
       if (!scope.disposed) replace(installedBox, errorState("Couldn't load connectors", error, () => void refresh()));
     }
