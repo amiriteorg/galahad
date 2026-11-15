@@ -10,7 +10,7 @@ import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
@@ -25,7 +25,7 @@ import { toast } from "../ui/toast.ts";
 import { openAside } from "./chat-aside.ts";
 import { queuePanel } from "./chat-queue.ts";
 import { openInHand } from "./in-hand.ts";
-import { openAddKey } from "./vault.ts";
+import { openAddKey, secretRequestCard } from "./vault.ts";
 
 /*
  * Chat. A turn runs on the node, not in this page: the page starts it and watches
@@ -879,6 +879,26 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const panel = queuePanel(queueActions(ctx.api));
   const elsewhere = h("div", { class: "composer-alerts" });
   let shownElsewhere = "";
+  // A key he asked for in this chat: its sealed field here, above the message box, as well as in the Inbox. What you
+  // seal goes straight to the vault; he learns that it exists, never what it is. Drawn again only when which keys wait
+  // changes, so a half-typed value stays.
+  const keyAsks = h("div", { class: "composer-alerts key-asks" });
+  let shownAsks = "";
+  const looked = new Set<string>();
+  function syncKeyAsks(): void {
+    const names = keysAskedIn(thread.turns);
+    const waiting = ctx.live.secretRequests.value.filter((request) => names.includes(request.name));
+    // Asked just now: the Inbox is asked at once, not at its next look.
+    const fresh = names.filter((name) => !looked.has(name) && !waiting.some((request) => request.name === name));
+    if (fresh.length && ctx.can("vault:read")) {
+      for (const name of fresh) looked.add(name);
+      void ctx.live.refreshInbox();
+    }
+    const signature = waiting.map((request) => request.name).join(",");
+    if (signature === shownAsks) return;
+    shownAsks = signature;
+    replace(keyAsks, ...waiting.map((request) => secretRequestCard(ctx, request)));
+  }
 
   function syncComposer(): void {
     const busy = live !== null;
@@ -895,6 +915,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     steerButton.classList.toggle("primary", !canQueue || enter === "steer");
     queueButton.classList.toggle("primary", canQueue && enter === "queue");
     input.placeholder = busy ? (canQueue ? "Steer him, or queue what's next…" : "Steer him…") : "Ask Galahad…";
+    syncKeyAsks();
     panel.render({ queue, held, steering, busy, deadline: live?.deadline ?? null });
     // He's working in this chat on a turn this device may not watch (it may read the bank): said, with Stop.
     const other = unwatchable && !live ? unwatchable.id : "";
@@ -1276,12 +1297,13 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       h("div", { class: "chat-head" }, back, who, inbox, options.el),
       subHead,
       threadEl,
-      h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, panel.el, form),
+      h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, keyAsks, panel.el, form),
     ),
   );
 
   changed.add(onChange);
   scope.add(() => changed.delete(onChange));
+  scope.add(ctx.live.secretRequests.subscribe(syncKeyAsks));
   // Arriving for one chat, or to start one in a project.
   if (opts.conversation && opts.conversation !== current?.id) {
     openConversation(ctx.api, opts.conversation).catch((error: unknown) => toast("Couldn't open that chat", { tone: "error", description: errorMessage(error) }));

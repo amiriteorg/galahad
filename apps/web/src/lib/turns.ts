@@ -73,6 +73,26 @@ export interface Step {
   toolName?: string;
 }
 
+/** The keys he asked for in these turns (his request_secret steps, by the name each named), once each, in the order he asked. */
+export function keysAskedIn(turns: Turn[]): string[] {
+  const names: string[] = [];
+  for (const turn of turns) {
+    for (const step of turn.steps) {
+      if (step.toolName !== "request_secret" || !step.detail) continue;
+      // The step's detail is the tool's arguments as JSON, then " → " and what it answered.
+      const end = step.detail.indexOf("} → ");
+      let name: unknown;
+      try {
+        name = (JSON.parse(end >= 0 ? step.detail.slice(0, end + 1) : step.detail) as { name?: unknown }).name;
+      } catch {
+        continue;
+      }
+      if (typeof name === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(name) && !names.includes(name)) names.push(name);
+    }
+  }
+  return names;
+}
+
 export interface Turn {
   id: number;
   /** The kept message this is, once the node has said (kept chats). */

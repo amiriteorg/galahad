@@ -1062,6 +1062,10 @@
       .composer .send { width: 34px; height: 34px; padding: 0; border-radius: 10px; flex: none; }
       @media (pointer: coarse) { .composer .send { width: 40px; height: 40px; } }
       .composer-wrap .callout { margin-bottom: var(--sp-2); box-shadow: var(--shadow-2); }
+      /* A key he asked for in this chat, sealed right here (views/chat.ts). */
+      .key-asks { display: flex; flex-direction: column; gap: var(--sp-2); }
+      .key-asks:not(:empty) { margin-bottom: var(--sp-2); }
+      .key-asks .card { box-shadow: var(--shadow-2); }
       /* While he works: steer or queue (the one Enter does is in ink), and Stop. */
       .composer .composer-bar .btn.sm { flex: none; }
       @media (pointer: coarse) { .composer .composer-bar .btn.sm:not(.icon-only) { height: 40px; padding: 0 14px; font-size: var(--fs-13); } }

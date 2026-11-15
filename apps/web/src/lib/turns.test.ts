@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatStreamEvent, StoredMessage } from "@galahad/core";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, stateBadge, stopsIn, type Thread, turnOf } from "./turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, endTurn, failTurn, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
 
 const fresh = (): Thread => ({ turns: [], nextId: 1, target: null, base: null });
 const shape = (thread: Thread) => thread.turns.map((t) => [t.role, t.content, t.status]);
@@ -233,5 +233,21 @@ describe("small words", () => {
   test("when a turn stops by itself", () => {
     expect(stopsIn(30 * 60_000, 3 * 60_000)).toBe("stops by itself in 27 min");
     expect(stopsIn(1000, 990)).toBe("stops by itself within a minute");
+  });
+});
+
+describe("keys he asked for in a chat", () => {
+  const turn = (steps: Step[]): Turn => ({ id: 1, role: "assistant", content: "", steps, status: "done", fallbacks: 0, startedAt: 0 });
+  const asked = (name: string, extra = ""): Step => ({ icon: "zap", text: "Ask the user for a credential", detail: `{"name":"${name}","purpose":"To open the pull request"${extra}} → Requested "${name}".`, state: "done", tool: `call_${name}`, toolName: "request_secret" });
+
+  test("each key named by his request_secret steps, once, in the order he asked", () => {
+    expect(keysAskedIn([turn([asked("github-token")]), turn([asked("deepseek"), asked("github-token")])])).toEqual(["github-token", "deepseek"]);
+  });
+
+  test("only his requests' names: another tool's arguments, or words that only look like one, aren't keys he asked for", () => {
+    const other: Step = { icon: "zap", text: "Recall", detail: '{"name":"github-token"}', state: "done", tool: "call_x", toolName: "recall" };
+    expect(keysAskedIn([turn([other])])).toEqual([]);
+    expect(keysAskedIn([turn([{ ...asked("ok"), detail: '{"purpose":"a \\"name\\":\\"trick\\""}' }])])).toEqual([]);
+    expect(keysAskedIn([])).toEqual([]);
   });
 });
