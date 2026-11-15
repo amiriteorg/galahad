@@ -12,7 +12,7 @@ struct PairedNode: Codable, Equatable, Sendable {
     var nodeName: String?
     var fleetName: String?
 
-    private static let key = "bot.galahad.paired-node"
+    private static let key = "org.amirite.galahad.paired-node"
 
     static func load(from defaults: UserDefaults = .standard) -> PairedNode? {
         defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(PairedNode.self, from: $0) }

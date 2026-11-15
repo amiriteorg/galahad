@@ -27,7 +27,7 @@ final class DeviceKey: RequestSigner, @unchecked Sendable {
     }
 
     /// The app's own key; tests use tags of their own.
-    static let appTag = "bot.galahad.device-key"
+    static let appTag = "org.amirite.galahad.device-key"
 
     /// Where a new key is made: the Secure Enclave wherever there is one.
     static var preferred: Storage { SecureEnclave.isAvailable ? .secureEnclave : .keychain }

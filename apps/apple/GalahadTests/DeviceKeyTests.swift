@@ -7,7 +7,7 @@ import Testing
 /// This device's key: made where it can't be read out, found again by its tag, signing as the node verifies. Each test
 /// has a tag of its own, so none of them ever meets the app's own key.
 @Suite(.serialized) struct DeviceKeyTests {
-    let tag = "bot.galahad.tests.\(UUID().uuidString)"
+    let tag = "org.amirite.galahad.tests.\(UUID().uuidString)"
 
     @Test func aNewKeyIsKeptAndFoundAgainByItsTag() throws {
         defer { try? DeviceKey.delete(tag: tag) }
