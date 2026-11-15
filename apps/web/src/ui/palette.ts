@@ -163,8 +163,16 @@ export function openPalette(source: PaletteSource, initialQuery = "", from?: Ele
     select(0);
   }
 
+  // A phone's keyboard covers the page's lower part (iOS keeps the page full height under it): the palette ends above
+  // it, so its last result can be reached (--room, index.html).
+  const viewport = window.visualViewport;
+  const fit = (): void => {
+    if (viewport) dialog.style.setProperty("--room", `${Math.floor(viewport.offsetTop + viewport.height - dialog.getBoundingClientRect().top - 8)}px`);
+  };
+
   function finish(): void {
     if (!dialog.isConnected) return;
+    viewport?.removeEventListener("resize", fit);
     if (dialog.open) dialog.close();
     dialog.remove();
     if (openDialog === dialog) openDialog = null;
@@ -235,6 +243,8 @@ export function openPalette(source: PaletteSource, initialQuery = "", from?: Ele
 
   document.body.appendChild(dialog);
   dialog.showModal();
+  fit();
+  viewport?.addEventListener("resize", fit);
   render();
   input.focus();
   input.select();

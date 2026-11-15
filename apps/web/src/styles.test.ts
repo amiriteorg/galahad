@@ -127,6 +127,15 @@ describe("the stylesheet", () => {
     expect(unringed.filter((field) => !focusStyled(field))).toEqual([]);
   });
 
+  test("with the keyboard up, the palette ends above it, so its last result can be reached", () => {
+    // Seen in the iOS 26.1 simulator: iOS keeps the page full height under its keyboard, and the palette's lower part,
+    // its last results with it, stood behind the keyboard. The palette measures the room above it (palette.ts).
+    for (const screen of [{ width: 390, touch: true }, { width: 1024, touch: true }] satisfies Screen[]) {
+      const heights = all.filter((r) => r.media.every((q) => holds(q, screen)) && r.selectors.includes("dialog.palette")).map((r) => r.body.match(/(?:^|;)\s*max-height\s*:\s*([^;]+)/)?.[1]?.trim()).filter(Boolean);
+      expect([screen, heights.at(-1)?.includes("var(--room")]).toEqual([screen, true]);
+    }
+  });
+
   test("the palette's field keeps its height however long the list under it", () => {
     // The palette is a column with a height cap, and what may shrink in one does: with every command listed, it squeezed
     // the field from 54 px to 27 px, the text against its top and the focus line under it (seen in Chrome, 15 Nov).

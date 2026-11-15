@@ -781,7 +781,7 @@
 
       /* ---------- command palette ---------- */
       dialog.palette {
-        margin: 12vh auto auto; padding: 0; width: min(620px, calc(100vw - 24px)); max-height: min(70vh, 560px);
+        margin: 12vh auto auto; padding: 0; width: min(620px, calc(100vw - 24px)); max-height: min(70vh, 560px, var(--room, 70vh));
         border: 1px solid var(--border); border-radius: var(--r-xl); background: var(--surface); color: var(--text); box-shadow: var(--shadow-3);
         overflow: hidden; display: flex; flex-direction: column; opacity: 0; transform: scale(0.98);
         transition: opacity var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out), overlay var(--d-1) allow-discrete, display var(--d-1) allow-discrete;
@@ -795,7 +795,7 @@
       /* On a phone it is the top bar's search: its field lies on the bar's line, edge to edge with the bar's padding, over
          the search button at the bar's end (which grows into it). */
       @media (max-width: 639px) {
-        dialog.palette { --field-h: 44px; margin-top: calc(var(--safe-top) + (var(--topbar-h) - var(--field-h)) / 2); width: calc(100vw - 2 * var(--sp-4)); max-width: none; max-height: 70dvh; }
+        dialog.palette { --field-h: 44px; margin-top: calc(var(--safe-top) + (var(--topbar-h) - var(--field-h)) / 2); width: calc(100vw - 2 * var(--sp-4)); max-width: none; max-height: min(70dvh, var(--room, 70dvh)); }
         dialog.palette .palette-input { height: var(--field-h); }
       }
       .palette-input { display: flex; flex: none; align-items: center; gap: 10px; padding: 0 var(--sp-4); height: 54px; border-bottom: 1px solid var(--border); }
