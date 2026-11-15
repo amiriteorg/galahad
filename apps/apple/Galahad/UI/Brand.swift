@@ -63,8 +63,8 @@ struct RoundtableMark: View {
     }
 }
 
-/// The app's icon, as the app draws it: the Roundtable on the black tile, as appIcon() seats it, with appIcon()'s faint
-/// white edge (a pixel wide here), which keeps the tile apart from a black page.
+/// The app's icon, as the app draws it: the Roundtable in black on the white tile, Galahad's seat in red, as appIcon()
+/// seats it, with appIcon()'s faint dark edge (a pixel wide here), which keeps the white tile apart from a white page.
 struct AppTile: View {
     var size: CGFloat = 88
     @Environment(\.displayScale) private var displayScale
@@ -72,9 +72,9 @@ struct AppTile: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous)
-                .fill(Color.tile)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1 / displayScale)
-            Image(.roundtable).resizable().scaledToFit().padding(size * 0.11).environment(\.colorScheme, .dark)
+                .fill(.white)
+                .strokeBorder(.black.opacity(0.1), lineWidth: 1 / displayScale)
+            Image(.roundtable).resizable().scaledToFit().padding(size * 0.11).environment(\.colorScheme, .light)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
