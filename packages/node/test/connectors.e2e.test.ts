@@ -137,6 +137,24 @@ describe("connectors", () => {
     expect(installed.body.connector.tools.find((t) => t.name === "post")).toMatchObject({ class: "outward", asks: true });
   });
 
+  test("every connector Galahad ships installs, and so does one more GitHub owner: the vault name a manifest gives is a name, not a key", async () => {
+    // Cloudflare and Home Assistant were refused as "a password assignment": the check for pasted keys read
+    // "secret":"cloudflare" (the name of its vault entry) as one. GitHub only passed because its name is short.
+    for (const [id, extra] of [["cloudflare", {}], ["home-assistant", { origin: "http://homeassistant.local:8123" }]] as const) {
+      const installed = await admin("setConnector", { id, ...extra });
+      expect([id, installed.status, installed.body.error]).toEqual([id, 200, undefined]);
+      await admin("removeConnector", { id });
+    }
+    const github = (await admin<{ connectors: ConnectorView[] }>("connectors")).body.connectors.find((c) => c.id === "github")!;
+    const another = { ...manifest("github-acme"), label: "GitHub (acme)", auth: { secret: "github-acme", scheme: "bearer" } };
+    expect((await admin("setConnector", { id: "github-acme", manifest: another })).status).toBe(200);
+    expect(github.installed).toBe(false);
+    await admin("removeConnector", { id: "github-acme" });
+    // A key pasted where the name goes is still a key, and refused.
+    const pasted = await admin("setConnector", { id: "forge-two", manifest: { ...manifest("forge-two"), auth: { secret: "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB", scheme: "bearer" } } });
+    expect(pasted.status).toBe(422);
+  });
+
   test("without its key a call fails, sends nothing, and files a secret request", async () => {
     const response = await admin("callConnector", { connector: "forge", tool: "me" });
     expect(response.status).toBe(424);

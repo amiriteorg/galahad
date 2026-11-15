@@ -2568,8 +2568,13 @@ export function createApp(ctx: AppContext) {
         if (!parsed.success) throw new HttpError(400, parsed.error.issues.map((i) => i.message).join("; "));
         manifest = parsed.data;
       }
-      // Manifests replicate in plaintext: a key pasted into a description or header must never land there.
-      guardAgainstSecrets(JSON.stringify({ ...manifest, tools: Object.fromEntries(Object.entries(manifest.tools).map(([k, t]) => [k, t.description])) }));
+      // Manifests replicate in plaintext: a key pasted into a description or header must never land there. The vault
+      // entry it names is checked on its own: inside the JSON ("secret":"cloudflare") a name reads as a password.
+      const { auth, ...described } = manifest;
+      guardAgainstSecrets(
+        JSON.stringify({ ...described, ...(auth ? { auth: { ...auth, secret: undefined } } : {}), tools: Object.fromEntries(Object.entries(manifest.tools).map(([k, t]) => [k, t.description])) }),
+        auth?.secret ?? "",
+      );
       ctx.store.emit(ctx.identity, "connector.set", { id: manifest.id, manifest: manifest as unknown as Record<string, unknown> });
       return { connector: connectorViews().find((c) => c.id === manifest.id) };
     },
