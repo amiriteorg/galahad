@@ -118,6 +118,12 @@ describe("the stylesheet", () => {
     expect(declared('.shell[data-pane="roster"] .sidebar-head', "padding")).toBe(declared(".topbar", "padding"));
   });
 
+  test("the floating button steps aside while you read down a list (it covered the row under it), and can't be tapped while away", () => {
+    const away = rules.find((r) => r.selectors.includes(".quick[data-away] > .fab"));
+    expect(away?.body).toMatch(/transform:\s*translateY\(/);
+    expect(away?.body).toMatch(/pointer-events:\s*none/);
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {

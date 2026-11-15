@@ -229,8 +229,10 @@
         .shell[data-pane="page"] main.view { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-8) + 56px); }
       }
       :root[data-keyboard="open"] .quick { display: none !important; }
-      .fab { display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: var(--r-full); background: var(--text); color: var(--bg); box-shadow: var(--shadow-3); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform var(--d-1) var(--ease-out); }
+      .fab { display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: var(--r-full); background: var(--text); color: var(--bg); box-shadow: var(--shadow-3); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform var(--d-1) var(--ease-out), opacity var(--d-1) var(--ease-out); }
       .fab:active { transform: scale(0.94); }
+      /* Out of the way while you read down a list (shell.ts): below the screen's edge, not to be tapped. */
+      .quick[data-away] > .fab { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; transition: transform var(--d-2) var(--ease-out), opacity var(--d-2) var(--ease-out); }
       .fab svg { transition: transform var(--d-2) var(--ease-out); }
       .fab[aria-expanded="true"] svg { transform: rotate(45deg); }
       .quick-menu { position: absolute; right: 0; bottom: calc(100% + 12px); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }

@@ -284,6 +284,28 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   document.addEventListener("pointerdown", (event) => !quickMenu.hidden && !(event.target instanceof Node && quick.contains(event.target)) && closeQuick(), { capture: true, signal: lifetime.signal });
   document.addEventListener("keydown", (event) => event.key === "Escape" && !quickMenu.hidden && (closeQuick(), fab.focus()), { signal: lifetime.signal });
   window.addEventListener("hashchange", closeQuick, { signal: lifetime.signal });
+  // Out of the way while you read down a list (it would cover the row under it): back when you scroll up, or reach the
+  // end, where the list leaves room for it. Any scroller: the page, or the Roundtable's own list.
+  const tops = new WeakMap<Element, number>();
+  const atEnd = (scroller: Element) => scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
+  let settled: ReturnType<typeof setTimeout> | undefined;
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      const scroller = event.target === document ? document.scrollingElement : event.target;
+      if (!(scroller instanceof Element) || !quickMenu.hidden) return;
+      const y = scroller.scrollTop;
+      const before = tops.get(scroller) ?? y;
+      tops.set(scroller, y);
+      if (y > before + 4 && y > 80 && !atEnd(scroller)) quick.dataset.away = "";
+      else if (y < before - 4 || y <= 80 || atEnd(scroller)) delete quick.dataset.away;
+      // A fling's last event can come short of the end (iOS sends none while it bounces): looked at again once it rests.
+      clearTimeout(settled);
+      settled = setTimeout(() => atEnd(scroller) && delete quick.dataset.away, 150);
+    },
+    { capture: true, passive: true, signal: lifetime.signal },
+  );
+  window.addEventListener("hashchange", () => delete quick.dataset.away, { signal: lifetime.signal });
 
   const shell = h("div", { class: "shell" }, rail, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar, quick, railTip);
   replace(root, shell);
