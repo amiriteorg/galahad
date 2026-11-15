@@ -74,10 +74,13 @@ describe("the stylesheet", () => {
     }
   });
 
-  test("a double tap never zooms the page (pinching still does), and holding a tab or a button brings up no link preview", () => {
+  test("a double tap never zooms the page (pinching still does), and holding a tab, a button or a card brings up no link preview and selects nothing", () => {
     const declares = (selector: string, declaration: RegExp) => all.some((rule) => rule.media.length === 0 && rule.selectors.includes(selector) && declaration.test(rule.body));
     expect(declares("html", /touch-action:\s*manipulation/)).toBe(true);
-    for (const control of [".tab", ".btn", ".sidebar a"]) expect([control, declares(control, /-webkit-touch-callout:\s*none/)]).toEqual([control, true]);
+    // Safari reads only the prefixed user-select.
+    for (const control of [".tab", ".btn", ".sidebar a", ".roster-row", ".selector-trigger"]) {
+      expect([control, declares(control, /-webkit-touch-callout:\s*none/), declares(control, /-webkit-user-select:\s*none/)]).toEqual([control, true, true]);
+    }
   });
 
   test("a text field that drops the browser's focus ring shows focus another way", () => {

@@ -158,8 +158,9 @@
       }
       button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
       button { cursor: pointer; }
-      /* Holding one of the app's own controls does nothing, as in an app: no link preview, no "Open in Safari". */
-      .tab, .btn, .sidebar a { -webkit-touch-callout: none; }
+      /* Holding one of the app's own controls does nothing, as in an app: no link preview, no "Open in Safari", no label
+         selected (Safari reads only the prefixed user-select). */
+      .tab, .btn, .sidebar a, .roster-row, .selector-trigger { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
       a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
       h1, h2, h3, h4, p { margin: 0; }
       img, svg { display: block; }
