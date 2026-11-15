@@ -13,7 +13,8 @@
  *
  *   bun apps/apple/scripts/dev-node.ts [--dir <dir>]    (SIGINT or SIGTERM stops it and deletes its home)
  *
- * <dir> (default: a new temp directory, printed) receives invite.txt, and pairing.txt while a request waits.
+ * <dir> (default: a new temp directory, printed) receives invite.txt, and pairing.txt while a request waits. The node's
+ * home is made inside it too, so a run that is killed outright leaves its home there, not in the system's temp folder.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,8 +31,10 @@ const flag = (name: string): string | undefined => {
 };
 // The node's key goes to a file in the temp home, never to the OS keychain.
 process.env.GALAHAD_KEYSTORE = "file";
-const tmp = mkdtempSync(join(tmpdir(), "galahad-apple-node-"));
-const dir = flag("dir") ?? join(tmp, "out");
+const chosen = flag("dir");
+if (chosen) mkdirSync(chosen, { recursive: true });
+const tmp = mkdtempSync(join(chosen ?? tmpdir(), "galahad-apple-node-"));
+const dir = chosen ?? join(tmp, "out");
 mkdirSync(dir, { recursive: true });
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const freePort = (): number => {
