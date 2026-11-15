@@ -280,9 +280,10 @@
       }
       .sidebar-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); margin-bottom: var(--sp-2); }
       .sidebar-head > .wordmark { height: 40px; }
-      /* On a wide screen, search is the head's second line, the sidebar's whole width (it sits in the head so a phone can
-         put it beside the mark). */
+      /* On a wide screen, search is the head's second line, the sidebar's whole width; a phone has the top bar's search
+         button in the head instead. */
       .sidebar-head > .search-trigger { order: 3; flex: 1 0 100%; width: auto; margin: var(--sp-2) calc(-1 * var(--sp-1)) var(--sp-1) calc(-1 * var(--sp-2)); }
+      .sidebar-head > .head-search { display: none; }
       .wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; min-width: 0; }
       .emblem { flex: none; display: inline-block; width: var(--em-size, 24px); height: var(--em-size, 24px); }
       .emblem img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none; }
@@ -389,11 +390,12 @@
           padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
           background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
         }
-        .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .search-trigger .kbds { display: none; }
-        /* On a phone, search is a small pill beside the mark, in the head's one line. */
+        .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .sidebar-head > .search-trigger { display: none; }
+        /* On a phone, search is the top bar's button, at the head's end where the top bar has it (the palette grows out
+           of it). */
         .shell[data-pane="roster"] .sidebar-head { flex-wrap: nowrap; gap: var(--sp-3); }
         .shell[data-pane="roster"] .sidebar-head > .wordmark { flex: none; height: auto; }
-        .shell[data-pane="roster"] .sidebar-head > .search-trigger { order: 0; flex: 1 1 auto; height: 36px; margin: 0; border-radius: var(--r-full); padding: 0 var(--sp-3); }
+        .shell[data-pane="roster"] .sidebar-head > .btn.head-search { display: inline-flex; margin-left: auto; }
         .roster { overflow: visible; }
         .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
         .roster-face, .roster-face .worker-avatar, .roster-face .avatar { width: 40px; height: 40px; }
@@ -788,13 +790,25 @@
       dialog.palette.shown { opacity: 1; transform: none; }
       dialog.palette::backdrop { background: var(--overlay); opacity: 0; transition: opacity var(--d-1) var(--ease-out); }
       dialog.palette.shown::backdrop { opacity: 1; }
-      @media (max-width: 639px) { dialog.palette { margin-top: calc(var(--safe-top) + 12px); max-height: 70dvh; } }
+      /* Grown out of a button, it shapes itself (palette.ts). */
+      dialog.palette[data-grow] { opacity: 1; transform: none; transition: none; }
+      /* On a phone it is the top bar's search: its field lies on the bar's line, edge to edge with the bar's padding, over
+         the search button at the bar's end (which grows into it). */
+      @media (max-width: 639px) {
+        dialog.palette { --field-h: 44px; margin-top: calc(var(--safe-top) + (var(--topbar-h) - var(--field-h)) / 2); width: calc(100vw - 2 * var(--sp-4)); max-width: none; max-height: 70dvh; }
+        dialog.palette .palette-input { height: var(--field-h); }
+      }
       .palette-input { display: flex; flex: none; align-items: center; gap: 10px; padding: 0 var(--sp-4); height: 54px; border-bottom: 1px solid var(--border); }
       .palette-input input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: var(--fs-16); }
       /* The field is focused whenever the palette is open: an ink rule under it says so. */
       .palette-input:focus-within { box-shadow: inset 0 -2px 0 var(--focus); }
       .palette-input svg { color: var(--text-3); }
       .palette-input:focus-within svg { color: var(--text); }
+      .palette-cancel {
+        display: none; align-items: center; align-self: stretch; margin-right: calc(-1 * var(--sp-2)); padding: 0 var(--sp-2);
+        border: 0; background: none; color: var(--text-2); font-size: var(--fs-15); font-weight: 500; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+      }
+      .palette-cancel:active { color: var(--text); }
       .palette-list { overflow-y: auto; padding: var(--sp-2); overscroll-behavior: contain; }
       .palette-group { font-size: var(--fs-11); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; padding: var(--sp-2) var(--sp-2) var(--sp-1); }
       .palette-item { display: flex; align-items: center; gap: var(--sp-3); height: 40px; padding: 0 var(--sp-2) 0 10px; border-radius: var(--r-md); cursor: pointer; color: var(--text-2); }
@@ -806,7 +820,7 @@
       .palette-item[aria-selected="true"] svg { color: var(--accent); }
       .palette-foot { display: flex; gap: var(--sp-4); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--fs-12); background: var(--bg-sunken); }
       .palette-foot span { display: inline-flex; align-items: center; gap: 4px; }
-      @media (pointer: coarse) { .palette-foot { display: none; } .palette-item { height: 46px; } }
+      @media (pointer: coarse) { .palette-foot, .palette-input kbd { display: none; } .palette-cancel { display: inline-flex; } .palette-item { height: 46px; } }
 
       /* ---------- smart selector: one control that says what's chosen, the choices in a popover (a sheet on phones) ---------- */
       .selector-trigger {

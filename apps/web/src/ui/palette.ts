@@ -5,7 +5,8 @@ import { icon, type IconName } from "./icons.ts";
 /*
  * The command palette (⌘K / Ctrl+K): fuzzy search over everywhere you can go
  * and everything you can do. A combobox + listbox, fully keyboard-driven;
- * opens instantly (it is used often, so it barely animates).
+ * opens instantly (it is used often, so it barely animates). On a phone it is
+ * the top bar's search: opened from the button there, it grows out of it.
  */
 
 export interface Command {
@@ -27,11 +28,27 @@ export interface PaletteSource {
 
 let openDialog: HTMLDialogElement | null = null;
 
+/** Where the palette is the top bar's search, its field lying over the bar's search button (index.html). */
+const BAR_SEARCH = "(max-width: 639px)";
+
+interface Box {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** The clip that shows only the button's part of the palette (both boxes in the viewport's px): what it grows from. */
+export function clipTo(button: Box, palette: Box, radius: number): string {
+  const inset = [button.top - palette.top, palette.right - button.right, palette.bottom - button.bottom, button.left - palette.left];
+  return `inset(${inset.map((n) => `${Math.max(0, Math.round(n))}px`).join(" ")} round ${radius}px)`;
+}
+
 export function isPaletteOpen(): boolean {
   return Boolean(openDialog?.open);
 }
 
-export function openPalette(source: PaletteSource, initialQuery = ""): void {
+export function openPalette(source: PaletteSource, initialQuery = "", from?: Element | null): void {
   if (openDialog?.open) {
     openDialog.querySelector("input")?.focus();
     return;
@@ -53,10 +70,13 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
   });
   const list = h("div", { class: "palette-list", role: "listbox", id: listId, "aria-label": "Results" });
   const status = h("div", { class: "sr-only", role: "status", "aria-live": "polite" });
+  // A touch screen has no Esc: it gets Cancel instead (index.html shows one or the other).
+  const cancel = h("button", { class: "palette-cancel", type: "button" }, "Cancel");
+  const field = h("div", { class: "palette-input" }, icon("search", { size: 18 }), input, h("kbd", {}, "Esc"), cancel);
   const dialog = h(
     "dialog",
     { class: "palette", "aria-label": "Command palette" },
-    h("div", { class: "palette-input" }, icon("search", { size: 18 }), input, h("kbd", {}, "Esc")),
+    field,
     list,
     h(
       "div",
@@ -71,6 +91,9 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
 
   let items: { command: Command; el: HTMLElement }[] = [];
   let active = 0;
+  /** The button it grew out of, if it did: it goes back into it. */
+  let grewFrom: Element | null = null;
+  let closing = false;
 
   function select(index: number, scroll = true): void {
     if (!items.length) {
@@ -150,10 +173,32 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
   }
 
   function close(): void {
-    if (!dialog.open) return;
+    if (!dialog.open || closing) return;
+    closing = true;
+    const into = grewFrom?.isConnected ? grewFrom : null;
+    if (!into) delete dialog.dataset.grow;
     dialog.classList.remove("shown");
-    if (prefersReducedMotion()) finish();
+    if (into) {
+      // Back into the button (where it is now: what was typed may have made the palette shorter), the keyboard going down
+      // with it. What it holds goes first, then its shape, fading as it arrives.
+      input.blur();
+      for (const animation of dialog.getAnimations({ subtree: true })) animation.cancel();
+      const time = motion("--d-3");
+      for (const part of [field, list]) part.animate([{ opacity: 1 }, { opacity: 0 }], { duration: time / 4, easing: "ease-out", fill: "forwards" });
+      const shrink = dialog.animate([{ clipPath: whole(), opacity: 1 }, { opacity: 1, offset: 0.7 }, { clipPath: shapeOf(into), opacity: 0 }], { duration: time, easing: motionEase("--ease-drawer"), fill: "forwards" });
+      shrink.finished.then(finish, finish);
+    } else if (prefersReducedMotion()) finish();
     else setTimeout(finish, 130);
+  }
+
+  /** The clip that shows all of it, its shadow too. */
+  function whole(): string {
+    return `inset(-48px round ${48 + (parseFloat(getComputedStyle(dialog).borderTopLeftRadius) || 0)}px)`;
+  }
+
+  /** The clip that shows only the button's part of it, as both are now. */
+  function shapeOf(button: Element): string {
+    return clipTo(button.getBoundingClientRect(), dialog.getBoundingClientRect(), parseFloat(getComputedStyle(button).borderTopLeftRadius) || 0);
   }
 
   function choose(index: number): void {
@@ -164,6 +209,7 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
     item.command.run();
   }
 
+  cancel.addEventListener("click", close);
   input.addEventListener("input", render);
   input.addEventListener("keydown", (event: KeyboardEvent) => {
     if (event.key === "ArrowDown" || (event.ctrlKey && event.key === "n")) {
@@ -192,5 +238,24 @@ export function openPalette(source: PaletteSource, initialQuery = ""): void {
   render();
   input.focus();
   input.select();
+  // On a phone, opened from the top bar's search button, it is that button grown, as a sheet moves: across the bar into
+  // the field (which lies over it) and down into what it finds, which fades in as it arrives.
+  if (from && from.getBoundingClientRect().width > 0 && matchMedia(BAR_SEARCH).matches && !prefersReducedMotion()) {
+    grewFrom = from;
+    dialog.dataset.grow = "";
+    const time = motion("--d-sheet");
+    dialog.animate([{ clipPath: shapeOf(from), opacity: 0 }, { opacity: 1, offset: 0.15 }, { clipPath: whole() }], { duration: time, easing: motionEase("--ease-drawer") });
+    for (const part of [field, list]) part.animate([{ opacity: 0 }, { opacity: 1 }], { duration: time / 2, delay: time / 6, fill: "backwards" });
+  }
   requestAnimationFrame(() => dialog.classList.add("shown"));
+}
+
+/** A duration token from the stylesheet, in ms. */
+function motion(token: string): number {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token)) || 0;
+}
+
+/** An easing token from the stylesheet, for an animation run from script. */
+function motionEase(token: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || "ease-out";
 }

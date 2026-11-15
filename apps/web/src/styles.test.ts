@@ -93,6 +93,31 @@ describe("the stylesheet", () => {
     for (const control of [".roster-row", ".nav-item", ".rail-item", ".rows > a.item", ".suggestion"]) expect([control, pressed(control)]).toEqual([control, true]);
   });
 
+  test("on a phone, the palette's field lies exactly over the search button at the top bar's end (which grows into it), and the Roundtable's head puts it in the same place", () => {
+    const phone: Screen = { width: 390, touch: true };
+    const seen = all.filter((rule) => rule.media.every((query) => holds(query, phone)));
+    // A phone held upright: no inset at the sides; the status bar's is the same for the bar and the palette.
+    const vars = new Map([["--safe-top", "0px"], ["--safe-right", "0px"], ["--safe-left", "0px"]]);
+    for (const rule of seen.filter((r) => r.selectors.includes(":root") || r.selectors.includes("dialog.palette"))) {
+      for (const [, name, value] of rule.body.matchAll(/(--[\w-]+)\s*:\s*([^;]+)/g)) if (!name!.startsWith("--safe-")) vars.set(name!, value!.trim());
+    }
+    const declared = (selector: string, property: string) =>
+      seen.filter((r) => r.selectors.includes(selector)).map((r) => r.body.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`))?.[1]?.trim()).filter(Boolean).at(-1) ?? "";
+    // A shorthand's parts (a calc() is one part); a length as arithmetic once its custom properties are filled in.
+    const parts = (shorthand: string) => shorthand.match(/(?:[^\s(]+|\((?:[^()]|\([^()]*\))*\))+/g) ?? [];
+    const length = (expression: string): number => {
+      let e = expression;
+      while (e.includes("var(")) e = e.replace(/var\((--[\w-]+)\)/g, (_, name: string) => vars.get(name) ?? "NaN");
+      e = e.replace(/calc\(/g, "(").replace(/([\d.]+)vw/g, (_, n: string) => String((Number(n) * phone.width) / 100)).replace(/px/g, "");
+      return /^[\d.\s+\-*/()]+$/.test(e) ? Number(Function(`return ${e}`)()) : Number.NaN;
+    };
+    const control = length("var(--control-h)");
+    const button = { top: (length("var(--topbar-h)") - control) / 2, height: control, right: length(parts(declared(".topbar", "padding"))[1]!) };
+    const field = { top: length(declared("dialog.palette", "margin-top")), height: length(declared("dialog.palette .palette-input", "height")), right: (phone.width - length(declared("dialog.palette", "width"))) / 2 };
+    expect(field).toEqual(button);
+    expect(declared('.shell[data-pane="roster"] .sidebar-head', "padding")).toBe(declared(".topbar", "padding"));
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {

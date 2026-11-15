@@ -124,10 +124,10 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       if (location.hash === hash) render();
       else location.hash = hash;
     },
-    palette: (query) => {
+    palette: (query, from) => {
       // Your chats and projects, so the palette can find them by name.
       chatsForPalette(base.api, { chat: can("chat"), read: can("mind:read") });
-      openPalette(paletteSource, query);
+      openPalette(paletteSource, query, from);
     },
   };
 
@@ -173,10 +173,16 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     h("span", { class: "avatar" }, icon(base.identity.name.includes("iPhone") || base.identity.name.includes("Android") ? "phone" : "laptop", { size: 16 })),
     h("span", { class: "device-meta" }, h("div", { class: "name ellipsis" }, base.identity.name), h("div", { class: "id mono subtle" }, shortId(base.identity.device))),
   );
+  // Search on a phone: a button at the top bar's end, which the palette grows out of. The Roundtable's head has the same
+  // one in the same place.
+  const searchButton = (): HTMLButtonElement =>
+    button("Search", { variant: "ghost", iconOnly: true, icon: "search", onClick: (event) => ctx.palette(undefined, event.currentTarget as Element), label: `Search and commands (${isMac() ? "⌘" : "Ctrl"}+K)` });
+  const headSearch = searchButton();
+  headSearch.classList.add("head-search");
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    // (Search is in the head: beside the mark on a phone, on its own line under it on a wide screen.)
+    // (Search is in the head: on a wide screen a row under the mark, on a phone the top bar's button at its end.)
     h(
       "div",
       { class: "sidebar-head" },
@@ -188,6 +194,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         h("span", { class: "label" }, "Search…"),
         h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
       ),
+      headSearch,
       collapse,
     ),
     roster?.el ?? null,
@@ -207,7 +214,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       { class: "actions" },
       chatActivityPill(),
       fleetPill,
-      button("Search", { variant: "ghost", iconOnly: true, icon: "search", onClick: () => ctx.palette(), label: `Search and commands (${isMac() ? "⌘" : "Ctrl"}+K)` }),
+      searchButton(),
     ),
   );
 

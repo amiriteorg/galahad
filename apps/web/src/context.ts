@@ -64,8 +64,8 @@ export interface Ctx {
   can(scope: AnyScope): boolean;
   navigate(route: Route, opts?: NavigateOptions): void;
   live: Live;
-  /** Opens the command palette, optionally with a query. */
-  palette(query?: string): void;
+  /** Opens the command palette, optionally with a query; given the button pressed for it, on a phone it grows out of it. */
+  palette(query?: string, from?: Element): void;
 }
 
 export interface ViewArgs {
