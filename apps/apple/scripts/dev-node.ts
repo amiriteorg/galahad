@@ -5,7 +5,8 @@
  * Docker and stand-in models. Nothing leaves this machine, and ~/.galahad is never touched.
  *
  * It seats knights at work (one running a task, one thinking, one whose task was verified, one whose task failed, one
- * paused), has an agent ask your leave for an outward call, and has Galahad ask for a key. Then it makes a client invite
+ * paused, one with a desktop in its VM to watch and take over), has an agent ask your leave for an outward call, and has
+ * Galahad ask for a key. Then it makes a client invite
  * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
  * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, a page,
  * choices).
@@ -76,8 +77,13 @@ const caps = { os: "linux", arch: "x64", hostname: "keep", cores: 16, cpu: "stan
 const docker = fakeDocker();
 const hold = new Promise<void>((release) => held.push(release));
 let adaAtWork = false;
+// Gawain's VM has a desktop: its screen is a browser on a blank tab until you open an address, then a page.
+const SCREENS = ["screen-blank.jpg", "screen-page.jpg"].map((file) => readFileSync(join(import.meta.dir, "fixtures", file)).toString("base64"));
+let screen = 0;
 docker.onExec = async (_container: string, command: string[]) => {
   const text = command.join("\n");
+  if (command[0] === "desktop" && command[1] === "open") screen = 1;
+  if (text.includes("base64 -w0")) return { code: 0, stdout: SCREENS[screen]! };
   if (text.includes("write-sync")) {
     adaAtWork = true;
     await hold;
@@ -258,6 +264,7 @@ const knights = [
   { id: "gawain", name: "Gawain", role: "engineer", instructions: "Works the web through a browser: signs in, downloads, checks pages." },
 ];
 for (const knight of knights) await admin("saveTeammate", knight);
+await admin("provisionTeammate", { id: "gawain", desktop: true });
 await admin("setComputeLimit", { node: started.identity.id, cores: 16, memoryGb: 32, sandboxes: 6 });
 const ended = (id: string) => async () => !["queued", "running"].includes((await admin("team")).tasks.find((t: { id: string }) => t.id === id)?.status ?? "queued");
 const own: Record<string, string> = {};

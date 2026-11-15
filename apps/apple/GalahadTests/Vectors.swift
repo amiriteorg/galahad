@@ -115,6 +115,19 @@ struct Vectors: Decodable {
         let setups: [Setup]
     }
 
+    struct DesktopCases: Decodable {
+        struct XY: Decodable, Equatable { let x: Double; let y: Double }
+        struct Box: Decodable { let left: Double; let top: Double; let width: Double; let height: Double }
+        struct Size: Decodable { let width: Int; let height: Int }
+        struct Point: Decodable { let tap: XY; let shown: Box; let screen: Size; let point: XY? }
+        struct Address: Decodable { let text: String; let address: String? }
+        struct Shot: Decodable { let view: DesktopShot; let shown: Bool }
+        let points: [Point]
+        let unshown: XY?
+        let addresses: [Address]
+        let shots: [Shot]
+    }
+
     struct Thread: Decodable {
         struct Turn: Decodable, Equatable {
             let role: String
@@ -249,6 +262,7 @@ struct Vectors: Decodable {
     let rooms: Rooms
     let knightForms: KnightForms
     let keys: KeyCases
+    let desktop: DesktopCases
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]

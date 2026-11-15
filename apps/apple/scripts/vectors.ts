@@ -18,6 +18,7 @@ import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
+import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
@@ -344,6 +345,22 @@ const keys = {
   ].map(([provider, secret, may]) => ({ provider, secret, may, ...providerSetup({ providers: configured, presets: PRESETS }, provider as string, secret as string, may as boolean) })),
 };
 
+// ---- a knight's desktop (the PWA's own lib/desktop.ts) ---------------------------------------------------------------
+const drawn = { left: 10, top: 20, width: 640, height: 400 };
+const desktop = {
+  points: [[10, 20], [330, 220], [649.9, 419.9], [650, 420], [9, 20], [10, 421], [100.5, 300.25]].map(([x, y]) => ({ tap: { x, y }, shown: drawn, screen: { width: 1280, height: 800 }, point: screenPoint({ x: x!, y: y! }, drawn, { width: 1280, height: 800 }) })),
+  unshown: screenPoint({ x: 1, y: 1 }, { left: 0, top: 0, width: 0, height: 0 }, { width: 1280, height: 800 }),
+  addresses: ["galahad.bot", "https://galahad.bot/x?y=1", "http://localhost:3000", "localhost:3000", "file:///work/index.html", "about:blank", "javascript:alert(1)", "mailto:x@y.z", "two words", "  ", "", `a${"b".repeat(2000)}.com`, "ftp://host"].map((text) => ({ text, address: desktopAddress(text) })),
+  shots: [
+    { shot: { mediaType: "image/jpeg", data: "/9j/4AAQ" }, width: 1280, height: 800 },
+    { shot: { mediaType: "image/png", data: "iVBORw0KGgo=" }, width: 1280, height: 800 },
+    { shot: { mediaType: "image/gif", data: "R0lGODlh" }, width: 1280, height: 800 },
+    { shot: { mediaType: "image/jpeg", data: "not base64!" }, width: 1280, height: 800 },
+    { shot: { mediaType: "image/jpeg", data: "" }, width: 1280, height: 800 },
+    { shot: { mediaType: "image/jpeg", data: "/9j/4AAQ" }, width: 0, height: 800 },
+  ].map((view) => ({ view, shown: shotSource(view) !== null })),
+};
+
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
 const stored = (id: number, role: "user" | "assistant", content: string, extra: Partial<core.StoredMessage> = {}): core.StoredMessage => ({
   id,
@@ -618,6 +635,7 @@ const vectors = {
   rooms,
   knightForms,
   keys,
+  desktop,
   threads,
   chats,
   markdown,

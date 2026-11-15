@@ -91,6 +91,12 @@ struct KnightView: View {
                 }
                 .accessibilityHint("What \(name) is and how its day stands")
             }
+            // Its screen, to watch and take over, once it has a VM.
+            if let knight, knight.workspace != nil, session.can("sandbox") {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { KnightScreenView(session: session, knight: knight) } label: { Label("Its screen", systemImage: "display") }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { giving = true } label: { Label("Give a task", systemImage: "hammer") }
                     .disabled(room.view == nil || knight == nil)

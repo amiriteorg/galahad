@@ -2931,6 +2931,267 @@
       }
     ]
   },
+  "desktop": {
+    "points": [
+      {
+        "tap": {
+          "x": 10,
+          "y": 20
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "tap": {
+          "x": 330,
+          "y": 220
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": {
+          "x": 640,
+          "y": 400
+        }
+      },
+      {
+        "tap": {
+          "x": 649.9,
+          "y": 419.9
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": {
+          "x": 1279,
+          "y": 799
+        }
+      },
+      {
+        "tap": {
+          "x": 650,
+          "y": 420
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": {
+          "x": 1279,
+          "y": 799
+        }
+      },
+      {
+        "tap": {
+          "x": 9,
+          "y": 20
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": null
+      },
+      {
+        "tap": {
+          "x": 10,
+          "y": 421
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": null
+      },
+      {
+        "tap": {
+          "x": 100.5,
+          "y": 300.25
+        },
+        "shown": {
+          "left": 10,
+          "top": 20,
+          "width": 640,
+          "height": 400
+        },
+        "screen": {
+          "width": 1280,
+          "height": 800
+        },
+        "point": {
+          "x": 181,
+          "y": 560
+        }
+      }
+    ],
+    "unshown": null,
+    "addresses": [
+      {
+        "text": "galahad.bot",
+        "address": "https://galahad.bot"
+      },
+      {
+        "text": "https://galahad.bot/x?y=1",
+        "address": "https://galahad.bot/x?y=1"
+      },
+      {
+        "text": "http://localhost:3000",
+        "address": "http://localhost:3000"
+      },
+      {
+        "text": "localhost:3000",
+        "address": "https://localhost:3000"
+      },
+      {
+        "text": "file:///work/index.html",
+        "address": "file:///work/index.html"
+      },
+      {
+        "text": "about:blank",
+        "address": "about:blank"
+      },
+      {
+        "text": "javascript:alert(1)",
+        "address": null
+      },
+      {
+        "text": "mailto:x@y.z",
+        "address": null
+      },
+      {
+        "text": "two words",
+        "address": null
+      },
+      {
+        "text": "  ",
+        "address": null
+      },
+      {
+        "text": "",
+        "address": null
+      },
+      {
+        "text": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com",
+        "address": null
+      },
+      {
+        "text": "ftp://host",
+        "address": null
+      }
+    ],
+    "shots": [
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/jpeg",
+            "data": "/9j/4AAQ"
+          },
+          "width": 1280,
+          "height": 800
+        },
+        "shown": true
+      },
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/png",
+            "data": "iVBORw0KGgo="
+          },
+          "width": 1280,
+          "height": 800
+        },
+        "shown": true
+      },
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/gif",
+            "data": "R0lGODlh"
+          },
+          "width": 1280,
+          "height": 800
+        },
+        "shown": false
+      },
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/jpeg",
+            "data": "not base64!"
+          },
+          "width": 1280,
+          "height": 800
+        },
+        "shown": false
+      },
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/jpeg",
+            "data": ""
+          },
+          "width": 1280,
+          "height": 800
+        },
+        "shown": false
+      },
+      {
+        "view": {
+          "shot": {
+            "mediaType": "image/jpeg",
+            "data": "/9j/4AAQ"
+          },
+          "width": 0,
+          "height": 800
+        },
+        "shown": false
+      }
+    ]
+  },
   "threads": [
     {
       "name": "kept",
