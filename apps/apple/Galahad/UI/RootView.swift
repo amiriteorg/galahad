@@ -27,7 +27,7 @@ struct RootView: View {
     }
 }
 
-/// The paired app: the Roundtable, asked again every few seconds while the app is open.
+/// The paired app: the Roundtable and the Inbox, asked again every few seconds while the app is open.
 struct MainView: View {
     let app: AppModel
     let session: Session
@@ -38,6 +38,10 @@ struct MainView: View {
             Tab("Roundtable", systemImage: "person.3") {
                 NavigationStack { RoundtableView(session: session) }
             }
+            Tab("Inbox", systemImage: "tray") {
+                NavigationStack { InboxView(session: session) }
+            }
+            .badge(session.inboxCount)
         }
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }

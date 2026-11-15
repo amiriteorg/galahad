@@ -51,6 +51,11 @@ import Observation
 
     func teammate(_ id: String) -> Teammate? { team?.teammates.first { $0.id == id } }
 
+    /// A node, by name where this device knows it: its own node's, else the start of its id.
+    func nodeName(of id: String) -> String {
+        id == whoami?.node ? (whoami?.nodeName ?? node.nodeName ?? id) : String(id.dropFirst(2).prefix(8))
+    }
+
     func refresh() async {
         let client = self.client
         async let me = attempt { try await client.get("/api/whoami", as: WhoAmI.self) }
