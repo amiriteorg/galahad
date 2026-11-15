@@ -59,12 +59,32 @@ struct Vectors: Decodable {
         let approvalProof: String
     }
 
+    struct Look: Decodable {
+        let id: String
+        let name: String
+        let avatar: JSONValue?
+        let look: String
+    }
+
+    struct Roundtable: Decodable {
+        struct Row: Decodable { let id: String; let line: String; let needs: Bool }
+        struct Now: Decodable { let input: GalahadWork; let text: String; let tone: String }
+        struct Needs: Decodable { let inbox: Int; let knights: [String]; let needs: Int }
+        let snapshot: TeamSnapshot
+        let asks: [Ask]
+        let rows: [Row]
+        let galahad: [Now]
+        let needs: [Needs]
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
     let requests: [Request]
     let canonical: [Canonical]
     let pairing: Pairing
+    let looks: [Look]
+    let roundtable: Roundtable
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {
