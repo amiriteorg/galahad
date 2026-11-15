@@ -211,6 +211,49 @@ const KNIGHT_SAYS: Record<string, string> = {
   Gareth: "I'll check that every migration in 0.4 runs on a fresh database before the notes go out.",
 };
 
+// A knight's terminal is a stand-in shell, never one on this machine: it echoes what you type, and answers the vendors'
+// sign-ins as they do (an address to open, then a code to paste), so the app's terminal can be tried end to end.
+const standInShell = (_argv: string[], _size: { cols: number; rows: number }, onData: (bytes: Uint8Array) => void) => {
+  const say = (text: string) => onData(new TextEncoder().encode(text));
+  let line = "";
+  let waitingForCode = false;
+  let done!: (code: number) => void;
+  const exited = new Promise<number>((resolve) => (done = resolve));
+  const prompt = () => say("\x1b[32mgawain@vm\x1b[0m:\x1b[34m/work\x1b[0m$ ");
+  setTimeout(() => { say("A stand-in shell on the dev node (nothing here runs).\r\n"); prompt(); }, 50);
+  return {
+    write(data: string) {
+      for (const ch of data) {
+        if (ch === "\r") {
+          say("\r\n");
+          const typed = line.trim();
+          line = "";
+          if (waitingForCode) {
+            waitingForCode = false;
+            say(typed ? "Login successful. Claude Code is signed in to your subscription, in this VM.\r\n" : "No code given.\r\n");
+          } else if (typed === "claude auth login") {
+            say("Browser didn't open? Use the url below to sign in:\r\n\r\n\x1b[36mhttps://claude.ai/oauth/authorize?code=true&client_id=dev-node-stand-in&state=fake\x1b[39m\r\n\r\nPaste code here if prompted > ");
+            waitingForCode = true;
+            continue;
+          } else if (typed === "exit") {
+            done(0);
+            return;
+          } else if (typed) say(`stand-in: ${typed}\r\n`);
+          prompt();
+        } else if (ch === "\x7f") {
+          if (line) { line = line.slice(0, -1); say("\b \b"); }
+        } else if (ch >= " ") {
+          line += ch;
+          say(ch);
+        }
+      }
+    },
+    resize() {},
+    kill() { done(130); },
+    exited,
+  };
+};
+
 // ---------- start ----------
 const proxyPort = freePort();
 const started = await startDaemon(home, {
@@ -218,6 +261,7 @@ const started = await startDaemon(home, {
   proxyPort,
   log: () => {},
   docker: docker.runner,
+  spawnTerminal: standInShell,
   measure: async (reason, body, limit) => {
     const threads = core.ceilingThreads(body, limit);
     return { at: Date.now(), tookMs: 1, reason, body: core.bodyFingerprint(body, limit), cpu: { single: core.REFERENCE_SINGLE, multi: core.REFERENCE_SINGLE * threads, threads, kernel: core.KERNEL } };

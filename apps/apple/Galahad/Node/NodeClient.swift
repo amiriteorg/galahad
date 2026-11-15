@@ -55,6 +55,11 @@ struct NodeClient: Sendable {
     /// A POST answered with server-sent events (Galahad's chat): each event as it arrives. Ending the stream (its
     /// consumer goes away) ends the watching and nothing else: a turn the node owns runs on to its end.
     func events(_ path: String, _ body: some Encodable) -> AsyncThrowingStream<ChatEvent, any Error> {
+        payloads(path, body, as: ChatEvent.init(json:))
+    }
+
+    /// A POST answered with server-sent events, each read as `read` reads it (one it can't read is passed over).
+    func payloads<Event: Sendable>(_ path: String, _ body: some Encodable, as read: @escaping @Sendable (String) -> Event?) -> AsyncThrowingStream<Event, any Error> {
         let request = Result { try self.request("POST", path, body: JSONEncoder().encode(body), timeout: 120) }
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -69,7 +74,7 @@ struct NodeClient: Sendable {
                     var reader = SSEReader()
                     for try await byte in bytes {
                         for payload in reader.feed(CollectionOfOne(byte)) {
-                            if let event = ChatEvent(json: payload) { continuation.yield(event) }
+                            if let event = read(payload) { continuation.yield(event) }
                         }
                     }
                     continuation.finish()

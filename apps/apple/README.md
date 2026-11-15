@@ -32,7 +32,9 @@ time" is never answered, so a turn stays running to leave and come back to.
 
 It also seats a room of two (Kay and Gareth), who answer you there, and gives Gawain a VM with a desktop: his screen
 (Gawain → the display button) shows a browser's blank tab until you open an address, then a page; taps and keys go
-to the node as they would to a real VM's (the pictures are `scripts/fixtures/screen-*.jpg`). Ask a knight to "propose" something and its
+to the node as they would to a real VM's (the pictures are `scripts/fixtures/screen-*.jpg`). His terminal (Gawain → Its
+VM → Its terminal) is a stand-in shell in the node, never one on this machine: it echoes what you type and answers
+`claude auth login` as Claude Code does (an address to open, then a code to paste), which "Sign a tool in" types. Ask a knight to "propose" something and its
 stand-in proposes a task with its tool, so its card comes up to approve. Keys (More → Keys) recognise a pasted key's
 provider or coding plan the PWA's way, refuse a subscription's sign-in, and keep a copy on the iPhone only when asked.
 

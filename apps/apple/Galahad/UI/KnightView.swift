@@ -12,6 +12,8 @@ struct KnightView: View {
     @State private var stopping: TeamTask?
     @FocusState private var composing: Bool
     @Environment(\.dismiss) private var leave
+    @State private var watching = false
+    @State private var inTerminal = false
 
     init(session: Session, id: String) {
         self.session = session
@@ -91,10 +93,15 @@ struct KnightView: View {
                 }
                 .accessibilityHint("What \(name) is and how its day stands")
             }
-            // Its screen, to watch and take over, once it has a VM.
+            // Its VM, once it has one: its screen to watch and take over, and a terminal in it.
             if let knight, knight.workspace != nil, session.can("sandbox") {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { KnightScreenView(session: session, knight: knight) } label: { Label("Its screen", systemImage: "display") }
+                    Menu {
+                        Button { watching = true } label: { Label("Its screen", systemImage: "display") }
+                        Button { inTerminal = true } label: { Label("Its terminal", systemImage: "apple.terminal") }
+                    } label: {
+                        Label("Its VM", systemImage: "desktopcomputer")
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -106,6 +113,12 @@ struct KnightView: View {
             GiveTaskSheet(name: name) { title, goal, gates, _ in
                 try await room.give(title: title, goal: goal, gates: gates, with: session.client)
             }
+        }
+        .navigationDestination(isPresented: $watching) {
+            if let knight { KnightScreenView(session: session, knight: knight) }
+        }
+        .fullScreenCover(isPresented: $inTerminal) {
+            if let knight { KnightTerminalView(session: session, knight: knight) }
         }
         .sheet(isPresented: $about) {
             KnightAbout(session: session, id: id, row: row, look: look) { leave() }
