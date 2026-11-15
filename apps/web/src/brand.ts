@@ -1,9 +1,9 @@
 /*
  * The mark: Galahad's helm as the owner drew it, his oxblood cross down its face and across its brow. Two forms of the
  * one drawing. Where it can be a picture, it is the drawing itself (src/knights/galahad-helm.webp, cut out of his
- * drawing along the helm's own bottom edge). Where a mark must be one flat colour (the icon set, the website's crest),
- * it is the helm's silhouette with the cross and the slit cut out of it (MARK_PATH, traced from the same drawing onto
- * the 24-unit icon grid).
+ * drawing along the helm's own bottom edge). Where a mark must be one flat colour (the icon set), it is the helm's
+ * silhouette with the cross and the slit cut out of it (MARK_PATH, traced from the same drawing onto the 24-unit icon
+ * grid).
  *
  * Pure data and a tiny SVG tree, no DOM: the PWA shows the drawing (ui/emblem.ts) and draws the silhouette
  * (ui/icons.ts); scripts/brand.ts writes the icon files from them, so every surface carries the same helm.
@@ -47,9 +47,6 @@ export interface SvgNode {
 const n = (tag: string, attrs: Record<string, string | number>, ...children: SvgNode[]): SvgNode => ({ tag, attrs, children });
 const root = (viewBox: string, title: string, ...children: SvgNode[]): SvgNode =>
   n("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox, fill: "none" }, n("title", {}, { tag: "#text", attrs: { text: title } }), ...children);
-/** The drawing, as a data URL, on the 1024 grid: its square centred on (cx, cy), `side` across. */
-const drawing = (helm: string, side: number, cx = 512, cy = 512): SvgNode =>
-  n("image", { href: helm, x: cx - side / 2, y: cy - side / 2, width: side, height: side, preserveAspectRatio: "xMidYMid meet" });
 /** The flat silhouette, scaled from its 24-unit grid to a 1024 square. */
 const silhouette = (fill: string): SvgNode => n("path", { d: MARK_PATH, fill, "fill-rule": "evenodd", transform: "scale(42.6667)" });
 
@@ -113,11 +110,6 @@ export function roundtableIcon(): SvgNode {
     n("title", {}, { tag: "#text", attrs: { text: "The Roundtable" } }),
     ...roundtableShapes("currentColor", INK.siege),
   );
-}
-
-/** The mark for the website's header and crest: the drawn helm, which reads on a light page and a dark one alike. */
-export function crestFile(helm: string): SvgNode {
-  return root("0 0 1024 1024", "Galahad", drawing(helm, 1024));
 }
 
 const escapeAttr = (value: string | number): string => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

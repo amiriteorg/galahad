@@ -1,25 +1,21 @@
 #!/usr/bin/env bun
 /*
- * Regenerates every brand file (apps/web/src/brand.ts): the app's icons are the Roundtable, drawn; the website's crest
- * is Galahad's helm as the owner drew it.
+ * Regenerates every brand file (apps/web/src/brand.ts): the app's icons are the Roundtable, drawn (the website's
+ * favicon among them; its mark is drawn from the same definition at build time).
  *
  *   bun scripts/brand.ts          SVGs only (deterministic; safe to run any time)
  *   bun scripts/brand.ts --png    also renders the PNG icons with headless Chromium
  *                                 (set GALAHAD_BROWSER to the browser binary if it isn't found)
  *
- * The icons are drawn (vectors only), so every PNG is rendered from the same SVG at its own size; the crest carries the
- * helm the app serves (apps/web/src/knights/galahad-helm.webp).
+ * The icons are drawn (vectors only), so every PNG is rendered from the same SVG at its own size.
  */
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { appIcon, crestFile, flatMark, INK, maskableIcon, monoIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
+import { appIcon, flatMark, INK, maskableIcon, monoIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
-const dataUrl = (p: string): string => `data:image/webp;base64,${readFileSync(at(p)).toString("base64")}`;
-/** The helm as the app serves it, for the website's crest. */
-const HELM = dataUrl("apps/web/src/knights/galahad-helm.webp");
 
 /** Every committed SVG, by where it goes: what tests read back (brand.test.ts). */
 export const BRAND_SVGS: Record<string, () => SvgNode> = {
@@ -28,8 +24,6 @@ export const BRAND_SVGS: Record<string, () => SvgNode> = {
   "assets/roundtable.svg": () => roundtableIcon(),
   "apps/web/src/icon-maskable.svg": () => maskableIcon(),
   "apps/site/public/icon.svg": () => appIcon(),
-  "apps/site/public/crest-white.svg": () => crestFile(HELM),
-  "apps/site/public/crest-black.svg": () => crestFile(HELM),
 };
 
 if (import.meta.main) {

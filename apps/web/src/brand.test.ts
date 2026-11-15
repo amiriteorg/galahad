@@ -10,7 +10,6 @@ const walk = (node: SvgNode, out: SvgNode[] = []): SvgNode[] => {
   for (const child of node.children ?? []) walk(child, out);
   return out;
 };
-const HELM = "data:image/webp;base64,UklGRg==";
 
 describe("the mark: Galahad's helm as the owner drew it", () => {
   test("its flat form is the helm's silhouette on the icon grid, the cross and the slit cut out of it", () => {
@@ -63,13 +62,7 @@ describe("the mark: Galahad's helm as the owner drew it", () => {
     for (const [path, tree] of Object.entries(BRAND_SVGS)) expect(readFileSync(join(ROOT, path), "utf8")).toBe(`${toSvg(tree())}\n`);
   });
 
-  test("the website's crest carries the helm as the app serves it, and nothing that is fetched; the icons carry no picture", () => {
-    const served = readFileSync(join(ROOT, "apps/web/src/knights/galahad-helm.webp")).toString("base64");
+  test("the icons carry no picture, the website's favicon among them", () => {
     for (const path of ["assets/icon.svg", "apps/web/src/icon-maskable.svg", "apps/site/public/icon.svg"]) expect(readFileSync(join(ROOT, path), "utf8")).not.toContain("<image");
-    for (const path of ["apps/site/public/crest-white.svg"]) {
-      const svg = readFileSync(join(ROOT, path), "utf8");
-      expect(svg).toContain(`data:image/webp;base64,${served}`);
-      expect(svg).not.toMatch(/href="(?!data:image\/webp;base64,)/);
-    }
   });
 });
