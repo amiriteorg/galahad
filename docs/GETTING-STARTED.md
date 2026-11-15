@@ -63,6 +63,8 @@ Run it on the node you'll talk to, wherever that is: on a server over SSH (`tail
 
 The device gets every scope except `gateway:mint`: it's your console, the bank, the vault and pairing included. For a device you trust less, pair it from the PWA (**Fleet → Pair a device**, then **Custom** or **Chat & read**) with fewer; an invite never carries a scope the inviting device lacks.
 
+**On an Android phone**, install it from Chrome's menu (**Add to Home screen**, then **Install**). Galahad is then in the share sheet of every app: share a page, a post or some text to him and a new chat opens with it in the message box, unsent, for you to add what you want done with it. (iOS has no share sheet for a web app.)
+
 ### Let him reach you: notifications
 
 Until you turn this on, everything he has for you waits in the Inbox. With it, a paired device gets a short notification when something needs you (a warning or an alert from his heartbeat), an approval is waiting, he has finished work you left him with, or he has a question. He stays silent when there's nothing to say.

@@ -8,6 +8,8 @@ import type { WhoAmI } from "./types.ts";
 import { toast } from "./ui/toast.ts";
 import { readBankCallback } from "./lib/bank.ts";
 import { handBankCallback } from "./views/bank.ts";
+import { handShared } from "./views/chat.ts";
+import { isShare, readShare } from "./lib/share.ts";
 import { syncPush } from "./views/notifications.ts";
 
 /*
@@ -53,6 +55,10 @@ function renderRefused(root: HTMLElement, error: ApiError): void {
  */
 const bankReturn = location.pathname === "/bank/callback" ? readBankCallback(location.search) : null;
 if (bankReturn) history.replaceState(null, "", "/#/bank");
+
+/** Something shared from another app (Android's share sheet: lib/share.ts): read once, and the chat is where it lands. */
+const shared = location.pathname === "/" && isShare(location.search) ? readShare(location.search) : null;
+if (location.pathname === "/" && isShare(location.search)) history.replaceState(null, "", "/#/chat");
 
 async function boot(): Promise<void> {
   const root = document.getElementById("app")!;
@@ -115,6 +121,7 @@ async function boot(): Promise<void> {
     return;
   }
   if (bankReturn) handBankCallback(bankReturn);
+  if (shared) handShared(shared);
   const shell = renderShell(root, { api, identity, whoami });
   // Notifications: the node's copy of this device's subscription is kept current (never asks, never turns anything on).
   void syncPush(api);

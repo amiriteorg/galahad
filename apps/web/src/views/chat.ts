@@ -441,6 +441,13 @@ export function restoreOpenChat(api: Api): void {
   });
 }
 
+/** Something shared from another app (lib/share.ts), before the chat is first shown: a new chat, with it in the message
+ * box and unsent, rather than the chat that was open last. */
+export function handShared(text: string): void {
+  restored = true;
+  draft = text;
+}
+
 /** "New chat" from anywhere. A kept chat stays in your history; a temporary one can be brought back once. */
 export function startNewChat(): void {
   if (!thread.turns.length) return;
