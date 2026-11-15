@@ -113,6 +113,14 @@ export const KEY_STATE: Record<string, { label: string; tone: Tone; icon: IconNa
   },
 };
 
+/** A connector that signs in as you (mail): its key state is its app and its sign-in, said as those. */
+export const OAUTH_STATE: Record<string, { label: string; tone: Tone; icon: IconName }> = {
+  missing: { label: "needs your app", tone: "warn", icon: "key" },
+  "signed-out": { label: "not signed in", tone: "warn", icon: "key" },
+  ready: { label: "signed in", tone: "ok", icon: "check" },
+  "wrong-origin": { label: "pinned elsewhere", tone: "danger", icon: "alert" },
+};
+
 const host = (origin: string | null): string => origin?.replace(/^https?:\/\//, "") ?? "";
 
 export async function loadConnectors(ctx: Ctx, abort?: AbortSignal): Promise<ConnectorView[]> {
@@ -479,16 +487,21 @@ function accessBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
     c.access
       ? h(
           "p",
-          { class: "small" },
-          icon("shield-check", { size: 13 }),
-          " Galahad's alone",
-          allowed.length ? ", and " : ": a knight or another agent asks you first.",
-          ...allowed.map((agent, i) => [
-            i ? ", " : "",
-            h("span", { class: "strong" }, agentName(agent)),
-            c.installed && ctx.can("brain:write") ? h("button", { class: "btn ghost sm icon-only", type: "button", "aria-label": `Stop ${agentName(agent)} using it`, title: "Stop", onclick: () => stop(agent) }, icon("x", { size: 12 })) : null,
-          ]),
-          allowed.length ? "." : null,
+          // (An icon is a block of its own: beside the words it needs a row, or it takes a line.)
+          { class: "small row top", style: "gap:6px" },
+          h("span", { style: "padding-top:4px;color:var(--text-3)" }, icon("shield-check", { size: 13 })),
+          h(
+            "span",
+            {},
+            "Galahad's alone",
+            allowed.length ? ", and " : ": a knight or another agent asks you first.",
+            ...allowed.map((agent, i) => [
+              i ? ", " : "",
+              h("span", { class: "strong" }, agentName(agent)),
+              c.installed && ctx.can("brain:write") ? h("button", { class: "btn ghost sm icon-only", type: "button", "aria-label": `Stop ${agentName(agent)} using it`, title: "Stop", onclick: () => stop(agent) }, icon("x", { size: 12 })) : null,
+            ]),
+            allowed.length ? "." : null,
+          ),
         )
       : null,
     c.private ? h("p", { class: "tiny subtle" }, "What it reads stays in the answer that read it: nothing else that could carry it out runs after it, as for your bank.") : null,
@@ -518,7 +531,7 @@ async function remove(ctx: Ctx, c: ConnectorView): Promise<void> {
 }
 
 function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: McpDeps): HTMLElement {
-  const state = KEY_STATE[c.key];
+  const state = (c.oauth ? OAUTH_STATE[c.key] : undefined) ?? KEY_STATE[c.key];
   const asking = c.tools.filter((t) => t.asks).length;
   const mcp = c.kind === "mcp" && c.installed;
   const write = ctx.can("brain:write");
