@@ -183,7 +183,8 @@ async function showPush(event: PushEventLike): Promise<void> {
     tag: shown.tag,
     renotify: true,
     icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    // Android's status bar draws a badge from its alpha alone: the helm's silhouette, not the tile (a white square).
+    badge: "/icon-mono-96.png",
     data: { open: shown.open, ...(shown.conversation ? { conversation: shown.conversation } : {}) },
   });
   await countOnIcon(shown);

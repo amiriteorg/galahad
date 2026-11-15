@@ -44,7 +44,7 @@ describe("the PWA bundle", () => {
     const html = await assets.serve("/").text();
     expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
     const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    for (const path of ["/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png"]) {
+    for (const path of ["/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/icon-mono-96.png"]) {
       const response = assets.serve(path);
       expect(response.headers.get("content-type")).toBe("image/png");
       const bytes = new Uint8Array(await response.arrayBuffer());
@@ -53,6 +53,8 @@ describe("the PWA bundle", () => {
       const view = new DataView(bytes.buffer);
       expect(view.getUint32(16)).toBe(view.getUint32(20));
     }
+    // The notification badge is a silhouette: colour and alpha (type 6), so Android can draw it from the alpha alone.
+    expect(new Uint8Array(await assets.serve("/icon-mono-96.png").arrayBuffer())[25]).toBe(6);
   });
 
   test("the knights' drawings are served as WebP, every one the app can show, and nothing beside them", async () => {

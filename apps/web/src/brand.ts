@@ -79,6 +79,12 @@ export function flatMark(): SvgNode {
   return root("0 0 1024 1024", "Galahad", silhouette("currentColor"));
 }
 
+/** A notification's badge (Android's status bar): the silhouette in white on nothing. The system draws it from its
+ * alpha alone, in its own colour, so the app icon's black tile would be a white square. */
+export function monoIcon(): SvgNode {
+  return root("0 0 1024 1024", "Galahad", silhouette("#ffffff"));
+}
+
 /** The Roundtable's icon as its own file: the ring and the knights' chairs in currentColor, Galahad's in his red. Each
  * knight's chair is the bottom one turned about the middle. */
 export function roundtableIcon(): SvgNode {

@@ -148,6 +148,8 @@ describe("he comes to you: a push becomes a notification", () => {
     expect(shown).toHaveLength(1);
     expect(shown[0]!.title).toBe("Galahad has finished");
     expect(shown[0]!.options).toMatchObject({ body: "“Plan the garden shed”.", tag: "t-AbCdEfGhIjKlMnOpQrStUv", renotify: true, icon: "/icon-192.png", data: { open: "chat", conversation: CHAT } });
+    // In Android's status bar, the helm's silhouette: the system draws a badge from its alpha alone, so the tile would be a white square.
+    expect(shown[0]!.options.badge).toBe("/icon-mono-96.png");
     await push({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "ultra is low on disk", open: "inbox", tag: "t-0123456789abcdefghijkl" });
     expect(shown[1]!.options.data).toEqual({ open: "inbox" });
   });

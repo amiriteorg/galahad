@@ -12,7 +12,7 @@
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { appIcon, crestFile, flatMark, maskableIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
+import { appIcon, crestFile, flatMark, maskableIcon, monoIcon, roundtableIcon, toSvg, type SvgNode } from "../apps/web/src/brand.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
@@ -51,6 +51,8 @@ async function renderPngs(): Promise<void> {
       ["apps/web/src/icon-maskable-512.png", maskableIcon(HELM_FULL), 512, "#0a0a0b"],
       // iOS rounds the corners itself, so the touch icon is full bleed with a larger helm.
       ["apps/web/src/apple-touch-icon.png", maskableIcon(HELM_FULL, 0.72), 180, "#0a0a0b"],
+      // A notification's badge: one colour and its alpha, kept as rendered (a palette would make its edge jagged).
+      ["apps/web/src/icon-mono-96.png", monoIcon(), 96, "transparent"],
     ];
     // A drawing makes a heavy PNG: where ImageMagick is installed, each icon is cut to a 256-colour palette (a quarter
     // of the bytes, the same to the eye) and its metadata stripped; without it, the full-colour render is kept.
@@ -58,13 +60,14 @@ async function renderPngs(): Promise<void> {
     for (const [path, tree, size, background] of pngs) {
       const out = join(work, `${size}-${pngs.findIndex((p) => p[0] === path)}.png`);
       await screenshot(browser, work, toSvg(tree), size, background, out);
+      const flat = path.includes("-mono-");
       if (magick) {
         const small = `${out}.8.png`;
-        const quantised = Bun.spawnSync([magick, out, "-strip", "-dither", "FloydSteinberg", "-colors", "256", `PNG8:${small}`], { stdout: "ignore", stderr: "ignore" });
+        const quantised = Bun.spawnSync([magick, out, "-strip", ...(flat ? [`PNG32:${small}`] : ["-dither", "FloydSteinberg", "-colors", "256", `PNG8:${small}`])], { stdout: "ignore", stderr: "ignore" });
         if (quantised.exitCode === 0 && existsSync(small)) copyFileSync(small, out);
       }
       copyFileSync(out, at(path));
-      console.log(`rendered ${path}${magick ? " (256 colours)" : ""}`);
+      console.log(`rendered ${path}${magick ? (flat ? " (metadata stripped)" : " (256 colours)") : ""}`);
     }
     copyFileSync(at("apps/web/src/apple-touch-icon.png"), at("apps/site/public/apple-touch-icon.png"));
     console.log("copied apps/site/public/apple-touch-icon.png");

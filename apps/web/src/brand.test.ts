@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BRAND_SVGS } from "../../../scripts/brand.ts";
-import { appIcon, INK, MARK_PATH, maskableIcon, TILE, toSvg, type SvgNode } from "./brand.ts";
+import { appIcon, INK, MARK_PATH, maskableIcon, monoIcon, TILE, toSvg, type SvgNode } from "./brand.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 const walk = (node: SvgNode, out: SvgNode[] = []): SvgNode[] => {
@@ -41,6 +41,13 @@ describe("the mark: Galahad's helm as the owner drew it", () => {
       const corner = Math.hypot(Number(image.attrs.width) / 2, Number(image.attrs.height) / 2) * 0.62; // the helm's own round shoulders
       expect(corner).toBeLessThanOrEqual(0.4 * 1024);
     }
+  });
+
+  test("the notification badge is the helm's silhouette in white on nothing: Android draws it from its alpha", () => {
+    const icon = walk(monoIcon());
+    const shapes = icon.filter((node) => !["svg", "title", "#text"].includes(node.tag));
+    expect(shapes).toHaveLength(1);
+    expect(shapes[0]!.attrs).toMatchObject({ d: MARK_PATH, fill: "#ffffff", "fill-rule": "evenodd" });
   });
 
   test("the committed brand files match the definition (run `bun scripts/brand.ts`)", () => {

@@ -22,6 +22,7 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 | `assets/icon.svg` | App icon and favicon: the drawn helm on a black tile |
 | `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the helm sits inside the central safe circle |
 | `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG, rendered from the full-size cut-out (`apps/web/design/galahad-helm.webp`) |
+| `icon-mono-96.png` | A notification's badge in Android's status bar: the flat silhouette in white on nothing (the system draws a badge from its alpha alone, so the tile would be a white square) |
 | `assets/galahad-mark.svg` | The flat mark in `currentColor`: the silhouette, the cross and the slit holes in it |
 | `apps/site/public/crest-{white,black}.svg` | The drawn helm, for the site's header and crest (it reads on a light page and a dark one) |
 | `ui/emblem.ts` → `emblem()` | The drawn helm inline in the PWA, on no tile: its own ink line holds it in either theme; the boot screen shows it too |
