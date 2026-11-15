@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity } from "@galahad/core";
-import { type BrainContext, GatewayTokens, installedConnectors, pinLegacyKeys } from "@galahad/brain";
+import { type BrainContext, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
 import { UsageStore } from "./usage.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
@@ -84,6 +84,8 @@ export interface DaemonOptions {
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
   fetch?: typeof fetch;
+  /** Where Google's and Microsoft's sign-ins are reached (tests: a stand-in). */
+  oauthEndpoints?: Partial<OAuthEndpoints>;
   /** How often the archive's background work runs (default 20 s); false: never by itself (tests drive it). */
   archiveIntervalMs?: number | false;
   /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
@@ -359,7 +361,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, natives: { "github.ship": shipNative(artifacts) } });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts) } });
   const taskDeps: LoopTaskDeps = {
     bank,
     store,
@@ -531,6 +533,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     usage,
     ledger,
     shutdown: shutdown.signal,
+    ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}),
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 

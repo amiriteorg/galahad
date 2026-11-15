@@ -251,13 +251,22 @@ export async function noticeCommand(api: Api, sub: string | undefined, rest: str
   for (const n of shown) console.log(`  ${MARK[n.severity]} ${bold(n.title)}${n.dismissed ? dim(" (dismissed)") : ""}  ${dim(n.key)}\n      ${n.body}`);
 }
 
-export async function connectorCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
+/** How long `connector signin` waits for you to finish signing in at the provider's page. */
+const SIGN_IN_WAIT_MS = 10 * 60_000;
+
+export async function connectorCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags, readHidden?: (prompt: string) => Promise<string>, sleep: (ms: number) => Promise<void> = Bun.sleep): Promise<void> {
   switch (sub) {
     case undefined:
     case "ls": {
       const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
       for (const c of connectors) {
-        const key = { "none-needed": "no key needed", ready: "key ✓", missing: "needs a key", "optional-missing": "no key (public only)", "wrong-origin": "key pinned elsewhere" }[c.key] ?? c.key;
+        const key = c.oauth
+          ? c.key === "ready"
+            ? `signed in${c.oauth.account ? ` as ${c.oauth.account}` : ""} ✓`
+            : c.key === "signed-out"
+              ? `not signed in: galahad connector signin ${c.id}`
+              : `needs your app: galahad connector app ${c.id}`
+          : ({ "none-needed": "no key needed", ready: "key ✓", missing: "needs a key", "optional-missing": "no key (public only)", "wrong-origin": "key pinned elsewhere" }[c.key] ?? c.key);
         console.log(`  ${bold(c.id.padEnd(16))} ${(c.installed ? "installed" : dim("available")).padEnd(tty ? 18 : 9)} ${c.origin ?? dim("(your address)")}  ${c.installed ? key : ""}`);
         if (c.problem) console.log(`      ${bold(c.problem)}`);
       }
@@ -288,6 +297,41 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       if (!rest[0] || !rest[1]) throw new Error(`usage: galahad connector ${sub} <id> <agent> (an agent's label, as galahad connector requests shows it)`);
       const { connector } = await api.call<{ connector: ConnectorView }>("setConnectorAccess", { id: rest[0], agent: rest[1], allow: sub === "allow" });
       console.log(sub === "allow" ? `${rest[1]} may use ${connector.label} now.` : `${rest[1]} may not use ${connector.label} any more: it asks first.`);
+      return;
+    }
+    case "app": {
+      // The app you registered with Google or Microsoft: its client id, and Google's secret, typed hidden.
+      const [id] = rest;
+      const client = str(flags, "client-id");
+      if (!id || !client) throw new Error("usage: galahad connector app <id> --client-id <id> (Google's secret is asked for, hidden)");
+      const c = (await api.call<{ connectors: ConnectorView[] }>("connectors")).connectors.find((x) => x.id === id && x.installed);
+      if (!c?.oauth) throw new Error(`${id} isn't an installed connector that signs in`);
+      const secret = c.oauth.provider === "google" ? await (readHidden ?? (() => Promise.reject(new Error("no way to ask for the secret here"))))("Its client secret (hidden): ") : undefined;
+      const { connector } = await api.call<{ connector: ConnectorView }>("setOAuthApp", { connector: id, client, ...(secret ? { secret } : {}) });
+      console.log(`Sealed ${connector.label}'s app. Sign in: galahad connector signin ${id}${c.oauth.provider === "google" ? " --redirect <your app's address>/oauth/callback" : ""}`);
+      return;
+    }
+    case "signin": {
+      const [id] = rest;
+      if (!id) throw new Error("usage: galahad connector signin <id> [--redirect <your app's address>/oauth/callback] (Google returns there)");
+      const redirect = str(flags, "redirect");
+      const started = await api.call<{ flow: "code"; url: string } | { flow: "device"; code: string; url: string; expires: number }>("oauthStart", { connector: id, ...(redirect ? { redirect } : {}) });
+      if (started.flow === "code") console.log(`Open this page, choose your account and allow it:\n  ${started.url}\nIt comes back to ${redirect}, which says when you're signed in.`);
+      else console.log(`Open ${started.url} and type the code ${bold(started.code)}. This waits while you do.`);
+      // Watched until it's done (or the wait ends): its card says when it's signed in, and as whom.
+      for (const until = Date.now() + SIGN_IN_WAIT_MS; Date.now() < until; await sleep(3000)) {
+        const c = (await api.call<{ connectors: ConnectorView[] }>("connectors")).connectors.find((x) => x.id === id);
+        if (c?.key === "ready") {
+          console.log(`Signed in${c.oauth?.account ? ` as ${c.oauth.account}` : ""}.`);
+          return;
+        }
+      }
+      throw new Error("Not signed in yet, and this stopped waiting: galahad connector ls says when it is");
+    }
+    case "signout": {
+      if (!rest[0]) throw new Error("usage: galahad connector signout <id>");
+      const { connector } = await api.call<{ connector: ConnectorView }>("oauthSignOut", { connector: rest[0] });
+      console.log(`Signed out of ${connector.label}. The app you registered stays; sign in again with galahad connector signin ${connector.id}.`);
       return;
     }
     case "dismiss": {

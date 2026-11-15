@@ -253,6 +253,8 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
   connector call <id>.<tool> [--arg key=value …] [--why "…"]
   connector requests | connector dismiss <id>      what an agent asked you to connect (it never installs one)
   connector allow|disallow <id> <agent>           let an agent use a connector that's Galahad's alone (mail), or stop it
+  connector app <id> --client-id <id>             a connector that signs in (Gmail, Outlook): the app you registered
+  connector signin <id> [--redirect <url>]        sign in as you (Google returns to <your app>/oauth/callback) · connector signout <id>
   secret set <name> --connector <id>                    a connector's key, pinned to its origin
   action ls [--all] | action approve <id> [--note …] | action deny <id>
 
@@ -403,6 +405,8 @@ async function main(): Promise<void> {
       keystore: { type: "string" },
       advertise: { type: "string" },
       client: { type: "boolean" },
+      "client-id": { type: "string" },
+      redirect: { type: "string" },
       origin: { type: "string" },
       provider: { type: "string" },
       preset: { type: "string" },
@@ -1544,7 +1548,7 @@ Evidence: galahad artifact ${i!.artifact}`));
       return;
     case "connector":
     case "connectors":
-      await connectorCommand(new Admin(home), sub, rest, flags);
+      await connectorCommand(new Admin(home), sub, rest, flags, readSecret);
       return;
     case "action":
     case "actions":

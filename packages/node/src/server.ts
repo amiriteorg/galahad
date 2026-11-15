@@ -97,6 +97,7 @@ import {
   installedConnector,
   installedConnectors,
   keyState,
+  type OAuthEndpoints,
   handleGateway,
   listModels,
   originOf,
@@ -141,6 +142,7 @@ import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
+import { SignInError, SignIns } from "./sign-ins.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
@@ -219,6 +221,8 @@ export interface AppContext {
   ledger?: (entry: LedgerEntryInput) => void;
   /** How the node reaches other machines and services (tests pass a stand-in). */
   fetch?: typeof fetch;
+  /** Where Google's and Microsoft's sign-ins are reached (tests: a stand-in). */
+  oauthEndpoints?: Partial<OAuthEndpoints>;
   /** Aborted when the node stops: what would otherwise hold it up (a doctor's full check under way) ends. */
   shutdown?: AbortSignal;
 }
@@ -893,6 +897,33 @@ export function createApp(ctx: AppContext) {
     };
   }
 
+  // Signing in to a connector as you (sign-ins.ts): its app, its consent page or code, Google's return.
+  const signIns = new SignIns({
+    vault: ctx.vault,
+    manifest: (id) => installedConnector(ctx.store, id),
+    ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
+    ...(ctx.oauthEndpoints ? { endpoints: ctx.oauthEndpoints } : {}),
+    log: ctx.log,
+  });
+  ctx.shutdown?.addEventListener("abort", () => signIns.stop());
+  async function signInErrors<T>(work: () => T | Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof SignInError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  }
+  /** The page Google's return opens: what happened, in words, and nothing else (no script, nothing loaded, never kept). */
+  function signInPage(outcome: { ok: boolean; message: string }): Response {
+    const text = outcome.message.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    const body = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Galahad</title><style>body{font:17px/1.5 system-ui,sans-serif;margin:0;padding:40px 24px;color:#0a0a0b;background:#fafafa}@media(prefers-color-scheme:dark){body{color:#ededef;background:#08080a}}h1{font-size:22px;margin:0 0 8px}</style><h1>${outcome.ok ? "Signed in" : "Not signed in"}</h1><p>${text}</p>`;
+    return new Response(body, {
+      status: outcome.ok ? 200 : 400,
+      headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" },
+    });
+  }
+
   /** What agents asked you to connect that still isn't installed (installed on another node, it's answered there too). */
   function openConnectorRequests(): ConnectorRequest[] {
     const installed = new Map(installedConnectors(ctx.store).map((c) => [c.id, c.manifest]));
@@ -951,6 +982,7 @@ export function createApp(ctx: AppContext) {
         problem: mine?.problem ?? null,
         tools,
         access: manifest?.access ? { only: manifest.access.only, allowed: [...manifest.access.allowed] } : null,
+        oauth: manifest?.auth?.oauth ? { provider: manifest.auth.oauth.provider, account: (mine?.manifest && signIns.keep(mine.manifest)?.account) ?? null } : null,
         private: Boolean(manifest?.private),
       };
     });
@@ -2459,6 +2491,15 @@ export function createApp(ctx: AppContext) {
       if (installed && !access) throw new HttpError(409, `${input.connector} is installed: call its tools (connectors lists them)`);
       return { request: connectorRequestView(ctx.connectorRequests.add({ connector: input.connector, access, why: input.why, by: p.label ?? p.kind })) };
     },
+    setOAuthApp: (input) => signInErrors(() => {
+      signIns.setApp(input.connector, input.client, input.secret);
+      return { connector: connectorViews().find((c) => c.id === input.connector) };
+    }),
+    oauthStart: (input) => signInErrors(() => signIns.start(input.connector, input.redirect)),
+    oauthSignOut: (input) => signInErrors(() => {
+      signIns.signOut(input.connector);
+      return { connector: connectorViews().find((c) => c.id === input.connector) };
+    }),
     setConnectorAccess: (input) => {
       const manifest = installedConnector(ctx.store, input.id);
       if (!manifest) throw new HttpError(404, `${input.id} isn't installed`);
@@ -2835,6 +2876,8 @@ export function createApp(ctx: AppContext) {
     }
 
     if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path, req);
+    // Google's return from its consent page: bound to the sign-in a device of yours started, by its state.
+    if (req.method === "GET" && path === "/oauth/callback") return signInPage(await signIns.callback(url.searchParams));
 
     if (path.startsWith("/gw/")) {
       if (listener !== "loopback") throw new HttpError(404, "not found");

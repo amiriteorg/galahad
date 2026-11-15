@@ -60,3 +60,28 @@ test("an agent asking to use one that's Galahad's alone: who, which and why, and
   expect(asked.at(-1)).toEqual({ name: "setConnectorAccess", input: { id: "gmail", agent: "team.0a1b2c3d4e.kay", allow: true } });
 });
 
+
+test("signing in at a terminal: the app's secret is asked for hidden, never a flag; the page or the code is shown, and it waits till you're in", async () => {
+  const states = ["signed-out", "signed-out", "ready"];
+  const asked: { name: RouteName; input: unknown }[] = [];
+  const view = (key: string) => ({ id: "gmail", label: "Gmail", installed: true, key, oauth: { provider: "google", account: key === "ready" ? "you@example.com" : null } });
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name === "connectors") return { connectors: [view(states.length > 1 ? states.shift()! : states[0]!)] } as T;
+      if (name === "oauthStart") return { flow: "code", url: "https://accounts.example.test/auth?state=abc" } as T;
+      return { connector: view("signed-out") } as T;
+    },
+  };
+  const hidden: string[] = [];
+  const app = await printed(() => connectorCommand(api, "app", ["gmail"], { "client-id": "client-id.apps.example" }, async (prompt) => (hidden.push(prompt), "test-secret-FAKE")));
+  expect(hidden).toEqual(["Its client secret (hidden): "]);
+  expect(asked.find((a) => a.name === "setOAuthApp")?.input).toEqual({ connector: "gmail", client: "client-id.apps.example", secret: "test-secret-FAKE" });
+  expect(app.join("\n")).not.toContain("test-secret-FAKE");
+  const signin = await printed(() => connectorCommand(api, "signin", ["gmail"], { redirect: "https://keep.example.test/oauth/callback" }, undefined, async () => {}));
+  expect(signin.join("\n")).toContain("https://accounts.example.test/auth?state=abc");
+  expect(signin.at(-1)).toBe("Signed in as you@example.com.");
+  expect(asked.find((a) => a.name === "oauthStart")?.input).toEqual({ connector: "gmail", redirect: "https://keep.example.test/oauth/callback" });
+  const out = await printed(() => connectorCommand(api, "signout", ["gmail"], {}));
+  expect(out.join("\n")).toContain("Signed out of Gmail");
+});

@@ -10,6 +10,7 @@ export * from "./quest.ts";
 export * from "./windows.ts";
 export * from "./checks.ts";
 export * from "./mcp-connectors.ts";
+export * from "./oauth.ts";
 export * from "./investigation.ts";
 export * from "./trials.ts";
 export * from "./trial-suite.ts";

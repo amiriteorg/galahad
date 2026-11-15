@@ -14,6 +14,7 @@ import { CLASS_INFO } from "./activity.ts";
 import { classSelect, type McpDeps, mcpBadge, openAddMcp, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
 import { loadOrders, openNewOrder, ordersChanged, renderOrders } from "./orders.ts";
 import { vaultChanged } from "./vault.ts";
+import { signInBlock } from "./sign-in.ts";
 
 /*
  * Connectors: how Galahad reaches the services you use. Each is a manifest,
@@ -103,6 +104,7 @@ export const KEY_STATE: Record<string, { label: string; tone: Tone; icon: IconNa
   ready: { label: "key sealed", tone: "ok", icon: "check", explain: "Its key is sealed in the vault and only ever sent to this origin." },
   missing: { label: "needs a key", tone: "warn", icon: "key", explain: "It can't do anything until its key is in the vault." },
   "optional-missing": { label: "public only", tone: "neutral", icon: "key", explain: "Public reads work without a key, at a lower rate limit. Add one to reach your own data." },
+  "signed-out": { label: "not signed in", tone: "warn", icon: "key", explain: "Its app is sealed: sign in as yourself to use it." },
   "wrong-origin": {
     label: "key pinned elsewhere",
     tone: "danger",
@@ -586,7 +588,8 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
       c.description ? h("p", { class: "small muted" }, c.description) : null,
       c.problem ? callout("warn", c.problem) : null,
       accessBlock(ctx, c),
-      keyBlock(ctx, c, mcp && !c.tools.length ? () => void refreshMcp(ctx, c, deps) : undefined),
+      // One that signs in as you (mail) has an app and a sign-in where another has its key.
+      c.oauth ? signInBlock(ctx, c) : keyBlock(ctx, c, mcp && !c.tools.length ? () => void refreshMcp(ctx, c, deps) : undefined),
       installBlock(ctx, c),
       mcp
         ? h(

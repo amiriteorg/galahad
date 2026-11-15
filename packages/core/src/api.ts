@@ -634,6 +634,28 @@ export const routes = {
   /** An agent asking for a connector it doesn't have. Asking installs nothing: you add it, from the request. */
   requestConnector: { method: "POST", path: "/api/connectors/requests", scope: "connect", input: ConnectorRequestInput },
   dismissConnectorRequest: { method: "POST", path: "/api/connectors/requests/dismiss", scope: "brain:write", input: z.strictObject({ id: ConnectorRequestId }) },
+  /**
+   * The app you registered for a connector that signs in (Gmail, Outlook): its client id, and for Google its secret.
+   * Sealed in the vault under the connector's secret, pinned to it; a new client id ends the sign-in it had.
+   */
+  setOAuthApp: {
+    method: "POST",
+    path: "/api/oauth/app",
+    scope: "vault:write",
+    input: z.strictObject({ connector: ConnectorId, client: z.string().min(1).max(256).regex(/^\S+$/), secret: z.string().min(1).max(256).regex(/^\S+$/).optional() }),
+  },
+  /**
+   * Sign in to a connector as yourself. Google: the address of its consent page, which returns to `redirect` (your
+   * app's own /oauth/callback, as you registered it). Microsoft: a code to type at its page, while the node waits.
+   */
+  oauthStart: {
+    method: "POST",
+    path: "/api/oauth/start",
+    scope: "brain:write",
+    input: z.strictObject({ connector: ConnectorId, redirect: z.string().url().max(300).optional() }),
+  },
+  /** Forget a connector's sign-in (the app you registered stays). */
+  oauthSignOut: { method: "POST", path: "/api/oauth/signout", scope: "brain:write", input: z.strictObject({ connector: ConnectorId }) },
   /** Let an agent use a connector that's Galahad's alone, or stop it again. It answers that agent's request for it. */
   setConnectorAccess: {
     method: "POST",
@@ -1212,6 +1234,8 @@ export interface ConnectorView {
   tools: ConnectorToolView[];
   /** Galahad's alone (and the agents you allowed, by label), when it isn't every agent's. */
   access: { only: "galahad"; allowed: string[] } | null;
+  /** One that signs in as you: whose sign-in, and whose account it's signed in to (null until then). */
+  oauth: { provider: "google" | "microsoft"; account: string | null } | null;
   /** What it reads stays in the answer that read it (mail), as the bank's data does. */
   private: boolean;
 }

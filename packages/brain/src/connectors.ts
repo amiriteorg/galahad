@@ -1,5 +1,6 @@
 import { type BuiltRequest, ConnectorError, ConnectorManifest, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
+import { accessToken, type OAuthContext, readKeep } from "./oauth.ts";
 
 /*
  * The connector broker's outbound half: send one built request with the key
@@ -35,15 +36,21 @@ export function installedConnector(store: MindStore, id: string): ConnectorManif
   return parsed.success ? parsed.data : null;
 }
 
-export type KeyState = "none-needed" | "ready" | "missing" | "optional-missing" | "wrong-origin";
+export type KeyState = "none-needed" | "ready" | "missing" | "optional-missing" | "wrong-origin" | "signed-out";
 
-/** Whether the connector's key is in the vault and pinned to the connector's origin. */
+/**
+ * Whether the connector's key is in the vault and pinned to the connector's origin. One that signs in (oauth) is
+ * ready once you've signed in; with only the app you registered it's signed-out.
+ */
 export function keyState(vault: Vault, manifest: ConnectorManifest): KeyState {
   if (!manifest.auth) return "none-needed";
   const info = vault.info(manifest.auth.secret);
   if (!info) return manifest.auth.optional ? "optional-missing" : "missing";
   // Pinned to this origin *and* entered for this connector: a manifest can't borrow another service's key.
-  return info.origin === new URL(manifest.origin).origin && info.provider === manifest.id ? "ready" : "wrong-origin";
+  if (info.origin !== new URL(manifest.origin).origin || info.provider !== manifest.id) return "wrong-origin";
+  if (manifest.auth.scheme !== "oauth") return "ready";
+  const keep = vault.unlocked() ? readKeep(vault.reveal(manifest.auth.secret)) : null;
+  return !keep ? "missing" : keep.refresh ? "ready" : "signed-out";
 }
 
 export interface ConnectorResult {
@@ -87,6 +94,8 @@ export interface SendContext {
   fetch?: typeof fetch;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** For a connector that signs in: where its provider is, and how a rotated sign-in is kept (oauth.ts). */
+  oauth?: Omit<OAuthContext, "vault" | "fetch">;
 }
 
 /**
@@ -98,6 +107,7 @@ export function authFor(vault: Vault, manifest: ConnectorManifest): { headers: R
   if (state === "missing") throw new ConnectorError(`${manifest.id} needs its key: add the secret "${manifest.auth!.secret}" for ${manifest.origin}`);
   if (state === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth!.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
   if (state !== "ready" || !manifest.auth) return { headers: {}, key: null };
+  if (manifest.auth.scheme === "oauth") throw new ConnectorError(`${manifest.id} signs in: its calls carry an access token (sendConnectorRequest)`);
   const key = vault.reveal(manifest.auth.secret);
   if (manifest.auth.scheme === "bearer") return { headers: { authorization: `Bearer ${key}` }, key };
   if (manifest.auth.scheme === "basic") return { headers: { authorization: `Basic ${Buffer.from(key).toString("base64")}` }, key };
@@ -108,9 +118,19 @@ export async function sendConnectorRequest(ctx: SendContext, manifest: Connector
   const headers = new Headers({ accept: "application/json", "user-agent": "galahad/0.1 (+https://galahad.bot)" });
   for (const [name, value] of Object.entries(request.headers)) headers.set(name, value);
   if (request.body !== undefined) headers.set("content-type", "application/json");
-  const auth = authFor(ctx.vault, manifest);
-  for (const [name, value] of Object.entries(auth.headers)) headers.set(name, value);
-  const key = auth.key;
+  let key: string | null;
+  if (manifest.auth?.scheme === "oauth") {
+    // Signed in as you: a short-lived access token for this call, never the sign-in itself.
+    if (keyState(ctx.vault, manifest) === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
+    key = await accessToken({ vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}), ...ctx.oauth }, manifest).catch((error: Error) => {
+      throw new ConnectorError(error.message);
+    });
+    headers.set("authorization", `Bearer ${key}`);
+  } else {
+    const auth = authFor(ctx.vault, manifest);
+    for (const [name, value] of Object.entries(auth.headers)) headers.set(name, value);
+    key = auth.key;
+  }
 
   const started = performance.now();
   const timeout = AbortSignal.timeout(ctx.timeoutMs ?? 30_000);

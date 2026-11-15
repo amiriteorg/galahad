@@ -35,6 +35,7 @@ import {
   keyState,
   type MergeReport,
   mergeMcpTools,
+  type OAuthEndpoints,
   sendConnectorRequest,
 } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
@@ -93,6 +94,8 @@ export interface ConnectorServiceOptions {
   now?: () => number;
   /** The native tools this node can carry out (a call to another is refused). */
   natives?: Partial<Record<NativeName, NativeTool>>;
+  /** Where Google's and Microsoft's sign-ins are reached (tests: a stand-in). */
+  oauthEndpoints?: Partial<OAuthEndpoints>;
 }
 
 /** How long an action waits for you. No answer means no. */
@@ -190,7 +193,12 @@ export class ConnectorService {
 
   private async send(manifest: ConnectorManifest, request: ConnectorRequest): Promise<ConnectorResult> {
     try {
-      const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}) };
+      // One that signs in keeps a rotated sign-in sealed and pinned as before.
+      const keepRotated = (name: string, value: string) => {
+        const info = this.o.vault.info(name);
+        this.o.vault.set(name, value, { ...(info?.origin ? { origin: info.origin } : {}), ...(info?.provider ? { provider: info.provider } : {}), ...(info?.label ? { label: info.label } : {}) });
+      };
+      const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: keepRotated, ...(this.o.oauthEndpoints ? { endpoints: this.o.oauthEndpoints } : {}) } };
       if (request.kind === "native") {
         const native = this.o.natives?.[request.native];
         if (!native) throw new ConnectorCallError(501, `${request.native} isn't available on this node`);

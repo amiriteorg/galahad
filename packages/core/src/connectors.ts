@@ -109,11 +109,22 @@ const Origin = z
 export const ConnectorAuth = z.strictObject({
   /** The vault secret holding the key. Its pinned origin must be this connector's origin. */
   secret: SecretName,
-  /** bearer: Authorization: Bearer <key> · header: <header>: <key> · basic: the key is "user:password". */
-  scheme: z.enum(["bearer", "header", "basic"]),
+  /**
+   * bearer: Authorization: Bearer <key> · header: <header>: <key> · basic: the key is "user:password" · oauth: you sign
+   * in as yourself with an app you registered (brain oauth.ts); the secret keeps the app and the sign-in, and each call
+   * carries a short-lived access token the node gets for it.
+   */
+  scheme: z.enum(["bearer", "header", "basic", "oauth"]),
   header: HeaderName.optional(),
   /** Call without a key when none is set (public APIs with a lower rate limit). */
   optional: z.boolean().optional(),
+  /** scheme oauth: whose sign-in, and what it asks you to allow. */
+  oauth: z
+    .strictObject({
+      provider: z.enum(["google", "microsoft"]),
+      scopes: z.array(z.string().min(1).max(200).regex(/^[A-Za-z0-9.:/_-]+$/)).min(1).max(16),
+    })
+    .optional(),
 });
 
 /** An agent as a connector's access names it: its label (Galahad's own is galahad; a knight's, team.…). */
@@ -184,6 +195,9 @@ export const ConnectorManifest = z
       return;
     }
     if (tools.length === 0 || tools.length > 64) issue.addIssue({ code: "custom", message: "a connector has 1 to 64 tools", path: ["tools"] });
+    if ((manifest.auth?.scheme === "oauth") !== Boolean(manifest.auth?.oauth)) {
+      issue.addIssue({ code: "custom", message: "auth scheme oauth goes with oauth (its provider and scopes), and only it does", path: ["auth", "oauth"] });
+    }
     if (manifest.auth?.scheme === "header" && !manifest.auth.header) {
       issue.addIssue({ code: "custom", message: "auth scheme header needs a header name", path: ["auth", "header"] });
     }
