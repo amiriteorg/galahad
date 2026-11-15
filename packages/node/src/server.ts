@@ -1653,6 +1653,11 @@ export function createApp(ctx: AppContext) {
       modelsOutside: (member) => harnessModels(member.harness, leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),
       memories: (query) => memoryContext(query) ?? "",
+      roundtable: () => teamOf().overview().workers,
+      work: (id) => teamOf().snapshot().tasks.filter((task) => task.assignee === id),
+      story: (room) => teamOf().story(room),
+      keepStory: (room, text, through) => teamOf().keepStory(room, text, through),
+      search: (id, query) => teamOf().search(id, query),
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
         const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);

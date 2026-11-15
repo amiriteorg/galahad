@@ -80,7 +80,8 @@ export class TeamStore {
       CREATE INDEX IF NOT EXISTS team_jobs_teammate ON team_jobs(teammate, status);
       CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);
       CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));`);
+      CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));
+      CREATE TABLE IF NOT EXISTS team_stories (room TEXT PRIMARY KEY REFERENCES team_rooms(id), text TEXT NOT NULL, through TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
   }
 
   close(): void { this.db.close(); }
@@ -92,6 +93,26 @@ export class TeamStore {
     const on = teamInput(z.boolean(), raw);
     this.db.query("INSERT INTO team_settings(key,value) VALUES('engram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
     return on;
+  }
+  /** A room's story so far: what its knights summed up of the conversation before `through` (a message's id), so a
+   * long one keeps what it settled. Null: nothing has been summed up yet. */
+  story(room: string): { text: string; through: string; updatedAt: number } | null {
+    const row = this.db.query<{ text: string; through: string; updated_at: number }, [string]>("SELECT text, through, updated_at FROM team_stories WHERE room = ?").get(room);
+    return row ? { text: row.text, through: row.through, updatedAt: row.updated_at } : null;
+  }
+  /** The story told anew, through a later message. A model wrote it: it is held to what team memory is. */
+  keepStory(room: string, raw: string, through: string): void {
+    const text = teamOutput(raw, TEAM_LIMITS.memory);
+    teamText(text);
+    this.requireRoom(room);
+    this.db.query("INSERT INTO team_stories(room,text,through,updated_at) VALUES(?,?,?,?) ON CONFLICT(room) DO UPDATE SET text=excluded.text, through=excluded.through, updated_at=excluded.updated_at").run(room, text, through, this.now());
+  }
+  /** What was said in these rooms that holds every word of `query` (case aside), the latest first: at most `limit`. */
+  searchMessages(rooms: string[], query: string, limit = 8): TeamMessage[] {
+    const words = [...new Set(query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 2))].slice(0, 8);
+    if (!rooms.length || !words.length) return [];
+    const where = `room IN (${rooms.map(() => "?").join(",")}) AND ${words.map(() => "instr(lower(text), ?) > 0").join(" AND ")}`;
+    return this.db.query<MessageRow, string[]>(`SELECT * FROM team_messages WHERE ${where} ORDER BY seq DESC LIMIT ${Math.max(1, Math.min(32, Math.trunc(limit)))}`).all(...rooms, ...words).map(messageOf);
   }
   /** A worker's record as it is kept, whether or not it was removed. */
   private record(id: string): Teammate | null {

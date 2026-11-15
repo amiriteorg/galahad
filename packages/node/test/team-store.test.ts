@@ -693,3 +693,34 @@ describe("the notes store's switch", () => {
     expect(opened.engram()).toBe(true);
   });
 });
+
+test("a room's story is kept for it, replaced as it grows, and never holds a secret", () => {
+  const store = new TeamStore(":memory:");
+  store.saveTeammate({ id: "ada", name: "Ada" });
+  store.saveRoom({ id: "forge", name: "Forge", members: ["ada"] });
+  expect(store.story("forge")).toBeNull();
+  store.keepStory("forge", "Ada drafts the notes.", "message-1");
+  store.keepStory("forge", "Ada drafted the notes; Kay plans Monday.", "message-9");
+  expect(store.story("forge")).toMatchObject({ text: "Ada drafted the notes; Kay plans Monday.", through: "message-9" });
+  const fake = "sk-ant-" + "obviouslyfaketest".repeat(3);
+  store.keepStory("forge", `The key is ${fake}`, "message-10");
+  expect(store.story("forge")?.text).not.toContain(fake);
+  expect(() => store.keepStory("nowhere", "x", "message-1")).toThrow();
+  store.close();
+});
+
+test("what was said is searched in the rooms asked, every word of the question, the latest first", () => {
+  const store = new TeamStore(":memory:");
+  for (const id of ["ada", "lin"]) store.saveTeammate({ id, name: id });
+  store.saveRoom({ id: "forge", name: "Forge", members: ["ada"] });
+  store.saveRoom({ id: "quiet", name: "Quiet", members: ["lin"] });
+  store.post({ room: "forge", text: "The release date is Monday." });
+  store.post({ room: "forge", text: "Monday it is: the release ships at nine." });
+  store.post({ room: "forge", text: "Unrelated: the coffee machine broke." });
+  store.post({ room: "quiet", text: "The release date is secret to Lin's room." });
+  const found = store.searchMessages(["forge"], "Release MONDAY");
+  expect(found.map((m) => m.text)).toEqual(["Monday it is: the release ships at nine.", "The release date is Monday."]);
+  expect(store.searchMessages(["forge"], "100%_")).toEqual([]);
+  expect(store.searchMessages([], "release")).toEqual([]);
+  store.close();
+});

@@ -112,6 +112,14 @@ export class TeamService {
   post(input: TeamPostInput): TeamMessage { this.accepting(); const message = this.store.post(input); this.changed(); this.kick(); return message; }
   /** His workers as Galahad himself reads them. */
   overview(room?: string): TeamOverview { return this.store.overview(room); }
+  /** What was said in the conversations a knight is part of (its own with you and other knights included) that holds every word of `query`. */
+  search(teammate: string, query: string): { room: string; speaker: string; speakerName: string; text: string; at: string }[] {
+    const rooms = this.store.rooms().filter((room) => room.members.includes(teammate)).map((room) => room.id);
+    return this.store.searchMessages(rooms, query).map(({ room, speaker, speakerName, text, createdAt }) => ({ room, speaker, speakerName, text: text.length > 600 ? `${text.slice(0, 599)}…` : text, at: new Date(createdAt).toISOString() }));
+  }
+  /** A room's story so far, and keeping it told anew (TeamStore.story). */
+  story(room: string): { text: string; through: string } | null { return this.store.story(room); }
+  keepStory(room: string, text: string, through: string): void { this.accepting(); this.store.keepStory(room, text, through); }
   /** Galahad himself, from your conversation with him: a new worker of his own. */
   recruit(input: TeamRecruitInput): Teammate {
     this.accepting();

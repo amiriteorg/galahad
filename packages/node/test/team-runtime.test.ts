@@ -64,6 +64,87 @@ test("persistent room history has a bounded model context while preserving the n
   expect(conversation).not.toContain("Older message 0:");
 });
 
+const said = (n: number, speaker: string, text: string): TeamMessage => ({ id: `message-${n}`, room: room.id, speaker, speakerName: speaker === "owner" ? "You" : "Ada", text, createdAt: n, chainId: "chain-test" });
+const seated = [
+  { id: "ada", name: "Ada", role: "engineer", harness: "native" as const, job: "Keep changes small.", madeBy: "owner", state: "working" as const, turnsToday: 1, dailyTurns: 40, repository: null, workspace: true },
+  { id: "kay", name: "Kay", role: "planner", harness: "native" as const, job: "Plans the releases.", madeBy: "owner", state: "ready" as const, turnsToday: 0, dailyTurns: 40, repository: null, workspace: false },
+];
+
+test("a knight sees the whole Roundtable, not only its room: every knight's name and job, and what each is doing now", async () => {
+  const f = fixture([say("Kay should plan it.")], { roundtable: () => seated });
+  await f.runtime.respond(member, room, [said(1, "owner", "Who plans the release?")], f.context);
+  const system = f.bodies[0].messages[0].content as string;
+  expect(system).toContain('"name":"Kay"');
+  expect(system).toContain("Plans the releases.");
+  // What each is doing changes from turn to turn: it is said after the conversation, never in the beginning a provider caches.
+  expect(system).not.toContain('"state"');
+  const asked = f.bodies[0].messages.find((m: any) => m.role === "user").content as string;
+  expect(asked).toMatch(/"id":"kay","state":"ready"/);
+});
+
+test("a knight is told its own latest work, wherever it was given", async () => {
+  const done = { ...task, id: "task-donenotes000", title: "Draft the notes", status: "done" as const, verified: true, room: "release" };
+  const f = fixture([say("I drafted them.")], { work: () => [done] });
+  await f.runtime.respond(member, room, [said(1, "owner", "Did you draft the notes?")], f.context);
+  const asked = f.bodies[0].messages.find((m: any) => m.role === "user").content as string;
+  expect(asked).toContain("Draft the notes");
+  expect(asked).toContain('"verified":true');
+});
+
+test("a conversation's turns are sent the same beginning, so a provider reads it from its cache: only what is new, and what is true now, follow it", async () => {
+  const f = fixture([say("On it."), say("Done.")], { roundtable: () => seated, memories: (query: string) => `Recalled for ${query}` });
+  const first = [said(1, "owner", "Plan the release.")];
+  await f.runtime.respond(member, room, first, f.context);
+  await f.runtime.respond(member, room, [...first, said(2, "ada", "On it."), said(3, "owner", "And the notes?")], f.context);
+  const [a, b] = f.bodies.map((body) => body.messages);
+  expect(b[0].content).toBe(a[0].content);
+  const before = a.find((m: any) => m.role === "user").content as string;
+  const after = b.find((m: any) => m.role === "user").content as string;
+  const through = before.indexOf("Plan the release.") + "Plan the release.".length;
+  expect(after.slice(0, through)).toBe(before.slice(0, through));
+  // What was recalled for the newest message is said at the end, where it changes nothing before it.
+  expect(after.endsWith("Recalled for And the notes?")).toBe(true);
+});
+
+test("a long conversation is kept as a story: its older part is summed up once, by the knight's model, for the room, and later turns start from it", async () => {
+  let kept: { text: string; through: string } | null = null;
+  const stories: string[] = [];
+  const f = fixture([say("Ada drafts the notes; Kay plans the release for Monday."), say("Understood."), say("Still on it.")], {
+    story: () => kept,
+    keepStory: (where: string, text: string, through: string) => { expect(where).toBe(room.id); stories.push(text); kept = { text, through }; },
+  });
+  const long = Array.from({ length: 40 }, (_, i) => said(i + 1, i % 2 ? "ada" : "owner", `${i === 0 ? "Who drafts the notes?" : `Message ${i + 1}`} ${"x".repeat(1000)}`));
+  await f.runtime.respond(member, room, long, f.context);
+  // One call summed up the older part, and the reply came after it.
+  expect(f.bodies).toHaveLength(2);
+  expect(stories).toEqual(["Ada drafts the notes; Kay plans the release for Monday."]);
+  const asked = f.bodies[1].messages.find((m: any) => m.role === "user").content as string;
+  expect(asked).toContain("Ada drafts the notes; Kay plans the release for Monday.");
+  expect(asked).not.toContain("Who drafts the notes?");
+  expect(asked).toContain("Message 40");
+  // The story covers everything before what is said whole: nothing falls between them.
+  const through = Number(kept!.through.replace("message-", ""));
+  expect(asked).toContain(`Message ${through + 1} `);
+  expect(asked).not.toContain(`Message ${through} `);
+  // The next turn starts from the same story, with no new summing up while what follows it is short.
+  await f.runtime.respond(member, room, [...long, said(41, "owner", "Thanks.")], f.context);
+  expect(f.bodies).toHaveLength(3);
+  const next = f.bodies[2].messages.find((m: any) => m.role === "user").content as string;
+  const head = asked.indexOf(`Message ${through + 1} `);
+  expect(next.slice(0, head)).toBe(asked.slice(0, head));
+});
+
+test("a knight searches everything said in its conversations, older than it was shown included, with its own tool", async () => {
+  const asked: [string, string][] = [];
+  const f = fixture([call("search_conversations", { query: "release date" }), say("We settled on Monday.")], {
+    search: (who: string, query: string) => { asked.push([who, query]); return [{ room: "release", speaker: "owner", speakerName: "You", text: "The release date is Monday.", at: "2026-11-15T10:00:00.000Z" }]; },
+  });
+  expect(await f.runtime.respond(member, room, [said(1, "owner", "When did we say we'd release?")], f.context)).toBe("We settled on Monday.");
+  expect(asked).toEqual([["ada", "release date"]]);
+  expect(f.bodies[0].tools.map((t: any) => t.function.name)).toContain("search_conversations");
+  expect(JSON.stringify(f.bodies[1].messages)).toContain("The release date is Monday.");
+});
+
 test("task completion requires its gates before independent review, and the reviewer sees execution evidence", async () => {
   const f = fixture([say("1. Make the change and test it."), say("```sh\necho built\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe gate and command output support the result.")]);
   const outcome = await f.runtime.executeTask(member, task, f.context);
