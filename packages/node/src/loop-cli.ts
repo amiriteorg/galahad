@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorView, type FindingView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorView, type FindingView, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -134,8 +134,43 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       }
       return;
     }
+    case "drafts": {
+      const { drafts } = await api.call<{ drafts: LoopDraftView[] }>("loopDrafts");
+      if (!drafts.length) console.log("No drafts. Ask Galahad in chat for something on a schedule, and his draft waits here for you.");
+      for (const draft of drafts) {
+        console.log(`  ${bold(draft.id)}  ${bold(draft.name)}: ${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}${draft.replaces ? dim(" (replaces your loop of that name)") : ""}`);
+        console.log(`  ${" ".repeat(draft.id.length)}  ${dim(describeTask(draft.task))}`);
+        if (draft.why) console.log(`  ${" ".repeat(draft.id.length)}  ${dim(`why: ${draft.why}`)}`);
+      }
+      if (drafts.length) console.log(dim("Add one: galahad loop add --draft <id> · dismiss one: galahad loop dismiss <id>"));
+      return;
+    }
+    case "dismiss": {
+      if (!name) throw new Error("usage: galahad loop dismiss <draft id>");
+      await api.call("dismissLoopDraft", { id: name });
+      console.log("Dismissed. Nothing was added.");
+      return;
+    }
     case "add":
     case "set": {
+      // A draft Galahad made when you asked in chat: added as he drafted it (where it runs may still be given).
+      if (sub === "add" && str(flags, "draft")) {
+        const { drafts } = await api.call<{ drafts: LoopDraftView[] }>("loopDrafts");
+        const draft = drafts.find((d) => d.id === str(flags, "draft"));
+        if (!draft) throw new Error(`no draft ${str(flags, "draft")} (it was added, dismissed, or a week went by): galahad loop drafts`);
+        const on = str(flags, "on") ?? draft.on;
+        const { loop } = await api.call<{ loop: LoopView }>("setLoop", {
+          name: draft.name,
+          schedule: draft.schedule,
+          tz: draft.tz,
+          task: draft.task,
+          ...(on ? { on } : {}),
+          ...(draft.label ? { label: draft.label } : {}),
+          draft: draft.id,
+        });
+        console.log(`Loop ${bold(loop.name)}: ${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""} on ${loop.onName}, ${describeTask(loop.task)}. Next run ${when(loop.next)}.`);
+        return;
+      }
       if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *") [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v])`);
       const every = str(flags, "every");
       const cron = str(flags, "cron");
@@ -180,7 +215,7 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       return;
     }
     default:
-      throw new Error("usage: galahad loop ls | add | set | pause | resume | rm | run | runs");
+      throw new Error("usage: galahad loop ls | add | set | pause | resume | rm | run | runs | drafts | dismiss");
   }
 }
 

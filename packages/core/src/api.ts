@@ -149,6 +149,23 @@ export const LoopTask = z.discriminatedUnion("kind", [
 export type LoopTask = z.infer<typeof LoopTask>;
 
 /**
+ * A loop Galahad drafted because you asked for one in chat ("every weekday at 8, check my open PRs"). It is only a
+ * draft: it waits in your Inbox, and becomes a loop only when you add it (setLoop with its `draft`), as you'd add one
+ * yourself. Kept on the node it was drafted on, never in the mind's log; a week unanswered and it's gone.
+ */
+export const LoopDraftId = z.string().regex(/^ld_[A-Za-z0-9_-]{22}$/);
+export const LoopDraftInput = z.strictObject({
+  name: LoopName,
+  schedule: z.string().min(1).max(128),
+  tz: z.string().max(64).optional(),
+  on: NodeRef.optional(),
+  task: LoopTask,
+  label: z.string().max(128).optional(),
+  /** What you asked for, in his words: shown with the draft. */
+  why: z.string().max(500).optional(),
+});
+
+/**
  * Kinds of task this version no longer has, and what each was. A fleet's mind may still hold a loop with one:
  * it never runs, and every surface that lists it says its task no longer exists (loops.ts' loopRecords).
  */
@@ -538,8 +555,14 @@ export const routes = {
       enabled: z.boolean().optional(),
       task: LoopTask.optional(),
       label: z.string().max(128).optional(),
+      /** The draft this adds (loopDrafts): it leaves your Inbox once the loop is set. */
+      draft: LoopDraftId.optional(),
     }),
   },
+  loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
+  /** Galahad's draft of a loop you asked for in chat: never a loop until you add it (setLoop, brain:write). */
+  draftLoop: { method: "POST", path: "/api/loops/drafts", scope: "chat", input: LoopDraftInput },
+  dismissLoopDraft: { method: "POST", path: "/api/loops/drafts/dismiss", scope: "brain:write", input: z.strictObject({ id: LoopDraftId }) },
   removeLoop: { method: "POST", path: "/api/loops/remove", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
   runLoop: { method: "POST", path: "/api/loops/run", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
   loopRuns: {
@@ -1060,6 +1083,25 @@ export interface LoopView {
   last: LoopRunView | null;
   /** Known only on the node that runs it. */
   running: boolean | null;
+}
+
+export interface LoopDraftView {
+  id: string;
+  name: string;
+  schedule: string;
+  tz: string;
+  /** The node it would run on, by name, when the draft names one. */
+  on: string | null;
+  task: LoopTask;
+  label: string | null;
+  why: string | null;
+  /** Who drafted it: Galahad, in a chat. */
+  by: string;
+  at: number;
+  /** Unanswered by then, and it's gone. */
+  expires: number;
+  /** Adding it replaces the loop that has its name. */
+  replaces: boolean;
 }
 
 export interface NoticeView {

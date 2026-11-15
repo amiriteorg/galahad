@@ -39,6 +39,7 @@ import {
   sha256B64u,
   isTimeZone,
   type LoopTask,
+  type LoopDraftView,
   type LoopView,
   nextRun,
   type NoticeView,
@@ -136,6 +137,7 @@ import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
+import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
@@ -185,6 +187,8 @@ export interface AppContext {
   terminals?: Terminals | null;
   connectors: ConnectorService;
   loops: LoopRunner;
+  /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss (node-local). */
+  loopDrafts: LoopDrafts;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
@@ -874,6 +878,14 @@ export function createApp(ctx: AppContext) {
         running: loop.on === ctx.identity.id ? ctx.loops.isRunning(loop.name) : null,
       };
     });
+  }
+
+  function loopDraftView(draft: LoopDraft): LoopDraftView {
+    return {
+      ...draft,
+      on: draft.on ? (ctx.store.activeDevice(draft.on)?.name ?? draft.on) : null,
+      replaces: loopRecords(ctx.store).some((l) => l.name === draft.name),
+    };
   }
 
   function connectorViews(): ConnectorView[] {
@@ -2414,6 +2426,25 @@ export function createApp(ctx: AppContext) {
       });
     },
     loops: () => ({ loops: loopViews() }),
+    loopDrafts: () => ({ drafts: ctx.loopDrafts.list().map(loopDraftView) }),
+    draftLoop: (input, p) => {
+      const tz = input.tz ?? "UTC";
+      if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);
+      try {
+        checkSchedule(input.schedule, tz, Date.now());
+      } catch (error) {
+        throw new HttpError(400, (error as Error).message);
+      }
+      // What he wrote is shown to you, and becomes a loop's text if you add it: no keys in it.
+      guardAgainstSecrets(JSON.stringify(input.task), input.label ?? "", input.why ?? "");
+      const on = input.on ? fullNode(input.on).id : null;
+      const draft = ctx.loopDrafts.add({ name: input.name, schedule: input.schedule, tz, on, task: input.task, label: input.label ?? null, why: input.why ?? null, by: p.label ?? p.kind });
+      return { draft: loopDraftView(draft) };
+    },
+    dismissLoopDraft: (input) => {
+      if (!ctx.loopDrafts.remove(input.id)) throw new HttpError(404, "no such draft (it was added, dismissed, or a week went by)");
+      return { ok: true };
+    },
     setLoop: (input) => {
       const existing = loopRecords(ctx.store).find((l) => l.name === input.name);
       if (!existing && (!input.schedule || !input.task)) throw new HttpError(400, "a new loop needs a schedule and a task");
@@ -2443,6 +2474,8 @@ export function createApp(ctx: AppContext) {
         task: task as unknown as Record<string, unknown>,
         ...(label ? { label } : {}),
       });
+      // A draft you added leaves the Inbox: it is a loop now.
+      if (input.draft) ctx.loopDrafts.remove(input.draft);
       return { loop: loopViews().find((l) => l.name === input.name) };
     },
     removeLoop: (input) => {

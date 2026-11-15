@@ -13,6 +13,8 @@ import {
   type ExecResult,
   type FleetView,
   type LedgerEntry,
+  LoopDraftInput,
+  type LoopDraftView,
   type LoopView,
   type MemoryView,
   type NoticeView,
@@ -37,7 +39,7 @@ import {
   type Teammate,
 } from "@galahad/core";
 import { z } from "zod";
-import { describeOrder } from "./loop-cli.ts";
+import { describeOrder, describeTask } from "./loop-cli.ts";
 
 /*
  * Galahad's tools, defined once. The same tools serve every surface: agents through
@@ -571,6 +573,28 @@ export const TOOLS: GalahadTool[] = [
           return `- ${l.name}: ${l.schedule}${l.tz !== "UTC" ? ` (${l.tz})` : ""} on ${l.onName ?? l.on}, ${l.task?.kind ?? "?"}, next ${next}${last}`;
         })
         .join("\n");
+    },
+  }),
+
+  tool({
+    name: "loop_draft",
+    title: "Draft a loop",
+    description:
+      "When your liege asks for something done on a schedule (\"every weekday at 8, check my open pull requests\", \"look at CI every hour\"), draft it as a loop: a name, when (every 30m, 2h or 1d, or a cron line such as 0 8 * * 1-5, read in a time zone such as Europe/Copenhagen), and what runs each time (one connector call, a quest with its gates, or the heartbeat with a checklist). You can't make a loop yourself: the draft waits in his Inbox, and only he adds it. Say so, and say what you drafted. Look up a connector's tools before you name one.",
+    input: {
+      name: LoopDraftInput.shape.name.describe("A short name: lowercase letters, digits, dots, dashes (e.g. pr-check)"),
+      schedule: LoopDraftInput.shape.schedule.describe("every 30m / 2h / 1d, or a five-field cron line"),
+      tz: LoopDraftInput.shape.tz.describe("The time zone a cron line is read in (default UTC)"),
+      task: LoopDraftInput.shape.task.describe("What runs each time"),
+      label: LoopDraftInput.shape.label.describe("A few words saying what it is for"),
+      why: LoopDraftInput.shape.why.describe("What your liege asked for, in a line"),
+    },
+    routes: ["draftLoop"],
+    // His words, kept and shown to the user (on this node, not the mind), and a loop's text if it is added.
+    flow: "record",
+    async run(api, input) {
+      const { draft } = await api.call<{ draft: LoopDraftView }>("draftLoop", input);
+      return `Drafted, not added: loop ${draft.name}, ${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}, ${describeTask(draft.task)}.${draft.replaces ? ` Adding it replaces his loop named ${draft.name}.` : ""} It waits in his Inbox to add or dismiss (gone in a week), or from a terminal: galahad loop add --draft ${draft.id}`;
     },
   }),
 

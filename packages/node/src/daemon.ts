@@ -33,6 +33,7 @@ import { ConnectorService } from "./connectors.ts";
 import { loopNotice } from "./heartbeat.ts";
 import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
+import { LoopDrafts } from "./loop-drafts.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
@@ -398,6 +399,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
         }
       });
   };
+  const loopDrafts = new LoopDrafts(local);
   const loops = new LoopRunner({
     store,
     identity,
@@ -507,6 +509,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectors,
     artifacts,
     loops,
+    loopDrafts,
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,

@@ -1,4 +1,4 @@
-import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, FleetView, LoopDraftView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
@@ -33,6 +33,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const fleet = signal<FleetView | null>(null);
   const pairings = signal<PairingView[]>([]);
   const secretRequests = signal<SecretRequestView[]>([]);
+  const loopDrafts = signal<LoopDraftView[]>([]);
   const actions = signal<ActionView[]>([]);
   const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
@@ -53,10 +54,12 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
       pairings.value.length +
         secretRequests.value.length +
         actions.value.filter((a) => isWaiting(a)).length +
-        notices.value.filter((n) => !n.dismissed).length,
+        notices.value.filter((n) => !n.dismissed).length +
+        loopDrafts.value.length,
     );
   pairings.subscribe(recount);
   secretRequests.subscribe(recount);
+  loopDrafts.subscribe(recount);
   actions.subscribe(recount);
   notices.subscribe(recount);
 
@@ -102,6 +105,16 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
       if (!same) secretRequests.set(requests);
     } catch {
       /* transient */
+    }
+  }
+
+  async function refreshLoopDrafts(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { drafts } = await api.get<{ drafts: LoopDraftView[] }>("/api/loops/drafts");
+      if (JSON.stringify(drafts.map((d) => d.id)) !== JSON.stringify(loopDrafts.value.map((d) => d.id))) loopDrafts.set(drafts);
+    } catch {
+      /* transient, or an older node with no drafts */
     }
   }
 
@@ -169,7 +182,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   }
 
   const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices()]);
+    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices(), refreshLoopDrafts()]);
     inboxLoaded.set(true);
   };
 
@@ -181,6 +194,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     timers.push(setInterval(() => void refreshFleet(), FLEET_MS));
     timers.push(setInterval(() => void refreshPairings(), PAIRINGS_MS));
     timers.push(setInterval(() => void refreshRequests(), REQUESTS_MS));
+    timers.push(setInterval(() => void refreshLoopDrafts(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
     watchTeam();
@@ -205,5 +219,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, notices, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, notices, loopDrafts, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshInbox, stop: dispose };
 }

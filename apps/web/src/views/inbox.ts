@@ -1,4 +1,4 @@
-import type { ActionView, NoticeView, SelfActionView } from "@galahad/core";
+import type { ActionView, LoopDraftView, NoticeView, SelfActionView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
@@ -11,7 +11,7 @@ import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO, deviceName } from "./activity.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
-import { findingRow } from "./loops.ts";
+import { describeTask, findingRow, loopsChanged } from "./loops.ts";
 import { openOrderFromAction } from "./orders.ts";
 import { secretRequestCard } from "./vault.ts";
 
@@ -67,6 +67,59 @@ function keptWork(ctx: Ctx, action: ActionView): HTMLElement | null {
 }
 
 /** An action Galahad wants to take that the oath says to ask about. Nothing leaves until you approve it. */
+/** A loop Galahad drafted when you asked for one in chat: it runs nothing until you add it here (or dismiss it). */
+function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
+  const note = h("div");
+  const mayAdd = ctx.can("brain:write");
+  const add = button(draft.replaces ? "Add, replacing yours" : "Add loop", { variant: "primary", icon: "check" });
+  const dismiss = button("Dismiss", { icon: "x" });
+  const answer = async (trigger: HTMLButtonElement, adding: boolean) =>
+    busy(trigger, async () => {
+      try {
+        if (adding) {
+          await ctx.api.post("/api/loops", { name: draft.name, schedule: draft.schedule, tz: draft.tz, task: draft.task, ...(draft.on ? { on: draft.on } : {}), ...(draft.label ? { label: draft.label } : {}), draft: draft.id });
+          loopsChanged.update((n) => n + 1);
+          toast(`Added loop ${draft.name}`, { tone: "ok", description: "It runs on its schedule from now: see Loops." });
+        } else {
+          await ctx.api.post("/api/loops/drafts/dismiss", { id: draft.id });
+          toast("Dismissed", { tone: "info", description: "Nothing was added." });
+        }
+      } catch (error) {
+        replace(note, callout("danger", errorMessage(error), { title: adding ? "Couldn't add it" : "Couldn't dismiss it" }));
+      }
+      await ctx.live.refreshLoopDrafts();
+    });
+  add.addEventListener("click", () => void answer(add, true));
+  dismiss.addEventListener("click", () => void answer(dismiss, false));
+  return h(
+    "article",
+    { class: "card accent", "aria-label": `Galahad drafted a loop: ${draft.label ?? draft.name}` },
+    h(
+      "div",
+      { class: "card-body stack" },
+      h(
+        "div",
+        { class: "row top" },
+        h("span", { class: "avatar agent" }, icon("repeat", { size: 16 })),
+        h(
+          "div",
+          { class: "grow stack tight" },
+          h("div", { class: "row wrap" }, h("span", { class: "strong" }, draft.label ?? draft.name), h("span", { class: "mono tiny subtle" }, draft.name)),
+          h("div", { class: "small" }, `${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}`),
+          h("div", { class: "small muted" }, describeTask(draft.task)),
+          h("div", { class: "tiny subtle row wrap" }, h("span", {}, `Drafted by ${draft.by === "galahad" ? "Galahad" : draft.by}`), h("span", { title: new Date(draft.at).toLocaleString() }, relativeTime(draft.at))),
+        ),
+      ),
+      draft.why ? h("div", { class: "quote small" }, draft.why) : null,
+      h("p", { class: "tiny subtle" }, draft.replaces ? `Adding it replaces your loop ${draft.name}. ` : "", `It runs nothing until you add it. Unanswered, it's gone ${relativeTime(draft.expires)}.`),
+      mayAdd
+        ? h("div", { class: "row wrap", style: "justify-content:flex-end" }, dismiss, add)
+        : callout("quiet", h("span", {}, "This device can't add loops (no brain:write scope). Add it from one that can, or on a node: ", h("code", {}, `galahad loop add --draft ${draft.id}`))),
+      note,
+    ),
+  );
+}
+
 function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const info = CLASS_INFO[action.class as ActionClass];
   const destructive = action.class === "delete";
@@ -202,6 +255,7 @@ function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
 export const inboxView: View = (root, ctx, { scope }) => {
   const pairingsBox = h("div", { class: "stack" });
   const requestsBox = h("div", { class: "stack" });
+  const draftsBox = h("div", { class: "stack" });
   const actionsBox = h("div", { class: "stack" });
   const noticesBox = h("div", { class: "card" });
   const historyRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
@@ -314,8 +368,15 @@ export const inboxView: View = (root, ctx, { scope }) => {
     }
   }
 
+  const renderDrafts = () => {
+    const drafts = ctx.live.loopDrafts.value;
+    replace(draftsBox, ...drafts.map((d) => loopDraftCard(ctx, d)));
+    draftsSection.hidden = !drafts.length;
+    renderAllClear();
+  };
+
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -350,6 +411,12 @@ export const inboxView: View = (root, ctx, { scope }) => {
     actionsBox,
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);
+  const draftsSection = section(
+    "Loops Galahad drafted",
+    { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) },
+    h("p", { class: "tiny subtle" }, "You asked in chat for something on a schedule. Each runs only once you add it."),
+    draftsBox,
+  );
   const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
   const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);
   // Kept across re-renders so it stays open while the outbox changes.
@@ -365,6 +432,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       pairingsSection,
       actionsSection,
       requestsSection,
+      draftsSection,
       noticesSection,
       read ? history : null,
       read ? fixed : null,
@@ -373,11 +441,13 @@ export const inboxView: View = (root, ctx, { scope }) => {
 
   scope.add(ctx.live.pairings.subscribe(renderPairings));
   scope.add(ctx.live.secretRequests.subscribe(renderRequests));
+  scope.add(ctx.live.loopDrafts.subscribe(renderDrafts));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();
   renderRequests();
+  renderDrafts();
   renderActions();
   renderNotices();
   void ctx.live.refreshInbox();

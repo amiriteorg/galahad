@@ -176,6 +176,8 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "fleet",
         "ledger",
         "loops",
+        // A draft waits for you: an agent can't add a loop (chat-tools.test.ts).
+        "loop_draft",
         "note_idea",
         "notices",
         "place",

@@ -223,6 +223,8 @@ Loops (work on a schedule, on one node; every run is recorded in the mind)
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set heartbeat --every 1h
+  loop drafts                     loops Galahad drafted when you asked for one in chat (they run nothing until added)
+  loop add --draft <id> [--on n]  add a draft as he drafted it · loop dismiss <id>: drop it
   heartbeat                       run the heartbeat's checks now and print what they find
   self-action [on|off]            whether he fixes what's safe himself after each heartbeat (on by default):
                                   the allowlist, and what he fixed lately

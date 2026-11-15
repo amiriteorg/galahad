@@ -468,6 +468,8 @@ bun galahad doctor --json                  # the report for a script; the exit c
 
 It changes nothing. It checks the node's keys, the mind (integrity, its hash chain, the clock, sync, your last backup's age: it looks in `backups` in or beside the node's home, or where `GALAHAD_BACKUP_DIR` says), the vault, each role's models (the first one skipped on every answer is said), the embedder and the archive, sandboxes, compute, loops, connectors, the app (built, and published by Tailscale), notifications, the disk and the service. The app's Overview has the same on a **Doctor** card, and the heartbeat takes from it what it didn't already check.
 
+Or ask for one in chat: "every weekday at 8, check my open pull requests and tell me which need me". Galahad drafts the loop, and the draft waits in your Inbox (**Loops Galahad drafted**) until you add it or dismiss it; from a terminal, `bun galahad loop drafts`, then `bun galahad loop add --draft <id>` or `bun galahad loop dismiss <id>`. He can't add a loop himself.
+
 A loop that fails or needs a look leaves a notice in your inbox, and its next good run clears it. So a loop that calls a connector is a monitor: install a one-tool connector for your site (`{"id":"site","label":"galahad.bot","origin":"https://galahad.bot","tools":{"home":{"description":"The home page","method":"GET","path":"/","class":"read"}}}`) and `loop add site --every 5m --call site.home`.
 
 ## 11½. Skills: what he learned, and you curate

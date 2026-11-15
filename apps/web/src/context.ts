@@ -1,4 +1,4 @@
-import type { ActionView, FleetView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, FleetView, LoopDraftView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -34,6 +34,8 @@ export interface Live {
   actions: Signal<ActionView[]>;
   /** What the heartbeat found, dismissed ones included (the Inbox shows the open ones). */
   notices: Signal<NoticeView[]>;
+  /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss. */
+  loopDrafts: Signal<LoopDraftView[]>;
   online: Signal<boolean>;
   /** The inbox has been asked at least once (until then, "nothing needs you" would be a guess). */
   inboxLoaded: Signal<boolean>;
@@ -48,7 +50,8 @@ export interface Live {
   refreshFleet(): Promise<void>;
   refreshActions(): Promise<void>;
   refreshNotices(): Promise<void>;
-  /** Pairings, secret requests, actions and notices. */
+  refreshLoopDrafts(): Promise<void>;
+  /** Pairings, secret requests, actions, notices and loop drafts. */
   refreshInbox(): Promise<void>;
   /** Stops polling and listening (when the app shell is torn down). */
   stop(): void;

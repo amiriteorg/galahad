@@ -490,3 +490,62 @@ describe("one answer's tools", () => {
     expect(toolsFor(["mind:read", "mind:write", "sandbox", "vault:read", "chat", "connect"]).some((t) => t.flow === "private")).toBe(false);
   });
 });
+
+describe("loops he drafts when you ask for one", () => {
+  const prCheck = {
+    name: "pr-check",
+    schedule: "0 8 * * 1-5",
+    tz: "Europe/Copenhagen",
+    task: { kind: "call", connector: "github", tool: "pulls", args: { owner: "amiriteorg", repo: "galahad" } },
+    label: "Open pull requests, each weekday",
+    why: "You asked to see the open pull requests every weekday at 8.",
+  };
+  const json = async (response: Response) => {
+    const body = await response.json();
+    expect([response.status, body]).toMatchObject([200, {}]);
+    return body as any;
+  };
+
+  test("asked in chat, he drafts it: it waits for you and runs nothing; you add it, and the draft is gone", async () => {
+    const admin = home.adminToken();
+    script = [callTool("loop_draft", prCheck), say("Drafted: it's in your Inbox to add.")];
+    const events = await ask(admin, "Every weekday at 8, check my open pull requests.");
+    expect(events.find((e) => e.type === "tool_result")).toMatchObject({ name: "loop_draft", ok: true });
+    expect(bodies[1].messages.at(-1).content).toContain("Drafted, not added: loop pr-check");
+    const { drafts } = await json(await call("loopDrafts", null, admin));
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ name: "pr-check", schedule: "0 8 * * 1-5", tz: "Europe/Copenhagen", task: prCheck.task, label: prCheck.label, why: prCheck.why, by: "galahad", replaces: false });
+    expect(drafts[0].id).toMatch(/^ld_[A-Za-z0-9_-]{22}$/);
+    // Only a draft: no loop exists until you add it.
+    expect((await json(await call("loops", null, admin))).loops.some((loop: { name: string }) => loop.name === "pr-check")).toBe(false);
+    const { name, schedule, tz, task, label } = drafts[0];
+    await json(await call("setLoop", { name, schedule, tz, task, label, draft: drafts[0].id }, admin));
+    expect((await json(await call("loops", null, admin))).loops.find((loop: { name: string }) => loop.name === "pr-check")).toMatchObject({ schedule: "0 8 * * 1-5", tz: "Europe/Copenhagen", enabled: true });
+    expect((await json(await call("loopDrafts", null, admin))).drafts).toEqual([]);
+    // Drafted again, it says that adding it replaces the loop that has its name.
+    await json(await call("draftLoop", prCheck, admin));
+    expect((await json(await call("loopDrafts", null, admin))).drafts[0]).toMatchObject({ name: "pr-check", replaces: true });
+  });
+
+  test("an agent may draft one, never add or dismiss it; a draft of the same name replaces the older one", async () => {
+    const admin = home.adminToken();
+    const { token } = (await (await call("mintArm", { label: "drafter" }, admin)).json()) as { token: string };
+    await json(await call("draftLoop", { ...prCheck, label: "Again, from an agent" }, token));
+    const { drafts } = await json(await call("loopDrafts", null, admin));
+    expect(drafts.filter((d: { name: string }) => d.name === "pr-check")).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ label: "Again, from an agent", by: "drafter" });
+    expect((await call("setLoop", { ...prCheck, draft: drafts[0].id }, token)).status).toBe(403);
+    expect((await call("dismissLoopDraft", { id: drafts[0].id }, token)).status).toBe(403);
+    // You dismiss it, once.
+    await json(await call("dismissLoopDraft", { id: drafts[0].id }, admin));
+    expect((await call("dismissLoopDraft", { id: drafts[0].id }, admin)).status).toBe(404);
+  });
+
+  test("a draft is checked as a loop is: its schedule, its time zone, and no key in it", async () => {
+    const admin = home.adminToken();
+    expect((await call("draftLoop", { ...prCheck, schedule: "every 5s" }, admin)).status).toBe(400);
+    expect((await call("draftLoop", { ...prCheck, tz: "Mars/Olympus" }, admin)).status).toBe(400);
+    expect((await call("draftLoop", { ...prCheck, task: { kind: "quest", goal: "Use ghp_0123456789abcdefghijklmnopqrstuvwxyzAB to push", network: "online" } }, admin)).status).toBe(422);
+    expect((await call("draftLoop", { ...prCheck, task: { kind: "launch-rockets" } }, admin)).status).toBe(400);
+  });
+});
