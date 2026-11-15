@@ -8,6 +8,9 @@
  *     --runs 9      loads per page, profile and kind (the median is reported, with the fastest and slowest);
  *                   0 measures nothing and only takes the screenshots
  *     --json <file> everything measured, as JSON
+ *     --moves 5     also times moving between places in the app already open, as a person does (a look at the page,
+ *                   a press, the tap; each place twice, so a revisit shows), this many times over on each profile;
+ *                   with --runs 0, only that
  *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable, Galahad's timeline, a knight's
  *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
  *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), the Inbox
@@ -52,6 +55,7 @@ const REPO = resolve(flag("repo") ?? join(dirname(fileURLToPath(import.meta.url)
 const RUNS = Math.max(0, Number(flag("runs") ?? 9));
 const JSON_OUT = flag("json");
 const SHOTS = flag("shots");
+const MOVES = Math.max(0, Number(flag("moves") ?? 0));
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 if (!existsSync(CHROME)) throw new Error(`No Chrome at ${CHROME}. Set CHROME to a Chrome or Chromium binary.`);
 
@@ -209,6 +213,8 @@ function watchPage(): void {
     // (The knights' rows: in the page's own list, or in the roster that is the sidebar and a phone's first screen.)
     return Boolean(document.querySelector(".team-nav-row[data-key], .roster-row[data-key^='person:']"));
   };
+  // (For timing a move in the app already open: whether the page now on screen is there.)
+  (window as unknown as { __there: () => boolean }).__there = there;
   let seen = false;
   const watch = new MutationObserver(() => {
     if (m.shell === null && document.querySelector(".shell")) m.shell = performance.now();
@@ -748,8 +754,56 @@ try {
     }
   }
 
+  // ---------- moving between places, as a tap does ----------
+  // In the app already open, as a person moves: a look at the page first (DWELL_MS), then a press on a link to the next
+  // place and the tap a finger's moment later (PRESS_MS; an app may start reading on the press). Timed from the tap to
+  // the place's own content drawn (the page that was there gone, every loading placeholder replaced, a frame drawn).
+  // Each place twice, so what a revisit costs shows.
+  const PATH = ["#/chat", "#/inbox", "#/loops", "#/overview", "#/inbox", "#/team", "#/team?room=forge", "#/team"];
+  const DWELL_MS = 800;
+  const PRESS_MS = 100;
+  const move = async (hash: string) => {
+    await sleep(DWELL_MS);
+    return evaluate<number>(`new Promise((done) => {
+      const link = document.createElement("a");
+      link.setAttribute("href", ${JSON.stringify(hash)});
+      link.hidden = true;
+      document.body.append(link);
+      link.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      link.remove();
+      setTimeout(() => {
+        const main = document.querySelector(".shell main");
+        const was = main && main.firstElementChild;
+        const start = performance.now();
+        location.hash = ${JSON.stringify(hash)};
+        const look = () => ((!was || !was.isConnected) && window.__there() ? requestAnimationFrame(() => setTimeout(() => done(performance.now() - start))) : requestAnimationFrame(look));
+        requestAnimationFrame(look);
+      }, ${PRESS_MS});
+    })`);
+  };
+  const moves: Record<string, Spread[]> = {};
+  for (const name of MOVES ? (Object.keys(PROFILES) as Profile[]) : []) {
+    await setProfile(name);
+    const times: number[][] = PATH.map(() => []);
+    for (let round = 0; round < MOVES; round++) {
+      await open("#/team", false);
+      for (const [i, hash] of PATH.entries()) times[i]!.push(await move(hash));
+    }
+    moves[name] = times.map(spread);
+    console.error(`measured moving between places on the ${name} profile`);
+  }
+  if (MOVES) {
+    const from = ["#/team", ...PATH];
+    const rows = [["move", ...Object.keys(moves)]];
+    for (const [i, hash] of PATH.entries()) rows.push([`${from[i]} → ${hash}${PATH.indexOf(hash) < i ? " (again)" : ""}`, ...Object.values(moves).map((spreads) => `${spreads[i]!.median} ms (${spreads[i]!.min}–${spreads[i]!.max})`)]);
+    const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => row[column]!.length)));
+    console.log(`\nMoving between places in the app already open, ${MOVES} times over (median, fastest–slowest):`);
+    console.log(rows.map((row) => row.map((cell, column) => (column ? cell.padStart(widths[column]!) : cell.padEnd(widths[column]!))).join("  ")).join("\n"));
+    if (JSON_OUT && !RUNS) writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, moves: Object.fromEntries(Object.entries(moves).map(([name, spreads]) => [name, Object.fromEntries(PATH.map((hash, i) => [`${i} ${hash}`, spreads[i]]))])) }, null, 2)}\n`);
+  }
+
   // ---------- the report ----------
-  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured (--runs 0).`);
+  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES ? " but the moves" : ""} (--runs 0).`);
   else {
   // (The browser fetches /sw.js itself, outside what the protocol shows of the page and the worker: it is counted here.)
   const files = await Promise.all([...new Set([...firstVisit.filter((w) => !w.path.startsWith("/api/") && !w.path.startsWith("/link/")).map((w) => w.path), "/sw.js"])].map(sizeOf));
@@ -765,6 +819,7 @@ try {
     pages: results,
     chatAtRest,
     roundtableAtRest: atRest,
+    ...(MOVES ? { moves } : {}),
     shots,
   };
   if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify(report, null, 2)}\n`);
