@@ -8,5 +8,5 @@
     <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(60 12 12)"/>
     <rect x="10" y="20" width="4" height="2" rx="1" transform="rotate(120 12 12)"/>
   </g>
-  <rect x="10" y="1" width="4" height="3" rx="1" fill="#8e1820"/>
+  <rect x="10" y="1" width="4" height="3" rx="1" fill="#c4141b"/>
 </svg>
