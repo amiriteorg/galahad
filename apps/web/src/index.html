@@ -250,7 +250,11 @@
           overflow: hidden;
         }
       }
-      .sidebar-head { display: flex; align-items: center; gap: var(--sp-2); height: 40px; padding: 0 var(--sp-1) 0 var(--sp-2); margin-bottom: var(--sp-2); }
+      .sidebar-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); margin-bottom: var(--sp-2); }
+      .sidebar-head > .wordmark { height: 40px; }
+      /* On a wide screen, search is the head's second line, the sidebar's whole width (it sits in the head so a phone can
+         put it beside the mark). */
+      .sidebar-head > .search-trigger { order: 3; flex: 1 0 100%; width: auto; margin: var(--sp-2) calc(-1 * var(--sp-1)) var(--sp-1) calc(-1 * var(--sp-2)); }
       .wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; min-width: 0; }
       .emblem { flex: none; display: inline-block; width: var(--em-size, 24px); height: var(--em-size, 24px); }
       .emblem img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none; }
@@ -358,7 +362,10 @@
           background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
         }
         .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .search-trigger .kbds { display: none; }
-        .shell[data-pane="roster"] .search-trigger { height: 40px; }
+        /* On a phone, search is a small pill beside the mark, in the head's one line. */
+        .shell[data-pane="roster"] .sidebar-head { flex-wrap: nowrap; gap: var(--sp-3); }
+        .shell[data-pane="roster"] .sidebar-head > .wordmark { flex: none; height: auto; }
+        .shell[data-pane="roster"] .sidebar-head > .search-trigger { order: 0; flex: 1 1 auto; height: 36px; margin: 0; border-radius: var(--r-full); padding: 0 var(--sp-3); }
         .roster { overflow: visible; }
         .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
         .roster-face, .roster-face .worker-avatar, .roster-face .avatar { width: 40px; height: 40px; }

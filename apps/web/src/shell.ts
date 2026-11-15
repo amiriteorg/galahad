@@ -176,13 +176,19 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const sidebar = h(
     "aside",
     { class: "sidebar", "aria-label": "Sidebar" },
-    h("div", { class: "sidebar-head" }, homeLink("wordmark grow", icon("roundtable", { size: 28 })), collapse),
+    // (Search is in the head: beside the mark on a phone, on its own line under it on a wide screen.)
     h(
-      "button",
-      { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
-      icon("search", { size: 15 }),
-      h("span", { class: "label" }, "Search…"),
-      h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
+      "div",
+      { class: "sidebar-head" },
+      homeLink("wordmark grow", icon("roundtable", { size: 28 })),
+      h(
+        "button",
+        { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
+        icon("search", { size: 15 }),
+        h("span", { class: "label" }, "Search…"),
+        h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
+      ),
+      collapse,
     ),
     roster?.el ?? null,
     h("nav", { class: "nav", "aria-label": "Sections" }, ...navChildren),
