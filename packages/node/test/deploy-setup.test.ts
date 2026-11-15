@@ -11,8 +11,8 @@ import { basename, join, resolve } from "node:path";
  */
 
 const script = resolve(import.meta.dir, "../../../scripts/remote-setup.sh");
-// The script installs the Bun it pins unless that one is there already: the stand-in says it is.
-const pinned = /^BUN_VERSION=(\S+)$/m.exec(readFileSync(script, "utf8"))![1]!;
+// The script installs the Bun it pins (scripts/bun-pin.sh) unless that one is there already: the stand-in says it is.
+const pinned = /^BUN_VERSION=(\S+)$/m.exec(readFileSync(resolve(import.meta.dir, "../../../scripts/bun-pin.sh"), "utf8"))![1]!;
 const root = mkdtempSync(join(tmpdir(), "galahad-deploy-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 

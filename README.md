@@ -29,7 +29,18 @@ Working and tested today (`bun run check` runs the whole suite, including proper
 
 ## Quick start
 
-See **[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)**. The short version:
+On a Mac or a Linux machine of yours, in one line:
+
+```sh
+curl -fsSL https://galahad.sh | bash
+```
+
+It installs Galahad with its own pinned Bun, keeps the node running as a service of yours, founds your fleet (or joins
+one: `bash -s -- --join <invite>`), publishes the app on your tailnet when Tailscale is there, and shows the code to pair
+your phone. Run it again to update. Nothing runs as root. What it does, step by step: `scripts/install.sh`, or the same
+line with `bash -s -- --plan`.
+
+From a checkout instead (**[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** has the whole of it):
 
 ```sh
 bun install && bun run check

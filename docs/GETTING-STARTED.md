@@ -2,6 +2,21 @@
 
 This guide sets up the target layout: your **Windows laptop** plus one **beefy Linux server** on the same tailnet, with Docker and VMs. Both run a Galahad node and share one mind.
 
+## The one-line way
+
+```sh
+curl -fsSL https://galahad.sh | bash                          # a new fleet, with this machine as its first node
+curl -fsSL https://galahad.sh | bash -s -- --join <invite>    # this machine into a fleet you have (galahad invite on one of its nodes)
+```
+
+`scripts/install.sh` installs Galahad into `~/.local/share/galahad` with its own pinned, checksum-verified Bun (never
+over one of yours), adds the `galahad` command in `~/.local/bin`, keeps the node running (a login item on a Mac,
+`systemctl --user` on Linux), publishes the app on your tailnet when Tailscale is running (`galahad expose`) and shows
+the code to pair your phone. Running it again updates Galahad and restarts the node; its home, `~/.galahad`, is kept.
+`--plan` says what it would do and does nothing; `--help` lists the rest (`--name`, `--fleet`, `--ref`,
+`--no-service`, `--no-expose`, `--no-pair`). The rest of this guide is the same setup by hand, for a server with
+Docker and VMs too (`scripts/deploy.sh` below).
+
 ## 0. Prerequisites (both machines)
 
 - **Tailscale**, logged in to the same tailnet.
