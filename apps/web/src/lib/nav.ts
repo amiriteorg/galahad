@@ -5,7 +5,7 @@ import type { IconName } from "../ui/icons.ts";
  * The app's places, as one list (pure: no DOM; the shell gives each its view). The roster
  * comes first everywhere: Galahad's own timeline (Chat) and the Roundtable's, where every
  * other knight and room has one. Every other place, the Inbox among them, is reached from
- * More, one plain index under a few headings. An address (`#/fleet`) is a contract: a place
+ * More on a phone, one plain index under a few headings, and from the rail on a wide screen. An address (`#/fleet`) is a contract: a place
  * is never renamed or dropped here, and what a device may see follows its scopes.
  */
 
@@ -93,6 +93,17 @@ export function moreIndex(visible: Place[]): { heading: string; places: Place[] 
   return Object.entries(HEADINGS)
     .map(([under, heading]) => ({ heading, places: visible.filter((place) => place.under === under) }))
     .filter((group) => group.places.length > 0);
+}
+
+/**
+ * A wide screen's rail: every place this device may see but the roster's own (beside it) and More (which the rail
+ * replaces there), one click away, under More's headings; this device's own settings at its foot.
+ */
+export function railOf(visible: Place[]): { groups: Place[][]; foot: Place[] } {
+  return {
+    groups: moreIndex(visible).filter((group) => group.heading !== HEADINGS.device).map((group) => group.places),
+    foot: visible.filter((place) => place.under === "device"),
+  };
 }
 
 /** Which entry of the bar a place is under: itself when it is one, the roster for a timeline, More for the rest. */

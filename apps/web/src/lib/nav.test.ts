@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyScope } from "../types.ts";
-import { homeOf, moreIndex, PLACES, placesFor, primaryOf, routeOf, tabOf, tabsOf } from "./nav.ts";
+import { homeOf, moreIndex, PLACES, placesFor, primaryOf, railOf, routeOf, tabOf, tabsOf } from "./nav.ts";
 
 /* Every address the app had before it was a roster and More, with the scope each asked for (and Sandboxes'
  * second one): an address is a contract, and what a device may see follows its scopes as it did. */
@@ -94,6 +94,18 @@ describe("the app's places", () => {
     // On a device whose bar holds the Inbox, the Inbox marks itself.
     expect(tabOf("inbox", tabsOf(device("mind:read")))).toBe("inbox");
     expect(tabOf("fleet", tabsOf(device("mind:read")))).toBe("more");
+  });
+
+  test("a wide screen reaches every place in one click: the rail holds each one this device may see but the roster's and More, by heading, Settings at its foot", () => {
+    const rail = railOf(device(...OWNER));
+    expect(rail.groups.map(ids)).toEqual(moreIndex(device(...OWNER)).filter((group) => group.heading !== "This device").map((group) => ids(group.places)));
+    expect(ids(rail.foot)).toEqual(["settings"]);
+    const onRail: string[] = [...rail.groups.flat(), ...rail.foot].map((place) => place.id);
+    expect(onRail.sort()).toEqual(ids(device(...OWNER)).filter((id) => !["chat", "team", "more"].includes(id)).sort());
+    // The Inbox leads it, where what needs you is counted.
+    expect(rail.groups[0]![0]!.id).toBe("inbox");
+    // A device that may only chat sees only what it may open.
+    expect([...railOf(device("chat")).groups.flat(), ...railOf(device("chat")).foot].map((place) => place.id).sort()).toEqual(["inbox", "overview", "settings"]);
   });
 
   test("every place has its own key after G, and none is G itself", () => {

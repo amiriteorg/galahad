@@ -21,7 +21,7 @@ import { projectsView } from "./views/projects.ts";
 import { rosterNav } from "./views/roster.ts";
 import { chatActivityPill, chatsForPalette, chatView, lookAtWork, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
-import { homeOf, type Place, placesFor, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
+import { homeOf, type Place, placesFor, railOf, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
 import { keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
@@ -205,6 +205,35 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     ),
   );
 
+  // Rail (wide screens): every other place one click away, under More's headings, this device's settings at its foot.
+  // (On a phone they are behind More.) What waits in the Inbox is counted on it.
+  const railLinks = new Map<Route, HTMLAnchorElement>();
+  const railLink = (spec: Place): HTMLAnchorElement => {
+    const a = h("a", { class: "rail-item", href: `#/${spec.id}`, "aria-label": spec.label, "data-tip": spec.label, "data-keys": `G ${spec.key.toUpperCase()}` }, icon(spec.icon, { size: 18 }), spec.id === "inbox" ? inboxBadge() : null);
+    railLinks.set(spec.id, a);
+    return a;
+  };
+  const places = railOf(visible);
+  const rail = h(
+    "nav",
+    { class: "rail", "aria-label": "Places" },
+    ...places.groups.map((group) => h("div", { class: "rail-group" }, ...group.map(railLink))),
+    h("div", { class: "rail-group rail-foot" }, ...places.foot.map(railLink)),
+  );
+  // Each place's name beside the rail as you point at it or tab to it (its link is named for a screen reader already).
+  const railTip = h("div", { class: "rail-tip", "aria-hidden": "true", hidden: true });
+  const tipFor = (target: EventTarget | null) => {
+    const item = target instanceof Element ? target.closest<HTMLElement>(".rail-item") : null;
+    if (!item) return void (railTip.hidden = true);
+    const box = item.getBoundingClientRect();
+    replace(railTip, item.dataset.tip ?? "", h("span", { class: "rail-keys" }, item.dataset.keys ?? ""));
+    railTip.style.left = `${box.right + 8}px`;
+    railTip.style.top = `${box.top + box.height / 2}px`;
+    railTip.hidden = false;
+  };
+  for (const type of ["pointerover", "focusin"]) rail.addEventListener(type, (event) => tipFor(event.target), { signal: lifetime.signal });
+  for (const type of ["pointerleave", "focusout", "scroll", "click"]) rail.addEventListener(type, () => (railTip.hidden = true), { signal: lifetime.signal });
+
   // Tab bar (phones): the Roundtable, and More. What waits in the Inbox is counted on the first.
   const tabbar = h(
     "nav",
@@ -212,7 +241,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
   );
 
-  const shell = h("div", { class: "shell" }, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar);
+  const shell = h("div", { class: "shell" }, rail, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar, railTip);
   replace(root, shell);
 
   // ---------- the on-screen keyboard ----------
@@ -318,6 +347,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     watch();
     // A place reached from More keeps More marked.
     for (const [id, els] of navLinks) for (const el of els) id === tabOf(route, tabs) ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
+    for (const [id, el] of railLinks) id === route ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
     topTitle.textContent = spec.label;
     const n = live.inboxCount.value;
     document.title = `${n ? `(${n}) ` : ""}${spec.label} · Galahad`;

@@ -121,6 +121,7 @@
         --control-h-sm: 28px;
         --topbar-h: 52px;
         --sidebar-w: 240px;
+        --rail-w: 56px;
         --tabbar-h: 58px;
         --page-max: 1120px;
         --safe-top: env(safe-area-inset-top, 0px);
@@ -237,9 +238,11 @@
       .tab .count { position: absolute; top: 6px; left: calc(50% + 6px); }
 
       @media (min-width: 960px) {
-        .shell { grid-template-columns: var(--sidebar-w) 1fr; }
-        :root[data-sidebar="collapsed"] .shell { grid-template-columns: 64px 1fr; }
+        .shell { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
+        :root[data-sidebar="collapsed"] .shell { grid-template-columns: var(--rail-w) 64px 1fr; }
         .tabbar { display: none; }
+        /* The rail has every place More would list. */
+        .sidebar > .nav { display: none; }
         main.view { padding: var(--sp-6) var(--sp-8) var(--sp-12); }
         .topbar { padding: 0 var(--sp-6) 0 var(--sp-8); }
         .topbar .brand-mini { display: none; }
@@ -290,6 +293,31 @@
         :root[data-sidebar="collapsed"] .sidebar-head { flex-direction: column; height: auto; gap: var(--sp-2); padding: var(--sp-1) 0; }
         :root[data-sidebar="collapsed"] .sidebar .nav-item { position: relative; }
       }
+
+      /* ---------- the rail (a wide screen): every other place one click away, under More's headings ---------- */
+      .rail { display: none; }
+      @media (min-width: 960px) {
+        .rail {
+          display: flex; flex-direction: column; align-items: center; position: sticky; top: 0; height: 100vh; height: 100dvh;
+          padding: var(--sp-3) 0; background: var(--bg-sunken); border-right: 1px solid var(--border); overflow-y: auto; scrollbar-width: none;
+        }
+      }
+      .rail-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .rail-group + .rail-group { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+      .rail-group.rail-foot { margin-top: auto; }
+      .rail-item {
+        position: relative; display: grid; place-items: center; width: 36px; height: 34px; border-radius: var(--r-md); color: var(--text-3);
+        transition: background-color var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out);
+      }
+      .rail-item:hover { background: var(--surface-3); color: var(--text); }
+      .rail-item[aria-current="page"] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
+      .rail-item .count { position: absolute; top: -3px; right: -5px; }
+      .rail-tip {
+        position: fixed; z-index: 60; transform: translateY(-50%); display: flex; align-items: center; gap: var(--sp-2); padding: 5px 8px;
+        border-radius: var(--r-sm); background: var(--text); color: var(--bg); font-size: var(--fs-12); font-weight: 550; white-space: nowrap; pointer-events: none;
+        box-shadow: var(--shadow-2);
+      }
+      .rail-tip .rail-keys { opacity: 0.6; font-weight: 500; letter-spacing: 0.04em; }
 
       /* The roster: Galahad, then each knight, then each room. A face, a name, one line of latest activity, and a mark
          when the row needs you. The sidebar on a wide screen; on a phone, the first screen. */
