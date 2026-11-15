@@ -14,12 +14,19 @@ const script = join(root, "scripts/install.sh");
 const scratch = mkdtempSync(join(tmpdir(), "galahad-install-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+// The checkout it installs from is one of its own (--plan reads only its commit), so this runs from a tarball too.
+const source = join(scratch, "source");
+mkdirSync(source);
+const git = (...a: string[]) => Bun.spawnSync(["git", "-C", source, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
+git("init", "-q");
+git("commit", "-q", "--allow-empty", "-m", "init");
+
 function plan(name: string, args: string[], before?: (home: string) => void) {
   const home = join(scratch, name);
   mkdirSync(home, { recursive: true });
   before?.(home);
   const run = Bun.spawnSync(["bash", script, "--plan", ...args], {
-    env: { HOME: home, PATH: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", GALAHAD_SOURCE: root },
+    env: { HOME: home, PATH: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", GALAHAD_SOURCE: source },
     stdout: "pipe",
     stderr: "pipe",
   });
