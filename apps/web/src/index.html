@@ -210,7 +210,6 @@
         padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
         display: flex; align-items: center; gap: var(--sp-2);
         background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
-        border-bottom: 1px solid var(--border);
       }
       .topbar .title { font-weight: 600; font-size: var(--fs-15); letter-spacing: -0.01em; transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out); }
       .topbar .title.tucked { opacity: 0; transform: translateY(4px); }
@@ -348,10 +347,17 @@
         .shell[data-pane="roster"] .main-col { display: none; }
         .shell[data-pane="roster"] .sidebar {
           display: flex; flex-direction: column; min-width: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg);
-          padding: calc(var(--safe-top) + var(--sp-2)) calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)) calc(var(--sp-3) + var(--safe-left));
+          padding: 0 calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)) calc(var(--sp-3) + var(--safe-left));
+        }
+        /* Its head is the top bar's twin (same height, the icon in the same place, the same glass, no hairline), so moving
+           between the Roundtable and any other place moves nothing at the top. */
+        .shell[data-pane="roster"] .sidebar-head {
+          position: sticky; top: 0; z-index: 20; height: calc(var(--topbar-h) + var(--safe-top));
+          margin: 0 calc(-1 * (var(--sp-3) + var(--safe-right))) var(--sp-3) calc(-1 * (var(--sp-3) + var(--safe-left)));
+          padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
+          background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
         }
         .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .search-trigger .kbds { display: none; }
-        .shell[data-pane="roster"] .sidebar-head { height: 44px; }
         .shell[data-pane="roster"] .search-trigger { height: 40px; }
         .roster { overflow: visible; }
         .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
@@ -877,7 +883,7 @@
       .shell[data-route="team"] main.view { padding: 0; }
       .team-layout { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - var(--safe-bottom)); min-height: 320px; }
       .team-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-      .team-head { display: flex; align-items: center; gap: var(--sp-3); padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) var(--sp-4); min-height: 78px; border-bottom: 1px solid var(--border); }
+      .team-head { display: flex; align-items: center; gap: var(--sp-3); padding: calc(var(--safe-top) + var(--sp-4)) var(--sp-5) var(--sp-4); min-height: 78px; }
       .team-head:empty { display: none; }
       .team-head h2 { font-size: var(--fs-16); font-weight: 650; letter-spacing: -0.015em; }
       .team-head > .btn { flex: none; }
@@ -983,7 +989,7 @@
       .shell[data-route="chat"] .main-col { overflow-x: clip; }
       .chat-head { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: calc(var(--safe-top) + 6px) 0 6px; margin-bottom: var(--sp-3); }
       /* (Its ground runs the page's whole width, as the top bar's does, whatever the column's.) */
-      .chat-head::before { content: ""; position: absolute; z-index: -1; inset: 0 -100vw; background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px); border-bottom: 1px solid var(--border); }
+      .chat-head::before { content: ""; position: absolute; z-index: -1; inset: 0 -100vw; background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px); }
       .chat-head > .btn, .chat-head > .selector-trigger { flex: none; }
       .chat-inbox { position: relative; }
       .chat-inbox .count { position: absolute; top: -4px; right: -4px; }
