@@ -124,6 +124,16 @@ describe("the stylesheet", () => {
     expect(away?.body).toMatch(/pointer-events:\s*none/);
   });
 
+  test("the bars at the top are solid, so the top of the app is one flat colour however the page under them scrolls", () => {
+    // They were frosted glass: what scrolled under them showed through, blurred, as a grey haze just below the status
+    // bar, which iOS paints solid in the page's colour (seen in the iOS 26.1 simulator, 15 Nov).
+    for (const bar of [".topbar", '.shell[data-pane="roster"] .sidebar-head', ".chat-head::before", ".tl-day"]) {
+      const declared = all.filter((r) => r.selectors.includes(bar));
+      const ground = declared.map((r) => r.body.match(/(?:^|;)\s*background\s*:\s*([^;]+)/)?.[1]?.trim()).filter(Boolean).at(-1);
+      expect([bar, ground, declared.some((r) => /backdrop-filter/.test(r.body))]).toEqual([bar, "var(--bg)", false]);
+    }
+  });
+
   test("a text field that drops the browser's focus ring shows focus another way", () => {
     const unringed = rules.filter((r) => /outline:\s*none/.test(r.body)).flatMap((r) => r.selectors.filter((s) => /(^| )(input|textarea)$/.test(s)));
     const focusStyled = (field: string) => {

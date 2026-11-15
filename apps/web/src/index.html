@@ -209,7 +209,8 @@
         position: sticky; top: 0; z-index: 20; height: calc(var(--topbar-h) + var(--safe-top));
         padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
         display: flex; align-items: center; gap: var(--sp-2);
-        background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+        /* Solid, as the status bar above it is: frosted, what scrolled under it showed through as a haze. */
+        background: var(--bg);
       }
       .topbar .title { font-weight: 600; font-size: var(--fs-15); letter-spacing: -0.01em; transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out); }
       .topbar .title.tucked { opacity: 0; transform: translateY(4px); }
@@ -384,13 +385,13 @@
           display: flex; flex-direction: column; min-width: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg);
           padding: 0 calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)) calc(var(--sp-3) + var(--safe-left));
         }
-        /* Its head is the top bar's twin (same height, the icon in the same place, the same glass, no hairline), so moving
+        /* Its head is the top bar's twin (same height, the icon in the same place, the same ground, no hairline), so moving
            between the Roundtable and any other place moves nothing at the top. */
         .shell[data-pane="roster"] .sidebar-head {
           position: sticky; top: 0; z-index: 20; height: calc(var(--topbar-h) + var(--safe-top));
           margin: 0 calc(-1 * (var(--sp-3) + var(--safe-right))) var(--sp-3) calc(-1 * (var(--sp-3) + var(--safe-left)));
           padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
-          background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+          background: var(--bg);
         }
         .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .sidebar-head > .search-trigger { display: none; }
         /* On a phone, search is the top bar's button, at the head's end where the top bar has it (the palette grows out
@@ -1118,7 +1119,7 @@
       .shell[data-route="chat"] .main-col { overflow-x: clip; }
       .chat-head { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: calc(var(--safe-top) + 6px) 0 6px; margin-bottom: var(--sp-3); }
       /* (Its ground runs the page's whole width, as the top bar's does, whatever the column's.) */
-      .chat-head::before { content: ""; position: absolute; z-index: -1; inset: 0 -100vw; background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px); }
+      .chat-head::before { content: ""; position: absolute; z-index: -1; inset: 0 -100vw; background: var(--bg); }
       .chat-head > .btn, .chat-head > .selector-trigger { flex: none; }
       .chat-inbox { position: relative; }
       .chat-inbox .count { position: absolute; top: -4px; right: -4px; }
@@ -1308,7 +1309,7 @@
 
       /* ---------- timeline (ledger) ---------- */
       .timeline { display: flex; flex-direction: column; }
-      .tl-day { position: sticky; top: calc(var(--topbar-h) + var(--safe-top)); z-index: 2; padding: var(--sp-2) var(--sp-4); background: var(--surface-glass); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font-size: var(--fs-12); font-weight: 600; color: var(--text-2); border-bottom: 1px solid var(--border); }
+      .tl-day { position: sticky; top: calc(var(--topbar-h) + var(--safe-top)); z-index: 2; padding: var(--sp-2) var(--sp-4); background: var(--bg); font-size: var(--fs-12); font-weight: 600; color: var(--text-2); border-bottom: 1px solid var(--border); }
       .tl-item { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); align-items: start; }
       .tl-item:last-child { border-bottom: 0; }
       /* Long lists: rows out of sight aren't laid out or painted until they're scrolled near. */
