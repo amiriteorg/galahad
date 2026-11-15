@@ -1,12 +1,13 @@
 import Foundation
 import Observation
 
-/// A paired device's view of its node: who it is there, the Roundtable, and what waits for you. It asks the node again
-/// on every refresh; each part keeps what it last had when an ask fails.
+/// A paired device's view of its node: who it is there, the Roundtable, what waits for you, and Galahad's chat. It asks
+/// the node again on every refresh; each part keeps what it last had when an ask fails.
 @MainActor @Observable final class Session {
     let key: DeviceKey
     let node: PairedNode
     let client: NodeClient
+    let chat = ChatModel()
 
     private(set) var whoami: WhoAmI?
     private(set) var team: TeamSnapshot?
@@ -36,10 +37,12 @@ import Observation
     var asks: [Ask] { waiting.map { Ask(by: $0.by, connector: $0.connector, tool: $0.tool) } }
     var rows: [RosterRow] { team.map { Roster.rows(snapshot: $0, asks: asks) } ?? [] }
 
-    /// Galahad's own line: the turns the node runs, the quests in hand, what waits on you.
+    /// Galahad's own line: what he's answering here, the turns the node runs, the quests in hand, what waits on you.
     var galahad: GalahadNow {
         let knights = team?.teammates.map(\.id) ?? []
         return GalahadNow(GalahadWork(
+            answering: chat.answering,
+            step: chat.step,
             turns: turns.map(\.title),
             quests: quests.map(\.goal),
             needs: inboxLoaded ? Roster.galahadNeeds(inbox: inboxCount, asks: asks, knights: knights) : nil

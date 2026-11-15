@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// Where a row of the Roundtable leads.
+enum Route: Hashable {
+    case galahad
+}
+
 /// The Roundtable: Galahad first, then every knight, each with its drawing and one line of what it is doing, marked in
 /// Galahad's red when only you can move it on (lib/roster.ts says what each line is).
 struct RoundtableView: View {
@@ -20,7 +25,7 @@ struct RoundtableView: View {
             }
             if query.isEmpty {
                 Section {
-                    GalahadRow(now: session.galahad)
+                    NavigationLink(value: Route.galahad) { GalahadRow(now: session.galahad) }
                 }
             }
             Section {
@@ -38,6 +43,11 @@ struct RoundtableView: View {
             }
         }
         .navigationTitle("Roundtable")
+        .navigationDestination(for: Route.self) { route in
+            switch route {
+            case .galahad: ChatView(session: session)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { RoundtableMark(size: 28) }
                 .sharedBackgroundVisibility(.hidden)
