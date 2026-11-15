@@ -139,6 +139,13 @@ struct Vectors: Decodable {
         let steps: [Step]
     }
 
+    struct ConnectorState: Decodable {
+        struct State: Decodable { let label: String; let tone: String }
+        let key: String
+        let signsIn: Bool
+        let state: State?
+    }
+
     struct Thread: Decodable {
         struct Turn: Decodable, Equatable {
             let role: String
@@ -275,6 +282,7 @@ struct Vectors: Decodable {
     let keys: KeyCases
     let desktop: DesktopCases
     let eyes: EyeCases
+    let connectorStates: [ConnectorState]
     let threads: [Thread]
     let chats: ChatList
     let markdown: [MarkdownCase]

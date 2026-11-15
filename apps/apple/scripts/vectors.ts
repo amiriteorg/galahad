@@ -20,6 +20,7 @@ import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
+import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
@@ -370,6 +371,11 @@ const eyes = {
   steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
 };
 
+// ---- where a connector's key or sign-in stands (the PWA's own lib/connector-state.ts) -------------------------------
+const connectorStates = ["none-needed", "ready", "missing", "optional-missing", "signed-out", "wrong-origin", "unheard-of"].flatMap((key) =>
+  [false, true].map((signsIn) => ({ key, signsIn, state: connectorState({ key, oauth: signsIn ? { provider: "google" as const, account: null } : null }) })),
+);
+
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------
 const stored = (id: number, role: "user" | "assistant", content: string, extra: Partial<core.StoredMessage> = {}): core.StoredMessage => ({
   id,
@@ -646,6 +652,7 @@ const vectors = {
   keys,
   desktop,
   eyes,
+  connectorStates,
   threads,
   chats,
   markdown,

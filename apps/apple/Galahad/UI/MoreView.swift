@@ -26,6 +26,15 @@ struct MoreView: View {
                     Text("Sealed for your full nodes, each pinned to the one address it may go to; no model ever sees one.")
                 }
             }
+            if session.can("mind:read") {
+                Section {
+                    NavigationLink { ConnectorsView(session: session) } label: {
+                        Label("Connectors", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                } footer: {
+                    Text("Your services, reached through Galahad's oath: what's sent out or deleted asks you first.")
+                }
+            }
             Section("Its node") {
                 LabeledContent("Node", value: session.whoami?.nodeName ?? session.node.nodeName ?? "—")
                 LabeledContent("Fleet", value: session.whoami?.fleetName ?? session.node.fleetName ?? "—")

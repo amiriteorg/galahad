@@ -1,6 +1,7 @@
 import type { ArgValue, ConnectorRequestView, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { KEY_STATE, OAUTH_STATE } from "../lib/connector-state.ts";
 import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
@@ -98,28 +99,6 @@ export function connectorRequestCard(ctx: Ctx, request: ConnectorRequestView): H
     ),
   );
 }
-
-export const KEY_STATE: Record<string, { label: string; tone: Tone; icon: IconName; explain: string }> = {
-  "none-needed": { label: "no key needed", tone: "neutral", icon: "check", explain: "It works without a key." },
-  ready: { label: "key sealed", tone: "ok", icon: "check", explain: "Its key is sealed in the vault and only ever sent to this origin." },
-  missing: { label: "needs a key", tone: "warn", icon: "key", explain: "It can't do anything until its key is in the vault." },
-  "optional-missing": { label: "public only", tone: "neutral", icon: "key", explain: "Public reads work without a key, at a lower rate limit. Add one to reach your own data." },
-  "signed-out": { label: "not signed in", tone: "warn", icon: "key", explain: "Its app is sealed: sign in as yourself to use it." },
-  "wrong-origin": {
-    label: "key pinned elsewhere",
-    tone: "danger",
-    icon: "alert",
-    explain: "The vault holds a key under this name, but it's pinned to another origin, so it's never sent here. Replace it with one entered for this connector.",
-  },
-};
-
-/** A connector that signs in as you (mail): its key state is its app and its sign-in, said as those. */
-export const OAUTH_STATE: Record<string, { label: string; tone: Tone; icon: IconName }> = {
-  missing: { label: "needs your app", tone: "warn", icon: "key" },
-  "signed-out": { label: "not signed in", tone: "warn", icon: "key" },
-  ready: { label: "signed in", tone: "ok", icon: "check" },
-  "wrong-origin": { label: "pinned elsewhere", tone: "danger", icon: "alert" },
-};
 
 const host = (origin: string | null): string => origin?.replace(/^https?:\/\//, "") ?? "";
 

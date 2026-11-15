@@ -3526,6 +3526,114 @@
       }
     ]
   },
+  "connectorStates": [
+    {
+      "key": "none-needed",
+      "signsIn": false,
+      "state": {
+        "label": "no key needed",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "none-needed",
+      "signsIn": true,
+      "state": {
+        "label": "no key needed",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "ready",
+      "signsIn": false,
+      "state": {
+        "label": "key sealed",
+        "tone": "ok"
+      }
+    },
+    {
+      "key": "ready",
+      "signsIn": true,
+      "state": {
+        "label": "signed in",
+        "tone": "ok"
+      }
+    },
+    {
+      "key": "missing",
+      "signsIn": false,
+      "state": {
+        "label": "needs a key",
+        "tone": "warn"
+      }
+    },
+    {
+      "key": "missing",
+      "signsIn": true,
+      "state": {
+        "label": "needs your app",
+        "tone": "warn"
+      }
+    },
+    {
+      "key": "optional-missing",
+      "signsIn": false,
+      "state": {
+        "label": "public only",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "optional-missing",
+      "signsIn": true,
+      "state": {
+        "label": "public only",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "signed-out",
+      "signsIn": false,
+      "state": {
+        "label": "not signed in",
+        "tone": "warn"
+      }
+    },
+    {
+      "key": "signed-out",
+      "signsIn": true,
+      "state": {
+        "label": "not signed in",
+        "tone": "warn"
+      }
+    },
+    {
+      "key": "wrong-origin",
+      "signsIn": false,
+      "state": {
+        "label": "key pinned elsewhere",
+        "tone": "danger"
+      }
+    },
+    {
+      "key": "wrong-origin",
+      "signsIn": true,
+      "state": {
+        "label": "pinned elsewhere",
+        "tone": "danger"
+      }
+    },
+    {
+      "key": "unheard-of",
+      "signsIn": false,
+      "state": null
+    },
+    {
+      "key": "unheard-of",
+      "signsIn": true,
+      "state": null
+    }
+  ],
   "threads": [
     {
       "name": "kept",
