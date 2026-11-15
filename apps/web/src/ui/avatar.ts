@@ -87,7 +87,8 @@ function askMark(art: Art): SVGElement {
       svg("circle", { cx: 22, cy: 25, r: 2.4, fill: "#ffffff" })));
 }
 
-/** How each state moves, and the editor's choices: given to the page once, by the first avatar drawn. */
+/** How each state shows, and the editor's choices: given to the page once, by the first avatar drawn. The drawing
+ * itself stays still (no hop, bob or bounce): a knight's state is in its eyes, its ask mark and its colour at rest. */
 export const KNIGHT_CSS = `
 .knight { position: relative; display: block; flex: none; width: var(--kn-size, 40px); height: var(--kn-size, 40px); }
 .knight .kn-figure { position: absolute; inset: 0; transform-origin: 50% 95%; }
@@ -102,10 +103,8 @@ export const KNIGHT_CSS = `
 @keyframes kn-glance { 0%, 56%, 100% { transform: translate(0, 0); } 60%, 70% { transform: translate(-5px, -1px); } 74%, 84% { transform: translate(5px, -1px); } 88% { transform: translate(0, 0); } }
 .knight[data-expression="idle"]:not([data-temper="calm"]) .kn-gaze { animation: kn-glance 8.5s ease-in-out infinite; }
 .knight.kn-t1 .kn-gaze { animation-delay: -1.7s; } .knight.kn-t2 .kn-gaze { animation-delay: -3.1s; } .knight.kn-t3 .kn-gaze { animation-delay: -4.9s; } .knight.kn-t4 .kn-gaze { animation-delay: -6.2s; }
-@keyframes kn-hop { 0%, 78%, 100% { transform: translateY(0); } 83% { transform: translateY(-5%); } 88% { transform: translateY(0) scaleY(.97); } 92% { transform: translateY(-2%); } 96% { transform: translateY(0); } }
-.knight[data-expression="idle"][data-temper="lively"] .kn-figure { animation: kn-hop 6.5s ease-in-out infinite; }
-@keyframes kn-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1.2%); } }
-.knight[data-expression="working"] .kn-figure { animation: kn-bob .9s ease-in-out infinite; }
+@keyframes kn-work { 0%, 18% { transform: translate(-4px, 0); } 25%, 43% { transform: translate(-1px, 0); } 50%, 68% { transform: translate(2px, 0); } 75%, 93% { transform: translate(4px, 1px); } 100% { transform: translate(-4px, 0); } }
+.knight[data-expression="working"] .kn-gaze { animation: kn-work 2.8s ease-in-out infinite; }
 @keyframes kn-read { 0% { transform: translate(-5px, -1px); } 26% { transform: translate(5px, -1px); } 32% { transform: translate(-5px, 2px); } 58% { transform: translate(5px, 2px); } 64% { transform: translate(-5px, 4px); } 90% { transform: translate(5px, 4px); } 100% { transform: translate(-5px, -1px); } }
 .knight[data-expression="reading"] .kn-gaze { animation: kn-read 3.4s ease-in-out infinite; }
 @keyframes kn-follow { 0%, 100% { transform: translate(-5px, 0); } 30%, 45% { transform: translate(5px, -1px); } 70%, 85% { transform: translate(0, 2px); } }
@@ -114,12 +113,6 @@ export const KNIGHT_CSS = `
 .knight[data-expression="checking"] .kn-gaze { animation: kn-scan 2.6s ease-in-out infinite; }
 @keyframes kn-ponder { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-2px, 1px); } }
 .knight[data-expression="thinking"] .kn-gaze { animation: kn-ponder 3.2s ease-in-out infinite; }
-@keyframes kn-nudge { 0%, 80%, 100% { transform: rotate(0); } 86% { transform: rotate(-8deg); } 92% { transform: rotate(6deg); } }
-.knight[data-expression="asking"] .kn-ask { animation: kn-nudge 2.8s ease-in-out infinite; }
-@keyframes kn-joy { 0%, 100% { transform: translateY(0); } 12% { transform: translateY(-5%); } 24% { transform: translateY(0) scaleY(.97); } 34% { transform: translateY(-2%); } 44% { transform: translateY(0); } }
-.knight[data-expression="pleased"] .kn-figure { animation: kn-joy 2.2s ease-in-out infinite; }
-@keyframes kn-sigh { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1.5%); } }
-.knight[data-expression="concerned"] .kn-figure { animation: kn-sigh 3.2s ease-in-out infinite; }
 .knight[data-expression="resting"] img { filter: grayscale(.85); opacity: .62; }
 @keyframes kn-embers { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
 .knight[data-beast] .kn-ember { animation: kn-embers 1.6s ease-in-out infinite; }

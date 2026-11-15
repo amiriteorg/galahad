@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AVATAR_EXPRESSIONS, AVATAR_LOOKS, defaultAvatar, lookProfile } from "@galahad/core/avatar";
 import { avatarSheet } from "../../design/avatars.ts";
-import { workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
+import { KNIGHT_CSS, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
 
 /** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser. */
 class Node_ {
@@ -133,4 +133,13 @@ test("every drawing the app can show is a file it has", () => {
 test("the design sheet in apps/web/design is the one these knights draw", () => {
   // `bun apps/web/design/avatars.ts` writes it again after a change to the drawings.
   expect(readFileSync(join(import.meta.dir, "../../design/avatars.html"), "utf8")).toBe(avatarSheet());
+});
+
+test("the knights' bodies stay still: only their eyes move (and beast mode's embers glow), and the ask mark stands", () => {
+  // (Every rule that sets an animation, but the ones that turn animation off.)
+  const animated = [...KNIGHT_CSS.matchAll(/([^{}]+)\{[^{}]*\banimation:(?!\s*none)[^;}]+/g)].map(([, selector]) => selector!.trim());
+  expect(animated.length).toBeGreaterThan(0);
+  for (const selector of animated) expect([selector, /\.kn-(eye|gaze|ember)$/.test(selector)]).toEqual([selector, true]);
+  // Working has eyes of its own: down at the work, moving along it.
+  expect(animated.some((selector) => selector.includes('[data-expression="working"]'))).toBe(true);
 });

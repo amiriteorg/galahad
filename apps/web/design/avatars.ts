@@ -52,16 +52,16 @@ function draw(options: WorkerAvatarOptions): string {
 /** The rule is avatarExpression's, in packages/core/src/avatar.ts (the roster adds asking): the first of these that holds. */
 const MEANS: Record<AvatarExpression, string> = {
   thinking: "it is planning (its task's latest line starts “Plan ·” or “Thinking ·”), or writing you an answer: its eyes up",
-  working: "a command of its task is running (“Running ·”), or a step the others don't name: its eyes down at the work, a small bob",
+  working: "a command of its task is running (“Running ·”), or a step the others don't name: its eyes down at the work, moving along it",
   reading: "it is reading what the command printed (“Exit N ·”): its eyes along the lines",
   browsing: "it is using its desktop (“Running · desktop …”): its eyes after the pointer",
   checking: "its gates are running, or its work is under review (“Gate i/n ·”, “Review ·”): its eyes back and forth",
   asking: "it asks your leave for something (an approval waiting in the Inbox): wide eyes, and a red mark beside it",
   resting: "it is paused: shut eyes, its colour drained",
   waiting: "it has work queued: its eyes up and away",
-  concerned: "something of its failed or was interrupted in the last 30 seconds: lowered eyes, a sigh",
-  pleased: "a task of its passed its checks in the last 30 seconds: happy eyes, a hop",
-  idle: "none of these: it blinks, and a curious or lively one glances about or hops",
+  concerned: "something of its failed or was interrupted in the last 30 seconds: lowered eyes",
+  pleased: "a task of its passed its checks in the last 30 seconds: happy eyes",
+  idle: "none of these: it blinks, and a curious or lively one glances about",
 };
 const ORDER: AvatarExpression[] = ["thinking", "working", "reading", "browsing", "checking", "asking", "resting", "waiting", "concerned", "pleased", "idle"];
 const SIZES = [32, 56, 112];
