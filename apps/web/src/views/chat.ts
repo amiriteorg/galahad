@@ -753,7 +753,10 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       return h("article", { class: "turn user", "aria-label": "You said" }, h("div", { class: "turn-col" }, h("div", { class: "bubble" }, turn.content), turnActions(turn)));
     }
     const content = h("div", { class: "md" });
-    content.append(renderMarkdown(turn.content));
+    // His latest answer, once it's done: a choice he offered is tapped to answer with it, sent as if typed (the same
+    // checks). While he's writing, a page he makes waits for the end.
+    const answerable = thread.turns.at(-1) === turn && turn.status === "done" && canChat;
+    content.append(renderMarkdown(turn.content, { live: turn.status === "streaming", choose: answerable ? (text) => ((input.value = text), void deliver()) : undefined }));
     if (turn.status === "streaming") {
       if (turn.content) {
         const last = content.lastElementChild;

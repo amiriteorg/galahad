@@ -6,6 +6,21 @@ import { buildAssets } from "../src/assets.ts";
 const STATIC_IMPORT = /\bimport\s*[{*"']|\bimport\s+[\w$]/;
 
 describe("the PWA bundle", () => {
+  test("a page he made runs its code in a frame of its own: sandboxed, nothing from the network, framed by the app alone", async () => {
+    const assets = await buildAssets();
+    const frame = assets.serve("/frame.html");
+    const policy = frame.headers.get("content-security-policy") ?? "";
+    for (const rule of ["sandbox allow-scripts", "default-src 'none'", "script-src 'unsafe-inline'", "img-src data: blob:", "form-action 'none'", "frame-ancestors 'self'"]) expect([rule, policy.includes(rule)]).toEqual([rule, true]);
+    // Nothing it may load from, the app's own address included: only the app may frame it.
+    expect(policy.replace("frame-ancestors 'self'", "")).not.toMatch(/'self'|https?:/);
+    expect(frame.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    // It takes a page only from the app that framed it.
+    expect(await frame.text()).toContain("event.source !== parent");
+    // Everything else stays unframeable, under the app's own policy.
+    expect(assets.serve("/").headers.get("x-frame-options")).toBe("DENY");
+    expect(assets.serve("/app.js").headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  });
+
   test("builds and is served with a strict CSP", async () => {
     const assets = await buildAssets();
 

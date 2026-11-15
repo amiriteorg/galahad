@@ -695,6 +695,21 @@ A chat turn of yours belongs to the node, not to the page or terminal that start
 
 Routes (all `chat`): `turns`, `attachTurn`, `stopTurn`, `steerTurn`, `queueMessage`, `editQueued`, `removeQueued`, `sendQueued`, `resumeQueue`, `askAside`, `bringBack`. Stream events added: `turn`, `steer`, `stopped`, `undelivered`, `aside`. Surfaces: the app's Chat page (Enter steers or queues by this device's choice, the other with Ctrl/⌘; the queue above the composer; `/btw`); `galahad ask [--steer | --queue | --aside [--bring]] [--detach]`, `galahad turns`, `galahad turn watch|stop`, `galahad queue <chat> …`. End to end, over real HTTP with paired devices: `packages/node/test/turns.e2e.test.ts`.
 
+### What an answer can show beyond words ✅
+
+An answer is Markdown, drawn with `createElement` and `textContent` only (`apps/web/src/ui/markdown.ts`): nothing a model writes becomes HTML in the app. A few fenced blocks become live elements instead (`apps/web/src/ui/blocks.ts`); the grammar and its readers are one dependency-free contract, `packages/core/src/blocks.ts` (`@galahad/core/blocks`), and Galahad is told it in `SHOW_GUIDE` (`packages/brain/src/persona.ts`; not on a quest's coding turns). Anywhere else (a terminal, a notification) a block stays the text it is.
+
+| Block | What it draws |
+|---|---|
+| ` ```chart ` | `{"type":"line|area|bar|stacked","title","unit","labels":[…],"series":[{"name","values":[…]}]}`: an SVG drawn by the app, one axis, at most 6 series and 60 labels, `null` for a gap; bars and stacks grow from zero. Colours in a fixed order, validated for colour-blind separation and contrast on both themes' surfaces; a legend for two or more series, end labels where they don't collide, a crosshair and tooltip that reads every series (pointer, touch, or the arrow keys on the focused chart), and the data as a table beneath. |
+| ` ```stats ` | Up to 6 figures: a label, a value (compacted: 1,284 · 12.9K · 4.2M), and a change with which way is good; good or not is said with an arrow and words, never colour alone. |
+| ` ```choices ` | Two to six short answers. On his latest finished answer each is a button that sends it as your reply, through the message box's own checks; anywhere else they show what was offered. |
+| ` ```steps ` | A plan and where each step stands: done, doing, todo, failed, skipped. |
+| ` ```artifact ` | A whole HTML page (inline CSS and JS). Shown as it is in a `srcdoc` frame sandboxed with no permissions: no script runs, and its own policy (written first, so the page can only add to it) lets nothing load from the network, since an image's address could carry what he wrote out; `<link>` elements and DNS prefetching are removed. It waits for the end of the answer (each new word would load it again). **Run** loads it in the node's frame host (`apps/web/src/frame.html`, served with a policy of its own in `packages/node/src/assets.ts`: `sandbox allow-scripts`, `default-src 'none'`, inline scripts only, framed by the app alone), which takes the page by message from the frame it was meant for. A srcdoc frame can't run it: it inherits the app's own policy. Running, it is still sealed off from Galahad and fetches nothing; like a link, it could open a web address, which the card says. |
+| ` ```html `, ` ```svg ` | HTML is code, with **Preview** to see it as a page (sealed the same way); an SVG shows as the picture it is (an image runs nothing and loads nothing), its code a tap away. |
+
+A block the reader doesn't accept (not JSON, a field out of shape, too big) is shown as its code, with why. While a block is still being written it's a placeholder, never half-drawn JSON.
+
 ## 10½. The bank, read-only ✅
 
 Your own accounts' balances and transactions, through Enable Banking (PSD2 account information only), for the agents you choose. Setup, the threat model and what couldn't be verified: [BANK](BANK.md).

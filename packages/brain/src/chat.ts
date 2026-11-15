@@ -3,7 +3,7 @@ import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
-import { GALAHAD_SYSTEM, runtimeContext, TOOL_GUIDE } from "./persona.ts";
+import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
 import { windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { listModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
@@ -213,7 +213,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       continue;
     }
     // Stable persona first (cacheable), then what changes: the model, then recalled memories.
-    const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
+    // What he can show beyond words is for answers you read in the app, not a quest's commands.
+    const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, req.coding ? null : SHOW_GUIDE, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
     let parsed: { provider: string; model: string };
     try {
       parsed = parseRef(ref);

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_PROPOSED_GATES } from "@galahad/core";
-import { GALAHAD_SYSTEM, TOOL_GUIDE } from "../src/persona.ts";
+import { BLOCK_KINDS, CHART_TYPES, STEP_STATES } from "@galahad/core/blocks";
+import { GALAHAD_SYSTEM, SHOW_GUIDE, TOOL_GUIDE } from "../src/persona.ts";
 
 /*
  * What he is told about himself. Asked on ultra what a quest gate is, he recalled
@@ -55,3 +56,11 @@ describe("what he knows about his own work", () => {
     expect(GALAHAD_SYSTEM).not.toMatch(/--gate|galahad quests/);
   });
 });
+
+test("his guide to what an answer can show names every block the app draws, and only those", () => {
+  const named = [...SHOW_GUIDE.matchAll(/```([a-z]+)/g)].map((m) => m[1]);
+  expect(named).toEqual([...BLOCK_KINDS]);
+  expect(SHOW_GUIDE).toContain(`"type":"${CHART_TYPES.join("|")}"`);
+  expect(SHOW_GUIDE).toContain(`"state":"${STEP_STATES.join("|")}"`);
+});
+

@@ -21,6 +21,24 @@ const CSP = [
   "form-action 'none'",
 ].join("; ");
 
+/**
+ * Where a page Galahad made runs its code, when you press Run (frame.html, ui/blocks.ts): its own origin (a sandbox),
+ * its own scripts and nothing from the network, and framed by the app alone. The app's own policy would refuse the
+ * page's scripts, which is why it isn't a srcdoc frame: one of those inherits the policy of the page that holds it.
+ */
+const FRAME_CSP = [
+  "sandbox allow-scripts",
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "media-src data: blob:",
+  "font-src data:",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'self'",
+].join("; ");
+
 export interface Assets {
   has(path: string): boolean;
   /** The file, compressed when the request accepts it, or 304 when it already holds this version. */
@@ -32,6 +50,8 @@ interface Asset {
   type: string;
   /** Content-versioned files may be kept for good; everything else is revalidated. */
   immutable?: boolean;
+  /** A page that is framed (by the app alone), under a policy of its own. */
+  framed?: { csp: string };
 }
 
 /** Text compresses well; images are sent as they are. */
@@ -81,6 +101,7 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     files.set("/index.html", { body: html, type: "text/html; charset=utf-8" });
     // Where the bank sends you back after authorising: the app itself finishes it.
     files.set("/bank/callback", { body: html, type: "text/html; charset=utf-8" });
+    files.set("/frame.html", { body: readFileSync(join(src, "frame.html")), type: "text/html; charset=utf-8", framed: { csp: FRAME_CSP } });
     files.set("/manifest.webmanifest", {
       body: readFileSync(join(src, "manifest.webmanifest")),
       type: "application/manifest+json",
@@ -114,11 +135,11 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
       const compressible = COMPRESSIBLE.test(asset.type);
       const headers: Record<string, string> = {
         "content-type": asset.type,
-        "content-security-policy": CSP,
+        "content-security-policy": asset.framed?.csp ?? CSP,
         "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-cache",
         "x-content-type-options": "nosniff",
         "referrer-policy": "no-referrer",
-        "x-frame-options": "DENY",
+        "x-frame-options": asset.framed ? "SAMEORIGIN" : "DENY",
         etag: ready.etag,
         ...(compressible ? { vary: "Accept-Encoding" } : {}),
       };

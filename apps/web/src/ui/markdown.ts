@@ -1,5 +1,6 @@
 import { type Block, type Inline, parseMarkdown } from "../lib/markdown.ts";
 import { matchRanges } from "../lib/text.ts";
+import { type BlockOptions, drawBlock } from "./blocks.ts";
 import { copyText } from "./controls.ts";
 import { h } from "./dom.ts";
 import { icon } from "./icons.ts";
@@ -8,6 +9,9 @@ import { icon } from "./icons.ts";
  * AST → DOM with createElement and textContent only. There is no path from
  * model output to innerHTML. Links are http(s) only, open in a new tab with
  * no referrer or opener, and show their host when the text says otherwise.
+ * A fenced block a model may show as more than code (a chart, figures, choices,
+ * steps, a page) is drawn by ui/blocks.ts; a page is the one thing parsed as
+ * HTML, and only inside a frame sealed off from the app.
  */
 
 /**
@@ -52,7 +56,7 @@ function inlines(nodes: Inline[]): Node[] {
   });
 }
 
-function codeBlock(block: Extract<Block, { t: "code" }>): HTMLElement {
+function codeBlock(block: { lang: string; v: string }): HTMLElement {
   const copy = h("button", { class: "btn ghost sm", type: "button", "aria-label": "Copy code" }, icon("copy", { size: 13 }), h("span", {}, "Copy"));
   copy.addEventListener("click", () => void copyText(block.v, "Code copied"));
   return h(
@@ -63,7 +67,7 @@ function codeBlock(block: Extract<Block, { t: "code" }>): HTMLElement {
   );
 }
 
-function blocks(list: Block[]): Node[] {
+function blocks(list: Block[], options: BlockOptions): Node[] {
   return list.map((block): Node => {
     switch (block.t) {
       case "p":
@@ -74,13 +78,13 @@ function blocks(list: Block[]): Node[] {
         return h(`h${level}`, {}, ...inlines(block.c));
       }
       case "code":
-        return codeBlock(block);
+        return drawBlock(block, options, codeBlock) ?? codeBlock(block);
       case "list": {
-        const items = block.items.map((item) => h("li", {}, ...blocks(item)));
+        const items = block.items.map((item) => h("li", {}, ...blocks(item, options)));
         return block.ordered ? h("ol", { start: block.start !== 1 ? block.start : null }, ...items) : h("ul", {}, ...items);
       }
       case "quote":
-        return h("blockquote", {}, ...blocks(block.c));
+        return h("blockquote", {}, ...blocks(block.c, options));
       case "hr":
         return h("hr");
       case "table":
@@ -98,9 +102,9 @@ function blocks(list: Block[]): Node[] {
   });
 }
 
-export function renderMarkdown(source: string): DocumentFragment {
+export function renderMarkdown(source: string, options: BlockOptions = {}): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  fragment.append(...blocks(parseMarkdown(source)));
+  fragment.append(...blocks(parseMarkdown(source), options));
   return fragment;
 }
 
