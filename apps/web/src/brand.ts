@@ -15,7 +15,7 @@ export const MARK_PATH = "M11.8 1.59C11.8 1.63 11.43 1.7 10.97 1.73C7.57 2 4.45 
 
 /** The app tile's black, the inks the flat mark is drawn in on the website, and Galahad's seat's red: the red of the
  * cross on his helm in the owner's drawing, a touch brighter, so it holds on white and on black. */
-export const INK = { tile: "#0a0a0b", light: "#f8ebdc", dark: "#141416", siege: "#c4141b" } as const;
+export const INK = { tile: "#0a0a0b", light: "#f8ebdc", dark: "#141416", siege: "#c4141b", siegeOnDark: "#ee2c36" } as const;
 
 /**
  * The Roundtable's icon: the Round Table from above, as a floor plan draws one, on the 24-unit icon grid. The table is a
@@ -57,21 +57,39 @@ const silhouette = (fill: string): SvgNode => n("path", { d: MARK_PATH, fill, "f
 /** The app tile: a rounded square on the 1024 grid. */
 export const TILE = { x: 64, y: 64, width: 896, height: 896, rx: 214 } as const;
 
-/** The app icon: the drawn helm on a black tile, transparent at its corners. `helm` is the drawing as a data URL. */
-export function appIcon(helm: string): SvgNode {
+/** The Roundtable's shapes on the 24-unit grid (roundtableIcon), in `ink`, Galahad's seat in `seat`. Each knight's chair
+ * is the bottom one turned about the middle. */
+function roundtableShapes(ink: string, seat: string): SvgNode[] {
+  const { table, chair, siege, seats } = ROUNDTABLE;
+  const at = (c: { R: number; w: number; d: number; rx: number }, top: boolean) => ({ x: 12 - c.w / 2, y: top ? 12 - c.R - c.d / 2 : 12 + c.R - c.d / 2, width: c.w, height: c.d, rx: c.rx });
+  return [
+    n("circle", { cx: 12, cy: 12, r: table.r, stroke: ink, "stroke-width": table.width }),
+    n("g", { fill: ink }, ...seats.map((deg) => n("rect", { ...at(chair, false), ...(deg === 180 ? {} : { transform: `rotate(${(deg + 180) % 360} 12 12)` }) }))),
+    n("rect", { ...at(siege, true), fill: seat }),
+  ];
+}
+
+/** The Roundtable drawn `side` across on the 1024 grid, centred on (cx, cy). */
+const table = (side: number, ink: string, seat: string, cx = 512, cy = 512): SvgNode =>
+  n("g", { transform: `translate(${cx - side / 2} ${cy - side / 2}) scale(${side / 24})` }, ...roundtableShapes(ink, seat));
+
+/** The app icon (and favicon): the Roundtable in light ink on a black tile, transparent at its corners, Galahad's seat
+ * in the red that holds on black. Drawn, never a picture: crisp from a tab's 16 px to a Home Screen's 180. */
+export function appIcon(): SvgNode {
   const { x, y, width, height, rx } = TILE;
   return root(
     "48 48 928 928",
     "Galahad",
     n("rect", { x, y, width, height, rx, fill: INK.tile }),
-    drawing(helm, width * 0.7, 512, 506),
+    table(width * 0.78, INK.light, INK.siegeOnDark),
     n("rect", { x: x + 1, y: y + 1, width: width - 2, height: height - 2, rx: rx - 1, stroke: "#ffffff", "stroke-opacity": 0.12, "stroke-width": 2 }),
   );
 }
 
-/** Full bleed for platform masks (Android adaptive icons, iOS): the helm scaled into the centre so any mask keeps it. */
-export function maskableIcon(helm: string, scale = 0.6): SvgNode {
-  return root("0 0 1024 1024", "Galahad", n("rect", { width: 1024, height: 1024, fill: INK.tile }), drawing(helm, 1024 * scale));
+/** Full bleed for platform masks (Android adaptive icons, iOS's Home Screen): the Roundtable in the centre, where every
+ * mask keeps it. */
+export function maskableIcon(scale = 0.6): SvgNode {
+  return root("0 0 1024 1024", "Galahad", n("rect", { width: 1024, height: 1024, fill: INK.tile }), table(1024 * scale, INK.light, INK.siegeOnDark));
 }
 
 /** The flat, single-colour mark (currentColor). */
@@ -79,24 +97,19 @@ export function flatMark(): SvgNode {
   return root("0 0 1024 1024", "Galahad", silhouette("currentColor"));
 }
 
-/** A notification's badge (Android's status bar): the silhouette in white on nothing. The system draws it from its
+/** A notification's badge (Android's status bar): the Roundtable in white on nothing. The system draws it from its
  * alpha alone, in its own colour, so the app icon's black tile would be a white square. */
 export function monoIcon(): SvgNode {
-  return root("0 0 1024 1024", "Galahad", silhouette("#ffffff"));
+  return root("0 0 1024 1024", "Galahad", table(1024 * 0.86, "#ffffff", "#ffffff"));
 }
 
-/** The Roundtable's icon as its own file: the ring and the knights' chairs in currentColor, Galahad's in his red. Each
- * knight's chair is the bottom one turned about the middle. */
+/** The Roundtable's icon as its own file: the ring and the knights' chairs in currentColor, Galahad's in his red. */
 export function roundtableIcon(): SvgNode {
-  const { table, chair, siege, seats } = ROUNDTABLE;
-  const at = (c: { R: number; w: number; d: number; rx: number }, top: boolean) => ({ x: 12 - c.w / 2, y: top ? 12 - c.R - c.d / 2 : 12 + c.R - c.d / 2, width: c.w, height: c.d, rx: c.rx });
   return n(
     "svg",
     { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none" },
     n("title", {}, { tag: "#text", attrs: { text: "The Roundtable" } }),
-    n("circle", { cx: 12, cy: 12, r: table.r, stroke: "currentColor", "stroke-width": table.width }),
-    n("g", { fill: "currentColor" }, ...seats.map((deg) => n("rect", { ...at(chair, false), ...(deg === 180 ? {} : { transform: `rotate(${(deg + 180) % 360} 12 12)` }) }))),
-    n("rect", { ...at(siege, true), fill: INK.siege }),
+    ...roundtableShapes("currentColor", INK.siege),
   );
 }
 

@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 /*
- * Regenerates every brand file from the one mark (apps/web/src/brand.ts): Galahad's helm as the owner drew it.
+ * Regenerates every brand file (apps/web/src/brand.ts): the app's icons are the Roundtable, drawn; the website's crest
+ * is Galahad's helm as the owner drew it.
  *
  *   bun scripts/brand.ts          SVGs only (deterministic; safe to run any time)
  *   bun scripts/brand.ts --png    also renders the PNG icons with headless Chromium
  *                                 (set GALAHAD_BROWSER to the browser binary if it isn't found)
  *
- * The SVG icons carry the helm the app serves (apps/web/src/knights/galahad-helm.webp); the PNGs are rendered from the
- * full-size cut-out kept beside the design sheet (apps/web/design/galahad-helm.webp), so a 512 px icon stays sharp.
+ * The icons are drawn (vectors only), so every PNG is rendered from the same SVG at its own size; the crest carries the
+ * helm the app serves (apps/web/src/knights/galahad-helm.webp).
  */
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,17 +18,16 @@ import { appIcon, crestFile, flatMark, maskableIcon, monoIcon, roundtableIcon, t
 const ROOT = resolve(import.meta.dir, "..");
 const at = (p: string): string => join(ROOT, p);
 const dataUrl = (p: string): string => `data:image/webp;base64,${readFileSync(at(p)).toString("base64")}`;
-/** The helm as the app serves it, and at full size. */
+/** The helm as the app serves it, for the website's crest. */
 const HELM = dataUrl("apps/web/src/knights/galahad-helm.webp");
-const HELM_FULL = dataUrl("apps/web/design/galahad-helm.webp");
 
 /** Every committed SVG, by where it goes: what tests read back (brand.test.ts). */
 export const BRAND_SVGS: Record<string, () => SvgNode> = {
-  "assets/icon.svg": () => appIcon(HELM),
+  "assets/icon.svg": () => appIcon(),
   "assets/galahad-mark.svg": () => flatMark(),
   "assets/roundtable.svg": () => roundtableIcon(),
-  "apps/web/src/icon-maskable.svg": () => maskableIcon(HELM),
-  "apps/site/public/icon.svg": () => appIcon(HELM),
+  "apps/web/src/icon-maskable.svg": () => maskableIcon(),
+  "apps/site/public/icon.svg": () => appIcon(),
   "apps/site/public/crest-white.svg": () => crestFile(HELM),
   "apps/site/public/crest-black.svg": () => crestFile(HELM),
 };
@@ -46,11 +46,11 @@ async function renderPngs(): Promise<void> {
   const work = mkdtempSync(join(tmpdir(), "galahad-brand-"));
   try {
     const pngs: [string, SvgNode, number, string][] = [
-      ["apps/web/src/icon-192.png", appIcon(HELM_FULL), 192, "transparent"],
-      ["apps/web/src/icon-512.png", appIcon(HELM_FULL), 512, "transparent"],
-      ["apps/web/src/icon-maskable-512.png", maskableIcon(HELM_FULL), 512, "#0a0a0b"],
-      // iOS rounds the corners itself, so the touch icon is full bleed with a larger helm.
-      ["apps/web/src/apple-touch-icon.png", maskableIcon(HELM_FULL, 0.72), 180, "#0a0a0b"],
+      ["apps/web/src/icon-192.png", appIcon(), 192, "transparent"],
+      ["apps/web/src/icon-512.png", appIcon(), 512, "transparent"],
+      ["apps/web/src/icon-maskable-512.png", maskableIcon(), 512, "#0a0a0b"],
+      // iOS rounds the corners itself, so the touch icon is full bleed with a larger table.
+      ["apps/web/src/apple-touch-icon.png", maskableIcon(0.76), 180, "#0a0a0b"],
       // A notification's badge: one colour and its alpha, kept as rendered (a palette would make its edge jagged).
       ["apps/web/src/icon-mono-96.png", monoIcon(), 96, "transparent"],
     ];

@@ -47,7 +47,7 @@ The phone in one hand, often in short glances; work runs for minutes to hours un
 - The name Galahad, and the Arthurian vocabulary above.
 - Galahad's colours are oxblood, navy and off-white, used as accents only (binding). Oxblood marks what waits on the owner.
 - The knights are the owner's own drawings, shown exactly as drawn (cut out of their paper, never redrawn, recoloured or restyled), with live eyes over the drawn ones; no dot matrix (binding, 14–15 November 2026).
-- Galahad is his drawing with the oxblood Templar cross on his helm, not the nose brace; his helm is the mark (binding).
+- Galahad is his drawing with the oxblood Templar cross on his helm, not the nose brace; his helm is his emblem in the app and the website's crest (binding). The app's icon and favicon are the Roundtable, Galahad's seat in red (the owner's choice, 15 November 2026).
 - In beast mode, Galahad becomes the Black Knight; the Black Knight is no knight of his own (binding).
 - The look around them takes after Vercel/shadcn (Geist, neutral greys, 1 px borders), Benji Taylor's trays and live pills, and T3 Code's composer (the owner's references).
 

@@ -13,7 +13,7 @@ import { afterPush, badgeCount, type BadgeState, type Badging, NO_BADGE, readBad
  * are kept the first time a page shows them, so the roster has its faces offline.
  */
 
-const VERSION = "galahad-shell-v8";
+const VERSION = "galahad-shell-v9";
 // (Not the SVG icons: the app never shows them, a browser fetches its favicon itself, and the installer its icons.)
 const SHELL = ["/", "/app.js", "/boot.js", "/manifest.webmanifest", "/icon-192.png", "/apple-touch-icon.png", "/knights/galahad.webp", "/knights/galahad-helm.webp", "/fonts/geist.woff2"];
 /** Kept the first time they are fetched, then served like the shell: the knights' drawings (Galahad's, and his helm, the
