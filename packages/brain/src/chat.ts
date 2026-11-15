@@ -212,9 +212,10 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       yield passOver(ref, `it doesn't follow the quest loop's command format (commands in ${off.format.good} of ${off.format.replies} replies when it was checked): passed over for this loop`);
       continue;
     }
-    // Stable persona first (cacheable), then what changes: the model, then recalled memories.
+    // Stable persona first (cacheable), then the model it runs on; the memories recalled for this question follow it,
+    // after the part a provider keeps in its cache (adapters.ts).
     // What he can show beyond words is for answers you read in the app, not a quest's commands.
-    const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, req.coding ? null : SHOW_GUIDE, runtimeContext(ref), req.context].filter(Boolean).join("\n\n");
+    const system = [GALAHAD_SYSTEM, tools ? TOOL_GUIDE : null, req.coding ? null : SHOW_GUIDE, runtimeContext(ref)].filter(Boolean).join("\n\n");
     let parsed: { provider: string; model: string };
     try {
       parsed = parseRef(ref);
@@ -245,6 +246,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         model: parsed.model,
         ...(sees === null ? {} : { sees }),
         system,
+        ...(req.context ? { context: req.context } : {}),
         messages: req.messages,
         effort: effortFor(req.role),
         signal: req.signal,

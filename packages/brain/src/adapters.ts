@@ -7,6 +7,11 @@ export interface CompletionInput {
   provider: ResolvedProvider;
   model: string;
   system: string;
+  /**
+   * What changes from one turn of a conversation to the next (the memories recalled for a question): it follows the
+   * system prompt, after the part a provider keeps in its cache.
+   */
+  context?: string;
   messages: ChatMessage[];
   effort: Effort;
   signal?: AbortSignal;
@@ -122,7 +127,15 @@ const SERVER_FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "
 /** Claude via the official SDK: adaptive thinking, explicit effort, streaming, tools. */
 export function anthropicConversation(input: CompletionInput): Conversation {
   const client = new Anthropic({ apiKey: input.provider.apiKey ?? "", baseURL: input.provider.baseUrl, maxRetries: 2, fetch: withoutRedirects(input.fetch) });
-  const serverFallback = input.provider.baseUrl === "https://api.anthropic.com" && SERVER_FALLBACK_MODELS.has(input.model);
+  const firstParty = input.provider.baseUrl === "https://api.anthropic.com";
+  const serverFallback = firstParty && SERVER_FALLBACK_MODELS.has(input.model);
+  // Anthropic caches only what a call marks. On its own API each call marks the tools and the system prompt (the same
+  // in every call of a conversation, and from one turn to the next) and, through the top-level mark the API moves to
+  // the last block, the conversation so far: the next call reads them at a tenth of the price or less. What changes
+  // from turn to turn comes after the first mark. An endpoint that only speaks Anthropic's format is sent what it was.
+  const system: string | Anthropic.Beta.BetaTextBlockParam[] = firstParty
+    ? [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }, ...(input.context ? [{ type: "text" as const, text: input.context }] : [])]
+    : [input.system, input.context].filter(Boolean).join("\n\n");
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
   // Pictures given with the question lead the last user message.
   const asked = messages.findLast((m) => m.role === "user");
@@ -146,7 +159,8 @@ export function anthropicConversation(input: CompletionInput): Conversation {
           {
             model: input.model,
             max_tokens: 64_000,
-            system: input.system,
+            system,
+            ...(firstParty ? { cache_control: { type: "ephemeral" as const } } : {}),
             messages,
             thinking: { type: "adaptive" },
             output_config: { effort: input.effort },
@@ -248,7 +262,8 @@ const READ_DELTA = new Set(["role", "content", "reasoning_content", "tool_calls"
 
 /** Any OpenAI-compatible endpoint (DeepSeek, Mistral, Cloudflare AI Gateway, Ollama, llama.cpp …), with function calling. */
 export function openAIConversation(input: CompletionInput): Conversation {
-  const messages: OpenAIMessage[] = [{ role: "system", content: input.system }, ...input.messages];
+  // Its provider caches the longest prefix it has seen: the system prompt, then what changes from turn to turn.
+  const messages: OpenAIMessage[] = [{ role: "system", content: [input.system, input.context].filter(Boolean).join("\n\n") }, ...input.messages];
   const vision = input.sees ?? seesImages(input.provider, input.model);
   // Pictures given with the question go with the last user message, to a model that sees; else in words.
   const asked = messages.findLast((m) => m.role === "user");
