@@ -11,7 +11,9 @@ struct ChatView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            // A plain stack: an answer's rows are tall and hold sideways-scrolling code and tables, and a lazy stack
+            // pinned to the bottom kept placing them again and never settled (seen in the iOS 26.1 simulator).
+            VStack(alignment: .leading, spacing: 16) {
                 if chat.thread.isEmpty {
                     if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) } else { welcome }
                 }
@@ -117,7 +119,7 @@ struct MessageRow: View {
                             .foregroundStyle(step.state == .warn || step.state == .error ? Color.siege : .secondary)
                     }
                     if !turn.content.isEmpty {
-                        Text(Self.markdown(turn.content))
+                        MarkdownView(turn.content)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(.fill.tertiary, in: .rect(cornerRadius: 20, style: .continuous))
@@ -149,11 +151,6 @@ struct MessageRow: View {
         case .done:
             EmptyView()
         }
-    }
-
-    /// His words with their inline markdown (bold, code, links); anything it can't read stays as it was written.
-    static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 }
 

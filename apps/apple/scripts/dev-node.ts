@@ -6,7 +6,8 @@
  *
  * It seats knights at work (one running a task, one thinking, one whose task was verified, one whose task failed, one
  * paused), has an agent ask your leave for an outward call, and has Galahad ask for a key. Then it makes a client invite
- * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time.
+ * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
+ * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, choices).
  *
  * Pairing waits for you as a node does: the app's request is printed with its code, and approved only once you write
  * that code into <dir>/approve (`echo 482913 > <dir>/approve`), having compared it with the app's.
@@ -86,6 +87,47 @@ docker.onExec = async (_container: string, command: string[]) => {
 
 // ---------- stand-in models ----------
 const GALAHAD = "Good evening. This is a stand-in model on a throwaway node, so the words are canned, but they stream to you as a real model's would: a word at a time, into this bubble, until the answer is done.";
+// Asked to show something, he answers with everything an answer can hold: what the app draws beyond plain words.
+const SHOWN = [
+  "## What I found",
+  "",
+  "Three things stand out, and **one needs you**:",
+  "",
+  "1. The *release* is on track.",
+  "2. CI on `main` is green: https://github.com/amiriteorg/galahad/actions.",
+  "3. ~~Friday~~ Monday is the new date.",
+  "   - It moved for the review.",
+  "",
+  "> The gate held: nothing ships unreviewed.",
+  "",
+  "| Check | Result | Time |",
+  "|:--|:--:|--:|",
+  "| Unit tests | passed | 41 s |",
+  "| Review | passed | 2 min |",
+  "",
+  "```ts",
+  "const ok = await verify(change);",
+  "if (!ok) throw new Error(\"held\");",
+  "```",
+  "",
+  "```chart",
+  JSON.stringify({ type: "line", title: "Tokens a task", unit: "k", labels: ["Mon", "Tue", "Wed", "Thu", "Fri"], series: [{ name: "Before", values: [442, 430, 451, 438, 440] }, { name: "After", values: [258, 250, 262, 249, 255] }] }),
+  "```",
+  "",
+  "```stats",
+  JSON.stringify([{ label: "Read from a cache", value: "73%", delta: 71, note: "since Monday", good: "up" }, { label: "Cost a task", value: 0.54, unit: "$", delta: -0.51, good: "down" }]),
+  "```",
+  "",
+  "```steps",
+  JSON.stringify([{ text: "Read the failing test", state: "done" }, { text: "Fix the parser", state: "doing" }, { text: "Ship it", state: "todo" }]),
+  "```",
+  "",
+  "Shall I go ahead?",
+  "",
+  "```choices",
+  JSON.stringify(["Ship it", "Hold until Monday"]),
+  "```",
+].join("\n");
 const stream = (text: string, delayMs: number): Response => {
   const encoder = new TextEncoder();
   const words = text.split(/(?<= )/);
@@ -122,7 +164,9 @@ const model = Bun.serve({
       return stream(text, 0);
     }
     // Galahad himself answers with his tools at hand; a knight's reply in a room comes quickly.
-    return Array.isArray(body.tools) && body.tools.length ? stream(GALAHAD, 70) : stream("Understood. I will take the part that is mine and say when it is done.", 0);
+    const asked = JSON.stringify(turns.filter((message) => message.role === "user").at(-1) ?? "");
+    if (Array.isArray(body.tools) && body.tools.length) return stream(/\bshow\b/i.test(asked) ? SHOWN : GALAHAD, /\bshow\b/i.test(asked) ? 15 : 70);
+    return stream("Understood. I will take the part that is mine and say when it is done.", 0);
   },
 });
 servers.push(model);

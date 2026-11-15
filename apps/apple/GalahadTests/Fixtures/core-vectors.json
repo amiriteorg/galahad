@@ -2611,5 +2611,877 @@
         "words": "Failed"
       }
     ]
-  }
+  },
+  "markdown": [
+    {
+      "source": "## What I found\n\nThree things stand out, and **one needs you**:\n\n1. The *release* is on track.\n2. CI on `main` is green: https://github.com/amiriteorg/galahad/actions.\n3. ~~Friday~~ Monday is the new date.\n   - It moved for the review.\n\n> The gate held: nothing ships unreviewed.",
+      "blocks": [
+        {
+          "t": "h",
+          "level": 2,
+          "c": [
+            {
+              "t": "text",
+              "v": "What I found"
+            }
+          ]
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "Three things stand out, and "
+            },
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "one needs you"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": ":"
+            }
+          ]
+        },
+        {
+          "t": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "The "
+                  },
+                  {
+                    "t": "em",
+                    "c": [
+                      {
+                        "t": "text",
+                        "v": "release"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": " is on track."
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "CI on "
+                  },
+                  {
+                    "t": "code",
+                    "v": "main"
+                  },
+                  {
+                    "t": "text",
+                    "v": " is green: "
+                  },
+                  {
+                    "t": "link",
+                    "href": "https://github.com/amiriteorg/galahad/actions",
+                    "c": [
+                      {
+                        "t": "text",
+                        "v": "https://github.com/amiriteorg/galahad/actions"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "."
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "del",
+                    "c": [
+                      {
+                        "t": "text",
+                        "v": "Friday"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": " Monday is the new date."
+                  }
+                ]
+              },
+              {
+                "t": "list",
+                "ordered": false,
+                "start": 1,
+                "items": [
+                  [
+                    {
+                      "t": "p",
+                      "c": [
+                        {
+                          "t": "text",
+                          "v": "It moved for the review."
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        {
+          "t": "quote",
+          "c": [
+            {
+              "t": "p",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "The gate held: nothing ships unreviewed."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "| Check | Result | Time |\n|:--|:-:|--:|\n| Unit tests | passed | 41 s |\n| Review | `a|b` \\| c |\n| Short |",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "| Check | Result | Time |"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "|:--|:-:|--:|"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "| Unit tests | passed | 41 s |"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "| Review | "
+            },
+            {
+              "t": "code",
+              "v": "a|b"
+            },
+            {
+              "t": "text",
+              "v": " | c |"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "| Short |"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "```ts\nconst ok = await verify(change);\n```\n\n```chart\n{\"type\":\"line\"}\n```\n\n~~~\ntilde fence\n~~~",
+      "blocks": [
+        {
+          "t": "code",
+          "lang": "ts",
+          "v": "const ok = await verify(change);",
+          "open": false
+        },
+        {
+          "t": "code",
+          "lang": "chart",
+          "v": "{\"type\":\"line\"}",
+          "open": false
+        },
+        {
+          "t": "code",
+          "lang": "",
+          "v": "tilde fence",
+          "open": false
+        }
+      ]
+    },
+    {
+      "source": "Still writing:\n\n```python\nprint('half",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "Still writing:"
+            }
+          ]
+        },
+        {
+          "t": "code",
+          "lang": "python",
+          "v": "print('half",
+          "open": true
+        }
+      ]
+    },
+    {
+      "source": "# One\n###### Six\n####### Seven\n## C#\n## Closed ##",
+      "blocks": [
+        {
+          "t": "h",
+          "level": 1,
+          "c": [
+            {
+              "t": "text",
+              "v": "One"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "level": 6,
+          "c": [
+            {
+              "t": "text",
+              "v": "Six"
+            }
+          ]
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "####### Seven"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "level": 2,
+          "c": [
+            {
+              "t": "text",
+              "v": "C"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "level": 2,
+          "c": [
+            {
+              "t": "text",
+              "v": "Closed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "---\n* * *\n___\n- - -\n    ---",
+      "blocks": [
+        {
+          "t": "hr"
+        },
+        {
+          "t": "hr"
+        },
+        {
+          "t": "hr"
+        },
+        {
+          "t": "hr"
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "---"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "3. Third\n4. Fourth\n\n   indented under Fourth\n\n5) Fifth",
+      "blocks": [
+        {
+          "t": "list",
+          "ordered": true,
+          "start": 3,
+          "items": [
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "Third"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "Fourth"
+                  }
+                ]
+              },
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "indented under Fourth"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "Fifth"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "source": "- a\n  - nested\n    - deeper\n- b\nlazy continuation\n\n- after a blank",
+      "blocks": [
+        {
+          "t": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "a"
+                  }
+                ]
+              },
+              {
+                "t": "list",
+                "ordered": false,
+                "start": 1,
+                "items": [
+                  [
+                    {
+                      "t": "p",
+                      "c": [
+                        {
+                          "t": "text",
+                          "v": "nested"
+                        }
+                      ]
+                    },
+                    {
+                      "t": "list",
+                      "ordered": false,
+                      "start": 1,
+                      "items": [
+                        [
+                          {
+                            "t": "p",
+                            "c": [
+                              {
+                                "t": "text",
+                                "v": "deeper"
+                              }
+                            ]
+                          }
+                        ]
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "b"
+                  },
+                  {
+                    "t": "br"
+                  },
+                  {
+                    "t": "text",
+                    "v": "lazy continuation"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "c": [
+                  {
+                    "t": "text",
+                    "v": "after a blank"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "source": "> quoted\n> - with a list\n>\n> > and a quote",
+      "blocks": [
+        {
+          "t": "quote",
+          "c": [
+            {
+              "t": "p",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "quoted"
+                }
+              ]
+            },
+            {
+              "t": "list",
+              "ordered": false,
+              "start": 1,
+              "items": [
+                [
+                  {
+                    "t": "p",
+                    "c": [
+                      {
+                        "t": "text",
+                        "v": "with a list"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "t": "quote",
+              "c": [
+                {
+                  "t": "p",
+                  "c": [
+                    {
+                      "t": "text",
+                      "v": "and a quote"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "**bold** __also__ snake_case_name *em* _em_ 2 * 3 * 4 ~~gone~~ ***both***",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "bold"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "also"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " snake_case_name "
+            },
+            {
+              "t": "em",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "em"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "em",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "em"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " 2 * 3 * 4 "
+            },
+            {
+              "t": "del",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "gone"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "*both"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "*"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "`code` ``a`b`` ` padded ` `unclosed\n\\*not em\\* \\_ \\# \\[x\\]",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "code",
+              "v": "code"
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "code",
+              "v": "a`b"
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "code",
+              "v": "padded"
+            },
+            {
+              "t": "text",
+              "v": " `unclosed"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "*not em* _ # [x]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "[a link](https://example.com/x?y=1) [no](javascript:alert(1)) [rel](/path) [Upper](HTTPS://Example.COM)",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "link",
+              "href": "https://example.com/x?y=1",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "a link"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " [no](javascript:alert(1)) "
+            },
+            {
+              "t": "text",
+              "v": "[rel](/path)"
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "link",
+              "href": "https://example.com/",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "Upper"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "See https://example.com/a. And (https://example.com/b), xhttps://not.a.link and HTTP://EXAMPLE.ORG:80/p!",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "See "
+            },
+            {
+              "t": "link",
+              "href": "https://example.com/a",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "https://example.com/a"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": ". And ("
+            },
+            {
+              "t": "link",
+              "href": "https://example.com/b",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "https://example.com/b"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "), xhttps://not.a.link and "
+            },
+            {
+              "t": "link",
+              "href": "http://example.org/p",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "HTTP://EXAMPLE.ORG:80/p"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "!"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "Line one\nline two\r\nline three\rline four",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "Line one"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "line two"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "line three"
+            },
+            {
+              "t": "br"
+            },
+            {
+              "t": "text",
+              "v": "line four"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "Blåbærgrød på fredag 🛡️ — **fed** *kursiv* `kode` 🎉",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "Blåbærgrød på fredag 🛡️ — "
+            },
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "fed"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "em",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "kursiv"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": " "
+            },
+            {
+              "t": "code",
+              "v": "kode"
+            },
+            {
+              "t": "text",
+              "v": " 🎉"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "<b>raw html stays text</b> & < >",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "<b>raw html stays text</b> & < >"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "*a\n\nb* stays apart, ** no space ** and *trailing *",
+      "blocks": [
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "*a"
+            }
+          ]
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "text",
+              "v": "b* stays apart, ** no space ** and *trailing *"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "",
+      "blocks": []
+    }
+  ]
 }

@@ -16,6 +16,7 @@ import * as core from "../../../packages/core/src/index.ts";
 import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
+import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
@@ -404,6 +405,29 @@ const chats = {
   states: stateCases.map((c) => ({ ...c, words: chatStateWords(c) })),
 };
 
+// ---- an answer's words: Markdown read as the PWA reads it (lib/markdown.ts) -------------------------------------------
+const markdownCases = [
+  "## What I found\n\nThree things stand out, and **one needs you**:\n\n1. The *release* is on track.\n2. CI on `main` is green: https://github.com/amiriteorg/galahad/actions.\n3. ~~Friday~~ Monday is the new date.\n   - It moved for the review.\n\n> The gate held: nothing ships unreviewed.",
+  "| Check | Result | Time |\n|:--|:-:|--:|\n| Unit tests | passed | 41 s |\n| Review | `a|b` \\| c |\n| Short |",
+  "```ts\nconst ok = await verify(change);\n```\n\n```chart\n{\"type\":\"line\"}\n```\n\n~~~\ntilde fence\n~~~",
+  "Still writing:\n\n```python\nprint('half",
+  "# One\n###### Six\n####### Seven\n## C#\n## Closed ##",
+  "---\n* * *\n___\n- - -\n    ---",
+  "3. Third\n4. Fourth\n\n   indented under Fourth\n\n5) Fifth",
+  "- a\n  - nested\n    - deeper\n- b\nlazy continuation\n\n- after a blank",
+  "> quoted\n> - with a list\n>\n> > and a quote",
+  "**bold** __also__ snake_case_name *em* _em_ 2 * 3 * 4 ~~gone~~ ***both***",
+  "`code` ``a`b`` ` padded ` `unclosed\n\\*not em\\* \\_ \\# \\[x\\]",
+  "[a link](https://example.com/x?y=1) [no](javascript:alert(1)) [rel](/path) [Upper](HTTPS://Example.COM)",
+  "See https://example.com/a. And (https://example.com/b), xhttps://not.a.link and HTTP://EXAMPLE.ORG:80/p!",
+  "Line one\nline two\r\nline three\rline four",
+  "Blåbærgrød på fredag 🛡️ — **fed** *kursiv* `kode` 🎉",
+  "<b>raw html stays text</b> & < >",
+  "*a\n\nb* stays apart, ** no space ** and *trailing *",
+  "",
+];
+const markdown = markdownCases.map((source) => ({ source, blocks: parseMarkdown(source) }));
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -417,6 +441,7 @@ const vectors = {
   roundtable,
   threads,
   chats,
+  markdown,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

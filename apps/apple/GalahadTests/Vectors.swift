@@ -119,6 +119,12 @@ struct Vectors: Decodable {
         let states: [State]
     }
 
+    struct MarkdownCase: Decodable {
+        let source: String
+        /// The PWA's tree for it, as lib/markdown.ts writes it ({t: "p", c: […]}, …).
+        let blocks: [JSONValue]
+    }
+
     let auth: Auth
     let base64url: Base64URLCases
     let identity: Identity
@@ -129,6 +135,7 @@ struct Vectors: Decodable {
     let roundtable: Roundtable
     let threads: [Thread]
     let chats: ChatList
+    let markdown: [MarkdownCase]
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {
