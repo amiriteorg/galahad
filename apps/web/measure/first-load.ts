@@ -22,6 +22,8 @@
  *                   timeline) opened as a returning visit opens it, on both profiles, watched from its first frame
  *                   until 3 s after it is usable; every layout shift is summed (the place's
  *                   cumulative layout shift), with what moved. --shift-runs n opens each that many times (default 3).
+ *     --places a,b  only these places (their names as the report gives them: overview, knight, sheet-add-key…), for
+ *                   --shots and --shifts
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
@@ -65,6 +67,9 @@ const SHOTS = flag("shots");
 const GALLERY = flag("gallery");
 const SHIFTS = process.argv.includes("--shifts");
 const SHIFT_RUNS = Math.max(1, Number(flag("shift-runs") ?? 3));
+const ONLY = flag("places")?.split(",").map((name) => name.trim());
+/** Whether a place named so is to be shot or watched (--places). */
+const wanted = (name: string): boolean => !ONLY || ONLY.includes(name);
 const MOVES = Math.max(0, Number(flag("moves") ?? 0));
 /** Chrome, wherever this machine keeps it (CHROME names another). */
 const CHROME =
@@ -813,7 +818,7 @@ try {
     { name: "galahad", hash: `#/chat?c=${conversation}` },
     { name: "knight", hash: `#/team?room=${own.ada}` },
     { name: "room", hash: "#/team?room=forge" },
-  ];
+  ].filter((place) => wanted(place.name));
   interface Shifted {
     /** The place's score on each load. */
     scores: number[];
@@ -917,7 +922,7 @@ try {
     for (const theme of ["light", "dark"]) {
       for (const [width, height, mobile] of sizes) {
         await look(theme, width, height, mobile);
-        for (const view of views) {
+        for (const view of views.filter((v) => wanted(v.name))) {
           // A new chat, not the kept one the last round left open (the app comes back to that one).
           await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
           await open(view.hash, false).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
@@ -927,7 +932,7 @@ try {
           await shoot(view.name, width, theme);
           if (await evaluate<boolean>(`document.documentElement.scrollHeight > innerHeight + 8`)) await shoot(view.name, width, theme, true);
         }
-        for (const sheet of sheets) {
+        for (const sheet of sheets.filter((v) => wanted(v.name))) {
           await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
           try {
             await open(sheet.hash, false);
@@ -945,10 +950,10 @@ try {
         }
       }
     }
-    shots.push(...(await shootGallery(browser, page, SHOTS, REPO)));
+    if (wanted("gallery")) shots.push(...(await shootGallery(browser, page, SHOTS, REPO)));
     // A task given to the Roundtable, through the page's own form, where the app has one: who took it and why. Last, as it
     // gives Gawain work; stopped again after each, so each is given to the same Roundtable.
-    giving: for (const theme of ["light", "dark"]) {
+    giving: for (const theme of wanted("give-to-the-roundtable") ? ["light", "dark"] : []) {
       for (const [width, height, mobile] of sizes) {
         await look(theme, width, height, mobile);
         await open("#/team", false);
