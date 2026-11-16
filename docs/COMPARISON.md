@@ -39,7 +39,7 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 | | Web | Desktop | iPhone | Android | How a client is let in |
 |---|---|---|---|---|---|
-| **Galahad** | The full app, an installable PWA from your node | The PWA, installed | Native (SwiftUI), in testing on TestFlight | The PWA | An invite and a six-digit code on both screens; the device's key never leaves it (Secure Enclave on iPhone); every request signed, each route its own scope |
+| **Galahad** | The full app, an installable PWA from your node | A Mac app (macOS 27): client and node in one, notarized and self-updating; elsewhere the PWA, installed | Native (SwiftUI), in testing on TestFlight | The PWA | An invite and a six-digit code on both screens; the device's key never leaves it (Secure Enclave on iPhone); every request signed, each route its own scope |
 | **Hermes Agent** | A Webapp, off by default, no PWA found [H1][H6] | Electron: macOS and Windows [H1][H3] | None official | The CLI under Termux; a third-party app over the LAN in plain HTTP [H8][H9] | A one-use link locally; remotely a Nous account or a password gate behind a tunnel; plain HTTP on the LAN [H6] |
 | **Rakazo** | A web app with a service worker [R2][R8] | Electron: macOS, Windows, Linux [R6] | App Store (Expo) [R7] | Google Play and an APK [R5][R11] | A rakazo.com account, or your server's HTTPS address [R5] |
 | **OpenMausBot** | A phone web app [M10] | macOS, Windows, Ubuntu (beta) [M3] | App Store [M7] | Google Play named in its docs (unconfirmed) [M6] | QR pairing, trust kept per device in the Keychain, revocable; a relay, Tailscale or the LAN [M6][M1] |
@@ -61,7 +61,7 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 **Leads.** Each knight's work is in a VM of its own, on hardware you own. Work counts as done only through gates and an independent reviewer, and only Galahad publishes numbers for it. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale). Any model or coding plan serves any role.
 
-**Trails.** No chat apps yet, and nothing but schedules starts work. The iPhone app is in testing, not in the App Store, and there is no Android or desktop app of its own. Knights' VMs need a Linux machine with KVM: Rakazo now gives each bot a VM on an Apple-silicon Mac. Chats can't carry photos or files yet. The trials say how well Galahad does on its own suite; nothing yet measures it against the others on the same tasks. What comes next is in the [PLAN](PLAN.md).
+**Trails.** No chat apps yet, and nothing but schedules starts work. The iPhone app is in testing, not in the App Store, and there is no Android app of its own, and the Mac app is its only desktop one (17 November). Knights' VMs need a Linux machine with KVM until those on a Mac, through Apple's `container`, pass their tests on a Mac mini: Rakazo already gives each bot a VM on an Apple-silicon Mac. Chats can't carry photos or files yet. The trials say how well Galahad does on its own suite; nothing yet measures it against the others on the same tasks. What comes next is in the [PLAN](PLAN.md).
 
 ## Sources
 

@@ -8,7 +8,7 @@ What he is built towards is [the mandate](docs/MANDATE.md): the best coding agen
 
 ## Status
 
-Galahad runs every day on its owner's machines, a Linux server with KVM among them, and every change ships only with the whole suite green: `bun run check`, about 2,260 tests including property tests and two-node end-to-end tests over HTTP, and the iPhone app's own. Where it stands:
+Galahad runs every day on its owner's machines, a Linux server with KVM among them, and every change ships only with the whole suite green: `bun run check`, about 2,700 tests including property tests and two-node end-to-end tests over HTTP, and the iPhone app's own. Where it stands:
 
 - **What's next:** the feature plan, in order and with why ([PLAN](docs/PLAN.md)); the milestones ([ARCHITECTURE §13](docs/ARCHITECTURE.md#13-roadmap)).
 - **How well it does:** its trials, with every run's record (on 14 November 2026, Galahad Index 94 to 98 % on the agentic suite at level 2, at $0.27 to $0.54 a task on a coding plan; at level 3 on 16 November, 95 % at $0.39 a task: [TRIALS](docs/TRIALS.md)), and the scorecard of what is measured without a model ([BENCHMARKS](docs/BENCHMARKS.md)).
@@ -33,6 +33,7 @@ Working and tested today:
 - **The archive.** Every model, teaching, idea, kept chat and lesson is kept for good (content-addressed, never evicted; only you delete), indexed by words and meaning (FTS5 and local embeddings, fused), summarised, and offered back to Galahad as fenced context when it bears on his work. `galahad archive`, the app's Archive page; `deploy.sh --embedder` runs the embedder on your server.
 - **PWA.** Pair a phone or browser with a non-extractable WebCrypto key and the 6-digit code. It is the full hub: chat, the Roundtable and each knight's timeline, a knight's screen and terminal, the Inbox, memory, keys, models and roles, connectors, loops, trials and the rest. Every request is signed, each route has its own scope, and the CSP is strict. Chats are the node's, so a chat begun on your phone goes on at your laptop.
 - **iPhone app.** A native SwiftUI app for iPhone and iPad, in testing on TestFlight: its key in the Secure Enclave, chats, the Roundtable, rooms, approve cards, keys and plans, connectors, a knight's screen and terminal, and notifications. Its shared logic is held to the PWA's by test vectors.
+- **Mac app.** Galahad for the Mac (macOS 27): your client, and a node in one, so a Mac mini becomes a node from the app with no Terminal. Signed with a Developer ID, notarized, and kept up to date by Sparkle from a signed feed on galahad.sh; [download it](https://github.com/amiriteorg/galahad/releases/latest). Knights' VMs on a Mac, through Apple's `container`, are being tested on a Mac mini.
 
 ## Quick start
 
@@ -64,7 +65,7 @@ bun galahad ask "Good morning, Galahad."
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | The mind, the Link, pairing, vault, brain, placement, R2, growth, roadmap |
 | [PLAN](docs/PLAN.md) | What's built next, in order, why, and what was declined |
 | [COMPARISON](docs/COMPARISON.md) | Galahad next to Hermes Agent, Rakazo, OpenMausBot, Grok Bot and Dots, surface by surface, with sources |
-| [MAC](docs/MAC.md) | The Mac app: the client and a node in one, to make a Mac mini a node with no Terminal (designed, not built) |
+| [MAC](docs/MAC.md) | The Mac app: the client and a node in one, to make a Mac mini a node with no Terminal; how it is signed, notarized and updated; knights' VMs through Apple's `container` (in testing) |
 | [ROUNDTABLE](docs/ROUNDTABLE.md) | Persistent workers, rooms and DMs, shared knowledge, VM workspaces, task supervision and current limits |
 | [OATH](docs/OATH.md) | Character, duties, limits, autonomy classes |
 | [TRIALS](docs/TRIALS.md) | How we prove quality holds and intelligence grows |

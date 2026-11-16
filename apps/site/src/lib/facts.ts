@@ -87,21 +87,21 @@ export const COMPARE = {
 
 /** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them. */
 export const PHASING = {
-  date: "16 November 2026",
+  date: "17 November 2026",
   rows: [
     { state: "built", what: "Galahad leads in rooms", line: "What you say to a room is his; he brings in only the knights the work needs." },
     { state: "built", what: "Cheaper coding plans", line: "Twelve plans as presets, each used only as far as its vendor's terms allow." },
     { state: "built", what: "His own computer", line: "A VM with a desktop that is his, kept between conversations." },
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on; the reviewer stays independent." },
+    { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
+    { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, or run a check after one; next, before an answer." },
+    { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
+    { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
+    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; next, knights' VMs on the Mac." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
-    { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
-    { state: "building", what: "Contract first", line: "The tests a gate names are locked; next, a gate that passes before the work isn't proof." },
-    { state: "building", what: "A budget per task", line: "A knight's task sees what it has spent and stops when it is; next, your own quests." },
-    { state: "next", what: "Hooks and tripwires", line: "Rules you write that halt a command or run a check: never a model's judgment." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
-    { state: "next", what: "Trials from your own work", line: "Every task that passed review becomes a test the next change must pass." },
     { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },
     { state: "next", what: "Chat apps", line: "Telegram first, then Slack, Discord, Signal and WhatsApp." },
   ],
