@@ -28,7 +28,7 @@ import {
 } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
 import { budgetLabel, describeCost, describeDone, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
-import { suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
+import { loadSuite, suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
 
 /*
  * `galahad trial …`, `galahad trials`, `galahad price …` and `galahad usage`: the
@@ -106,7 +106,8 @@ export function parsePins(pins: readonly string[]): TrialPins | undefined {
 /** What `trial run`, `sweep` and `ab` share: the suite, the problems, how many, at what effort, within what budget. */
 async function runOptions(args: TrialArgs, names: readonly string[]) {
   const { flags } = args;
-  const suite = suiteNamed(str(flags, "suite") ?? "engineering");
+  // (A suite of your own work is read through the node first.)
+  const suite = await loadSuite(suiteNamed(str(flags, "suite") ?? "engineering"), args.node);
   const network = str(flags, "net") ?? suite.network;
   if (!(suite.networks as readonly string[]).includes(network)) bad(`--net must be ${suite.networks.join(" or ")} for the ${suite.id} suite`);
   const seedRaw = str(flags, "seed");
@@ -116,7 +117,12 @@ async function runOptions(args: TrialArgs, names: readonly string[]) {
   if (levelRaw !== undefined && !suite.levels) bad(`the ${suite.id} suite has no --level`);
   const level = levelRaw === undefined ? undefined : Number(levelRaw);
   if (level !== undefined && suite.levels && (!Number.isInteger(level) || level < suite.levels.min || level > suite.levels.max)) bad(`--level must be a whole number from ${suite.levels.min} to ${suite.levels.max}`);
-  const problems = suite.choose(names, level);
+  const hardestRaw = str(flags, "hardest");
+  if (hardestRaw !== undefined && suite.hardest === undefined) bad(`the ${suite.id} suite has no --hardest`);
+  const chosen = suite.choose(names, level);
+  // The hardest few of every problem when none is named, or as many as --hardest says of those named.
+  const problems = suite.hardest !== undefined && (hardestRaw !== undefined || !names.length) ? chosen.slice(0, whole(flags, "hardest", suite.hardest, 100)) : chosen;
+  if (!problems.length) bad(`the ${suite.id} suite has nothing to run yet (galahad trial problems --suite ${suite.id} says why)`);
   // A run is measured at one level: auto would mix them.
   const effortRaw = str(flags, "effort");
   if (effortRaw !== undefined && !["1", "2", "3"].includes(effortRaw)) bad("--effort must be 1, 2 or 3 for a trial run (a run is measured at one level; auto would mix them)");
@@ -199,13 +205,20 @@ const freshGroup = (): { seed: number; group: string } => ({ seed: crypto.getRan
 /** `galahad trial …` and `galahad trials`. Returns the process's exit code. */
 export async function trialCommand(args: TrialArgs): Promise<number> {
   const { command, sub, rest, flags } = args;
-  // The suites are part of Galahad, not of a node: listing one needs no node.
+  // The suites are part of Galahad, not of a node: listing one needs no node. Your own work is your node's: it is
+  // listed through the node when it is asked for by name, and pointed to otherwise.
   if (command === "trial" && sub === "problems") {
     const only = str(flags, "suite");
-    for (const suite of only ? [suiteNamed(only)] : Object.values(TRIAL_SUITES)) {
-      console.log(`${bold(suite.id)} ${dim(`· ${suite.about}${suite.levels ? ` · --level ${suite.levels.min} to ${suite.levels.max} (usually ${suite.levels.usual})` : ""}`)}`);
+    for (const known of only ? [suiteNamed(only)] : Object.values(TRIAL_SUITES)) {
+      const suite = only ? await loadSuite(known, args.node) : known;
+      console.log(`${bold(suite.id)} ${dim(`· ${suite.about}${suite.levels ? ` · --level ${suite.levels.min} to ${suite.levels.max} (usually ${suite.levels.usual})` : ""}${suite.hardest !== undefined ? " · hardest first" : ""}`)}`);
+      if (suite.load) {
+        console.log(dim(`  your node's own: galahad trial problems --suite ${suite.id}`));
+        continue;
+      }
       const levelRaw = str(flags, "level");
-      for (const p of suite.list(levelRaw === undefined ? undefined : Number(levelRaw))) console.log(`  ${p.id.padEnd(26)} ${p.domain.padEnd(13)} ${p.title}`);
+      for (const p of suite.list(levelRaw === undefined ? undefined : Number(levelRaw))) console.log(`  ${p.id.padEnd(26)} ${p.domain.padEnd(13)} ${p.title}${p.detail ? `\n${" ".repeat(43)}${dim(p.detail)}` : ""}`);
+      if (suite.aside) console.log(dim(suite.aside.replace(/^/gm, "  ")));
     }
     return 0;
   }

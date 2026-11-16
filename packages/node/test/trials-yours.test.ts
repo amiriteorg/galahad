@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { TrialRecord, trialProblem } from "@galahad/core";
 import type { TrialJob } from "../src/trial-cli.ts";
+import { trialCommand, UsageError } from "../src/trial-commands.ts";
 import { attemptCase, chooseCases, type GateRun, hardestFirst, judgeGates, rootOf, yourCases } from "../src/trial-yours.ts";
 import { FIX, GATES, KNIGHT_ARTIFACT, knightOf, runOf, taskOf, teamOf, widgets, widgetsCase, WIDGETS, YoursStandIn } from "./yours-standin.ts";
 
@@ -241,5 +242,102 @@ describe("a trial of a case", () => {
     const stop = new AbortController();
     stop.abort();
     expect(await attemptCase(node, widgetsCase(repo.base), job({ signal: stop.signal }))).toBeNull();
+  });
+});
+
+describe("the yours suite at the command line", () => {
+  let printed: string[] = [];
+  const realLog = console.log;
+  beforeEach(() => {
+    printed = [];
+    console.log = (...args: unknown[]) => void printed.push(args.join(" "));
+  });
+  afterEach(() => {
+    console.log = realLog;
+  });
+  const out = () => printed.join("\n");
+  const trial = (node: YoursStandIn, sub: string, rest: string[], flags: Record<string, unknown> = {}) => trialCommand({ command: "trial", sub, rest, flags: { parallel: "1", ...flags }, node: () => node });
+  const spent = (input: number) => [{ role: "engineer", model: "example/coder", calls: 9, unknown: 0, input, output: 4_000, cached: 0, reasoning: 0 }];
+
+  test("trial problems --suite yours lists the cases hardest first, with what each took and cost when it was done, and why the rest aren't cases", async () => {
+    const node = new YoursStandIn({});
+    node.team = teamOf([
+      taskOf({ id: "task-easy_one-123", title: "Fix the typo in the README", record: runOf({ revisions: 0, commands: 4, spent: spent(20_000) }) }),
+      taskOf({ id: "task-hard_one-123", record: runOf({ revisions: 2, commands: 31, spent: spent(90_000) }) }),
+      taskOf({ id: "task-notverified", verified: false }),
+      taskOf({ id: "task-nogatesxxxx", gates: [] }),
+    ]);
+    expect(await trial(node, "problems", [], { suite: "yours" })).toBe(0);
+    expect(printed[0]).toBe("yours · your knights' tasks that passed review, each worked again from the commit it began at and graded by its own gates · hardest first");
+    expect(printed[1]).toBe(`  ${"task-hard-one-123".padEnd(26)} ${"gareth".padEnd(13)} Make the total the sum\n${" ".repeat(43)}when it was done: 2 revisions · 31 commands · 18 min · 94.0k tokens · $0.11`);
+    expect(printed[2]).toBe(`  ${"task-easy-one-123".padEnd(26)} ${"gareth".padEnd(13)} Fix the typo in the README\n${" ".repeat(43)}when it was done: 0 revisions · 4 commands · 18 min · 24.0k tokens · $0.04`);
+    // What a run of the hardest would likely cost, going by when they were done; and what isn't a case, and why.
+    expect(out()).toContain("A run that names none takes the first 2 (--hardest n for more or fewer). When they were done they took 118k tokens · $0.14");
+    expect(out()).toContain("2 of your knights' 4 latest tasks aren't cases: 1 not verified, 1 no gates.");
+    // Every suite at once needs no node: your own work is pointed to, not read.
+    printed = [];
+    expect(await trialCommand({ command: "trial", sub: "problems", rest: [], flags: {}, node: () => { throw new Error("no node was needed"); } })).toBe(0);
+    expect(out()).toContain("your node's own: galahad trial problems --suite yours");
+    expect(out()).toContain("cantilever-beam");
+  });
+
+  test("a run takes the hardest 5 unless told otherwise; names choose some; --hardest takes that many of those", async () => {
+    const node = new YoursStandIn({});
+    node.team = teamOf(Array.from({ length: 7 }, (_, i) => taskOf({ id: `task-case_${String(i).padStart(7, "0")}`, record: runOf({ revisions: i % 3, commands: 10 + i }) })), [knightOf(), knightOf({ id: "bors", name: "Bors" })]);
+    node.team.tasks.push(taskOf({ id: "task-bors_task-01", assignee: "bors" }));
+    const count = async (rest: string[], flags: Record<string, unknown> = {}) => {
+      printed = [];
+      expect(await trial(node, "estimate", rest, { suite: "yours", ...flags })).toBe(0);
+      return Number(/^(\d+) trial\(s\) from the yours suite/.exec(printed[0] ?? "")?.[1]);
+    };
+    expect(await count([])).toBe(5);
+    expect(await count([], { hardest: "2" })).toBe(2);
+    expect(await count(["gareth"])).toBe(7);
+    expect(await count(["gareth"], { hardest: "3" })).toBe(3);
+    expect(await count(["task-case_0000001", "task-bors-task-01"])).toBe(2);
+    await expect(trial(node, "estimate", [], { suite: "yours", hardest: "0" })).rejects.toThrow("--hardest must be a whole number from 1 to 100");
+    await expect(trial(node, "estimate", [], { suite: "agentic", hardest: "2" })).rejects.toThrow("the agentic suite has no --hardest");
+    await expect(trial(node, "estimate", [], { suite: "yours", level: "2" })).rejects.toThrow("the yours suite has no --level");
+    await expect(trial(node, "estimate", [], { suite: "yours", net: "isolated" })).rejects.toThrow("--net must be online or gateway for the yours suite");
+    await expect(trial(node, "estimate", ["task-nothere-0001"], { suite: "yours" })).rejects.toThrow("task-nothere-0001: no case, nor a knight with one");
+    node.team = teamOf([taskOf({ verified: false })]);
+    await expect(trial(node, "estimate", [], { suite: "yours" })).rejects.toThrow(UsageError);
+    await expect(trial(node, "estimate", [], { suite: "yours" })).rejects.toThrow("the yours suite has nothing to run yet (galahad trial problems --suite yours says why)");
+  });
+
+  test("its trials are ordinary trials: the report and compare read two runs of it, pairing case by case", async () => {
+    const repo = widgets();
+    const node = new YoursStandIn({ [WIDGETS]: repo.dir }, repo.patch);
+    node.work = FIX;
+    try {
+      node.team = teamOf([
+        taskOf({ changes: { artifact: KNIGHT_ARTIFACT, files: 1, base: repo.base } }),
+        taskOf({ id: "task-other_one-12", changes: { artifact: KNIGHT_ARTIFACT, files: 1, base: repo.base }, record: runOf({ revisions: 1 }) }),
+      ]);
+      expect(await trial(node, "run", [], { suite: "yours" })).toBe(0);
+      expect(out()).toContain("[2 trial(s) from the yours suite, 1 at a time (as asked), in the workshop, each from the commit its task began at, with no archive, memories or skills (they may hold its answer) · network online");
+      expect(out()).toContain("Galahad Index 100%");
+      expect(await trial(node, "run", [], { suite: "yours" })).toBe(0);
+      const runs = [...new Set(node.recorded.map((t) => t.run))];
+      expect(runs).toHaveLength(2);
+      expect(node.recorded.map((t) => [t.suite, t.problem, t.seed])).toEqual([
+        ["yours", "task-other-one-12", 0],
+        ["yours", "task-abc-def-1234", 0],
+        ["yours", "task-other-one-12", 0],
+        ["yours", "task-abc-def-1234", 0],
+      ]);
+      // What each spent is recorded beside it, as for any suite.
+      expect(node.recorded.every((t) => t.spent?.lines.some((l) => l.role === "engineer"))).toBe(true);
+      printed = [];
+      expect(await trialCommand({ command: "trials", sub: undefined, rest: [], flags: { suite: "yours" }, node: () => node })).toBe(0);
+      expect(out()).toContain("— yours —");
+      expect(out()).toMatch(/task-abc-def-1234\s+2\/2\s+solved · mean score 100%/);
+      printed = [];
+      expect(await trial(node, "compare", runs)).toBe(0);
+      expect(out()).toContain("On the 2 tasks both ran (same problem, same seed)");
+    } finally {
+      node.remove();
+      repo.remove();
+    }
   });
 });

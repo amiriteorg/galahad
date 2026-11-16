@@ -156,7 +156,6 @@ export class YoursStandIn {
   /** No sandbox can be made (a number: none after that many). */
   full: boolean | number = false;
   team: TeamSnapshot = teamOf([]);
-  private turns = new Map<string, number>();
 
   constructor(
     /** Repository address → where it is on disk. */
@@ -262,10 +261,8 @@ export class YoursStandIn {
     if (first.startsWith("You are choosing between")) text = "PICK A\nOn the evidence.";
     else if (input.role === "planner") text = "1. Read total.sh and its test.\n2. Fix it.\nDone when: the gates pass.";
     else if (input.role === "engineer") {
-      const key = `${input.attempt?.index ?? 1}`;
-      const turn = (this.turns.get(key) ?? 0) + 1;
-      this.turns.set(key, turn);
-      text = turn === 1 && this.work ? `Doing the work.\n\`\`\`sh\n${this.work}\n\`\`\`` : "DONE\nThat is what I have.";
+      // (Its first turn is the one it is only briefed for: every quest's, and every attempt's.)
+      text = input.messages.length === 1 && this.work ? `Doing the work.\n\`\`\`sh\n${this.work}\n\`\`\`` : "DONE\nThat is what I have.";
     } else text = "PASS\nThe gates passed and the change does what was asked.";
     yield { type: "text", text };
     yield { type: "usage", ref: `fake/${input.role}`, usage: { input: 2000, output: 150 } };

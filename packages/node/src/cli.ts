@@ -145,13 +145,15 @@ Work
                                   the scientific method: hypothesis and predictions registered before anything
                                   runs, a verified experiment in the Lab, an independent method review
   findings | finding <id>         what investigations concluded (supported, refuted, inconclusive) and why
-  trial run [problem|domain …] [--suite engineering|agentic|reviewer] [--level 1..4] [--repeat 1] [--parallel auto|n]
-            [--effort 1|2|3] [--seed n] [--net …] [--vm|--container]
+  trial run [problem|domain …] [--suite engineering|agentic|reviewer|yours] [--level 1..4] [--hardest 5] [--repeat 1]
+            [--parallel auto|n] [--effort 1|2|3] [--seed n] [--net …] [--vm|--container]
                                   the Trials: problems posed from a seed, worked as quests, graded by a program: the
                                   Galahad Index. engineering: exact answers, in the Lab. agentic: real work in a small
                                   repository, graded by hidden tests in a fresh sandbox (--level turns the difficulty).
-                                  reviewer: a quest's evidence with a known answer, put to the reviewer. --effort makes
-                                  that many attempts a trial (the reviewer takes one before anything is graded)
+                                  reviewer: a quest's evidence with a known answer, put to the reviewer. yours: your
+                                  knights' tasks that passed review, worked again from the commit each began at and
+                                  graded by its own gates; named by task id or knight, else the --hardest 5. --effort
+                                  makes that many attempts a trial (the reviewer takes one before anything is graded)
      … --pin <role>=<provider/model> [--pin …] --variant <name[:switch=value,…]> --budget 2M --budget-usd 5
                                   hold a role to one model; run under a named set of harness switches; stop cleanly
                                   when the budget is spent (it says first what past runs of these problems cost)
@@ -165,7 +167,8 @@ Work
   trial estimate [problem …] [--suite s] [--repeat n] [--effort n]   what such a run would cost, going by past runs
   trials [--suite s] [--all] | trial <id|run> | trial problems [--suite s] [--level n] | trial variants
                                   the Index per run with what it cost (tokens, time, money, and the quality each
-                                  bought), per effort, per model in each role, per variant; each answer or hidden check
+                                  bought), per effort, per model in each role, per variant; each answer or hidden check;
+                                  trial problems --suite yours: your cases, with what each took when it was done
   price | price set <provider/model | provider/*> <$/M in> <$/M out> [--cached x] | price rm <provider/model>
                                   your prices, per million tokens: tokens are always counted, money only where
                                   you've stated a price
@@ -509,6 +512,8 @@ async function main(): Promise<void> {
       // The Trials: `trial run --suite agentic --level 3 --pin engineer=p/m --variant no-gates --budget 2M --budget-usd 5`; `price set … --cached 0.3`.
       suite: { type: "string" },
       level: { type: "string" },
+      // `trial run --suite yours --hardest 8`: how many of your own cases a run takes, hardest first.
+      hardest: { type: "string" },
       pin: { type: "string", multiple: true },
       variant: { type: "string" },
       "budget-usd": { type: "string" },

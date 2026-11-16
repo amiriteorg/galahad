@@ -1,8 +1,10 @@
-import type { SandboxNetwork } from "@galahad/core";
+import type { Prices, SandboxNetwork } from "@galahad/core";
 import { AGENTIC_SUITE, agenticProblem, agenticProblems, ENGINEERING_SUITE, LEVELS, reviewDomain, REVIEWER_CASES, USUAL_LEVEL } from "@galahad/brain";
+import type { NodeClient } from "./quest-cli.ts";
 import { agenticUnit } from "./trial-agentic.ts";
 import { reviewerUnit } from "./trial-reviewer.ts";
 import type { Tryable } from "./trial-cli.ts";
+import { caseUnit, chooseCases, originalRun, readCases, type YourCases, yoursAside } from "./trial-yours.ts";
 
 /*
  * The suites a run can be made from. A suite says what it is, lists its problems, and
@@ -21,11 +23,20 @@ export interface SuiteInfo {
   networks: readonly SandboxNetwork[];
   /** Whether its problems have a difficulty you can turn (`--level`). */
   levels?: { min: number; max: number; usual: number };
-  /** Every problem, as `galahad trial problems` lists them. */
-  list(level?: number): { id: string; domain: string; title: string }[];
+  /** Whether its problems come hardest first, and a run that names none takes this many of them (`--hardest n`). */
+  hardest?: number;
+  /** Every problem, as `galahad trial problems` lists them (`detail`: a line more about one). */
+  list(level?: number): { id: string; domain: string; title: string; detail?: string }[];
   /** The problems a run would pose: all of them, or those named (by id or domain). Throws with what's unknown. */
   choose(names: readonly string[], level?: number): Tryable[];
+  /** A suite of your own work: its problems are your node's, so it is read through the node before it lists or chooses any. */
+  load?(node: NodeClient): Promise<SuiteInfo>;
+  /** What `galahad trial problems` says under the list (yours: what a run would likely cost, and which tasks aren't cases). */
+  aside?: string;
 }
+
+/** The suite ready to list and choose from: read through the node first when it is your own work. */
+export const loadSuite = async (suite: SuiteInfo, node: () => NodeClient): Promise<SuiteInfo> => (suite.load ? suite.load(node()) : suite);
 
 /** Those named, by id or domain; all when none is named. */
 export function named<T extends { id: string; domain: string }>(all: readonly T[], names: readonly string[], suite: string): T[] {
@@ -85,7 +96,41 @@ const reviewer: SuiteInfo = {
   choose: (names) => named(REVIEWER_CASES.map((c) => ({ ...reviewerUnit(c), domain: reviewDomain(c.truth) })), names, "reviewer"),
 };
 
-export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering, agentic, reviewer };
+/** What your own work is as a suite, read or not. */
+const YOURS = {
+  id: "yours",
+  about: "your knights' tasks that passed review, each worked again from the commit it began at and graded by its own gates",
+  where: "in the workshop, each from the commit its task began at, with no archive, memories or skills (they may hold its answer)",
+  network: "online",
+  networks: ["online", "gateway"],
+  hardest: 5,
+} as const satisfies Partial<SuiteInfo>;
+
+/** Your own work as read through your node: its cases hardest first, each with what its original run took (trial-yours.ts). */
+function yoursRead(cases: YourCases, prices: Prices): SuiteInfo {
+  return {
+    ...YOURS,
+    list: () => cases.cases.map((c) => ({ id: c.id, domain: c.knight, title: c.title, detail: `when it was done: ${originalRun(c, prices)}` })),
+    choose: (names) => chooseCases(cases, names).map(caseUnit),
+    aside: yoursAside(cases, prices, YOURS.hardest),
+  };
+}
+
+/** Your knights' verified tasks as trials (trial-yours.ts): your node's, so read through it before any is listed or chosen. */
+const yours: SuiteInfo = {
+  ...YOURS,
+  // (Unread, it knows of no case: a report of past runs lists the ones they tried.)
+  list: () => [],
+  choose: () => {
+    throw new Error("your cases are your node's: the suite is read through it first (loadSuite)");
+  },
+  load: async (node) => {
+    const [cases, { prices }] = await Promise.all([readCases(node), node.call<{ prices: Prices }>("prices").catch(() => ({ prices: {} as Prices }))]);
+    return yoursRead(cases, prices);
+  },
+};
+
+export const TRIAL_SUITES: Record<string, SuiteInfo> = { engineering, agentic, reviewer, yours };
 
 export function suiteNamed(id: string): SuiteInfo {
   const suite = TRIAL_SUITES[id];
