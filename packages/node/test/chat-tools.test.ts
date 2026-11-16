@@ -295,6 +295,30 @@ describe("your chat history", () => {
     expect((await get(id)).messages).toHaveLength(10);
   });
 
+  test("a long chat's story goes with his answer when the archive has something on the question too", async () => {
+    const admin = home.adminToken();
+    expect((await call("setRoster", { role: "swift", models: ["stand-in/swift"] }, admin)).status).toBe(200);
+    const noted = (await (await call("noteIdea", { title: "A drawbridge for the keep", text: "Counterweighted, so one person can raise the drawbridge." }, admin)).json()) as { id: string };
+    const system = (body: any) => (body.messages as { role: string; content: string }[]).filter((m) => m.role === "system").map((m) => m.content).join("\n");
+    try {
+      script = [say("Noted K.")];
+      const { id } = conversationOf(await ask(admin, `${"k".repeat(20_000)} (note K)`, { save: true }));
+      script = [say("Noted L.")];
+      await ask(admin, `${"l".repeat(20_000)} (note L)`, { conversation: id });
+      script = [say("Noted M.")];
+      await ask(admin, `${"m".repeat(20_000)} (note M)`, { conversation: id });
+      // Folded now, and the archive has an entry on what is asked: the planner is told both.
+      script = [say("You sent notes K and L."), say("Raise it with the counterweight.")];
+      const events = await ask(admin, "And the drawbridge?", { conversation: id });
+      expect(events.some((e) => e.type === "archive")).toBe(true);
+      expect(bodies.map((b) => b.model)).toEqual(["swift", "m"]);
+      expect(system(bodies[1])).toContain("A drawbridge for the keep");
+      expect(system(bodies[1])).toContain("You sent notes K and L.");
+    } finally {
+      await call("deleteArchived", { id: noted.id, reason: "only for this test" }, admin);
+    }
+  });
+
   test("a chat that can't be folded now is sent as it was, and the answer still comes", async () => {
     const admin = home.adminToken();
     expect((await call("setRoster", { role: "swift", models: ["stand-in/swift"] }, admin)).status).toBe(200);

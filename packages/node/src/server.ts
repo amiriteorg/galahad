@@ -1246,7 +1246,8 @@ export function createApp(ctx: AppContext) {
               return null;
             });
             if (found) {
-              context = [known, found.text].filter(Boolean).join("\n\n");
+              // (After the chat's story and what he knows: never instead of them.)
+              context = [context, found.text].filter(Boolean).join("\n\n");
               const event: ChatStreamEvent = { type: "archive", entries: found.entries };
               keepStep(shown, event);
               yield event;
