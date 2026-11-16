@@ -3,7 +3,8 @@
  * Writes the Apple app's brand assets from the PWA's own (apps/web/src/brand.ts), so the two can't drift:
  *   - the app icon: appIcon() rendered at 1024 px. iOS rounds an icon's corners itself and wants it opaque, so the
  *     drawing is the icon's tile edge to edge (its rounded corners and its edge's highlight are iOS's to draw); the
- *     Roundtable sits on the tile exactly as appIcon() seats it;
+ *     Roundtable sits on the tile exactly as appIcon() seats it. The Mac's is the same icon at each size a Mac draws one
+ *     at: macOS clips a tile edge to edge to its own rounded shape and inset (seen on macOS 27.2);
  *   - the Roundtable's mark (roundtableIcon()) in the black tile's ink for light mode and the cream ink for dark, Galahad's
  *     seat in his red for each;
  *   - Galahad's colours (INK): his red for what needs you, the cream ink, the black tile, and the app's ink accent.
@@ -17,6 +18,9 @@ import { join } from "node:path";
 import { appIcon, INK, roundtableIcon, TILE, toSvg, type SvgNode } from "../../web/src/brand.ts";
 
 const ASSETS = join(import.meta.dir, "../Galahad/Assets.xcassets");
+const MAC_ICON = join(import.meta.dir, "../Galahad/Mac/MacAssets.xcassets/MacIcon.appiconset");
+/** A Mac icon's sizes, in points and scales. */
+const MAC_SIZES = [[16, 1], [16, 2], [32, 1], [32, 2], [128, 1], [128, 2], [256, 1], [256, 2], [512, 1], [512, 2]] as const;
 const write = (path: string, text: string) => {
   mkdirSync(join(ASSETS, path, ".."), { recursive: true });
   writeFileSync(join(ASSETS, path), text);
@@ -87,6 +91,16 @@ try {
   copyFileSync(flat, join(ASSETS, "AppIcon.appiconset/AppIcon.png"));
   console.log("rendered AppIcon.appiconset/AppIcon.png");
   write("AppIcon.appiconset/Contents.json", contents({ images: [{ filename: "AppIcon.png", idiom: "universal", platform: "ios", size: "1024x1024" }] }));
+  mkdirSync(MAC_ICON, { recursive: true });
+  for (const px of new Set(MAC_SIZES.map(([points, scale]) => points * scale))) {
+    const sized = Bun.spawnSync([magick, flat, "-resize", `${px}x${px}`, "-strip", `PNG24:${join(MAC_ICON, `icon_${px}.png`)}`]);
+    if (sized.exitCode !== 0) throw new Error(`ImageMagick couldn't size the Mac's icon: ${sized.stderr.toString()}`);
+  }
+  writeFileSync(
+    join(MAC_ICON, "Contents.json"),
+    contents({ images: MAC_SIZES.map(([points, scale]) => ({ filename: `icon_${points * scale}.png`, idiom: "mac", scale: `${scale}x`, size: `${points}x${points}` })) }),
+  );
+  console.log("rendered the Mac's MacIcon.appiconset");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

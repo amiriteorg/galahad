@@ -1,0 +1,261 @@
+#if os(macOS)
+import AppKit
+import SwiftUI
+
+/*
+ * Galahad on the Mac (docs/MAC.md, M1): the iPhone and iPad app's own views, in a Mac's frame. One main window, the
+ * iPad's sidebar and detail; a chat, a knight or a room in a window of its own, each back where it was at the next launch;
+ * the places, a new chat and a task for the Roundtable in the menus; Settings; and the Roundtable in the menu bar, which
+ * keeps the app running with its windows closed.
+ */
+@main
+struct GalahadMacApp: App {
+    @NSApplicationDelegateAdaptor(MacDelegate.self) private var delegate
+    private let mac = MacApp.shared
+
+    var body: some Scene {
+        Window("Galahad", id: MacApp.main) {
+            MacRoot(mac: mac)
+        }
+        .defaultSize(width: 1180, height: 780)
+        .commands { MacCommands(mac: mac) }
+        // A `galahad:` link comes here, to joining.
+        .handlesExternalEvents(matching: ["galahad"])
+
+        WindowGroup(for: MacWindow.self) { $window in
+            MacWindowRoot(mac: mac, window: window)
+        }
+        .defaultSize(width: 760, height: 760)
+        .handlesExternalEvents(matching: [])
+
+        Settings {
+            MacSettings(mac: mac)
+        }
+
+        MenuBarExtra {
+            MenuBarRoundtable(mac: mac)
+        } label: {
+            MenuBarMark(mac: mac)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+/// What the Mac's main window shows: Galahad's chat, the Roundtable's board, a knight's or a room's page, the Inbox, More.
+enum MacPlace: Hashable, Codable {
+    case galahad, roundtable, inbox, more
+    case knight(String)
+    case room(String)
+
+    init(_ route: Route) {
+        switch route {
+        case .galahad: self = .galahad
+        case .knight(let id): self = .knight(id)
+        case .room(let id): self = .room(id)
+        }
+    }
+
+    /// A seat at the Roundtable: Galahad's chat, or a knight's page.
+    static func seat(_ id: String) -> MacPlace { id == "galahad" ? .galahad : .knight(id) }
+}
+
+/// What a window of its own shows: one of Galahad's chats (by its id on the node), a knight's page, or a room's. Kept by
+/// macOS with the window, so it opens again where it was.
+enum MacWindow: Hashable, Codable {
+    case chat(String)
+    case knight(String)
+    case room(String)
+}
+
+/// What the Mac app's windows, menus and menu bar share: whether this Mac is paired (and with what), the place its main
+/// window shows (kept for the next launch), and what a menu asked of it.
+@MainActor @Observable final class MacApp {
+    static let shared = MacApp()
+    /// The main window's id.
+    static let main = "main"
+
+    let app = AppModel()
+    var place: MacPlace = MacApp.keptPlace() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
+    }
+    /// The Roundtable is being given a task (⌘K).
+    var giving = false
+    /// A new chat was asked for (⌘N): Galahad's message box takes the keys.
+    var composerWanted = false
+    /// An invite a `galahad:` link handed over, for the join screen.
+    var handed: String?
+    private var loop: Task<Void, Never>?
+
+    private static let placeKey = "org.amirite.galahad.mac.place"
+
+    var session: Session? {
+        if case .paired(let session) = app.phase { session } else { nil }
+    }
+
+    private static func keptPlace() -> MacPlace {
+        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(MacPlace.self, from: $0) } ?? .galahad
+    }
+
+    /// Reads this Mac's key, then asks the node again every few seconds while the app runs, windows or not (the menu bar
+    /// shows the Roundtable): every 5 s in front, every 15 behind.
+    func run() {
+        guard loop == nil else { return }
+        app.start()
+        loop = Task { [weak self] in
+            while !Task.isCancelled {
+                if let session = self?.session { await session.refresh() }
+                try? await Task.sleep(for: .seconds(NSApplication.shared.isActive ? 5 : 15))
+            }
+        }
+    }
+
+    /// Back in front: the chat on screen as the node holds it now (an answer it was watching may have gone on).
+    func cameBack() async {
+        guard let session else { return }
+        await session.chat.resume(with: session.client)
+        await session.refresh()
+    }
+
+    /// A new chat with Galahad, in the main window.
+    func newChat() {
+        guard let session, !session.chat.answering else { return }
+        place = .galahad
+        session.chat.startNew()
+        composerWanted = true
+    }
+}
+
+/// What macOS tells the app: it has started, and it is in front again. Closing its last window leaves it in the menu bar.
+final class MacDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MacApp.shared.run()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { await MacApp.shared.cameBack() }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// The main window: joining until this Mac is in the fleet, the app itself after.
+struct MacRoot: View {
+    let mac: MacApp
+
+    var body: some View {
+        Group {
+            switch mac.app.phase {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .unpaired:
+                JoinView(app: mac.app, handed: mac.handed)
+                    .frame(maxWidth: 600)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .paired(let session):
+                MacPlaces(mac: mac, session: session)
+            case .broken(let why):
+                KeyUnreadable(why: why) { mac.app.start() }
+            }
+        }
+        .frame(minWidth: 820, minHeight: 560)
+        .tint(.ink)
+        .formStyle(.grouped)
+        .onOpenURL { url in
+            if let link = Joining.handed(url) { mac.handed = link }
+        }
+    }
+}
+
+/// A window of its own: a chat, a knight or a room, while this Mac is paired.
+struct MacWindowRoot: View {
+    let mac: MacApp
+    let window: MacWindow?
+
+    var body: some View {
+        Group {
+            if let session = mac.session, let window {
+                NavigationStack {
+                    switch window {
+                    case .chat(let id): ChatWindow(session: session, id: id)
+                    case .knight(let id): KnightView(session: session, id: id)
+                    case .room(let id): RoomView(session: session, id: id)
+                    }
+                }
+            } else {
+                ContentUnavailableView("Not in a fleet", systemImage: "person.2.slash", description: Text("Join your fleet in Galahad's window first."))
+            }
+        }
+        .frame(minWidth: 480, minHeight: 420)
+        .tint(.ink)
+        .formStyle(.grouped)
+    }
+}
+
+/// One of Galahad's chats in a window of its own: its own conversation, beside the one in the main window.
+private struct ChatWindow: View {
+    let session: Session
+    let id: String
+    @State private var chat = ChatModel()
+    @State private var opened = false
+
+    var body: some View {
+        Group {
+            if opened { ChatView(session: session, chat: chat) } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .task {
+            await chat.open(id, with: session.client)
+            opened = true
+            // He may be answering in it for another device: looked at again every few seconds.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                await chat.noticed(chats: nil, turns: session.turns, with: session.client)
+            }
+        }
+    }
+}
+
+/// The menus: a new chat and a task for the Roundtable in File, and the four places in View.
+struct MacCommands: Commands {
+    let mac: MacApp
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Chat") {
+                mac.newChat()
+                front()
+            }
+            .keyboardShortcut("n")
+            .disabled(mac.session == nil || mac.session?.chat.answering == true)
+            Button("Give the Roundtable a Task…") {
+                mac.giving = true
+                front()
+            }
+            .keyboardShortcut("k")
+            .disabled(mac.session?.can("fleet:admin") != true || mac.session?.rows.isEmpty != false)
+        }
+        CommandGroup(before: .sidebar) {
+            place("Galahad", .galahad, "1")
+            place("Roundtable", .roundtable, "2")
+            place("Inbox", .inbox, "3")
+            place("More", .more, "4")
+            Divider()
+        }
+    }
+
+    private func place(_ name: String, _ place: MacPlace, _ key: KeyEquivalent) -> some View {
+        Button(name) {
+            mac.place = place
+            front()
+        }
+        .keyboardShortcut(key)
+        .disabled(mac.session == nil)
+    }
+
+    /// The main window, in front.
+    private func front() {
+        openWindow(id: MacApp.main)
+        NSApplication.shared.activate()
+    }
+}
+#endif

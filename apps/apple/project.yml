@@ -1,10 +1,12 @@
-# Galahad's native Apple app: a SwiftUI client for a Galahad node, for iPhone and iPad.
-# XcodeGen writes Galahad.xcodeproj and Galahad/Info.plist from this file; neither is committed (README.md).
+# Galahad's native Apple apps: a SwiftUI client for a Galahad node, for iPhone and iPad, and for the Mac (docs/MAC.md),
+# both from the same sources (what is one platform's alone is marked `#if os(iOS)` or `#if os(macOS)` in them).
+# XcodeGen writes Galahad.xcodeproj and each app's Info.plist from this file; none of them is committed (README.md).
 name: Galahad
 options:
   bundleIdPrefix: org.amirite
   deploymentTarget:
     iOS: "26.0"
+    macOS: "27.0"
   createIntermediateGroups: true
   developmentLanguage: en
 settings:
@@ -20,6 +22,7 @@ targets:
     platform: iOS
     sources:
       - path: Galahad
+        excludes: ["Mac/**"]
       # The knights as the owner drew them: the PWA's own files, bundled as they are (never copied, redrawn or recoloured).
       - path: ../web/src/knights
         type: folder
@@ -68,6 +71,57 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.tests
+  # The Mac's: a native app (not Mac Catalyst), the client for now. It is called Galahad as the iPhone's is, and its module
+  # is too, so the tests import it as they import the iPhone's. M1 is signed to run on this Mac only: its Developer ID,
+  # notarization and what the node needs come with M2 (docs/MAC.md).
+  GalahadMac:
+    type: application
+    platform: macOS
+    sources:
+      # The iPhone's Info.plist and entitlements are XcodeGen's, written there for the iOS target.
+      - path: Galahad
+        excludes: ["Info.plist", "Galahad.entitlements"]
+      - path: ../web/src/knights
+        type: folder
+        buildPhase: resources
+    info:
+      path: GalahadMac/Info.plist
+      properties:
+        CFBundleDisplayName: Galahad
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # A `galahad:` link carrying an invite opens the app at joining, with the invite filled in.
+        CFBundleURLTypes:
+          - CFBundleURLName: org.amirite.galahad.invite
+            CFBundleURLSchemes: [galahad]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.mac
+        PRODUCT_NAME: Galahad
+        PRODUCT_MODULE_NAME: Galahad
+        ASSETCATALOG_COMPILER_APPICON_NAME: MacIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_PREVIEWS: YES
+  GalahadMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: GalahadTests
+    dependencies:
+      - target: GalahadMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.mac.tests
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Galahad.app/Contents/MacOS/Galahad
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   Galahad:
     build:
@@ -77,3 +131,11 @@ schemes:
     test:
       targets:
         - GalahadTests
+  GalahadMac:
+    build:
+      targets:
+        GalahadMac: all
+        GalahadMacTests: [test]
+    test:
+      targets:
+        - GalahadMacTests

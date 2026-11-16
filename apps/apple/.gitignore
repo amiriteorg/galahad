@@ -2,5 +2,6 @@
 Galahad.xcodeproj/
 Galahad/Info.plist
 Galahad/Galahad.entitlements
+GalahadMac/
 # xcodebuild -derivedDataPath build
 build/
