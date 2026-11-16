@@ -77,6 +77,19 @@ describe("sandbox slots", () => {
     expect(g.usage()).toMatchObject({ sandboxes: 0, cores: 0, memoryGb: 0 });
   });
 
+  test("a knight's VM at rest grows only within the ceiling: the threads it holds at work count, though it holds none now", async () => {
+    const { g } = governor({ capacity: () => capacity({ cores: 8, memoryGb: 16, sandboxes: 2 }) });
+    g.bind(await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "arm.team.abcdef0123.ada", kept: true }), "ada");
+    expect(g.usage()).toMatchObject({ kept: 1, cores: 0, memoryGb: 4 });
+    // Its 2 threads and 7 more would be 9 once it works: past the ceiling of 8, as a new VM that size would be.
+    expect(g.grow("ada", { cpus: 7, memoryGb: 0 })).toMatch(/threads he may use/);
+    // Up to the ceiling it grows, and still holds no threads while it rests.
+    expect(g.grow("ada", { cpus: 6, memoryGb: 0 })).toBeNull();
+    expect(g.usage()).toMatchObject({ kept: 1, cores: 0, memoryGb: 4 });
+    g.work("ada");
+    expect(g.usage().cores).toBe(8);
+  });
+
   test("a knight's own VM takes no slot, and holds its memory of the ceiling; its threads only while it works, and a while after", async () => {
     let t = 1_000_000;
     const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }), now: () => t });

@@ -179,7 +179,10 @@ export class Governor {
   grow(id: string, more: { cpus: number; memoryGb: number }): string | null {
     const held = this.held.get(id);
     if (!held) return "this node holds no such sandbox";
-    const verdict = admitGrowth(this.opts.capacity(), this.use(), more, this.hostNow());
+    // A knight's VM at rest holds no threads now, but holds them all again once it works: its own count, as at work.
+    const used = this.use();
+    if (held.kept && !held.creating && !this.working(held)) used.cores += held.cpus;
+    const verdict = admitGrowth(this.opts.capacity(), used, more, this.hostNow());
     if (!verdict.ok) return verdict.why;
     held.cpus += more.cpus;
     held.memoryGb += more.memoryGb;
