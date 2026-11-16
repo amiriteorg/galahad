@@ -74,6 +74,28 @@ describe("parallel sub-steps", () => {
     expect(budget.commands).toEqual(["a", "b", "c"]);
   });
 
+  test("a batch that fails the same way three turns in a row stops the quest, as one command does, whatever else runs beside it", async () => {
+    // Both fail each turn, exactly as before: the loop breaker counts each command's turns in a row, not the last one alone.
+    const both = harness([sh("check fail", "lint fail"), sh("check fail", "lint fail"), sh("check fail", "lint fail"), sh("check fail", "lint fail")], { parallelCommands: 2 });
+    const stopped = await both.run;
+    expect(stopped.status).toBe("stopped");
+    expect(stopped.summary).toContain("Stopped: the same command failed the same way 3 times in a row");
+    expect(both.commands).toHaveLength(6);
+    // One passes beside it each turn: the one that fails still fails three turns in a row.
+    const beside = harness([sh("test ok", "check fail"), sh("test ok", "check fail"), sh("test ok", "check fail"), sh("test ok", "check fail")], { parallelCommands: 2 });
+    const besideOutcome = await beside.run;
+    expect(besideOutcome.status).toBe("stopped");
+    expect(besideOutcome.summary).toContain("$ check fail");
+    const told = beside.seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+    expect(told[2]).toContain("The same command failed the same way 2 times in a row");
+  });
+
+  test("a command that fails, then sits a turn out, starts its count again: only turns in a row count", async () => {
+    const h = harness([sh("check fail", "a"), sh("b"), sh("check fail", "a"), sh("check fail", "a"), "DONE\nok"], { parallelCommands: 2 });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+  });
+
   test("without the option, two blocks are refused as they always were, and the briefing doesn't offer it", async () => {
     const h = harness([sh("a", "b"), sh("a"), "DONE\nok"]);
     await h.run;

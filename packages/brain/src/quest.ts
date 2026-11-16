@@ -868,24 +868,31 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let excerpted = 0;
     /** How many replies in a row, up to now, had no command to run. */
     let malformedRun = 0;
-    /** Each command's last failure as it was (`said`: its exit code and output), and the one failing again in a row. */
+    /** Each command's last failure as it was (`said`: its exit code and output). */
     const failures = new Map<string, { step: number; said: string }>();
-    let inRow: { command: string; said: string; count: number } | null = null;
+    /**
+     * Each command failing the same way turn after turn: how many turns in a row, and the last. A turn is a reply that ran
+     * commands; all of a parallel batch's run in the same one, so each of its commands is counted on its own (one
+     * failing the same way beside others is still one failing the same way). Missing a turn, it starts again.
+     */
+    const inRow = new Map<string, { said: string; count: number; turn: number }>();
+    let turn = 0;
     /** What a command's result adds when it failed as it failed before (LOOP_STOP), and whether that ends the quest. */
     const repeated = (command: string, step: number, result: ExecResult, seen: string): { note: string; stop: boolean } => {
+      const key = command.trim();
       if (result.exitCode === 0) {
-        inRow = null;
+        inRow.delete(key);
         return { note: "", stop: false };
       }
-      const key = command.trim();
       const said = `${result.exitCode}\n${seen.split("\n").slice(1).join("\n")}`;
       const before = failures.get(key);
       failures.set(key, { step, said });
-      if (inRow?.command === key && inRow.said === said) {
-        inRow.count += 1;
-        return { note: `\n(The same command failed the same way ${inRow.count} times in a row: running it again won't change that. Change what you do, or reply GIVE UP and say why.)`, stop: inRow.count >= LOOP_STOP };
+      const last = inRow.get(key);
+      const count = last && last.said === said && last.turn === turn - 1 ? last.count + 1 : 1;
+      inRow.set(key, { said, count, turn });
+      if (count > 1) {
+        return { note: `\n(The same command failed the same way ${count} times in a row: running it again won't change that. Change what you do, or reply GIVE UP and say why.)`, stop: count >= LOOP_STOP };
       }
-      inRow = { command: key, said, count: 1 };
       return { note: before?.said === said ? `\n(This failed exactly as it did at step ${before.step}: what you changed since didn't change it.)` : "", stop: false };
     };
     /** Whose models do the work: the engineer's, until a gate fails twice in a row (escalate). */
@@ -952,6 +959,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         return finish({ status: "gave-up", summary: action.reason });
       }
       if (action.kind === "commands") {
+        turn += 1;
         // Parallel sub-steps: each is a step of its own (the budget holds), run at the same time, reported in order.
         const first = steps;
         const batch = action.commands.slice(0, o.maxSteps - first + 1);
@@ -998,6 +1006,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         continue;
       }
       if (action.kind === "command") {
+        turn += 1;
         if (action.thought) emit({ type: "thought", step: steps, text: action.thought, model: reply.model });
         // Your tripwires first: a command one halts ends the quest; one refused isn't run, and he is told which and why.
         const found = tripOf(await rulesNow(), action.command);
