@@ -8,7 +8,9 @@ import SwiftUI
 struct FirstRunView: View {
     let mac: MacApp
     @Bindable var run: FirstRun
-    var setup = NodeSetup { _ in }
+    /// Why this app can't make this Mac a node from where it is (NodeSetup.unready), or nil.
+    var unready: String? = NodeSetup { _ in }.unready
+    var carriesNode = NodeBundle.main.carriesNode
 
     var body: some View {
         HStack(spacing: 0) {
@@ -44,30 +46,28 @@ struct FirstRunView: View {
 
     @ViewBuilder private var nodeStep: some View {
         Section {
+            TextField("Name", text: $run.name)
+                .disabled(run.working)
+        } header: {
             StepHead(title: FirstRun.Step.node.title, line: "A node is where Galahad and his knights do their work. This Mac can be one, run by this app whenever the Mac is on, or it can be your client alone.")
+        } footer: {
+            Text("How this Mac appears in your fleet.")
         }
-        .listRowBackground(Color.clear)
-        if run.way != .client, let unready = setup.unready {
+        if run.way != .client, let unready {
             Section {
                 Label(unready, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                if setup.bundle.carriesNode {
+                if carriesNode {
                     Text("Drag Galahad into Applications, then open it from there.").foregroundStyle(.secondary)
                     Button("Show the Applications Folder") { NSWorkspace.shared.open(URL(filePath: "/Applications")) }
                 }
             }
         }
         Section {
-            FormField("Name", text: $run.name)
-                .disabled(run.working)
-        } header: {
-            Text("Its name")
-        } footer: {
-            Text("How this Mac appears in your fleet.")
-        }
-        Section {
             WayRow(title: "Start a fleet", detail: "This Mac is your fleet's first node, its keys and its memory kept here.", chosen: run.way == .start) { run.way = .start }
             if run.way == .start {
-                FormField("The fleet's name", text: $run.fleet).disabled(run.working)
+                TextField("Its fleet's name", text: $run.fleet)
+                    .padding(.leading, WayRow.indent)
+                    .disabled(run.working)
             }
             WayRow(title: "Join my fleet", detail: "Another node of yours invites it: run galahad invite there. You approve it there once the two codes match.", chosen: run.way == .join) { run.way = .join }
             if run.way == .join {
@@ -75,6 +75,7 @@ struct FirstRunView: View {
                     .lineLimit(2...4)
                     .font(.footnote.monospaced())
                     .autocorrectionDisabled()
+                    .padding(.leading, WayRow.indent)
                     .disabled(run.working)
             }
             WayRow(title: "Just the app", detail: "Your client alone, paired with a node elsewhere. This Mac can still become a node later, from This Mac.", chosen: run.way == .client) { run.way = .client }
@@ -89,19 +90,17 @@ struct FirstRunView: View {
 
     @ViewBuilder private var stayOnStep: some View {
         Section {
-            StepHead(title: FirstRun.Step.stayOn.title, line: "A node is only useful while it's up. Each line is read from this Mac as it is now: a tick, or what is missing. Galahad never changes these settings itself; each button opens the place that does.")
-        }
-        .listRowBackground(Color.clear)
-        if let stayingOn = mac.thisMac.stayingOn {
-            Section {
+            if let stayingOn = mac.thisMac.stayingOn {
                 ForEach(stayingOn.lines) { line in
                     StayingOnRow(line: line) { StayingOnAction(line: line, node: mac.thisMac) }
                 }
-            } footer: {
-                Text("You can come back to these in Settings → This Mac.")
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
             }
-        } else {
-            Section { ProgressView().frame(maxWidth: .infinity) }
+        } header: {
+            StepHead(title: FirstRun.Step.stayOn.title, line: "A node is only useful while it's up. Each line is read from this Mac as it is now: a tick, or what is missing. Galahad never changes these settings itself; each button opens the place that does.")
+        } footer: {
+            Text("You can come back to these in Settings → This Mac.")
         }
         progress
     }
@@ -110,13 +109,11 @@ struct FirstRunView: View {
 
     @ViewBuilder private var vmsStep: some View {
         Section {
-            StepHead(title: FirstRun.Step.vms.title, line: "Each knight works in a VM of its own. On a Mac they are made with Apple's container, which runs each one in a lightweight VM on this Mac's own silicon.")
-        }
-        .listRowBackground(Color.clear)
-        Section {
             ContainerLine()
             Text("This release of Galahad doesn't make knights' VMs on a Mac yet: an update brings them. Until then, knights work on your other nodes.")
                 .foregroundStyle(.secondary)
+        } header: {
+            StepHead(title: FirstRun.Step.vms.title, line: "Each knight works in a VM of its own. On a Mac they are made with Apple's container, which runs each one in a lightweight VM on this Mac's own silicon.")
         }
     }
 
@@ -199,7 +196,7 @@ struct FirstRunView: View {
 
     private var canContinue: Bool {
         switch run.step {
-        case .node: run.canGo && (run.way == .client || setup.unready == nil)
+        case .node: run.canGo && (run.way == .client || unready == nil)
         case .stayOn, .vms: !run.working
         }
     }
@@ -232,17 +229,20 @@ struct FirstRunSteps: View {
     }
 }
 
-/// A step's title and what it is for.
+/// A step's title and what it is for: the head of its first section, so it lines up with the rows under it and stands on
+/// the page, not in a card.
 private struct StepHead: View {
     let title: String
     let line: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text(title).font(.largeTitle.bold())
-            Text(line).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.largeTitle.bold()).foregroundStyle(.primary)
+            Text(line).font(.body).fontWeight(.regular).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, Space.s2)
+        .textCase(nil)
+        .padding(.top, Space.s4)
+        .padding(.bottom, Space.s3)
     }
 }
 
@@ -253,11 +253,15 @@ private struct WayRow: View {
     let chosen: Bool
     let choose: () -> Void
 
+    /// Where a way's words start, so what it asks for under it (a fleet's name, an invite) starts there too.
+    static let indent = Space.s4 + Space.s1 + Space.s3
+
     var body: some View {
         Button(action: choose) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                 Image(systemName: chosen ? "largecircle.fill.circle" : "circle")
                     .foregroundStyle(chosen ? AnyShapeStyle(Color.ink) : AnyShapeStyle(.secondary))
+                    .frame(width: Space.s4 + Space.s1)
                 VStack(alignment: .leading, spacing: Space.line) {
                     Text(title).font(.headline)
                     Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
