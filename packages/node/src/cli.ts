@@ -282,7 +282,8 @@ Tripwires (your rules on the commands his work runs: data, never code, never a m
                                   isn't run and he is told why: * any run but /, ** any run, ? one character ('*.lock',
                                   '.env*', 'migrations/**', rm). Checked before every command of his quests and of a
                                   knight's task on his own runner, and every gate; a coding tool's own commands in its
-                                  VM aren't seen
+                                  VM aren't seen. Quote globs; one that begins with - goes after --
+                                  (rule add no-force --refuse -- --force)
 
 Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
   bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
