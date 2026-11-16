@@ -37,9 +37,9 @@ struct RoomView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Metrics.margin) {
                 if info == nil, room.view == nil, room.problem == nil {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s10)
                 } else if items.isEmpty, room.view != nil {
                     welcome
                 }
@@ -52,20 +52,14 @@ struct RoomView: View {
                     }
                 }
                 if !writing.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.mini)
-                        Text("\(writing.joined(separator: ", ")) \(writing.count > 1 ? "are" : "is") writing…")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 44)
+                    WritingLine(words: "\(writing.joined(separator: ", ")) \(writing.count > 1 ? "are" : "is") writing…")
                 }
                 if let problem = problem ?? room.problem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Metrics.margin)
+            .padding(.vertical, Space.s3)
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -76,7 +70,7 @@ struct RoomView: View {
                     Label("Paused: nobody here takes new work until you resume the room.", systemImage: "pause.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 6)
+                        .padding(.top, Space.s2)
                 }
                 RoomComposer(room: room, name: name, client: session.client, composing: $composing)
             }
@@ -86,14 +80,7 @@ struct RoomView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(name).font(.headline)
-                    Text(row?.line ?? members.map(\.name).joined(separator: ", "))
-                        .font(.caption)
-                        .foregroundStyle(row?.needs == true ? Color.siege : .secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: 240)
+                TimelineTitle(title: name, line: row?.line ?? members.map(\.name).joined(separator: ", "), needs: row?.needs == true)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -132,21 +119,13 @@ struct RoomView: View {
     }
 
     private var welcome: some View {
-        VStack(spacing: 12) {
+        TimelineWelcome(title: name, words: "Say what you need: Galahad sits here, answers, and brings in whichever of \(ListFormatter.localizedString(byJoining: members.map(\.name))) the work needs. Name a knight with @ to ask it yourself.") {
             HStack(spacing: -14) {
                 ForEach(members.prefix(5)) { member in
                     Portrait(drawing: AvatarLook.of(id: member.id, name: member.name, profile: member.avatar), size: 72, expression: session.rows.first { $0.id == member.id }?.expression ?? "idle", id: member.id, temper: AvatarLook.temperament(id: member.id, profile: member.avatar))
                 }
             }
-            Text(name).font(.title2.bold())
-            Text("Say what you need: Galahad sits here, answers, and brings in whichever of \(ListFormatter.localizedString(byJoining: members.map(\.name))) the work needs. Name a knight with @ to ask it yourself.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 40)
-        .padding(.horizontal, 24)
     }
 
     private func look(of message: TeamMessage) -> String {

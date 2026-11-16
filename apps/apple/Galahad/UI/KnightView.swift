@@ -36,11 +36,11 @@ struct KnightView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Metrics.margin) {
                 if knight == nil {
                     ContentUnavailableView("Not at the table", systemImage: "person.slash", description: Text("This knight isn't on the Roundtable any more."))
                 } else if room.view == nil, room.problem == nil {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s10)
                 } else if items.isEmpty, room.view != nil {
                     welcome
                 }
@@ -53,20 +53,14 @@ struct KnightView: View {
                     }
                 }
                 if room.writing {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.mini)
-                        Text("\(name) is writing…")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 44)
+                    WritingLine(words: "\(name) is writing…")
                 }
                 if let problem = room.problem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Metrics.margin)
+            .padding(.vertical, Space.s3)
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -81,17 +75,15 @@ struct KnightView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Button { about = true } label: {
-                    VStack(spacing: 1) {
-                        Text(name).font(.headline).foregroundStyle(.primary)
-                        if let row {
-                            Text(row.line).font(.caption).foregroundStyle(row.needs ? Color.siege : .secondary).lineLimit(1)
-                        }
-                    }
-                    // Between the back button and the toolbar's own: a long line ends in an ellipsis, not behind them.
-                    .frame(maxWidth: 240)
-                }
-                .accessibilityHint("What \(name) is and how its day stands")
+                // Not a Button: the bar sizes a button by its whole line, which then runs under the bar's own buttons; a
+                // plain title gets the room between them, and ends in an ellipsis there.
+                TimelineTitle(title: name, line: row?.line, needs: row?.needs ?? false)
+                    .contentShape(.rect)
+                    .onTapGesture { about = true }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { about = true }
+                    .accessibilityHint("What \(name) is and how its day stands")
             }
             // Its VM, once it has one: its screen to watch and take over, and a terminal in it.
             if let knight, knight.workspace != nil, session.can("sandbox") {
@@ -138,17 +130,9 @@ struct KnightView: View {
     }
 
     private var welcome: some View {
-        VStack(spacing: 12) {
-            Portrait(drawing: look, size: 120, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: knight?.avatar))
-            Text(name).font(.title2.bold())
-            Text("Say something to \(name), or give it a task: it works in its own workspace, and its commands and an independent review say whether the work is done.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        TimelineWelcome(title: name, words: "Say something to \(name), or give it a task: it works in its own workspace, and its commands and an independent review say whether the work is done.") {
+            Portrait(drawing: look, size: Metrics.welcomeFace, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: knight?.avatar))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 40)
-        .padding(.horizontal, 24)
     }
 
     private func act(_ action: TaskCard.Action, on task: TeamTask) {
@@ -177,12 +161,11 @@ struct TeamBubble: View {
         switch message.speaker {
         case "owner":
             HStack {
-                Spacer(minLength: 56)
+                Spacer(minLength: Metrics.yoursInset)
                 Text(message.text)
                     .foregroundStyle(Color.onAccent)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.ink, in: .rect(cornerRadius: 20, style: .continuous))
+                    .padding(Metrics.bubblePadding)
+                    .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
                     .textSelection(.enabled)
             }
         case "system":
@@ -192,17 +175,16 @@ struct TeamBubble: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         default:
-            HStack(alignment: .top, spacing: 10) {
-                Portrait(drawing: look, size: 34)
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: Space.s2) {
+                Portrait(drawing: look, size: Metrics.speakerFace)
+                VStack(alignment: .leading, spacing: Space.s1) {
                     if named || message.speaker == "galahad" { Text(speaker).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
                     MarkdownView(message.text)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.fill.tertiary, in: .rect(cornerRadius: 20, style: .continuous))
+                        .padding(Metrics.bubblePadding)
+                        .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
                         .textSelection(.enabled)
                 }
-                Spacer(minLength: 24)
+                Spacer(minLength: Space.s6)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(speaker): \(message.text)")
@@ -281,9 +263,9 @@ struct TaskCardView: View {
                 .padding(.top, 2)
             }
         }
-        .padding(12)
+        .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 14, style: .continuous))
+        .background(.fill.quaternary, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
@@ -322,7 +304,7 @@ struct RoomComposer: View {
     var body: some View {
         let empty = room.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         GlassEffectContainer(spacing: 10) {
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: Space.s2) {
                 TextField("Message \(name)", text: $room.draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused(composing)
@@ -340,8 +322,8 @@ struct RoomComposer: View {
                 .accessibilityLabel("Send to \(name)")
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Metrics.margin)
+        .padding(.vertical, Space.s2)
     }
 }
 

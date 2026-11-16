@@ -28,6 +28,9 @@ enum Metrics {
     static let rowFace: CGFloat = 56
     /// A speaker's face beside what it said.
     static let speakerFace: CGFloat = 32
+    /// What your bubble leaves free at its side: a speaker's face and its gap, and the room a reply leaves at the other
+    /// side, so a bubble of yours is never wider than one of theirs.
+    static let yoursInset = speakerFace + Space.s2 + Space.s6
     /// The face that welcomes you to a timeline with nothing in it yet.
     static let welcomeFace: CGFloat = 120
     /// The column an icon stands in beside its words, so the words start at one edge whatever the icon.

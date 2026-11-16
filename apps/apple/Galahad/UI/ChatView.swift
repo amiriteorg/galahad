@@ -17,9 +17,9 @@ struct ChatView: View {
         ScrollView {
             // A plain stack: an answer's rows are tall and hold sideways-scrolling code and tables, and a lazy stack
             // pinned to the bottom kept placing them again and never settled (seen in the iOS 26.1 simulator).
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Metrics.margin) {
                 if chat.thread.isEmpty {
-                    if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(.top, 80) } else { welcome }
+                    if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s10) } else { welcome }
                 }
                 if let problem = chat.problem {
                     Label("This chat couldn't be read: \(problem)", systemImage: "exclamationmark.triangle.fill")
@@ -33,8 +33,8 @@ struct ChatView: View {
                         .environment(\.choose, turn.id == latestAnswer && turn.status == .done && !chat.answering ? { text in chat.reply(text, with: session.client) } : nil)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Metrics.margin)
+            .padding(.vertical, Space.s3)
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -48,13 +48,7 @@ struct ChatView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text("Galahad").font(.headline)
-                    Text(chat.title ?? session.galahad.text)
-                        .font(.caption)
-                        .foregroundStyle(chat.title == nil && session.galahad.tone == .warn ? Color.siege : .secondary)
-                        .lineLimit(1)
-                }
+                TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 // His own computer, once he has one (made from the web app or a terminal, as a knight's VM is).
@@ -102,17 +96,9 @@ struct ChatView: View {
     }
 
     private var welcome: some View {
-        VStack(spacing: 12) {
-            Portrait(drawing: "galahad", size: 150, expression: chat.answering ? "thinking" : "idle", id: "galahad")
-            Text("Ask Galahad").font(.title2.bold())
-            Text("He answers with his tools at hand, within what this device may do. What you say here is kept on your node.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        TimelineWelcome(title: "Ask Galahad", words: "He answers with his tools at hand, within what this device may do. What you say here is kept on your node.") {
+            Portrait(drawing: "galahad", size: Metrics.welcomeFace, expression: chat.answering ? "thinking" : "idle", id: "galahad")
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 48)
-        .padding(.horizontal, 24)
     }
 }
 
@@ -124,18 +110,17 @@ struct MessageRow: View {
         switch turn.role {
         case .user:
             HStack {
-                Spacer(minLength: 56)
+                Spacer(minLength: Metrics.yoursInset)
                 Text(turn.content)
                     .foregroundStyle(Color.onAccent)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.ink, in: .rect(cornerRadius: 20, style: .continuous))
+                    .padding(Metrics.bubblePadding)
+                    .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
                     .textSelection(.enabled)
             }
         case .assistant:
-            HStack(alignment: .top, spacing: 10) {
-                Portrait(drawing: "galahad", size: 34)
-                VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: Space.s2) {
+                Portrait(drawing: "galahad", size: Metrics.speakerFace)
+                VStack(alignment: .leading, spacing: Space.s2) {
                     ForEach(Array(turn.steps.enumerated()).filter { $0.element.tool != nil }, id: \.offset) { _, step in
                         Label(step.text, systemImage: step.state == .active ? "gearshape" : step.state == .done ? "checkmark.circle" : "exclamationmark.circle")
                             .font(.caption)
@@ -143,15 +128,14 @@ struct MessageRow: View {
                     }
                     if !turn.content.isEmpty {
                         MarkdownView(turn.content)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(.fill.tertiary, in: .rect(cornerRadius: 20, style: .continuous))
+                            .padding(Metrics.bubblePadding)
+                            .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
                             .textSelection(.enabled)
                             .accessibilityIdentifier("galahad-answer")
                     }
                     footer
                 }
-                Spacer(minLength: 24)
+                Spacer(minLength: Space.s6)
             }
         }
     }
@@ -159,7 +143,7 @@ struct MessageRow: View {
     @ViewBuilder private var footer: some View {
         switch turn.status {
         case .streaming:
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s2) {
                 ProgressView().controlSize(.mini)
                 Text(turn.steps.last?.text ?? "Starting")
             }
@@ -185,7 +169,7 @@ struct Composer: View {
 
     var body: some View {
         GlassEffectContainer(spacing: 10) {
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: Space.s2) {
                 // Made anew with each message sent: clearing a focused multi-line field can leave what was sent on
                 // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
                 // finishing). A new one is empty, and nothing late reaches it.
@@ -224,7 +208,7 @@ struct Composer: View {
                 }
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Metrics.margin)
+        .padding(.vertical, Space.s2)
     }
 }
