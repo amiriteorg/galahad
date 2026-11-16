@@ -953,3 +953,14 @@ test("the gates are said in words on a task's timeline: which they are, then how
   // Each of them still shows the knight checking.
   for (const line of ["Gates · 1. bun test", "Gates · all 2 passed", "gates", "gated"]) expect(taskStep(line)).toBe("checking");
 });
+
+test("a gate that passes before any work is said to show nothing; when every gate does, that the reviewer decides alone", () => {
+  const ran = (command: string, exitCode: number) => ({ command, by: "owner" as const, exitCode, durationMs: 9, excerpt: "" });
+  expect(progress({ type: "baseline", results: [ran("bun test", 1), ran("test -s out.csv", 0)] })).toBe(
+    "Gates before the work · 1. exit 1 · bun test\n2. exit 0 · test -s out.csv · passes already, so it shows nothing about this work",
+  );
+  expect(progress({ type: "baseline", results: [ran("grep -qx Hi hello.txt", 0)] })).toBe(
+    "Gates before the work · 1. exit 0 · grep -qx Hi hello.txt · passes already, so it shows nothing about this work\nNone of its gates can show this task was done: each passes before any work, so the reviewer decides alone.",
+  );
+  expect(taskStep(progress({ type: "baseline", results: [ran("grep -qx Hi hello.txt", 0)] }))).toBe("checking");
+});
