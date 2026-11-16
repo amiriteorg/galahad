@@ -144,9 +144,17 @@ What it found, now part of the design:
 - **`init` must run in your session.** Over SSH, `init` fell back to the file keystore, because the login keychain isn't reachable from there; the app runs it as itself, in your session, so the keys go to the Keychain.
 - **A flat `node_modules`.** Bun links its dependencies with thousands of symbolic links, which the VM's shared folder couldn't copy (a tar stream did). The app is built with Bun's hoisted layout and without development dependencies; the one native binary in them was TypeScript's compiler, which the node never runs.
 
+Signed, notarized and judged by Gatekeeper (the same evening, once the owner had the Developer ID certificate from the team's Account Holder, as a `.p12` in their keychain):
+
+- **Built as the app will be:** only what the node runs, laid out flat (`bun install --production --linker hoisted`): 164 MB, no native binary among the dependencies, nine symbolic links all inside the bundle; a 60 MB zip.
+- **Signed with the Developer ID,** every executable with the hardened runtime and Apple's secure timestamp; Bun with `allow-jit` alone.
+- **Notarized:** Apple's notary service accepted it, and its ticket is stapled to the app. The notary's credentials are a profile in the owner's login keychain (`xcrun notarytool store-credentials galahad-notary`), so a release needs no cards.
+- **Gatekeeper on a stock macOS 27.2** (the MacBook) accepts it as a quarantined download: `source=Notarized Developer ID`. Apple's own pre-distribution check (`syspolicy_check distribution`) passes, there and in the VM.
+- **Not the VM for this:** the prepared image's Gatekeeper, switched back on, rejects every Developer ID app, notarized or not (a notarized app of another developer's, UTM, too), and macOS 27 lets it be switched off again only in System Settings. Gatekeeper is judged on a stock Mac; the VM was made again from its image.
+- **What the app does about it:** a downloaded app opened from Downloads runs from a read-only copy macOS makes for it (App Translocation), so the first run asks to be moved to Applications before it registers the node; and the first open asks "downloaded from the Internet, open it?", as for any app.
+
 Not tried yet:
 
-- **Gatekeeper and notarization:** the prepared image has assessments turned off, so this waits for a Developer ID build, downloaded the way you would download it.
 - **`container`:** it can't run inside a macOS VM; it waits for the Mac mini.
 - **The client's windows and the menu bar,** which come with M1.
 
@@ -163,5 +171,5 @@ Against the [mandate](MANDATE.md):
 
 The owner's answers (16 November): the Mac mini logs in by itself with FileVault off; updates come through Sparkle; the app is *Galahad*, `org.amirite.galahad.mac`.
 
-- **A Developer ID Application certificate** is still to be made: none was on the owner's MacBook (the certificate TestFlight builds use is an Apple Distribution one, not this). Only the team's Account Holder can make one (or an Admin given Apple's cloud-managed Developer ID role), at most five ([Apple](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)): in Xcode, Settings → Accounts → the team → *Manage Certificates…* → **+** → *Developer ID Application*, which makes its private key in the login keychain too; or on developer.apple.com, Certificates, IDs & Profiles → Certificates → **+** → *Developer ID Application*, with a certificate signing request from Keychain Access. Notarization can then use the App Store Connect API key the TestFlight uploads already use.
+- **The Developer ID Application certificate** is in hand (16 November): the team's Account Holder made it (only they can, or an Admin given Apple's cloud-managed Developer ID role, and that cloud signing doesn't work with an App Store Connect API key, so a `.p12` it is), and the owner keeps it in the MacBook's login keychain. Releases are signed there and notarized with the profile above.
 - **Where the spike runs.** The owner asked for a macOS VM on the MacBook. A VM serves the app's own install, its service and its first run on a clean macOS. It can't serve `container`: Apple's nested virtualization is for Linux guests (M3 and later, macOS 15 and later), not macOS guests, so `container` doesn't run inside a macOS VM ([Apple Developer Forums](https://developer.apple.com/forums/thread/827663)). That part runs on the MacBook itself, with the owner's yes, or on the Mac mini. A macOS 27 VM needs about 60 GB of disk (its restore image and its own disk); on 16 November the MacBook had under 4 GB free.
