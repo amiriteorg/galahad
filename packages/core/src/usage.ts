@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Price, Usage, UsageLine } from "./spend.ts";
+import type { Price, UsageLine } from "./spend.ts";
 
 /*
  * The contracts for what model calls cost (spend.ts has the arithmetic): a call's
@@ -8,8 +8,6 @@ import type { Price, Usage, UsageLine } from "./spend.ts";
  */
 
 const Count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
-
-export const UsageSchema = z.strictObject({ input: Count, output: Count, cached: Count.optional(), reasoning: Count.optional() }) satisfies z.ZodType<Usage>;
 
 /** A model's ref as a tally keeps it: `<provider>/<model>`, or what a coding agent calls its own. */
 const TallyModel = z.string().min(1).max(200);

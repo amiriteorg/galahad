@@ -89,11 +89,6 @@ export const landingHash = (route: string, hash: string): string => (route === "
  * inside a class must be escaped: unescaped, the field is never checked at all. */
 export const HANDLE_PATTERN = "[a-z][a-z0-9\\-]{0,31}";
 
-export function teammateInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).map((word) => [...word][0] ?? "").join("").toLocaleUpperCase() || "G";
-}
-
 /** A profile ID is stable after a rename; reserved speakers are never assigned. */
 export function teammateId(name: string, taken: string[]): string {
   const cleaned = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");

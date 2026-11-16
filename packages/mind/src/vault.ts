@@ -1,7 +1,6 @@
 import {
   aeadOpen,
   aeadSeal,
-  b64u,
   fromB64u,
   fromUtf8,
   type NodeIdentity,
@@ -238,4 +237,3 @@ export class Vault {
   }
 }
 
-export const boxKeyOf = (identity: NodeIdentity): string => b64u(identity.boxPublic);
