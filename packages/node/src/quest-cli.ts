@@ -135,6 +135,12 @@ export interface DoOptions {
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
+   * Where the work is (a trial of your own work: the task's repository, where its knight had it): each of the quest's
+   * commands and gates starts there, as a knight's task's did, with $TMPDIR a directory that can run what is written
+   * to it (a sandbox's /tmp can't). Absent: where the sandbox starts (/work), as ever.
+   */
+  workdir?: string;
+  /**
    * The engineer is given the sandbox's notes store (Engram: packages/brain/src/engram.ts). A trial's variant
    * sets it, to measure what the store costs a task: its sandbox is fresh, so the store starts empty. A sandbox
    * whose image has no pinned Engram ends the quest with that as its error; it is never run without and counted as with.
@@ -247,6 +253,10 @@ export interface Shipped {
 }
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/** A command started where a quest's work is (DoOptions.workdir), as a knight's task's commands are; as given without one. */
+export const inWorkdir = (workdir: string | undefined, command: string): string =>
+  workdir ? `mkdir -p /work/.tmp && export TMPDIR=/work/.tmp && cd ${shq(workdir)} && ${command}` : command;
 
 /**
  * A quest's id: when it started, and three more characters, so quests started in the same millisecond
@@ -472,8 +482,8 @@ export interface NodeQuestHooks {
   finished?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>): Promise<void>;
   /** With effort: how many attempts the node granted and why, each attempt's start and end, and the pick. */
   effort?(event: { type: "granted"; grant: EffortGrant } | EffortEvent): void;
-  /** Before the plan, in each attempt's fresh sandbox: put there what the work starts from (a trial's repository). */
-  prepare?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>, info: { attempt?: number }): Promise<void>;
+  /** Before the plan, in each attempt's fresh sandbox (`sandbox`): put there what the work starts from (a trial's repository). */
+  prepare?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>, info: { attempt?: number; sandbox: SandboxView }): Promise<void>;
   /** Every model call as it ends: the role, the model, its tokens as the provider reported them (null: it reported nothing). */
   spent?(call: { role: string; model: string; usage: Usage | null }): void;
 }
@@ -561,7 +571,7 @@ async function workIn(
   run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; spentUsd?: () => Promise<{ usd: number; complete: boolean }>; prepare?: NodeQuestHooks["prepare"] },
 ): Promise<QuestOutcome> {
   const { exec } = shop;
-  await run.prepare?.(exec, run.tag && run.tag.of > 1 ? { attempt: run.tag.index } : {});
+  await run.prepare?.(exec, { ...(run.tag && run.tag.of > 1 ? { attempt: run.tag.index } : {}), sandbox: shop.sandbox });
   if (options.agent?.repo) {
     const github = githubRepo(options.agent.repo);
     const through = github ? await cloneThroughGateway(node, exec, github, shop.quest, options.agent.minutes) : null;
@@ -635,7 +645,8 @@ async function workIn(
         return { text, model, ...(skipped.length ? { skipped } : {}) };
       },
       // (With the store, each of the quest's commands is told where it is and which project: the engineer has only a shell.)
-      exec: store ? (command, timeoutSec) => exec(`${engramShell(store)}${command}`, timeoutSec) : exec,
+      // Where its work is, each starts there (workdir).
+      exec: store || options.workdir ? (command, timeoutSec) => exec(inWorkdir(options.workdir, `${store ? engramShell(store) : ""}${command}`), timeoutSec) : exec,
       emit: (event) => (shop.trail.on(event), run.emit?.(event)),
       signal: run.signal,
       ...(run.spentUsd ? { spentUsd: run.spentUsd } : {}),
@@ -783,7 +794,9 @@ export async function runNodeQuest(
                 ...(spentUsd ? { spentUsd } : {}),
                 ...(prepare ? { prepare } : {}),
               });
-              return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };
+              // (Taken where the work is, as the quest's own evidence was.)
+              const evidence = await sandboxEvidence((command, timeoutSec) => shop.exec(inWorkdir(options.workdir, command), timeoutSec), evidenceCommands);
+              return { outcome: done, evidence: collect.text(done, evidence), handle: shop };
             } catch (error) {
               standing.failed(error);
               throw error;
