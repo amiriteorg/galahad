@@ -21,7 +21,7 @@ import {
 import { plural } from "../lib/text.ts";
 import { relativeTime, shortDate } from "../lib/time.ts";
 import type { ActionClass } from "../types.ts";
-import { badge, busy, button, callout, empty, field, segmented, switchControl, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, field, formActions, segmented, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { type Child, h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -135,7 +135,7 @@ export function argEditor(
         h(
           "div",
           { class: "row wrap between" },
-          h("span", { class: "row wrap", style: "gap:6px" }, h("span", { class: "mono strong small" }, row.name), row.inPath ? h("span", { class: "tiny subtle" }, "where it goes") : null),
+          h("span", { class: "row wrap" }, h("span", { class: "mono strong small" }, row.name), row.inPath ? h("span", { class: "tiny subtle" }, "where it goes") : null),
           control,
         ),
         input,
@@ -380,7 +380,7 @@ export function openOrderFromAction(
       ? h("div", { class: "field" }, h("label", { for: typedId }, "Type ", h("span", { class: "mono strong" }, options.confirmName), " to confirm"), typed)
       : null,
     status,
-    h("div", { class: "row wrap", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), sign),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), sign),
   );
   const sheet = openSheet({
     title: "Approve and allow similar",
@@ -463,7 +463,7 @@ export function openNewOrder(ctx: Ctx, connectors: ConnectorView[]): void {
     toolNote,
     formBox,
     status,
-    h("div", { class: "row wrap", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), sign),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), sign),
   );
   const sheet = openSheet({
     title: "Add a standing order",
@@ -518,9 +518,9 @@ function orderItem(ctx: Ctx, order: OrderView): HTMLElement {
       { class: "grow stack tight" },
       h(
         "div",
-        { class: "stack", style: "gap:2px" },
+        { class: "stack snug" },
         h("div", { class: "row wrap" }, h("span", { class: "strong small" }, order.label), badge(state.label, state.tone, state.icon)),
-        h("div", { class: "row wrap tiny subtle" }, h("span", { class: "mono" }, `${order.connector}.${order.tool}`), h("span", { "data-tone": info?.tone ?? "neutral", style: "color:var(--tone)" }, info?.label.toLowerCase() ?? order.class)),
+        h("div", { class: "row wrap tiny subtle" }, h("span", { class: "mono" }, `${order.connector}.${order.tool}`), h("span", { class: "toned", "data-tone": info?.tone ?? "neutral" }, info?.label.toLowerCase() ?? order.class)),
       ),
       args.length
         ? h("dl", { class: "kv" }, ...args.flatMap(([name, pattern]) => [h("dt", { class: "mono" }, name), h("dd", {}, patternView(pattern))]))
@@ -534,7 +534,7 @@ function orderItem(ctx: Ctx, order: OrderView): HTMLElement {
         : null,
       h(
         "div",
-        { class: "meta", style: "margin-top:0" },
+        { class: "meta" },
         h("span", {}, whoWords(order.callers)),
         h("span", { class: "tnum", title: new Date(order.until).toLocaleString() }, until),
         h("span", { class: "tnum" }, order.uses ? `used ${plural(order.uses, "time")}${order.lastUsed ? `, last ${relativeTime(order.lastUsed)}` : ""}` : "not used yet"),
@@ -575,7 +575,7 @@ export function renderOrders(box: HTMLElement, ctx: Ctx, orders: OrderView[], on
             "details",
             { class: "process" },
             h("summary", { "data-key": "orders:old" }, icon("chevron-right", { size: 14, class: "chev" }), `Old orders (${old.length})`),
-            h("div", { class: "card flat", style: "margin-top:8px" }, h("div", { class: "rows" }, ...old.map((o) => orderItem(ctx, o)))),
+            h("div", { class: "card flat process-body" }, h("div", { class: "rows" }, ...old.map((o) => orderItem(ctx, o)))),
           )
         : null,
     ),

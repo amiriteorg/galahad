@@ -194,6 +194,7 @@
       .wrap-anywhere { overflow-wrap: anywhere; }
       .pre-wrap { white-space: pre-wrap; }
       .grow { flex: 1 1 auto; min-width: 0; }
+      .flex-none { flex: none; }
       .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
       .row.wrap { flex-wrap: wrap; }
       .row.top { align-items: flex-start; }
@@ -567,7 +568,11 @@
       .item-body { margin-top: calc(var(--sp-2) - 2px); }
       .rows > .item .meta { margin-top: var(--sp-1); }
       .rows > .item .item-text > .meta { margin-top: 2px; }
+      /* In a stack, a meta line takes the stack's gap. */
+      .rows > .item .stack > .meta { margin-top: 0; }
       .rows > .item .item-actions { display: flex; gap: var(--sp-1); align-items: center; flex: none; }
+      /* A folder's line in a list of files (artifacts.ts): quieter, on sunken ground. */
+      .rows > .item.dir-row { align-items: center; gap: var(--sp-2); padding-top: var(--sp-2); padding-bottom: var(--sp-2); background: var(--bg-sunken); color: var(--text-3); font: var(--fs-12)/1.5 var(--font-mono); }
       /* A fact of yours (about-you.ts): its words across the row's width, whose it is and its answers under them. */
       .item.fact { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
       .rows > .item > .item-chevron { flex: none; color: var(--text-3); }
@@ -642,6 +647,8 @@
       [data-tone="accent"] { --tone: var(--accent); --tone-soft: var(--accent-soft); }
       [data-tone="agent"] { --tone: var(--agent); --tone-soft: var(--agent-soft); }
       [data-tone="neutral"] { --tone: var(--text-2); --tone-soft: var(--surface-2); }
+      /* Words in their tone (an action class beside a tool's name). */
+      .toned { color: var(--tone); }
       .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--text-3)); flex: none; display: inline-block; }
       .dot:not([data-tone]) { --tone: var(--text-3); }
       .dot.live { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--text-3)) 22%, transparent); }
@@ -678,6 +685,8 @@
         box-shadow: var(--shadow-1); transition: border-color var(--d-1) var(--ease-out), box-shadow var(--d-1) var(--ease-out);
       }
       .textarea { height: auto; min-height: 76px; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+      /* A select as wide as its choices, beside other things (a tool's class). */
+      .select.fit { width: auto; flex: none; }
       .select { appearance: none; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%); background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
       .input::placeholder, .textarea::placeholder { color: var(--text-3); }
       .input:hover, .select:hover, .textarea:hover { border-color: color-mix(in srgb, var(--text-3) 60%, var(--border-strong)); }

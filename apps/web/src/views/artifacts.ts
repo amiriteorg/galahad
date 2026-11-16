@@ -20,7 +20,7 @@ import {
 } from "../lib/artifacts.ts";
 import { plural } from "../lib/text.ts";
 import { absoluteTime, relativeTime } from "../lib/time.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, skeletonRows } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, field, formActions, pageHead, skeletonRows, spinner } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -103,7 +103,7 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
 
   async function show(f: ArtifactFile, trigger: HTMLButtonElement): Promise<void> {
     await busy(trigger, async () => {
-      replace(preview, h("p", { class: "small muted row", style: "gap:8px" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Fetching ${baseName(f.path)}…`));
+      replace(preview, h("p", { class: "small muted row" }, spinner("sm"), `Fetching ${baseName(f.path)}…`));
       try {
         const got = await fetchFile(ctx, a, f, sheet.scope.signal);
         if (sheet.scope.disposed) return;
@@ -118,7 +118,7 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
         let body: HTMLElement;
         if (kind === "image") {
           const url = imageDataUrl(got.data, got.type);
-          body = url ? h("img", { src: url, alt: f.path, style: "max-width:100%;height:auto;border-radius:8px;border:1px solid var(--border);background:var(--bg-sunken)" }) : callout("quiet", "This one can only be saved.");
+          body = url ? h("img", { class: "preview-img", src: url, alt: f.path }) : callout("quiet", "This one can only be saved.");
         } else if (kind === "download") {
           body = callout("quiet", "The node sends this one only as a file to save, so it isn't shown here.");
         } else {
@@ -133,7 +133,7 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
             clipped ? h("p", { class: "tiny subtle" }, "Only the first 512 KB is shown. Save it to see the rest.") : null,
           );
         }
-        replace(preview, head, got.matches ? null : mismatch(f), body, h("div", { class: "row", style: "justify-content:flex-end" }, save));
+        replace(preview, head, got.matches ? null : mismatch(f), body, h("div", { class: "row end" }, save));
         preview.scrollIntoView({ block: "nearest" });
       } catch (error) {
         if (!sheet.scope.disposed) failed(error, `Couldn't fetch ${baseName(f.path)}`);
@@ -221,9 +221,9 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
       h("span", { class: "avatar", title: kind }, icon(KIND_ICON[kind], { size: 14 })),
       h(
         "div",
-        { class: "grow", style: "min-width:0" },
+        { class: "grow" },
         h("div", { class: "mono small strong wrap-anywhere" }, baseName(f.path)),
-        h("div", { class: "meta", style: "margin-top:2px" }, h("span", { class: "tnum" }, bytesLabel(f.size)), h("span", { class: "mono", title: `SHA-256 ${f.sha256}` }, shortSha(f.sha256))),
+        h("div", { class: "meta" }, h("span", { class: "tnum" }, bytesLabel(f.size)), h("span", { class: "mono", title: `SHA-256 ${f.sha256}` }, shortSha(f.sha256))),
       ),
       h(
         "div",
@@ -237,7 +237,7 @@ export function openArtifact(ctx: Ctx, a: ArtifactView): void {
   function renderList(): void {
     // One list; a folder is a quiet header row above its files.
     const folder = (dir: string) =>
-      h("div", { class: "item tiny subtle mono", style: "padding:6px 16px;background:var(--bg-sunken);gap:6px;align-items:center" }, icon("layers", { size: 12 }), `${dir}/`);
+      h("div", { class: "item dir-row" }, icon("layers", { size: 12 }), `${dir}/`);
     replace(
       list,
       h("div", { class: "card flat" }, h("div", { class: "rows" }, ...groupFiles(a.files).flatMap((g) => [g.dir ? folder(g.dir) : null, ...g.files.map(fileRow)]))),
@@ -304,7 +304,7 @@ export function openKeepWork(ctx: Ctx, sandbox: SandboxView, on: string | null):
           return;
         }
         void busy(keep, async () => {
-          replace(status, h("p", { class: "small muted row", style: "gap:8px" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Copying its files out… a large folder takes a while."));
+          replace(status, h("p", { class: "small muted row" }, spinner("sm"), "Copying its files out… a large folder takes a while."));
           try {
             const { artifact } = await ctx.api.post<{ artifact: ArtifactView | null }>("/api/artifacts/save", {
               sandbox: sandbox.id,
@@ -334,7 +334,7 @@ export function openKeepWork(ctx: Ctx, sandbox: SandboxView, on: string | null):
     field("Label (optional)", label, { hint: "How it shows up under Artifacts." }),
     callout("quiet", `Galahad copies the files out and keeps them on ${sandbox.node} after the sandbox is gone, up to 512 MB and 5,000 files, each with its SHA-256.`),
     status,
-    h("div", { class: "row wrap", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), keep),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), keep),
   );
   const sheet = openSheet({ title: `Keep ${sandbox.name}'s work`, description: "Its results, kept after the sandbox is gone.", body, size: "small", initialFocus: () => folder });
 }
@@ -350,7 +350,7 @@ export const artifactsView: View = (root, ctx, { scope, opts }) => {
       h("span", { class: "avatar" }, icon("archive", { size: 14 })),
       h(
         "div",
-        { class: "grow", style: "min-width:0" },
+        { class: "grow" },
         h("div", { class: "row wrap" }, h("span", { class: "strong small" }, a.label), a.here ? null : badge(`on ${a.nodeName}`, "neutral")),
         h(
           "div",

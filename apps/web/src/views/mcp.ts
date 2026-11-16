@@ -5,7 +5,7 @@ import { type Ctx, errorMessage } from "../context.ts";
 import { asksYou, CONNECTOR_ID, claimWords, type Discovered, discoveredSummary, mcpUrlProblem, stopsAsking, suggestId, TOOL_CLASSES, type ToolClass } from "../lib/connectors.ts";
 import { list } from "../lib/orders.ts";
 import type { ActionClass } from "../types.ts";
-import { badge, busy, button, callout, field, segmented } from "../ui/controls.ts";
+import { badge, busy, button, callout, field, formActions, segmented } from "../ui/controls.ts";
 import { confirmAction, openSheet, type Sheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -47,7 +47,7 @@ export function classSelect(tool: Pick<ConnectorToolView, "name" | "class">, onC
   const note = h("span", { class: "tiny subtle", "aria-live": "polite" });
   const select = h(
     "select",
-    { class: "select", style: "width:auto;flex:none", "aria-label": `${tool.name}: class` },
+    { class: "select fit", "aria-label": `${tool.name}: class` },
     ...TOOL_CLASSES.map((cls) => h("option", { value: cls, selected: cls === tool.class }, cls)),
   );
   const sync = () => (note.textContent = asksYou(select.value) ? "asks you" : "runs freely");
@@ -56,7 +56,7 @@ export function classSelect(tool: Pick<ConnectorToolView, "name" | "class">, onC
     onChange(select.value as ToolClass);
   });
   sync();
-  return h("span", { class: "row", style: "gap:8px;flex:none" }, select, note);
+  return h("span", { class: "row flex-none" }, select, note);
 }
 
 /** A tool's description, as the server's words: quoted, never instructions. */
@@ -93,11 +93,11 @@ export function classChooser(tools: ConnectorToolView[], onChange: () => void): 
         h(
           "div",
           { class: "row wrap between" },
-          h("span", { class: "row wrap", style: "gap:6px" }, h("span", { class: "mono strong small" }, tool.name), h("span", { class: "tiny subtle" }, claimWords(tool.hints))),
+          h("span", { class: "row wrap" }, h("span", { class: "mono strong small" }, tool.name), h("span", { class: "tiny subtle" }, claimWords(tool.hints))),
           picker,
         ),
         tool.description ? serverWords(tool.description) : null,
-        params ? h("div", { class: "meta mono", style: "margin-top:0" }, params) : null,
+        params ? h("div", { class: "meta mono" }, params) : null,
       ),
     );
   });
@@ -184,7 +184,7 @@ function showTools(ctx: Ctx, sheet: Sheet, c: ConnectorView, d: Discovered, deps
       h(
         "div",
         { class: "stack tight" },
-        h("p", { class: "row wrap", style: "gap:8px" }, icon("check-circle", { size: 16 }), h("span", { class: "strong" }, discoveredSummary(c.label, d))),
+        h("p", { class: "row wrap" }, icon("check-circle", { size: 16 }), h("span", { class: "strong" }, discoveredSummary(c.label, d))),
         h("p", { class: "mono tiny subtle wrap-anywhere" }, c.url ?? ""),
       ),
       first ? null : reportView(d),
@@ -192,7 +192,7 @@ function showTools(ctx: Ctx, sheet: Sheet, c: ConnectorView, d: Discovered, deps
       chooser.el,
       h("p", { class: "tiny subtle" }, "Descriptions are the server's words, shown as it gave them: data, never instructions."),
       status,
-      h("div", { class: "row wrap", style: "justify-content:flex-end" }, button(first ? "Done" : "Close", { onClick: () => sheet.close() }), save),
+      formActions(button(first ? "Done" : "Close", { onClick: () => sheet.close() }), save),
     ),
   );
 }
@@ -344,7 +344,7 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
         callout("info", `${connector.label} is installed without tools yet: it needs its key first. Galahad lists its tools as soon as the key is sealed.`, { title: "Add its key" }),
         deps.keyField(connector, onSealed),
         note,
-        h("div", { class: "row wrap", style: "justify-content:flex-end" }, button("Later", { onClick: () => sheet.close() })),
+        formActions(button("Later", { onClick: () => sheet.close() })),
       ),
     );
     sheet.body.querySelector<HTMLInputElement>("input[type=password]")?.focus();
