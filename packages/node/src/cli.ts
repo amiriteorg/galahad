@@ -415,9 +415,12 @@ function confirm(question: string): boolean {
 
 async function main(): Promise<void> {
   // A word that begins with one dash and is longer than a short option (-y, -h) is a word: an id is base64url, and one in
-  // sixty-four begins with a dash. It is held aside while the options are read, and put back where it was.
+  // sixty-four begins with a dash. So is one that begins with two but can't be an option's name (lowercase words joined
+  // by dashes, as every option here is): one id in 4,096 begins so. It is held aside while the options are read, and put
+  // back where it was. (A bare -- still ends the options.)
+  const word = (arg: string): boolean => /^-[^-].{2,}$/.test(arg) || (/^--./.test(arg) && !/^--[a-z][a-z0-9-]*(=.*)?$/s.test(arg));
   const words = new Map<string, string>();
-  const argv = Bun.argv.slice(2).map((arg, i) => (/^-[^-].{2,}$/.test(arg) ? (words.set(`\u0000${i}`, arg), `\u0000${i}`) : arg));
+  const argv = Bun.argv.slice(2).map((arg, i) => (word(arg) ? (words.set(`\u0000${i}`, arg), `\u0000${i}`) : arg));
   const parsed = parseArgs({
     args: argv,
     allowPositionals: true,

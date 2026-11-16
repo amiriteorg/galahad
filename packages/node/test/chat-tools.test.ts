@@ -475,6 +475,10 @@ describe("what he knows of you", () => {
     const dashed = await cli("about", "rm", "-AbCdEfGhIjK");
     expect(dashed.code).not.toBe(0);
     expect(dashed.err).toContain('no fact about you is "-AbCdEfGhIjK"');
+    // One in 4,096 begins with two: still an id, as no option is named so (it failed so on 16 November).
+    const twice = await cli("about", "rm", "--AbCdEfGhIjK");
+    expect(twice.code).not.toBe(0);
+    expect(twice.err).toContain('no fact about you is "--AbCdEfGhIjK"');
   });
 
   test("what you kept goes with his answers, and is listed, however many facts he has proposed since", async () => {
