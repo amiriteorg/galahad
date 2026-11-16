@@ -68,6 +68,11 @@ describe("which files a command changes", () => {
     ] as const) expect(writesOf(command), command).toEqual([...paths]);
   });
 
+  test("a here-string is one line, not a here-document: the lines after it are commands", () => {
+    expect(writesOf("grep -c x <<< 'ab'\nprintf y > out.txt")).toEqual(["out.txt"]);
+    expect(testFilesOf("wc -w <<< hello\nbun test src/sum.test.ts")).toEqual(["src/sum.test.ts"]);
+  });
+
   test("reads, tests and searches change nothing", () => {
     for (const command of ["cat src/x.ts", "bun test", "grep -rn foo src", "sed -n '1,5p' src/x.ts", "ls -la", "echo '> not a redirect'", "git diff -- src/x.ts"]) expect(writesOf(command), command).toEqual([]);
   });

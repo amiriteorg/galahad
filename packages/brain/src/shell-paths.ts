@@ -8,14 +8,14 @@
  * says whether any of it was unquoted dynamic shell (`$`, a glob, a backtick), which a read can't be judged by. */
 interface Word { text: string; dynamic: boolean; operator?: string }
 
-/** The command without a here-document's body (its lines are data, not commands). */
+/** The command without a here-document's body (its lines are data, not commands). A here-string (`<<<`) is not one. */
 function withoutHereDocs(command: string): string {
   const lines = command.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     out.push(line);
-    const here = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line);
+    const here = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line);
     if (!here) continue;
     const end = lines.findIndex((l, j) => j > i && l.trim() === here[2]);
     if (end === -1) break;
