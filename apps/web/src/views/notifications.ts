@@ -1,4 +1,4 @@
-import { NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyKind, type NotifyPrefs, type NotifyView } from "@galahad/core/notify";
+import { NOTIFY_DEFAULTS, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyKind, type NotifyPrefs, type NotifyView } from "@galahad/core/notify";
 import { type Api, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
 import { clockProblem, isIos, keyBytes, perDayProblem, PUSH_STATE_TEXT, type PushEnv, type PushState, pushState, quietLine, sameKey, todayLine, WHAT_IS_SENT } from "../lib/push.ts";
@@ -109,7 +109,9 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
   // A device that can't read the mind couldn't open anything a notification points to.
   if (!ctx.can("mind:read")) return null;
   const maySet = ctx.can("brain:write");
-  const deviceCard = h("div", { class: "card rows" }, h("div", { class: "item" }, h("div", { class: "tiny subtle" }, "Looking at this device…")));
+  // Drawn whole from the first frame, its controls off until the node has said how things stand (the node's defaults
+  // meanwhile): nothing under the section moves when it answers.
+  const deviceCard = h("div", { class: "card rows" });
   const nodeCards = h("div", { class: "stack" });
   const el = section("Notifications", {}, deviceCard, nodeCards);
   let view: NotifyView | null = null;
@@ -125,7 +127,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     const on = state === "on";
     const me = view?.devices.find((d) => d.device === ctx.identity.device);
     const toggle = switchControl("Notifications on this device", on, (checked) => void flip(checked), {
-      hint: on && me ? `${PUSH_STATE_TEXT.on} Through ${me.service}, turned on ${relativeTime(me.since)}.` : PUSH_STATE_TEXT[state],
+      hint: !view ? "Looking at this device…" : on && me ? `${PUSH_STATE_TEXT.on} Through ${me.service}, turned on ${relativeTime(me.since)}.` : PUSH_STATE_TEXT[state],
       disabled: !SWITCHABLE[state] || !view,
     });
     toggle.classList.add("notify-device");
@@ -140,14 +142,15 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
   }
 
   function renderNode(): void {
-    if (!view) return replace(nodeCards);
-    const prefs = view.prefs;
+    const prefs = view?.prefs ?? NOTIFY_DEFAULTS;
+    const ready = view !== null;
+    const may = maySet && ready;
     const locked = maySet ? null : "This device can't change these: it was paired without the brain:write scope.";
     const kindRow = (kind: NotifyKind) =>
-      h("div", { class: "item notify-row" }, switchControl(NOTIFY_KIND_INFO[kind].label, prefs.kinds[kind], (checked) => void save({ kinds: { [kind]: checked } }), { hint: NOTIFY_KIND_INFO[kind].hint, disabled: !maySet }));
+      h("div", { class: "item notify-row" }, switchControl(NOTIFY_KIND_INFO[kind].label, prefs.kinds[kind], (checked) => void save({ kinds: { [kind]: checked } }), { hint: NOTIFY_KIND_INFO[kind].hint, disabled: !may }));
 
-    const from = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.from, disabled: !maySet || !prefs.quiet.on, "aria-label": "Quiet hours begin" });
-    const to = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.to, disabled: !maySet || !prefs.quiet.on, "aria-label": "Quiet hours end" });
+    const from = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.from, disabled: !may || !prefs.quiet.on, "aria-label": "Quiet hours begin" });
+    const to = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.to, disabled: !may || !prefs.quiet.on, "aria-label": "Quiet hours end" });
     const hoursNote = h("div", { class: "tiny subtle", role: "status" }, quietLine(prefs));
     const setClock = (which: "from" | "to", input: HTMLInputElement) => {
       const problem = clockProblem(input.value);
@@ -161,8 +164,8 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     from.addEventListener("change", () => setClock("from", from));
     to.addEventListener("change", () => setClock("to", to));
 
-    const perDay = h("input", { class: "input notify-count", type: "number", inputmode: "numeric", min: NOTIFY_PER_DAY.min, max: NOTIFY_PER_DAY.max, step: 1, value: prefs.perDay, disabled: !maySet, id: "notify-per-day", "aria-describedby": "notify-per-day-note" });
-    const perDayNote = h("div", { class: "tiny subtle", id: "notify-per-day-note", role: "status" }, todayLine(view));
+    const perDay = h("input", { class: "input notify-count", type: "number", inputmode: "numeric", min: NOTIFY_PER_DAY.min, max: NOTIFY_PER_DAY.max, step: 1, value: prefs.perDay, disabled: !may, id: "notify-per-day", "aria-describedby": "notify-per-day-note" });
+    const perDayNote = h("div", { class: "tiny subtle", id: "notify-per-day-note", role: "status" }, view ? todayLine(view) : "Nothing sent today (a test doesn't count).");
     perDay.addEventListener("change", () => {
       const problem = perDayProblem(perDay.value);
       if (problem) {
@@ -186,7 +189,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
           h(
             "div",
             { class: "item notify-row wrap" },
-            switchControl("Quiet hours", prefs.quiet.on, (checked) => void save({ quiet: { on: checked } }), { hint: "Everything but an alert waits until they end.", disabled: !maySet }),
+            switchControl("Quiet hours", prefs.quiet.on, (checked) => void save({ quiet: { on: checked } }), { hint: "Everything but an alert waits until they end.", disabled: !may }),
             h("div", { class: "notify-hours" }, from, h("span", { class: "tiny subtle" }, "to"), to),
           ),
           h("div", { class: "item" }, hoursNote),
@@ -195,7 +198,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
         ),
         locked ? noteLine(locked) : null,
       ),
-      view.devices.length
+      view?.devices.length
         ? h(
             "div",
             { class: "stack tight" },
@@ -278,6 +281,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     if (!scope.disposed) render();
   }
 
+  render();
   void refresh();
   return el;
 }
