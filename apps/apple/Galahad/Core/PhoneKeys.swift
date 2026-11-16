@@ -32,6 +32,15 @@ enum PhoneKeys {
 
     static let service = "org.amirite.galahad.keys"
 
+    /// Whether this device keeps copies at all. An iPhone or an iPad does. A Mac's app does once it is signed with a
+    /// profile, which opens to it the Keychain that asks for Touch ID before it gives one back (M2, docs/MAC.md): signed to
+    /// run on this Mac alone, it has only the login keychain, which can't.
+    #if os(iOS)
+    static let offered = true
+    #else
+    static let offered = false
+    #endif
+
     /// Keeps a copy, replacing one kept under the same name. `service`: tests keep theirs apart.
     static func keep(name: String, value: String, provider: String?, label: String?, service: String = service) throws {
         try? forget(name: name, service: service)

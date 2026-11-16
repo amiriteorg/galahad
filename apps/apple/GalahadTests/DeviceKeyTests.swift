@@ -35,8 +35,20 @@ import Testing
     @Test(.enabled(if: SecureEnclave.isAvailable, "no Secure Enclave here, so no key can be made that can't be read out"))
     func itsPrivateKeyCantBeReadOutEvenByThisApp() throws {
         defer { try? DeviceKey.delete(tag: tag) }
-        #expect(try DeviceKey.create(tag: tag).storage == .secureEnclave)
+        let key = try DeviceKey.create(tag: tag)
+        #expect(key.storage == .secureEnclave)
+        #if os(macOS)
+        // On the Mac the login keychain keeps no key under its tag at all, only the enclave's wrapping of it: which no form
+        // a P-256 private key is written in reads, and which the enclave opens as the same key.
+        #expect(try DeviceKey.reference(tag: tag) == nil)
+        let wrapped = try #require(try DeviceKey.wrapped(tag: tag))
+        #expect((try? P256.Signing.PrivateKey(rawRepresentation: wrapped)) == nil)
+        #expect((try? P256.Signing.PrivateKey(x963Representation: wrapped)) == nil)
+        #expect((try? P256.Signing.PrivateKey(derRepresentation: wrapped)) == nil)
+        #expect(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: wrapped).publicKey.x963Representation == key.publicKey)
+        #else
         #expect(try privateBytes(tag: tag) == nil, "the private key's bytes came back")
+        #endif
     }
 
     /// Why the key is made in the Secure Enclave: iOS hands a software key's bytes back to the app that made it, even one
@@ -50,9 +62,14 @@ import Testing
     @Test func itIsMadeInTheEnclaveWhereThereIsOneAndKept() throws {
         defer { try? DeviceKey.delete(tag: tag) }
         _ = try DeviceKey.create(tag: tag)
+        #if os(macOS)
+        // Kept: the enclave's wrapping of it, in the login keychain.
+        #expect(try DeviceKey.wrapped(tag: tag) != nil)
+        #else
         let reference = try #require(try DeviceKey.reference(tag: tag))
         let attributes = try #require(SecKeyCopyAttributes(reference) as? [CFString: Any])
         #expect(attributes[kSecAttrIsPermanent] as? Bool == true)
+        #endif
         #expect(try DeviceKey.load(tag: tag)?.storage == (SecureEnclave.isAvailable ? .secureEnclave : .keychain))
     }
 

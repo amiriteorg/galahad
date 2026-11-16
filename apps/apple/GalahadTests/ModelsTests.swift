@@ -36,7 +36,8 @@ struct ModelsTests {
         }
     }
 
-    @Test func aCopyIsKeptListedWithoutItsValueReadBackAndForgotten() async throws {
+    @Test(.enabled(if: PhoneKeys.offered, "this device keeps no copies of keys"))
+    func aCopyIsKeptListedWithoutItsValueReadBackAndForgotten() async throws {
         let service = "org.amirite.galahad.keys.tests.\(UUID().uuidString)"
         defer { try? PhoneKeys.forget(name: "fake-key", service: service) }
         try PhoneKeys.keep(name: "fake-key", value: "fake-value-for-tests", provider: "openrouter", label: "tests", service: service)
