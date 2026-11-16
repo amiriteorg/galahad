@@ -163,6 +163,19 @@ The chat loop and the quest runner driven by stand-in models that answer at once
 
 The characters of every turn's conversation with the engineer, summed over a whole quest, for three kinds of work a stand-in engineer does the same way every time: the tests run after each of 13 edits (336,141 characters on 16 November 2026), ten files each read, edited and tested (379,806; its last turn 20,250), and thirty different searches that each print a page (647,513). And how many turns, over the three, didn't begin with the turn before's conversation (6): each of those is a beginning a provider can't read from its cache. The engineer's conversation is most of what a quest costs, so a change that sends more, or rewrites what was cached, fails here before it costs anything. Lean context ([PLAN](PLAN.md) #5) is told here: outputs a later run superseded, and file contents a later edit made stale, are lines instead of excerpts (the second kind sent 420,792 characters, its last turn 23,286, before stale contents were cut on 16 November 2026).
 
+### web: does anything move on the PWA's screens?
+
+Every place of the PWA, and Galahad's, a knight's and a room's timeline, opened in a headless Chrome paired with a throwaway node, as a returning visit opens it, on a laptop's screen (1280×800) and a phone's (390×844, the processor slowed 4×, a 9 Mbit/s line), and watched from its first frame until 3 s after it is usable (`apps/web/measure/first-load.ts --shifts`, which the suite runs). A place's metric is its cumulative layout shift, the sum of every layout shift in that time, ×10,000: 0 is a page where nothing moved once it was on screen. The node holds the same stand-in fleet every time (seven knights, a room, tasks running, verified and given up, two trial runs, a kept chat, a quest in hand, a key he asked for), so the same app moves the same way every time: three runs of three visits each gave identical values for every place. It needs Chrome (`CHROME`, or Chrome or Chromium where it usually is) and takes about three minutes, most of it the stand-in fleet getting its work done.
+
+| Cumulative layout shift ×10,000, the worst visit | Laptop | Phone |
+|---|---:|---:|
+| The Overview · Loops · the Fleet · the Vault · Connectors, before the PWA's parts appeared whole (16 Nov) | 856 · 731 · 1,086 · 788 · 397 | 2,160 · 1,946 · 1,888 · 1,945 · 2,256 |
+| A knight's timeline · a room's, before their headers held their place | 550 · 609 | 1,110 · 1,224 |
+| Every place now but Models | 0 | 0 |
+| Models | 283 | 622 |
+
+A place that holds still is judged to 5 (0.0005, below anything one can see), so one that starts to move fails the run; one that already moves is judged within 15 % of its score, because its text can wrap otherwise on another platform's fonts. Models still moves (its roster's placeholder settles to the roles' height, and the providers under it move): its page is being changed elsewhere, and `pageBody()` will hold it still as it holds the others. `web.still` counts the places that held still: 46 of 48.
+
 ## Adding a metric, or a suite
 
 - A metric: in its suite, `ctx.quality(id, value, unit, "higher" | "lower", { note, resolution? })` for something exact, `ctx.time(id, fn, { n, warm, batch, per, note })` for something timed (or `ctx.speed(id, samples, unit, better, [from, to], note)` for samples timed elsewhere, with when they were taken). Names are lower case with dots and dashes; one only `--full` measures starts `full.`. Say in the note what the number is. Then record the baseline on purpose and commit it with the change.

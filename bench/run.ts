@@ -19,6 +19,7 @@ const SUITES: Record<string, () => Promise<{ suite: Suite }>> = {
   archive: () => import("./suites/archive.ts"),
   "harness-overhead": () => import("./suites/harness-overhead.ts"),
   context: () => import("./suites/context.ts"),
+  web: () => import("./suites/web.ts"),
 };
 
 const USAGE = `bun run bench [suite…] [--full] [--json] [--all] [--ci] [--seed n] [--update-baseline]
