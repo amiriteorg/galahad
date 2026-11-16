@@ -9,10 +9,12 @@
 #                                                         its dependencies laid out flat: no development tools, no links out
 #   Contents/Library/LaunchAgents/sh.galahad.node.plist   the node's agent, which the app registers (SMAppService)
 #
-# Then every Mach-O inside is signed with the hardened runtime, the deepest first: Bun with allow-jit alone (and a fixed
+# Then every Mach-O inside is signed, the deepest first: Bun with the hardened runtime and allow-jit alone (and a fixed
 # identifier, so the Keychain knows the node's Bun from one release to the next), what the app embeds keeping its own
 # entitlements, and the app. GALAHAD_MAC_SIGN=developer-id signs with the Developer ID in this Mac's keychain and Apple's
-# timestamp (the identity is never printed); otherwise ad hoc.
+# timestamp (the identity is never printed), everything with the hardened runtime, as notarization asks. Otherwise it is
+# signed ad hoc, and only Bun is hardened: ad hoc code has no team, so the hardened runtime's library validation would
+# refuse the app its own frameworks (measured: Sparkle, and a Debug build's dylib, "have different Team IDs").
 #
 # It is a release step, run on a built app, not a build phase of GalahadMac: measured on the owner's MacBook (16 November),
 # it makes the app 165 MB bigger (19 → 184 MB) and takes 8 s with Bun's package cache warm, and it needs the network each
@@ -26,7 +28,9 @@ REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 [[ -x $APP/Contents/MacOS/Galahad && $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" 2>/dev/null) == org.amirite.galahad.mac ]] ||
   { echo "not Galahad for the Mac (org.amirite.galahad.mac): $APP" >&2; exit 1; }
 
-SIGN=(--force --options runtime)
+SIGN=(--force)
+# The hardened runtime for the app and what it embeds (Bun has it always).
+HARDENED=()
 case ${GALAHAD_MAC_SIGN:-adhoc} in
   developer-id)
     # The identity's fingerprint, read from the keychain, never printed.
@@ -37,11 +41,12 @@ case ${GALAHAD_MAC_SIGN:-adhoc} in
       exit 1
     fi
     SIGN+=(--sign "$ID" --timestamp)
-    HOW="with the Developer ID and Apple's timestamp"
+    HARDENED=(--options runtime)
+    HOW="with the Developer ID and Apple's timestamp, under the hardened runtime"
     ;;
   adhoc)
     SIGN+=(--sign -)
-    HOW="ad hoc, to run on this Mac"
+    HOW="ad hoc, to run on this Mac (Bun under the hardened runtime)"
     ;;
   *) echo "GALAHAD_MAC_SIGN is developer-id, or unset (ad hoc)" >&2; exit 1 ;;
 esac
@@ -74,11 +79,11 @@ echo "→ what the node runs of its dependencies, laid out flat"
 machos=0
 while IFS= read -r -d '' file; do
   if file -b "$file" | grep -q Mach-O; then
-    sign "$file"
+    sign --options runtime "$file"
     machos=$((machos + 1))
   fi
 done < <(find "$STAGE/node" -type f \( -perm -u+x -o -name '*.node' -o -name '*.dylib' -o -name '*.so' \) -print0)
-sign --identifier org.amirite.galahad.mac.bun --entitlements "$HERE/mac-node/bun.entitlements" "$STAGE/helpers/bun"
+sign --options runtime --identifier org.amirite.galahad.mac.bun --entitlements "$HERE/mac-node/bun.entitlements" "$STAGE/helpers/bun"
 
 rm -rf "$APP/Contents/Helpers" "$APP/Contents/Resources/node"
 mv "$STAGE/helpers" "$APP/Contents/Helpers"
@@ -90,10 +95,10 @@ cp "$HERE/mac-node/sh.galahad.node.plist" "$APP/Contents/Library/LaunchAgents/sh
 # entitlements; then the app.
 if [[ -d $APP/Contents/Frameworks ]]; then
   while IFS= read -r -d '' item; do
-    if [[ -d $item ]] || file -b "$item" | grep -q Mach-O; then sign --preserve-metadata=entitlements "$item"; fi
+    if [[ -d $item ]] || file -b "$item" | grep -q Mach-O; then sign ${HARDENED[@]+"${HARDENED[@]}"} --preserve-metadata=entitlements "$item"; fi
   done < <(find "$APP/Contents/Frameworks" -depth \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' -o -name '*.dylib' -o \( -type f -perm -u+x \) \) -print0)
 fi
-sign --preserve-metadata=entitlements "$APP"
+sign ${HARDENED[@]+"${HARDENED[@]}"} --preserve-metadata=entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 
 # Gatekeeper refuses an app with a link that leads out of it.
