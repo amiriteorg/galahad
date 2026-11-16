@@ -307,6 +307,34 @@ test("a task's budget counts its coding tool's own calls through the gateway too
   expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
 });
 
+test("a knight's task is given the skills that bear on its goal (its planner and engineer, never its reviewer), and its verified work is told so it can teach one", async () => {
+  const SKILLS = "<galahad-skills>Run the migrations before the importer.</galahad-skills>";
+  const asked: { teammate: string; task: string }[] = [];
+  const taught: { teammate: string; task: string; evidence: any }[] = [];
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], {
+    skills: (teammate, given) => (asked.push({ teammate: teammate.id, task: given.id }), SKILLS),
+    learned: (teammate, given, evidence) => void taught.push({ teammate: teammate.id, task: given.id, evidence }),
+  });
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.verified).toBe(true);
+  expect(asked).toEqual([{ teammate: "ada", task: task.id }]);
+  // The planner's and the engineer's calls carry them; the reviewer judges the evidence alone.
+  const seen = f.bodies.map((body) => JSON.stringify(body.messages).includes("Run the migrations before the importer."));
+  expect(seen).toEqual([true, true, true, false]);
+  // What it did, as the evidence of a quest of his is told: the goal, the plan, each command and its exit, the gates.
+  expect(taught).toHaveLength(1);
+  expect(taught[0]).toMatchObject({ teammate: "ada", task: task.id, evidence: { quest: `team:${task.id}`, goal: task.goal, status: "done", network: "online", steps: [{ command: "echo one", exitCode: 0 }] } });
+  expect(taught[0]!.evidence.gates).toEqual([{ command: "bun test required-check", exitCode: 0 }]);
+});
+
+test("work that wasn't verified teaches nothing: it isn't told", async () => {
+  const taught: unknown[] = [];
+  const f = fixture([say("1. Make the change."), say("GIVE UP\nNo way to do it.")], { learned: (_t, _task, evidence) => void taught.push(evidence) });
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.verified).toBe(false);
+  expect(taught).toEqual([]);
+});
+
 test("a knight on the reviewer's role talks on it, but its work is the engineer's: the reviewer never does the work it checks", async () => {
   const knight: Teammate = { ...member, role: "reviewer" };
   const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => knight });

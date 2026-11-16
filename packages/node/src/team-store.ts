@@ -607,6 +607,10 @@ export class TeamStore {
   }
   /** Its trail: each line as it happened, numbered in order, kept after the task has ended. Bounded: a line is cut to
    * TRAIL.text, and once a task has more than TRAIL.keep lines the oldest go (the numbers stay as written). */
+  /** A line of its own on a task's trail after it ran: what its verified work taught (a skill). */
+  noteTask(key: string, text: string): void {
+    if (this.jobRow(key)) this.trailLine(key, this.now(), text);
+  }
   private trailLine(key: string, at: number, text: string): void {
     const n = (this.db.query<{ n: number | null }, [string]>("SELECT MAX(n) AS n FROM team_trail WHERE task=?").get(key)?.n ?? 0) + 1;
     this.db.query("INSERT INTO team_trail(task,n,at,text) VALUES(?,?,?,?)").run(key, n, at, teamOutput(text, TRAIL.text));

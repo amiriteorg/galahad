@@ -1817,6 +1817,24 @@ export function createApp(ctx: AppContext) {
         return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
       },
       prices: () => pricesOf(ctx.store),
+      // His skills for a knight's task, as for a quest of his: chosen once from its goal, under the task's own ref.
+      skills: (_member, task) => {
+        try {
+          return ctx.skills.forQuest(`team:${task.id}`, task.goal)?.text ?? null;
+        } catch (error) {
+          ctx.log(`skills: ${(error as Error).message}`);
+          return null;
+        }
+      },
+      // Its verified work may teach one (skills.ts checks it against what the ledger recorded of the knight's own VM).
+      learned: (member, task, evidence) => {
+        void ctx.skills.learn(evidence, { ref: `team:${task.id}`, sandboxes: teammateLabel(member.id) }).then(
+          (learned) => {
+            if (learned.skill) ctx.team?.service?.noteTask(task.id, `Skill ${learned.revised ? "revised" : "learned"}: “${learned.skill.title}”${learned.skill.pending ? " (it waits for your approval, and isn't used until then)" : ""}`);
+          },
+          (error) => ctx.log(`skills: what ${task.id} taught wasn't kept (${(error as Error).message})`),
+        );
+      },
       // (A knight's VM on another node calls that node's gateway: its calls aren't counted here.)
       toolSpent: (member, since) => (member.workspace && member.workspace.node === ctx.identity.id ? toolSpend.since(`sandbox:${member.workspace.id}`, since) : []),
       models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,

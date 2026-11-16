@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { addUsage, costOf, mergeSpend, type NamedRule, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
+import { addUsage, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
 import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
+import { questEvidence, questTrail } from "./skills-quest.ts";
 import type { TeamRunContext } from "./team.ts";
 
 export interface TeamRuntimeDeps {
@@ -13,6 +14,13 @@ export interface TeamRuntimeDeps {
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
   /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
   prices?(): Prices;
+  /**
+   * His skills that bear on a task's goal (skills.ts: chosen once for the task, fenced as data), for its planner and
+   * engineer, never its reviewer. Absent or null: none.
+   */
+  skills?(teammate: Teammate, task: TeamTask): string | null;
+  /** A task's work passed review: its evidence, so it may teach a skill (at most one, which waits for you). Never waited on. */
+  learned?(teammate: Teammate, task: TeamTask, evidence: QuestEvidence): void;
   /**
    * What the knight's coding tool's own calls cost since `since` (ms), through its VM's gateway token, by model (role
    * "tool"): a task's budget counts them beside its own calls. Absent, or a VM on another node: none are known.
@@ -439,12 +447,20 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // Fenced once for the task: every turn of its planner and engineer is then sent the same beginning, which a
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
+      // His skills that bear on the goal go with the knight's notes: to its planner and its engineer, never its reviewer.
+      const context = [ownNotes, deps.skills?.(teammate, task) ?? null].filter(Boolean).join("\n\n") || undefined;
+      // What the review's evidence is made of (each command and its exit, the gates), for what the work may teach.
+      const trail = questTrail();
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
-        ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
-        exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
+        ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
+        exec, signal: ctx.signal,
+        emit: (event) => {
+          trail.on(event);
+          ctx.emit(progress(event));
+        },
         // Your tripwires, as the mind holds them before each command; each trip told to the ledger.
         ...(deps.rules ? { rules: deps.rules } : {}),
         tripped: (trip) => deps.tripped?.(teammate, task, trip),
@@ -464,6 +480,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // (Its coding tool's calls are in what it spent, under the role "tool".)
       const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent: mergeSpend(spent, deps.toolSpent?.(teammate, startedAt)) };
       const verified = outcome.status === "done";
+      // Its verified work may teach a skill, as his own quests do (it waits for you): told, never waited on.
+      if (verified) deps.learned?.(teammate, task, questEvidence({ quest: `team:${task.id}`, goal: task.goal, network: "online", repo: !!teammate.repository, agent: agent?.driver.name, outcome, trail }));
       // In a repository, the work itself is kept to read and to ship: a patch and a shipment of everything since the
       // start (what the knight committed included), as an artifact on the VM's host. Whatever happens is said.
       let changes: TeamTaskChanges | undefined;

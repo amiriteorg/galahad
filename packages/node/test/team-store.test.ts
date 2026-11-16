@@ -123,6 +123,11 @@ describe("private team persistence", () => {
     const reopened = make(path);
     expect(reopened.trail(task.id).entries.map((e) => e.text)).toEqual(["Plan · 1. Look.", "Running · ls", "Exit 0 · exit 0 · 3 ms\nREADME.md"]);
     expect(reopened.trail("task-nosuchtask00")).toEqual({ entries: [], more: false });
+    // What its verified work taught is a line of its own after it ran; a task that isn't there gets none.
+    reopened.noteTask(task.id, "Skill learned: “Run the migrations first” (it waits for your approval, and isn't used until then)");
+    reopened.noteTask("task-nosuchtask00", "nothing");
+    expect(reopened.trail(task.id).entries.at(-1)!.text).toBe("Skill learned: “Run the migrations first” (it waits for your approval, and isn't used until then)");
+    expect(reopened.trail("task-nosuchtask00")).toEqual({ entries: [], more: false });
   });
   test("a trail is bounded and holds no secret: long lines are cut, a page is at most two hundred, and the oldest go once a task has more than it may keep", () => {
     const store = make(); setup(store);

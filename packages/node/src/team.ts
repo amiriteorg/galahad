@@ -103,6 +103,11 @@ export class TeamService {
     this.changed(); this.kick();
     return saved;
   }
+  /** A line on a task's trail from outside its run (a skill its verified work taught), shown on every device. */
+  noteTask(task: string, text: string): void {
+    this.store.noteTask(task, text);
+    this.changed();
+  }
   setWorkspace(id: string, binding: TeamWorkspace | null): Teammate {
     this.accepting();
     this.steady(id);
