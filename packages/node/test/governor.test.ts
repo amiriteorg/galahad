@@ -77,6 +77,31 @@ describe("sandbox slots", () => {
     expect(g.usage()).toMatchObject({ sandboxes: 0, cores: 0, memoryGb: 0 });
   });
 
+  test("a knight's own VM takes no slot: it holds its threads and memory of the ceiling, and the slots stay for work that comes and goes", async () => {
+    const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }) });
+    for (const knight of ["ada", "lin", "sam"]) await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: `arm.team.abcdef0123.${knight}`, kept: true });
+    expect(g.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 6, memoryGb: 12 });
+    // Every slot is still there for work.
+    const a = await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "q-a" });
+    await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "q-b" });
+    expect(g.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 10, memoryGb: 20 });
+    // The ceiling still bounds them all: another VM of 4 threads would pass its 12, so it waits, and says why.
+    let made = false;
+    const dex = g.acquire({ cpus: 4, memoryGb: 4 }, { quest: "arm.team.abcdef0123.dex", kept: true }).then((ticket) => { made = true; return ticket; });
+    await settle();
+    expect(made).toBe(false);
+    expect(g.queue()[0]!.why).toMatch(/threads he may use/);
+    g.release(a);
+    await dex;
+    expect(g.usage()).toMatchObject({ sandboxes: 1, kept: 4, cores: 12 });
+  });
+
+  test("a persistent sandbox in Docker's list is a kept VM again after a restart", () => {
+    const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }) });
+    g.adopt([{ id: "0123456789", cpus: 1, memoryGb: 2, isolation: "vm", kept: true }, { id: "9876543210", cpus: 2, memoryGb: 4, isolation: "container" }]);
+    expect(g.usage()).toMatchObject({ sandboxes: 1, kept: 1, cores: 4, memoryGb: 8 });
+  });
+
   test("a sandbox is known by its id once it exists, and released by it", async () => {
     const { g } = governor();
     const ticket = await g.acquire(slot, { quest: "q" });

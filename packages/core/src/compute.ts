@@ -259,6 +259,7 @@ export function deriveCapacity(body: ComputeBody, calibration: Calibration | nul
     } else {
       reasons.push(`${plural(sandboxes, "sandbox", "sandboxes")} at once (${SLOT_CPUS} threads and ${SLOT_MEMORY_GB} GB each: the threads allow ${Math.max(1, byCores)}, the memory ${Math.max(1, byMemory)}).`);
     }
+    reasons.push("A knight's own VM takes no slot: it holds its threads and memory of the ceiling, as long as it is kept.");
   }
   const modelCalls = limit?.modelCalls ?? MODEL_CALLS_DEFAULT;
   reasons.push(`${plural(modelCalls, "model call")} at once (${limit?.modelCalls !== undefined ? "your ceiling" : "the default"}).`);
@@ -323,13 +324,13 @@ function fits(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; me
  * Whether one more sandbox fits now: inside the ceiling, and with room left on the machine itself
  * (he backs off while other work is using it). `host` null: the live load isn't known (another node).
  */
-export function admit(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; memoryGb: number }, host: HostLoad | null): Admission {
-  return fits(capacity, used, need, host, host ? othersLoad(used, host) : 0);
+export function admit(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; memoryGb: number }, host: HostLoad | null, opts: { slot?: boolean } = {}): Admission {
+  return fits(capacity, used, need, host, host ? othersLoad(used, host) : 0, opts.slot ?? true);
 }
 
 /** Whether a sandbox may grow by `more` now: what it adds fits the ceiling and the machine as a new one's would, its slot the same. */
 export function admitGrowth(capacity: NodeCapacity, used: ComputeUse, more: { cpus: number; memoryGb: number }, host: HostLoad | null): Admission {
-  return fits(capacity, used, more, host, host ? othersLoad(used, host) : 0, false);
+  return admit(capacity, used, more, host, { slot: false });
 }
 
 /** How many more standard sandboxes fit now. */
@@ -590,6 +591,8 @@ export function computeSuggestions(
 
 /** What a node's work holds now, and what waits. Travels with presence (never the log). */
 export interface ComputeUsage extends ComputeUse {
+  /** Knights' own VMs: kept, holding their threads and memory of the ceiling, and no slot (absent: a node from before). */
+  kept?: number;
   /** Sandboxes waiting for a slot. */
   queued: number;
   modelCalls: number;

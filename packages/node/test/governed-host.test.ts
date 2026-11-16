@@ -60,6 +60,18 @@ describe("every sandbox takes a slot first", () => {
     expect(governor.usage().sandboxes).toBe(2);
   });
 
+  test("a persistent sandbox (a knight's own VM) takes no slot, and is held by its size; Docker's list says so again after a restart", async () => {
+    const { sandbox, governor } = host({ capacity: () => capacity({ cores: 32, memoryGb: 64 }) });
+    for (const knight of ["ada", "lin", "sam"]) await sandbox.create(request({ quest: `arm.team.abcdef0123.${knight}`, persistent: true, cpus: 1, memoryGb: 2 }));
+    expect(governor.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 3, memoryGb: 6 });
+    // Both slots are still there for work that comes and goes.
+    await sandbox.create(request({ quest: "q-a" }));
+    await sandbox.create(request({ quest: "q-b" }));
+    expect(governor.usage()).toMatchObject({ sandboxes: 2, kept: 3 });
+    await sandbox.reconcile();
+    expect(governor.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 11, memoryGb: 22 });
+  });
+
   test("more than the ceiling gets the ceiling; a microVM's overhead comes out of it", async () => {
     const plain = host();
     expect(await plain.sandbox.create(request({ cpus: 64, memoryGb: 512 }))).toMatchObject({ cpus: 8, memoryGb: 16 });

@@ -39,6 +39,8 @@ export interface Ticket {
 interface Held {
   cpus: number;
   memoryGb: number;
+  /** A knight's own VM, kept between its tasks: it holds its threads and memory of the ceiling, never a slot. */
+  kept: boolean;
   /** Not yet a sandbox Docker lists: being created. */
   creating: boolean;
   /** When it became a sandbox (the governor's own count of such moments): a listing taken before that can't speak for it. */
@@ -48,6 +50,7 @@ interface Held {
 interface Waiting {
   need: { cpus: number; memoryGb: number };
   quest: string;
+  kept: boolean;
   since: number;
   why: string;
   admit(ticket: Ticket): void;
@@ -81,19 +84,22 @@ export class Governor {
     return this.opts.now?.() ?? Date.now();
   }
 
-  /** What his sandboxes hold now. */
+  /** What his sandboxes hold now: every one's threads and memory, and the slots of those that aren't knights' own VMs. */
   use(): ComputeUse {
     let cores = 0;
     let memoryGb = 0;
+    let slots = 0;
     for (const h of this.held.values()) {
       cores += h.cpus;
       memoryGb += h.memoryGb;
+      if (!h.kept) slots += 1;
     }
-    return { sandboxes: this.held.size, cores, memoryGb };
+    return { sandboxes: slots, cores, memoryGb };
   }
 
   usage(): ComputeUsage {
-    return { ...this.use(), queued: this.waiting.length, modelCalls: this.modelCalls, modelQueued: this.modelWaiting.length };
+    const kept = [...this.held.values()].filter((h) => h.kept).length;
+    return { ...this.use(), kept, queued: this.waiting.length, modelCalls: this.modelCalls, modelQueued: this.modelWaiting.length };
   }
 
   /** What waits for a slot, oldest first, and why. */
@@ -152,7 +158,7 @@ export class Governor {
    * A slot for one sandbox: resolves when it fits (at once, when it does), in turn. Rejects when the wait
    * outlasts `maxWaitMs`, the caller goes away, or this node takes no sandboxes at all.
    */
-  acquire(need: { cpus: number; memoryGb: number }, meta: { quest: string }, signal?: AbortSignal): Promise<Ticket> {
+  acquire(need: { cpus: number; memoryGb: number }, meta: { quest: string; kept?: boolean }, signal?: AbortSignal): Promise<Ticket> {
     if (this.opts.capacity().sandboxes <= 0) return Promise.reject(new CapacityError("this node takes no sandboxes (its ceiling is none)", 409));
     if (signal?.aborted) return Promise.reject(new CapacityError("the caller gave up waiting for a slot", 499));
     return new Promise<Ticket>((resolve, reject) => {
@@ -172,6 +178,7 @@ export class Governor {
       const entry: Waiting = {
         need,
         quest: meta.quest,
+        kept: meta.kept === true,
         since,
         why: "",
         admit: (ticket) => {
@@ -207,7 +214,8 @@ export class Governor {
     let admitted = false;
     while (this.waiting.length) {
       const head = this.waiting[0]!;
-      const verdict = admit(this.opts.capacity(), this.use(), head.need, this.hostNow());
+      // A knight's own VM needs room for what it holds, and no slot.
+      const verdict = admit(this.opts.capacity(), this.use(), head.need, this.hostNow(), { slot: !head.kept });
       if (!verdict.ok) {
         head.why = verdict.why;
         for (const behind of this.waiting.slice(1)) behind.why ||= "others are ahead of it in the queue";
@@ -216,7 +224,7 @@ export class Governor {
       this.waiting.shift();
       this.remember();
       const ticket: Ticket = { id: `t${++this.next}` };
-      this.held.set(ticket.id, { ...head.need, creating: true, bound: 0 });
+      this.held.set(ticket.id, { ...head.need, kept: head.kept, creating: true, bound: 0 });
       this.remember();
       head.admit(ticket);
       admitted = true;
@@ -262,7 +270,7 @@ export class Governor {
    * that came to be after the list was asked for (`asOf`: the mark taken before asking): a stale list
    * never frees the slot of a sandbox that exists.
    */
-  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm" }[], asOf = this.bindings): void {
+  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm"; kept?: boolean }[], asOf = this.bindings): void {
     const before = JSON.stringify([...this.held.entries()]);
     this.remember();
     const listed = new Set(sandboxes.map((s) => s.id));
@@ -270,7 +278,7 @@ export class Governor {
     for (const s of sandboxes) {
       if (this.held.has(s.id)) continue;
       const vm = s.isolation === "vm";
-      this.held.set(s.id, { cpus: s.cpus + (vm ? VM_OVERHEAD.cpus : 0), memoryGb: s.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0), creating: false, bound: 0 });
+      this.held.set(s.id, { cpus: s.cpus + (vm ? VM_OVERHEAD.cpus : 0), memoryGb: s.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0), kept: s.kept === true, creating: false, bound: 0 });
     }
     this.remember();
     this.pump();

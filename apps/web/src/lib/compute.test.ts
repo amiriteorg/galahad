@@ -69,6 +69,8 @@ describe("the ceiling and the slots", () => {
     expect(slotsText(node({ capacity: capacity({ sandboxes: 0 }) })).text).toBe("No sandboxes: your ceiling");
     expect(slotsText(node({ capacity: capacity({ sandboxes: 1 }), use: use(0) })).text).toBe("0 of 1 slot in use");
     expect(slotsText(node({ capacity: capacity({ sandboxes: 2 }), limit: { sandboxes: 2 }, use: use(2, 1) })).text).toBe("2 of 2 slots in use (your ceiling)");
+    expect(slotsText(node({ use: { ...use(1), kept: 4 } })).text).toBe("1 of 3 slots in use · 4 knights' VMs besides");
+    expect(slotsText(node({ use: { ...use(0), kept: 1 } })).text).toBe("0 of 3 slots in use · 1 knight's VM besides");
     expect(modelCallsText(node())).toBe("2 of 8 model calls");
     expect(modelCallsText(node({ use: null }))).toBe("8 model calls");
   });

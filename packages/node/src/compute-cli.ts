@@ -69,7 +69,7 @@ function nodeLines(n: ComputeNodeView, now: number): string[] {
       !n.body.sandboxHost
         ? dim("no sandboxes (not a sandbox host)")
         : use
-          ? `${bar(use.sandboxes, slots)}${use.sandboxes} of ${plural(slots, "sandbox", "sandboxes")} in use${use.queued ? ` · ${bold(`${use.queued} waiting`)}` : ""}`
+          ? `${bar(use.sandboxes, slots)}${use.sandboxes} of ${plural(slots, "sandbox", "sandboxes")} in use${use.queued ? ` · ${bold(`${use.queued} waiting`)}` : ""}${use.kept ? dim(` · and ${plural(use.kept, "knight's VM", "knights' VMs")}, which take no slot`) : ""}`
           : `${plural(slots, "sandbox", "sandboxes")} ${dim("(in use: not known)")}`
     }${use ? ` · ${use.modelCalls} of ${plural(n.capacity.modelCalls, "model call")}${use.modelQueued ? ` (${use.modelQueued} waiting)` : ""}` : ` · ${plural(n.capacity.modelCalls, "model call")}`}`,
   );

@@ -40,7 +40,8 @@ export class GovernedSandboxHost extends SandboxHost {
     const need = clampNeed(capacity, { cpus, memoryGb }, vm);
     let ticket: Awaited<ReturnType<Governor["acquire"]>>;
     try {
-      ticket = await this.governed.governor.acquire(need, { quest: input.quest ?? "adhoc" }, wait.signal);
+      // A persistent one (a knight's own VM) takes no slot: it holds what it is given of the ceiling.
+      ticket = await this.governed.governor.acquire(need, { quest: input.quest ?? "adhoc", kept: input.persistent }, wait.signal);
     } catch (error) {
       if (error instanceof CapacityError) throw new SandboxError(error.message, error.status);
       throw error;
@@ -91,6 +92,6 @@ export class GovernedSandboxHost extends SandboxHost {
     // The mark first: a sandbox that comes to be while Docker answers isn't in this list, and keeps its slot.
     const asOf = this.governed.governor.mark();
     const listed = await this.listed();
-    if (listed) this.governed.governor.adopt(listed.map((s) => ({ id: s.id, cpus: s.cpus, memoryGb: s.memoryGb, isolation: s.isolation })), asOf);
+    if (listed) this.governed.governor.adopt(listed.map((s) => ({ id: s.id, cpus: s.cpus, memoryGb: s.memoryGb, isolation: s.isolation, kept: !s.ephemeral })), asOf);
   }
 }

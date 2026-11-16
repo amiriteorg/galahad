@@ -66,7 +66,9 @@ export function slotsText(node: Pick<ComputeNodeView, "body" | "capacity" | "use
   if (slots <= 0) return { text: "No sandboxes: your ceiling", waiting: 0, fraction: null };
   const capped = node.limit?.sandboxes !== undefined && node.limit.sandboxes <= slots ? " (your ceiling)" : "";
   if (!node.use) return { text: `${plural(slots, "slot")}${capped} · in use: not known`, waiting: 0, fraction: null };
-  return { text: `${node.use.sandboxes} of ${plural(slots, "slot")} in use${capped}`, waiting: node.use.queued, fraction: Math.min(1, node.use.sandboxes / slots) };
+  // Knights' own VMs hold their threads and memory, and no slot: said beside the slots, never among them.
+  const kept = node.use.kept ? ` · ${plural(node.use.kept, "knight's VM", "knights' VMs")} besides` : "";
+  return { text: `${node.use.sandboxes} of ${plural(slots, "slot")} in use${capped}${kept}`, waiting: node.use.queued, fraction: Math.min(1, node.use.sandboxes / slots) };
 }
 
 /** A node's model calls in words. */
