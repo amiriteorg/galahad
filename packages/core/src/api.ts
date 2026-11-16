@@ -330,6 +330,18 @@ export const routes = {
     }),
   },
   forget: { method: "POST", path: "/api/memories/forget", scope: "mind:write", input: z.strictObject({ id: z.string() }) },
+  /**
+   * What he knows of you (ABOUT_YOU_TAG): the facts you kept, which go with every answer of his, and the ones he
+   * proposed, which wait for you. Yours to read from any device that may read the mind.
+   */
+  aboutYou: { method: "GET", path: "/api/about-you", scope: "mind:read", input: null },
+  /** Keep a fact he proposed (or reword one you kept): yours alone, never an agent's. It goes with his answers from then on. */
+  keepAboutYou: {
+    method: "POST",
+    path: "/api/about-you/keep",
+    scope: "mind:write",
+    input: z.strictObject({ id: z.string().min(1).max(100), text: z.string().trim().min(1).max(2000).optional() }),
+  },
   secrets: { method: "GET", path: "/api/secrets", scope: "vault:read", input: null },
   setSecret: {
     method: "POST",
@@ -1044,6 +1056,13 @@ export interface FleetView {
   events: number;
   digest: string;
 }
+
+/**
+ * A memory with this tag is a durable fact about you (a preference, a convention, what not to do): yours, written
+ * from your device or kept by you, goes with every answer of his; his own (an agent's) is only proposed, and waits
+ * for you to keep it (your ruling, 16 November 2026), so nothing he read can plant a standing instruction.
+ */
+export const ABOUT_YOU_TAG = "about-you";
 
 export interface MemoryView {
   id: string;

@@ -594,6 +594,15 @@ bun galahad ask --project rocket "Size the nozzle for 5 kN at sea level"
 bun galahad projects
 ```
 
+**What he knows of you.** Durable facts about you go with every answer of his: a preference, a convention, what not to do. He proposes them as he notices them, and each waits for you to keep it, in your words:
+
+```sh
+bun galahad about                                      # kept facts, and his proposals
+bun galahad about add "Short answers, the command first."
+bun galahad about keep <id> --text "Uses tabs, never spaces."
+bun galahad about rm <id>
+```
+
 ## 13. Your bank, read-only
 
 Balances and transactions of your own accounts, through Enable Banking, for the agents you choose; nothing can move money. The whole setup (the application at Enable Banking, the key, linking your bank) is in [BANK](BANK.md). In short, on the node that holds it:

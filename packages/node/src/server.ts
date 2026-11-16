@@ -1,4 +1,5 @@
 import {
+  ABOUT_YOU_TAG,
   type ActionView,
   canonical,
   chooseEyes,
@@ -541,6 +542,19 @@ export function createApp(ctx: AppContext) {
       // A hash of every view (as big as the views, not the log; kept until they change).
       digest: ctx.store.digest(),
     };
+  }
+
+  /** The facts about you that you kept (yours: ABOUT_YOU_TAG): they go with every answer of his, oldest first. */
+  function aboutYouContext(): string | undefined {
+    let room = 4000;
+    const kept = ctx.store
+      .memoriesTagged(ABOUT_YOU_TAG, 100)
+      .filter((m) => m.trust === "owner")
+      .reverse()
+      .filter((m) => (room -= m.text.length + 3) >= 0);
+    if (!kept.length) return undefined;
+    // Your own words, kept by you: to keep to, as a project's instructions are (the same text until one changes).
+    return `What your liege has told you about themselves, to keep to in every answer (theirs, kept on their word):\n${kept.map((m) => `- ${m.text}`).join("\n")}`;
   }
 
   /** Recalled memories become context for chat, labelled with their trust level. */
@@ -1127,7 +1141,7 @@ export function createApp(ctx: AppContext) {
     // for the last message would ask his memory about a command's output and change the prompt's beginning each
     // time, so that no provider could read it from its cache (input tokens are the bill).
     const recallFor = request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
-    const known = [project ? projectContext(project) : null, recallFor ? memoryContext(about ?? recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
+    const known = [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
     // What it is about, for the archive and his skills: the question, or `about` when the last message holds more (a room's answer).
@@ -1953,6 +1967,21 @@ export function createApp(ctx: AppContext) {
         },
       });
       return { id: event.id, trust };
+    },
+    aboutYou: () => {
+      const facts = ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200);
+      return { kept: facts.filter((m) => m.trust === "owner"), proposed: facts.filter((m) => m.trust !== "owner") };
+    },
+    keepAboutYou: (input, p) => {
+      // Yours alone: an agent (Galahad among them) proposes, and only you keep what goes with every answer.
+      if (p.kind === "arm" || p.kind === "node") throw new HttpError(403, "only you keep a fact about you: he proposes, you keep");
+      const fact = ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200).find((m) => m.id === input.id);
+      if (!fact) throw new HttpError(404, "no such fact about you (galahad about lists them)");
+      const text = input.text ?? fact.text;
+      guardAgainstSecrets(text);
+      const event = ctx.store.remember(ctx.identity, text, { tags: [ABOUT_YOU_TAG], prov: { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) } });
+      ctx.store.emit(ctx.identity, "memory.forgotten", { memory: fact.id });
+      return { id: event.id, text };
     },
     forget: (input, p) => {
       // An agent may forget only what it wrote itself; your memories are yours to delete.

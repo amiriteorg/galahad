@@ -21,7 +21,7 @@ import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { chatStateWords, checkFacts, type ModelCheck } from "@galahad/core";
+import { ABOUT_YOU_TAG, chatStateWords, checkFacts, type MemoryView, type ModelCheck } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import type { BankStatusView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
@@ -95,6 +95,7 @@ Set up
 
 Mind
   remember <text> [--tag t]      recall [query]
+  about [add <fact> | keep <id> [--text …] | rm <id>]   what he knows of you: kept facts go with every answer
   search "<words>" [--page 2]    search the web through Galahad's own SearXNG (also: websearch, in sandboxes)
   decide "<state>" --question "…" [--options a,b,c | --levels low,mid,high]
                                   a typed decision from the decider role (TypeSafe's Jev): yes/no, a choice, a score
@@ -786,6 +787,48 @@ Next:
       if (!text) fail("usage: galahad remember <text>");
       await new Admin(home).call("remember", { text, tags: flags.tag as string[] | undefined });
       console.log("Remembered.");
+      return;
+    }
+    case "about": {
+      // What he knows of you: the facts you kept (they go with every answer of his) and the ones he proposed (they wait for you).
+      const admin = new Admin(home);
+      const facts = async () => (await admin.call("aboutYou")) as { kept: MemoryView[]; proposed: MemoryView[] };
+      const which = async (ref: string | undefined): Promise<MemoryView> => {
+        if (!ref) fail(`usage: galahad about ${sub} <id>`);
+        const { kept, proposed } = await facts();
+        const found = [...kept, ...proposed].filter((m) => m.id === ref || m.id.startsWith(ref!));
+        if (found.length !== 1) fail(found.length ? `"${ref}" names more than one fact: give more of its id` : `no fact about you is "${ref}" (galahad about lists them)`);
+        return found[0]!;
+      };
+      if (!sub || sub === "ls") {
+        const { kept, proposed } = await facts();
+        if (!kept.length && !proposed.length) console.log("He keeps nothing about you yet. Tell him in chat, or: galahad about add <fact>");
+        if (kept.length) console.log(bold("Kept: with every answer of his"));
+        for (const m of kept) console.log(`  ${dim(m.id.slice(0, 12))}  ${m.text}`);
+        if (proposed.length) console.log(bold("Proposed by him: waiting for you"));
+        for (const m of proposed) console.log(`  ${dim(m.id.slice(0, 12))}  ${m.text}`);
+        if (proposed.length) console.log(dim("  galahad about keep <id> [--text …] keeps one (in your words) · galahad about rm <id> drops it"));
+        return;
+      }
+      if (sub === "add") {
+        const text = rest.join(" ").trim();
+        if (!text) fail("usage: galahad about add <fact>");
+        await admin.call("remember", { text, tags: [ABOUT_YOU_TAG] });
+        console.log("Kept: it goes with every answer of his.");
+        return;
+      }
+      if (sub === "keep") {
+        const fact = await which(rest[0]);
+        await admin.call("keepAboutYou", { id: fact.id, ...(str("text") ? { text: str("text") } : {}) });
+        console.log("Kept: it goes with every answer of his.");
+        return;
+      }
+      if (sub === "rm") {
+        await admin.call("forget", { id: (await which(rest[0])).id });
+        console.log("Removed: it goes with his answers no more.");
+        return;
+      }
+      fail("usage: galahad about [add <fact> | keep <id> [--text …] | rm <id>]");
       return;
     }
     case "recall": {
