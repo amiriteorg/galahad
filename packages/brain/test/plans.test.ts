@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, chooseAgentModels, decide, detectProvider, embed, GatewayTokens, handleGateway, originOf, planOf, preset, PRESETS, resolveProvider, signIn } from "../src/index.ts";
+import { chat, chooseAgentModels, decide, detectProvider, embed, eyesOf, GatewayTokens, handleGateway, offersModel, originOf, planOf, preset, PRESETS, resolveProvider, signIn } from "../src/index.ts";
 
 /*
  * Coding plans and sign-ins. A coding plan is a subscription whose key is for coding (its terms
@@ -80,6 +80,24 @@ describe("coding plans are presets that say what they are", () => {
     expect(planOf("anthropic")).toBeNull();
     expect(planOf("deepseek")).toBeNull();
     expect(planOf("my-own-endpoint")).toBeNull();
+  });
+});
+
+describe("a model the owner wants on no role is offered for none (gpt-6-luna, 16 November 2026)", () => {
+  test("OpenCode Go offers the models its docs list (opencode.ai/docs/console/go), gpt-6-luna not among them", () => {
+    expect(preset("opencode-go")!.plan!.models).toEqual(["glm-5.3", "kimi-k3.1-pro", "kimi-k3", "deepseek-v4-pro", "qwen3.8-max", "qwen4-max"]);
+    expect(offersModel("opencode-go/gpt-6-luna")).toBe(false);
+    expect(offersModel("opencode-go/glm-5.3")).toBe(true);
+    // A provider of your own offers whatever it serves.
+    expect(offersModel("own/anything")).toBe(true);
+  });
+
+  test("a knight's eyes are chosen by evidence only among the models he offers; a model named for the role is yours, and stands", () => {
+    const sees = (meanErrorPx: number) => ({ at: 1, reads: { ok: true, said: "x" }, places: { targets: 8, landed: 8, meanErrorPx } });
+    const checks = [{ ref: "opencode-go/gpt-6-luna", check: sees(1) }, { ref: "opencode-go/glm-5.3", check: sees(9) }];
+    expect(eyesOf([], checks, () => true)).toBe("opencode-go/glm-5.3");
+    expect(eyesOf([], checks.slice(0, 1), () => true)).toBeNull();
+    expect(eyesOf(["opencode-go/gpt-6-luna"], checks, () => true)).toBe("opencode-go/gpt-6-luna");
   });
 });
 

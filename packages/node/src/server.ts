@@ -2,7 +2,6 @@ import {
   ABOUT_YOU_TAG,
   type ActionView,
   canonical,
-  chooseEyes,
   chooseKnight,
   readModelCheck,
   type KnightFacts,
@@ -119,6 +118,7 @@ import {
   windowsOf,
   checkModel,
   choreRole,
+  eyesOf,
   Steering,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
@@ -1656,12 +1656,13 @@ export function createApp(ctx: AppContext) {
       const at = ref.indexOf("/");
       return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spent(ref.slice(0, at));
     };
-    // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses.
+    // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses,
+    // among the models he offers (checks.ts eyesOf).
     const checks = ctx.store.lwwPrefix("modelcheck:").flatMap((entry) => {
       const check = readModelCheck(entry.value);
       return check ? [{ ref: entry.key.slice("modelcheck:".length), check }] : [];
     });
-    return chooseEyes(roster(ctx.store).eyes?.models ?? [], checks, usable);
+    return eyesOf(roster(ctx.store).eyes?.models ?? [], checks, usable);
   }
   /** When his computer last had its gateway lease written, on this node since it started: renewed every six hours. */
   let computerReady = 0;

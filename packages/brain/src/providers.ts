@@ -131,7 +131,7 @@ export const PRESETS: ProviderPreset[] = [
       name: "OpenCode Go",
       says: 'OpenCode: "OpenCode Go is designed for OpenCode and other coding agents that produce similar types of requests", each identifying itself "with its own user agent".',
       terms: "https://opencode.ai/docs/console/go/",
-      models: ["glm-5.3", "kimi-k3.1-pro", "kimi-k3", "deepseek-v4-pro", "qwen3.8-max", "qwen4-max", "gpt-6-luna"],
+      models: ["glm-5.3", "kimi-k3.1-pro", "kimi-k3", "deepseek-v4-pro", "qwen3.8-max", "qwen4-max"],
       allows: { native: true, tools: "unattended" },
       session: "x-opencode-session",
     },
@@ -255,6 +255,13 @@ export const preset = (id: string): ProviderPreset | undefined => PRESETS.find((
 
 /** The coding plan a provider is on: one added as a plan's preset. A provider of your own making is yours, and Galahad knows nothing of its terms. */
 export const planOf = (id: string): CodingPlan | null => preset(id)?.plan ?? null;
+
+/** Whether he offers a model of his own accord: any a provider of yours serves; of a coding plan, the ones its preset names. */
+export function offersModel(ref: string): boolean {
+  const slash = ref.indexOf("/");
+  const plan = slash > 0 ? planOf(ref.slice(0, slash)) : null;
+  return !plan || plan.models.includes(ref.slice(slash + 1));
+}
 
 /** Whether a model ref is on a coding plan (a ref that doesn't parse isn't one: whoever reads it says what is wrong with it). */
 export function onPlan(ref: string): boolean {

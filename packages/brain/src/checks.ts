@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import type { ChatMessage, ModelCheck } from "@galahad/core";
+import { type ChatMessage, chooseEyes, type ModelCheck } from "@galahad/core";
 import { anthropicConversation, openAIConversation, type ToolImage } from "./adapters.ts";
 import { type BrainContext, chat } from "./chat.ts";
-import { onPlan, resolveProvider, whyNoKey } from "./providers.ts";
+import { offersModel, onPlan, resolveProvider, whyNoKey } from "./providers.ts";
 import { parseRef } from "./roster.ts";
 import { parseAction, runQuest } from "./quest.ts";
 
@@ -35,6 +35,14 @@ const QUESTS = [
 ];
 
 export type CheckPart = "format" | "reads" | "places";
+
+/**
+ * A VM's eyes (core's chooseEyes): the first model named for the role that can be used there, yours to name; with none
+ * named, the checked model that sees best among the ones he offers (providers.ts offersModel), so a check of a model
+ * he doesn't offer never puts it on the role.
+ */
+export const eyesOf = (named: readonly string[], checks: readonly { ref: string; check: ModelCheck }[], usable: (ref: string) => boolean): string | null =>
+  chooseEyes(named, checks.filter(({ ref }) => offersModel(ref)), usable);
 
 /** Check a model (`provider/model`): every part, or those named. Throws only when the model can't be asked at all. */
 export async function checkModel(ctx: BrainContext, ref: string, options: { version?: string; parts?: readonly CheckPart[]; signal?: AbortSignal } = {}): Promise<ModelCheck> {
