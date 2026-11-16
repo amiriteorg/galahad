@@ -4,7 +4,7 @@ import { shortId } from "../lib/text.ts";
 import { clockTime, dayKey, dayLabel, hlcMs, relativeTime } from "../lib/time.ts";
 import { isUnavailable } from "../api.ts";
 import type { ActionClass, LedgerEntry, Verdict } from "../types.ts";
-import { badge, button, empty, errorState, pageHead, section, skeletonRows, type Tone } from "../ui/controls.ts";
+import { badge, button, card, empty, errorState, meta, note, pageHead, section, skeletonRows, type Tone } from "../ui/controls.ts";
 import { debounce, h, keepPlace, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
@@ -48,15 +48,13 @@ export function ledgerItem(ctx: Ctx, entry: LedgerEntry, compact = false): HTMLE
       "div",
       { class: "tl-main" },
       h("div", { class: "tl-title" }, h("span", { class: "strong small" }, entry.resource), h("span", { class: "mono small wrap-anywhere" }, entry.target), verdictBadge(entry.verdict)),
-      h(
-        "div",
-        { class: "meta", style: "display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px;font-size:12px;color:var(--text-3)" },
+      meta(
         h("span", {}, info.label.toLowerCase()),
         entry.quest ? h("span", {}, "quest ", h("span", { class: "mono" }, entry.quest)) : null,
         h("span", {}, "on ", deviceName(ctx, entry.device)),
-        entry.reason ? h("span", { style: "color:var(--text-2)" }, entry.reason) : null,
+        entry.reason ? h("span", { class: "muted" }, entry.reason) : null,
       ),
-      !compact && entry.detail ? h("details", { style: "margin-top:4px" }, h("summary", {}, "Details"), h("pre", {}, entry.detail)) : null,
+      !compact && entry.detail ? h("details", {}, h("summary", {}, "Details"), h("pre", {}, entry.detail)) : null,
     ),
     h("span", { class: "tl-time", title: ms ? new Date(ms).toLocaleString() : "" }, ms ? (compact ? relativeTime(ms) : clockTime(ms)) : ""),
   );
@@ -70,10 +68,8 @@ export function autonomyCard(entries: LedgerEntry[] | null): HTMLElement {
     const ms = hlcMs(e.hlc);
     if (ms && ms >= since) counts.set(e.class, (counts.get(e.class) ?? 0) + 1);
   }
-  return h(
-    "div",
-    { class: "card" },
-    h("div", { class: "card-head" }, icon("shield", { size: 16 }), h("h3", { class: "grow" }, "Autonomy"), h("span", { class: "tiny subtle" }, entries ? "last 24 h" : "")),
+  return card(
+    { title: "Autonomy", icon: "shield", actions: h("span", { class: "tiny subtle" }, entries ? "last 24 h" : ""), foot: note("Set by the oath. Only you can amend it, with your signature. Galahad may clean up ephemeral things he made for a quest."), flush: true },
     h(
       "div",
       { class: "autonomy" },
@@ -84,12 +80,11 @@ export function autonomyCard(entries: LedgerEntry[] | null): HTMLElement {
         return h(
           "div",
           { class: "a-row" },
-          h("div", { class: "row", style: "gap:10px" }, h("span", { style: "color:var(--text-3)" }, icon(info.icon, { size: 15 })), h("div", {}, h("div", { class: "strong" }, info.label), h("div", { class: "tiny subtle" }, info.rule))),
-          h("div", { class: "row", style: "gap:8px" }, n ? h("span", { class: "tiny subtle tnum" }, String(n)) : null, badge(info.verdict, tone)),
+          h("div", { class: "row" }, h("span", { class: "line-icon" }, icon(info.icon, { size: 15 })), h("div", {}, h("div", { class: "strong" }, info.label), h("div", { class: "tiny subtle" }, info.rule))),
+          h("div", { class: "row" }, n ? h("span", { class: "tiny subtle tnum" }, String(n)) : null, badge(info.verdict, tone)),
         );
       }),
     ),
-    h("div", { class: "card-foot tiny subtle" }, "Set by the oath. Only you can amend it, with your signature. Galahad may clean up ephemeral things he made for a quest."),
   );
 }
 
@@ -218,7 +213,7 @@ export const activityView: View = (root, ctx, { scope }) => {
         more > 0
           ? h(
               "div",
-              { class: "card-foot", style: "justify-content:center" },
+              { class: "card-foot centered" },
               button(`Show ${Math.min(more, PAGE)} more`, {
                 variant: "ghost",
                 icon: "chevron-down",
