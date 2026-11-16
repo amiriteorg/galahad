@@ -89,10 +89,14 @@ Galahad.app/Contents/MacOS/Galahad --this-mac                       # what This 
 `https://galahad.sh/mac/appcast.xml`; they stay off until `GALAHAD_SPARKLE_PUBLIC_KEY` holds the owner's public key (Sparkle's
 `generate_keys`, the private half kept in their keychain, never here).
 
-`MacShots` pictures the Mac app as it looks, light and dark, against a dev node: it pairs as you would, the codes
-compared before it approves, and pictures the app's own windows (an app may picture its own windows without being let
-record the screen). The menu bar's panel is pictured in a panel of the test's, on the menu's material: SwiftUI fills its
-own only for a click on the mark.
+`MacShots` pictures the Mac app as it looks, light and dark, against a dev node: the first run's three steps, joining,
+the main window (This Mac among its places), Settings, the app menu with Check for Updates, and the menu bar. It pairs as
+you would, the codes compared before it approves, and pictures the app's own windows (an app may picture its own windows
+without being let record the screen). This Mac's node is shown as given (`ThisMac.show`), since a build here carries none
+and this Mac is never made one; the first run is pictured in a window of the test's, as if the build carried the node.
+The menu bar's panel is pictured in a panel of the test's, on the menu's material: SwiftUI fills its own only for a click
+on the mark. While you use the Mac, macOS keeps the test's app from coming in front, and its windows are pictured as a
+window behind another is drawn.
 
 ```sh
 bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-mac-shots &

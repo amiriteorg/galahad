@@ -94,7 +94,7 @@ enum MacMain {
             return 0
         }
         print("\(config.name): \(node.running ? "running" : "not answering") · service \(words(node.service))\(node.scripted ? " (install.sh's)" : "")")
-        if let revision = node.bundle.revision { print("  revision \(revision.prefix(12))") }
+        if let revision = node.revision { print("  revision \(revision.prefix(12))") }
         if let started = node.started { print("  up since \(started.formatted(date: .abbreviated, time: .standard))") }
         print("  galahad on your PATH: \(node.command)")
         for line in node.stayingOn?.lines ?? [] {

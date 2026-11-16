@@ -13,6 +13,8 @@ import SwiftUI
     let commandFile: URL
 
     private(set) var config: NodeHome.Config?
+    /// The node's revision, as this app carries it.
+    private(set) var revision: String?
     private(set) var service = NodeAgent.State.off
     /// A node install.sh made, run by its own service.
     private(set) var scripted = false
@@ -27,6 +29,8 @@ import SwiftUI
     private(set) var busy: String?
     private(set) var problem: String?
     private(set) var read = false
+    /// Shown as given (`show`), not read from this Mac.
+    private var given = false
 
     init(bundle: NodeBundle = .main, home: NodeHome = .standard, commandFile: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".local/bin/galahad")) {
         (self.bundle, self.home, self.commandFile) = (bundle, home, commandFile)
@@ -48,7 +52,9 @@ import SwiftUI
     enum Tone { case good, quiet, needsYou }
 
     func refresh() async {
+        guard !given else { return }
         config = try? home.config()
+        revision = bundle.revision
         scripted = NodeAgent.installedByScript
         // A build without the node has no agent to ask about (SMAppService logs an error for each ask).
         service = bundle.carriesNode ? agent.state : .off
@@ -68,6 +74,13 @@ import SwiftUI
         let state: NodeAgent.State = scripted ? (process != nil ? .on : .off) : service
         stayingOn = await StayingOnReading.read(agent: state, home: home, admin: whoami == nil ? nil : admin)
         log = home.tail(200)
+    }
+
+    /// What This Mac shows, given rather than read from this Mac: for its pictures (MacShots) and previews. It isn't read
+    /// from the Mac after.
+    func show(config: NodeHome.Config, revision: String, service: NodeAgent.State, started: Date, answering: WhoAmI, stayingOn: StayingOn, command: CommandOnPath, log: String) {
+        (self.config, self.revision, self.service, self.started, self.answering) = (config, revision, service, started, answering)
+        (self.stayingOn, self.command, self.log, scripted, read, given) = (stayingOn, command, log, false, true, true)
     }
 
     /// Runs `work`, saying `doing` meanwhile, then reads everything again.
@@ -202,7 +215,7 @@ struct ThisMacSections: View {
                     Text(stateWords)
                 }
             }
-            if let revision = node.bundle.revision {
+            if let revision = node.revision {
                 LabeledContent("Revision") { Text(String(revision.prefix(12))).font(.body.monospaced()).textSelection(.enabled) }
             }
             if let started = node.started {

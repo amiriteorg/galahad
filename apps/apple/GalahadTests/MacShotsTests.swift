@@ -10,11 +10,13 @@ import Testing
 private let shotsAsked = ProcessInfo.processInfo.environment["GALAHAD_DEV_NODE"] != nil && ProcessInfo.processInfo.environment["GALAHAD_SHOTS"] != nil
 
 /**
- * The Mac app as it looks, in pictures, as the PWA's `measure/first-load.ts --shots` takes its own: the main window at the
- * Roundtable, a knight and Galahad's chat, Settings, and the Roundtable in the menu bar, in light and dark. Run only when
- * asked, against a fresh throwaway node (`scripts/dev-node.ts`, which lets one app in): it pairs as you would, the two
- * codes compared before it approves, then pictures the app's own windows as the window server draws them (an app may
- * picture its own windows without being let record the screen). It leaves no key behind.
+ * The Mac app as it looks, in pictures, as the PWA's `measure/first-load.ts --shots` takes its own: the first run's three
+ * steps, the main window at the Roundtable, a knight, Galahad's chat and This Mac, Settings, the app menu with Check for
+ * Updates, and the Roundtable in the menu bar, in light and dark. Run only when asked, against a fresh throwaway node
+ * (`scripts/dev-node.ts`, which lets one app in): it pairs as you would, the two codes compared before it approves, then
+ * pictures the app's own windows as the window server draws them (an app may picture its own windows without being let
+ * record the screen). This Mac's node is shown as given (`ThisMac.show`): a build here carries none, and this Mac is never
+ * made one. It leaves no key behind.
  *
  *   bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-mac-shots
  *   TEST_RUNNER_GALAHAD_DEV_NODE=/tmp/galahad-mac-shots TEST_RUNNER_GALAHAD_SHOTS=/tmp/shots \
@@ -35,7 +37,45 @@ struct MacShots {
         }
         let main = try window { $0.identifier?.rawValue.hasPrefix(MacApp.main) == true }
         main.setContentSize(NSSize(width: 1280, height: 800))
-        // Joining, with a `galahad:` link's invite filled in.
+        MacApp.shared.thisMac.show(config: NodeHome.Config(name: "mini", fleet: nil, port: 7777, keystore: "os", keepAwake: true),
+                                   revision: "4f2c9e1a7b30d58e6c41f9a2b7d3e0c5a8f61b24", service: .on, started: Date.now.addingTimeInterval(-3 * 3600 - 12 * 60),
+                                   answering: WhoAmI(device: "admin", kind: "admin", scopes: [], node: "n_mini", nodeName: "mini", fleet: nil, fleetName: "camelot"),
+                                   stayingOn: StayingOn(lines: [
+                                       StayingOn.runsAtLogin(.on),
+                                       StayingOn.logsIn(autoLogin: "owner", me: "owner", fileVault: false),
+                                       StayingOn.staysAwake(set: true, held: true),
+                                       StayingOn.startsAfterPowerCut(false),
+                                       StayingOn.reachable(.on(name: "mini.example-tailnet.ts.net", published: nil)),
+                                   ]),
+                                   command: .none,
+                                   log: "[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1\n[galahad] compute: Measured this node for the first time\n[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1")
+        // In front, as you would see it: Settings opened from the app's menu brings the app in front.
+        try await openSettings().close()
+        // The first run's three steps, as a Mac with no node sees them, in a window of the test's own: this build carries
+        // no node and isn't in Applications, which the first run would say.
+        let run = FirstRun()
+        run.name = "mini"
+        let first = firstRunWindow(run, size: main.frame.size)
+        NSApp.activate()
+        for (look, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (step, name) in [(FirstRun.Step.node, "1-node"), (.stayOn, "2-keep-on"), (.vms, "3-vms")] {
+                run.step = step
+                try await Task.sleep(for: .seconds(1.5))
+                try await snap(first, "first-run-\(name)-\(look)")
+            }
+            run.step = .node
+            run.way = .join
+            run.invite = "gi1.not-a-real-invite-only-a-picture-of-one"
+            try await Task.sleep(for: .seconds(1.5))
+            try await snap(first, "first-run-1-join-\(look)")
+            run.way = .start
+        }
+        first.close()
+        NSApp.appearance = nil
+        // Just the app: joining, with a `galahad:` link's invite filled in.
+        MacApp.shared.firstRun.active = false
+        main.makeKeyAndOrderFront(nil)
         MacApp.shared.handed = try String(contentsOf: node.appending(path: "invite.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         for (look, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
@@ -58,7 +98,7 @@ struct MacShots {
 
         for (look, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (place, name) in [(MacPlace.roundtable, "roundtable"), (.knight("ada"), "knight"), (.galahad, "chat"), (.inbox, "inbox")] {
+            for (place, name) in [(MacPlace.roundtable, "roundtable"), (.knight("ada"), "knight"), (.galahad, "chat"), (.inbox, "inbox"), (.thisMac, "this-mac")] {
                 MacApp.shared.place = place
                 try await Task.sleep(for: .seconds(3))
                 try await snap(main, "main-\(name)-\(look)")
@@ -73,6 +113,8 @@ struct MacShots {
             try await snap(settings, "settings-\(look)")
             settings.close()
             main.makeKeyAndOrderFront(nil)
+            // The app menu, open, with Check for Updates (off in a build that carries no update key).
+            try await snapAppMenu("app-menu-\(look)")
             // The menu bar's mark, and the panel it opens.
             let bar = try window { $0.isVisible && $0.contentView.flatMap(statusButton) != nil }
             let button = try #require(bar.contentView.flatMap(statusButton))
@@ -120,6 +162,54 @@ struct MacShots {
         return try window { $0.identifier?.rawValue.localizedStandardContains("settings") == true }
     }
 
+    /// A window of the test's own holding the first run, as the main window holds it.
+    private func firstRunWindow(_ run: FirstRun, size: NSSize) -> NSWindow {
+        let view = FirstRunView(mac: MacApp.shared, run: run, unready: nil, carriesNode: true)
+            .frame(minWidth: 820, minHeight: 560)
+            .tint(.ink)
+            .formStyle(.grouped)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "Galahad"
+        window.contentView = NSHostingView(rootView: view)
+        window.setContentSize(NSSize(width: 1180, height: 760))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    /// The app menu, pictured while it is open. The menu's tracking holds the main thread, the main actor with it, so the
+    /// window it opened (the window server lists it among this app's) is pictured off it, and the menu is closed from the
+    /// run loop's tracking mode, or by an Escape, as a click elsewhere would close it.
+    private func snapAppMenu(_ name: String) async throws {
+        let menu = try #require(NSApp.mainMenu?.items.first?.submenu)
+        let before = Set(try await SCShareableContent.currentProcess.windows.map(\.windowID))
+        let file = shots.appending(path: "\(name).png")
+        nonisolated(unsafe) let open = menu
+        let taking = Task.detached { () -> String? in
+            defer {
+                RunLoop.main.perform(inModes: [.eventTracking, .default]) {
+                    MainActor.assumeIsolated {
+                        open.cancelTracking()
+                        let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53)
+                        if let escape { NSApp.postEvent(escape, atStart: false) }
+                    }
+                }
+            }
+            do {
+                try await Task.sleep(for: .seconds(1.5))
+                let opened = try await SCShareableContent.currentProcess.windows.filter { !before.contains($0.windowID) && $0.frame.height > 100 }
+                guard let window = opened.max(by: { $0.frame.height < $1.frame.height }) else { return "no window opened for the menu" }
+                try await Self.capture(window.windowID, to: file)
+                return nil
+            } catch {
+                return "\(error)"
+            }
+        }
+        let screen = try #require(NSScreen.main)
+        menu.popUp(positioning: nil, at: NSPoint(x: screen.visibleFrame.minX + 24, y: screen.visibleFrame.maxY - 4), in: nil)
+        if let failure = await taking.value { Issue.record("the app menu wasn't pictured: \(failure)") }
+    }
+
     private func menuPanel() -> NSPanel {
         let content = NSHostingView(rootView: MenuBarRoundtable(mac: MacApp.shared))
         let size = content.fittingSize
@@ -164,6 +254,11 @@ struct MacShots {
     /// record the screen.
     private func snap(_ window: NSWindow, _ name: String) async throws {
         let id = try #require(CGWindowID(exactly: window.windowNumber), "\(window.className) isn't one of the window server's")
+        try await Self.capture(id, to: shots.appending(path: "\(name).png"))
+    }
+
+    /// One of this app's windows, by the window server's id for it, pictured into `file`.
+    nonisolated private static func capture(_ id: CGWindowID, to file: URL) async throws {
         let content = try await SCShareableContent.currentProcess
         let shown = try #require(content.windows.first { $0.windowID == id }, "the window server doesn't list this window")
         let filter = SCContentFilter(desktopIndependentWindow: shown)
@@ -173,7 +268,7 @@ struct MacShots {
         configuration.showsCursor = false
         configuration.ignoreShadowsSingleWindow = true
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: shots.appending(path: "\(name).png"))
+        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: file)
     }
 
     /// A view as it draws itself: the menu bar's mark, whose window the menu bar's own process holds.
