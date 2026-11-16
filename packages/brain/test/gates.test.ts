@@ -30,7 +30,7 @@ function harness(script: Script, options: Partial<QuestOptions> = {}) {
     engineer: [...script.engineer],
     reviewer: [...(script.reviewer ?? ["PASS\nLooks right."])],
   };
-  const seen: { role: QuestRole; messages: ChatMessage[] }[] = [];
+  const seen: { role: QuestRole; messages: ChatMessage[]; turn?: { loop?: boolean } }[] = [];
   const commands: string[] = [];
   const events: QuestEvent[] = [];
   /** Everything that happened, in order: who was asked, what ran. */
@@ -39,8 +39,8 @@ function harness(script: Script, options: Partial<QuestOptions> = {}) {
   const run = runQuest(
     { goal: "make it so", environment: "a test sandbox", ...options },
     {
-      ask: async (role, messages) => {
-        seen.push({ role, messages });
+      ask: async (role, messages, turn) => {
+        seen.push({ role, messages, ...(turn ? { turn } : {}) });
         order.push(role);
         const text = queues[role].shift();
         if (text === undefined) throw new Error(`the ${role} ran out of script`);
@@ -188,6 +188,62 @@ describe("gates on a quest", () => {
     for (const { messages } of h.seen) for (const m of messages) expect(findSecrets(m.content)).toEqual([]);
     expect(findSecrets(JSON.stringify(outcome.gates))).toEqual([]);
     expect(findSecrets(JSON.stringify(h.events))).toEqual([]);
+  });
+});
+
+describe("a gate that fails twice in a row (escalate)", () => {
+  // `bun test` fails on its first two runs, then passes.
+  const flaky = (failures: number) => (command: string, nth: number) => (command === "bun test" && nth <= failures ? { exitCode: 1, stdout: "", stderr: `1 fail (run ${nth}) [0.${nth}2s]` } : {});
+
+  test("the next attempt is the planner's, as a turn of the work, and it is said once; the reviewer is who it was", async () => {
+    const h = harness(
+      { engineer: ["DONE\nFirst go.", "DONE\nSecond go."], planner: ["1. Do it.\nDone when: it is done.", sh("bun test --bail"), "DONE\nFound why: fixed."], exec: flaky(2) },
+      { gates: ["bun test"], escalate: true },
+    );
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(h.order).toEqual(["planner", "engineer", "$ bun test", "engineer", "$ bun test", "planner", "$ bun test --bail", "planner", "$ bun test", "reviewer"]);
+    // Every turn of the work says it is one, whoever's models answer it; the plan and the review are not.
+    expect(h.seen.map((s) => [s.role, s.turn?.loop ?? false])).toEqual([
+      ["planner", false], ["engineer", true], ["engineer", true], ["planner", true], ["planner", true], ["reviewer", false],
+    ]);
+    expect(h.events.filter((e) => e.type === "escalated")).toEqual([{ type: "escalated", to: "planner", gate: "bun test" }]);
+    // (Told after the second failure, before the planner's first turn of the work: look at why, don't try the same again.)
+    expect(h.seen[3]!.messages.at(-1)!.content).toContain("$ bun test has failed twice in a row: before you change anything, find out why it fails");
+    expect(h.seen[2]!.messages.at(-1)!.content).not.toContain("twice in a row");
+  });
+
+  test("without the switch the engineer keeps the work: a quest is what it was", async () => {
+    const h = harness({ engineer: ["DONE\nFirst go.", "DONE\nSecond go.", "DONE\nThird go."], exec: flaky(2) }, { gates: ["bun test"] });
+    expect((await h.run).status).toBe("done");
+    expect(h.order.filter((o) => !o.startsWith("$"))).toEqual(["planner", "engineer", "engineer", "engineer", "reviewer"]);
+    expect(h.events.some((e) => e.type === "escalated")).toBe(false);
+  });
+
+  test("another gate failing is not the same one failing again, nor is one that failed before a reviewer's REVISE", async () => {
+    // a fails, then b, then b again: only b's second failure in a row moves the work.
+    const h = harness(
+      { engineer: ["DONE\n1", "DONE\n2", "DONE\n3"], planner: ["1. Do it.\nDone when: it is done.", "DONE\n4"], exec: (command, nth) => (command === "check a" && nth === 1) || (command === "check b" && nth <= 3 && nth >= 2) ? { exitCode: 1 } : {} },
+      { gates: ["check a", "check b"], escalate: true, maxRevisions: 3 },
+    );
+    expect((await h.run).status).toBe("done");
+    expect(h.events.filter((e) => e.type === "escalated")).toEqual([{ type: "escalated", to: "planner", gate: "check b" }]);
+    expect(h.order.filter((o) => !o.startsWith("$"))).toEqual(["planner", "engineer", "engineer", "engineer", "planner", "reviewer"]);
+
+    // The gate fails, the reviewer sends the next back (the gates passed), and it fails again: not twice in a row.
+    const r = harness(
+      { engineer: ["DONE\n1", "DONE\n2", "DONE\n3", "DONE\n4"], reviewer: ["REVISE\nNo evidence.", "PASS"], exec: (command, nth) => (command === "bun test" && (nth === 1 || nth === 3) ? { exitCode: 1 } : {}) },
+      { gates: ["bun test"], escalate: true, maxRevisions: 3 },
+    );
+    expect((await r.run).status).toBe("done");
+    expect(r.events.some((e) => e.type === "escalated")).toBe(false);
+  });
+
+  test("with no attempt left, nothing moves: the quest ends unverified, as it would have", async () => {
+    const h = harness({ engineer: ["DONE\nFirst go.", "DONE\nSecond go."], exec: flaky(2) }, { gates: ["bun test"], escalate: true, maxRevisions: 1 });
+    expect((await h.run).status).toBe("unverified");
+    expect(h.events.some((e) => e.type === "escalated")).toBe(false);
+    expect(h.order.filter((o) => !o.startsWith("$"))).toEqual(["planner", "engineer", "engineer"]);
   });
 });
 

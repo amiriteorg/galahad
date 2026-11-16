@@ -104,4 +104,9 @@ describe("where a quest stands, from its events", () => {
     const standing = standingAfter(questStanding(30), { type: "skipped", role: "engineer", model: "plan/first", error: "400 MissingSessionID", answered: "router/second" });
     expect(standing.doing).toBe("plan/first couldn't answer as engineer: router/second answers instead");
   });
+
+  test("a quest that escalated says so where every device shows it: the work moved, and to whose models", () => {
+    const standing = standingAfter({ ...questStanding(30), state: "working" }, { type: "escalated", to: "planner", gate: "bun test" });
+    expect(standing).toMatchObject({ state: "working", doing: "The same gate failed twice in a row: the planner's models take the work" });
+  });
 });

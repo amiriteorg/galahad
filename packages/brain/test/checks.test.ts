@@ -126,6 +126,10 @@ describe("choosing by what a model was seen to do", () => {
     const planner = roster("planner", ["odd/m", "able/m"], { "odd/m": NOT_FORMAT });
     await run(planner, { role: "planner", messages: [{ role: "user", content: "Plan it" }] });
     expect(planner.asked).toEqual(["odd"]);
+    // Another role's models doing the loop's turns (a quest that escalated: loop) are held to its format all the same.
+    const escalated = roster("planner", ["odd/m", "able/m"], { "odd/m": NOT_FORMAT });
+    await run(escalated, { role: "planner", coding: true, loop: true, messages: [{ role: "user", content: "Quest: make it so" }] });
+    expect(escalated.asked).toEqual(["able"]);
     const pinned = roster("engineer", ["able/m"], { "odd/m": NOT_FORMAT });
     await run(pinned, { ...loop, model: "odd/m" });
     expect(pinned.asked).toEqual(["odd"]);

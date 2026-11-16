@@ -57,7 +57,8 @@ const measure: Measure = async (reason, body, limit): Promise<Calibration> => {
 };
 
 /** The stand-in models. The engineer writes, says DONE, and when sent back fixes it and says DONE again. */
-const asked: { role: string; prompt: string }[] = [];
+/** Every model call: whose turn it reads as (from what it is asked), what it was last told, and the model asked. */
+const asked: { role: string; prompt: string; model?: string }[] = [];
 let atReview: QuestView[] = [];
 let plan ="1. Write the file.\n2. Check it.\nDone when: the file is there and says hi.";
 const fence = "```";
@@ -86,7 +87,7 @@ const models = Bun.serve({
       else if (/gates? did not pass/.test(last)) text = `The gate is right: the file is empty.\n${fence}sh\necho hi > /work/out/hi.txt\n${fence}`;
       else text = "DONE\nThe file is there.";
     }
-    asked.push({ role, prompt: last });
+    asked.push({ role, prompt: last, model: body.model });
     return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   },
 });
@@ -234,6 +235,36 @@ describe("gates on a quest, on a real node", () => {
     await expect(runNodeQuest(client(), { goal: "write hi", network: "isolated", gates: ["a", "b", "c", "d", "e", "f", "g", "h", "i"] })).rejects.toThrow();
     expect(docker.execs).toHaveLength(0);
     expect(docker.peak()).toBe(before);
+  });
+});
+
+describe("a gate that fails twice in a row", () => {
+  test("moves the rest of the work to the planner's models, by default; with the engineer held to one model, the work stays his", async () => {
+    asked.length = 0;
+    docker.execs.length = 0;
+    scriptSandbox({ neverPasses: true });
+    // The planner's models are told apart from the engineer's by name.
+    await call("setRoster", { role: "planner", models: ["stand-in/strong"] });
+    try {
+      const events: QuestEvent[] = [];
+      const { outcome } = await runNodeQuest(client(), { goal: "write hi to a file", network: "isolated", gates: [GATE] }, { emit: (event) => void events.push(event) });
+      expect(outcome.status).toBe("unverified");
+      expect(events.filter((e) => e.type === "escalated")).toEqual([{ type: "escalated", to: "planner", gate: GATE }]);
+      // The work's turns: the engineer's model for the first two submissions, the planner's for the third.
+      const work = asked.filter((a) => a.role === "engineer").map((a) => a.model);
+      expect(work.slice(0, 2)).toEqual(["m", "m"]);
+      expect(work.at(-1)).toBe("strong");
+      expect(new Set(work).size).toBe(2);
+
+      asked.length = 0;
+      events.length = 0;
+      const held = await runNodeQuest(client(), { goal: "write hi to a file", network: "isolated", gates: [GATE], pins: { engineer: "stand-in/m" } }, { emit: (event) => void events.push(event) });
+      expect(held.outcome.status).toBe("unverified");
+      expect(events.some((e) => e.type === "escalated")).toBe(false);
+      expect(asked.filter((a) => a.role === "engineer").every((a) => a.model === "m")).toBe(true);
+    } finally {
+      await call("setRoster", { role: "planner", models: ["stand-in/m"] });
+    }
   });
 });
 

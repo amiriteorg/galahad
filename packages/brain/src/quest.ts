@@ -20,8 +20,9 @@ export interface QuestDeps {
   /**
    * One complete reply from a role (the transport collects the stream). `skipped`: the role's models that
    * couldn't answer before this one did, each with why (the loop says so once: see the "skipped" event).
+   * `turn.loop`: a turn of the work itself (a command a reply), whichever role's models answer it.
    */
-  ask(role: QuestRole, messages: ChatMessage[]): Promise<{ text: string; model: string; skipped?: { model: string; error: string }[] }>;
+  ask(role: QuestRole, messages: ChatMessage[], turn?: { loop?: boolean }): Promise<{ text: string; model: string; skipped?: { model: string; error: string }[] }>;
   /** Run one shell command in the quest's workspace. */
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
   /** Fixed cleanup for this worker, available even after ordinary execution is cancelled. */
@@ -85,6 +86,13 @@ export interface QuestOptions {
    * Default off: a quest out of commands is stopped, as it was.
    */
   submitAtLimit?: boolean;
+  /**
+   * When a gate that failed the last submission fails again, the rest of the work is the planner's models' (and the
+   * engineer's turn is told to find out why before trying again): a model stuck on a gate isn't asked a third time.
+   * The reviewer stays who it was, independent of whoever did the work. A coding agent's run keeps its own models.
+   * Default off: the engineer keeps the work, as ever.
+   */
+  escalate?: boolean;
   /**
    * The sandbox's notes store (engram.ts), by the project its notes are kept under, when the caller found the
    * store there. Whoever does the engineer's part is told how far to trust a note and how to reach the store:
@@ -164,6 +172,8 @@ export type QuestEvent =
   | { type: "retry"; role: QuestRole; attempt: number; error: string; waitMs: number }
   /** A model of the role's couldn't answer and another did (`answered`): said once for each, never passed over in silence. */
   | { type: "skipped"; role: QuestRole; model: string; error: string; answered: string }
+  /** A gate failed again as it failed the submission before: the rest of the work is that role's (escalate). */
+  | { type: "escalated"; to: QuestRole; gate: string }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
@@ -475,6 +485,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     proposeGates: Boolean(options.proposeGates) && options.plan === undefined,
     gatesFirst: Boolean(options.gatesFirst),
     submitAtLimit: Boolean(options.submitAtLimit),
+    escalate: Boolean(options.escalate),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
@@ -495,12 +506,12 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   /** The models already said to have been passed over, by role: each is said once a quest. */
   const toldSkipped = new Set<string>();
   // Every message is redacted before it goes to a model: command output can contain anything.
-  const ask = async (role: QuestRole, messages: ChatMessage[]) => {
+  const ask = async (role: QuestRole, messages: ChatMessage[], turn?: { loop: true }) => {
     const redacted = messages.map((m) => ({ role: m.role, content: redact(m.content) }));
     for (let attempt = 0; ; attempt++) {
       check();
       try {
-        const reply = await deps.ask(role, redacted);
+        const reply = await deps.ask(role, redacted, turn);
         check();
         // Another model answering in a failed one's place costs what that one costs and measures that one: say so.
         for (const passed of reply.skipped ?? []) {
@@ -718,13 +729,17 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       inRow = { command: key, said, count: 1 };
       return { note: before?.said === said ? `\n(This failed exactly as it did at step ${before.step}: what you changed since didn't change it.)` : "", stop: false };
     };
+    /** Whose models do the work: the engineer's, until a gate fails twice in a row (escalate). */
+    let worker: QuestRole = "engineer";
+    /** The gates the last submission failed (none: it passed them, or it was the reviewer who sent it back). */
+    let failedLast = new Set<string>();
     const looped = (command: string, seen: string) =>
       finish({ status: "stopped", summary: `Stopped: the same command failed the same way ${LOOP_STOP} times in a row, so running it again would only spend more.\n$ ${command.split("\n")[0]}\n${clip(seen, 600, 300)}` });
 
     while (steps < o.maxSteps) {
       steps += 1;
       excerpted = excerptedNow(messages, excerpted);
-      const reply = await ask("engineer", compact(messages, excerpted));
+      const reply = await ask(worker, compact(messages, excerpted), { loop: true });
       const kept = keptReply(reply.text);
       messages.push({ role: "assistant", content: kept.content });
       // (Appended to whatever he is told next: a command's result still begins as one.)
@@ -808,7 +823,17 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       if (revisions >= o.maxRevisions) return finish({ status: "unverified", summary: action.summary, review: verdict.notes });
       revisions += 1;
-      messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${cut}` });
+      // A gate failing again as it failed last time: the rest of the work is the planner's (escalate), told to look first.
+      const failed = new Set(verdict.by === "gates" ? (gateRounds.at(-1) ?? []).filter((g) => g.exitCode !== 0).map((g) => g.command) : []);
+      const again = [...failed].find((command) => failedLast.has(command));
+      failedLast = failed;
+      let stuck = "";
+      if (o.escalate && worker === "engineer" && again !== undefined) {
+        worker = "planner";
+        emit({ type: "escalated", to: worker, gate: again });
+        stuck = `\n\n$ ${again.split("\n")[0]} has failed twice in a row: before you change anything, find out why it fails, rather than trying the same fix again.`;
+      }
+      messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${stuck}${cut}` });
     }
     const ran = steps - malformed;
     const stopped = malformed

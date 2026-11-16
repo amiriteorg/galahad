@@ -783,6 +783,8 @@ test("every step a task reports starts with the mark its knight's avatar shows i
     [{ type: "format", step: 3, problem: "no command", reply: "…" }, "working"],
     [{ type: "skipped", role: "engineer", model: "m", error: "429", answered: "n" }, "working"],
     [{ type: "retry", role: "engineer", attempt: 1, error: "429", waitMs: 10 }, "working"],
+    // The work goes on, on the planner's models: still work.
+    [{ type: "escalated", to: "planner", gate: "bun run check" }, "working"],
   ];
   for (const [event, step] of steps) expect(`${event.type}: ${taskStep(progress(event))}`).toBe(`${event.type}: ${step}`);
 });

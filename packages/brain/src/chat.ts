@@ -36,6 +36,11 @@ export interface ChatRequest {
    * models may give it (providers.ts); any other answer of his passes them over.
    */
   coding?: boolean;
+  /**
+   * A turn of a quest's work loop (a command a reply), whichever role's models answer it: the engineer's, or the
+   * planner's once a gate has failed twice in a row. Held to the loop's format checks as the engineer's turns are.
+   */
+  loop?: boolean;
   /** Messages the owner sends while this answer is under way: each reaches the model at the next safe point. */
   steering?: Steering;
 }
@@ -201,9 +206,10 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     whyNot.push(`${ref}: ${error.replace(/\s+/g, " ").slice(0, 240)}`);
     return { type: "fallback", from: ref, error };
   };
-  // The quest loop's engineer (coding, no tools, the role's own models): a model that was checked and doesn't follow
-  // its format (one command a reply) is passed over while another can take the turn (checks.ts; evidence, not a label).
-  const loopTurn = !!req.coding && (req.role ?? "planner") === "engineer" && !tools && !req.model;
+  // A turn of the quest loop (the engineer's, or another role's doing the work: coding, no tools, the role's own models):
+  // a model that was checked and doesn't follow its format (one command a reply) is passed over while another can take
+  // the turn (checks.ts; evidence, not a label).
+  const loopTurn = !!req.coding && (req.loop || (req.role ?? "planner") === "engineer") && !tools && !req.model;
   const offFormat = (ref: string) => (loopTurn ? checkOf(ctx.store, ref) : null);
   const someoneFits = candidates.some((ref) => followsFormat(offFormat(ref)) !== false);
   for (const ref of candidates) {

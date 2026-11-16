@@ -412,6 +412,12 @@ export const routes = {
        * it, called as Galahad. Without it a plan's models are passed over, as for any talk with him.
        */
       coding: z.boolean().optional(),
+      /**
+       * This call is a turn of a quest's work loop (a command a reply), whichever role answers it: the engineer's,
+       * or the planner's once a gate has failed twice in a row. A model checked as not following the loop's
+       * format is passed over for it, as for the engineer's own turns.
+       */
+      loop: z.boolean().optional(),
     }),
   },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */

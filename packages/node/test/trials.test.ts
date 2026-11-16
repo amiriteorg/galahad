@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type ChatStreamEvent, type RouteName, TrialRecord, trialProblem, type TrialView } from "@galahad/core";
+import { type ChatStreamEvent, type RouteName, TrialRecord, trialProblem, type TrialView, VARIANTS } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
-import { chooseProblems, runTrial, runTrials } from "../src/trial-cli.ts";
+import { chooseProblems, harnessOptions, runTrial, runTrials } from "../src/trial-cli.ts";
 
 /*
  * The trial runner against a fake node: fake models, a fake sandbox. What's checked
@@ -123,6 +123,14 @@ describe("a run", () => {
     expect(new Set(trials.map((t) => t.run))).toEqual(new Set([run]));
     expect(trials.filter((t) => t.problem === "rlc-step").map((t) => t.seed).sort()).toEqual([100, 101]);
     expect(() => chooseProblems("engineering", ["warp-drive"])).toThrow(/no such problem or domain: warp-drive/);
+  });
+});
+
+describe("a run's harness", () => {
+  test("a trial's quest escalates only when its variant says so: a run without a variant is measured as trials always were", () => {
+    expect(harnessOptions({}).escalate).toBe(false);
+    expect(harnessOptions({ harness: VARIANTS.baseline! }).escalate).toBe(false);
+    expect(harnessOptions({ harness: VARIANTS.escalate! }).escalate).toBe(true);
   });
 });
 

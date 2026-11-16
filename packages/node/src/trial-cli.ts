@@ -192,6 +192,8 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     ...(job.pins && Object.keys(job.pins).length ? { pins: job.pins } : {}),
     ...(h ? { proposeGates: h.plannerGates, offerSkills: h.skills, archive: h.archive, maxRevisions: h.revisions } : {}),
     ...(h?.engram ? { engram: true } : {}),
+    // A trial escalates only when its variant says so: a run without one is measured as trials always were.
+    escalate: h?.escalate ?? false,
   };
 }
 

@@ -114,6 +114,11 @@ export interface DoOptions {
   archive?: boolean;
   /** How many times the gates or the reviewer may send the work back (default 2). */
   maxRevisions?: number;
+  /**
+   * A gate that fails twice in a row moves the rest of the work to the planner's models (quest.ts). Default on,
+   * except with the engineer held to one model: what is measured then is that model. A trial's variant sets it.
+   */
+  escalate?: boolean;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
@@ -344,6 +349,9 @@ function print(event: QuestEvent): void {
     case "skipped":
       console.log(`  ${bold(`${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead.`);
       return;
+    case "escalated":
+      console.log(`  ${bold(`The same gate failed twice in a row: the ${event.to}'s models take the work`)} ${dim(`· $ ${firstLines(event.gate, 1)}`)}`);
+      return;
     case "finished":
       return;
   }
@@ -373,6 +381,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "skipped":
       console.log(`${tag} ${bold(`${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead.`);
+      return;
+    case "escalated":
+      console.log(`${tag} ${bold(`a gate failed twice: the ${event.to} takes the work`)}`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);
@@ -495,9 +506,10 @@ async function workIn(
       ...(options.gates?.length ? { gates: options.gates } : {}),
       ...(options.proposeGates ? { proposeGates: true } : {}),
       ...(store ? { engram: store } : {}),
+      ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
     },
     {
-      ask: async (role, messages) => {
+      ask: async (role, messages, turn) => {
         let text = "";
         let model = "";
         const input = {
@@ -506,6 +518,8 @@ async function workIn(
           tools: false,
           // A quest is coding work, whichever of its roles speaks: a coding plan on the role may answer it.
           coding: true,
+          // A turn of the work itself (the engineer's, or the planner's once a gate has failed twice): held to its format.
+          ...(turn?.loop ? { loop: true } : {}),
           // A role held to one model asks exactly that one (no fallback: what's measured is that model).
           ...(options.pins?.[role] ? { model: options.pins[role] } : {}),
           // The archive's relevant entries go with the plan (the start), not with every step.
