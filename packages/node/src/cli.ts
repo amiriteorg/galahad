@@ -46,8 +46,8 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable dm <id> [message]       open/read a direct chat, or send a message
   roundtable room <name> <member…>   create a shared room (--limit bounds its coordination chain)
   roundtable chat <room> [message]   read a room, or send a message; work continues on the node
-  roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command]
-  roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo url]
+  roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command] [--budget-usd 0.5]
+  roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo url] [--budget-usd 0.5]
                                     a task for the Roundtable: the knight best suited to it takes it (free, its work
                                     verified before, its job about this, a desktop or the repository it needs) and
                                     says why; the others' standing is shown beneath

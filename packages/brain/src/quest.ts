@@ -32,6 +32,8 @@ export interface QuestDeps {
   agentSession?(id: string): Promise<void>;
   /** Progress, for whoever is watching. */
   emit?(event: QuestEvent): void;
+  /** What this quest's model calls have cost so far at your prices (`complete`: every call was counted and priced). */
+  spentUsd?(): { usd: number; complete: boolean };
   signal?: AbortSignal;
   /** How to wait before asking a model again (tests pass one that doesn't). */
   sleep?(ms: number): Promise<void>;
@@ -87,6 +89,13 @@ export interface QuestOptions {
    * Default off: a quest out of commands is stopped, as it was.
    */
   submitAtLimit?: boolean;
+  /**
+   * Money, in US dollars at your prices, that this quest's model calls may spend (`deps.spentUsd` says how much they
+   * have). The engineer is told what is spent at each step and to wrap up past four fifths of it; once it is spent the
+   * work stops as at the end of its commands, and `submitAtLimit` decides whether what is there is judged.
+   * Unset: no envelope, as before.
+   */
+  budgetUsd?: number;
   /**
    * When a gate that failed the last submission fails again, the rest of the work is the planner's models' (and the
    * engineer's turn is told to find out why before trying again): a model stuck on a gate isn't asked a third time.
@@ -165,6 +174,8 @@ export type QuestEvent =
   | { type: "gated"; round: number; passed: boolean; results: GateResult[] }
   /** A submission changed test files a gate names (the contract): it went back before any gate ran. */
   | { type: "locked"; changed: string[] }
+  /** The budget is nearly spent (`out`: false, said once, past four fifths), or spent: the work stops. */
+  | { type: "budget"; spentUsd: number; budgetUsd: number; out: boolean }
   | { type: "thought"; step: number; text: string; model: string }
   | { type: "command"; step: number; command: string }
   | { type: "observation"; step: number; exitCode: number; durationMs: number; output: string }
@@ -347,7 +358,7 @@ const digestsOf = (stdout: string): Map<string, string> =>
 /* ---------- prompts ---------- */
 
 /** Options with their defaults applied (a fixed plan and a custom review stay optional). */
-type Resolved = Required<Omit<QuestOptions, "plan" | "review" | "agent" | "engram">> & Pick<QuestOptions, "plan" | "review" | "agent" | "engram">;
+type Resolved = Required<Omit<QuestOptions, "plan" | "review" | "agent" | "engram" | "budgetUsd">> & Pick<QuestOptions, "plan" | "review" | "agent" | "engram" | "budgetUsd">;
 
 const planPrompt = (o: Resolved): string => `Plan this quest for an engineer who works alone${o.agent ? `, with a coding agent (${o.agent.driver.name})` : ", one shell command at a time"}, in: ${o.environment}
 
@@ -537,6 +548,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.budgetUsd !== undefined && options.budgetUsd > 0 ? { budgetUsd: options.budgetUsd } : {}),
     // (Checked here, before a prompt or a file is made of it.)
     ...(options.engram !== undefined ? { engram: engramProject(options.engram) } : {}),
   };
@@ -806,12 +818,41 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     };
     /** Whose models do the work: the engineer's, until a gate fails twice in a row (escalate). */
     let worker: QuestRole = "engineer";
+    /** The budget's state now (null: no budget, or no way to tell what is spent). */
+    const money = (): { usd: number; complete: boolean; budget: number } | null => {
+      if (o.budgetUsd === undefined || !deps.spentUsd) return null;
+      return { ...deps.spentUsd(), budget: o.budgetUsd };
+    };
+    const usd = (n: number) => `$${n.toFixed(2)}`;
+    let warned = false;
+    /** Said with a step's result when there is a budget: what is spent, and past four fifths of it, to wrap up. */
+    const spentNote = (): string => {
+      const now = money();
+      if (!now) return "";
+      const spent = `${now.complete ? "" : "at least "}${usd(now.usd)} of ${usd(now.budget)}`;
+      if (now.usd >= now.budget * 0.8) {
+        if (!warned) {
+          warned = true;
+          emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: false });
+        }
+        return `\n\n(Spent ${spent}: wrap up. When the work is done and verified, reply DONE, or GIVE UP and say why: the work stops when the budget is spent.)`;
+      }
+      return `\n\n(Spent ${spent}${now.complete ? "" : ": some calls have no price"}.)`;
+    };
+    /** Spent: the work stops (said once, as an event). */
+    let spentOut = false;
     /** The gates the last submission failed (none: it passed them, or it was the reviewer who sent it back). */
     let failedLast = new Set<string>();
     const looped = (command: string, seen: string) =>
       finish({ status: "stopped", summary: `Stopped: the same command failed the same way ${LOOP_STOP} times in a row, so running it again would only spend more.\n$ ${command.split("\n")[0]}\n${clip(seen, 600, 300)}` });
 
     while (steps < o.maxSteps) {
+      const now = money();
+      if (now && now.usd >= now.budget) {
+        spentOut = true;
+        emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: true });
+        break;
+      }
       steps += 1;
       excerpted = excerptedNow(messages, excerpted);
       const reply = await ask(worker, compact(messages, excerpted), { loop: true });
@@ -829,7 +870,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (malformedRun >= MALFORMED_RUN) {
           return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
         }
-        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}` });
+        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
         continue;
       }
       malformedRun = 0;
@@ -866,7 +907,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
             batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}${notes[i]!.note}`).join("\n\n") +
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
             cut +
-            leftNote(o.maxSteps - steps),
+            leftNote(o.maxSteps - steps) +
+            spentNote(),
         });
         continue;
       }
@@ -885,7 +927,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
         const again = repeated(action.command, steps, result, seen);
         if (again.stop) return looped(action.command, seen);
-        messages.push({ role: "user", content: `${seen}${again.note}${cut}${leftNote(o.maxSteps - steps)}` });
+        messages.push({ role: "user", content: `${seen}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
         continue;
       }
 
@@ -913,17 +955,19 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${stuck}${cut}` });
     }
     const ran = steps - malformed;
-    const stopped = malformed
-      ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
-      : `Stopped after ${o.maxSteps} commands without finishing.`;
+    const stopped = spentOut
+      ? `Stopped: its budget (${usd(o.budgetUsd!)}) was spent before he finished.`
+      : malformed
+        ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
+        : `Stopped after ${o.maxSteps} commands without finishing.`;
     // Out of commands with work done: the gates and the reviewer still decide (submitAtLimit). He may have finished
     // and gone on checking; what they pass is done, whoever said so.
     if (o.submitAtLimit && ran > 0) {
-      const verdict = await submit("He ran out of commands before he said he was done: this is the work as it stands.", trail);
+      const verdict = await submit(`${spentOut ? "His budget was spent" : "He ran out of commands"} before he said he was done: this is the work as it stands.`, trail);
       if (verdict.verdict === "pass") {
         return finish({
           status: "done",
-          summary: `He ran out of commands (${o.maxSteps}) before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
+          summary: `${spentOut ? `Its budget (${usd(o.budgetUsd!)}) was spent` : `He ran out of commands (${o.maxSteps})`} before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
           review: verdict.notes || undefined,
           ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
         });

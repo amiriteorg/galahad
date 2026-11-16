@@ -94,10 +94,18 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     else { const view = await api.call<TeamRoomView>("teamRoom", { id: room }); for (const m of view.messages) print(spoken(plainLine(m.speakerName) ? m.speakerName : m.speaker, m.text)); }
     return;
   }
+  /** `--budget-usd 0.5`: money the task's model calls may spend, at your prices (none: no envelope). */
+  const budget = (): { budgetUsd?: number } => {
+    const raw = string("budget-usd");
+    if (raw === undefined) return {};
+    const usd = Number(raw);
+    if (!Number.isFinite(usd) || usd <= 0 || usd > 100) throw new Error("--budget-usd takes an amount in US dollars above 0 and at most 100, e.g. --budget-usd 0.5");
+    return { budgetUsd: usd };
+  };
   if (sub === "task") {
     const goal = args.slice(2).join(" ");
     const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? flags.gate : [];
-    const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}) });
+    const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}), ...budget() });
     print(`${task.id} queued; completion requires its gates and independent review.`); return;
   }
   if (sub === "give") {
@@ -107,7 +115,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? (flags.gate as string[]) : [];
     const needs = { ...(flags.desktop ? { desktop: true } : {}), ...(string("repo") ? { repository: string("repo") } : {}) };
     const given = await api.call<{ task: { id: string }; choice: { id: string; name: string; reasons: string[] }; considered: { id: string; name: string; eligible: boolean; why: string[] }[] }>("giveTeamTask", {
-      goal, ...(string("title") ? { title: string("title") } : {}), ...(gates.length ? { gates } : {}), ...(Object.keys(needs).length ? { needs } : {}),
+      goal, ...(string("title") ? { title: string("title") } : {}), ...(gates.length ? { gates } : {}), ...(Object.keys(needs).length ? { needs } : {}), ...budget(),
     });
     print(`${plainLine(given.choice.name)} takes it: ${given.choice.reasons.join("; ")}.`);
     for (const other of given.considered.filter((c) => c.id !== given.choice.id)) print(`  ${plainLine(other.name)}${other.eligible ? "" : " (can't take it)"}: ${other.why.join("; ")}`);

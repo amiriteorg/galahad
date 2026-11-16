@@ -1706,7 +1706,7 @@ export function createApp(ctx: AppContext) {
     const { choice, considered } = chooseKnight(input.goal, input.needs ?? {}, facts);
     if (!choice) throw new HttpError(409, `No knight can take this task now${considered.length ? `: ${considered.map((c) => `${c.name}: ${c.why.join("; ")}`).join(" · ")}` : ": there are no knights"}`);
     const room = teamOf().direct(choice.id);
-    const task = teamOf().createTask({ room: room.id, assignee: choice.id, title: input.title ?? input.goal.slice(0, 200), goal: input.goal, gates: input.gates ?? [] }, by);
+    const task = teamOf().createTask({ room: room.id, assignee: choice.id, title: input.title ?? input.goal.slice(0, 200), goal: input.goal, gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}) }, by);
     return { task, choice, considered };
   }
   async function stopTeamWorker(member: Teammate): Promise<void> {
@@ -1780,6 +1780,7 @@ export function createApp(ctx: AppContext) {
         if (!bound) throw new HttpError(424, "this knight has no VM");
         return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
       },
+      prices: () => pricesOf(ctx.store),
       models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,
       modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),

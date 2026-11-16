@@ -267,6 +267,18 @@ test("a knight's work runs on the models of the role you gave it; its plan and t
   expect(outcome.record!.spent.find((line) => line.role === "engineer")).toMatchObject({ model: "local/front", calls: 2 });
 });
 
+test("a task given a budget is told what is spent, wraps up past four fifths, and stops when it is spent: what is there is judged", async () => {
+  // Each call, at these prices: 100k tokens in at $1 a million and 10k out at $10 a million, $0.20.
+  const usage = { prompt_tokens: 100_000, completion_tokens: 10_000 };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("PASS\nFine.")], { prices: () => ({ "local/fake": { input: 1, output: 10 } }) }, usage);
+  const trail: string[] = [];
+  const outcome = await f.runtime.executeTask(member, { ...task, budgetUsd: 0.5 }, { ...f.context, emit: (line) => trail.push(String(line)) });
+  expect(outcome.verified).toBe(true);
+  expect(trail).toContain("Budget · $0.40 of $0.50 spent: wrapping up");
+  expect(trail).toContain("Budget · spent ($0.60 of $0.50): the work stops");
+  expect(f.bodies[2].messages.at(-1).content).toContain("(Spent $0.40 of $0.50: wrap up.");
+});
+
 test("a knight on the reviewer's role talks on it, but its work is the engineer's: the reviewer never does the work it checks", async () => {
   const knight: Teammate = { ...member, role: "reviewer" };
   const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => knight });

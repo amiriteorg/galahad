@@ -100,6 +100,8 @@ export const TeamTaskInput = z.strictObject({
   goal: z.string().trim().min(1).max(8000),
   dependsOn: z.array(TeamTaskId).max(32).refine((ids) => new Set(ids).size === ids.length, "dependencies must be distinct").optional(),
   gates: z.array(z.string().trim().min(1).max(1000)).max(16).optional(),
+  /** Money its model calls may spend, in US dollars at your prices: told what is spent at each step, it stops when spent. */
+  budgetUsd: z.number().positive().max(100).optional(),
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
@@ -111,6 +113,8 @@ export const TeamGiveInput = z.strictObject({
   goal: z.string().trim().min(1).max(8000),
   title: z.string().trim().min(1).max(200).optional(),
   gates: z.array(z.string().trim().min(1).max(1000)).max(16).optional(),
+  /** Money its model calls may spend, in US dollars at your prices: told what is spent at each step, it stops when spent. */
+  budgetUsd: z.number().positive().max(100).optional(),
   needs: z.strictObject({ desktop: z.boolean().optional(), repository: z.string().trim().min(1).max(300).optional() }).optional(),
 });
 export type TeamGiveInput = z.infer<typeof TeamGiveInput>;
@@ -248,6 +252,8 @@ export interface TeamTask {
   goal: string;
   dependsOn: string[];
   gates: string[];
+  /** Its budget in US dollars at your prices (absent: none). */
+  budgetUsd?: number;
   status: TeamWorkStatus;
   verified: boolean;
   progress: string;

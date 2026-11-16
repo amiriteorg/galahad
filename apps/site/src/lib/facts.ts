@@ -98,7 +98,7 @@ export const PHASING = {
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
     { state: "building", what: "Contract first", line: "The tests a gate names are locked; next, a gate that passes before the work isn't proof." },
-    { state: "next", what: "A budget per task", line: "An envelope in dollars that the work sees shrinking, and stops at." },
+    { state: "building", what: "A budget per task", line: "A knight's task sees what it has spent and stops when it is; next, the apps' fields." },
     { state: "next", what: "Hooks and tripwires", line: "Rules you write that halt a command or run a check: never a model's judgment." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
     { state: "next", what: "Trials from your own work", line: "Every task that passed review becomes a test the next change must pass." },

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
+import { addUsage, costOf, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
 import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
@@ -11,6 +11,8 @@ export interface TeamRuntimeDeps {
   exec(teammate: Teammate, command: string, timeout: number, signal: AbortSignal): Promise<ExecResult>;
   prepare(teammate: Teammate, signal: AbortSignal): Promise<void>;
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
+  /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
+  prices?(): Prices;
   /** The roster models of this knight's role that its harness can run on through the gateway, from its VM. */
   models(teammate: Teammate): AgentModel[];
   /** When there are none: roster models it could speak to, on providers its VM's gateway token doesn't cover. */
@@ -190,6 +192,7 @@ export function progress(event: QuestEvent): string {
     case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     case "escalated": return `Escalated · the same gate failed twice in a row: the ${event.to}'s models take the work\n$ ${event.gate}`;
     case "locked": return `Tests changed · ${event.changed.join(", ")}: the tests its gates run are the contract, so the work goes back`;
+    case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
     default: return event.type;
   }
 }
@@ -420,11 +423,16 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
         ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
+        // What this task's calls have cost so far, at your prices (a coding tool's own calls go through the gateway and aren't in it yet).
+        spentUsd: () => {
+          const cost = costOf(spent, deps.prices?.() ?? {});
+          return { usd: cost.usd, complete: cost.complete };
+        },
         stopAgent: () => deps.stopWorker(teammate),
         agentSession: async (id) => {
           if (!/^[A-Za-z0-9_.:-]{1,160}$/.test(id)) throw new Error("Invalid harness session identifier");
