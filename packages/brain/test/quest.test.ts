@@ -81,6 +81,32 @@ describe("quests", () => {
     expect(outcome.review).toBe("still none");
   });
 
+  test("the same command failing the same way is said to fail the same way, and a third time in a row stops the quest", async () => {
+    const failing = { exitCode: 1, stdout: "", stderr: "error: cannot find module 'left-pad'", durationMs: 40 };
+    const h = harness({ engineer: [sh("bun test"), sh("bun test"), sh("bun test"), sh("bun test")], outputs: [failing, { ...failing, durationMs: 55 }, { ...failing, durationMs: 61 }, failing] });
+    const outcome = await h.run;
+    expect(h.commands).toEqual(["bun test", "bun test", "bun test"]);
+    const told = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+    expect(told[1]).not.toContain("the same way");
+    expect(told[2]).toContain("The same command failed the same way 2 times in a row: running it again won't change that.");
+    expect(outcome.status).toBe("stopped");
+    expect(outcome.summary).toContain("Stopped: the same command failed the same way 3 times in a row");
+    expect(outcome.summary).toContain("$ bun test");
+  });
+
+  test("a failure seen before, with other commands since, is said to be unchanged by them; another failure is just a failure", async () => {
+    const failing = { exitCode: 1, stdout: "", stderr: "FAIL parser.test.ts: expected 2, got 3", durationMs: 40 };
+    const h = harness({
+      engineer: [sh("bun test"), sh("sed -i 's/3/2/' src/parser.ts"), sh("bun test"), sh("bun test --filter parser"), "DONE\nfixed"],
+      outputs: [failing, { exitCode: 0, stdout: "" }, failing, { ...failing, stderr: "FAIL parser.test.ts: expected 2, got 4" }],
+    });
+    await h.run;
+    const told = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+    expect(told[3]).toContain("This failed exactly as it did at step 1: what you changed since didn't change it.");
+    expect(told[4]).not.toContain("exactly as it did");
+    expect(told[4]).not.toContain("the same way");
+  });
+
   test("a reviewer that isn't clear is not an approval", () => {
     expect(parseVerdict("Looks mostly fine, I think.").verdict).toBe("revise");
     expect(parseVerdict("**PASS**\nverified").verdict).toBe("pass");

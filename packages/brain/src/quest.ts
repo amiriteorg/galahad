@@ -182,6 +182,13 @@ export const ASK_RETRY_DELAYS_MS = [15_000, 60_000, 180_000] as const;
  */
 export const MALFORMED_RUN = 3;
 
+/**
+ * The same command failing the same way (its exit code and what it printed, not how long it took) this many times in a
+ * row ends the quest: it is told so at the second, and running it a third time only spends more. A failure the same as
+ * one before it, with other commands between them, is said to be unchanged by them, which is worth knowing after an edit.
+ */
+export const LOOP_STOP = 3;
+
 /* ---------- the protocol ---------- */
 
 export type Action =
@@ -691,6 +698,28 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let excerpted = 0;
     /** How many replies in a row, up to now, had no command to run. */
     let malformedRun = 0;
+    /** Each command's last failure as it was (`said`: its exit code and output), and the one failing again in a row. */
+    const failures = new Map<string, { step: number; said: string }>();
+    let inRow: { command: string; said: string; count: number } | null = null;
+    /** What a command's result adds when it failed as it failed before (LOOP_STOP), and whether that ends the quest. */
+    const repeated = (command: string, step: number, result: ExecResult, seen: string): { note: string; stop: boolean } => {
+      if (result.exitCode === 0) {
+        inRow = null;
+        return { note: "", stop: false };
+      }
+      const key = command.trim();
+      const said = `${result.exitCode}\n${seen.split("\n").slice(1).join("\n")}`;
+      const before = failures.get(key);
+      failures.set(key, { step, said });
+      if (inRow?.command === key && inRow.said === said) {
+        inRow.count += 1;
+        return { note: `\n(The same command failed the same way ${inRow.count} times in a row: running it again won't change that. Change what you do, or reply GIVE UP and say why.)`, stop: inRow.count >= LOOP_STOP };
+      }
+      inRow = { command: key, said, count: 1 };
+      return { note: before?.said === said ? `\n(This failed exactly as it did at step ${before.step}: what you changed since didn't change it.)` : "", stop: false };
+    };
+    const looped = (command: string, seen: string) =>
+      finish({ status: "stopped", summary: `Stopped: the same command failed the same way ${LOOP_STOP} times in a row, so running it again would only spend more.\n$ ${command.split("\n")[0]}\n${clip(seen, 600, 300)}` });
 
     while (steps < o.maxSteps) {
       steps += 1;
@@ -733,15 +762,18 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           ),
         );
         const seen = results.map((result) => observation(result));
+        const notes = batch.map((command, i) => repeated(command, first + i, results[i]!, seen[i]!));
         for (const [i, command] of batch.entries()) {
           emit({ type: "observation", step: first + i, exitCode: results[i]!.exitCode, durationMs: results[i]!.durationMs, output: seen[i]! });
           trail.push({ command: trailCommand(command), exitCode: results[i]!.exitCode, excerpt: clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) });
         }
+        const stuck = notes.findIndex((n) => n.stop);
+        if (stuck >= 0) return looped(batch[stuck]!, seen[stuck]!);
         const dropped = action.commands.length - batch.length;
         messages.push({
           role: "user",
           content:
-            batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}`).join("\n\n") +
+            batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}${notes[i]!.note}`).join("\n\n") +
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
             cut +
             leftNote(o.maxSteps - steps),
@@ -761,7 +793,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const seen = observation(result);
         emit({ type: "observation", step: steps, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
         trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
-        messages.push({ role: "user", content: `${seen}${cut}${leftNote(o.maxSteps - steps)}` });
+        const again = repeated(action.command, steps, result, seen);
+        if (again.stop) return looped(action.command, seen);
+        messages.push({ role: "user", content: `${seen}${again.note}${cut}${leftNote(o.maxSteps - steps)}` });
         continue;
       }
 
