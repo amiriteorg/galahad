@@ -23,6 +23,8 @@ export interface FileFact {
 
 export interface RoleFact {
   role: string;
+  /** A role you made: a knight's, whose conversations and tasks are all coding work. */
+  custom?: boolean;
   /** Roles that answer in words are asked a word; the decider and the embedder aren't. */
   chats: boolean;
   /**
@@ -301,9 +303,10 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       if (lent.length) add("models", id, "ok", `${role.role}: ${lent[0]!.ref} looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)`);
       continue;
     }
-    // A role whose work is all coding is played by a plan alone.
-    if (!own.length && lent.length && CODING_ROLES.has(role.role)) {
-      add("models", id, "ok", `${role.role}: ${lent[0]!.ref} does his coding (a coding plan: it is asked nothing else, so not a word)`);
+    // A role whose work is all coding is played by a plan alone: the engineer's and the reviewer's, and a role you made,
+    // which only knights work on (their conversations and tasks are coding work).
+    if (!own.length && lent.length && (CODING_ROLES.has(role.role) || role.custom)) {
+      add("models", id, "ok", `${role.role}: ${lent[0]!.ref} ${role.custom ? "does the work of the knights on it" : "does his coding"} (a coding plan: it is asked nothing else, so not a word)`);
       continue;
     }
     if (!usable.length || !first) {

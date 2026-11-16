@@ -242,6 +242,14 @@ describe("each fault gives its own line and advice", () => {
     expect(lacking.line).toContain("no model can play planner");
   });
 
+  test("models: a role you made is a knight's, whose talk and tasks are all coding, so coding plans alone play it", () => {
+    const mine = healthy();
+    mine.roles.push({ role: "plan-coder", custom: true, chats: true, models: [{ ref: "mimo-token/mimo-v2.6-pro", problem: null, plan: true }, { ref: "opencode-go/deepseek-v4-pro", problem: null, plan: true }], probe: null });
+    const check = byId(diagnose(mine), "role.plan-coder");
+    expect(check.state).toBe("ok");
+    expect(check.line).toBe("plan-coder: mimo-token/mimo-v2.6-pro does the work of the knights on it (a coding plan: it is asked nothing else, so not a word)");
+  });
+
   test("models: a VM's eyes are asked by its tools, so a plan they may use plays them alone; one they may not is said once, with whom to hire", () => {
     const seeing = healthy();
     seeing.roles.push({ role: "eyes", chats: true, models: [{ ref: "opencode-go/gpt-6-luna", problem: null, plan: true }], probe: null });

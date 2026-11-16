@@ -277,6 +277,7 @@ async function askOneWord(ctx: BrainContext, ref: string, outer?: AbortSignal): 
 async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Promise<RoleFact[]> {
   const roles: RoleFact[] = Object.entries(roster(deps.store)).map(([role, spec]) => ({
     role,
+    ...(spec.custom ? { custom: true } : {}),
     chats: !SILENT_ROLES.has(role),
     models: spec.models.slice(0, 16).map((ref) => {
       // A role a VM's tools play can't have a plan its terms keep to a tool you run yourself (the gateway refuses a VM it).
