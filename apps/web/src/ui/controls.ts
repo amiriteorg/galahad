@@ -2,7 +2,22 @@ import { type Child, cx, h, nextId } from "./dom.ts";
 import { icon, type IconName } from "./icons.ts";
 import { toast } from "./toast.ts";
 
-/* Shared building blocks. Tones map to semantic tokens (see docs/DESIGN.md). */
+/*
+ * The app's components: every page is built from these, and they take their colour, type and spacing from the tokens
+ * at the top of index.html (docs/DESIGN.md is the system; apps/web/design/gallery.ts draws every one of them, light and
+ * dark, at a phone's width and a desktop's). A page made of them lines up with every other: the same head, the same
+ * gaps, the same leading edge in every card.
+ *
+ *   A page      pageHead · section · note
+ *   Containers  card · list · listRow · rows · disclosure · statTile · kv · meta
+ *   Actions     button · linkButton · busy · formActions
+ *   Status      badge · dot · count · meter · spinner · callout
+ *   States      empty · errorState · skeletonRows · skeletonStat · skeletonBlock
+ *   Fields      field · secretInput · segmented · switchControl · rangeControl · chipInput · copyField · sasCode · kbd
+ *
+ * Sheets and confirmations are dialog.ts's, the smart selector selector.ts's, toasts toast.ts's; the element builder
+ * (h) and lifetimes are dom.ts's. Tones map to semantic tokens: a component never picks a colour.
+ */
 
 export type Tone = "ok" | "warn" | "danger" | "info" | "accent" | "agent" | "neutral";
 
@@ -59,21 +74,50 @@ export function button(text: string, options: ButtonOptions = {}): HTMLButtonEle
   return el;
 }
 
+/**
+ * A link that looks like a button (.btn on an anchor): for going somewhere rather than doing something, as a section's
+ * "View all" or a way back does. The same variants and sizes as button(); `next` puts a chevron after the words.
+ */
+export function linkButton(text: string, href: string, options: { variant?: ButtonOptions["variant"]; size?: "sm"; icon?: IconName; next?: boolean; label?: string } = {}): HTMLAnchorElement {
+  const variant = options.variant && options.variant !== "default" ? options.variant : null;
+  return h(
+    "a",
+    { class: cx("btn", variant, options.size), href, "aria-label": options.label ?? null },
+    options.icon ? icon(options.icon, { size: options.size === "sm" ? 14 : 16 }) : null,
+    h("span", {}, text),
+    options.next ? icon("chevron-right", { size: 14 }) : null,
+  );
+}
+
+/**
+ * A form's actions, at its end, the primary one last: right-aligned on a wide screen; in a sheet on a phone, thumb-sized
+ * and as wide as the sheet, as its foot's are (.form-actions). Every form ends with one, so every form's buttons are
+ * the same size in the same place.
+ */
+export function formActions(...actions: Child[]): HTMLElement {
+  return h("div", { class: "form-actions" }, ...actions);
+}
+
+/** Something under way, in the current colour: a 16 px ring, `sm` 12 px (in a line of text), `xs` 10 px (in a badge). */
+export function spinner(size?: "sm" | "xs"): HTMLElement {
+  return h("span", { class: cx("spinner", size), "aria-hidden": "true" });
+}
+
 /** Disables the button and shows a spinner while `work` runs. Returns its result. */
 export async function busy<T>(el: HTMLButtonElement, work: () => Promise<T>): Promise<T> {
   if (el.getAttribute("aria-busy") === "true") throw new Error("already running");
   const wasDisabled = el.disabled;
   el.disabled = true;
   el.setAttribute("aria-busy", "true");
-  const spinner = h("span", { class: "spinner", "aria-hidden": "true" });
+  const turning = spinner();
   const firstIcon = el.querySelector("svg.icon");
-  if (firstIcon) firstIcon.replaceWith(spinner);
-  else el.prepend(spinner);
+  if (firstIcon) firstIcon.replaceWith(turning);
+  else el.prepend(turning);
   try {
     return await work();
   } finally {
-    if (firstIcon) spinner.replaceWith(firstIcon);
-    else spinner.remove();
+    if (firstIcon) turning.replaceWith(firstIcon);
+    else turning.remove();
     el.removeAttribute("aria-busy");
     el.disabled = wasDisabled;
   }
@@ -462,16 +506,13 @@ export function meter(fraction: number, tone?: string, label?: string): HTMLElem
   );
 }
 
-export function section(title: string, options: { actions?: Child; count?: string; id?: string } = {}, ...children: Child[]): HTMLElement {
-  const id = options.id ?? nextId("sec");
-  return h(
-    "section",
-    { class: "section", "aria-labelledby": id },
-    h("div", { class: "section-head" }, h("h2", { id }, title), options.count ? h("span", { class: "count-label tnum" }, options.count) : null, options.actions ? h("div", { class: "actions" }, options.actions) : null),
-    ...children,
-  );
-}
+/* ---------- a page ---------- */
 
+/**
+ * Every page starts with this, and only pages do (a timeline's header is whose it is): the title, a line that says what
+ * the page is for, and the page's actions at its end, its one primary action among them (.page-head). On a phone the
+ * actions go under the line. Its parts are a .page's first child, so the page's gap (--page-gap) follows it.
+ */
 export function pageHead(title: string, lede?: Child, actions?: Child): HTMLElement {
   return h(
     "header",
@@ -479,4 +520,155 @@ export function pageHead(title: string, lede?: Child, actions?: Child): HTMLElem
     h("div", { class: "grow" }, h("h1", {}, title), lede ? h("p", { class: "lede" }, lede) : null),
     actions ? h("div", { class: "actions" }, actions) : null,
   );
+}
+
+/**
+ * A part of a page under its own small heading (.section, its gap --section-gap): a count beside the heading, links or
+ * actions for the whole part at its end, and a note under it that says what is in it or what follows from it.
+ */
+export function section(title: string, options: { actions?: Child; count?: string; id?: string; note?: Child } = {}, ...children: Child[]): HTMLElement {
+  const id = options.id ?? nextId("sec");
+  return h(
+    "section",
+    { class: "section", "aria-labelledby": id },
+    h("div", { class: "section-head" }, h("h2", { id }, title), options.count ? h("span", { class: "count-label tnum" }, options.count) : null, options.actions ? h("div", { class: "actions" }, options.actions) : null),
+    options.note ? note(options.note) : null,
+    ...children,
+  );
+}
+
+/** A line about what's near it (a section, a list, a form): small, quiet type, never an instruction to the model. */
+export function note(...children: Child[]): HTMLElement {
+  return h("p", { class: "note" }, ...children);
+}
+
+/* ---------- containers ---------- */
+
+export interface CardOptions {
+  /** A head (.card-head): an icon and a title, with what belongs to the whole card at its end. */
+  title?: Child;
+  icon?: IconName;
+  actions?: Child;
+  /** A foot on sunken ground (.card-foot): a line about the card, or its own actions. */
+  foot?: Child;
+  /** What's in it fills it edge to edge (rows, a picture); otherwise it sits at the card's padding (--card-pad). */
+  flush?: boolean;
+  /** Its edge says it wants a look: yours (accent), a warning, a danger. */
+  tone?: "accent" | "warn" | "danger";
+  /** One of a list of things (a loop, a node): an article, named for a screen reader. */
+  label?: string;
+  id?: string;
+}
+
+/**
+ * A card: content on raised ground (.card). Its head, its rows and its foot all start at --card-pad from its edge, so
+ * their leading edges line up, and line up with the next card's. Content not flush sits at that padding, as a stack.
+ */
+export function card(options: CardOptions = {}, ...children: Child[]): HTMLElement {
+  const head = options.title === undefined ? null : h("div", { class: "card-head" }, options.icon ? icon(options.icon, { size: 16 }) : null, h("h3", { class: "grow" }, options.title), options.actions ?? null);
+  const foot = options.foot ? h("div", { class: "card-foot" }, options.foot) : null;
+  const framed = head !== null || foot !== null;
+  const body = options.flush ? children : framed ? h("div", { class: "card-body" }, ...children) : children;
+  return h(
+    options.label ? "article" : "div",
+    { class: cx("card", !options.flush && !framed && "pad", options.tone), id: options.id ?? null, "aria-label": options.label ?? null },
+    head,
+    body,
+    foot,
+  );
+}
+
+/** A list's rows, one under another with a hairline between (.rows). In a card, list() says it shorter. */
+export function rows(...items: Child[]): HTMLElement {
+  return h("div", { class: "rows" }, ...items);
+}
+
+/**
+ * A list in a card: its rows, or, with none, what will appear there (an empty state in the same card, so the page
+ * doesn't change shape when the first one arrives). `nav` makes it a list of places, named `label`.
+ */
+export function list(items: Child[], options: Omit<CardOptions, "flush"> & { empty?: Parameters<typeof empty>[0]; nav?: string } = {}): HTMLElement {
+  const { empty: none, nav, ...framing } = options;
+  const shown = items.filter((item) => item !== null && item !== undefined && item !== false);
+  const content = shown.length ? rows(...shown) : none ? empty({ ...none, compact: true }) : null;
+  if (nav === undefined) return card({ ...framing, flush: true }, content);
+  return h("nav", { class: "card", "aria-label": nav }, content);
+}
+
+export interface ListRowOptions {
+  /** What leads it: an icon on a small tile (toned when the tone means something), or any element (a face, a dot). */
+  lead?: IconName | Node | null;
+  leadTone?: Tone;
+  title: Child;
+  /** One line under the title, in secondary text: what it is, or what it does. */
+  sub?: Child;
+  /** Small facts under that, side by side: a time, a count, a badge (meta()). */
+  meta?: Child[];
+  /** At its end: its actions, a badge, a control. */
+  trail?: Child;
+  /** The whole row goes somewhere (a link) or does something (a button). */
+  href?: string;
+  onClick?: (event: MouseEvent) => void;
+  /** A chevron at its end: it opens something. */
+  chevron?: boolean;
+  /** Its parts sit at the top (a long body); otherwise the lead and the trail are level with the middle of its text. */
+  top?: boolean;
+  /** On a narrow screen its trail goes under the text (a setting's control). */
+  wrap?: boolean;
+  label?: string;
+  /** Its identity across a redraw (syncChildren, an opened disclosure kept open). */
+  key?: string;
+}
+
+/**
+ * A row of a list (.rows > .item): a lead, its text (a title, a line under it, a meta line) and a trail, at the row's
+ * padding (--row-pad above and below, --card-pad at either end). Every list in the app is made of these.
+ */
+export function listRow(options: ListRowOptions): HTMLElement {
+  const lead =
+    options.lead === undefined || options.lead === null
+      ? null
+      : typeof options.lead === "string"
+        ? h("span", { class: "avatar", "data-tone": options.leadTone ?? null }, icon(options.lead, { size: 16 }))
+        : options.lead;
+  const parts = [
+    lead,
+    h(
+      "div",
+      { class: "item-text" },
+      h("div", { class: "item-title" }, options.title),
+      options.sub ? h("div", { class: "item-sub" }, options.sub) : null,
+      options.meta?.some(Boolean) ? meta(...options.meta) : null,
+    ),
+    options.trail ? h("div", { class: "item-actions" }, options.trail) : null,
+    options.chevron ? icon("chevron-right", { size: 16, class: "item-chevron" }) : null,
+  ];
+  const attrs = { class: cx("item", !options.top && "center", options.wrap && "wrap"), "aria-label": options.label ?? null, "data-key": options.key ?? null };
+  if (options.href) return h("a", { ...attrs, href: options.href }, ...parts);
+  if (options.onClick) return h("button", { ...attrs, class: cx(attrs.class, "item-button"), type: "button", onclick: options.onClick }, ...parts);
+  return h("div", attrs, ...parts);
+}
+
+/** Small facts side by side, in quiet type and tabular figures (a time, a count, who): a row's meta line, a card's. */
+export function meta(...parts: Child[]): HTMLElement {
+  return h("div", { class: "meta" }, ...parts);
+}
+
+/**
+ * A card that opens on request (details.card.disclosure): one line, with what it's about and a chevron, until it's
+ * wanted. `flush` for a list in it, edge to edge under a hairline. Opened, it stays open across a redraw (keepPlace)
+ * when its summary carries a `key`.
+ */
+export function disclosure(summary: Child, options: { open?: boolean; flush?: boolean; key?: string; hidden?: boolean } = {}, ...body: Child[]): HTMLDetailsElement {
+  return h(
+    "details",
+    { class: cx("card", "disclosure", options.flush && "flush"), open: options.open ?? false, hidden: options.hidden ?? false },
+    h("summary", { "data-key": options.key ?? null }, icon("chevron-right", { size: 14, class: "chev" }), summary),
+    h("div", { class: "disclosure-body" }, ...body),
+  );
+}
+
+/** Names and their values, two columns (dl.kv): a device's facts, an entry's. */
+export function kv(pairs: [Child, Child][]): HTMLElement {
+  return h("dl", { class: "kv" }, ...pairs.flatMap(([name, value]) => [h("dt", {}, name), h("dd", {}, value)]));
 }
