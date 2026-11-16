@@ -884,11 +884,13 @@ Next:
         for (const m of models) console.log(`${rest[0]}/${m}`);
       } else if (sub === "presets") {
         const { presets } = await admin.call("providers");
-        for (const p of presets) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.baseUrl || dim(p.note ?? "")}${p.plan ? dim(`  coding plan: ${p.plan.name}`) : ""}`);
+        const wide = Math.max(14, ...presets.map((p: { id: string }) => p.id.length));
+        for (const p of presets) console.log(`  ${p.id.padEnd(wide)} ${p.kind.padEnd(10)} ${p.baseUrl || dim(p.note ?? "")}${p.plan ? dim(`  coding plan: ${p.plan.name}`) : ""}`);
       } else {
         const { providers } = await admin.call("providers");
         if (!providers.length) console.log("No providers yet. `galahad key add` configures one.");
-        for (const p of providers) console.log(`  ${p.id.padEnd(14)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}${planOf(p.id) ? dim("  coding plan: for coding only") : ""}`);
+        const wide = Math.max(14, ...providers.map((p: { id: string }) => p.id.length));
+        for (const p of providers) console.log(`  ${p.id.padEnd(wide)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}${planOf(p.id) ? dim("  coding plan: for coding only") : ""}`);
       }
       return;
     }

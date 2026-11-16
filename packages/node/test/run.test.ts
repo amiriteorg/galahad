@@ -155,3 +155,22 @@ describe("galahad run", () => {
     });
   }
 });
+
+describe("galahad provider presets", () => {
+  test("its columns stay in line, however long a preset's id", async () => {
+    const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, "../src/cli.ts"), "provider", "presets", "--home", home.dir], {
+      stdout: "pipe",
+      stderr: "ignore",
+      env: { ...process.env, GALAHAD_KEYSTORE: "file" },
+    });
+    const out = await new Response(proc.stdout).text();
+    expect(await proc.exited).toBe(0);
+    // Where each row's kind begins: the same column on every row, the longest id's (volcengine-coding) included.
+    const starts = out.split("\n").flatMap((line) => {
+      const row = /^ {2}(\S+)( +)(?:openai|anthropic)\b/.exec(line);
+      return row ? [row[1]!.length + row[2]!.length] : [];
+    });
+    expect(starts.length).toBeGreaterThan(20);
+    expect(new Set(starts).size).toBe(1);
+  });
+});
