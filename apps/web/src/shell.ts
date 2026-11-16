@@ -366,7 +366,9 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   live.inboxLoaded.watch(toIcon);
   live.fleet.watch((fleet) => {
     if (!fleet) {
-      replace(fleetPill, dot(null), h("span", {}, base.whoami.fleetName ?? "fleet"));
+      // As wide as it will be, the counts' places held by figure spaces (a tabular digit's width), so the pill doesn't
+      // grow under the pointer when the fleet answers.
+      replace(fleetPill, dot(null), h("span", { class: "tnum" }, `${base.whoami.fleetName ?? "fleet"} · \u2007/\u2007 online`));
       return;
     }
     const nodes = fleet.devices.filter((d) => d.kind === "node" && !d.revokedAt);
