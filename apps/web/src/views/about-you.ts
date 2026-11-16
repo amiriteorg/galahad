@@ -1,7 +1,7 @@
 import type { MemoryView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage } from "../context.ts";
-import { badge, busy, button, callout, field } from "../ui/controls.ts";
+import { badge, busy, button, callout, field, formActions } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { signal } from "../ui/signal.ts";
@@ -53,11 +53,11 @@ export function factRow(ctx: Ctx, m: MemoryView, proposed: boolean): HTMLElement
   // The fact across the whole width (a phone has no room beside it), then whose it is and what you can do.
   return h(
     "div",
-    { class: "item", style: "flex-direction:column;align-items:stretch" },
-    h("div", { class: "wrap-anywhere", style: "white-space:pre-wrap" }, m.text),
+    { class: "item fact" },
+    h("div", { class: "wrap-anywhere pre-wrap" }, m.text),
     h(
       "div",
-      { class: "row wrap", style: "justify-content:space-between;align-items:center" },
+      { class: "row wrap between" },
       proposed ? badge("He noticed it: yours to keep", "agent", "mark") : badge("Kept: with every answer", "accent", "user"),
       ctx.can("mind:write")
         ? h("div", { class: "row wrap" }, proposed ? keep : null, button(proposed ? "In my words" : "Reword", { size: "sm", onClick: () => openAboutYou(ctx, m) }), drop)
@@ -101,7 +101,7 @@ export function openAboutYou(ctx: Ctx, from?: MemoryView): void {
     },
     field("About you", text, { hint: "A preference, a convention, what not to do: in a line, as he should keep to it." }),
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), save),
   );
   const sheet = openSheet({ title: from ? "In your words" : "Tell him something about you", body: form, initialFocus: () => text });
 }

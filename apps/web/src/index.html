@@ -181,6 +181,8 @@
       .tnum { font-variant-numeric: tabular-nums; }
       .mono { font-family: var(--font-mono); font-size: 0.92em; }
       .muted { color: var(--text-2); }
+      /* The thing a quieter passage is about (a confirmation's memory or skill), in the text's own colour. */
+      .plain { color: var(--text); }
       .subtle { color: var(--text-3); }
       .small { font-size: var(--fs-13); }
       .tiny { font-size: var(--fs-12); }
@@ -563,6 +565,8 @@
       .rows > .item .meta { margin-top: var(--sp-1); }
       .rows > .item .item-text > .meta { margin-top: 2px; }
       .rows > .item .item-actions { display: flex; gap: var(--sp-1); align-items: center; flex: none; }
+      /* A fact of yours (about-you.ts): its words across the row's width, whose it is and its answers under them. */
+      .item.fact { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
       .rows > .item > .item-chevron { flex: none; color: var(--text-3); }
       /* A setting's row: on a narrow screen its control goes under its words. */
       .rows > .item.wrap { flex-wrap: wrap; }

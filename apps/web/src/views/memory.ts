@@ -4,7 +4,7 @@ import { ApiError } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { shortId } from "../lib/text.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
-import { badge, busy, button, callout, chipInput, empty, errorState, field, pageHead, section, skeletonRows, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, chipInput, empty, errorState, field, formActions, pageBody, pageHead, section, skeletonRows, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -97,7 +97,7 @@ export function openRemember(ctx: Ctx, initial = ""): void {
     field("Memory", text, { hint: "Plain text. Shared with every device in your fleet." }),
     h("div", { class: "field" }, h("label", { for: "memory-tags" }, "Tags (optional)"), tags.el),
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), save),
   );
   const sheet = openSheet({ title: "Remember something", body: form, initialFocus: () => text });
 }
@@ -146,7 +146,7 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
       h(
         "div",
         { class: "grow" },
-        h("div", { style: "white-space:pre-wrap", class: "wrap-anywhere" }, highlighted(m.text, q)),
+        h("div", { class: "wrap-anywhere pre-wrap" }, highlighted(m.text, q)),
         h(
           "div",
           { class: "meta" },
@@ -183,7 +183,7 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
               onClick: async () => {
                 const ok = await confirmAction({
                   title: "Forget this memory?",
-                  body: [h("p", { class: "wrap-anywhere", style: "color:var(--text)" }, m.text.length > 240 ? `${m.text.slice(0, 240)}…` : m.text), h("p", {}, "It is forgotten on every device.")],
+                  body: [h("p", { class: "wrap-anywhere plain" }, m.text.length > 240 ? `${m.text.slice(0, 240)}…` : m.text), h("p", {}, "It is forgotten on every device.")],
                   confirmLabel: "Forget",
                 });
                 if (!ok) return;
@@ -253,8 +253,8 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
         h("div", { role: "search", class: "input-wrap" }, icon("search", { size: 16 }), h("label", { class: "sr-only", for: "memory-q" }, "Search memory"), query),
         ctx.can("mind:write") ? button("Remember", { variant: "primary", icon: "plus", onClick: () => openRemember(ctx) }) : null,
       ),
-      section("About you", { actions: ctx.can("mind:write") ? button("Tell him something", { size: "sm", icon: "plus", onClick: () => openAboutYou(ctx) }) : null }, about),
-      memories,
+      // Shown whole once both have answered: what he knows of you came in above the memories, and pushed them down.
+      pageBody(section("About you", { actions: ctx.can("mind:write") ? button("Tell him something", { size: "sm", icon: "plus", onClick: () => openAboutYou(ctx) }) : null }, about), memories),
     ),
   );
   memories.querySelector(".section-head h2")?.after(summary);
