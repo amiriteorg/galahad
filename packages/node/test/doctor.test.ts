@@ -392,6 +392,25 @@ describe("each fault gives its own line and advice", () => {
     expect(byId(diagnose(none), "sandbox.host").line).toContain("they run on rack");
   });
 
+  test("a Mac's sandboxes: said in container's words, and a Mac whose container isn't running is told how to start it", () => {
+    const mac = healthy();
+    mac.sandbox.host = { ...mac.sandbox.host!, engine: "container", kvm: false, firewall: null, start: [{ kind: "vm", ok: true, ms: 1200, error: null }] };
+    const checks = diagnose(mac);
+    expect(checks.filter((c) => c.state !== "ok").map((c) => c.id)).toEqual([]);
+    expect(byId(checks, "sandbox.docker").line).toBe("Apple's container answers: every sandbox here is a VM of its own");
+    expect(byId(checks, "sandbox.networks").line).toBe("the gateway network is there (online sandboxes use container's own default network)");
+    const down = healthy();
+    down.sandbox.host = { ...down.sandbox.host!, engine: "container", docker: false, kvm: false, firewall: null, start: null };
+    expect(byId(diagnose(down), "sandbox.docker")).toMatchObject({ state: "broken", line: "Apple's container isn't answering on this Mac", fix: expect.stringContaining("container system start") });
+    const failed = healthy();
+    failed.sandbox.host = { ...failed.sandbox.host!, engine: "container", kvm: false, firewall: null, start: [{ kind: "vm", ok: false, ms: 3000, error: "Error: failed to boot" }] };
+    expect(byId(diagnose(failed), "sandbox.start.vm").fix).toContain("container system logs");
+    // A Mac with container found but not running hosts nothing: the line says why, and how.
+    const stopped = healthy();
+    stopped.sandbox = { host: null, others: [], container: { version: "1.7.1", running: false } };
+    expect(byId(diagnose(stopped), "sandbox.host")).toMatchObject({ state: "needs-you", fix: expect.stringContaining("container system start") });
+  });
+
   test("compute: never measured, stale, old", () => {
     expect(fault((f) => (f.compute!.lastAt = null), "compute.calibration").line).toContain("hasn't measured itself");
     const stale = fault((f) => (f.compute!.due = "changed"), "compute.calibration");

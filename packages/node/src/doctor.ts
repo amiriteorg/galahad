@@ -72,7 +72,10 @@ export interface DoctorFacts {
   sandbox: {
     /** null: this node hosts no sandboxes. */
     host: {
+      /** Its engine answers (Docker's, or on a Mac Apple's container's: `engine`). */
       docker: boolean;
+      /** "container": a Mac's, through Apple's container, every sandbox a VM. Absent: Docker's. */
+      engine?: "container";
       image: boolean;
       networks: boolean;
       diskLimited: boolean;
@@ -85,6 +88,8 @@ export interface DoctorFacts {
     } | null;
     /** The fleet's other sandbox hosts, as they last published themselves. */
     others: { name: string; online: boolean; image: boolean }[];
+    /** Apple's container, where this Mac has it: its version, and whether its service answers. */
+    container?: { version: string | null; running: boolean } | null;
   };
   /** null: compute isn't known here. */
   compute: { canMeasure: boolean; lastAt: number | null; due: "joined" | "changed" | null; slots: number | null; inUse: number; waiting: number } | null;
@@ -371,16 +376,20 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   const host = f.sandbox.host;
   if (!host) {
     const hosts = f.sandbox.others;
-    if (!hosts.length) add("sandbox", "sandbox.host", "needs-you", "no node in the fleet hosts sandboxes, so quests and trials can't run", "Enrol a machine with Docker (galahad join there), or install Docker on this one and restart the node.");
+    // (A Mac with Apple's container that isn't running is told how to start it: it hosts through nothing else.)
+    const container = f.sandbox.container;
+    const here = container && !container.running ? `start Apple's container here (container system start${container.version ? `; ${container.version} is installed` : ""}) and restart the node` : "install Docker on this one and restart the node";
+    if (!hosts.length) add("sandbox", "sandbox.host", "needs-you", "no node in the fleet hosts sandboxes, so quests and trials can't run", `Enrol a machine with Docker (galahad join there), or ${here}.`);
     else add("sandbox", "sandbox.host", "ok", `${self} hosts no sandboxes (no Docker here); they run on ${hosts.map((h) => h.name).join(", ")}`);
   } else {
-    if (!host.docker) add("sandbox", "sandbox.docker", "broken", "Docker isn't answering on this machine", "systemctl status docker, and check that the node's user is in the docker group.");
-    else add("sandbox", "sandbox.docker", "ok", "Docker answers");
+    const mac = host.engine === "container";
+    if (!host.docker) add("sandbox", "sandbox.docker", "broken", mac ? "Apple's container isn't answering on this Mac" : "Docker isn't answering on this machine", mac ? "container system start (its service, at a 1.x release), then restart the node." : "systemctl status docker, and check that the node's user is in the docker group.");
+    else add("sandbox", "sandbox.docker", "ok", mac ? "Apple's container answers: every sandbox here is a VM of its own" : "Docker answers");
     if (host.docker) {
       if (!host.image) add("sandbox", "sandbox.image", "needs-you", "the sandbox image is missing (another tool's cleanup may have pruned it)", "galahad sandbox build. He also rebuilds it himself when a sandbox is next needed, which makes that quest wait.");
       else add("sandbox", "sandbox.image", "ok", "the sandbox image is built and kept in use");
       if (!host.networks) add("sandbox", "sandbox.networks", "needs-you", "a sandbox network is missing", "Restart the node: it creates them at its start (systemctl restart galahad).");
-      else add("sandbox", "sandbox.networks", "ok", "both sandbox networks are there");
+      else add("sandbox", "sandbox.networks", "ok", mac ? "the gateway network is there (online sandboxes use container's own default network)" : "both sandbox networks are there");
 
       if (host.start === null) add("sandbox", "sandbox.start", "skipped", f.quick ? "no sandbox was started (a full check starts one and removes it)" : "no sandbox was started: the image is missing");
       else if (host.start === "busy") add("sandbox", "sandbox.start", "skipped", "no sandbox was started: there is no room for one now, and the doctor doesn't queue behind real work");
@@ -388,7 +397,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
         for (const run of host.start) {
           const what = run.kind === "vm" ? "a microVM sandbox" : "a sandbox";
           if (run.ok) add("sandbox", `sandbox.start.${run.kind}`, "ok", `${what} started, ran a command and was removed`, undefined, { ms: run.ms });
-          else add("sandbox", `sandbox.start.${run.kind}`, "broken", `${what} didn't start: ${redact(run.error ?? "no reason given").replace(/\s+/g, " ").slice(0, 200)}`, run.kind === "vm" ? "Kata Containers isn't working: a deploy with --sudo reinstalls it; until then online sandboxes can't be microVMs." : "See docker ps -a and the node's log; galahad sandbox run -- true shows the same failure.", { ms: run.ms });
+          else add("sandbox", `sandbox.start.${run.kind}`, "broken", `${what} didn't start: ${redact(run.error ?? "no reason given").replace(/\s+/g, " ").slice(0, 200)}`, mac ? "container system logs says why container couldn't start it; galahad sandbox run -- true shows the same failure." : run.kind === "vm" ? "Kata Containers isn't working: a deploy with --sudo reinstalls it; until then online sandboxes can't be microVMs." : "See docker ps -a and the node's log; galahad sandbox run -- true shows the same failure.", { ms: run.ms });
         }
       }
     }

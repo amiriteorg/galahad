@@ -18,8 +18,10 @@ import {
   containerVersionArgs,
   containerVolumeDeleteArgs,
   parseContainers,
+  CONTAINER_UNMADE,
   parseContainerVersion,
   type SandboxAsk,
+  type Unmade,
 } from "./container.ts";
 import { ContainerVolumes } from "./container-volumes.ts";
 import {
@@ -107,6 +109,8 @@ export interface SandboxHostOptions {
    * sandbox is a lightweight VM of its own (container.ts: each of Docker's flags there, and what a Mac can't make).
    */
   engine?: "docker" | "container";
+  /** The disk a Mac's workspaces come out of, for their budget (default: the one the home is on). */
+  disk?: () => { totalBytes: number; freeBytes: number };
   /** The engine's binary (default: docker, or container). */
   docker?: string;
   /** How the engine is run (tests pass a stand-in that answers its commands; nothing is spawned then). */
@@ -300,7 +304,7 @@ export class SandboxHost {
 
   constructor(opts: SandboxHostOptions) {
     this.apple = opts.engine === "container";
-    this.opts = this.apple && !opts.workspaces ? { ...opts, workspaces: new ContainerVolumes((args, timeoutMs) => this.docker(args, timeoutMs)) } : opts;
+    this.opts = this.apple && !opts.workspaces ? { ...opts, workspaces: new ContainerVolumes((args, timeoutMs) => this.docker(args, timeoutMs), opts.disk) } : opts;
     this.bin = opts.docker ?? (this.apple ? "container" : "docker");
     this.now = opts.now ?? Date.now;
     this.tokenStore = opts.tokenStore ?? memoryTokenStore();
@@ -1233,6 +1237,44 @@ export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; ne
     check(["network", "inspect", NETWORKS.gateway.name, "--format", "{{.Id}}"]),
   ]);
   return { image, networks: gw, vm: microVMsAvailable() };
+}
+
+/** What a Mac's sandbox host is, as its capabilities say it: every sandbox a VM, what it won't make, and its VMs don't grow live. */
+export interface ContainerHostCaps {
+  image: boolean;
+  networks: boolean;
+  vm: true;
+  engine: "container";
+  cannot: Unmade[];
+  grows: false;
+}
+
+/**
+ * Cheap readiness probe of Apple's container on a Mac (no side effects): its version and whether its service answers
+ * (`system version`: the API server's row is there only then), and when it does, at a release this node speaks, the
+ * host it makes. Null: no container here.
+ */
+export async function probeContainer(runner?: DockerRunner, bin = "container"): Promise<{ container: { version: string | null; running: boolean }; sandbox: ContainerHostCaps | null } | null> {
+  if (!runner && !Bun.which(bin)) return null;
+  const run: DockerRunner =
+    runner ??
+    (async (args, timeoutMs) => {
+      const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+      const timer = setTimeout(() => proc.kill(), timeoutMs);
+      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      clearTimeout(timer);
+      return { code, stdout, stderr: "" };
+    });
+  let version: ReturnType<typeof parseContainerVersion> = null;
+  try {
+    version = parseContainerVersion((await run(containerVersionArgs(), 8000)).stdout);
+  } catch {
+    /* it didn't answer */
+  }
+  const container = { version: version?.version ?? null, running: !!version?.running };
+  if (!version?.running || version.major !== CONTAINER_MAJOR) return { container, sandbox: null };
+  const [image, gw] = await Promise.all([run(containerImageInspectArgs(DEFAULT_IMAGE), 8000), run(containerNetworkInspectArgs(), 8000)]);
+  return { container, sandbox: { image: image.code === 0, networks: gw.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } };
 }
 
 const LEDGER_DETAIL_LIMIT = 400;

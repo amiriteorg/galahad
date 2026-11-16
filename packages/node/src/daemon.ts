@@ -94,6 +94,8 @@ export interface DaemonOptions {
   archiveIntervalMs?: number | false;
   /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
   docker?: DockerRunner;
+  /** The disk a Mac's workspaces come out of, for their budget (default: the one its home is on; tests beside a stand-in pass one). */
+  sandboxDisk?: () => { totalBytes: number; freeBytes: number };
   /** How a terminal's process is started beside that stand-in (tests: a local shell instead of `docker exec`). */
   spawnTerminal?: SpawnTerminal;
   /**
@@ -263,14 +265,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     ...(opts.slotWaitMs ? { maxWaitMs: opts.slotWaitMs } : {}),
   });
 
-  // Sandbox host: only when Docker is reachable on this machine.
+  // Sandbox host: only when Docker is reachable on this machine, or on a Mac Apple's container (docs/MAC.md).
   let sandbox: GovernedSandboxHost | null = null;
   const sandboxContext = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sandbox");
   if (caps.sandbox !== undefined && caps.sandbox !== null) {
+    // On a Mac with container: every sandbox a VM of its own, its /work container's own volume, its resolver container's.
+    const apple = caps.sandbox.engine === "container";
     // Online microVMs can't use Docker's DNS (it lives on the host side): they get the host's resolvers.
     const resolvConf = join(home.dir, "sandbox-resolv.conf");
     const readIf = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : null);
-    writeFileSync(resolvConf, vmResolvConf(readIf("/run/systemd/resolve/resolv.conf"), readIf("/etc/resolv.conf")), { mode: 0o644 });
+    if (!apple) writeFileSync(resolvConf, vmResolvConf(readIf("/run/systemd/resolve/resolv.conf"), readIf("/etc/resolv.conf")), { mode: 0o644 });
     const microVMs = caps.sandbox.vm ?? microVMsAvailable();
     sandbox = new GovernedSandboxHost(
       {
@@ -278,6 +282,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       tokens,
       tokenStore: sandboxTokens,
       ledger,
+      ...(apple ? { engine: "container" as const, ...(opts.sandboxDisk ? { disk: opts.sandboxDisk } : {}) } : {}),
       ...(opts.docker ? { runner: opts.docker } : {}),
       ...(opts.spawnTerminal ? { spawnTerminal: opts.spawnTerminal } : {}),
       maxCpus: caps.cores,
@@ -285,11 +290,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // Size-limited workspaces when the root helper is installed (scripts/remote-setup.sh); otherwise
       // unlimited Docker volumes, and the heartbeat says so. Never beside a stand-in for Docker: the
       // helper is root on its host, and would make real images there for containers that don't exist.
-      ...(opts.docker ? {} : { workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET) }),
+      // (On a Mac the host makes container's own volumes, each of a fixed size, and needs no helper.)
+      ...(opts.docker || apple ? {} : { workspaces: new WorkspaceHelper(env.GALAHAD_WORKSPACE_SOCKET) }),
       imageContext: sandboxContext,
       // Online sandboxes run in KVM microVMs where Kata is installed (scripts/remote-setup.sh).
       microVMs,
-      resolvConf,
+      ...(apple ? {} : { resolvConf }),
       },
       { governor, capacity: () => computeService!.selfCapacity() },
     );

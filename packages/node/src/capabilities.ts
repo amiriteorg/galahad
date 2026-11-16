@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import { preset } from "@galahad/brain";
 import type { Presence } from "@galahad/core";
-import { probeSandbox } from "@galahad/sandbox";
+import { type ContainerHostCaps, probeContainer, probeSandbox } from "@galahad/sandbox";
 
 /*
  * What this body can do. Stable facts go into the node's profile in the mind
@@ -23,9 +23,12 @@ export interface Capabilities {
   tools: string[];
   localModels: { runtime: string; models: string[] }[];
   tailscale: { ip: string | null; dnsName: string | null } | null;
-  /** Present when this node can host sandboxes (Docker reachable). */
-  /** vm: it can also run sandboxes as KVM microVMs (Kata). */
-  sandbox?: { image: boolean; networks: boolean; vm?: boolean } | null;
+  /** Present when this node can host sandboxes (Docker reachable, or on a Mac Apple's container answering). */
+  /** vm: it can also run sandboxes as KVM microVMs (Kata); on a Mac every one is a VM. A Mac's says more (ContainerHostCaps):
+   *  engine "container", what it won't make (`cannot`: placement sends that elsewhere), and `grows: false` (its VMs pause to). */
+  sandbox?: { image: boolean; networks: boolean; vm?: boolean; engine?: ContainerHostCaps["engine"]; cannot?: string[]; grows?: false } | null;
+  /** Apple's container, where this Mac has its binary: its version, and whether its service answers. Absent: not found. */
+  container?: { version: string | null; running: boolean };
   /** This node keeps its Mac from sleeping while it runs (`galahad awake on`: keep-awake.ts). Absent: it doesn't. */
   awake?: boolean;
 }
@@ -143,9 +146,23 @@ function hasBattery(macPower: string | null): boolean {
 /** Whether `pmset -g batt` speaks of an internal battery (null: it couldn't be asked, so none is assumed). */
 export const macHasBattery = (pmsetBatt: string | null): boolean => !!pmsetBatt && /InternalBattery/.test(pmsetBatt);
 
+/**
+ * Which sandbox host this body is. A Mac with Apple's container hosts through it, running or not (never through
+ * Docker one day and container the next, which would leave one's sandboxes unseen by the other), and says it found
+ * it; any other body through Docker where Docker answers, as before.
+ */
+export function sandboxHostOf(
+  platform: string,
+  container: Awaited<ReturnType<typeof probeContainer>>,
+  docker: Capabilities["sandbox"] | null,
+): Pick<Capabilities, "sandbox" | "container"> {
+  if (platform === "darwin" && container) return { sandbox: container.sandbox, container: container.container };
+  return { sandbox: docker };
+}
+
 export async function probeCapabilities(): Promise<Capabilities> {
   const tools = TOOLS.filter((tool) => Bun.which(tool));
-  const [gpu, models, docker, tailscale, windowsBattery, sandbox, macPower] = await Promise.all([
+  const [gpu, models, docker, tailscale, windowsBattery, sandbox, macPower, container] = await Promise.all([
     gpus(),
     localModels(),
     tools.includes("docker") ? run(["docker", "info", "--format", "{{.ServerVersion}}"], 5000) : Promise.resolve(null),
@@ -153,6 +170,7 @@ export async function probeCapabilities(): Promise<Capabilities> {
     process.platform === "win32" ? batteryWindows() : Promise.resolve(null),
     tools.includes("docker") ? probeSandbox() : Promise.resolve(null),
     process.platform === "darwin" ? run(["pmset", "-g", "batt"]) : Promise.resolve(null),
+    process.platform === "darwin" ? probeContainer() : Promise.resolve(null),
   ]);
   const cpus = os.cpus();
   return {
@@ -172,7 +190,7 @@ export async function probeCapabilities(): Promise<Capabilities> {
     tools,
     localModels: models,
     tailscale,
-    sandbox,
+    ...sandboxHostOf(process.platform, container, sandbox),
   };
 }
 

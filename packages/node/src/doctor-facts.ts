@@ -341,7 +341,9 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
       return { name: d.name, online: !!status?.online, image: !!(d.profile?.caps as Partial<Capabilities>).sandbox?.image };
     });
   const host = deps.sandbox;
-  if (!host) return { host: null, others };
+  // (A Mac's Apple's container, where it has one: running or not, it is what the Mac hosts through.)
+  const container = caps?.container ? { container: caps.container } : {};
+  if (!host) return { host: null, others, ...container };
   const [status, diskLimited] = await Promise.all([host.status().catch(() => ({ docker: false, image: false, networks: { gateway: false, online: false } })), host.diskLimited().catch(() => false)]);
   const microVMs = !!caps?.sandbox?.vm;
   let firewall: NonNullable<DoctorFacts["sandbox"]["host"]>["firewall"] = null;
@@ -353,8 +355,9 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
   // Never when the image is missing: creating a sandbox would rebuild it, and the doctor changes nothing.
   const start = deep && status.docker && status.image ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity()).catch(() => null) : null;
   return {
-    host: { docker: status.docker, image: status.image, networks: status.networks.gateway && status.networks.online, diskLimited, kvm: !!caps?.vm.kvm, microVMs, firewall, start },
+    host: { docker: status.docker, ...(caps?.sandbox?.engine === "container" ? { engine: "container" as const } : {}), image: status.image, networks: status.networks.gateway && status.networks.online, diskLimited, kvm: !!caps?.vm.kvm, microVMs, firewall, start },
     others,
+    ...container,
   };
 }
 
