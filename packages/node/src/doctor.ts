@@ -120,7 +120,7 @@ export interface Diagnosis extends DoctorCheck {
 
 const CORE_ROLES = new Set(["planner", "engineer", "reviewer"]);
 /** The roles whose own work is all coding (a quest's engineering and its review): a coding plan alone can play them. */
-const CODING_ROLES = new Set(["engineer", "reviewer"]);
+export const CODING_ROLES = new Set(["engineer", "reviewer"]);
 /**
  * The roles a VM's own tools play, through the gateway, and never he himself (a VM's eyes): a coding plan its tools may
  * use (one whose terms allow unattended tools) plays them alone.

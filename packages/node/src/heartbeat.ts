@@ -30,7 +30,8 @@ export interface HeartbeatSnapshot {
   self: { id: string; name: string; startedAt: number };
   nodes: { id: string; name: string; alwaysOn: boolean; online: boolean; lastSeen: number | null }[];
   vaultUnlocked: boolean;
-  roles: { role: string; usable: boolean; models: string[] }[];
+  /** `plans`: every model on it is on a coding plan, which may play only some roles (doctor.ts says which). */
+  roles: { role: string; usable: boolean; models: string[]; plans?: boolean }[];
   /** null when this node is not a sandbox host. */
   sandboxes: { id: string; expiresAt: number; ephemeral: boolean }[] | null;
   /** This node as a sandbox host: whether workspaces are size-limited and the image is there (null: not a host). */
@@ -88,7 +89,9 @@ export function assess(s: HeartbeatSnapshot): Finding[] {
       key: `no-model:${role.role}`,
       severity: CORE_ROLES.has(role.role) ? "warn" : "info",
       title: `No model can play ${role.role}`,
-      body: `None of ${role.models.join(", ") || "(no models)"} has a key here or a running local runtime. Add a key (galahad key add) or change the roster.`,
+      body: role.plans
+        ? `${role.models.join(", ")} ${role.models.length === 1 ? "is" : "are"} on a coding plan, which can't play ${role.role}: its terms keep it to coding, or to a tool you run yourself. Hire a model that can: galahad roster set ${role.role} <provider/model>.`
+        : `None of ${role.models.join(", ") || "(no models)"} has a key here or a running local runtime. Add a key (galahad key add) or change the roster.`,
     });
   }
 

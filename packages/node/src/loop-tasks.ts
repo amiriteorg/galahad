@@ -1,6 +1,6 @@
 import { type ChatStreamEvent, type NodeIdentity, redact, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
 import type { BankService } from "./bank/service.ts";
-import { chat, commandsRun, excerpt, installedConnector, installedConnectors, keyState, parseRef, resolveProvider, roster, sseData } from "@galahad/brain";
+import { chat, commandsRun, excerpt, installedConnector, installedConnectors, keyState, onPlan, parseRef, planOf, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
@@ -8,6 +8,7 @@ import type { ArmTokens } from "./arms.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import type { ComputeService } from "./compute/service.ts";
 import type { ConnectorService } from "./connectors.ts";
+import { CODING_ROLES, TOOL_ROLES } from "./doctor.ts";
 import { assess, checklistPrompt, diskOf, type Finding, type HeartbeatSnapshot, readChecklistReply, reconcile } from "./heartbeat.ts";
 import { hlcMs, loopRecords, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "./loops.ts";
 import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-action.ts";
@@ -107,6 +108,22 @@ function roleUsable(deps: LoopTaskDeps, models: string[]): boolean {
   });
 }
 
+/**
+ * Whether anyone can play a role, for what it does (the doctor's rule): his own words need a model of his own, while a
+ * coding plan the knights' tools may use can play a role that is all coding (the engineer, the reviewer) or a VM's
+ * eyes, which only its tools ask, and only when its terms let a VM's tools use it unattended.
+ */
+function rolePlayable(deps: LoopTaskDeps, role: string, models: string[]): boolean {
+  if (roleUsable(deps, models)) return true;
+  if (!CODING_ROLES.has(role) && !TOOL_ROLES.has(role)) return false;
+  return models.some((ref) => {
+    if (!onPlan(ref)) return false;
+    const provider = ref.slice(0, ref.indexOf("/"));
+    if (TOOL_ROLES.has(role) && planOf(provider)?.allows.tools !== "unattended") return false;
+    return !!resolveProvider(deps.store, deps.vault, provider, "tool")?.apiKey;
+  });
+}
+
 /** The roles his background writing tries, cheapest first. */
 const CHEAPEST_FIRST = ["swift", "reviewer", "planner", "engineer"] as const;
 
@@ -147,7 +164,12 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
         return { id: d.id, name: d.name, alwaysOn: isAlwaysOn(caps), online: !!status?.online, lastSeen: status?.lastSeen ?? null };
       }),
     vaultUnlocked: deps.vault.unlocked(),
-    roles: Object.entries(roster(deps.store)).map(([role, spec]) => ({ role, models: spec.models, usable: roleUsable(deps, spec.models) })),
+    roles: Object.entries(roster(deps.store)).map(([role, spec]) => ({
+      role,
+      models: spec.models,
+      usable: rolePlayable(deps, role, spec.models),
+      ...(spec.models.length && spec.models.every(onPlan) ? { plans: true } : {}),
+    })),
     sandboxes: sandboxes?.map((s) => ({ id: s.id, expiresAt: s.expiresAt, ephemeral: s.ephemeral })) ?? null,
     sandboxHost,
     loops: loopRecords(deps.store).map((loop) => ({

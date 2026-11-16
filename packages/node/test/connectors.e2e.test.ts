@@ -547,6 +547,29 @@ describe("loops over the API", () => {
     expect((await admin<{ notices: NoticeView[] }>("notices")).body.notices.find((n) => n.key === "no-model:planner")!.dismissed).toBe(true);
   });
 
+  test("a VM's eyes on a coding plan its tools may use aren't a model he lacks; on one for a tool you run yourself, the heartbeat says why", async () => {
+    // Two plans with their keys in the vault (fakes, made here), as `galahad key add` leaves them.
+    for (const id of ["opencode-go", "kimi-coding"]) {
+      expect((await admin("setSecret", { name: id, value: `FAKE-${id}-${"0".repeat(24)}`, provider: id })).status).toBe(200);
+      expect((await admin("setProvider", { id, secret: id })).status).toBe(200);
+    }
+    try {
+      await admin("setRoster", { role: "eyes", models: ["opencode-go/gpt-6-luna"] });
+      expect((await admin<{ findings: { key: string }[] }>("heartbeat", {})).body.findings.map((f) => f.key)).not.toContain("no-model:eyes");
+      // Kimi Code is for interactive use only: a tool you run yourself, which a VM's tools are not.
+      await admin("setRoster", { role: "eyes", models: ["kimi-coding/k3"] });
+      const blind = (await admin<{ findings: { key: string; body: string }[] }>("heartbeat", {})).body.findings.find((f) => f.key === "no-model:eyes");
+      expect(blind?.body).toContain("on a coding plan");
+      expect(blind?.body).not.toContain("has a key here");
+    } finally {
+      await admin("setRoster", { role: "eyes", models: [] });
+      for (const id of ["opencode-go", "kimi-coding"]) {
+        await admin("removeProvider", { id });
+        await admin("deleteSecret", { name: id });
+      }
+    }
+  });
+
   test("a loop that calls a connector: reads report back, outward calls wait for you", async () => {
     const set = await admin<{ loop: LoopView }>("setLoop", { name: "poll", schedule: "every 15m", task: { kind: "call", connector: "forge", tool: "me" } });
     expect(set.status).toBe(200);
