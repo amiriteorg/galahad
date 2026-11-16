@@ -1,5 +1,5 @@
 import type { NamedCheck, NamedRule, RuleDoes } from "@galahad/core";
-import { commandWords } from "./shell-paths.ts";
+import { commandWords, readOf } from "./shell-paths.ts";
 
 /*
  * Your rules (core's rules.ts) against a command: tripwires before it runs, checks after. A rule's globs are matched
@@ -127,8 +127,12 @@ export function tripOf(rules: readonly NamedRule[], command: string): Trip | nul
   return null;
 }
 
-/** The checks a command calls for once it has run, by name: each is run once, whatever else matched. */
+/**
+ * The checks a command calls for once it has run, by name: each is run once, whatever else matched. A command that only
+ * shows a file (`cat`, `head`, `sed -n …p`: shell-paths' readOf) calls for none: it changed nothing.
+ */
 export function checksAfter(rules: readonly NamedRule[], command: string): NamedCheck[] {
+  if (readOf(command) !== null) return [];
   const words = wordsOf(command);
   return rules.filter((r): r is NamedCheck => r.on === "after" && matchOf(r, command, words) !== null).sort(byName);
 }

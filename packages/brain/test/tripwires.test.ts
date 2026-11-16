@@ -162,6 +162,13 @@ describe("a check, against a command", () => {
     expect(checksAfter([commits], "git status")).toEqual([]);
   });
 
+  test("a command that only shows a file calls for none: it changed nothing", () => {
+    const types = check("types", "bunx tsc --noEmit", ["*.ts"]);
+    for (const command of ["cat src/a.ts", "head -50 src/a.ts", "sed -n '1,40p' src/a.ts", "nl -ba src/a.ts"]) expect(checksAfter([types], command), command).toEqual([]);
+    // Anything more than showing it may change it.
+    for (const command of ["sed -i 's/a/b/' src/a.ts", "cat src/a.ts > src/b.ts", "cat > src/a.ts <<'EOF'\nx\nEOF"]) expect(checksAfter([types], command), command).toEqual([types]);
+  });
+
   test("several, by name, each once; a tripwire is never a check, and a check never trips", () => {
     const rules = [check("z-lint", "bun run lint", ["*.ts"]), rule("no-locks", "halt", ["*.ts"]), check("a-types", "bunx tsc --noEmit", ["src/**", "*.ts"])];
     expect(checksAfter(rules, "touch src/a.ts").map((r) => r.name)).toEqual(["a-types", "z-lint"]);
