@@ -145,7 +145,7 @@ export function openInHand(ctx: Ctx): void {
     description: "What he has in hand, and what needs you.",
     size: "wide",
     body: needs,
-    footer: button("Overview", { icon: "overview", title: "Health, the fleet and recent activity", onClick: () => ctx.navigate("overview") }),
+    footer: button("Overview", { icon: "overview", title: "Health, what's in hand and recent activity", onClick: () => ctx.navigate("overview") }),
   });
   sheet.body.append(inHandSection(ctx, sheet.scope, { always: true, leave: sheet.close }));
   sheet.scope.add(
