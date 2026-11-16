@@ -82,6 +82,11 @@ import {
   type AttemptStation,
   utf8,
   verifyRequestSignature,
+  decodeHlc,
+  MAX_RULES,
+  type NamedRule,
+  readRule,
+  type RuleView,
 } from "@galahad/core";
 import {
   AGENTS,
@@ -120,6 +125,9 @@ import {
   choreRole,
   eyesOf,
   Steering,
+  clip,
+  type Trip,
+  tripOf,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -874,6 +882,22 @@ export function createApp(ctx: AppContext) {
       if (finding) throw new HttpError(422, `That looks like a ${finding.kind}. ${SECRET_REDIRECT}`);
     }
   }
+
+  /** Your rules as this node reads them (core's readRule): one a newer node wrote in a form this one doesn't know is shown, never applied. */
+  const rulesView = (): RuleView[] => ctx.store.rules().map((r) => ({ name: r.name, rule: readRule(r.rule), setAt: decodeHlc(r.hlc).ms, setVia: r.via }));
+  /** The tripwires the quests this node runs or serves are held to, as they stand now. */
+  const rulesInForce = (): NamedRule[] => rulesView().flatMap((r) => (r.rule ? [{ name: r.name, ...r.rule }] : []));
+  /** A command a tripwire stopped, as a line in the ledger: the rule, what it did and why, the quest, the command (redacted, its middle cut when long). */
+  const ledgerTrip = (quest: string, trip: Trip, command: string, gate: boolean): void =>
+    ctx.ledger?.({
+      class: "forbidden",
+      resource: "rule",
+      target: trip.rule,
+      verdict: "deny",
+      reason: redact(`your tripwire ${trip.does === "halt" ? "halted the work" : `refused the ${gate ? "gate" : "command"}`}: ${trip.why}`).slice(0, 500),
+      quest: quest.slice(0, 64),
+      detail: clip(redact(command), 300, 100),
+    });
 
   const fullNode = (ref: string): Device => {
     const node = resolveNode(ref);
@@ -2900,6 +2924,33 @@ export function createApp(ctx: AppContext) {
       return connectorErrors(() => ctx.connectors.sign(input, p.kind === "client" ? p.device : null));
     },
     revokeOrder: (input) => connectorErrors(() => ({ order: ctx.connectors.revoke(input.id) })),
+    rules: () => ({ rules: rulesView() }),
+    setRule: (input, p) => {
+      // A rule is your word given in advance, like a standing order: only you give it, from a terminal or a device of yours.
+      if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can set a rule");
+      // (Its globs and text reach the ledger and the engineer's conversation.)
+      guardAgainstSecrets(...input.words, input.contains ?? "");
+      const held = ctx.store.rules();
+      if (!held.some((r) => r.name === input.name) && held.length >= MAX_RULES) throw new HttpError(400, `you may keep at most ${MAX_RULES} rules: remove one first`);
+      const rule = { on: "command" as const, does: input.does, words: input.words, ...(input.contains !== undefined ? { contains: input.contains } : {}) };
+      ctx.store.emit(ctx.identity, "rule.set", { name: input.name, rule }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
+      return { rule: rulesView().find((r) => r.name === input.name)! };
+    },
+    removeRule: (input, p) => {
+      if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can remove a rule");
+      if (!ctx.store.rules().some((r) => r.name === input.name)) throw new HttpError(404, `no rule "${input.name}"`);
+      ctx.store.emit(ctx.identity, "rule.removed", { name: input.name }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
+      return { removed: input.name };
+    },
+    ruleTripped: (input, p) => {
+      const rule = rulesInForce().find((r) => r.name === input.rule);
+      if (!rule) throw new HttpError(404, `no rule "${input.rule}" in force`);
+      // Only what the rule really stops: a line it doesn't support is never written.
+      const trip = tripOf([rule], input.command);
+      if (!trip) throw new HttpError(400, `"${input.rule}" doesn't stop that command`);
+      ledgerTrip(questRef(p, input.quest), trip, input.command, input.gate === true);
+      return { ok: true };
+    },
     arms: () => ({ arms: ctx.arms.list() }),
     mintArm: (input) => {
       // `loop.<name>` is the name the node gives its own loops' quests (his own work: skills.ts): never an agent's.

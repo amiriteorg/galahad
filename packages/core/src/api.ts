@@ -3,6 +3,7 @@ import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
+import { RuleInput, RuleName, RuleTrippedInput } from "./rules.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
 import { HarnessOptions, TrialPins, VariantName } from "./trials.ts";
@@ -919,6 +920,13 @@ export const routes = {
     }),
   },
   revokeOrder: { method: "POST", path: "/api/orders/revoke", scope: "fleet:admin", input: z.strictObject({ id: OrderId }) },
+  /** Your rules (rules.ts): the tripwires on his work's commands, each as this node reads it. */
+  rules: { method: "GET", path: "/api/rules", scope: "mind:read", input: null },
+  /** Set a rule, or replace the one by its name: yours alone, like a standing order (never an agent's, never another node's). */
+  setRule: { method: "POST", path: "/api/rules", scope: "fleet:admin", input: RuleInput },
+  removeRule: { method: "POST", path: "/api/rules/remove", scope: "fleet:admin", input: z.strictObject({ name: RuleName }) },
+  /** A rule stopped a quest's command: the ledger says so. Whoever runs the quest's sandbox says it, and the node checks the rule stops it. */
+  ruleTripped: { method: "POST", path: "/api/rules/tripped", scope: "sandbox", input: RuleTrippedInput },
   arms: { method: "GET", path: "/api/arms", scope: "fleet:admin", input: null },
   mintArm: {
     method: "POST",
