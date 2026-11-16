@@ -54,7 +54,7 @@ test("a plan's key whose form says whose it is needs no flag: Kimi Code's is sea
   expect(calls[0]!.input).toEqual({ name: "kimi-coding", value: "sk-kimi-FAKE-membership-key-0000", provider: "kimi-coding" });
   expect(calls[1]!.input).toEqual({ id: "kimi-coding", baseUrl: "https://api.kimi.ai/coding/v1", kind: "openai", secret: "kimi-coding" });
   expect(lines).toContain("Kimi Code is a coding plan");
-  expect(lines).toContain('"for interactive use only"');
+  expect(lines).toContain('"Kimi Code subscriptions are for interactive use only"');
 });
 
 test("a key that says nothing of whose it is asks for the provider, and is sent nowhere", async () => {

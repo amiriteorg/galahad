@@ -57,12 +57,15 @@ const ask = [{ role: "user" as const, content: "hello" }];
 describe("coding plans are presets that say what they are", () => {
   test("each names its plan and where its terms are, on its vendor's own site, and points at the plan's own endpoint", () => {
     const plans = PRESETS.filter((p) => p.plan);
-    expect(plans.map((p) => p.id).sort()).toEqual(["alibaba-coding", "kimi-coding", "opencode-go", "zai-coding"]);
+    expect(plans.map((p) => p.id).sort()).toEqual([
+      "alibaba-coding", "alibaba-token", "byteplus-coding", "kimi-coding", "mimo-token", "minimax-mplan",
+      "opencode-go", "qianfan-token", "stepfun-plan", "tencent-coding", "volcengine-coding", "zai-coding",
+    ]);
     for (const p of plans) {
       expect([p.id, p.baseUrl.startsWith("https://")]).toEqual([p.id, true]);
       expect([p.id, p.plan!.name.length > 3, p.plan!.terms.startsWith("https://")]).toEqual([p.id, true, true]);
       // What its vendor says it is for, and who says so.
-      expect([p.id, p.plan!.says.length > 40, /^(Z\.ai|Kimi|Alibaba|OpenCode): /.test(p.plan!.says)]).toEqual([p.id, true, true]);
+      expect([p.id, p.plan!.says.length > 40, /^(Z\.ai|Kimi|Alibaba|OpenCode|Xiaomi|MiniMax|Volcengine|BytePlus|StepFun|Tencent|Baidu): /.test(p.plan!.says)]).toEqual([p.id, true, true]);
       expect([p.id, p.plan!.models.length > 0]).toEqual([p.id, true]);
     }
     expect(preset("zai-coding")).toMatchObject({ kind: "openai", baseUrl: "https://api.z.ai/api/coding/paas/v4" });
@@ -108,7 +111,7 @@ describe("coding is what a coding plan is for: he codes on it himself, as himsel
   });
 });
 
-describe("each plan is held to what its own vendor's terms allow (read 14 November 2026)", () => {
+describe("each plan is held to what its own vendor's terms allow (read 16 November 2026)", () => {
   test("what each allows: his own coding calls only where the vendor's words permit a coding agent's own calls; a tool's unattended use only where it isn't forbidden", () => {
     expect(Object.fromEntries(PRESETS.filter((p) => p.plan).map((p) => [p.id, p.plan!.allows]))).toEqual({
       // "designed for OpenCode and other coding agents", calling as themselves.
@@ -118,6 +121,18 @@ describe("each plan is held to what its own vendor's terms allow (read 14 Novemb
       // "for interactive use only": a tool you run yourself, never a knight's or a quest's unattended work.
       "kimi-coding": { native: false, tools: "interactive" },
       "alibaba-coding": { native: false, tools: "interactive" },
+      "alibaba-token": { native: false, tools: "interactive" },
+      "tencent-coding": { native: false, tools: "interactive" },
+      "qianfan-token": { native: false, tools: "interactive" },
+      // "designed for individual, interactive developer use": read as interactive, the stricter way, until it says otherwise.
+      "minimax-mplan": { native: false, tools: "interactive" },
+      // Only in programming tools, "such as OpenClaw, OpenCode, etc.", never "automated scripts": a coding tool in a
+      // knight's VM, but not his own calls, which no list of theirs names.
+      "mimo-token": { native: false, tools: "unattended" },
+      // Only inside the AI coding tools they name ("Not available for API calls"), with no rule that a person must be there.
+      "volcengine-coding": { native: false, tools: "unattended" },
+      "byteplus-coding": { native: false, tools: "unattended" },
+      "stepfun-plan": { native: false, tools: "unattended" },
     });
   });
 
@@ -322,10 +337,15 @@ describe("a subscription's sign-in is not an API key", () => {
 });
 
 describe("a plan's key is recognised where its form says whose it is", () => {
-  test("Kimi's and Alibaba's plan keys have forms of their own; Z.ai's has none, and is never guessed at", () => {
+  test("a key whose form is one vendor's plan's is recognised; one several vendors share (sk-sp-), or none at all, is never guessed at", () => {
     // (Fakes, in the vendors' documented forms.)
     expect(detectProvider("sk-kimi-FAKE-membership-key-0000")).toBe("kimi-coding");
-    expect(detectProvider("sk-sp-FAKE-coding-plan-key-0000")).toBe("alibaba-coding");
+    expect(detectProvider("tp-FAKE-token-plan-key-0000")).toBe("mimo-token");
+    expect(detectProvider("ttp-FAKE-team-token-plan-key-0000")).toBe("mimo-token");
+    expect(detectProvider("sk-cp-FAKE-m-plan-key-0000")).toBe("minimax-mplan");
+    expect(detectProvider("sk-nano-00000000-0000-0000-0000-000000000000")).toBe("nanogpt");
+    // Alibaba's Coding Plan and Token Plan, and Tencent's Coding Plan, all have sk-sp- keys: it says none of them.
+    expect(detectProvider("sk-sp-FAKE-coding-plan-key-0000")).toBeNull();
     expect(detectProvider(PLAN_KEY)).toBeNull();
     // A key of the ordinary kind is not taken for a plan's.
     expect(detectProvider("sk-FAKE-platform-key-0000")).toBeNull();

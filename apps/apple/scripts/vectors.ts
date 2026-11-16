@@ -333,7 +333,7 @@ const knightForms = {
 };
 
 // ---- keys and the providers they are for (the PWA's own lib/text.ts, over the node's real presets) -----------------------
-const fakeKeys = ["sk-ant-api03-FAKE-for-tests", "sk-ant-oat01-FAKE-for-tests", "sk-or-v1-FAKE", "sk-orca-FAKE", "sk-kimi-FAKE", "sk-sp-FAKE", "gsk_FAKE", "plain-FAKE", ""];
+const fakeKeys = ["sk-ant-api03-FAKE-for-tests", "sk-ant-oat01-FAKE-for-tests", "sk-or-v1-FAKE", "sk-orca-FAKE", "sk-kimi-FAKE", "sk-sp-FAKE", "sk-nano-FAKE", "sk-cp-FAKE", "tp-FAKE", "ttp-FAKE", "gsk_FAKE", "plain-FAKE", ""];
 const configured = [{ id: "openrouter", kind: "openai" as const, baseUrl: "https://openrouter.ai/api/v1", secret: "openrouter", label: null, hasKey: true }];
 const keys = {
   presets: PRESETS,

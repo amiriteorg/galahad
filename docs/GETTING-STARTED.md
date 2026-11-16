@@ -192,7 +192,8 @@ Keys go into a **hidden prompt**, never on the command line and never into chat.
 
 ```sh
 bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk-orca- (OrcaRouter), sk-or- (OpenRouter),
-                                       # sk-kimi- (Kimi Code) and sk-sp- (Alibaba Cloud Coding Plan)
+                                       # sk-kimi- (Kimi Code), tp- (Xiaomi MiMo Token Plan), sk-cp- (MiniMax M Plan)
+                                       # and sk-nano- (NanoGPT)
 bun galahad key add --provider deepseek
 bun galahad key add --provider abliteration
 bun galahad key add --provider moonshot
@@ -208,11 +209,12 @@ A key added on any full node is sealed into the vault and usable by every full n
 
 ```sh
 bun galahad key add --provider zai-coding     # Z.ai's GLM Coding Plan
-bun galahad key add                           # a Kimi Code key (sk-kimi-…) is recognised
+bun galahad key add                           # a Kimi Code (sk-kimi-…), MiMo (tp-…) or MiniMax (sk-cp-…) key is recognised
+bun galahad key add --provider stepfun-plan   # StepFun's Step Plan is on your ordinary Step key: name the plan
 bun galahad provider presets                  # every preset; the plans are marked
 ```
 
-A plan's key is for coding: its vendor's terms say so, and `key add` prints the vendor's own sentence and where it is said. Galahad and his knights are a coding tool, so they code on a plan themselves (his quests, their work), calling as Galahad, and lend it to the other coding tools in their VMs (OpenCode, Hermes) and under `galahad run`, each calling as itself. His talk with you, his loops and his heartbeat never use it. `key add` prints the roster line that puts the plan first for coding, for example `bun galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5`. [ARCHITECTURE §6](ARCHITECTURE.md) has the whole of it, and what each vendor says of its plan.
+Twelve plans have presets: OpenCode Go, Z.ai's, Kimi's, Xiaomi MiMo's, MiniMax's, Alibaba's two, Volcengine's, BytePlus's, StepFun's, Tencent's and Baidu's. A plan's key is for coding: its vendor's terms say so, and `key add` prints the vendor's own sentence and where it is said. Galahad and his knights are a coding tool, so they code on a plan themselves (his quests, their work), calling as Galahad, and lend it to the other coding tools in their VMs (OpenCode, Hermes) and under `galahad run`, each calling as itself. His talk with you, his loops and his heartbeat never use it. `key add` prints the roster line that puts the plan first for coding, for example `bun galahad roster set engineer zai-coding/glm-5.3 anthropic/claude-opus-5-5`. [ARCHITECTURE §6](ARCHITECTURE.md) has the whole of it, and what each vendor says of its plan.
 
 A **Claude subscription's sign-in** (what `claude setup-token` prints, `sk-ant-oat…`) is not an API key, and is refused if you paste it as one: Anthropic keeps it to its own tool and its own sign-in flow. Claude Code and Codex on your own subscriptions work with Galahad as agents over MCP, each on its own sign-in (§10: `bun galahad mcp install claude --apply`).
 
