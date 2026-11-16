@@ -525,6 +525,10 @@
 
       /* ---------- list rows ---------- */
       .rows { display: flex; flex-direction: column; }
+      /* A row's layout (listRow()): a lead, its text, a trail. In a list it has the row's padding and a hairline above; alone
+         (a card's head: a loop, a node) it is just the layout. */
+      .item { display: flex; gap: var(--sp-3); align-items: flex-start; min-width: 0; }
+      .item.center { align-items: center; }
       .rows > .item { display: flex; gap: var(--sp-3); padding: var(--row-pad) var(--card-pad); border-top: 1px solid var(--border); min-width: 0; align-items: flex-start; }
       .rows > .item:first-child { border-top: 0; }
       .rows > .item.center { align-items: center; }
@@ -1209,6 +1213,8 @@
       .process summary:hover { color: var(--text-2); background: var(--surface-2); }
       .process summary svg { transition: transform var(--d-2) var(--ease-out); }
       .process[open] summary .chev { transform: rotate(90deg); }
+      /* What a process opens onto, under its line. */
+      .process-body { margin-top: var(--sp-2); }
       .steps { list-style: none; margin: 6px 0 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 0; }
       .step { display: grid; grid-template-columns: 16px 1fr; gap: 10px; align-items: start; position: relative; padding-bottom: 8px; }
       .step:not(:last-child)::before { content: ""; position: absolute; left: 7.5px; top: 17px; bottom: 0; width: 1px; background: var(--border); }
@@ -1383,7 +1389,8 @@
       .capacity .chip { font-variant-numeric: tabular-nums; }
       .capacity .cap-facts { margin-top: calc(-1 * var(--sp-1)); }
       .capacity details summary { cursor: pointer; color: var(--text-3); font-size: var(--fs-12); width: fit-content; }
-      .capacity details ul, .plain-list { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); display: flex; flex-direction: column; gap: 4px; }
+      .capacity details ul, .plain-list { margin: 0; padding-left: 18px; color: var(--text-2); display: flex; flex-direction: column; gap: var(--sp-1); }
+      .capacity details ul { margin-top: var(--sp-2); }
       .capacity details ul { font-size: var(--fs-12); }
       .pips { display: inline-flex; gap: 3px; align-items: center; }
       .pips > span { width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--border-strong); }

@@ -6,7 +6,7 @@ import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
 import type { NetworkMode } from "../types.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows, switchControl, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, card, empty, errorState, field, formActions, list, listRow, note, pageBody, pageHead, rows, section, segmented, skeletonBlock, skeletonRows, spinner, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { type Child, h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -78,19 +78,14 @@ export function describeTask(task: LoopTask | null): string {
 /** A heartbeat finding or a notice: what, how serious, about which machine. */
 export function findingRow(ctx: Ctx, f: { severity: FindingView["severity"]; title: string; body: string; node?: string | null }, meta: Child = null, actions: Child = null): HTMLElement {
   const sev = SEVERITY[f.severity] ?? SEVERITY.info;
-  return h(
-    "div",
-    { class: "item" },
-    h("span", { class: "avatar", "data-tone": sev.tone }, icon(sev.icon, { size: 16, label: sev.label })),
-    h(
-      "div",
-      { class: "grow" },
-      h("div", { class: "strong" }, f.title),
-      f.body ? h("p", { class: "small muted wrap-anywhere" }, f.body) : null,
-      f.node || meta ? h("div", { class: "meta" }, f.node ? h("span", {}, `about ${deviceName(ctx, f.node)}`) : null, meta) : null,
-    ),
-    actions ? h("div", { class: "item-actions" }, actions) : null,
-  );
+  return listRow({
+    lead: h("span", { class: "avatar", "data-tone": sev.tone }, icon(sev.icon, { size: 16, label: sev.label })),
+    top: true,
+    title: f.title,
+    sub: f.body || null,
+    meta: [f.node ? h("span", {}, `about ${deviceName(ctx, f.node)}`) : null, meta],
+    trail: actions,
+  });
 }
 
 function timeZones(): string[] {
@@ -354,7 +349,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     questPanel,
     callPanel,
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), save),
   );
   const sheet = openSheet({
     title: existing ? `Change ${existing.name}` : "Add a loop",
@@ -403,34 +398,20 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
 }
 
 function runsList(ctx: Ctx, runs: LoopRunView[]): HTMLElement {
-  if (!runs.length) return h("p", { class: "small subtle" }, "No runs yet.");
-  return h(
-    "div",
-    { class: "card flat" },
-    h(
-      "div",
-      { class: "rows" },
-      ...runs.map((run) => {
-        const st = RUN_STATUS[run.status] ?? RUN_STATUS.failed;
-        return h(
-          "div",
-          { class: "item" },
-          h("span", { class: "avatar", "data-tone": st.tone }, icon(st.icon, { size: 14 })),
-          h(
-            "div",
-            { class: "grow" },
-            h(
-              "div",
-              { class: "row wrap" },
-              badge(st.label, st.tone),
-              h("span", { class: "tiny subtle tnum", title: absoluteTime(run.started) }, relativeTime(run.started)),
-            ),
-            h("div", { class: "meta" }, h("span", { class: "tnum" }, duration(Math.max(0, run.finished - run.started))), h("span", {}, run.slot === null ? "by hand" : "on schedule"), h("span", {}, `on ${deviceName(ctx, run.node)}`)),
-            run.summary ? h("p", { class: "small pre-wrap wrap-anywhere", style: "margin-top:6px" }, run.summary) : null,
-          ),
-        );
-      }),
-    ),
+  if (!runs.length) return note("No runs yet.");
+  return list(
+    runs.map((run) => {
+      const st = RUN_STATUS[run.status] ?? RUN_STATUS.failed;
+      return listRow({
+        lead: st.icon,
+        leadTone: st.tone,
+        top: true,
+        title: h("span", { class: "row wrap" }, badge(st.label, st.tone), h("span", { class: "tiny subtle", title: absoluteTime(run.started) }, relativeTime(run.started))),
+        sub: run.summary ? h("span", { class: "pre-wrap" }, run.summary) : null,
+        meta: [h("span", {}, duration(Math.max(0, run.finished - run.started))), h("span", {}, run.slot === null ? "by hand" : "on schedule"), h("span", {}, `on ${deviceName(ctx, run.node)}`)],
+      });
+    }),
+    { flat: true },
   );
 }
 
@@ -500,7 +481,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
   }
 
   function stateBadge(loop: LoopView, running: boolean): HTMLElement | null {
-    if (running) return h("span", { class: "badge", "data-tone": "info" }, h("span", { class: "spinner", style: "width:10px;height:10px;border-width:1.5px", "aria-hidden": "true" }), "running");
+    if (running) return h("span", { class: "badge", "data-tone": "info" }, spinner("xs"), "running");
     if (!loop.enabled) return badge("paused", "neutral");
     return null;
   }
@@ -512,34 +493,19 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
     const last = loop.last;
     const st = last ? (RUN_STATUS[last.status] ?? RUN_STATUS.failed) : null;
     const cached = runs.get(loop.name);
-    const runsBox = h("div", { style: "margin-top:8px" }, cached ? runsList(ctx, cached) : skeletonRows(2));
+    const runsBox = h("div", { class: "process-body" }, cached ? runsList(ctx, cached) : skeletonRows(2));
     const details = h("details", { class: "process" }, h("summary", { "data-key": `runs:${loop.name}` }, icon("chevron-right", { size: 14, class: "chev" }), "Recent runs"), runsBox);
     details.addEventListener("toggle", () => {
       if (details.open) void loadRuns(loop.name, runsBox);
     });
-    return h(
-      "article",
-      { class: "card", "aria-label": `Loop ${loop.name}` },
-      h(
-        "div",
-        { class: "card-body stack" },
-        h(
-          "div",
-          { class: "row top" },
-          h("span", { class: "avatar" }, icon(kind?.icon ?? "repeat", { size: 16 })),
-          h(
-            "div",
-            { class: "grow" },
-            h("div", { class: "row wrap" }, h("span", { class: "strong mono" }, loop.name), loop.label ? h("span", { class: "small muted" }, loop.label) : null, stateBadge(loop, running)),
-            h(
-              "div",
-              { class: "tiny subtle row wrap", style: "margin-top:2px" },
-              words ? h("span", { title: loop.schedule }, words) : h("span", { class: "mono" }, loop.schedule),
-              h("span", {}, loop.tz),
-              h("span", {}, `on ${loop.onName ?? deviceName(ctx, loop.on)}`),
-            ),
-          ),
-        ),
+    return card(
+      { label: `Loop ${loop.name}` },
+      listRow({
+        lead: kind?.icon ?? "repeat",
+        top: true,
+        title: h("span", { class: "row wrap" }, h("span", { class: "mono" }, loop.name), loop.label ? h("span", { class: "small muted" }, loop.label) : null, stateBadge(loop, running)),
+        meta: [words ? h("span", { title: loop.schedule }, words) : h("span", { class: "mono" }, loop.schedule), h("span", {}, loop.tz), h("span", {}, `on ${loop.onName ?? deviceName(ctx, loop.on)}`)],
+      }),
         h("p", { class: "small muted wrap-anywhere" }, describeTask(loop.task)),
         loop.problem ? callout("warn", loop.problem) : null,
         h(
@@ -572,7 +538,6 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
             )
           : null,
         details,
-      ),
     );
   }
 
@@ -581,9 +546,8 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
     if (!loops.length) {
       replace(
         listBox,
-        h(
-          "div",
-          { class: "card" },
+        card(
+          { flush: true },
           empty({
             icon: "repeat",
             title: "No loops yet",
@@ -628,7 +592,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
       loops = list;
       keepPlace(listBox, render);
     } catch (error) {
-      if (!scope.disposed && loops === null) replace(listBox, h("div", { class: "card" }, errorState("Couldn't load loops", error, () => void refresh())));
+      if (!scope.disposed && loops === null) replace(listBox, card({ flush: true }, errorState("Couldn't load loops", error, () => void refresh())));
     }
   }
 
@@ -641,19 +605,15 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
           checkBox,
           section(
             "Checked just now",
-            { actions: button("Close the check", { size: "sm", variant: "ghost", iconOnly: true, icon: "x", onClick: () => replace(checkBox) }) },
-            h(
-              "div",
-              { class: "card" },
-              findings.length
-                ? h("div", { class: "rows" }, ...findings.map((f) => findingRow(ctx, f)))
-                : h("div", { class: "card-body" }, callout("ok", `All quiet, as seen from ${node}.`)),
-            ),
-            h("p", { class: "tiny subtle" }, `The heartbeat's checks, run on ${node} just now. This check writes nothing; the heartbeat loop is what turns findings into notices in your Inbox.`),
+            {
+              actions: button("Close the check", { size: "sm", variant: "ghost", iconOnly: true, icon: "x", onClick: () => replace(checkBox) }),
+              note: `The heartbeat's checks, run on ${node} just now. This check writes nothing; the heartbeat loop is what turns findings into notices in your Inbox.`,
+            },
+            findings.length ? list(findings.map((f) => findingRow(ctx, f))) : card({}, callout("ok", `All quiet, as seen from ${node}.`)),
           ),
         );
       } catch (error) {
-        if (!scope.disposed) replace(checkBox, h("div", { class: "card" }, errorState("Couldn't run the checks", error)));
+        if (!scope.disposed) replace(checkBox, card({ flush: true }, errorState("Couldn't run the checks", error)));
       }
     });
   }
@@ -683,28 +643,18 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
         hint: view.heartbeats.length ? `After each run of ${view.heartbeats.join(", ")}. Everything else (anything outward, your data, the bank, the vault, devices, the roster) stays a notice or an approval.` : "There's no heartbeat loop for it to follow.",
       },
     );
-    const allow = h(
-      "ul",
-      { class: "small muted", style: "margin:0;padding-left:18px" },
-      ...view.allowlist.map((a) => h("li", {}, h("span", { class: "mono" }, a.kind), ` (${a.class}): ${a.why}`)),
-    );
+    const allow = h("ul", { class: "plain-list small" }, ...view.allowlist.map((a) => h("li", {}, h("span", { class: "mono" }, a.kind), ` (${a.class}): ${a.why}`)));
     const recent = view.recent.length
-      ? h(
-          "div",
-          { class: "rows" },
-          ...view.recent.slice(0, 6).map((e) => {
+      ? list(
+          view.recent.slice(0, 6).map((e) => {
             const failed = e.reason?.startsWith("Galahad's own fix didn't") ?? false;
             const at = Number(e.hlc.slice(0, 15));
-            return h(
-              "div",
-              { class: "item" },
-              h("span", { class: "avatar", "data-tone": failed ? "warn" : "ok" }, icon(failed ? "alert" : "check-circle", { size: 14 })),
-              h("div", { class: "grow" }, h("div", { class: "small strong" }, `${failed ? "Tried" : "Fixed"}: ${e.detail ?? e.target}`), h("div", { class: "tiny subtle", title: absoluteTime(at) }, relativeTime(at))),
-            );
+            return listRow({ lead: failed ? "alert" : "check-circle", leadTone: failed ? "warn" : "ok", title: `${failed ? "Tried" : "Fixed"}: ${e.detail ?? e.target}`, meta: [h("span", { title: absoluteTime(at) }, relativeTime(at))] });
           }),
+          { flat: true },
         )
-      : h("p", { class: "tiny subtle" }, "Nothing fixed yet.");
-    replace(selfBox, h("div", { class: "card" }, h("div", { class: "card-body stack" }, toggle, h("div", { class: "stack tight" }, h("div", { class: "label" }, "What he may fix"), allow), h("div", { class: "stack tight" }, h("div", { class: "label" }, "Lately"), recent))));
+      : note("Nothing fixed yet.");
+    replace(selfBox, card({}, toggle, h("div", { class: "stack tight" }, h("div", { class: "label" }, "What he may fix"), allow), h("div", { class: "stack tight" }, h("div", { class: "label" }, "Lately"), recent)));
   }
   async function refreshSelf(): Promise<void> {
     try {
@@ -733,8 +683,8 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
       ),
       write ? null : callout("quiet", "This device can see loops but not change or run them (no brain:write scope)."),
       checkBox,
-      section("Self-action", {}, selfBox),
-      section("Loops", {}, listBox),
+      // The loops, then what he may fix after them: shown whole once both have answered (the second pushed the first).
+      pageBody(section("Loops", {}, listBox), section("Self-action", {}, selfBox)),
     ),
   );
 

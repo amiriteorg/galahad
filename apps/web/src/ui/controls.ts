@@ -580,6 +580,8 @@ export interface CardOptions {
   flush?: boolean;
   /** Its edge says it wants a look: yours (accent), a warning, a danger. */
   tone?: "accent" | "warn" | "danger";
+  /** No shadow of its own: a card inside another. */
+  flat?: boolean;
   /** One of a list of things (a loop, a node): an article, named for a screen reader. */
   label?: string;
   id?: string;
@@ -596,7 +598,7 @@ export function card(options: CardOptions = {}, ...children: Child[]): HTMLEleme
   const body = options.flush ? children : framed ? h("div", { class: "card-body" }, ...children) : children;
   return h(
     options.label ? "article" : "div",
-    { class: cx("card", !options.flush && !framed && "pad", options.tone), id: options.id ?? null, "aria-label": options.label ?? null },
+    { class: cx("card", !options.flush && !framed && "pad", options.tone, options.flat && "flat"), id: options.id ?? null, "aria-label": options.label ?? null },
     head,
     body,
     foot,
