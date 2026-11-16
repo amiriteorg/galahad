@@ -24,7 +24,22 @@ struct RootView: View {
             }
         }
         .tint(.ink)
+        .background(WindowTint())
         .task { app.start() }
+    }
+}
+
+/// Gives the window it is in the ink as its tint. The root's .tint reaches what SwiftUI draws, but a sheet's rows are
+/// first drawn with the window's own, which stayed system blue whatever the asset catalog's accent (iOS 26.1).
+private struct WindowTint: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView { Probe() }
+    func updateUIView(_ view: UIView, context: Context) {}
+
+    final class Probe: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            window?.tintColor = UIColor(named: "AccentColor")
+        }
     }
 }
 
