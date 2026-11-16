@@ -396,8 +396,11 @@ function confirm(question: string): boolean {
 }
 
 async function main(): Promise<void> {
-  const argv = Bun.argv.slice(2);
-  const { values: flags, positionals } = parseArgs({
+  // A word that begins with one dash and is longer than a short option (-y, -h) is a word: an id is base64url, and one in
+  // sixty-four begins with a dash. It is held aside while the options are read, and put back where it was.
+  const words = new Map<string, string>();
+  const argv = Bun.argv.slice(2).map((arg, i) => (/^-[^-].{2,}$/.test(arg) ? (words.set(`\u0000${i}`, arg), `\u0000${i}`) : arg));
+  const parsed = parseArgs({
     args: argv,
     allowPositionals: true,
     strict: false,
@@ -559,6 +562,9 @@ async function main(): Promise<void> {
       json: { type: "boolean" },
     },
   });
+  const back = (value: unknown): unknown => (typeof value === "string" ? (words.get(value) ?? value) : Array.isArray(value) ? value.map(back) : value);
+  const positionals = parsed.positionals.map((p) => words.get(p) ?? p);
+  const flags = Object.fromEntries(Object.entries(parsed.values).map(([key, value]) => [key, back(value)])) as typeof parsed.values;
   const [command, sub, ...rest] = positionals;
   const home = Home.resolve(flags.home as string | undefined);
   const str = (key: string) => flags[key] as string | undefined;

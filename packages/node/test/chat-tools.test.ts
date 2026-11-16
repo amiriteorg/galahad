@@ -467,9 +467,14 @@ describe("what he knows of you", () => {
     const kept = await cli("about", "keep", tabs.id.slice(0, 12), "--text", "Uses tabs, never spaces.");
     expect(kept.code, `${kept.err}${kept.out}`).toBe(0);
     const british = (await listed()).kept.find((m) => m.text === "Writes in British English.")!;
-    expect((await cli("about", "rm", british.id.slice(0, 12))).out).toContain("Removed");
+    const removed = await cli("about", "rm", british.id.slice(0, 12));
+    expect(removed.out, removed.err).toContain("Removed");
     expect((await listed()).kept.map((m) => m.text)).toEqual(["Uses tabs, never spaces."]);
     expect((await cli("about", "rm", "nothing-like-it")).code).not.toBe(0);
+    // An id is base64url: one in 64 begins with a dash, and is still an id, not options (it failed so, now and then).
+    const dashed = await cli("about", "rm", "-AbCdEfGhIjK");
+    expect(dashed.code).not.toBe(0);
+    expect(dashed.err).toContain('no fact about you is "-AbCdEfGhIjK"');
   });
 
   test("what you kept goes with his answers, and is listed, however many facts he has proposed since", async () => {
