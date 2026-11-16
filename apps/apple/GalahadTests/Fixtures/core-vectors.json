@@ -2849,7 +2849,7 @@
       {
         "id": "deepseek",
         "kind": "openai",
-        "baseUrl": "https://api.deepseek.com/v1"
+        "baseUrl": "https://api.deepseek.com"
       },
       {
         "id": "abliteration",

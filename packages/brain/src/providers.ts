@@ -56,7 +56,7 @@ export interface CodingPlan {
  */
 export const PRESETS: ProviderPreset[] = [
   { id: "anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", keyPrefixes: ["sk-ant-"] },
-  { id: "deepseek", kind: "openai", baseUrl: "https://api.deepseek.com/v1" },
+  { id: "deepseek", kind: "openai", baseUrl: "https://api.deepseek.com" },
   { id: "abliteration", kind: "openai", baseUrl: "https://api.abliteration.ai/v1" },
   { id: "orcarouter", kind: "openai", baseUrl: "https://api.orcarouter.ai/v1", keyPrefixes: ["sk-orca-"] },
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },

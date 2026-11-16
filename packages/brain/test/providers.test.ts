@@ -74,6 +74,16 @@ describe("key headers", () => {
 });
 
 /*
+ * A preset's address is the one its vendor's documentation gives now (read 16 November 2026), so a key is pinned
+ * where the vendor says calls go.
+ */
+describe("a preset points where its vendor's docs say", () => {
+  test("DeepSeek: base_url https://api.deepseek.com, its OpenAI format (api-docs.deepseek.com), with no /v1", () => {
+    expect(preset("deepseek")).toMatchObject({ kind: "openai", baseUrl: "https://api.deepseek.com" });
+  });
+});
+
+/*
  * A local runtime's preset is where that runtime listens when it is started with its defaults: Ollama on 11434
  * (docs.ollama.com/api/openai-compatibility), and llama.cpp's llama-server on 9931 (its tools/server/README.md and
  * common/common.h; it was 8080 before, which is now only what its Docker examples map).

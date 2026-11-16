@@ -230,7 +230,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | Preset | Kind | Base URL |
 |---|---|---|
 | `anthropic` | anthropic | `https://api.anthropic.com` |
-| `deepseek` | openai | `https://api.deepseek.com/v1` |
+| `deepseek` | openai | `https://api.deepseek.com` |
 | `abliteration` | openai | `https://api.abliteration.ai/v1` |
 | `orcarouter` | openai | `https://api.orcarouter.ai/v1` |
 | `openrouter` | openai | `https://openrouter.ai/api/v1` |
