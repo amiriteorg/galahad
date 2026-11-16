@@ -40,11 +40,11 @@ struct KnightTerminalView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.ink)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+                    .padding(.horizontal, Metrics.margin)
+                    .padding(.top, Space.s2)
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s2) {
                         ForEach(Self.keys, id: \.name) { key in
                             Button(key.label) { terminal.type(key.keys); bridge.focus() }
                                 .buttonStyle(.bordered)
@@ -55,12 +55,12 @@ struct KnightTerminalView: View {
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Metrics.margin)
+                    .padding(.vertical, Space.s2)
                 }
                 .disabled(terminal.ended)
                 if !terminal.status.isEmpty {
-                    Text(terminal.status).font(.caption).foregroundStyle(.secondary).padding(.bottom, 6)
+                    Text(terminal.status).font(.caption).foregroundStyle(.secondary).padding(.bottom, Space.s2)
                 }
             }
             .navigationTitle("\(knight.name)'s terminal")

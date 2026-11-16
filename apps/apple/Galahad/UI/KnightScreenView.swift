@@ -24,7 +24,7 @@ struct KnightScreenView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Space.s3) {
                 screen
                 Text(status).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 if noDesktop {
@@ -32,14 +32,14 @@ struct KnightScreenView: View {
                         .font(.footnote)
                         .foregroundStyle(Color.siege)
                 } else if let problem {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Space.s2) {
                         Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
-                        Button("Try again") { Task { await act(nil) } }.buttonStyle(.bordered).controlSize(.small)
+                        Button("Try again") { Task { await act(nil) } }.buttonStyle(.bordered)
                     }
                 }
                 controls
             }
-            .padding()
+            .padding(Metrics.margin)
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("\(knight.name)'s screen")
@@ -58,7 +58,7 @@ struct KnightScreenView: View {
     private var screen: some View {
         GeometryReader { box in
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.black.opacity(0.85))
+                RoundedRectangle(cornerRadius: Metrics.innerRadius, style: .continuous).fill(.black.opacity(0.85))
                 if let picture {
                     Image(uiImage: picture)
                         .resizable()
@@ -70,7 +70,7 @@ struct KnightScreenView: View {
                     ProgressView().tint(.white)
                 }
             }
-            .clipShape(.rect(cornerRadius: 12, style: .continuous))
+            .clipShape(.rect(cornerRadius: Metrics.innerRadius, style: .continuous))
             .contentShape(.rect)
             .onTapGesture(coordinateSpace: .local) { location in
                 guard let shot else { return }
@@ -86,18 +86,19 @@ struct KnightScreenView: View {
     }
 
     @ViewBuilder private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            fieldRow {
                 TextField("An address to open", text: $address)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
+                    .quietField()
                     .submitLabel(.go)
                     .onSubmit(open)
-                Button("Open", action: open).buttonStyle(.bordered).disabled(Desktop.address(address) == nil)
+            } button: {
+                Button(action: open) { buttonLabel("Open") }.buttonStyle(.bordered).disabled(Desktop.address(address) == nil)
             }
-            HStack(spacing: 8) {
+            fieldRow {
                 Group {
                     if hidden {
                         SecureField("Text to type on \(knight.name)'s screen", text: $typed)
@@ -107,14 +108,16 @@ struct KnightScreenView: View {
                 }
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
+                .quietField()
                 .submitLabel(.send)
                 .onSubmit(type)
-                Button("Type", action: type).buttonStyle(.bordered).disabled(typed.isEmpty)
+            } button: {
+                Button(action: type) { buttonLabel("Type") }.buttonStyle(.bordered).disabled(typed.isEmpty)
             }
             Toggle("Hide what I type", isOn: $hidden).font(.footnote)
+            // The keys scroll from one edge of the screen to the other, starting at the page's margin.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s2) {
                     ForEach(Desktop.keys, id: \.key) { each in
                         Button(each.label) { Task { await act(.key(each.key)) } }.buttonStyle(.bordered).controlSize(.small)
                     }
@@ -124,11 +127,27 @@ struct KnightScreenView: View {
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }
+            .contentMargins(.horizontal, Metrics.margin, for: .scrollContent)
+            .padding(.horizontal, -Metrics.margin)
             .disabled(shot == nil)
             Text("What you type goes to \(knight.name)'s screen and nowhere else: it isn't kept here, and the ledger says only that something was typed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// A field and the button that sends what's in it: as tall as each other, and the buttons of every row as wide, so the
+    /// fields end at one edge.
+    private func fieldRow(@ViewBuilder field: () -> some View, @ViewBuilder button: () -> some View) -> some View {
+        HStack(spacing: Space.s2) {
+            field()
+            button()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func buttonLabel(_ words: String) -> some View {
+        Text(words).frame(minWidth: Space.s10 + Space.s2, maxHeight: .infinity)
     }
 
     private func open() {
