@@ -154,7 +154,7 @@ struct KnightEditor: View {
 
                 Section {
                     Stepper(value: $dailyTurns, in: 0...1000, step: 5) {
-                        LabeledContent("A day", value: "\(dailyTurns) turns and jobs")
+                        LabeledContent("A day") { Text("\(dailyTurns) turns and jobs").monospacedDigit() }
                     }
                     Toggle("At work", isOn: $enabled)
                 } footer: {
@@ -255,7 +255,7 @@ struct RoomEditor: View {
                 }
                 Section {
                     Stepper(value: $budget, in: 1...64) {
-                        LabeledContent("Replies", value: "\(budget) per message of yours")
+                        LabeledContent("Replies") { Text("\(budget) per message of yours").monospacedDigit() }
                     }
                 } footer: {
                     Text("Every reply counts, their handoffs to each other too; each new message from you starts again.")

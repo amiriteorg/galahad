@@ -412,7 +412,7 @@ private struct KnightAbout: View {
                     }
                     Section("Today") {
                         LabeledContent("State", value: knight.enabled ? "At the table" : "Paused")
-                        LabeledContent("Turns", value: "\(knight.turnsToday) of \(knight.dailyTurns)")
+                        LabeledContent("Turns") { Text("\(knight.turnsToday) of \(knight.dailyTurns)").monospacedDigit() }
                         LabeledContent("Harness", value: KnightView.harness[knight.harness] ?? knight.harness)
                         LabeledContent("Its VM", value: knight.workspace != nil ? "Yes" : knight.workspaceNode != nil ? "Being made" : "None yet")
                         if let repository = knight.repository { LabeledContent("Repository") { Text(repository).font(.footnote.monospaced()) } }
