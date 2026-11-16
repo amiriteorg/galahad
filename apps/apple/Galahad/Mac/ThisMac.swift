@@ -159,7 +159,8 @@ enum CommandOnPath: Equatable, Sendable {
     }
 }
 
-/// This Mac's node, in sections of a grouped form: the node, staying on, `galahad` in Terminal, its log and its doctor. When this Mac isn't a node, it says so, and offers to make it one.
+/// This Mac's node, in sections of a grouped form: the node, staying on, `galahad` in Terminal, updates, its log and its
+/// doctor. When this Mac isn't a node, it says so, and offers to make it one.
 struct ThisMacSections: View {
     let mac: MacApp
     @State private var stopping = false
@@ -172,6 +173,7 @@ struct ThisMacSections: View {
             nodeSection
             stayingOnSection
             commandSection
+            updatesSection
             logSection
             doctorSection
         } else if node.read {
@@ -185,6 +187,7 @@ struct ThisMacSections: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            updatesSection
         }
     }
 
@@ -291,6 +294,17 @@ struct ThisMacSections: View {
             Button("Replace It") { node.putCommand() }
         } message: {
             Text("galahad will run this app's node instead of what it runs now.")
+        }
+    }
+
+    private var updatesSection: some View {
+        Section("Updates") {
+            HStack {
+                Text(Updates.shared.available ? "New releases come from galahad.sh, each checked against Galahad's signing key before it is installed." : "Off in this build: it carries no key to check updates with yet.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Check for Updates…") { Updates.shared.check() }.disabled(!Updates.shared.canCheck)
+            }
         }
     }
 

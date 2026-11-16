@@ -205,6 +205,16 @@ struct MacNodeTests {
         _ = try scratch.write(#"{"v":1,"name":"mini","fleet":null,"port":7777,"keystore":"os","advertise":null}"#, to: "config.json")
         #expect(!FirstRun.wanted(paired: false, home: home, defaults: defaults), "a node already")
     }
+
+    @Test @MainActor func updatesStayOffUntilTheBuildCarriesItsKey() {
+        #expect(!Updates(key: nil).available)
+        #expect(!Updates(key: "").available)
+        #expect(!Updates(key: " ").canCheck)
+        // This build's own: the feed on galahad.sh, and no key yet (the owner makes it).
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String == "https://galahad.sh/mac/appcast.xml")
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String == "")
+        #expect(!Updates.shared.available)
+    }
 }
 
 /// Lines said by a command, as they came.

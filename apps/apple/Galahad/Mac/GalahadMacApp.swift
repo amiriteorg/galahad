@@ -238,6 +238,10 @@ struct MacCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Updates.shared.check() }
+                .disabled(!Updates.shared.canCheck)
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Chat") {
                 mac.newChat()
