@@ -1564,6 +1564,15 @@ export function createApp(ctx: AppContext) {
     vmProvisioning.set(member.id, work);
     try { return await work; } finally { vmProvisioning.delete(member.id); }
   }
+  /* A knight's VM made bigger while it runs, on the owner's word (`p`: the device that asked, which the VM's host
+   * records). Nothing in it stops, so a knight at work may be grown too. */
+  async function resizeTeamVm(member: Teammate, sizes: { cpus?: number; memoryGb?: number; diskGb?: number }, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+    const existing = await teamWorkspace(member, signal);
+    if (!existing) throw new HttpError(424, `this knight has no VM yet: galahad roundtable provision ${member.id} makes one`);
+    if (vmProvisioning.has(member.id)) throw new HttpError(409, "this knight's VM is being made; make it bigger once that has finished");
+    const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("resizeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), ...sizes });
+    return sandbox;
+  }
   /* A task given to the Roundtable (by you, or by Galahad from your conversation): the knight best suited to it
    * takes it, in that knight's own conversation with you (roundtable.ts says who and why). Each knight's VM is asked
    * of its host, once a host; one whose host can't say has no desktop known. */
@@ -1757,6 +1766,20 @@ export function createApp(ctx: AppContext) {
       ownerOnly(p);
       const member = teamMember(input.id);
       return longRunning(remakeTeamVm(member, input.network, input.desktop, p, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace })));
+    },
+    resizeTeammate: (input, p, req) => {
+      ownerOnly(p);
+      const { id, ...sizes } = input;
+      return longRunning(resizeTeamVm(teamMember(id), sizes, p, req.signal).then((workspace) => ({ teammate: teamMember(id), workspace })));
+    },
+    resizeTeamWorkspace: (input, p) => {
+      // Yours alone, like making it again: an arm (a knight among them) is never let through, whatever its scopes.
+      const approver: string | undefined = p.kind === "node" ? input.onBehalfOf : p.kind === "arm" ? undefined : p.device;
+      if (!approver) throw new HttpError(403, "a knight's VM is made bigger only on your word");
+      const { on, ...asked } = input;
+      return longRunning(onNode(p, on, routes.resizeTeamWorkspace.path, { ...asked, onBehalfOf: approver }, async () => ({
+        sandbox: await ctx.sandbox!.resizeTeam(input.id, input.quest, { ...(input.cpus !== undefined ? { cpus: input.cpus } : {}), ...(input.memoryGb !== undefined ? { memoryGb: input.memoryGb } : {}), ...(input.diskGb !== undefined ? { diskGb: input.diskGb } : {}), approvedBy: approver }),
+      }), { sandbox: input.id }));
     },
     remakeTeamWorkspace: (input, p) => {
       // Yours alone, like a removal: an arm (a knight among them) is never let through, whatever its scopes.

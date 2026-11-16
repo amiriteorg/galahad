@@ -55,6 +55,28 @@ describe("sandbox slots", () => {
     expect(order).toEqual(["second", "small"]);
   });
 
+  test("a sandbox it holds grows within the ceiling, at once or not at all, and what it gives back is given back", async () => {
+    const { g, changes } = governor({ capacity: () => capacity({ sandboxes: 2 }) });
+    const a = await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "knight" });
+    g.bind(a, "0123456789");
+    const before = changes();
+    expect(g.grow("0123456789", { cpus: 2, memoryGb: 4 })).toBeNull();
+    expect(g.usage()).toMatchObject({ sandboxes: 1, cores: 4, memoryGb: 8 });
+    expect(changes()).toBeGreaterThan(before);
+    // Past the ceiling (8 threads): refused with the reason, and nothing held for it.
+    expect(g.grow("0123456789", { cpus: 6, memoryGb: 0 })).toMatch(/threads he may use/);
+    expect(g.usage()).toMatchObject({ cores: 4, memoryGb: 8 });
+    // Every slot taken doesn't stop a sandbox that is already one of them from growing.
+    const b = await g.acquire({ cpus: 1, memoryGb: 1 }, { quest: "other" });
+    expect(g.grow("0123456789", { cpus: 2, memoryGb: 2 })).toBeNull();
+    expect(g.grow("ffffffffff", { cpus: 1, memoryGb: 1 })).toMatch(/no such sandbox/);
+    g.shrink("0123456789", { cpus: 2, memoryGb: 2 });
+    expect(g.usage()).toMatchObject({ sandboxes: 2, cores: 5, memoryGb: 9 });
+    g.release(b);
+    g.release("0123456789");
+    expect(g.usage()).toMatchObject({ sandboxes: 0, cores: 0, memoryGb: 0 });
+  });
+
   test("a sandbox is known by its id once it exists, and released by it", async () => {
     const { g } = governor();
     const ticket = await g.acquire(slot, { quest: "q" });

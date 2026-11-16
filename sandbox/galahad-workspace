@@ -12,6 +12,7 @@
 #   remove <id>          → ok                unmount and delete an unretained image
 #   remove-owned <id>    → ok                owner-approved deletion, retained images too
 #   mount <id>           → ok                remount an existing image; never create one
+#   grow <id> <gib>      → ok                make a workspace bigger, mounted or not; never smaller
 #   retain <id>          → ok                keep it when its container is absent
 #   stats                → ok <fs-total-bytes> <fs-free-bytes>
 #                          <id> <size-bytes> <used-bytes> <mounted 0|1> <created-epoch-s>   (one per workspace)
@@ -68,6 +69,30 @@ case "$verb" in
       : > "$ROOT/$id.keep" || fail "cannot retain workspace"
     elif ! mountpoint -q "$mnt"; then
       mount -o loop,nodev,nosuid,discard "$img" "$mnt" || fail "mount failed"
+    fi
+    echo ok ;;
+  grow)
+    [ "$#" -eq 3 ] || fail "bad arguments"
+    valid_id "$id" || fail "bad id"
+    gib=$3
+    printf '%s' "$gib" | grep -Eqx '[1-9][0-9]{0,3}' || fail "bad size"
+    [ "$gib" -le "$MAX_GIB" ] || fail "at most $MAX_GIB GiB"
+    img="$ROOT/$id.img" mnt="$ROOT/$id"
+    [ -f "$img" ] && [ ! -L "$img" ] && [ -d "$mnt" ] && [ ! -L "$mnt" ] || fail "existing workspace is missing"
+    [ "$((gib * 1073741824))" -gt "$(stat -c %s "$img")" ] || fail "a workspace only grows"
+    if mountpoint -q "$mnt"; then
+      # Grown where it is mounted: the image, then its loop device, then ext4 itself, while the sandbox runs.
+      dev=$(findmnt -n -o SOURCE --target "$mnt")
+      case "$dev" in /dev/loop[0-9]*) ;; *) fail "not a workspace mount" ;; esac
+      [ "$(losetup -n -O BACK-FILE "$dev" 2>/dev/null)" = "$img" ] || fail "not this workspace's disk"
+      truncate -s "${gib}G" "$img" || fail "cannot grow the image"
+      losetup -c "$dev" || fail "cannot resize the loop device"
+      resize2fs "$dev" >/dev/null 2>&1 || fail "resize2fs failed"
+    else
+      truncate -s "${gib}G" "$img" || fail "cannot grow the image"
+      e2fsck -f -p "$img" >/dev/null 2>&1
+      [ "$?" -le 1 ] || fail "the workspace needs a filesystem check"
+      resize2fs "$img" >/dev/null 2>&1 || fail "resize2fs failed"
     fi
     echo ok ;;
   remove|remove-owned)

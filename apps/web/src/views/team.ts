@@ -21,7 +21,7 @@ import { noteSaid } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, giveToRoundtable, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, giveTask, giveToRoundtable, growVm, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 
 /*
@@ -323,6 +323,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
                   // A real terminal where the VM is on the node you are talking to (terminals aren't forwarded); else the console.
                   ctx.can("sandbox") ? (person.workspace?.node === ctx.whoami.node ? button("Open terminal", { size: "sm", icon: "terminal", onClick: () => void openTerminal(ctx, { id: vm.id, name: `${person.name}'s VM` }) }) : button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, vm, person.workspace?.node ?? null) })) : null,
                   button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }),
+                  canEdit ? button("Give it more", { size: "sm", icon: "plus", onClick: () => growVm(ctx, person, vm, madeVm(person)) }) : null,
                   canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remakeVm(ctx, person, vm, madeVm(person)) }) : null,
                 ),
               ),

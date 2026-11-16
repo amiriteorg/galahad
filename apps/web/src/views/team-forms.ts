@@ -307,6 +307,29 @@ export function remakeVm(ctx: Ctx, person: Teammate, workspace: SandboxView, don
   });
 }
 
+/** More for its VM while it runs: threads and memory given as it runs, its disk grown where it is mounted. Never less. */
+export function growVm(ctx: Ctx, person: Teammate, workspace: SandboxView, done: (workspace: SandboxView) => void): void {
+  const more = (now: number, max: number, step: number) => h("input", { class: "input", type: "number", min: now, max, step, value: now, required: true });
+  const cpus = more(workspace.cpus, 64, 1);
+  const memory = more(workspace.memoryGb, 512, 1);
+  const disk = workspace.disk ? more(workspace.disk.limitGb, 4096, 1) : null;
+  editor(ctx, `Give ${person.name}'s VM more`, "More threads, memory or disk while it runs: nothing in it stops, and its work is kept.", [
+    h("div", { class: "team-form-grid" }, field("CPUs", cpus), field("Memory (GB)", memory), disk ? field("Disk (GB)", disk) : null),
+    callout("info", `More only. What it adds must fit this node's ceiling. A smaller size takes effect when the VM is made again.${disk ? "" : " Its disk has no size of its own to grow: it was made before workspaces had one."}`),
+  ], "Give it more", async () => {
+    const asked = {
+      ...(Number(cpus.value) !== workspace.cpus ? { cpus: Number(cpus.value) } : {}),
+      ...(Number(memory.value) !== workspace.memoryGb ? { memoryGb: Number(memory.value) } : {}),
+      ...(disk && Number(disk.value) !== workspace.disk!.limitGb ? { diskGb: Number(disk.value) } : {}),
+    };
+    if (!Object.keys(asked).length) return;
+    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView }>("/api/team/resize", { id: person.id, ...asked });
+    const now = result.workspace;
+    toast(`${person.name}'s VM has more`, { description: `${now.cpus} CPUs · ${now.memoryGb} GB memory${now.disk ? ` · ${now.disk.limitGb} GB disk` : ""}, and nothing in it stopped.` });
+    done(now);
+  });
+}
+
 /** Whether a knight's VM has a desktop: chosen when it is made, or made again (from the desktop image, or the workshop's). */
 function desktopChoice(checked: boolean): { el: HTMLElement; box: HTMLInputElement } {
   const box = h("input", { type: "checkbox", name: "desktop", checked });

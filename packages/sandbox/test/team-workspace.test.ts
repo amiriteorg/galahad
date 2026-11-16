@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { containerName, LABEL, NETWORKS, SandboxHost, type LedgerEntryInput, type TokenMinter, type Workspaces } from "../src/index.ts";
+import { containerName, LABEL, NETWORKS, SandboxHost, type LedgerEntryInput, type TokenMinter, type Workspaces, type WorkspaceStats } from "../src/index.ts";
 
 const ID = "0123456789";
 const QUEST = "arm.team.abcdef0123.builder";
@@ -18,6 +18,8 @@ function teammateHost(opts: {
   failure?: "mount" | "start" | "write" | "throw-write" | "run";
   /** A remake that was cut short: the container is only there under the name it was set aside as. */
   setAside?: boolean;
+  /** The workspaces' disk as the helper says it is (default: a few bytes, nothing to grow into). */
+  stats?: WorkspaceStats;
 } = {}) {
   const commands: string[][] = [];
   const events: string[] = [];
@@ -40,10 +42,17 @@ function teammateHost(opts: {
     },
     remove: async (id) => { note(`remove:${id}`); },
     removeRetained: async (id) => { note(`remove-owned:${id}`); },
-    stats: async () => ({ totalBytes: 100, freeBytes: 90, images: [
+    stats: async () => opts.stats ?? ({ totalBytes: 100, freeBytes: 90, images: [
       { id: ID, sizeBytes: 10, usedBytes: 1, mounted: false, createdAt: 0, retained: true },
     ] }),
+    grow: async (id, gib) => {
+      note(`grow:${id}:${gib}`);
+      const image = opts.stats?.images.find((i) => i.id === id);
+      if (image) image.sizeBytes = gib * 2 ** 30;
+    },
   };
+  /** What Docker holds the container to, once it has been changed (`docker update`): before that, what it was made with. */
+  let held: { NanoCpus: number; Memory: number } | undefined;
   if (opts.legacyHelper) { delete workspaces.mount; delete workspaces.retain; }
   const labels = {
     [LABEL]: "1", [`${LABEL}.id`]: ID, [`${LABEL}.node`]: "test", [`${LABEL}.quest`]: QUEST,
@@ -81,8 +90,12 @@ function teammateHost(opts: {
         if (opts.failure === "run") return { code: 125, stdout: "", stderr: `kata: could not start the VM (${lease(1)})` };
         named.add(args[args.indexOf("--name") + 1]!);
       }
+      if (args[0] === "update") {
+        all.push("update");
+        held = { NanoCpus: Number(args[args.indexOf("--cpus") + 1]) * 1e9, Memory: Number.parseInt(args[args.indexOf("--memory") + 1]!, 10) * 2 ** 20 };
+      }
       if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify([
-        { Config: { Labels: labels, Image: "galahad/sandbox:1" }, State: { Status: opts.status ?? "exited" } },
+        { Config: { Labels: labels, Image: "galahad/sandbox:1" }, State: { Status: opts.status ?? "exited" }, ...(held ? { HostConfig: held } : {}) },
       ]), stderr: "" };
       if (args[0] === "start") {
         note("start");
@@ -299,5 +312,57 @@ describe("persistent teammate workspaces", () => {
     });
     await host.reap();
     expect(removed).toEqual(["9876543210"]);
+  });
+});
+
+describe("a knight's VM grows while it runs", () => {
+  const GIB = 2 ** 30;
+  const running = (images = 20) => ({
+    status: "running",
+    labels: { [`${LABEL}.cpus`]: "1", [`${LABEL}.memory`]: "2" },
+    stats: { totalBytes: 1800 * GIB, freeBytes: 900 * GIB, images: [{ id: ID, sizeBytes: images * GIB, usedBytes: 5 * GIB, mounted: true, createdAt: 0, retained: true }] },
+  });
+  const GROWN = { approvedBy: "test-owner" };
+
+  test("threads and memory are hot-added, the disk grows where it is mounted, and nothing in it stops", async () => {
+    const { host, commands, events, all, ledger } = teammateHost(running());
+    const grown = await host.resizeTeam(ID, QUEST, { cpus: 4, memoryGb: 8, diskGb: 60, ...GROWN });
+    expect(commands.filter((c) => c[0] === "update")).toEqual([["update", "--cpus", "4", "--memory", "8192m", "--memory-swap", "8192m", containerName(ID)]]);
+    expect(events).toContain(`grow:${ID}:60`);
+    expect(all.filter((step) => ["stop", "run", "start"].includes(step) || step.startsWith("rename") || step.startsWith("rm:"))).toEqual([]);
+    expect(grown).toMatchObject({ cpus: 4, memoryGb: 8, disk: { limitGb: 60 }, status: "running" });
+    expect(ledger.at(-1)).toMatchObject({ class: "modify", verdict: "approved", reason: "approved by test-owner", detail: "grown while it runs: 4 cpu · 8 GB · 60 GB disk" });
+  });
+
+  test("only what is asked grows: more disk alone touches no thread, more threads alone no disk", async () => {
+    const disk = teammateHost(running());
+    expect(await disk.host.resizeTeam(ID, QUEST, { diskGb: 40, ...GROWN })).toMatchObject({ cpus: 1, memoryGb: 2, disk: { limitGb: 40 } });
+    expect(disk.commands.some((c) => c[0] === "update")).toBe(false);
+    const threads = teammateHost(running());
+    expect(await threads.host.resizeTeam(ID, QUEST, { cpus: 2, ...GROWN })).toMatchObject({ cpus: 2, memoryGb: 2, disk: { limitGb: 20 } });
+    expect(threads.events.some((e) => e.startsWith("grow:"))).toBe(false);
+  });
+
+  test("never smaller, never past the node's disk limit or its budget, never another quest's VM; nothing changes when refused", async () => {
+    const { host, commands, events, ledger } = teammateHost(running());
+    await expect(host.resizeTeam(ID, QUEST, { cpus: 0.5, ...GROWN })).rejects.toThrow(/only grows/);
+    await expect(host.resizeTeam(ID, QUEST, { memoryGb: 1, ...GROWN })).rejects.toThrow(/only grows/);
+    await expect(host.resizeTeam(ID, QUEST, { diskGb: 10, ...GROWN })).rejects.toThrow(/only grows/);
+    await expect(host.resizeTeam(ID, QUEST, { diskGb: 500, ...GROWN })).rejects.toThrow(/at most 200 GB/);
+    await expect(host.resizeTeam(ID, "arm.team.abcdef0123.other", { cpus: 2, ...GROWN })).rejects.toThrow(/not this teammate's/);
+    const full = teammateHost({ ...running(), stats: { totalBytes: 1800 * GIB, freeBytes: 40 * GIB, images: [{ id: ID, sizeBytes: 20 * GIB, usedBytes: 5 * GIB, mounted: true, createdAt: 0, retained: true }] } });
+    await expect(full.host.resizeTeam(ID, QUEST, { diskGb: 100, ...GROWN })).rejects.toThrow(/doesn't fit/);
+    expect(full.events.some((e) => e.startsWith("grow:"))).toBe(false);
+    expect(commands.some((c) => c[0] === "update")).toBe(false);
+    expect(events.some((e) => e.startsWith("grow:"))).toBe(false);
+    expect(ledger).toEqual([]);
+  });
+
+  test("what the node's ceiling can't hold is refused before Docker is asked", async () => {
+    const { host, commands } = teammateHost(running());
+    const asked: unknown[] = [];
+    await expect(host.resizeTeam(ID, QUEST, { cpus: 16, ...GROWN, fits: (more) => { asked.push(more); return "12 of the 16 threads he may use are taken, and this needs 15"; } })).rejects.toThrow(/12 of the 16 threads/);
+    expect(asked).toEqual([{ cpus: 15, memoryGb: 0 }]);
+    expect(commands.some((c) => c[0] === "update")).toBe(false);
   });
 });

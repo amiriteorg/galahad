@@ -474,10 +474,10 @@ export class SandboxHost {
     if (!ids.length) return [];
     const inspected = await this.docker(["inspect", ...ids]);
     if (inspected.code !== 0) return null;
-    const containers = JSON.parse(inspected.stdout) as { Config: { Labels: Record<string, string>; Image: string }; State: { Status: string } }[];
+    const containers = JSON.parse(inspected.stdout) as { Config: { Labels: Record<string, string>; Image: string }; State: { Status: string }; HostConfig?: { NanoCpus?: number; Memory?: number } }[];
     const usage = await this.workspaceStats();
     return containers
-      .map((c) => toView(c.Config.Labels, c.Config.Image, c.State.Status, usage))
+      .map((c) => toView(c.Config.Labels, c.Config.Image, c.State.Status, usage, c.HostConfig))
       .filter((v): v is SandboxView => v !== null)
       .sort((a, b) => b.createdAt - a.createdAt);
   }
@@ -646,6 +646,56 @@ export class SandboxHost {
       reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
       quest,
       detail: `made again from ${image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
+    });
+    return (await this.get(id))!;
+  }
+
+  /**
+   * A knight's VM made bigger while it runs, on the owner's word: more threads and memory (the microVM takes them as it
+   * runs, hot-added), and more disk (its workspace grows where it is mounted). Nothing stops and nothing is lost. Never
+   * smaller this way: what a running VM was given isn't taken from under it (`remakeTeam` makes it again, and a smaller
+   * size takes effect then). `fits` says why what it adds doesn't fit the node's ceiling, or null. Returns it as it is now.
+   */
+  async resizeTeam(id: string, quest: string, opts: { cpus?: number; memoryGb?: number; diskGb?: number; approvedBy: string; fits?: (more: { cpus: number; memoryGb: number }) => string | null }): Promise<SandboxView> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
+    if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
+      throw new SandboxError("that is not this teammate's persistent VM", 403);
+    }
+    const cpus = opts.cpus ?? sandbox.cpus;
+    const memoryGb = opts.memoryGb ?? sandbox.memoryGb;
+    const disk = sandbox.disk?.limitGb ?? null;
+    if (cpus < sandbox.cpus || memoryGb < sandbox.memoryGb || (opts.diskGb !== undefined && disk !== null && opts.diskGb < disk)) {
+      throw new SandboxError(`a running VM only grows (it has ${sandbox.cpus} cpu, ${sandbox.memoryGb} GB${disk !== null ? `, ${disk} GB of disk` : ""}): to give it less, make it again`, 409);
+    }
+    if (opts.diskGb !== undefined && opts.diskGb !== disk && disk === null) throw new SandboxError("this VM's /work has no size of its own to grow: it was made before workspaces had one", 409);
+    const maxDiskGb = this.opts.maxDiskGb ?? 200;
+    if (opts.diskGb !== undefined && opts.diskGb > maxDiskGb) throw new SandboxError(`at most ${maxDiskGb} GB of workspace per sandbox on this node`);
+    const more = { cpus: cpus - sandbox.cpus, memoryGb: memoryGb - sandbox.memoryGb };
+    const grows = disk !== null && opts.diskGb !== undefined && opts.diskGb > disk;
+    if (!more.cpus && !more.memoryGb && !grows) return sandbox;
+    if (grows) {
+      if (!this.opts.workspaces?.grow) throw new SandboxError("update the workspace helper before growing a teammate's disk", 424);
+      const problem = budgetProblem(await this.opts.workspaces.stats(), opts.diskGb! - disk!);
+      if (problem) throw new SandboxError(problem, 507);
+    }
+    const unfit = more.cpus || more.memoryGb ? (opts.fits?.(more) ?? null) : null;
+    if (unfit) throw new SandboxError(unfit, 409);
+    const name = containerName(id);
+    if (more.cpus || more.memoryGb) {
+      const memory = `${Math.round(memoryGb * 1024)}m`;
+      const updated = await this.docker(["update", "--cpus", String(cpus), "--memory", memory, "--memory-swap", memory, name]);
+      if (updated.code !== 0) throw new SandboxError(`could not give the teammate's VM more, so it is as it was: ${redact(updated.stderr).split("\n")[0]!.slice(0, 300)}`, 424);
+    }
+    if (grows) await this.opts.workspaces!.grow!(id, opts.diskGb!);
+    this.opts.ledger({
+      class: "modify",
+      resource: "docker.container",
+      target: name,
+      verdict: "approved",
+      reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
+      quest,
+      detail: `grown while it runs: ${cpus} cpu · ${memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
     });
     return (await this.get(id))!;
   }
@@ -882,11 +932,16 @@ function truncateLedgerDetail(command: string): string {
   return command.slice(0, head) + note(omitted) + command.slice(command.length - tail);
 }
 
-function toView(labels: Record<string, string>, image: string, status: string, usage: WorkspaceStats | null): SandboxView | null {
+function toView(labels: Record<string, string>, image: string, status: string, usage: WorkspaceStats | null, held?: { NanoCpus?: number; Memory?: number }): SandboxView | null {
   const id = labels[`${LABEL}.id`];
   if (!id || labels[LABEL] !== "1") return null;
-  const limit = Number(labels[`${LABEL}.disk`]);
-  const used = usage?.images.find((i) => i.id === id)?.usedBytes;
+  // A VM may have been grown since its labels were written: what Docker holds it to now, and its workspace's size as
+  // the helper has it, say what it is (its labels, what it was made with, where those can't be had).
+  const workspace = usage?.images.find((i) => i.id === id);
+  const labelled = Number(labels[`${LABEL}.disk`]);
+  // (A workspace only grows: never less than it was made with.)
+  const limit = labelled > 0 && workspace ? Math.max(labelled, Math.round(workspace.sizeBytes / 2 ** 30)) : labelled;
+  const used = workspace?.usedBytes;
   return {
     id,
     name: containerName(id),
@@ -894,8 +949,8 @@ function toView(labels: Record<string, string>, image: string, status: string, u
     quest: labels[`${LABEL}.quest`] ?? "",
     image,
     network: (labels[`${LABEL}.network`] ?? "isolated") as SandboxView["network"],
-    cpus: Number(labels[`${LABEL}.cpus`] ?? 0),
-    memoryGb: Number(labels[`${LABEL}.memory`] ?? 0),
+    cpus: held?.NanoCpus ? held.NanoCpus / 1e9 : Number(labels[`${LABEL}.cpus`] ?? 0),
+    memoryGb: held?.Memory ? Math.round((held.Memory / 2 ** 30) * 100) / 100 : Number(labels[`${LABEL}.memory`] ?? 0),
     createdAt: Number(labels[`${LABEL}.created`] ?? 0),
     expiresAt: Number(labels[`${LABEL}.expires`] ?? 0),
     status,

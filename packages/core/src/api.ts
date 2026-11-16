@@ -260,6 +260,27 @@ export const routes = {
     }),
   },
   /**
+   * A knight's VM made bigger while it runs, on your word: more threads, memory or disk, with nothing stopped and its
+   * work kept (the microVM takes threads and memory as it runs; its workspace grows where it is mounted). What it adds
+   * must fit this node's ceiling. Never smaller this way: a smaller size takes effect when the VM is made again.
+   */
+  resizeTeammate: {
+    method: "POST", path: "/api/team/resize", scope: "fleet:admin",
+    input: z
+      .strictObject({ id: z.string().min(1).max(32), cpus: z.number().min(0.25).max(64).optional(), memoryGb: z.number().min(0.25).max(512).optional(), diskGb: z.number().int().min(1).max(4096).optional() })
+      .refine((input) => input.cpus !== undefined || input.memoryGb !== undefined || input.diskGb !== undefined, "say what it should have: cpus, memoryGb or diskGb"),
+  },
+  /** The same, asked of the node that hosts the VM by the team's controller (never by a knight). */
+  resizeTeamWorkspace: {
+    method: "POST", path: "/api/team/resize-workspace", scope: "fleet:admin",
+    input: z.strictObject({
+      id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest,
+      cpus: z.number().min(0.25).max(64).optional(), memoryGb: z.number().min(0.25).max(512).optional(), diskGb: z.number().int().min(1).max(4096).optional(),
+      /** The device whose word it was, when a node passes the request on to the VM's host. */
+      onBehalfOf: z.string().max(100).optional(),
+    }),
+  },
+  /**
    * A knight's desktop, for you to watch and to take over (to sign in for it, to get it past something): one
    * thing done there, or nothing (`look`), and a picture of the screen back. Yours alone. What you type is carried
    * to the VM and never written to the ledger.

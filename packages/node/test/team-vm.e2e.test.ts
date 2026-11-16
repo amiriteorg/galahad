@@ -20,6 +20,8 @@ const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-vm-test", cores: 16, cpu: "test", memoryGb: 32, hasBattery: false, gpu: [], docker: true, vm: { kvm: true, tools: ["kata"] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true, vm: true } };
 const docker = fakeDocker();
 const runs: string[][] = [];
+/** Every `docker update`: a VM given more while it runs. */
+const updates: string[][] = [];
 const events: { kind: "cleanup" | "lease" | "exec" | "model"; target: string; text: string }[] = [];
 const active = new Map<string, number>();
 const peak = new Map<string, number>();
@@ -92,6 +94,7 @@ const create = (assignee: string, tag: string, dependsOn: string[] = []) => api<
 const start = () => startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {},
   docker: (args, timeout) => {
     if (args[0] === "run") runs.push(args);
+    if (args[0] === "update") updates.push(args);
     // Docker that cannot say what is there (its daemon is busy or restarting): never the same as "nothing is there".
     if (dockerSilent && args[0] === "ps") return Promise.resolve({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" });
     return docker.runner(args, timeout);
@@ -441,9 +444,23 @@ test("what became of its VM is asked of the host and said as it was: Docker that
     await expect(api("teamDesktop", { id: "una", action: { do: "open", address: "javascript:alert(1)" } })).rejects.toThrow(/400/);
     await expect(api("teamDesktop", { id: "vmless-not-yet" })).rejects.toThrow(/404/);
   } finally { docker.onExec = answered; }
+  // Made bigger while it runs, on your word: the same VM, nothing stopped or started, the threads and memory given to
+  // it as it runs, and in the ledger as yours.
+  const runsBefore = runs.length;
+  const grown = (await api<{ teammate: { id: string }; workspace: SandboxView }>("resizeTeammate", { id: "una", cpus: 2, memoryGb: 6 })).workspace;
+  expect(grown).toMatchObject({ id: kept.id, cpus: 2, memoryGb: 6, status: "running" });
+  expect(runs.length).toBe(runsBefore);
+  expect(updates.at(-1)).toEqual(["update", "--cpus", "2", "--memory", "6144m", "--memory-swap", "6144m", `galahad-sbx-${kept.id}`]);
+  expect((await api<{ entries: LedgerEntry[] }>("ledger")).entries.find((e) => e.resource === "docker.container" && e.class === "modify" && e.detail?.startsWith("grown while it runs"))).toMatchObject({ verdict: "approved", target: `galahad-sbx-${kept.id}`, detail: "grown while it runs: 2 cpu · 6 GB" });
+  // Never smaller this way, never past the node's ceiling (8 threads here), and never nothing.
+  await expect(api("resizeTeammate", { id: "una", cpus: 1 })).rejects.toThrow(/409 .*only grows/);
+  await expect(api("resizeTeammate", { id: "una", cpus: 64 })).rejects.toThrow(/409 .*threads he may use/);
+  await expect(api("resizeTeammate", { id: "una" })).rejects.toThrow(/400/);
+  expect(updates).toHaveLength(1);
   // A knight with no VM has none to make again, and a knight that isn't there is not found.
   await api("saveTeammate", { id: "vmless", name: "VMLESS", role: "engineer" });
   await expect(api("remakeTeammate", { id: "vmless" })).rejects.toThrow(/424 .*no VM yet/);
+  await expect(api("resizeTeammate", { id: "vmless", cpus: 2 })).rejects.toThrow(/424 .*no VM yet/);
   await expect(api("remakeTeammate", { id: "nobody" })).rejects.toThrow(/404/);
   expect(await api("removeTeammate", { id: "una", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
   // A knight may be given a desktop from the start, with room for a browser whatever memory was asked.

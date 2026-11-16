@@ -162,6 +162,14 @@ bun galahad roundtable provision ada --remake --network online
 
 At the Roundtable it is **Workspace → Make VM again**, which also chooses again whether the VM has a desktop. It is the same VM: its id, its host, its CPUs, memory and disk, and everything in `/work` (the repository, its files, its notes store, a coding tool's own sign-in). The container is new, from the image as it is built now, with a new gateway token that covers the providers that have a key today. What the VM can reach may be chosen again with it, which nothing else can change. Whatever is running in the VM ends, so it is refused while the knight is working, and a task that starts meanwhile waits for it. The host sets the old container aside and removes it only once the new one runs; one that will not start is cleared away and the old one is put back as it was. It is yours alone, like a removal: no knight, agent or node acting by itself is let through, and the ledger records it as approved by the device that asked. It needs `fleet:admin`.
 
+**Giving a VM more while it runs.** A knight's VM can be given more threads, memory or disk without stopping it: nothing in it ends, and its work is kept, so a knight at work can be grown too.
+
+```sh
+bun galahad roundtable resize ada --cpus 4 --mem 8 --disk 60
+```
+
+At the Roundtable it is **Workspace → Give it more**. The microVM takes the threads and memory as it runs (Kata hot-adds them: on a real node a VM went from 2 to 4 threads and 4 to 6 GB of memory this way), and its workspace grows where it is mounted (the root helper's `grow`: the image, its loop device, then ext4 itself). It is more only. What a running VM was given isn't taken from under it: a smaller size takes effect when the VM is made again (above), which keeps the size it has. What it adds must fit the node's ceiling, as a new sandbox's would (`admitGrowth`): refused with the reason, it changes nothing. Its slot is the same one, so every slot taken doesn't stop a VM that is already one of them from growing. More disk is checked against the host's disk budget too, and goes no further than 200 GB a workspace by default. The VM's size is read from what Docker holds it to now and from its workspace as the root helper has it, so a VM grown and then made again keeps what it was given. Like making it again, it is yours alone: no knight, agent or node acting by itself is let through, the ledger records it as approved by the device that asked, and it needs `fleet:admin`.
+
 **A desktop, for work that needs a screen.** A knight's VM can have a desktop: a display (1280 by 800), a window manager and a browser (Chromium), with one command in the VM that operates them. Choose it when the VM is made (**Workspace → Provision VM → A desktop**), or have an existing VM made again with one (**Make VM again**):
 
 ```sh

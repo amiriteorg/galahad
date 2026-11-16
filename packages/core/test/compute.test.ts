@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   admit,
+  admitGrowth,
   bodyFingerprint,
   type Calibration,
   calibrationDue,
@@ -162,6 +163,19 @@ describe("admission: work fits, or it waits", () => {
     // Two big sandboxes use every core he may use: a third waits though a slot is free.
     expect(admit(capacity, { sandboxes: 2, cores: 16, memoryGb: 16 }, slot, idle(ultra))).toMatchObject({ ok: false });
     expect(admit(capacity, { sandboxes: 1, cores: 4, memoryGb: 88 }, slot, idle(ultra))).toMatchObject({ ok: false });
+  });
+
+  test("a sandbox that grows needs room for what it adds, not a slot: every slot taken doesn't stop it, the ceiling does", () => {
+    // Four sandboxes hold every slot, but only half the threads and a third of the memory he may use.
+    const full = { sandboxes: 4, cores: 8, memoryGb: 30 };
+    expect(admit(capacity, full, slot, idle(ultra))).toMatchObject({ ok: false });
+    expect(admitGrowth(capacity, full, { cpus: 4, memoryGb: 8 }, idle(ultra))).toEqual({ ok: true });
+    const past = admitGrowth(capacity, full, { cpus: 9, memoryGb: 0 }, idle(ultra));
+    expect(past).toMatchObject({ ok: false, busy: false });
+    expect(!past.ok && past.why).toContain("8.0 of the 16 threads");
+    expect(admitGrowth(capacity, full, { cpus: 0, memoryGb: 62 }, idle(ultra))).toMatchObject({ ok: false });
+    // The machine busy with other work holds it back as it would a new one.
+    expect(admitGrowth(capacity, full, { cpus: 4, memoryGb: 0 }, { ...idle(ultra), load: 27 })).toMatchObject({ ok: false, busy: true });
   });
 
   test("he backs off while the machine is busy with other work", () => {

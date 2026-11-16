@@ -1,4 +1,4 @@
-import { admit, type ComputeUsage, type ComputeUse, type HostLoad, type NodeCapacity, type QueuedWork, VM_OVERHEAD } from "@galahad/core";
+import { admit, admitGrowth, type ComputeUsage, type ComputeUse, type HostLoad, type NodeCapacity, type QueuedWork, VM_OVERHEAD } from "@galahad/core";
 
 /*
  * The governor: this node's slots. A sandbox is admitted only when it fits inside
@@ -121,6 +121,31 @@ export class Governor {
     } catch {
       /* a watcher never stops the governor */
     }
+  }
+
+  /**
+   * A sandbox it holds made bigger by `more`: held at its new size when that fits the ceiling and the machine now, and
+   * the reason it doesn't otherwise (it never waits: you asked for it now). Its slot is the same one.
+   */
+  grow(id: string, more: { cpus: number; memoryGb: number }): string | null {
+    const held = this.held.get(id);
+    if (!held) return "this node holds no such sandbox";
+    const verdict = admitGrowth(this.opts.capacity(), this.use(), more, this.hostNow());
+    if (!verdict.ok) return verdict.why;
+    held.cpus += more.cpus;
+    held.memoryGb += more.memoryGb;
+    this.remember();
+    this.changed();
+    return null;
+  }
+
+  /** What `grow` held, given back: the VM didn't take it. */
+  shrink(id: string, less: { cpus: number; memoryGb: number }): void {
+    const held = this.held.get(id);
+    if (!held) return;
+    held.cpus = Math.max(0, held.cpus - less.cpus);
+    held.memoryGb = Math.max(0, held.memoryGb - less.memoryGb);
+    this.changed();
   }
 
   /**

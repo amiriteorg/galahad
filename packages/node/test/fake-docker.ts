@@ -2,7 +2,7 @@ import type { DockerRunner } from "@galahad/sandbox";
 
 /*
  * A stand-in for Docker, for tests on machines without one: it answers the commands
- * the sandbox host runs (info, inspect, run, ps, exec, stop, start, rename, rm, volumes, networks) from
+ * the sandbox host runs (info, inspect, run, ps, exec, stop, start, rename, rm, update, volumes, networks) from
  * memory, so the real host's own logic (labels, the ledger, the oath gate, reaping)
  * runs unchanged above it. Nothing is spawned.
  */
@@ -12,7 +12,18 @@ interface Container {
   image: string;
   labels: Record<string, string>;
   status: string;
+  /** What Docker holds it to (--cpus and --memory as it was run, or as `docker update` changed them). */
+  held: { NanoCpus: number; Memory: number };
 }
+
+/** `--cpus 2` and `--memory 4096m`, as Docker keeps them. */
+const heldOf = (args: string[], before?: Container["held"]): Container["held"] => {
+  const at = (flag: string) => args[args.indexOf(flag) + 1];
+  return {
+    NanoCpus: args.includes("--cpus") ? Number(at("--cpus")) * 1e9 : (before?.NanoCpus ?? 0),
+    Memory: args.includes("--memory") ? Number.parseInt(at("--memory")!, 10) * 2 ** 20 : (before?.Memory ?? 0),
+  };
+};
 
 export interface FakeDocker {
   runner: DockerRunner;
@@ -66,7 +77,7 @@ export function fakeDocker(): FakeDocker {
           }
           // The image comes before the command (`sleep infinity`).
           const image = rest[rest.length - 3]!;
-          containers.set(name, { name, image, labels, status: "running" });
+          containers.set(name, { name, image, labels, status: "running", held: heldOf(rest) });
           peak = Math.max(peak, fake.running());
           return ok(name);
         }
@@ -82,7 +93,7 @@ export function fakeDocker(): FakeDocker {
         case "inspect": {
           const found = rest.map((name) => containers.get(name)).filter((c): c is Container => !!c);
           if (!found.length) return no();
-          return ok(JSON.stringify(found.map((c) => ({ Config: { Labels: c.labels, Image: c.image }, State: { Status: c.status } }))));
+          return ok(JSON.stringify(found.map((c) => ({ Config: { Labels: c.labels, Image: c.image }, State: { Status: c.status }, HostConfig: c.held }))));
         }
         case "exec": {
           const at = rest.findIndex((a) => a.startsWith("galahad-sbx-"));
@@ -108,6 +119,12 @@ export function fakeDocker(): FakeDocker {
           containers.delete(from);
           containers.set(to, { ...container, name: to });
           return ok();
+        }
+        case "update": {
+          const container = containers.get(rest.at(-1)!);
+          if (!container) return no(`No such container: ${rest.at(-1)}`);
+          container.held = heldOf(rest, container.held);
+          return ok(container.name);
         }
         case "rm": {
           const name = rest.at(-1)!;

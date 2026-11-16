@@ -61,6 +61,9 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     its VM made again from the image as it is now (a fix to the image, a newer tool):
                                     the same VM and everything in /work, a new container; not while it is working.
                                     --desktop gives a VM that has none a desktop; --no-desktop takes it away
+  roundtable resize <id> [--cpus 4] [--mem 8] [--disk 40]
+                                    more threads, memory or disk for its VM while it runs, nothing stopped and
+                                    its work kept; never less (a smaller size takes effect when it is made again)
   roundtable memory <id> [text]      read or replace that knight's notes
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a knight's harness can search and keep notes in its own VM, where the

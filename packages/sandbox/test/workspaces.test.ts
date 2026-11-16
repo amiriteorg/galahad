@@ -102,9 +102,20 @@ describe.skipIf(!unixSockets)("talking to the helper", () => {
     expect(heard.slice(before)).toEqual(["retain 0123456789", "mount 0123456789", "remove-owned 0123456789"]);
   });
 
+  test("growing a workspace is one exact line: its id and its new size", async () => {
+    const helper = new WorkspaceHelper(path, 5000);
+    const before = heard.length;
+    await helper.grow("0123456789", 30);
+    expect(heard.slice(before)).toEqual(["grow 0123456789 30"]);
+  });
+
   test("nothing that isn't an id or a size is ever sent", async () => {
     const helper = new WorkspaceHelper(path, 5000);
     const before = heard.length;
+    await expect(helper.grow("../../etc", 30)).rejects.toThrow(/bad workspace/);
+    await expect(helper.grow("0123456789", 2.5)).rejects.toThrow(/bad workspace/);
+    await expect(helper.grow("0123456789", 0)).rejects.toThrow(/bad workspace/);
+    await expect(helper.grow("0123456789", 5000)).rejects.toThrow(/bad workspace/);
     await expect(helper.create("../../etc", 20)).rejects.toThrow(/bad workspace/);
     await expect(helper.create("0123456789", 1.5)).rejects.toThrow(/bad workspace/);
     await expect(helper.remove("0123456789 ; rm -rf /")).rejects.toThrow(/bad workspace/);
@@ -203,6 +214,59 @@ describe.skipIf(!unixSockets)("the installed helper's retention rules", () => {
       expect(ask(`mount ${id}`)).toBe("error existing workspace is missing");
       expect(ask(`retain ${id}`)).toBe("error existing workspace is missing");
       expect(readFileSync(other, "utf8")).toBe("unrelated data");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("a workspace grows where it is mounted, or unmounted after a check, and never shrinks or grows another's disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-helper-"));
+    const root = join(dir, "workspaces");
+    const bin = join(dir, "bin");
+    const trace = join(dir, "calls");
+    const id = "0123456789";
+    mkdirSync(root); mkdirSync(bin);
+    // The privileged commands are stand-ins that say what they were asked: the policy is the helper's own.
+    const record = '#!/bin/sh\nprintf "%s %s\\n" "$(basename "$0")" "$*" >> "$TEST_WORKSPACE_TRACE"\n';
+    for (const name of ["truncate", "resize2fs", "e2fsck"]) writeFileSync(join(bin, name), record, { mode: 0o700 });
+    // Asked which file a loop device is backed by, it says; asked to resize one, it is recorded like the rest.
+    writeFileSync(join(bin, "losetup"), '#!/bin/sh\ncase "$*" in *BACK-FILE*) echo "$TEST_BACKING" ;; *) printf "%s %s\\n" losetup "$*" >> "$TEST_WORKSPACE_TRACE" ;; esac\n', { mode: 0o700 });
+    writeFileSync(join(bin, "chown"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+    writeFileSync(join(bin, "mountpoint"), '#!/bin/sh\n[ "$TEST_MOUNTED" = 1 ]\n', { mode: 0o700 });
+    writeFileSync(join(bin, "findmnt"), '#!/bin/sh\necho "$TEST_SOURCE"\n', { mode: 0o700 });
+    writeFileSync(join(bin, "stat"), '#!/bin/sh\necho "$TEST_SIZE"\n', { mode: 0o700 });
+    const source = readFileSync(new URL("../../../sandbox/galahad-workspace", import.meta.url), "utf8");
+    const isolated = source.replace(/^ROOT=\/var\/lib\/galahad-workspaces$/m, 'ROOT="$TEST_WORKSPACE_ROOT"');
+    const ask = (command: string, env: { mounted: boolean; source?: string; size?: number; backing?: string }) => {
+      rmSync(trace, { force: true });
+      const result = Bun.spawnSync(["sh", "-c", isolated], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEST_WORKSPACE_ROOT: root, TEST_WORKSPACE_TRACE: trace, TEST_MOUNTED: env.mounted ? "1" : "0", TEST_SOURCE: env.source ?? "/dev/loop7", TEST_SIZE: String(env.size ?? GIB), TEST_BACKING: env.backing ?? join(root, `${id}.img`) },
+        stdin: Buffer.from(`${command}\n`),
+      });
+      expect(result.exitCode).toBe(0);
+      return { said: result.stdout.toString().trim(), calls: existsSync(trace) ? readFileSync(trace, "utf8").trim().split("\n") : [] };
+    };
+    const img = join(root, `${id}.img`);
+    try {
+      expect(ask(`grow ${id} 3`, { mounted: true }).said).toBe("error existing workspace is missing");
+      writeFileSync(img, "teammate work");
+      mkdirSync(join(root, id));
+      // Mounted: the image, its loop device, then the filesystem, while the sandbox runs.
+      expect(ask(`grow ${id} 3`, { mounted: true })).toEqual({ said: "ok", calls: [`truncate -s 3G ${img}`, "losetup -c /dev/loop7", "resize2fs /dev/loop7"] });
+      // Not mounted: checked first, then grown.
+      expect(ask(`grow ${id} 3`, { mounted: false })).toEqual({ said: "ok", calls: [`truncate -s 3G ${img}`, `e2fsck -f -p ${img}`, `resize2fs ${img}`] });
+      // Never smaller, nor the same; never a disk that isn't a workspace's loop device.
+      expect(ask(`grow ${id} 1`, { mounted: true })).toEqual({ said: "error a workspace only grows", calls: [] });
+      expect(ask(`grow ${id} 3`, { mounted: true, size: 3 * GIB })).toEqual({ said: "error a workspace only grows", calls: [] });
+      expect(ask(`grow ${id} 3`, { mounted: true, source: "/dev/nvme0n1p2" })).toEqual({ said: "error not a workspace mount", calls: [] });
+      expect(ask(`grow ${id} 3`, { mounted: true, backing: join(root, "9876543210.img") })).toEqual({ said: "error not this workspace's disk", calls: [] });
+      for (const [line, error] of [[`grow ../etc 3`, "bad id"], [`grow ${id} 0`, "bad size"], [`grow ${id} 9999`, "at most 4096 GiB"], [`grow ${id}`, "bad arguments"], [`grow ${id} 3 4`, "bad arguments"]] as const) {
+        expect(ask(line, { mounted: true })).toEqual({ said: `error ${error}`, calls: [] });
+      }
+      // A substituted image is never followed.
+      rmSync(img);
+      const other = join(root, "other.img");
+      writeFileSync(other, "unrelated data");
+      symlinkSync(other, img);
+      expect(ask(`grow ${id} 3`, { mounted: true })).toEqual({ said: "error existing workspace is missing", calls: [] });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -13,6 +13,8 @@ import { existsSync } from "node:fs";
 
 export const WORKSPACE_SOCKET = "/run/galahad-workspace.sock";
 export const DEFAULT_DISK_GB = 20;
+/** The most a workspace may be, as the helper itself holds (its MAX_GIB). */
+export const MAX_WORKSPACE_GB = 4096;
 const GIB = 2 ** 30;
 
 export interface WorkspaceStats {
@@ -30,6 +32,8 @@ export interface Workspaces {
   mount?(id: string): Promise<void>;
   /** Protect a persistent teammate's data even if its container is lost. */
   retain?(id: string): Promise<void>;
+  /** Make a workspace bigger, where it is mounted (its sandbox running) or not; never smaller. */
+  grow?(id: string, gib: number): Promise<void>;
   remove(id: string): Promise<void>;
   /** Only an owner-approved destruction may remove retained data. */
   removeRetained?(id: string): Promise<void>;
@@ -135,6 +139,11 @@ export class WorkspaceHelper implements Workspaces {
   async remove(id: string): Promise<void> {
     if (!/^[0-9a-f]{10}$/.test(id)) throw new WorkspaceError("bad workspace id");
     await this.ask(`remove ${id}`);
+  }
+
+  async grow(id: string, gib: number): Promise<void> {
+    if (!/^[0-9a-f]{10}$/.test(id) || !Number.isInteger(gib) || gib < 1 || gib > MAX_WORKSPACE_GB) throw new WorkspaceError("bad workspace request");
+    await this.ask(`grow ${id} ${gib}`);
   }
 
   async mount(id: string): Promise<void> {

@@ -55,6 +55,24 @@ export class GovernedSandboxHost extends SandboxHost {
     }
   }
 
+  /** A knight's VM grown while it runs: what it adds is held of the ceiling first, and given back if the VM doesn't take it. */
+  override async resizeTeam(id: string, quest: string, opts: Parameters<SandboxHost["resizeTeam"]>[2]): Promise<SandboxView> {
+    let held: { cpus: number; memoryGb: number } | null = null;
+    try {
+      return await super.resizeTeam(id, quest, {
+        ...opts,
+        fits: (more) => {
+          const why = this.governed.governor.grow(id, more);
+          if (!why) held = more;
+          return why;
+        },
+      });
+    } catch (error) {
+      if (held) this.governed.governor.shrink(id, held);
+      throw error;
+    }
+  }
+
   override async destroy(id: string, opts: { approvedBy?: string; quest?: string } = {}): Promise<Decision> {
     const decision = await super.destroy(id, opts);
     if (decision.verdict === "allow") this.governed.governor.release(id);

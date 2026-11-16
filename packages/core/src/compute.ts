@@ -297,10 +297,11 @@ export function clampNeed(capacity: NodeCapacity, request: { cpus: number; memor
 /** Load on the machine that isn't his own sandboxes' (in threads). */
 const othersLoad = (used: ComputeUse, host: HostLoad): number => Math.max(0, host.load - Math.max(used.cores, host.oursRecently));
 
-function fits(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; memoryGb: number }, host: HostLoad | null, others: number): Admission {
+/** `counted`: one more sandbox, so the count of them counts too (a sandbox that grows is already counted). */
+function fits(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; memoryGb: number }, host: HostLoad | null, others: number, counted = true): Admission {
   const no = (why: string, busy = false): Admission => ({ ok: false, why, busy });
   if (capacity.sandboxes <= 0) return no("this node takes no sandboxes");
-  if (used.sandboxes >= capacity.sandboxes) return no(`every slot is in use (${used.sandboxes} of ${capacity.sandboxes} sandboxes)`);
+  if (counted && used.sandboxes >= capacity.sandboxes) return no(`every slot is in use (${used.sandboxes} of ${capacity.sandboxes} sandboxes)`);
   if (used.cores + need.cpus > capacity.cores + 1e-9) return no(`${fixed1(used.cores)} of the ${capacity.cores} threads he may use are taken, and this needs ${fixed1(need.cpus)}`);
   if (used.memoryGb + need.memoryGb > capacity.memoryGb + 1e-9) return no(`${fixed1(used.memoryGb)} of the ${capacity.memoryGb} GB he may use are taken, and this needs ${fixed1(need.memoryGb)}`);
   if (host) {
@@ -324,6 +325,11 @@ function fits(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; me
  */
 export function admit(capacity: NodeCapacity, used: ComputeUse, need: { cpus: number; memoryGb: number }, host: HostLoad | null): Admission {
   return fits(capacity, used, need, host, host ? othersLoad(used, host) : 0);
+}
+
+/** Whether a sandbox may grow by `more` now: what it adds fits the ceiling and the machine as a new one's would, its slot the same. */
+export function admitGrowth(capacity: NodeCapacity, used: ComputeUse, more: { cpus: number; memoryGb: number }, host: HostLoad | null): Admission {
+  return fits(capacity, used, more, host, host ? othersLoad(used, host) : 0, false);
 }
 
 /** How many more standard sandboxes fit now. */
