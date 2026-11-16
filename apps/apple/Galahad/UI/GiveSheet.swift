@@ -19,6 +19,7 @@ struct GiveSheet: View {
     @State private var goal = ""
     @State private var title = ""
     @State private var gates = ""
+    @State private var budget = ""
     @State private var desktop = false
     @State private var repository = ""
     @State private var working = false
@@ -68,6 +69,13 @@ struct GiveSheet: View {
             } footer: {
                 Text("One shell command a line, up to 16. They run in the knight's workspace.")
             }
+            Section {
+                TextField("0.50", text: $budget).keyboardType(.decimalPad).monospacedDigit()
+            } header: {
+                Text("Budget in US dollars (optional)")
+            } footer: {
+                Text("What its model calls may spend, at your prices. It is told what it has spent, and stops with what it has when it is spent.")
+            }
             Section("It needs") {
                 Toggle("A desktop (a browser, an app with windows)", isOn: $desktop)
                 TextField("A repository (owner/name or a URL)", text: $repository)
@@ -115,6 +123,13 @@ struct GiveSheet: View {
     }
 
     private func give() async {
+        let money: Double?
+        switch KnightRoom.budget(from: budget) {
+        case .failure(let error):
+            problem = error.message
+            return
+        case .success(let usd): money = usd
+        }
         let commands: [String]
         switch KnightRoom.gates(from: gates) {
         case .failure(let error):
@@ -123,7 +138,7 @@ struct GiveSheet: View {
         case .success(let list): commands = list
         }
         struct Needs: Encodable { var desktop: Bool?; var repository: String? }
-        struct Give: Encodable { let goal: String; var title: String?; var gates: [String]?; var needs: Needs? }
+        struct Give: Encodable { let goal: String; var title: String?; var gates: [String]?; var needs: Needs?; var budgetUsd: Double? }
         let repo = repository.trimmingCharacters(in: .whitespacesAndNewlines)
         let named = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let needs = Needs(desktop: desktop ? true : nil, repository: repo.isEmpty ? nil : repo)
@@ -131,7 +146,8 @@ struct GiveSheet: View {
             goal: goal.trimmingCharacters(in: .whitespacesAndNewlines),
             title: named.isEmpty ? nil : named,
             gates: commands.isEmpty ? nil : commands,
-            needs: needs.desktop == nil && needs.repository == nil ? nil : needs
+            needs: needs.desktop == nil && needs.repository == nil ? nil : needs,
+            budgetUsd: money
         )
         working = true
         defer { working = false }

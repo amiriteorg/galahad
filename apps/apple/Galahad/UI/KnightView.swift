@@ -102,8 +102,8 @@ struct KnightView: View {
             }
         }
         .sheet(isPresented: $giving) {
-            GiveTaskSheet(name: name) { title, goal, gates, _ in
-                try await room.give(title: title, goal: goal, gates: gates, with: session.client)
+            GiveTaskSheet(name: name) { title, goal, gates, _, budget in
+                try await room.give(title: title, goal: goal, gates: gates, budgetUsd: budget, with: session.client)
             }
         }
         .navigationDestination(isPresented: $watching) {
@@ -305,11 +305,12 @@ struct RoomComposer: View {
 struct GiveTaskSheet: View {
     let name: String
     var members: [(id: String, name: String)] = []
-    let give: (String, String, [String], String?) async throws -> Void
+    let give: (String, String, [String], String?, Double?) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var goal = ""
     @State private var gates = ""
+    @State private var budget = ""
     @State private var assignee = ""
     @State private var working = false
     @State private var problem: String?
@@ -345,6 +346,13 @@ struct GiveTaskSheet: View {
                 } footer: {
                     Text("One shell command a line, up to 16. They run in \(worker)'s workspace; they and an independent reviewer decide whether the work is verified.")
                 }
+                Section {
+                    TextField("0.50", text: $budget).keyboardType(.decimalPad).monospacedDigit()
+                } header: {
+                    Text("Budget in US dollars (optional)")
+                } footer: {
+                    Text("What its model calls may spend, at your prices. It is told what it has spent, and stops with what it has when it is spent.")
+                }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
                 }
@@ -362,13 +370,18 @@ struct GiveTaskSheet: View {
     }
 
     private func submit() async {
+        let money: Double?
+        switch KnightRoom.budget(from: budget) {
+        case .failure(let error): problem = error.message; return
+        case .success(let usd): money = usd
+        }
         switch KnightRoom.gates(from: gates) {
         case .failure(let error): problem = error.message
         case .success(let commands):
             working = true
             defer { working = false }
             do {
-                try await give(title.trimmingCharacters(in: .whitespacesAndNewlines), goal.trimmingCharacters(in: .whitespacesAndNewlines), commands, members.isEmpty ? nil : assignee)
+                try await give(title.trimmingCharacters(in: .whitespacesAndNewlines), goal.trimmingCharacters(in: .whitespacesAndNewlines), commands, members.isEmpty ? nil : assignee, money)
                 dismiss()
             } catch {
                 problem = error.localizedDescription

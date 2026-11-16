@@ -5,7 +5,7 @@ import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
 import { hasDesktop } from "../lib/desktop.ts";
-import { gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
+import { budgetFrom, gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
 import { HANDLE_PATTERN, HARNESS, knightRoleLine, knightRoles, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, field } from "../ui/controls.ts";
@@ -167,6 +167,8 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
   const goal = h("textarea", { class: "input", required: true, rows: 6, maxlength: 8000, placeholder: "What should be built or investigated, and what proves it is complete?" }, copy?.goal ?? "");
   const assignee = h("select", { class: "select", required: true }, ...members.map((person) => h("option", { value: person.id, selected: person.id === copy?.assignee }, `${person.name} · ${HARNESS[person.harness]}`)));
   const gates = h("textarea", { class: "input mono", rows: 3, placeholder: "bun run check\nbun test path/to/test.ts" }, copy?.gates?.join("\n") ?? "");
+  const budget = h("input", { class: "input tnum", inputmode: "decimal", maxlength: 10, placeholder: "0.50", autocomplete: "off" });
+  if (copy?.budgetUsd) budget.value = String(copy.budgetUsd);
   const dependencies = new Set(copy?.dependsOn ?? []);
   const candidates = snapshot?.tasks.filter((task) => task.room === room.id) ?? [];
   const choices = h("div", { class: "team-dependency-choices" }, ...candidates.map((task) => {
@@ -179,11 +181,14 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
     field("Title", title), members.length > 1 ? field("Assigned to", assignee) : null, field("Goal", goal),
     candidates.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Wait for these tasks"), choices) : null,
     field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace." }),
+    field("Budget in US dollars (optional)", budget, { hint: "US dollars at your prices: what its model calls may spend. It is told what it has spent, and stops with what it has when it is spent." }),
   ], "Give task", async () => {
     if (findSecrets(goal.value).length) throw new Error("The goal contains something that looks like a secret.");
     const checks = gatesFrom(gates.value);
     if ("error" in checks) throw new Error(checks.error);
-    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates });
+    const money = budgetFrom(budget.value);
+    if ("error" in money) throw new Error(money.error);
+    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}) });
   });
 }
 
@@ -198,6 +203,7 @@ export function giveToRoundtable(ctx: Ctx): void {
   const goal = h("textarea", { class: "input", name: "goal", required: true, rows: 5, maxlength: 8000, placeholder: "What should be done, and what shows it is done?" });
   const title = h("input", { class: "input", name: "title", maxlength: 200, placeholder: "A short name for it", autocomplete: "off" });
   const gates = h("textarea", { class: "input mono", name: "gates", rows: 3, placeholder: "bun test\ntest -s export.csv" });
+  const budget = h("input", { class: "input tnum", inputmode: "decimal", maxlength: 10, placeholder: "0.50", autocomplete: "off" });
   const who = h("select", { class: "select", name: "who" }, h("option", { value: "" }, "The Roundtable: the knight best suited to it"), ...knights.map((person) => h("option", { value: person.id }, `${person.name}${person.enabled ? "" : " (paused)"}`)));
   const desktop = h("input", { type: "checkbox", name: "desktop" });
   const repository = h("input", { class: "input mono", name: "repository", type: "url", maxlength: 300, placeholder: "https://github.com/owner/repository", autocomplete: "off" });
@@ -211,6 +217,7 @@ export function giveToRoundtable(ctx: Ctx): void {
     field("Goal", goal),
     field("Title (optional)", title),
     field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace, and a reviewer who did not do the work checks it." }),
+    field("Budget in US dollars (optional)", budget, { hint: "US dollars at your prices: what its model calls may spend. It is told what it has spent, and stops with what it has when it is spent." }),
     field("Who takes it", who),
     needs,
     error,
@@ -243,18 +250,20 @@ export function giveToRoundtable(ctx: Ctx): void {
     if (findSecrets(goal.value).length) return void replace(error, callout("danger", "The goal contains something that looks like a secret. Keep it in the vault."));
     const checks = gatesFrom(gates.value);
     if ("error" in checks) return void replace(error, callout("danger", checks.error));
+    const money = budgetFrom(budget.value);
+    if ("error" in money) return void replace(error, callout("danger", money.error));
     await busy(submit, async () => {
       try {
         if (who.value) {
           // By name: in that knight's own conversation with you.
           const { room } = await ctx.api.post<{ room: TeamRoom }>("/api/team/direct", { id: who.value });
-          await ctx.api.post("/api/team/tasks", { room: room.id, assignee: who.value, title: title.value.trim() || goal.value.trim().slice(0, 200), goal: goal.value.trim(), gates: checks.gates });
+          await ctx.api.post("/api/team/tasks", { room: room.id, assignee: who.value, title: title.value.trim() || goal.value.trim().slice(0, 200), goal: goal.value.trim(), gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}) });
           sheet.close();
           void ctx.live.refreshTeam();
           ctx.navigate("team", { room: room.id });
           return;
         }
-        const answer = await ctx.api.post<Given>("/api/team/give", giveInput({ goal: goal.value, title: title.value, gates: checks.gates, desktop: desktop.checked, repository: repository.value }));
+        const answer = await ctx.api.post<Given>("/api/team/give", giveInput({ goal: goal.value, title: title.value, gates: checks.gates, desktop: desktop.checked, repository: repository.value, budgetUsd: money.usd }));
         void ctx.live.refreshTeam();
         answered(answer);
       } catch (failure) {

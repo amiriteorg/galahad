@@ -25,6 +25,7 @@ import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { knightRoleLine, knightRoles, removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
+import { budgetFrom } from "../../web/src/lib/give.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
@@ -338,6 +339,11 @@ const knightForms = {
     { roster: { swift: { models: [] }, engineer: { models: ["a/e"] }, fold: { models: ["a/x"] }, Odd: { models: ["a/o"] } }, current: "made-up" },
     { roster: {} },
   ].map((c) => ({ ...c, roles: knightRoles(c.roster, c.current) })),
+  // A task's budget as typed (the PWA's budgetFrom): the dollars, or what is wrong with it.
+  budgets: ["", "  ", "0.50", "$2", "$ 1,5", "100", "abc", "1.2.3", ".5", "5.", "-1", "1e3", "0", "0.00", "100.01", "250", " 3 "].map((text) => {
+    const read = budgetFrom(text);
+    return { text, ...("error" in read ? { error: read.error } : { usd: read.usd }) };
+  }),
   roleLines: [
     { role: "frontend", spec: knightRoster.frontend },
     { role: "engineer", spec: knightRoster.engineer },

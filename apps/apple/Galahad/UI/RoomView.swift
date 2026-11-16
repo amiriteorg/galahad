@@ -98,8 +98,8 @@ struct RoomView: View {
             }
         }
         .sheet(isPresented: $giving) {
-            GiveTaskSheet(name: name, members: members.map { ($0.id, $0.name) }) { title, goal, gates, assignee in
-                try await room.give(title: title, goal: goal, gates: gates, assignee: assignee, with: session.client)
+            GiveTaskSheet(name: name, members: members.map { ($0.id, $0.name) }) { title, goal, gates, assignee, budget in
+                try await room.give(title: title, goal: goal, gates: gates, assignee: assignee, budgetUsd: budget, with: session.client)
             }
         }
         .sheet(isPresented: $editing) {

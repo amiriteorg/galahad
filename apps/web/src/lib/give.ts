@@ -18,8 +18,21 @@ export function gatesFrom(text: string): { gates: string[] } | { error: string }
   return { gates };
 }
 
+/**
+ * A task's budget as typed: US dollars above 0 and at most 100 ("0.50", "$2", "1,5" with a comma for the point), or
+ * none when nothing is typed. Its model calls may spend that much at your prices; it stops when it is spent.
+ */
+export function budgetFrom(text: string): { usd: number | null } | { error: string } {
+  const typed = text.trim().replace(/^\$\s*/, "").replace(",", ".");
+  if (!typed) return { usd: null };
+  if (!/^\d+(\.\d+)?$/.test(typed)) return { error: "A budget is an amount in US dollars, like 0.50." };
+  const usd = Number(typed);
+  if (usd <= 0 || usd > 100) return { error: "A budget is more than $0 and at most $100." };
+  return { usd };
+}
+
 /** A task for the Roundtable, as the node takes it: only what was given. */
-export function giveInput(form: { goal: string; title: string; gates: string[]; desktop: boolean; repository: string }): TeamGiveInput {
+export function giveInput(form: { goal: string; title: string; gates: string[]; desktop: boolean; repository: string; budgetUsd?: number | null }): TeamGiveInput {
   const title = form.title.trim();
   const repository = form.repository.trim();
   const needs = { ...(form.desktop ? { desktop: true } : {}), ...(repository ? { repository } : {}) };
@@ -28,6 +41,7 @@ export function giveInput(form: { goal: string; title: string; gates: string[]; 
     ...(title ? { title } : {}),
     ...(form.gates.length ? { gates: form.gates } : {}),
     ...(Object.keys(needs).length ? { needs } : {}),
+    ...(form.budgetUsd ? { budgetUsd: form.budgetUsd } : {}),
   };
 }
 

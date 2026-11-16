@@ -1,5 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { gatesFrom, giveInput, givenTo } from "./give.ts";
+import { budgetFrom, gatesFrom, giveInput, givenTo } from "./give.ts";
+
+describe("a task's budget, as typed", () => {
+  test("dollars with a point or a comma, with or without the sign; nothing typed is no budget", () => {
+    expect(budgetFrom("")).toEqual({ usd: null });
+    expect(budgetFrom("  ")).toEqual({ usd: null });
+    expect(budgetFrom("0.50")).toEqual({ usd: 0.5 });
+    expect(budgetFrom("$2")).toEqual({ usd: 2 });
+    expect(budgetFrom("$ 1,5")).toEqual({ usd: 1.5 });
+    expect(budgetFrom("100")).toEqual({ usd: 100 });
+  });
+
+  test("anything else is said plainly", () => {
+    for (const text of ["abc", "1.2.3", ".5", "5.", "-1", "1e3"]) expect(budgetFrom(text)).toEqual({ error: "A budget is an amount in US dollars, like 0.50." });
+    for (const text of ["0", "0.00", "100.01", "250"]) expect(budgetFrom(text)).toEqual({ error: "A budget is more than $0 and at most $100." });
+  });
+
+  test("given to the Roundtable, it goes with the task only when there is one", () => {
+    const base = { goal: "Fix it", title: "", gates: [], desktop: false, repository: "" };
+    expect(giveInput({ ...base, budgetUsd: 0.5 })).toEqual({ goal: "Fix it", budgetUsd: 0.5 });
+    expect(giveInput({ ...base, budgetUsd: null })).toEqual({ goal: "Fix it" });
+  });
+});
 
 describe("the commands that prove a task is done, as typed", () => {
   test("one a line, blank lines and spaces around them left out", () => {

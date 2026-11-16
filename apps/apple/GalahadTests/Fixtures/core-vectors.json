@@ -2349,6 +2349,76 @@
         ]
       }
     ],
+    "budgets": [
+      {
+        "text": "",
+        "usd": null
+      },
+      {
+        "text": "  ",
+        "usd": null
+      },
+      {
+        "text": "0.50",
+        "usd": 0.5
+      },
+      {
+        "text": "$2",
+        "usd": 2
+      },
+      {
+        "text": "$ 1,5",
+        "usd": 1.5
+      },
+      {
+        "text": "100",
+        "usd": 100
+      },
+      {
+        "text": "abc",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": "1.2.3",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": ".5",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": "5.",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": "-1",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": "1e3",
+        "error": "A budget is an amount in US dollars, like 0.50."
+      },
+      {
+        "text": "0",
+        "error": "A budget is more than $0 and at most $100."
+      },
+      {
+        "text": "0.00",
+        "error": "A budget is more than $0 and at most $100."
+      },
+      {
+        "text": "100.01",
+        "error": "A budget is more than $0 and at most $100."
+      },
+      {
+        "text": "250",
+        "error": "A budget is more than $0 and at most $100."
+      },
+      {
+        "text": " 3 ",
+        "usd": 3
+      }
+    ],
     "roleLines": [
       {
         "role": "frontend",

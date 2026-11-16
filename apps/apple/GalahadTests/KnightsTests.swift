@@ -37,6 +37,19 @@ struct KnightsTests {
         }
     }
 
+    @Test func aTasksBudgetIsReadAsThePWAReadsIt() {
+        #expect(!vectors.knightForms.budgets.isEmpty)
+        for item in vectors.knightForms.budgets {
+            switch KnightRoom.budget(from: item.text) {
+            case .success(let usd):
+                #expect(item.error == nil, "\(item.text)")
+                #expect(usd == item.usd, "\(item.text)")
+            case .failure(let error):
+                #expect(error.message == item.error, "\(item.text)")
+            }
+        }
+    }
+
     @Test func removingAKnightSaysWhatThePWASays() {
         for item in vectors.knightForms.removals {
             let plan = Knights.removal(id: item.id, name: item.name, workspace: item.workspace, workspaceNode: item.workspaceNode, maySandbox: item.maySandbox)

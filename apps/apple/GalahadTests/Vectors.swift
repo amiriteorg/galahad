@@ -99,12 +99,14 @@ struct Vectors: Decodable {
         struct Temperament: Decodable { let id: String; let avatar: JSONValue?; let temperament: String }
         struct RoleCase: Decodable { let roster: [String: Knights.RoleInfo]; let current: String?; let roles: [String] }
         struct RoleLine: Decodable { let role: String; let spec: Knights.RoleInfo?; let line: String }
+        struct Budget: Decodable { let text: String; let usd: Double?; let error: String? }
         let handles: [Handle]
         let removals: [Removal]
         let profiles: [Profile]
         let temperaments: [Temperament]
         let roles: [RoleCase]
         let roleLines: [RoleLine]
+        let budgets: [Budget]
     }
 
     struct KeyCases: Decodable {

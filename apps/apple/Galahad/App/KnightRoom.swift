@@ -70,10 +70,10 @@ import Observation
     }
 
     /// A task for this knight (in a room of several, for `assignee`): what it should do, and the commands that prove it done.
-    func give(title: String, goal: String, gates: [String], dependsOn: [String] = [], assignee: String? = nil, with client: NodeClient) async throws {
+    func give(title: String, goal: String, gates: [String], dependsOn: [String] = [], assignee: String? = nil, budgetUsd: Double? = nil, with client: NodeClient) async throws {
         guard let room = view?.id else { throw NodeError(status: 0, message: "The conversation isn't open yet.") }
-        struct Task: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String] }
-        _ = try await client.post("/api/team/tasks", Task(room: room, assignee: assignee ?? knight, title: title, goal: goal, dependsOn: dependsOn, gates: gates), as: JSONValue.self)
+        struct Task: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String]; let budgetUsd: Double? }
+        _ = try await client.post("/api/team/tasks", Task(room: room, assignee: assignee ?? knight, title: title, goal: goal, dependsOn: dependsOn, gates: gates, budgetUsd: budgetUsd), as: JSONValue.self)
         await load(room: room, with: client)
     }
 
@@ -105,5 +105,19 @@ import Observation
         if gates.count > 16 { return .failure(NodeError(status: 0, message: "At most 16 commands: this has \(gates.count).")) }
         if let long = gates.firstIndex(where: { $0.utf16.count > 1000 }) { return .failure(NodeError(status: 0, message: "A command can be at most 1,000 characters: line \(long + 1) is longer.")) }
         return .success(gates)
+    }
+
+    /// A task's budget as typed: US dollars above 0 and at most 100 ("0.50", "$2", "1,5"), or nil when nothing is typed
+    /// (the PWA's `budgetFrom`).
+    nonisolated static func budget(from text: String) -> Result<Double?, NodeError> {
+        var typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed.hasPrefix("$") { typed = String(typed.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        if let comma = typed.firstIndex(of: ",") { typed.replaceSubrange(comma...comma, with: ".") }
+        if typed.isEmpty { return .success(nil) }
+        let parts = typed.split(separator: ".", omittingEmptySubsequences: false)
+        let digits = parts.count <= 2 && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }
+        guard digits, let usd = Double(typed) else { return .failure(NodeError(status: 0, message: "A budget is an amount in US dollars, like 0.50.")) }
+        guard usd > 0, usd <= 100 else { return .failure(NodeError(status: 0, message: "A budget is more than $0 and at most $100.")) }
+        return .success(usd)
     }
 }
