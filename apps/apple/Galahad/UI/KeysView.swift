@@ -167,11 +167,14 @@ struct KeysView: View {
     private func load() async {
         struct Listed: Decodable { let secrets: [SecretView]; let unlocked: Bool }
         kept = PhoneKeys.list()
-        if let found = try? await session.client.get("/api/providers", as: ProvidersView.self) { providers = found }
+        // Both read before either is shown: the providers shown first had the sealed keys come in above them.
+        let found = try? await session.client.get("/api/providers", as: ProvidersView.self)
         do {
             let listed = try await session.client.get("/api/secrets", as: Listed.self)
+            if let found { providers = found }
             (keys, unlocked, problem) = (listed.secrets.sorted { $0.name < $1.name }, listed.unlocked, nil)
         } catch {
+            if let found { providers = found }
             problem = "The vault couldn't be read: \(error.localizedDescription)"
             if keys == nil { keys = [] }
         }
