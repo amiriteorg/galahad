@@ -45,7 +45,7 @@ struct MacShots {
                                        StayingOn.logsIn(autoLogin: "owner", me: "owner", fileVault: false),
                                        StayingOn.staysAwake(set: true, held: true),
                                        StayingOn.startsAfterPowerCut(false),
-                                       StayingOn.reachable(.on(name: "mini.example-tailnet.ts.net", published: nil)),
+                                       StayingOn.reachable(.on(name: "mini.example.ts.net", published: nil)),
                                    ]),
                                    command: .none,
                                    log: "[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1\n[galahad] compute: Measured this node for the first time\n[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1")
