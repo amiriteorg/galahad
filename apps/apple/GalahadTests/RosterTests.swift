@@ -17,6 +17,24 @@ struct RosterTests {
         }
     }
 
+    @Test func everyKnightsStateIsThePWAs() {
+        let rows = Roster.rows(snapshot: roundtable.snapshot, asks: roundtable.asks, now: roundtable.now)
+        #expect(rows.map(\.id) == roundtable.rows.map(\.id))
+        for (row, expected) in zip(rows, roundtable.rows) {
+            #expect(row.standing.rawValue == expected.state, "\(row.id)")
+        }
+        for item in roundtable.galahad {
+            #expect(Standing.of(GalahadNow(item.input), answering: false).rawValue == item.state, "\(item.text)")
+        }
+    }
+
+    @Test func besideItsChipALineSaysWhatThePWASays() {
+        #expect(!roundtable.besides.isEmpty)
+        for item in roundtable.besides {
+            #expect(Standing(rawValue: item.state)?.beside(item.line) == item.beside, "\(item.line)")
+        }
+    }
+
     @Test func aKnightsRowOpensItsOwnConversation() {
         let rows = Roster.rows(snapshot: roundtable.snapshot, asks: [])
         #expect(rows.first { $0.id == "ada" }?.room == "dm-ada")

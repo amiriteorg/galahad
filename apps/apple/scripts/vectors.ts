@@ -13,6 +13,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as core from "../../../packages/core/src/index.ts";
+import { besideChip, galahadState, type KnightState } from "../../web/src/lib/knight-state.ts";
 import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
@@ -245,7 +246,13 @@ const snapshot: core.TeamSnapshot = {
   deliveries: [delivery("busy", "bea", "running"), delivery("think", "eve", "queued"), delivery("old", "jo", "failed", { error: "Model unavailable", updatedAt: at(2) })],
 };
 const asks = [{ by: `arm:team.0123456789.max`, connector: "forge", tool: "post" }, { by: `arm:team.0123456789.max`, connector: "forge", tool: "bucket.delete" }, { by: "loop:morning", connector: "github", tool: "comment" }];
-const rows = rosterRows({ snapshot, asks, now: NOW }).filter((row) => row.kind === "knight").map((row) => ({ id: row.id, line: row.line, needs: row.needs, expression: row.expression ?? null }));
+const rows = rosterRows({ snapshot, asks, now: NOW }).filter((row) => row.kind === "knight").map((row) => ({ id: row.id, line: row.line, needs: row.needs, expression: row.expression ?? null, state: row.state ?? "resting" }));
+// Each line as it reads beside its state's chip (lib/knight-state.ts), every row's and a few that only start alike.
+const besides = [
+  ...rows.map((row) => ({ line: row.line, state: row.state })),
+  { line: "Paused", state: "paused" }, { line: "Paused · 2 waiting", state: "paused" }, { line: "Pausedness", state: "paused" },
+  { line: "Verified: “Ship it” · 3 files kept", state: "verified" }, { line: "Verified: “Ship it”", state: "resting" },
+].map(({ line, state }) => ({ line, state, beside: besideChip(line, state as KnightState) }));
 const nows: NowInput[] = [
   { turns: [], quests: [], needs: null },
   { turns: [], quests: [], needs: 0 },
@@ -263,7 +270,9 @@ const roundtable = {
   snapshot,
   asks,
   rows,
-  galahad: nows.map((input) => ({ input, ...galahadNow(input) })),
+  besides,
+  // (Galahad's state from his line; the app adds his own answer being written here, which a node's line doesn't know.)
+  galahad: nows.map((input) => ({ input, ...galahadNow(input), state: galahadState(galahadNow(input)) })),
   needs: [
     { inbox: 5, knights: snapshot.teammates.map((t) => t.id), needs: galahadNeeds(5, asks, snapshot.teammates.map((t) => t.id)) },
     { inbox: 1, knights: ["max"], needs: galahadNeeds(1, asks, ["max"]) },

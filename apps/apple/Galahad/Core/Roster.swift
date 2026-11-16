@@ -29,31 +29,41 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     var standing = Standing.resting
 }
 
-/// Where someone at the Roundtable stands, at a glance: the colour of the ring round its face, and the word beside its
-/// name, so the colour is never the only sign. At work; waiting for you (your leave, or your approval of work it
-/// proposes); its latest work failed or was interrupted; paused by you, or held by its spent allowance; at rest. The
-/// words are short, so a name keeps its room beside them.
-struct Standing: Sendable, Equatable {
-    enum Kind: Sendable, Equatable { case working, waiting, failed, paused, resting }
-    let kind: Kind
-    let word: String
+/// Where someone at the Roundtable stands, at a glance (lib/knight-state.ts): the colour of the ring round its face, and
+/// the word beside its name, so the colour is never the only sign. At work; it needs you (your leave, your approval of
+/// work it proposes, work cut short for you to look at); its latest work failed; paused by you; work queued; work that
+/// passed review a moment ago; at rest, which says no word: its line says what it is for. The PWA's, held to it by the
+/// vectors.
+enum Standing: String, Sendable, Equatable {
+    case working, needs, failed, paused, queued, verified, resting
 
-    /// Said as the app says what waits for you everywhere ("3 things need you").
-    static let waiting = Standing(kind: .waiting, word: "Needs you")
-    static let resting = Standing(kind: .resting, word: "Resting")
-
-    /// At work, in the word its eyes act out: thinking, working, reading, browsing or checking.
-    static func working(_ expression: String) -> Standing {
-        Standing(kind: .working, word: expression.prefix(1).uppercased() + expression.dropFirst())
+    /// The chip's words (lib/knight-state.ts' STATES), short so a name keeps its room beside them; nil at rest.
+    var word: String? {
+        switch self {
+        case .working: "Working"
+        case .needs: "Needs you"
+        case .failed: "Failed"
+        case .paused: "Paused"
+        case .queued: "Queued"
+        case .verified: "Verified"
+        case .resting: nil
+        }
     }
 
-    /// Galahad's, from his line: what needs you first, then what he is doing (thinking while he answers here).
+    /// Galahad's, from his line (lib/knight-state.ts' galahadState): what needs you first, then work in hand or an answer
+    /// he is writing here; at rest otherwise.
     static func of(_ now: GalahadNow, answering: Bool) -> Standing {
-        switch now.tone {
-        case .warn: .waiting
-        case .accent: .working(answering ? "thinking" : "working")
-        case .neutral: .resting
-        }
+        now.tone == .warn ? .needs : now.tone == .accent || answering ? .working : .resting
+    }
+
+    /// A line as it reads beside this state's chip (lib/knight-state.ts' `besideChip`): the chip's words aren't said
+    /// twice. A line that begins with them ("Failed: “X”", "Paused · 2 waiting") loses them there, and one that is only
+    /// them ("Paused") leaves the chip to say it (empty). Where no chip is shown, a line keeps them.
+    func beside(_ line: String) -> String {
+        guard let word else { return line }
+        if line == word { return "" }
+        for joint in [": ", " · "] where line.hasPrefix(word + joint) { return String(line.dropFirst(word.count + joint.count)) }
+        return line
     }
 }
 
@@ -147,34 +157,37 @@ enum Roster {
         // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
         let asking = !asked.isEmpty || jobs.contains { $0.status == "proposed" && $0.task != nil }
         let expression = asking ? "asking" : KnightEyes.expression(of: person, in: snapshot, now: now)
+        // At rest, unless its work passed review a moment ago: its face is pleased, and its ring is green.
+        let rest: Standing = expression == "pleased" ? .verified : .resting
         let say = { (line: String, needs: Bool, standing: Standing) in
             RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression, standing: standing)
         }
 
         // What only you can answer comes first: it is what the row is marked for.
         if let ask = asked.first {
-            return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true, .waiting)
+            return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true, .needs)
         }
-        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true, .waiting) }
+        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true, .needs) }
         if let running = jobs.first(where: { $0.status == "running" && $0.task != nil })?.task {
             let progress = firstLine(running.progress)
-            return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false, .working(expression))
+            return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false, .working)
         }
-        if jobs.contains(where: { $0.status == "running" }) { return say("Writing a reply", false, .working(expression)) }
+        if jobs.contains(where: { $0.status == "running" }) { return say("Writing a reply", false, .working) }
         let last = latest(of: jobs)
-        if let wrong = trouble(last) { return say(wrong, true, Standing(kind: .failed, word: last?.status == "interrupted" ? "Interrupted" : "Failed")) }
+        // (Work the node cut short is yours to look at before it resumes; work that failed is a failure.)
+        if let wrong = trouble(last) { return say(wrong, true, last?.status == "interrupted" ? .needs : .failed) }
         let waiting = jobs.filter { $0.status == "queued" }.count
-        let held = !person.enabled ? ("Paused", "Paused") : person.turnsToday >= person.dailyTurns ? ("Daily allowance spent", "Out of turns") : nil
-        if let held { return say(waiting > 0 ? "\(held.0) · \(waiting) waiting" : held.0, waiting > 0, Standing(kind: .paused, word: held.1)) }
-        let queued = Standing(kind: .resting, word: "Queued")
+        let held = !person.enabled ? "Paused" : person.turnsToday >= person.dailyTurns ? "Daily allowance spent" : nil
+        // Paused is yours to lift; a spent allowance renews by itself, and needs you only while work waits on it.
+        if let held { return say(waiting > 0 ? "\(held) · \(waiting) waiting" : held, waiting > 0, !person.enabled ? .paused : waiting > 0 ? .needs : .resting) }
         if let task = jobs.first(where: { $0.status == "queued" && $0.task != nil })?.task {
             let blocking = dependencies(of: task, in: snapshot.tasks).first { !$0.satisfied }
-            return say(blocking.map { "Waiting for “\($0.title)”" } ?? "Queued: \(titled(task))", false, queued)
+            return say(blocking.map { "Waiting for “\($0.title)”" } ?? "Queued: \(titled(task))", false, .queued)
         }
-        if waiting > 0 { return say("Reply queued", false, queued) }
-        if let task = latest(of: jobs.filter { $0.task != nil })?.task { return say(ended(task), false, .resting) }
+        if waiting > 0 { return say("Reply queued", false, .queued) }
+        if let task = latest(of: jobs.filter { $0.task != nil })?.task { return say(ended(task), false, rest) }
         let job = firstLine(person.instructions).isEmpty ? person.role : firstLine(person.instructions)
-        return say(maker(of: person, in: snapshot).map { "Made by \($0) · \(job)" } ?? job, false, .resting)
+        return say(maker(of: person, in: snapshot).map { "Made by \($0) · \(job)" } ?? job, false, rest)
     }
 
     /// The first line of a text, trimmed (the PWA's `firstLine`).

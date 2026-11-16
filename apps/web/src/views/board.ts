@@ -1,6 +1,6 @@
 import type { Ctx } from "../context.ts";
 import { GALAHAD } from "../lib/arrange.ts";
-import { withState } from "../lib/knight-state.ts";
+import { besideChip, withState } from "../lib/knight-state.ts";
 import { teamHash } from "../lib/team.ts";
 import { roundtableView, setRoundtableView, type RoundtableView } from "../prefs.ts";
 import { leadMark, stateChip } from "../ui/avatar.ts";
@@ -79,7 +79,7 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
     const content = [
       leads(seated, now),
       h("div", { class: "knight-card-portrait" }, seatFace(seated, PORTRAIT)),
-      h("div", { class: "knight-card-text" }, h("div", { class: "knight-card-head" }, h("h3", { class: "ellipsis" }, seated.name), stateChip(seated.state)), h("div", { class: "knight-card-role" }, roleOf(seated, now)), h("p", { class: "knight-card-line" }, seated.line)),
+      h("div", { class: "knight-card-text" }, h("div", { class: "knight-card-head" }, h("h3", { class: "ellipsis" }, seated.name), stateChip(seated.state)), h("div", { class: "knight-card-role" }, roleOf(seated, now)), h("p", { class: "knight-card-line" }, besideChip(seated.line, seated.state))),
     ];
     const attrs = { class: "card knight-card", "data-key": keyOf(seated), "data-state": seated.state, "data-needs": seated.needs ? "" : null, "data-moves": movable(seated, now) ? "" : null };
     if (arranging) return h("div", attrs, ...content, h("div", { class: "knight-card-arrange" }, ...arrangeControls(ctx, now.snapshot!, seated)));
@@ -92,7 +92,7 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
     const el = listRow({
       lead: seatFace(seated, FACE),
       title: h("span", { class: "knight-row-title" }, h("span", { class: "ellipsis" }, seated.name), leads(seated, now), stateChip(seated.state)),
-      sub: seated.line,
+      sub: besideChip(seated.line, seated.state),
       meta: [h("span", {}, roleOf(seated, now))],
       key: keyOf(seated),
       ...(arranging ? { trail: arrangeControls(ctx, now.snapshot!, seated) } : { href: seated.href, chevron: true, ...(openSeat(ctx, seated) ? { onClick: openSeat(ctx, seated)! } : {}) }),

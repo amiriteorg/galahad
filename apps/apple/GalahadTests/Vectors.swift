@@ -67,13 +67,15 @@ struct Vectors: Decodable {
     }
 
     struct Roundtable: Decodable {
-        struct Row: Decodable { let id: String; let line: String; let needs: Bool; let expression: String? }
-        struct Now: Decodable { let input: GalahadWork; let text: String; let tone: String }
+        struct Row: Decodable { let id: String; let line: String; let needs: Bool; let expression: String?; let state: String }
+        struct Beside: Decodable { let line: String; let state: String; let beside: String }
+        struct Now: Decodable { let input: GalahadWork; let text: String; let tone: String; let state: String }
         struct Needs: Decodable { let inbox: Int; let knights: [String]; let needs: Int }
         let now: Double
         let snapshot: TeamSnapshot
         let asks: [Ask]
         let rows: [Row]
+        let besides: [Beside]
         let galahad: [Now]
         let needs: [Needs]
     }

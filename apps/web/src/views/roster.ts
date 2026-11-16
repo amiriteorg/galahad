@@ -3,7 +3,7 @@ import { isUnavailable } from "../api.ts";
 import type { Ctx, Route } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { GALAHAD, placed, seating } from "../lib/arrange.ts";
-import { galahadState, type KnightState } from "../lib/knight-state.ts";
+import { besideChip, galahadState, type KnightState } from "../lib/knight-state.ts";
 import { galahadNow, type Now } from "../lib/now.ts";
 import { galahadNeeds, rosterRows, type RosterRow, type Said } from "../lib/roster.ts";
 import { teamHash } from "../lib/team.ts";
@@ -179,7 +179,8 @@ export function rosterNav(ctx: Ctx): Roster {
       current: galahad ? where.route === "chat" : where.route === "team" && seated.room !== null && seated.room === where.room,
       face: seatFace(seated, size),
       name: seated.name,
-      line: seated.line,
+      // Beside its chip (a phone's), the line doesn't say the chip's word again.
+      line: phone ? besideChip(seated.line, seated.state) : seated.line,
       needs: seated.needs,
       lead,
       leads: seated.id === now.primary,

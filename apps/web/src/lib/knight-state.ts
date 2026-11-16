@@ -32,3 +32,16 @@ export const galahadState = (now: Pick<Now, "expression" | "tone">): KnightState
 
 /** How a knight is named with its state, for a screen reader and a tooltip: "Ada, working". */
 export const withState = (name: string, state: KnightState): string => (STATES[state].words ? `${name}, ${STATES[state].words!.toLowerCase()}` : name);
+
+/**
+ * A line as it reads beside its state's chip: the chip's words aren't said twice. A line that begins with them ("Failed:
+ * “X”", "Paused · 2 waiting") loses them there, and one that is only them ("Paused") leaves the chip to say it (empty).
+ * Where no chip is shown (the sidebar's rows), the line keeps them: the colour is never the only telling.
+ */
+export function besideChip(line: string, state: KnightState | undefined): string {
+  const words = STATES[state ?? "resting"].words;
+  if (!words) return line;
+  if (line === words) return "";
+  for (const joint of [": ", " · "]) if (line.startsWith(`${words}${joint}`)) return line.slice(words.length + joint.length);
+  return line;
+}

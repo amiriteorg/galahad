@@ -55,42 +55,22 @@ struct SeatsTests {
         }
     }
 
-    @Test func eachKnightSaysWhereItStandsInAWord() {
-        let rows = Roster.rows(snapshot: roundtable.snapshot, asks: roundtable.asks, now: roundtable.now)
-        let expected: [String: (Standing.Kind, String)] = [
-            "ada": (.working, "Working"), "bea": (.working, "Working"),
-            "cy": (.resting, "Resting"), "hal": (.resting, "Resting"), "ivy": (.resting, "Resting"), "lou": (.resting, "Resting"),
-            // Work in hand that hasn't started yet.
-            "gus": (.resting, "Queued"),
-            "dot": (.paused, "Paused"), "ned": (.paused, "Paused"),
-            // Held by its spent allowance, not by you.
-            "eve": (.paused, "Out of turns"),
-            "fay": (.failed, "Failed"), "jo": (.failed, "Failed"), "kit": (.failed, "Interrupted"),
-            // Asking your leave, or your approval of work proposed.
-            "max": (.waiting, "Needs you"), "oz": (.waiting, "Needs you"), "pip": (.waiting, "Needs you"),
-        ]
-        #expect(Set(rows.map(\.id)) == Set(expected.keys))
-        for row in rows {
-            guard let (kind, word) = expected[row.id] else { continue }
-            #expect(row.standing == Standing(kind: kind, word: word), "\(row.id)")
-        }
+    @Test func eachStateIsSaidInAWordButRest() {
+        // The colour is never the only sign: every state the ring colours has its word, and rest says none.
+        for state in [Standing.working, .needs, .failed, .paused, .queued, .verified] { #expect(state.word?.isEmpty == false, "\(state)") }
+        #expect(Standing.resting.word == nil)
         // Red where it needs you: what it waits for, and work gone wrong.
-        for row in rows where row.standing.kind == .waiting || row.standing.kind == .failed { #expect(row.needs, "\(row.id)") }
-    }
-
-    @Test func atWorkItSaysWhatItsEyesActOut() {
-        #expect(Standing.working("thinking") == Standing(kind: .working, word: "Thinking"))
-        #expect(Standing.working("checking") == Standing(kind: .working, word: "Checking"))
-        #expect(Standing.working("browsing").word == "Browsing")
+        let rows = Roster.rows(snapshot: roundtable.snapshot, asks: roundtable.asks, now: roundtable.now)
+        for row in rows where row.standing == .needs || row.standing == .failed { #expect(row.needs, "\(row.id)") }
     }
 
     @Test func galahadSaysWhereHeStandsToo() {
-        #expect(Standing.of(GalahadNow(GalahadWork(needs: 2)), answering: false) == .waiting)
-        #expect(Standing.of(GalahadNow(GalahadWork(answering: true, step: "Reading sync.ts")), answering: true) == Standing(kind: .working, word: "Thinking"))
-        #expect(Standing.of(GalahadNow(GalahadWork(turns: ["The release plan"])), answering: false) == Standing(kind: .working, word: "Working"))
+        #expect(Standing.of(GalahadNow(GalahadWork(needs: 2)), answering: false) == .needs)
+        #expect(Standing.of(GalahadNow(GalahadWork(turns: ["The release plan"])), answering: false) == .working)
         #expect(Standing.of(GalahadNow(GalahadWork(needs: 0)), answering: false) == .resting)
-        // What needs you comes first, as on a knight's row.
-        #expect(Standing.of(GalahadNow(GalahadWork(answering: true, needs: 1)), answering: true) == .waiting)
+        // Writing an answer here, which no node's line knows of yet, is work too; what needs you still comes first.
+        #expect(Standing.of(GalahadNow(GalahadWork(needs: 0)), answering: true) == .working)
+        #expect(Standing.of(GalahadNow(GalahadWork(answering: true, needs: 1)), answering: true) == .needs)
     }
 
     @Test func aSnapshotCarriesYourOrderAndWhoLeads() throws {

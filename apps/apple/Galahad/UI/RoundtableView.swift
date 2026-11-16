@@ -198,11 +198,11 @@ struct RoundtableView: View {
         Button { open(route) } label: {
             if id == "galahad" {
                 SeatCard(name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: galahadStanding, selected: chosen(route)) {
-                    SeatFace(drawing: "galahad", size: Metrics.cardFace, expression: galahadExpression, id: id, standing: galahadStanding.kind, leads: session.primary == id)
+                    SeatFace(drawing: "galahad", size: Metrics.cardFace, expression: galahadExpression, id: id, standing: galahadStanding, leads: session.primary == id)
                 }
             } else if let row = rows[id] {
                 SeatCard(name: row.name, line: row.line, needs: row.needs, standing: row.standing, selected: chosen(route)) {
-                    SeatFace(drawing: look(of: row), size: Metrics.cardFace, expression: row.expression, id: id, temper: temper(of: id), standing: row.standing.kind, leads: session.primary == id)
+                    SeatFace(drawing: look(of: row), size: Metrics.cardFace, expression: row.expression, id: id, temper: temper(of: id), standing: row.standing, leads: session.primary == id)
                 }
             }
         }
@@ -281,16 +281,18 @@ struct RosterLine<Face: View>: View {
                 // Its word is always there, so a row is as tall whatever it says.
                 if typeSize.isAccessibilitySize {
                     Text(name).font(.headline).lineLimit(1)
-                    if let standing { StateBadge(text: standing.word, tone: standing.tone, selected: selected) }
+                    if let standing { chip(standing) }
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         Text(name).font(.headline).lineLimit(1)
                         Spacer(minLength: 0)
-                        if let standing { StateBadge(text: standing.word, tone: standing.tone, selected: selected).fixedSize() }
+                        if let standing { chip(standing).fixedSize() }
                     }
                 }
+                // Beside its chip, the line doesn't say the chip's word again.
+                let said = standing?.beside(line) ?? line
                 Group {
-                    if selected { Text(line) } else { Text(line).foregroundStyle(needs ? Color.siege : .secondary) }
+                    if selected { Text(said) } else { Text(said).foregroundStyle(needs ? Color.siege : .secondary) }
                 }
                 .font(.subheadline)
                 .lineLimit(2, reservesSpace: true)
@@ -302,6 +304,15 @@ struct RosterLine<Face: View>: View {
         }
         .padding(.vertical, Space.s1)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Its state in a word; at rest, which says none, the chip's place is kept, so a row is as tall whatever it says.
+    @ViewBuilder private func chip(_ standing: Standing) -> some View {
+        if let word = standing.word {
+            StateBadge(text: word, tone: standing.tone, selected: selected)
+        } else {
+            StateBadge(text: "Queued", tone: "neutral").hidden().accessibilityHidden(true)
+        }
     }
 }
 
@@ -315,7 +326,7 @@ struct GalahadRow: View {
 
     var body: some View {
         RosterLine(name: "Galahad", line: now.text, needs: now.tone == .warn, standing: standing, selected: selected) {
-            SeatFace(drawing: "galahad", size: Metrics.rowFace, expression: expression, id: "galahad", standing: standing.kind, leads: leads, selected: selected)
+            SeatFace(drawing: "galahad", size: Metrics.rowFace, expression: expression, id: "galahad", standing: standing, leads: leads, selected: selected)
         }
     }
 }
@@ -329,7 +340,7 @@ struct KnightRow: View {
 
     var body: some View {
         RosterLine(name: row.name, line: row.line, needs: row.needs, standing: row.standing, selected: selected) {
-            SeatFace(drawing: look, size: Metrics.rowFace, expression: row.expression, id: row.id, temper: temper, standing: row.standing.kind, leads: leads, selected: selected)
+            SeatFace(drawing: look, size: Metrics.rowFace, expression: row.expression, id: row.id, temper: temper, standing: row.standing, leads: leads, selected: selected)
         }
     }
 }
@@ -350,8 +361,12 @@ struct SeatCard<Face: View>: View {
             // Room under every face for the mark the one who leads wears on its ring, so cards side by side match.
             face.padding(.bottom, Space.s2)
             Text(name).font(.headline).lineLimit(1)
-            StateBadge(text: standing.word, tone: standing.tone)
-            Text(line)
+            if let word = standing.word {
+                StateBadge(text: word, tone: standing.tone)
+            } else {
+                StateBadge(text: "Queued", tone: "neutral").hidden().accessibilityHidden(true)
+            }
+            Text(standing.beside(line))
                 .font(.footnote)
                 .foregroundStyle(needs ? Color.siege : .secondary)
                 .multilineTextAlignment(.center)
@@ -388,7 +403,7 @@ struct SeatFace: View {
     var expression: String? = nil
     var id = ""
     var temper = "calm"
-    let standing: Standing.Kind
+    let standing: Standing
     var leads = false
     var selected = false
 
@@ -402,11 +417,12 @@ struct SeatFace: View {
     }
 }
 
-/// The ring round a face, in the colour of where it stands: the ink at work (a stroke of it going round, still when the
-/// device asks for less motion), Galahad's red when it waits for you or its work failed, dashed grey while paused or held,
-/// a hairline at rest. On a row an iPad shows selected, white, as the row's words are.
+/// The ring round a face, in the colour of where it stands (the PWA's seat): the ink at work (a stroke of it going round,
+/// still when the device asks for less motion), Galahad's red when it needs you or its work failed, green for work that
+/// passed review a moment ago, grey while queued, dashed grey while paused, a hairline at rest. On a row an iPad shows
+/// selected, white, as the row's words are.
 struct StandingRing: View {
-    let kind: Standing.Kind
+    let kind: Standing
     let width: CGFloat
     var selected = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -429,8 +445,12 @@ struct StandingRing: View {
                         }
                 }
             }
-        case .waiting, .failed:
+        case .needs, .failed:
             Circle().strokeBorder(selected ? Color.white : .siege, lineWidth: width)
+        case .verified:
+            Circle().strokeBorder(selected ? Color.white : .green, lineWidth: width)
+        case .queued:
+            Circle().strokeBorder(selected ? Color.white : .secondary, lineWidth: width)
         case .paused:
             Circle().strokeBorder(selected ? Color.white : .secondary, style: StrokeStyle(lineWidth: width, dash: [width * 1.5, width * 1.5]))
         case .resting:
@@ -440,12 +460,13 @@ struct StandingRing: View {
 }
 
 extension Standing {
-    /// As a badge takes it: the ink at work, Galahad's red when it needs you, grey otherwise.
+    /// As a badge takes it: the ink at work, Galahad's red when it needs you or failed, green when verified, grey otherwise.
     var tone: String {
-        switch kind {
+        switch self {
         case .working: "accent"
-        case .waiting, .failed: "danger"
-        case .paused, .resting: "neutral"
+        case .needs, .failed: "danger"
+        case .verified: "ok"
+        case .paused, .queued, .resting: "neutral"
         }
     }
 }

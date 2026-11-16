@@ -8,6 +8,7 @@ import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import { GALAHAD } from "../lib/arrange.ts";
 import { hasDesktop } from "../lib/desktop.ts";
+import { besideChip } from "../lib/knight-state.ts";
 import { type TaskAction, taskBadge } from "../lib/task-card.ts";
 import { activeTeamWork, engramLine, HARNESS, harnessNote, taskDependencies, teamSpeaker, teammateMaker, type HarnessStatus } from "../lib/team.ts";
 import { giveAgain, timeline, timelineTasks } from "../lib/timeline.ts";
@@ -326,7 +327,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
           seated ? seatFace(seated, 88) : avatar(person, true, 88),
           h("div", { class: "team-side-name" }, h("h2", { class: "ellipsis" }, person.name), leads ? leadMark(person.name) : null, stateChip(seated?.state)),
           h("p", { class: "meta" }, [person.role, madeBy(person)].filter(Boolean).join(" · ")),
-          seated ? h("p", { class: "team-side-line" }, seated.line) : null,
+          seated ? h("p", { class: "team-side-line" }, besideChip(seated.line, seated.state)) : null,
           canEdit
             ? h(
                 "div",

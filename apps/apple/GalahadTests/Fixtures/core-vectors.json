@@ -1221,97 +1221,220 @@
         "id": "ada",
         "line": "The run task · Running · bun test packages/link",
         "needs": false,
-        "expression": "working"
+        "expression": "working",
+        "state": "working"
       },
       {
         "id": "bea",
         "line": "Working on “The plain task”",
         "needs": false,
-        "expression": "working"
+        "expression": "working",
+        "state": "working"
       },
       {
         "id": "cy",
         "line": "Verified: “The keep task” · 3 files kept",
         "needs": false,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "resting"
       },
       {
         "id": "dot",
         "line": "Paused",
         "needs": false,
-        "expression": "resting"
+        "expression": "resting",
+        "state": "paused"
       },
       {
         "id": "eve",
         "line": "Daily allowance spent · 1 waiting",
         "needs": true,
-        "expression": "waiting"
+        "expression": "waiting",
+        "state": "needs"
       },
       {
         "id": "fay",
         "line": "Failed: “The fail task” · The gate needs a Postgres this VM doesn't have.",
         "needs": true,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "failed"
       },
       {
         "id": "gus",
         "line": "Waiting for “The blocker task”",
         "needs": false,
-        "expression": "waiting"
+        "expression": "waiting",
+        "state": "queued"
       },
       {
         "id": "hal",
         "line": "Made by Galahad · Hal keeps the build green.",
         "needs": false,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "resting"
       },
       {
         "id": "ivy",
         "line": "Made by Hal · Ivy keeps the build green.",
         "needs": false,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "resting"
       },
       {
         "id": "jo",
         "line": "Couldn't reply · Model unavailable",
         "needs": true,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "failed"
       },
       {
         "id": "kit",
         "line": "Interrupted: “The halt task” · review it before resuming",
         "needs": true,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "needs"
       },
       {
         "id": "lou",
         "line": "Stopped: “The stop task”",
         "needs": false,
-        "expression": "idle"
+        "expression": "idle",
+        "state": "resting"
       },
       {
         "id": "max",
         "line": "Asks your leave: forge.post, and 1 more",
         "needs": true,
-        "expression": "asking"
+        "expression": "asking",
+        "state": "needs"
       },
       {
         "id": "ned",
         "line": "Paused · 1 waiting",
         "needs": true,
-        "expression": "resting"
+        "expression": "resting",
+        "state": "paused"
       },
       {
         "id": "oz",
         "line": "Proposes “The ask task”, and 1 more",
         "needs": true,
-        "expression": "asking"
+        "expression": "asking",
+        "state": "needs"
       },
       {
         "id": "pip",
         "line": "Ada proposes “The askpip task”",
         "needs": true,
-        "expression": "asking"
+        "expression": "asking",
+        "state": "needs"
+      }
+    ],
+    "besides": [
+      {
+        "line": "The run task · Running · bun test packages/link",
+        "state": "working",
+        "beside": "The run task · Running · bun test packages/link"
+      },
+      {
+        "line": "Working on “The plain task”",
+        "state": "working",
+        "beside": "Working on “The plain task”"
+      },
+      {
+        "line": "Verified: “The keep task” · 3 files kept",
+        "state": "resting",
+        "beside": "Verified: “The keep task” · 3 files kept"
+      },
+      {
+        "line": "Paused",
+        "state": "paused",
+        "beside": ""
+      },
+      {
+        "line": "Daily allowance spent · 1 waiting",
+        "state": "needs",
+        "beside": "Daily allowance spent · 1 waiting"
+      },
+      {
+        "line": "Failed: “The fail task” · The gate needs a Postgres this VM doesn't have.",
+        "state": "failed",
+        "beside": "“The fail task” · The gate needs a Postgres this VM doesn't have."
+      },
+      {
+        "line": "Waiting for “The blocker task”",
+        "state": "queued",
+        "beside": "Waiting for “The blocker task”"
+      },
+      {
+        "line": "Made by Galahad · Hal keeps the build green.",
+        "state": "resting",
+        "beside": "Made by Galahad · Hal keeps the build green."
+      },
+      {
+        "line": "Made by Hal · Ivy keeps the build green.",
+        "state": "resting",
+        "beside": "Made by Hal · Ivy keeps the build green."
+      },
+      {
+        "line": "Couldn't reply · Model unavailable",
+        "state": "failed",
+        "beside": "Couldn't reply · Model unavailable"
+      },
+      {
+        "line": "Interrupted: “The halt task” · review it before resuming",
+        "state": "needs",
+        "beside": "Interrupted: “The halt task” · review it before resuming"
+      },
+      {
+        "line": "Stopped: “The stop task”",
+        "state": "resting",
+        "beside": "Stopped: “The stop task”"
+      },
+      {
+        "line": "Asks your leave: forge.post, and 1 more",
+        "state": "needs",
+        "beside": "Asks your leave: forge.post, and 1 more"
+      },
+      {
+        "line": "Paused · 1 waiting",
+        "state": "paused",
+        "beside": "1 waiting"
+      },
+      {
+        "line": "Proposes “The ask task”, and 1 more",
+        "state": "needs",
+        "beside": "Proposes “The ask task”, and 1 more"
+      },
+      {
+        "line": "Ada proposes “The askpip task”",
+        "state": "needs",
+        "beside": "Ada proposes “The askpip task”"
+      },
+      {
+        "line": "Paused",
+        "state": "paused",
+        "beside": ""
+      },
+      {
+        "line": "Paused · 2 waiting",
+        "state": "paused",
+        "beside": "2 waiting"
+      },
+      {
+        "line": "Pausedness",
+        "state": "paused",
+        "beside": "Pausedness"
+      },
+      {
+        "line": "Verified: “Ship it” · 3 files kept",
+        "state": "verified",
+        "beside": "“Ship it” · 3 files kept"
+      },
+      {
+        "line": "Verified: “Ship it”",
+        "state": "resting",
+        "beside": "Verified: “Ship it”"
       }
     ],
     "galahad": [
@@ -1323,7 +1446,8 @@
         },
         "text": "Idle",
         "expression": "idle",
-        "tone": "neutral"
+        "tone": "neutral",
+        "state": "resting"
       },
       {
         "input": {
@@ -1333,7 +1457,8 @@
         },
         "text": "Idle · nothing needs you",
         "expression": "idle",
-        "tone": "neutral"
+        "tone": "neutral",
+        "state": "resting"
       },
       {
         "input": {
@@ -1343,7 +1468,8 @@
         },
         "text": "1 thing needs you",
         "expression": "asking",
-        "tone": "warn"
+        "tone": "warn",
+        "state": "needs"
       },
       {
         "input": {
@@ -1353,7 +1479,8 @@
         },
         "text": "3 things need you",
         "expression": "asking",
-        "tone": "warn"
+        "tone": "warn",
+        "state": "needs"
       },
       {
         "input": {
@@ -1364,7 +1491,8 @@
         },
         "text": "Starting · 2 things need you",
         "expression": "thinking",
-        "tone": "warn"
+        "tone": "warn",
+        "state": "needs"
       },
       {
         "input": {
@@ -1375,7 +1503,8 @@
         },
         "text": "Reading packages/link/src/sync.ts",
         "expression": "thinking",
-        "tone": "accent"
+        "tone": "accent",
+        "state": "working"
       },
       {
         "input": {
@@ -1389,7 +1518,8 @@
         },
         "text": "Working in “The release plan” · 1 thing needs you",
         "expression": "working",
-        "tone": "warn"
+        "tone": "warn",
+        "state": "needs"
       },
       {
         "input": {
@@ -1403,7 +1533,8 @@
         },
         "text": "Working in a temporary chat",
         "expression": "working",
-        "tone": "accent"
+        "tone": "accent",
+        "state": "working"
       },
       {
         "input": {
@@ -1417,7 +1548,8 @@
         },
         "text": "Working on: Make sync resume",
         "expression": "working",
-        "tone": "accent"
+        "tone": "accent",
+        "state": "working"
       },
       {
         "input": {
@@ -1435,7 +1567,8 @@
         },
         "text": "Working on 2 things · 4 things need you",
         "expression": "working",
-        "tone": "warn"
+        "tone": "warn",
+        "state": "needs"
       }
     ],
     "needs": [

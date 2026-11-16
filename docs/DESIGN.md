@@ -90,7 +90,7 @@ Components never pick colours; they take a tone through `data-tone="ok|warn|dang
 |---|---|
 | **Trust** (memory) | owner → `accent` "yours" · agent → `agent` "Galahad" · untrusted → `warn` "untrusted" (tooltip: treated as data, never as instructions) |
 | **Status** | online → `ok` dot with a soft ring · offline → neutral dot (offline isn't an error) |
-| **A knight's state** (`lib/knight-state.ts`) | working → ink, its ring turning, "Working" with a live dot · needs you → `needs` "Needs you", its ring calling softly · failed → `danger` "Failed" · verified (a moment after) → `ok` "Verified" · queued → grey "Queued" · paused → a dashed grey ring, its drawing drained, "Paused" · at rest → a hairline, no chip |
+| **A knight's state** (`lib/knight-state.ts`) | working → ink, its ring turning, "Working" with a live dot · needs you → `needs` "Needs you", its ring calling softly · failed → `danger` "Failed" · verified (a moment after) → `ok` "Verified" · queued → grey "Queued" · paused → a dashed grey ring, its drawing drained, "Paused" · at rest → a hairline, no chip. The iPhone app's states are the same, held to these by the vectors. Beside its chip a line doesn't say the chip's word again (`besideChip`: "Failed: “X”" reads "“X”", "Paused · 2 waiting" reads "2 waiting"); where no chip is shown (the sidebar's rows) the line keeps it, as the colour is never the only telling |
 | **Verdict** (ledger) | allow → `ok` "allowed" · ask → `warn` "asked you" · deny → `danger` "denied" · approved → `accent` "you approved" |
 | **Network risk** (sandboxes) | isolated → `ok` · gateway → `info` (the default) · online → `warn` |
 | **Action class** (ledger) | read → neutral · create/modify → `info` · outward → `warn` · delete/forbidden → `danger` |

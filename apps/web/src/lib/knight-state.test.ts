@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { galahadState, type KnightState, STATES, withState } from "./knight-state.ts";
+import { besideChip, galahadState, type KnightState, STATES, withState } from "./knight-state.ts";
 import { galahadNow } from "./now.ts";
 
 describe("a knight's state in a word and a colour", () => {
@@ -19,6 +19,20 @@ describe("a knight's state in a word and a colour", () => {
     expect(galahadState(galahadNow({ turns: [{ title: "Release plan" }], quests: [], needs: 0 }))).toBe("working");
     expect(galahadState(galahadNow({ turns: [], quests: [{ goal: "Make sync resume" }], needs: 2 }))).toBe("needs");
     expect(galahadState(galahadNow({ turns: [], quests: [], needs: 1 }))).toBe("needs");
+  });
+
+  test("beside its chip a line doesn't say the chip's word again; where no chip is shown it keeps it", () => {
+    expect(besideChip("Failed: “Migrations run on a fresh database” · gave-up", "failed")).toBe("“Migrations run on a fresh database” · gave-up");
+    expect(besideChip("Paused · 2 waiting", "paused")).toBe("2 waiting");
+    expect(besideChip("Paused", "paused")).toBe("");
+    expect(besideChip("Queued: “Ship it”", "queued")).toBe("“Ship it”");
+    expect(besideChip("Verified: “Ship it” · 3 files kept", "verified")).toBe("“Ship it” · 3 files kept");
+    // What doesn't begin with the chip's words stays as it is: another state's line, or words that only start alike.
+    expect(besideChip("Interrupted: “Ship it” · review it before resuming", "needs")).toBe("Interrupted: “Ship it” · review it before resuming");
+    expect(besideChip("Working on “Ship it”", "working")).toBe("Working on “Ship it”");
+    expect(besideChip("Pausedness", "paused")).toBe("Pausedness");
+    expect(besideChip("Verified: “Ship it”", "resting")).toBe("Verified: “Ship it”");
+    expect(besideChip("Paused", undefined)).toBe("Paused");
   });
 
   test("a knight is named with its state for a screen reader, and alone at rest", () => {
