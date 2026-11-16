@@ -21,6 +21,7 @@ import {
   type SkillLearned,
   addUsage,
   costOf,
+  mergeSpend,
   type Price,
   type Prices,
   TRIAL_QUEST_PREFIX,
@@ -520,13 +521,42 @@ async function openWorkshop(node: NodeClient, options: DoOptions, quest: string,
   return { quest, sandbox, host, exec, gitToken: null, trail: questTrail() };
 }
 
+/**
+ * What a run's sandboxes spent through their node's gateway (a coding agent's own calls, a script's), as that node counted
+ * them by the sandbox's token: asked of it each time the budget is asked about (before each step of his, at each look
+ * at a coding agent), and once more as each sandbox closes. A node that can't say (one from before this) is taken as
+ * having nothing to add.
+ */
+function gatewaySpend(node: NodeClient) {
+  const heard = new Map<string, { on: string; lines: UsageLine[]; closed: boolean }>();
+  const ask = (id: string, on: string, closed = false): Promise<void> =>
+    node.call<{ lines: UsageLine[] }>("sandboxSpend", { id, on }).then(
+      ({ lines }) => void heard.set(id, { on, lines, closed }),
+      () => void (closed && heard.set(id, { on, lines: heard.get(id)?.lines ?? [], closed })),
+    );
+  const all = (): UsageLine[] => mergeSpend(...[...heard.values()].map((h) => h.lines));
+  return {
+    watch(sandbox: SandboxView): void {
+      heard.set(sandbox.id, { on: sandbox.node, lines: [], closed: false });
+    },
+    /** What they have spent, asked now (a closed sandbox's last word stands). */
+    async now(): Promise<UsageLine[]> {
+      await Promise.all([...heard].filter(([, h]) => !h.closed).map(([id, h]) => ask(id, h.on)));
+      return all();
+    },
+    /** The last word on a sandbox, before it goes. */
+    settle: (sandbox: SandboxView): Promise<void> => ask(sandbox.id, sandbox.node, true),
+    all,
+  };
+}
+
 /** The quest itself, in its workshop: the repository cloned if there is one, plan, work, review, and its changes kept as a patch. */
 async function workIn(
   node: NodeClient,
   options: DoOptions,
   shop: Workshop,
   agent: Agent | undefined,
-  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; spentUsd?: () => { usd: number; complete: boolean }; prepare?: NodeQuestHooks["prepare"] },
+  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; spentUsd?: () => Promise<{ usd: number; complete: boolean }>; prepare?: NodeQuestHooks["prepare"] },
 ): Promise<QuestOutcome> {
   const { exec } = shop;
   await run.prepare?.(exec, run.tag && run.tag.of > 1 ? { attempt: run.tag.index } : {});
@@ -674,11 +704,13 @@ export async function runNodeQuest(
     addUsage(usage, call.role, call.model, call.usage);
     hooks.spent?.(call);
   };
+  // And what its sandboxes' own calls through the gateway came to (a coding agent's): counted beside them.
+  const tools = gatewaySpend(node);
   // With a budget: what those calls have cost so far at your prices (asked for once, as the run starts).
   const prices: Prices = options.budgetUsd !== undefined ? await node.call<{ prices: Prices }>("prices").then((r) => r.prices, () => ({})) : {};
   const spentUsd = options.budgetUsd !== undefined
-    ? () => {
-        const cost = costOf(usage, prices);
+    ? async () => {
+        const cost = costOf(mergeSpend(usage, await tools.now()), prices);
         return { usd: cost.usd, complete: cost.complete };
       }
     : undefined;
@@ -696,12 +728,14 @@ export async function runNodeQuest(
     const standing = standingReporter(node, options, quest);
     try {
       const shop = await openWorkshop(node, options, quest, agent, tag);
+      tools.watch(shop.sandbox);
       hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
       worked = shop;
       try {
         outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}), spent, ...(spentUsd ? { spentUsd } : {}), ...(prepare ? { prepare } : {}) });
         await hooks.finished?.(shop.exec);
       } finally {
+        await tools.settle(shop.sandbox);
         artifact = await closeWorkshop(node, options, shop, true);
       }
     } catch (error) {
@@ -725,6 +759,7 @@ export async function runNodeQuest(
             try {
               const shop = await openWorkshop(node, options, `${quest}.${index}`, agent, tag);
               open.push(shop);
+              tools.watch(shop.sandbox);
               hooks.started?.({ quest: shop.quest, sandbox: shop.sandbox, host: shop.host, attempt: index });
               const collect = evidenceCollector();
               const done = await workIn(node, options, shop, agent, {
@@ -771,7 +806,7 @@ export async function runNodeQuest(
       );
     } catch (error) {
       // No attempt finished: nothing to keep, every sandbox goes.
-      await Promise.all(open.map((shop) => closeWorkshop(node, options, shop, false)));
+      await Promise.all(open.map((shop) => tools.settle(shop.sandbox).then(() => closeWorkshop(node, options, shop, false))));
       throw error;
     }
     outcome = result.outcome;
@@ -781,14 +816,16 @@ export async function runNodeQuest(
       if (taken) await hooks.finished?.(taken.exec);
     } finally {
       // The taken attempt's work is kept; the others' sandboxes go (their commands stay in the ledger).
-      const closed = await Promise.all(open.map((shop) => closeWorkshop(node, options, shop, shop === taken)));
+      const closed = await Promise.all(open.map((shop) => tools.settle(shop.sandbox).then(() => closeWorkshop(node, options, shop, shop === taken))));
       artifact = taken ? (closed[open.indexOf(taken)] ?? null) : null;
     }
     effort = { attempts: result.attempts.map((a) => ({ index: a.index, status: a.outcome.status })), failed: result.failed, pick: result.pick, grant: grant! };
   }
 
   const shipped = options.ship ? await shipQuest(node, options, { outcome, quest, artifact }) : undefined;
-  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), usage };
+  // What it spent: its own calls, and its sandboxes' through the gateway.
+  const spentAll = mergeSpend(usage, tools.all());
+  if (options.remember === false) return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), usage: spentAll };
   // His skills (skills-quest.ts), in one call now that the review is over: the outcome is recorded against the skills this
   // quest was given and, if it passed, the node may distil one. What it answers is only what the mind now holds.
   const learned = worked
@@ -812,7 +849,7 @@ export async function runNodeQuest(
       .join("\n"),
   ).slice(0, 20_000);
   await node.call("remember", { text: memory, tags: ["quest", quest], untrusted: true }).catch(() => {});
-  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), learned, usage };
+  return { outcome, quest, artifact, ...(shipped ? { shipped } : {}), ...(effort ? { effort } : {}), learned, usage: spentAll };
 }
 
 /** Passed work on a GitHub clone: file github.ship for your approval (a standing order may answer it at once). */

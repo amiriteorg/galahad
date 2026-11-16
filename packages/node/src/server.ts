@@ -2497,6 +2497,25 @@ export function createApp(ctx: AppContext) {
         ).finally(() => ended?.()),
       );
     },
+    sandboxSpend: (input, p) => {
+      const { on, quest: relayed, ...rest } = input;
+      const quest = p.kind === "arm" ? armQuest(p.label!) : p.kind === "node" ? relayed : undefined;
+      return onNode(
+        p,
+        on,
+        routes.sandboxSpend.path,
+        { ...rest, ...(quest ? { quest } : {}) },
+        async () => {
+          if (quest) {
+            const sandbox = await ctx.sandbox!.get(rest.id);
+            if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
+            if (sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
+          }
+          return { lines: toolSpend.since(`sandbox:${rest.id}`, 0) };
+        },
+        { sandbox: rest.id },
+      );
+    },
     terminals: (_input, p) => ({ terminals: terminalsFor(p).list() }),
     openTerminal: async (input, p) => ({ terminal: await terminalsFor(p).open(input.sandbox, input.size) }),
     watchTerminal: (input, p, req) => watchTerminal(terminalsFor(p), input.terminal, req),

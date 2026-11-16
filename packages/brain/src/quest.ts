@@ -34,7 +34,7 @@ export interface QuestDeps {
   /** Progress, for whoever is watching. */
   emit?(event: QuestEvent): void;
   /** What this quest's model calls have cost so far at your prices (`complete`: every call was counted and priced). */
-  spentUsd?(): { usd: number; complete: boolean };
+  spentUsd?(): { usd: number; complete: boolean } | Promise<{ usd: number; complete: boolean }>;
   signal?: AbortSignal;
   /** How to wait before asking a model again (tests pass one that doesn't). */
   sleep?(ms: number): Promise<void>;
@@ -804,9 +804,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   };
 
   /** The budget's state now (null: no budget, or no way to tell what is spent). */
-  const money = (): { usd: number; complete: boolean; budget: number } | null => {
+  const money = async (): Promise<{ usd: number; complete: boolean; budget: number } | null> => {
     if (o.budgetUsd === undefined || !deps.spentUsd) return null;
-    return { ...deps.spentUsd(), budget: o.budgetUsd };
+    return { ...(await deps.spentUsd()), budget: o.budgetUsd };
   };
   const usd = (n: number) => `$${n.toFixed(2)}`;
   /** How a quest whose budget was spent before he said he was done ends, when nothing judged what was there. */
@@ -821,8 +821,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
      * Its budget, at each look at the agent: its own calls through the gateway count as it makes them (deps.spentUsd).
      * Past four fifths it is said once; spent, it is said and the agent is stopped. It can't be told to wrap up mid-run.
      */
-    const spentNow = (): boolean => {
-      const now = money();
+    const spentNow = async (): Promise<boolean> => {
+      const now = await money();
       if (!now) return false;
       if (now.usd >= now.budget) {
         emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: true });
@@ -897,7 +897,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const verdict = await submit(run.summary || "(the agent ended without a summary)", trail.slice(-40));
       if (verdict.verdict === "pass") return finish({ status: "done", summary: run.summary, review: verdict.notes || undefined });
       // (Sent back with its budget spent, it isn't taken up again: the reviewer's word stands.)
-      if (revisions >= o.maxRevisions || !session || spentNow()) return finish({ status: "unverified", summary: run.summary, review: verdict.notes });
+      if (revisions >= o.maxRevisions || !session || (await spentNow())) return finish({ status: "unverified", summary: run.summary, review: verdict.notes });
       revisions += 1;
       prompt = sentBack(verdict, "verify it, then end with a short summary and the evidence.");
     }
@@ -975,8 +975,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let worker: QuestRole = "engineer";
     let warned = false;
     /** Said with a step's result when there is a budget: what is spent, and past four fifths of it, to wrap up. */
-    const spentNote = (): string => {
-      const now = money();
+    const spentNote = async (): Promise<string> => {
+      const now = await money();
       if (!now) return "";
       const spent = `${now.complete ? "" : "at least "}${usd(now.usd)} of ${usd(now.budget)}`;
       if (now.usd >= now.budget * 0.8) {
@@ -996,7 +996,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       finish({ status: "stopped", summary: `Stopped: the same command failed the same way ${LOOP_STOP} times in a row, so running it again would only spend more.\n$ ${command.split("\n")[0]}\n${clip(seen, 600, 300)}` });
 
     while (steps < o.maxSteps) {
-      const now = money();
+      const now = await money();
       if (now && now.usd >= now.budget) {
         spentOut = true;
         emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: true });
@@ -1019,7 +1019,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (malformedRun >= MALFORMED_RUN) {
           return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
         }
-        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
+        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
         continue;
       }
       malformedRun = 0;
@@ -1079,7 +1079,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
             cut +
             leftNote(o.maxSteps - steps) +
-            spentNote(),
+            (await spentNote()),
         });
         continue;
       }
@@ -1097,7 +1097,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           trail.push({ command: trailCommand(action.command), exitCode: -1, excerpt: said });
           const again = repeated(action.command, steps, NOT_RUN, `not run\n${said}`);
           if (again.stop) return looped(action.command, said);
-          messages.push({ role: "user", content: `${said}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
+          messages.push({ role: "user", content: `${said}${again.note}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
           continue;
         }
         emit({ type: "command", step: steps, command: action.command });
@@ -1115,7 +1115,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (again.stop) return looped(action.command, seen);
         // Your checks after it, if it ran clean and one matches it.
         const checked = result.exitCode === 0 ? await runChecks(checksAfter(rules, action.command), steps, trail) : "";
-        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
+        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
         continue;
       }
 

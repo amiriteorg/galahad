@@ -580,6 +580,22 @@ export const routes = {
     }),
   },
   /**
+   * What a sandbox's own calls through its node's gateway have come to (a coding agent's, a script's), by model, as that
+   * node counted them by the sandbox's token: `{ lines: UsageLine[] }`, role "tool". `galahad do` counts them in its
+   * budget. Asked of the node the sandbox is on; an agent, of its own sandboxes only.
+   */
+  sandboxSpend: {
+    method: "POST",
+    path: "/api/sandboxes/spend",
+    scope: "sandbox",
+    input: z.strictObject({
+      id: SandboxId,
+      on: NodeRef.optional(),
+      /** Set by a full node relaying an arm's request: the arm may only ask of its own sandboxes. */
+      quest: z.string().max(64).optional(),
+    }),
+  },
+  /**
    * Terminals in this node's sandboxes (a knight's VM, one of yours), for you alone: a login shell on a real terminal.
    * One stays open while it is watched and for a while after, so a phone that leaves to finish a sign-in comes back to it.
    */

@@ -219,7 +219,7 @@ print(json.dumps({"alive": alive, "exit": exit_code, "next": nxt, "lines": lines
  */
 export async function runAgent(
   driver: AgentDriver,
-  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number; spent?: () => boolean },
+  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number; spent?: () => boolean | Promise<boolean> },
   deps: AgentRunDeps,
 ): Promise<AgentRun> {
   const now = deps.now ?? Date.now;
@@ -299,7 +299,7 @@ export async function runAgent(
         }
         return run;
       }
-      if (input.spent?.()) {
+      if (await input.spent?.()) {
         await stop();
         return { ...run, status: "spent", error: "its budget was spent" };
       }

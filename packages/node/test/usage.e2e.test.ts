@@ -253,6 +253,53 @@ describe("a quest with a budget", () => {
     }
   });
 
+  test("its sandbox's own calls through the gateway count in it (a coding agent's), and in what it says it spent", async () => {
+    const { prices: before } = await call<{ prices: Record<string, Price> }>("prices");
+    await call("setPrice", { model: "stand-in/counted", input: 1, output: 1 });
+    try {
+      // His command runs a program in the sandbox (a coding agent) that asks a model through the gateway on the sandbox's
+      // own token, with a long prompt: a tenth of a dollar, where the planner's and the engineer's calls cost a cent.
+      let sandboxId = "";
+      docker.onExec = async (_container, cmd) => {
+        if (cmd.join(" ").includes("touch /work/out/done")) {
+          const { token } = await call<{ token: string }>("mintToken", { label: `sandbox:${sandboxId}`, providers: ["stand-in"] });
+          const response = await fetch(`http://127.0.0.1:${port}/gw/stand-in/chat/completions`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "counted", stream: true, stream_options: { include_usage: true }, messages: [{ role: "user", content: `Quest: ${"x".repeat(100_000)}` }] }),
+          });
+          await response.text();
+        }
+        return { code: 0, stdout: "" };
+      };
+      const events: QuestEvent[] = [];
+      const { outcome, usage } = await runNodeQuest(client(), { goal: "make the file", network: "isolated", remember: false, budgetUsd: 0.05 }, {
+        started: ({ sandbox }) => void (sandboxId = sandbox.id),
+        emit: (event) => void events.push(event),
+      });
+      // Told at once, after that command: the work stops before he is asked again.
+      expect(events.filter((e) => e.type === "budget").map((e) => (e as { out: boolean }).out)).toEqual([false, true]);
+      expect(outcome.status).toBe("stopped");
+      expect(outcome.summary).toBe("Stopped: its budget ($0.05) was spent before he finished.");
+      expect(usage.find((l) => l.role === "tool")).toMatchObject({ model: "stand-in/counted", calls: 1 });
+      expect(usage.find((l) => l.role === "tool")!.input).toBeGreaterThan(100_000);
+    } finally {
+      docker.onExec = undefined;
+      await call("setPrice", { model: "stand-in/counted", ...before["stand-in/counted"]! });
+    }
+  });
+
+  test("an agent may ask what a sandbox spent only of its own", async () => {
+    const { sandbox } = await call<{ sandbox: { id: string } }>("createSandbox", { network: "isolated" });
+    try {
+      expect(await call("sandboxSpend", { id: sandbox.id })).toEqual({ lines: [] });
+      const { token } = await call<{ token: string }>("mintArm", { label: "nosy" });
+      await expect(call("sandboxSpend", { id: sandbox.id }, token)).rejects.toThrow(/403 that sandbox belongs to another quest/);
+    } finally {
+      await call("destroySandbox", { id: sandbox.id });
+    }
+  });
+
   test("with room to spare it runs as ever, told what it has spent as it goes", async () => {
     const asked: string[] = [];
     const { outcome } = await runNodeQuest(client(), { goal: "make the file", network: "isolated", remember: false, budgetUsd: 50 }, {
