@@ -396,9 +396,21 @@ function adopt(api: Api, conversation: ConversationView): void {
   void follow(w, (signal) => api.events("/api/turns/attach", { turn: running.id }, signal));
 }
 
+/** How many kept chats are being opened: while one is, its title's place under the header is held. */
+let opening = 0;
+
 /** A kept conversation, back on screen with its answers' steps; if he's working in it, live from where he is. */
 export async function openConversation(api: Api, id: string): Promise<void> {
-  const { conversation } = await api.post<{ conversation: ConversationView }>("/api/conversations/get", { id });
+  opening++;
+  let conversation: ConversationView;
+  try {
+    ({ conversation } = await api.post<{ conversation: ConversationView }>("/api/conversations/get", { id }));
+  } catch (error) {
+    opening--;
+    for (const fn of keptChanged) fn();
+    throw error;
+  }
+  opening--;
   leave();
   thread.turns = keptMessages(conversation).map((m) => turnOf(m, conversation.role, thread.nextId++));
   thread.target = null;
@@ -456,10 +468,17 @@ export function restoreOpenChat(api: Api): void {
   if (!fresh()) return;
   const id = openChatId();
   if (id) return void openConversation(api, id).catch(() => rememberOpenChat(null));
-  void refreshKept(api).then(() => {
-    const latest = mostRecent(kept ?? []);
-    if (latest && fresh() && !draft) void openConversation(api, latest.id).catch(() => {});
-  });
+  // (Likely to open one: the title's place is held until it's known.)
+  opening++;
+  void refreshKept(api)
+    .then(() => {
+      const latest = mostRecent(kept ?? []);
+      if (latest && fresh() && !draft) void openConversation(api, latest.id).catch(() => {});
+    })
+    .finally(() => {
+      opening--;
+      for (const fn of keptChanged) fn();
+    });
 }
 
 /** Something shared from another app (lib/share.ts), before the chat is first shown: a new chat, with it in the message
@@ -1262,6 +1281,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       );
     } else if (temporary) {
       replace(subHead, badge("temporary", "warn", "eye"), h("span", { class: "small muted" }, "Not kept: gone when you start another chat or close the app."));
+    } else if (opening) {
+      // Its title's place, while the chat is opened: the thread under it doesn't drop when it comes.
+      replace(subHead, h("span", { class: "skeleton sk-line chat-sub-pending", "aria-hidden": "true" }));
     } else replace(subHead);
   }
 
