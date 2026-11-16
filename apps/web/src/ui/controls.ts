@@ -8,7 +8,7 @@ import { toast } from "./toast.ts";
  * dark, at a phone's width and a desktop's). A page made of them lines up with every other: the same head, the same
  * gaps, the same leading edge in every card.
  *
- *   A page      pageHead · section · note
+ *   A page      pageHead · pageBody · section · note
  *   Containers  card · list · listRow · rows · disclosure · statTile · kv · meta
  *   Actions     button · linkButton · busy · formActions
  *   Status      badge · dot · count · meter · spinner · callout
@@ -540,6 +540,31 @@ export function section(title: string, options: { actions?: Child; count?: strin
 /** A line about what's near it (a section, a list, a form): small, quiet type, never an instruction to the model. */
 export function note(...children: Child[]): HTMLElement {
   return h("p", { class: "note" }, ...children);
+}
+
+/**
+ * A page's body that appears whole (.page-body): its parts are drawn at once, hidden, while one placeholder stands in;
+ * when none of them is still loading (no .skeleton, nothing aria-busy) it is shown in one frame, or after `ms` whatever
+ * is still loading. Parts that answer at different times don't push each other down as they arrive: what you see first
+ * is where it stays. A part that loads without a skeleton says so with aria-busy until its first answer.
+ */
+export function pageBody(...parts: Child[]): HTMLElement {
+  const wait = h("div", { class: "skeleton page-body-wait", "aria-hidden": "true" });
+  const shown = h("div", { class: "page-body-parts", hidden: true }, ...parts);
+  const el = h("div", { class: "page-body" }, wait, shown);
+  const loading = () => shown.querySelector('.skeleton, [aria-busy="true"]') !== null;
+  const show = () => {
+    watch.disconnect();
+    clearTimeout(late);
+    if (!wait.isConnected) return;
+    wait.remove();
+    shown.hidden = false;
+  };
+  const watch = new MutationObserver(() => !loading() && show());
+  const late = setTimeout(show, 1500);
+  watch.observe(shown, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "aria-busy"] });
+  queueMicrotask(() => !loading() && show());
+  return el;
 }
 
 /* ---------- containers ---------- */

@@ -89,7 +89,8 @@ function questCard(q: QuestView, opened: Set<string>): HTMLElement {
  * `always`: said even when there's nothing in hand; `leave`: called before a row goes to a chat.
  */
 export function inHandSection(ctx: Ctx, scope: Scope, options: { always?: boolean; leave?: () => void } = {}): HTMLElement {
-  const host = h("div", { class: "in-hand", hidden: true });
+  // (Busy until its first answer: a page that appears whole waits for it, pageBody().)
+  const host = h("div", { class: "in-hand", hidden: true, "aria-busy": "true" });
   const opened = new Set<string>();
   let seen = "";
   const mayTurns = ctx.can("chat");
@@ -102,6 +103,7 @@ export function inHandSection(ctx: Ctx, scope: Scope, options: { always?: boolea
       mayQuests ? ctx.api.get<{ quests: QuestView[] }>("/api/quests", scope.signal).catch(() => null) : null,
     ]);
     if (scope.disposed) return;
+    host.setAttribute("aria-busy", "false");
     const running = turns?.turns ?? [];
     const all = quests?.quests ?? [];
     const going = all.filter((q) => questInHand(q.state));

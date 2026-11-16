@@ -4,9 +4,8 @@ import type { View } from "../context.ts";
 import { ledgerSignature } from "../lib/activity.ts";
 import { greeting } from "../lib/time.ts";
 import type { LedgerEntry } from "../types.ts";
-import { button, dot, empty, pageHead, section, skeletonRows, skeletonStat, statTile } from "../ui/controls.ts";
+import { button, dot, empty, linkButton, pageBody, pageHead, section, skeletonRows, skeletonStat, statTile } from "../ui/controls.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
-import { icon } from "../ui/icons.ts";
 import { ledgerItem } from "./activity.ts";
 import { inHandSection } from "./in-hand.ts";
 import { doctorSection } from "./doctor-card.ts";
@@ -133,19 +132,22 @@ export const overviewView: View = (root, ctx, { scope }) => {
       "div",
       { class: "page" },
       pageHead(`${greeting()}.`, lede, actions),
-      stats,
-      h(
-        "div",
-        { class: "two-col" },
+      // Shown whole once its parts have answered: what he has in hand comes first, and would push the rest down.
+      pageBody(
+        stats,
         h(
           "div",
-          { class: "stack loose" },
-          // What he's working on now: the turns the node is running, and the quests in hand with their plan and gates.
-          inHandSection(ctx, scope),
-          section("Recent activity", { actions: h("a", { href: "#/activity", class: "btn ghost sm" }, "View all", icon("chevron-right", { size: 14 })) }, recent),
+          { class: "two-col" },
+          h(
+            "div",
+            { class: "stack loose" },
+            // What he's working on now: the turns the node is running, and the quests in hand with their plan and gates.
+            inHandSection(ctx, scope),
+            section("Recent activity", { actions: linkButton("View all", "#/activity", { variant: "ghost", size: "sm", next: true }) }, recent),
+          ),
+          // Is everything well on the node you're talking to: a quick look by the doctor, and a full check when you ask.
+          h("div", { class: "stack loose" }, doctorSection(ctx, scope)),
         ),
-        // Is everything well on the node you're talking to: a quick look by the doctor, and a full check when you ask.
-        h("div", { class: "stack loose" }, doctorSection(ctx, scope)),
       ),
     ),
   );

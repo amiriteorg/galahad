@@ -479,7 +479,10 @@
       .page.narrow { max-width: 760px; }
       /* A placeholder with nothing in it yet (a note, a status line) takes no room and adds no gap. Skeletons and
          live regions stay: one holds a place, the other must exist before it speaks. */
-      :is(.page, .stack, .sheet-body) > div:empty:not(.skeleton):not([role]):not([aria-live]) { display: none; }
+      :is(.page, .page-body-parts, .stack, .sheet-body) > div:empty:not(.skeleton):not([role]):not([aria-live]) { display: none; }
+      /* A page's body appears whole (pageBody()): its parts at the page's gap, one placeholder until they've all answered. */
+      .page-body, .page-body-parts { display: flex; flex-direction: column; gap: var(--page-gap); min-width: 0; }
+      .page-body-wait { height: min(480px, 60vh); border-radius: var(--r-lg); }
       @keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
       .page-head { display: flex; align-items: flex-end; gap: var(--sp-4); flex-wrap: wrap; }
       .page-head h1 { font-size: var(--fs-24); font-weight: 650; letter-spacing: -0.022em; line-height: 1.2; }
