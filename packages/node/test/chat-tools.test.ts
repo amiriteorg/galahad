@@ -431,7 +431,8 @@ describe("what he knows of you", () => {
     expect(shown).toMatch(/Proposed by him: waiting for you\n\s+\S+\s+Uses tabs\./);
     const about = await listed();
     const tabs = about.proposed.find((m) => m.text === "Uses tabs.")!;
-    expect((await cli("about", "keep", tabs.id.slice(0, 12), "--text", "Uses tabs, never spaces.")).code).toBe(0);
+    const kept = await cli("about", "keep", tabs.id.slice(0, 12), "--text", "Uses tabs, never spaces.");
+    expect(kept.code, `${kept.err}${kept.out}`).toBe(0);
     const british = (await listed()).kept.find((m) => m.text === "Writes in British English.")!;
     expect((await cli("about", "rm", british.id.slice(0, 12))).out).toContain("Removed");
     expect((await listed()).kept.map((m) => m.text)).toEqual(["Uses tabs, never spaces."]);
