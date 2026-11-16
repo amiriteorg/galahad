@@ -11,8 +11,9 @@ extension EnvironmentValues {
 }
 
 /// A fenced block his answer holds, drawn as what it is (core's blocks.ts, the PWA's ui/blocks.ts): a chart, figures,
-/// choices to tap, a plan's steps, a page. One still being written is a placeholder; one its reader won't take is shown
-/// as the code it is, with why.
+/// choices to tap, a plan's steps, a page. One still being written is a placeholder (a chart's and a page's as big as
+/// what replaces it, so the answer doesn't jump when it's drawn); one its reader won't take is shown as the code it is,
+/// with why.
 struct AnswerBlock: View {
     let kind: Blocks.Kind
     let text: String
@@ -21,7 +22,11 @@ struct AnswerBlock: View {
 
     var body: some View {
         if open {
-            Pending(kind: kind)
+            switch kind {
+            case .chart: ChartPending()
+            case .artifact: PageBlock(page: text, waiting: true)
+            default: Pending(kind: kind)
+            }
         } else {
             switch kind {
             case .chart:
@@ -46,7 +51,7 @@ struct AnswerBlock: View {
                 }
             case .artifact:
                 switch Blocks.artifact(text) {
-                case .ok(let page): if live { Pending(kind: kind) } else { PageBlock(page: page) }
+                case .ok(let page): PageBlock(page: page, waiting: live)
                 case .no(let why): Refused(what: "page", why: why, kind: kind, text: text)
                 }
             }
@@ -68,10 +73,32 @@ private struct Pending: View {
         Label(words, systemImage: symbol)
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            .padding(12)
+            .padding(Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.fill.quaternary, in: .rect(cornerRadius: 12, style: .continuous))
+            .background(.fill.quaternary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// A chart still being written, laid out as the chart will be (its title's line, its plot, its data folded under it),
+/// so nothing under it moves when it's drawn.
+private struct ChartPending: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Label("Drawing a chart…", systemImage: "chart.xyaxis.line").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            RoundedRectangle(cornerRadius: Metrics.innerRadius, style: .continuous)
+                .fill(.fill.quaternary)
+                .frame(height: ChartBlock.plotHeight)
+            DisclosureGroup(isExpanded: .constant(false)) {
+                EmptyView()
+            } label: {
+                Text("The data").font(.caption).foregroundStyle(.secondary)
+            }
+            .disabled(true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Drawing a chart…")
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
@@ -82,7 +109,7 @@ private struct Refused: View {
     let text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.s2) {
             Text("This \(what) couldn't be drawn: \(why).").font(.caption).foregroundStyle(.secondary)
             CodeBlock(lang: kind.rawValue, text: text)
         }
@@ -135,6 +162,9 @@ func domainOf(_ spec: Blocks.Chart) -> (Double, Double) {
 }
 
 private struct ChartBlock: View {
+    /// How tall its plot is, drawn or still to come.
+    static let plotHeight: CGFloat = 200
+
     let spec: Blocks.Chart
     @State private var selected: String?
     @State private var showingData = false
@@ -174,7 +204,7 @@ private struct ChartBlock: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s2) {
             if spec.title != nil || spec.unit != nil {
                 HStack(alignment: .firstTextBaseline) {
                     if let title = spec.title { Text(title).font(.subheadline.weight(.semibold)) }
@@ -208,7 +238,7 @@ private struct ChartBlock: View {
                 }
             }
             .chartXSelection(value: $selected)
-            .frame(height: 200)
+            .frame(height: Self.plotHeight)
             .accessibilityLabel(spec.title ?? "A chart")
             DisclosureGroup(isExpanded: $showingData) {
                 dataTable.padding(.top, 6)
@@ -256,9 +286,9 @@ private struct ChartBlock: View {
                 .font(.caption)
             }
         }
-        .padding(8)
+        .padding(Space.s2)
         .frame(minWidth: 120)
-        .background(.regularMaterial, in: .rect(cornerRadius: 10, style: .continuous))
+        .background(.regularMaterial, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
     }
 
     private var dataTable: some View {
@@ -290,7 +320,7 @@ private struct StatsBlock: View {
 
     var body: some View {
         // Two a row: a phone's width holds two figures side by side.
-        Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 10) {
+        Grid(alignment: .topLeading, horizontalSpacing: Space.s2, verticalSpacing: Space.s2) {
             ForEach(Array(stride(from: 0, to: stats.count, by: 2)), id: \.self) { start in
                 GridRow {
                     ForEach(start..<min(start + 2, stats.count), id: \.self) { index in
@@ -339,10 +369,10 @@ private struct StatView: View {
                 Text(note).font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(12)
+        .padding(Space.s3)
         // As tall as the other figure in its row.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 12, style: .continuous))
+        .background(.fill.quaternary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityHint(tone == .good ? "Good" : tone == .bad ? "Not good" : "")
     }
@@ -356,27 +386,20 @@ private struct ChoicesBlock: View {
     @State private var chosen: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s2) {
             ForEach(choices, id: \.self) { choice in
-                if let choose {
-                    Button {
-                        chosen = choice
-                        choose(choice)
-                    } label: {
-                        Text(choice).multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .disabled(chosen != nil)
-                    .accessibilityAddTraits(chosen == choice ? .isSelected : [])
-                } else {
-                    // Offered in an answer before this one: what he offered, no longer an answer to tap.
-                    Text(choice)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(.secondary)
-                        .overlay(Capsule().strokeBorder(.secondary.opacity(0.4)))
+                Button {
+                    chosen = choice
+                    choose?(choice)
+                } label: {
+                    Text(choice).multilineTextAlignment(.leading)
                 }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                // While his answer is still coming, or once one after it has: what he offered, the same size as when
+                // it's yours to tap, so nothing moves when it becomes one.
+                .disabled(choose == nil || chosen != nil)
+                .accessibilityAddTraits(chosen == choice ? .isSelected : [])
             }
         }
         .accessibilityElement(children: .contain)
@@ -390,9 +413,9 @@ private struct StepsBlock: View {
     let steps: [Blocks.Step]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s2) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                     Image(systemName: Self.symbol[step.state] ?? "circle").foregroundStyle(color(step.state))
                     Text(step.text)
                         .strikethrough(step.state == .skipped)
@@ -421,7 +444,12 @@ private struct StepsBlock: View {
 // MARK: - A page
 
 private struct PageBlock: View {
+    /// How tall the page is shown in the answer, drawn or still to come.
+    static let height: CGFloat = 260
+
     let page: String
+    /// Still being written: its frame as it will be, with nothing in it yet and nothing to press.
+    var waiting = false
     @State private var run = false
     @State private var showingCode = false
     @State private var full = false
@@ -430,8 +458,8 @@ private struct PageBlock: View {
     private var title: String { Blocks.artifactTitle(page) ?? "A page he made" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s3) {
                 Label(title, systemImage: "doc.richtext").font(.subheadline.weight(.semibold)).lineLimit(1).layoutPriority(1)
                 Spacer(minLength: 0)
                 if !showingCode {
@@ -453,14 +481,26 @@ private struct PageBlock: View {
                 .accessibilityLabel("More for this page")
             }
             .buttonStyle(.borderless)
+            .disabled(waiting)
             if showingCode {
                 CodeBlock(lang: "html", text: page)
             } else {
-                PageFrame(page: page, run: run, scrolls: false)
-                    .id(run)
-                    .frame(height: 260)
-                    .clipShape(.rect(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.secondary.opacity(0.25)))
+                Group {
+                    if waiting {
+                        Label("Making a page: it opens when he's done", systemImage: "doc.richtext")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(Space.s3)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(.fill.quaternary)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    } else {
+                        PageFrame(page: page, run: run, scrolls: false).id(run)
+                    }
+                }
+                .frame(height: Self.height)
+                .clipShape(.rect(cornerRadius: Metrics.innerRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.innerRadius, style: .continuous).strokeBorder(.secondary.opacity(0.25)))
             }
             Text(run ? "Running its own code, sealed off from Galahad and your data: it can't fetch anything or open another page." : "Shown as it is: its scripts don't run until you press Run, and nothing loads from the network.")
                 .font(.caption)

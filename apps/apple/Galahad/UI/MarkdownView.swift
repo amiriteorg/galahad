@@ -10,7 +10,7 @@ struct MarkdownView: View {
     init(blocks: [Markdown.Block]) { self.blocks = blocks }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s3) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 BlockView(block: block)
             }
@@ -31,7 +31,7 @@ private struct BlockView: View {
                 .font(level == 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-                .padding(.top, 2)
+                .padding(.top, Space.line)
         case .code(let lang, let text, let open):
             // A block his answer shows beyond words (a chart, figures, choices, steps, a page); any other language is code.
             if let kind = Blocks.Kind(rawValue: lang.lowercased()) {
@@ -40,9 +40,9 @@ private struct BlockView: View {
                 CodeBlock(lang: lang, text: text)
             }
         case .list(let ordered, let start, let items):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.s2) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         Text(ordered ? "\(start + index)." : "•")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
@@ -54,13 +54,13 @@ private struct BlockView: View {
                 }
             }
         case .quote(let blocks):
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: Space.s2) {
                 Capsule().fill(.secondary.opacity(0.5)).frame(width: 3)
                 MarkdownView(blocks: blocks).foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         case .hr:
-            Divider().padding(.vertical, 2)
+            Divider().padding(.vertical, Space.line)
         case .table(let align, let head, let rows):
             TableBlock(align: align, head: head, rows: rows)
         }
@@ -87,16 +87,16 @@ struct CodeBlock: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel(copied ? "Copied" : "Copy the code")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s2)
             ScrollView(.horizontal) {
                 Text(text)
                     .font(.footnote.monospaced())
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(12)
+                    .padding(Space.s3)
             }
         }
-        .background(.fill.quaternary, in: .rect(cornerRadius: 12, style: .continuous))
+        .background(.fill.quaternary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
         .task(id: copied) {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(2))
@@ -113,7 +113,7 @@ private struct TableBlock: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: Space.s4, verticalSpacing: Space.s2) {
                 GridRow {
                     ForEach(Array(head.enumerated()), id: \.offset) { column, cell in
                         Text(Inlines.attributed(cell)).font(.subheadline.weight(.semibold)).gridColumnAlignment(alignment(column))
@@ -129,7 +129,7 @@ private struct TableBlock: View {
                 }
             }
             .fixedSize()
-            .padding(.vertical, 2)
+            .padding(.vertical, Space.line)
         }
     }
 
