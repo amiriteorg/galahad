@@ -160,9 +160,10 @@ struct RoomView: View {
 struct RoomRowView: View {
     let row: RoomRow
     let looks: [String]
+    var selected = false
 
     var body: some View {
-        RosterLine(name: row.name, line: row.line, needs: row.needs) {
+        RosterLine(name: row.name, line: row.line, needs: row.needs, selected: selected) {
             let shown = Array(looks.prefix(3))
             ZStack {
                 ForEach(Array(shown.enumerated()), id: \.offset) { index, look in

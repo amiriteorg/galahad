@@ -19,6 +19,7 @@ struct RoundtableView: View {
     @State private var giving = false
     @State private var seating = false
     @State private var gathering = false
+    @Environment(\.colorScheme) private var scheme
 
     private var words: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -41,12 +42,12 @@ struct RoundtableView: View {
             }
             if query.isEmpty {
                 Section {
-                    NavigationLink(value: Route.galahad) { GalahadRow(now: session.galahad, expression: session.chat.answering ? "thinking" : session.galahad.tone == .warn ? "asking" : "idle") }
+                    NavigationLink(value: Route.galahad) { GalahadRow(now: session.galahad, expression: session.chat.answering ? "thinking" : session.galahad.tone == .warn ? "asking" : "idle", selected: chosen(.galahad)) }
                 }
             }
             Section {
                 ForEach(knights) { row in
-                    NavigationLink(value: Route.knight(row.id)) { KnightRow(row: row, look: look(of: row), temper: AvatarLook.temperament(id: row.id, profile: session.teammate(row.id)?.avatar)) }
+                    NavigationLink(value: Route.knight(row.id)) { KnightRow(row: row, look: look(of: row), temper: AvatarLook.temperament(id: row.id, profile: session.teammate(row.id)?.avatar), selected: chosen(.knight(row.id))) }
                 }
             } header: {
                 if !knights.isEmpty { Text("Knights") }
@@ -60,11 +61,15 @@ struct RoundtableView: View {
             if !rooms.isEmpty {
                 Section("Rooms") {
                     ForEach(rooms) { row in
-                        NavigationLink(value: Route.room(row.id)) { RoomRowView(row: row, looks: looks(of: row)) }
+                        NavigationLink(value: Route.room(row.id)) { RoomRowView(row: row, looks: looks(of: row), selected: chosen(.room(row.id))) }
                     }
                 }
             }
         }
+        // An iPad fills the selected row with the tint and writes its words in white: the ink does on light, but on dark
+        // the ink is cream, and white on it couldn't be read; there the system's grey holds the selection. (Only the
+        // list's own tint: its bar's buttons and its sheets keep the ink.)
+        .tint(scheme == .dark ? Color(uiColor: .systemGray3) : .ink)
         .navigationTitle("Roundtable")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { RoundtableMark(size: 28) }
@@ -95,6 +100,9 @@ struct RoundtableView: View {
         }
     }
 
+    /// The row the detail column shows, on an iPad.
+    private func chosen(_ route: Route) -> Bool { selection?.wrappedValue == route }
+
     private func look(of row: RosterRow) -> String {
         let knight = session.teammate(row.id)
         return AvatarLook.of(id: row.id, name: row.name, profile: knight?.avatar)
@@ -115,6 +123,10 @@ struct RosterLine<Face: View>: View {
     let name: String
     let line: String
     let needs: Bool
+    /// It is the row an iPad shows selected. On the list's ink Galahad's red line was hard to read (3.3 to 1) and the
+    /// system's secondary grey harder, so its line takes no colour of its own there and turns as its name does; the mark
+    /// beside it still says it needs you.
+    var selected = false
     @ViewBuilder let face: Face
 
     var body: some View {
@@ -122,10 +134,11 @@ struct RosterLine<Face: View>: View {
             face.frame(width: Metrics.rowFace, height: Metrics.rowFace)
             VStack(alignment: .leading, spacing: Space.line) {
                 Text(name).font(.headline)
-                Text(line)
-                    .font(.subheadline)
-                    .foregroundStyle(needs ? Color.siege : .secondary)
-                    .lineLimit(2, reservesSpace: true)
+                Group {
+                    if selected { Text(line) } else { Text(line).foregroundStyle(needs ? Color.siege : .secondary) }
+                }
+                .font(.subheadline)
+                .lineLimit(2, reservesSpace: true)
             }
             Spacer(minLength: 0)
             if needs { NeedsMark() }
@@ -139,9 +152,10 @@ struct GalahadRow: View {
     let now: GalahadNow
     /// What his face shows: thinking while he answers, asking while something waits for you.
     var expression = "idle"
+    var selected = false
 
     var body: some View {
-        RosterLine(name: "Galahad", line: now.text, needs: now.tone == .warn) {
+        RosterLine(name: "Galahad", line: now.text, needs: now.tone == .warn, selected: selected) {
             Portrait(drawing: "galahad", size: Metrics.rowFace, expression: expression, id: "galahad")
         }
     }
@@ -151,9 +165,10 @@ struct KnightRow: View {
     let row: RosterRow
     let look: String
     var temper = "calm"
+    var selected = false
 
     var body: some View {
-        RosterLine(name: row.name, line: row.line, needs: row.needs) {
+        RosterLine(name: row.name, line: row.line, needs: row.needs, selected: selected) {
             Portrait(drawing: look, size: Metrics.rowFace, expression: row.expression, id: row.id, temper: temper)
         }
     }
