@@ -229,6 +229,16 @@ struct AppTile: View {
     }
 }
 
+extension View {
+    /// A field outside a form (a key to seal, text for a knight's screen): the system's quiet fill, the corners of what
+    /// sits inside a card, and a thumb's height. Beside a button, the row is made as tall as its tallest, so the two match.
+    func quietField() -> some View {
+        padding(.horizontal, Space.s3)
+            .frame(minHeight: Metrics.touch)
+            .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
+    }
+}
+
 /// The mark on what needs you.
 struct NeedsMark: View {
     var body: some View {

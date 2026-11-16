@@ -69,27 +69,57 @@ struct InboxView: View {
     }
 }
 
+/// A row of the Inbox: what it is about, in Galahad's red, in a column of its own, and everything else beside it, so
+/// every row's words start at one edge whatever its icon.
+struct InboxRow<Content: View>: View {
+    let symbol: String
+    /// It opens: a chevron at its end, as a row that leads somewhere has.
+    var opens = false
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Image(systemName: symbol)
+                .foregroundStyle(Color.siege)
+                .frame(width: Metrics.iconColumn)
+            VStack(alignment: .leading, spacing: Space.s3) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if opens {
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, Space.s1)
+    }
+}
+
+/// The buttons a row of the Inbox answers with: side by side, or one above the other when the words are too big for that.
+struct InboxButtons<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.s3) { content }
+            VStack(alignment: .leading, spacing: Space.s2) { content }
+        }
+    }
+}
+
 /// An approval in a line: what it calls, why, who asked, and until when.
 struct ApprovalRow: View {
     let action: ActionView
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: Approval.symbol(action.kind))
-                .font(.title3)
-                .foregroundStyle(Color.siege)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 3) {
+        InboxRow(symbol: Approval.symbol(action.kind), opens: true) {
+            VStack(alignment: .leading, spacing: Space.s1) {
                 Text("\(action.connector).\(action.tool)").font(.headline.monospaced())
                 if let why = action.why, !why.isEmpty { Text(why).font(.subheadline) }
+                // Its time left counts down: in figures of one width, so the line doesn't shift as it does.
                 Text("Asked by \(Approval.askedBy(action.by)) · expires in \(Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 }
@@ -136,7 +166,7 @@ struct ApprovalSheet: View {
                     LabeledContent("Where it goes") { Text(action.target).font(.footnote.monospaced()).multilineTextAlignment(.trailing) }
                     LabeledContent("Asked by", value: Approval.askedBy(action.by))
                     LabeledContent("Sent from", value: node)
-                    LabeledContent("Expires in") { Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative) }
+                    LabeledContent("Expires in") { Text(Date(timeIntervalSince1970: action.expires / 1000), style: .relative).monospacedDigit() }
                 }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
@@ -211,35 +241,35 @@ struct KeyRequestRow: View {
     @State private var problem: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label {
+        InboxRow(symbol: "key.fill") {
+            VStack(alignment: .leading, spacing: Space.s1) {
                 Text("Galahad asks for \(Text(request.name).font(.body.monospaced()).bold())")
-            } icon: {
-                Image(systemName: "key.fill").foregroundStyle(Color.siege)
-            }
-            Text(request.purpose).font(.subheadline)
-            if let asked = hlcDate(request.requestedAt) {
-                Text("Asked \(Text(asked, style: .relative)) ago").font(.caption).foregroundStyle(.secondary)
+                Text(request.purpose).font(.subheadline)
+                if let asked = hlcDate(request.requestedAt) {
+                    Text("Asked \(Text(asked, style: .relative)) ago").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
             }
             if session.can("vault:write") {
-                HStack(spacing: 10) {
+                HStack(spacing: Space.s2) {
                     // (No password content type: an API key is no password of yours for AutoFill to keep. iOS still
                     // offers its Passwords bar on any secure field.)
                     SecureField("Paste the key", text: $value)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(.fill.tertiary, in: .rect(cornerRadius: 12, style: .continuous))
+                        .quietField()
                         .submitLabel(.done)
                         .onSubmit(seal)
                         .accessibilityIdentifier("key-\(request.name)")
                     Button(action: seal) {
-                        if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(value.isEmpty ? Color.secondary : Color.onAccent) }
+                        Group {
+                            if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(value.isEmpty ? Color.secondary : Color.onAccent) }
+                        }
+                        .frame(maxHeight: .infinity)
                     }
                     .buttonStyle(.glassProminent)
                     .disabled(value.isEmpty || sealing)
                 }
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("This device can't fill key requests (it has no vault:write scope).").font(.footnote).foregroundStyle(.secondary)
             }
@@ -247,7 +277,6 @@ struct KeyRequestRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
-        .padding(.vertical, 4)
     }
 
     private func seal() {
@@ -268,7 +297,6 @@ struct KeyRequestRow: View {
     }
 }
 
-/// A device asking to join: its name and the code it shows. Let it in only if the codes match.
 /// A fact about you he proposed: keep it as he put it, or in your words, or drop it.
 struct FactRow: View {
     let session: Session
@@ -278,14 +306,14 @@ struct FactRow: View {
     @State private var problem: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        InboxRow(symbol: "person.text.rectangle") {
             Text(fact.text)
             if session.can("mind:write") {
-                HStack(spacing: 12) {
+                InboxButtons {
                     Button {
                         Task { await act { try await session.keep(fact) } }
                     } label: {
-                        Label("Keep", systemImage: "checkmark").fontWeight(.semibold).foregroundStyle(Color.onAccent)
+                        Text("Keep").fontWeight(.semibold).foregroundStyle(Color.onAccent)
                     }
                     .buttonStyle(.glassProminent)
                     Button("In my words") {
@@ -301,7 +329,6 @@ struct FactRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
-        .padding(.vertical, 4)
         .alert("In your words", isPresented: $rewording) {
             TextField("About you", text: $words)
             Button("Keep") {
@@ -325,6 +352,7 @@ struct FactRow: View {
     }
 }
 
+/// A device asking to join: its name and the code it shows. Let it in only if the codes match.
 struct JoinRequestRow: View {
     let session: Session
     let pairing: PairingView
@@ -332,14 +360,10 @@ struct JoinRequestRow: View {
     @State private var problem: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pairing.name).font(.headline)
-                    Text(pairing.kind == "node" ? "A machine" : "A phone or browser").font(.caption).foregroundStyle(.secondary)
-                }
-            } icon: {
-                Image(systemName: pairing.kind == "node" ? "server.rack" : "iphone").foregroundStyle(Color.siege)
+        InboxRow(symbol: pairing.kind == "node" ? "server.rack" : "iphone") {
+            VStack(alignment: .leading, spacing: Space.line) {
+                Text(pairing.name).font(.headline)
+                Text(pairing.kind == "node" ? "A machine" : "A phone or browser").font(.caption).foregroundStyle(.secondary)
             }
             Text(pairing.sas).font(.system(.title, design: .monospaced).weight(.semibold))
             if pairing.conflict {
@@ -347,7 +371,7 @@ struct JoinRequestRow: View {
                     .font(.footnote)
                     .foregroundStyle(Color.siege)
             } else if session.can("fleet:admin") {
-                HStack(spacing: 12) {
+                InboxButtons {
                     Button("Decline", role: .destructive) { Task { await answer(false) } }
                         .buttonStyle(.glass)
                     Button {
@@ -362,7 +386,6 @@ struct JoinRequestRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
-        .padding(.vertical, 4)
         .alert("Let \(pairing.name) in?", isPresented: $confirming) {
             Button("Let it in") { Task { await answer(true) } }
             Button("Cancel", role: .cancel) {}
