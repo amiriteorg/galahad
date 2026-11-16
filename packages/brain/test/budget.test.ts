@@ -71,7 +71,7 @@ describe("a budget in dollars", () => {
  * calls through the gateway, as the caller counts them; it ends of itself after `polls` looks. The planner and the
  * reviewer cost `perAsk` a call.
  */
-function agentAtWork(options: Partial<QuestOptions>, { perPoll, polls = 6, perAsk = 0, reviewer = ["PASS\nIt holds."] }: { perPoll: number; polls?: number; perAsk?: number; reviewer?: string[] }) {
+function agentAtWork(options: Partial<QuestOptions>, { perPoll, polls = 6, perAsk = 0, reviewer = ["PASS\nIt holds."], minutes = 60 }: { perPoll: number; polls?: number; perAsk?: number; reviewer?: string[]; minutes?: number }) {
   const driver: AgentDriver = { name: "stub", title: "Stub", kind: "openai", check: "true", files: () => ({}), command: () => "stub-agent", read: (line) => JSON.parse(line) as AgentEvent[] };
   const ok = (stdout = ""): ExecResult => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
   const queues: Record<QuestRole, string[]> = { planner: ["1. Do it.\nDone when: it is done."], engineer: [], reviewer: [...reviewer] };
@@ -81,7 +81,7 @@ function agentAtWork(options: Partial<QuestOptions>, { perPoll, polls = 6, perAs
   const prompts: string[] = [];
   let stopped = 0;
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", agent: { driver, models: [{ provider: "p", model: "m" }], minutes: 60, workdir: "/work" }, ...options },
+    { goal: "make it so", environment: "a test sandbox", agent: { driver, models: [{ provider: "p", model: "m" }], minutes, workdir: "/work" }, ...options },
     {
       ask: async (role) => {
         usd += perAsk;
@@ -97,6 +97,8 @@ function agentAtWork(options: Partial<QuestOptions>, { perPoll, polls = 6, perAs
         }
         if (command.startsWith("stat -c")) return ok("0\n");
         if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+          // (A look takes a moment, as it does: a deadline can pass between two.)
+          await Bun.sleep(2);
           looked += 1;
           usd += perPoll;
           const lines = [JSON.stringify([{ type: "session", id: "ses_1" }, { type: "tool", tool: "bash", input: `step ${looked}`, output: "ok", ok: true }, { type: "text", text: `did ${looked}` }])];
@@ -151,5 +153,30 @@ describe("a coding agent, held to its budget", () => {
     expect(q.looked()).toBe(4);
     expect(q.stopped()).toBe(0);
     expect(q.budget()).toEqual([]);
+  });
+});
+
+describe("a coding agent out of time", () => {
+  test("with work done, what it left is judged as it stands (submitAtLimit), and what passes is done", async () => {
+    const q = agentAtWork({ submitAtLimit: true }, { perPoll: 0, minutes: 0 });
+    const outcome = await q.run;
+    expect(q.stopped()).toBe(1);
+    expect(outcome.status).toBe("done");
+    expect(outcome.summary).toBe("His time (0 minutes) was up before he said he was done. The work as it stood was put to the reviewer, who accepted it.");
+  });
+
+  test("what they don't pass ends as before: it ran out of time, and what was there was judged", async () => {
+    const q = agentAtWork({ submitAtLimit: true }, { perPoll: 0, minutes: 0, reviewer: ["REVISE\nNot finished."] });
+    const outcome = await q.run;
+    expect(outcome.status).toBe("gave-up");
+    expect(outcome.summary).toEndWith("stub ran out of time (0 minutes): it ran out of time What was there was put to the reviewer, who did not accept it.");
+    expect(outcome.review).toBe("Not finished.");
+  });
+
+  test("without submitAtLimit it gives up, as it did", async () => {
+    const q = agentAtWork({}, { perPoll: 0, minutes: 0 });
+    const outcome = await q.run;
+    expect(outcome.status).toBe("gave-up");
+    expect(outcome.summary).toEndWith("stub ran out of time (0 minutes): it ran out of time");
   });
 });

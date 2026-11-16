@@ -94,9 +94,9 @@ export interface QuestOptions {
    */
   gatesFirst?: boolean;
   /**
-   * When the engineer runs out of commands having run some, put the work as it stands to the gates and the
-   * reviewer anyway: he may have finished and never said so, and what they pass is done whoever claimed it.
-   * Default off: a quest out of commands is stopped, as it was.
+   * When the engineer runs out of commands having run some (or a coding agent out of its time or its budget, having
+   * done something), put the work as it stands to the gates and the reviewer anyway: he may have finished and never
+   * said so, and what they pass is done whoever claimed it. Default off: a quest out of commands is stopped, as it was.
    */
   submitAtLimit?: boolean;
   /**
@@ -834,6 +834,23 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       return false;
     };
+    /**
+     * Work stopped at a limit (its budget, its time) with something done: put as it stands to the gates and the
+     * reviewer (submitAtLimit), as the engineer's is when his commands run out. What they pass is done; `otherwise` is
+     * how it ends if they don't, with what they did said after it.
+     */
+    const asItStands = async (said: string, limit: string, otherwise: { status: "stopped" | "gave-up"; summary: string }): Promise<QuestOutcome> => {
+      const verdict = await submit(said, trail.slice(-40));
+      if (verdict.verdict === "pass") {
+        return finish({
+          status: "done",
+          summary: `${limit} before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
+          review: verdict.notes || undefined,
+          ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
+        });
+      }
+      return finish({ ...otherwise, summary: `${otherwise.summary} What was there was put to ${verdict.by === "gates" ? "the gates, which did not pass" : "the reviewer, who did not accept it"}.`, review: verdict.notes });
+    };
     for (const [path, content] of Object.entries(agent.driver.files(agent.models, o.engram))) {
       const written = await deps.exec(`mkdir -p "$(dirname '${path}')" && printf %s '${Buffer.from(content, "utf8").toString("base64")}' | base64 -d > '${path}'`, 30);
       if (written.exitCode !== 0) return finish({ status: "gave-up", summary: `Couldn't set up ${agent.driver.name}: ${written.stderr || written.stdout}` });
@@ -870,16 +887,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       // Spent: what it left is judged as it stands (submitAtLimit), as when the engineer's budget runs out.
       if (run.status === "spent") {
         if (!o.submitAtLimit || !trail.length) return finish({ status: "stopped", summary: spentSummary() });
-        const verdict = await submit("His budget was spent before he said he was done: this is the work as it stands.", trail.slice(-40));
-        if (verdict.verdict === "pass") {
-          return finish({
-            status: "done",
-            summary: `Its budget (${usd(o.budgetUsd!)}) was spent before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
-            review: verdict.notes || undefined,
-            ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
-          });
-        }
-        return finish({ status: "stopped", summary: `${spentSummary()} What was there was put to ${verdict.by === "gates" ? "the gates, which did not pass" : "the reviewer, who did not accept it"}.`, review: verdict.notes });
+        return await asItStands("His budget was spent before he said he was done: this is the work as it stands.", `Its budget (${usd(o.budgetUsd!)}) was spent`, { status: "stopped", summary: spentSummary() });
       }
       // A model that fails (an outage, a provider's filter) hands over to the next, which carries on the same session.
       if (run.status === "failed" && current + 1 < agent.models.length) {
@@ -891,7 +899,12 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       if (run.status !== "finished") {
         const why = `${agent.driver.name} ${run.status === "timeout" ? `ran out of time (${agent.minutes} minutes)` : "failed"}: ${run.error ?? ""}`;
-        return finish({ status: "gave-up", summary: [run.summary, why].filter(Boolean).join("\n\n") });
+        const gaveUp = [run.summary, why].filter(Boolean).join("\n\n");
+        // Out of time with work done: the gates and the reviewer still decide (submitAtLimit), as at the end of the engineer's commands.
+        if (run.status === "timeout" && o.submitAtLimit && trail.length) {
+          return await asItStands(`His time (${agent.minutes} minutes) was up before he said he was done: this is the work as it stands.`, `His time (${agent.minutes} minutes) was up`, { status: "gave-up", summary: gaveUp });
+        }
+        return finish({ status: "gave-up", summary: gaveUp });
       }
       // The reviewer sees the latest commands; every one of them is in the ledger.
       const verdict = await submit(run.summary || "(the agent ended without a summary)", trail.slice(-40));
