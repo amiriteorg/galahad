@@ -94,6 +94,33 @@ describe("the roster: each knight, then each room", () => {
   });
 });
 
+describe("a knight's state: the ring round its face and the chip beside its name", () => {
+  test("says what its line says first: what waits on you, the work in hand, a failure, a pause, a queue, a pass, rest", () => {
+    const asks = [{ by: "arm:team.0123456789.ada", connector: "github", tool: "merge" }];
+    expect(ada({ tasks: [task("ada", "running")] }, { asks }).state).toBe("needs");
+    expect(ada({ tasks: [task("ada", "proposed", { proposedBy: "ada" })] }).state).toBe("needs");
+    expect(ada({ tasks: [task("ada", "running")] }).state).toBe("working");
+    expect(ada({ deliveries: [delivery("ada", "running")] }).state).toBe("working");
+    expect(ada({ tasks: [task("ada", "failed")] }).state).toBe("failed");
+    expect(ada({ deliveries: [delivery("ada", "failed")] }).state).toBe("failed");
+    // Cut short by the node: yours to look at before it resumes, not a failure of its own.
+    expect(ada({ tasks: [task("ada", "interrupted")] }).state).toBe("needs");
+    expect(ada({ teammates: [person("ada", { enabled: false })] }).state).toBe("paused");
+    expect(ada({ teammates: [person("ada", { enabled: false })], tasks: [task("ada", "queued")] })).toMatchObject({ state: "paused", needs: true });
+    // A spent allowance renews by itself: at rest, unless work waits on it.
+    expect(ada({ teammates: [person("ada", { turnsToday: 40 })] }).state).toBe("resting");
+    expect(ada({ teammates: [person("ada", { turnsToday: 40 })], tasks: [task("ada", "queued")] }).state).toBe("needs");
+    expect(ada({ tasks: [task("ada", "queued")] }).state).toBe("queued");
+    expect(ada({ deliveries: [delivery("ada", "queued")] }).state).toBe("queued");
+    // Verified a moment ago (its face is pleased); later, at rest.
+    expect(ada({ tasks: [task("ada", "done", { updatedAt: NOW - 1000 })] })).toMatchObject({ state: "verified", expression: "pleased" });
+    expect(ada({ tasks: [task("ada", "done", { updatedAt: NOW - 60_000 })] }).state).toBe("resting");
+    expect(ada({}).state).toBe("resting");
+    // A room has none: its row has no face.
+    expect(rows({ rooms: [room("dm-ada", ["ada"]), room("forge", ["ada"], { direct: false })] }).find((row) => row.kind === "room")!.state).toBeUndefined();
+  });
+});
+
 describe("a task a knight proposed", () => {
   test("marks its knight's row with what waits for your approval, and its face asks", () => {
     const proposal = task("ada", "proposed", { proposedBy: "ada", title: "Draft the notes" });

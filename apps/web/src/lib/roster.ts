@@ -1,5 +1,6 @@
 import { avatarExpression, type AvatarExpression } from "@galahad/core/avatar";
 import type { TeamDelivery, TeamMessage, TeamRoom, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
+import type { KnightState } from "./knight-state.ts";
 import { taskDependencies, teammateMaker, teamSpeaker } from "./team.ts";
 
 /*
@@ -36,6 +37,9 @@ export interface RosterRow {
   needs: boolean;
   /** What a knight's avatar acts out: its work as it stands (core's avatarExpression), or asking when it asks your leave. */
   expression?: AvatarExpression;
+  /** A knight's state in a word: the ring round its face and the chip beside its name (lib/knight-state.ts). It says
+   * what its line says first. */
+  state?: KnightState;
   avatar?: unknown;
 }
 
@@ -93,26 +97,29 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
   const proposed = proposals(jobs);
   // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
   const expression = asked[0] || proposed[0] ? "asking" : avatarExpression(person, snapshot, input.now);
-  const say = (line: string, needs = false): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression, avatar: person.avatar });
+  // (At rest, unless its work passed review a moment ago: its face is pleased, and its ring is green.)
+  const say = (line: string, needs = false, state: KnightState = expression === "pleased" ? "verified" : "resting"): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression, state, avatar: person.avatar });
 
   // What only you can answer comes first: it is what the row is marked for.
-  if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true);
-  if (proposed[0]) return say(proposing(proposed, (id) => (id === person.id ? null : snapshot.teammates.find((other) => other.id === id)?.name ?? id)), true);
+  if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true, "needs");
+  if (proposed[0]) return say(proposing(proposed, (id) => (id === person.id ? null : snapshot.teammates.find((other) => other.id === id)?.name ?? id)), true, "needs");
   const running = jobs.find((job) => job.status === "running" && job.task);
-  if (running?.task) return say(firstLine(running.progress) ? `${running.title} · ${firstLine(running.progress)}` : `Working on ${titled(running)}`);
-  if (jobs.some((job) => job.status === "running")) return say("Writing a reply");
+  if (running?.task) return say(firstLine(running.progress) ? `${running.title} · ${firstLine(running.progress)}` : `Working on ${titled(running)}`, false, "working");
+  if (jobs.some((job) => job.status === "running")) return say("Writing a reply", false, "working");
   const latest = latestOf(jobs);
   const wrong = trouble(latest, null);
-  if (wrong) return say(wrong, true);
+  // (Work the node cut short is yours to look at before it resumes; work that failed is a failure.)
+  if (wrong) return say(wrong, true, latest!.status === "interrupted" ? "needs" : "failed");
   const waiting = waitingIn(jobs);
   const held = !person.enabled ? "Paused" : person.turnsToday >= person.dailyTurns ? "Daily allowance spent" : null;
-  if (held) return say(waiting ? `${held} · ${waiting} waiting` : held, waiting > 0);
+  // Paused is yours to lift; a spent allowance renews by itself, and needs you only while work waits on it.
+  if (held) return say(waiting ? `${held} · ${waiting} waiting` : held, waiting > 0, !person.enabled ? "paused" : waiting ? "needs" : "resting");
   const queued = jobs.find((job) => job.status === "queued" && job.task);
   if (queued?.task) {
     const blocking = taskDependencies(queued, snapshot.tasks).find((dependency) => !dependency.satisfied);
-    return say(blocking ? `Waiting for “${blocking.title}”` : `Queued: ${titled(queued)}`);
+    return say(blocking ? `Waiting for “${blocking.title}”` : `Queued: ${titled(queued)}`, false, "queued");
   }
-  if (waiting) return say("Reply queued");
+  if (waiting) return say("Reply queued", false, "queued");
   const task = latestOf(jobs.filter((job) => job.task));
   const said = lastSaid(room, input);
   if (said && (!task || said.createdAt >= task.updatedAt)) return say(saidLine(said, snapshot.teammates));
