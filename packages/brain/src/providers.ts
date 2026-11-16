@@ -50,7 +50,7 @@ export interface CodingPlan {
 /**
  * Starting points, not hard-coded truth: everything here is overridable with
  * `galahad provider add`. Base URLs were checked against each provider's docs
- * (Nov 2026); Verda's endpoint is account-specific so it must be supplied.
+ * (Nov 2026); a Cloudflare AI Gateway's address is your gateway's, so it must be supplied.
  * A coding plan's key can't always be told from the same vendor's API key by its
  * form (Z.ai's can't; Kimi's and Alibaba's can), so a plan is added as its own preset.
  */
@@ -237,8 +237,8 @@ export const PRESETS: ProviderPreset[] = [
   {
     id: "verda",
     kind: "openai",
-    baseUrl: "",
-    note: "Verda's OpenAI-compatible endpoint is shown in your Verda console; pass it with --base-url",
+    baseUrl: "https://inference.verda.com/v1",
+    note: "Verda's inference API, with an inference API key from its console. A serverless container of your own on Verda has an address of its own: --base-url <its address>/v1.",
   },
   { id: "ollama", kind: "openai", baseUrl: "http://127.0.0.1:11434/v1", local: true },
   { id: "llamacpp", kind: "openai", baseUrl: "http://127.0.0.1:9931/v1", local: true, note: "llama.cpp's llama-server on its default address (127.0.0.1:9931). One started with --port, an older build (8080) or its Docker image takes --base-url." },

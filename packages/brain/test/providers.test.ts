@@ -81,6 +81,12 @@ describe("a preset points where its vendor's docs say", () => {
   test("DeepSeek: base_url https://api.deepseek.com, its OpenAI format (api-docs.deepseek.com), with no /v1", () => {
     expect(preset("deepseek")).toMatchObject({ kind: "openai", baseUrl: "https://api.deepseek.com" });
   });
+
+  test("Verda: its inference API at https://inference.verda.com/v1 (docs.verda.com/inference/openai-compatibility), not an address you must find", () => {
+    expect(preset("verda")).toMatchObject({ kind: "openai", baseUrl: "https://inference.verda.com/v1" });
+    // A container of your own on Verda has an endpoint of its own: the note says how to point at it.
+    expect(preset("verda")!.note).toContain("--base-url");
+  });
 });
 
 /*

@@ -251,7 +251,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | `nanogpt` | openai | `https://api.nano-gpt.com/api/v1`; keys start `sk-nano-` |
 | `synthetic` | openai | `https://api.synthetic.new/openai/v1` |
 | `ollama-cloud` | openai | `https://ollama.com/v1` (Ollama's cloud models) |
-| `verda` | openai | *Account-specific: pass `--base-url` from the Verda console* |
+| `verda` | openai | `https://inference.verda.com/v1` (Verda's inference API; a serverless container of your own: `--base-url` its address) |
 | `cloudflare-ai` | openai | *Your gateway: `https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat`. The key is the gateway's token, sent as `cf-aig-authorization` (never as `Authorization`, so Cloudflare adds the provider keys you stored with it); models are `<provider>/<model>`, e.g. `deepseek/deepseek-chat`* |
 | `ollama`, `llamacpp` | openai (local) | `http://127.0.0.1:11434/v1`, `http://127.0.0.1:9931/v1` (llama-server's default port; an older build's 8080, or its Docker image's, takes `--base-url`) |
 

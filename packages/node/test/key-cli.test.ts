@@ -97,10 +97,15 @@ test("a plan the engineer's roster already has is not offered again", async () =
 });
 
 test("a preset with no address of its own keeps the key and says what is still needed", async () => {
-  const { lines, calls } = await run("verda-key-FAKE-0123456789", { provider: "verda" });
+  const { lines, calls } = await run(["gateway", "key", "FAKE", crypto.randomUUID().slice(0, 8)].join("-"), { provider: "cloudflare-ai" });
   expect(calls.map((c) => c.name)).toEqual(["setSecret"]);
-  expect(lines).toContain('Key stored as "verda".');
+  expect(lines).toContain('Key stored as "cloudflare-ai".');
   expect(lines).toContain("--base-url");
+});
+
+test("Verda's inference API has an address of its own: its key is configured from the preset like any other", async () => {
+  const { calls } = await run(["verda", "key", "FAKE", crypto.randomUUID().slice(0, 8)].join("-"), { provider: "verda" });
+  expect(calls[1]!.input).toEqual({ id: "verda", baseUrl: "https://inference.verda.com/v1", kind: "openai", secret: "verda" });
 });
 
 test("your own address for a provider is what the key is pinned to", async () => {

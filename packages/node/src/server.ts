@@ -2022,7 +2022,7 @@ export function createApp(ctx: AppContext) {
       if (input.baseUrl) origin = originOf(input.baseUrl); // typed by you, next to the key
       else if (known?.baseUrl) origin = originOf(known.baseUrl); // built-in preset (constant)
       else if (input.provider && !known) origin = originOf(providerRecord(ctx.store, input.provider)?.baseUrl ?? ""); // custom provider
-      // A preset without a URL (e.g. Verda) stays unpinned, and therefore unused, until re-added with --base-url.
+      // A preset without a URL (Cloudflare AI Gateway) stays unpinned, and therefore unused, until re-added with --base-url.
       const info = ctx.vault.set(input.name, input.value, { provider: input.provider, label: input.label, ...(origin ? { origin } : {}) });
       return { secret: secretView(info) };
     },

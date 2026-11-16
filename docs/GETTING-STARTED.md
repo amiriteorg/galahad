@@ -197,7 +197,7 @@ bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk
 bun galahad key add --provider deepseek
 bun galahad key add --provider abliteration
 bun galahad key add --provider moonshot
-bun galahad key add --provider verda --base-url https://…   # endpoint from your Verda console
+bun galahad key add --provider verda      # Verda's inference API (a container of your own: --base-url its address)
 bun galahad key add --provider cloudflare-ai --base-url https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat
                                        # the AI Gateway token; DeepSeek, Mistral … keys stay stored in Cloudflare
 bun galahad secret list                   # names + …last4 hints only, never values

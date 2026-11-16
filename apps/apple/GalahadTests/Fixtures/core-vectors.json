@@ -3185,8 +3185,8 @@
       {
         "id": "verda",
         "kind": "openai",
-        "baseUrl": "",
-        "note": "Verda's OpenAI-compatible endpoint is shown in your Verda console; pass it with --base-url"
+        "baseUrl": "https://inference.verda.com/v1",
+        "note": "Verda's inference API, with an inference API key from its console. A serverless container of your own on Verda has an address of its own: --base-url <its address>/v1."
       },
       {
         "id": "ollama",
@@ -3453,8 +3453,11 @@
         "provider": "verda",
         "secret": "verda",
         "may": true,
-        "request": null,
-        "say": "Verda's OpenAI-compatible endpoint is shown in your Verda console; pass it with --base-url"
+        "request": {
+          "id": "verda",
+          "secret": "verda"
+        },
+        "say": "verda is configured and ready."
       },
       {
         "provider": "cloudflare-ai",
