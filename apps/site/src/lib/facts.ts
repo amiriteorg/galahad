@@ -84,6 +84,8 @@ export const PHASING = {
     { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
     { state: "building", what: "Contract first", line: "The tests a gate names are locked; next, a gate that passes before the work isn't proof." },
     { state: "next", what: "A budget per task", line: "An envelope in dollars that the work sees shrinking, and stops at." },
+    { state: "next", what: "Hooks and tripwires", line: "Rules you write that halt a command or run a check: never a model's judgment." },
+    { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
     { state: "next", what: "Trials from your own work", line: "Every task that passed review becomes a test the next change must pass." },
     { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },
     { state: "next", what: "Chat apps", line: "Telegram first, then Slack, Discord, Signal and WhatsApp." },
