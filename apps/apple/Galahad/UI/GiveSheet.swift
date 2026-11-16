@@ -30,7 +30,8 @@ struct GiveSheet: View {
             Group {
                 if let given { taken(given) } else { form }
             }
-            .navigationTitle(given == nil ? "Give the Roundtable a task" : "Given")
+            // The PWA's title: the bar of a sheet cut the longer one ("Give the Roundtable a…").
+            .navigationTitle(given == nil ? "Give a task" : "Given")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if given == nil {
