@@ -13,8 +13,15 @@
  *                   with --runs 0, only that
  *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable, Galahad's timeline, a knight's
  *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
- *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), the Inbox
- *                   and More. The same addresses on any checkout, so an older app is shown at the same places.
+ *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), every
+ *                   place the app has (its lib/nav.ts), each as far down as it goes too ("-full"), the sheets and
+ *                   forms its places open, and the gallery of its components (apps/web/design/gallery.ts, where the
+ *                   checkout has one). The same addresses on any checkout, so an older app is shown at the same places.
+ *     --gallery <dir> only the gallery's screenshots: no node is started
+ *     --shifts      also what moves on screen once it is there: each place (and Galahad's, a knight's and a room's
+ *                   timeline) opened as a returning visit opens it, on both profiles, watched from its first frame
+ *                   until 3 s after it is usable; every layout shift is summed (the place's
+ *                   cumulative layout shift), with what moved. --shift-runs n opens each that many times (default 3).
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
@@ -55,9 +62,16 @@ const REPO = resolve(flag("repo") ?? join(dirname(fileURLToPath(import.meta.url)
 const RUNS = Math.max(0, Number(flag("runs") ?? 9));
 const JSON_OUT = flag("json");
 const SHOTS = flag("shots");
+const GALLERY = flag("gallery");
+const SHIFTS = process.argv.includes("--shifts");
+const SHIFT_RUNS = Math.max(1, Number(flag("shift-runs") ?? 3));
 const MOVES = Math.max(0, Number(flag("moves") ?? 0));
-const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-if (!existsSync(CHROME)) throw new Error(`No Chrome at ${CHROME}. Set CHROME to a Chrome or Chromium binary.`);
+/** Chrome, wherever this machine keeps it (CHROME names another). */
+const CHROME =
+  process.env.CHROME ??
+  ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ...["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"].map((name) => Bun.which(name) ?? "")].find((path) => path && existsSync(path)) ??
+  "";
+if (!existsSync(CHROME)) throw new Error(`No Chrome found. Set CHROME to a Chrome or Chromium binary.`);
 
 // The node's key goes to a file in the temp home, never to the OS keychain.
 process.env.GALAHAD_KEYSTORE = "file";
@@ -191,7 +205,7 @@ type Profile = keyof typeof PROFILES;
  */
 function watchPage(): void {
   if (!location.protocol.startsWith("http")) return;
-  const m = { shell: null as number | null, usable: null as number | null, blocked: 0 };
+  const m = { shell: null as number | null, usable: null as number | null, blocked: 0, shifts: [] as { at: number; value: number; moved: string[] }[] };
   (window as unknown as { __measure: typeof m }).__measure = m;
   try {
     new PerformanceObserver((list) => {
@@ -199,6 +213,28 @@ function watchPage(): void {
     }).observe({ type: "longtask", buffered: true });
   } catch {
     /* no long-task timing here: blocked stays 0 */
+  }
+  // What moved on screen while nobody touched it: each layout shift, with what moved (a short path to it) and how.
+  type Rect = { x: number; y: number; width: number; height: number };
+  type Shift = PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: { node: Node | null; previousRect: Rect; currentRect: Rect }[] };
+  const describe = (node: Node | null, from: Rect, to: Rect): string => {
+    const path: string[] = [];
+    for (let el = node instanceof Element ? node : (node?.parentElement ?? null); el && el !== document.body && path.length < 3; el = el.parentElement) {
+      path.unshift(`${el.tagName.toLowerCase()}${[...el.classList].slice(0, 2).map((name) => `.${name}`).join("")}`);
+    }
+    const move = (a: number, b: number) => (Math.round(a) === Math.round(b) ? "" : ` ${Math.round(a)}→${Math.round(b)}`);
+    return `${path.join(" > ") || "#text"}${move(from.y, to.y) ? ` y${move(from.y, to.y)}` : ""}${move(from.x, to.x) ? ` x${move(from.x, to.x)}` : ""}${move(from.height, to.height) ? ` h${move(from.height, to.height)}` : ""}`;
+  };
+  try {
+    // Every shift counts, whatever hadRecentInput says: nothing touches the page while it is watched, and Chrome marks
+    // every shift as following input when it emulates a phone (mobile: true), so heeding it would see none there.
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as Shift[]) {
+        m.shifts.push({ at: Math.round(entry.startTime), value: entry.value, moved: (entry.sources ?? []).map((source) => describe(source.node, source.previousRect, source.currentRect)) });
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  } catch {
+    /* no layout-shift timing here: none is seen */
   }
   const there = (): boolean => {
     const main = document.querySelector(".shell main");
@@ -224,6 +260,68 @@ function watchPage(): void {
     requestAnimationFrame(() => setTimeout(() => (m.usable = performance.now())));
   });
   watch.observe(document, { childList: true, subtree: true, attributes: true });
+}
+
+/**
+ * The gallery of the app's components (apps/web/design/gallery.ts), served on loopback as the app is: its stylesheet
+ * (the head of index.html), its font and its pictures, with the gallery's own script in place of the app's. Null when
+ * the checkout has none.
+ */
+async function serveGallery(repo: string): Promise<{ url: string; stop(): void } | null> {
+  const entry = join(repo, "apps/web/design/gallery.ts");
+  if (!existsSync(entry)) return null;
+  const built = await Bun.build({ entrypoints: [entry], target: "browser", minify: true });
+  if (!built.success) throw new Error(built.logs.map(String).join("\n"));
+  const script = await built.outputs[0]!.text();
+  const index = readFileSync(join(repo, "apps/web/src/index.html"), "utf8");
+  const page = `${index.slice(0, index.indexOf("<body>"))}<body><div id="gallery"></div><script type="module" src="/gallery.js"></script></body></html>`;
+  const src = join(repo, "apps/web/src");
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/") return new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } });
+      if (path === "/gallery.js") return new Response(script, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+      if (/^\/(fonts\/[a-z-]+\.woff2|knights\/[a-z-]+(@2x)?\.webp)$/.test(path) && existsSync(join(src, path))) return new Response(Bun.file(join(src, path)));
+      return new Response("", { status: 404 });
+    },
+  });
+  return { url: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
+}
+
+/** Shots of the gallery, top to bottom, at each size in each theme: `gallery-<width>-<theme>.png`. */
+async function shootGallery(browser: Chrome, page: string, dir: string, repo: string): Promise<string[]> {
+  const gallery = await serveGallery(repo);
+  if (!gallery) {
+    console.error("this checkout has no gallery (apps/web/design/gallery.ts): no screenshots of it");
+    return [];
+  }
+  const files: string[] = [];
+  try {
+    for (const theme of ["light", "dark"]) {
+      for (const [width, height, mobile] of [[390, 844, true], [1280, 800, false]] as const) {
+        await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }, { name: "prefers-reduced-motion", value: "reduce" }] }, page);
+        await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }, page);
+        await browser.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }, page);
+        await browser.send("Page.navigate", { url: gallery.url }, page);
+        for (let i = 0; i < 100; i++) {
+          const { result } = await browser.send("Runtime.evaluate", { expression: `Boolean(document.querySelector("#gallery [data-ready]"))`, returnByValue: true }, page);
+          if (result.value) break;
+          await sleep(100);
+        }
+        await sleep(600);
+        const { cssContentSize } = await browser.send("Page.getLayoutMetrics", {}, page);
+        const { data } = await browser.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width, height: Math.ceil(cssContentSize.height), scale: 1 } }, page);
+        const file = join(dir, `gallery-${width}-${theme}.png`);
+        writeFileSync(file, Buffer.from(data, "base64"));
+        files.push(file);
+      }
+    }
+  } finally {
+    gallery.stop();
+  }
+  return files;
 }
 
 interface Wire {
@@ -277,6 +375,22 @@ async function tidy(): Promise<void> {
 }
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => void tidy().finally(() => process.exit(130)));
 
+// Only the gallery: a browser and the gallery's page, no node.
+if (GALLERY) {
+  try {
+    mkdirSync(GALLERY, { recursive: true });
+    chrome = await Chrome.launch(join(tmp, "chrome"));
+    const { targetInfos } = await chrome.send("Target.getTargets");
+    const { sessionId } = await chrome.send("Target.attachToTarget", { targetId: targetInfos.find((t: { type: string }) => t.type === "page").targetId, flatten: true });
+    await chrome.send("Page.enable", {}, sessionId);
+    const files = await shootGallery(chrome, sessionId, GALLERY, REPO);
+    console.log(`${files.length} screenshots of the gallery in ${resolve(GALLERY)}`);
+  } finally {
+    await tidy();
+  }
+  process.exit(0);
+}
+
 try {
   const from = (path: string): Promise<any> => import(join(REPO, path));
   const core = await from("packages/core/src/index.ts");
@@ -285,6 +399,8 @@ try {
   const { Home } = await from("packages/node/src/home.ts");
   const { buildAssets } = await from("packages/node/src/assets.ts");
   const { fakeDocker } = await from("packages/node/test/fake-docker.ts");
+  // The app's places, by its own list: every one is shot and watched for shifts.
+  const places = (await from("apps/web/src/lib/nav.ts")).PLACES as readonly { id: string; label: string }[];
   const routes = core.routes as Record<string, { method: string; path: string }>;
   const revision = new TextDecoder().decode(Bun.spawnSync(["git", "-C", REPO, "rev-parse", "--short", "HEAD"]).stdout).trim() || "not a git checkout";
   const dirty = new TextDecoder().decode(Bun.spawnSync(["git", "-C", REPO, "status", "--porcelain", "--", "apps/web/src", "packages"]).stdout).trim() ? " + uncommitted changes" : "";
@@ -686,6 +802,63 @@ try {
       }
     : null;
 
+  // ---------- what moves on screen once it is there ----------
+  // Each place, and Galahad's, a knight's and a room's timeline, opened as a returning visit opens it (the service worker
+  // holds the shell), on each profile, SHIFT_RUNS times; watched from its first frame until SETTLE_MS after it is usable.
+  // A place's score is the sum of every layout shift (its cumulative layout shift; nothing touches it meanwhile); what moved is said
+  // with it, the most first. Before the screenshots, which give a knight work: every checkout is seen in the same state.
+  const SETTLE_MS = 3000;
+  const shiftPlaces = [
+    ...places.map((place) => ({ name: place.id, hash: `#/${place.id}` })),
+    { name: "galahad", hash: `#/chat?c=${conversation}` },
+    { name: "knight", hash: `#/team?room=${own.ada}` },
+    { name: "room", hash: "#/team?room=forge" },
+  ];
+  interface Shifted {
+    /** The place's score on each load. */
+    scores: number[];
+    median: number;
+    max: number;
+    /** What moved, with its share of the score summed over the loads, the most first. */
+    moved: { what: string; score: number }[];
+  }
+  const shifted: Record<string, Partial<Record<Profile, Shifted>>> = {};
+  for (const name of SHIFTS ? (Object.keys(PROFILES) as Profile[]) : []) {
+    await setProfile(name);
+    await open("#/team", false);
+    for (const place of shiftPlaces) {
+      const scores: number[] = [];
+      const moved = new Map<string, number>();
+      for (let run = 0; run < SHIFT_RUNS; run++) {
+        // (A new chat at #/chat, not the kept one a load before left open.)
+        await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
+        await open(place.hash, false);
+        await sleep(SETTLE_MS);
+        const seen = await evaluate<{ value: number; moved: string[] }[]>(`window.__measure.shifts`);
+        scores.push(seen.reduce((sum, shift) => sum + shift.value, 0));
+        for (const shift of seen) for (const what of shift.moved) moved.set(what, (moved.get(what) ?? 0) + shift.value / shift.moved.length);
+      }
+      const round = (n: number) => Math.round(n * 10_000) / 10_000;
+      (shifted[place.name] ??= {})[name] = {
+        scores: scores.map(round),
+        median: round(median(scores)),
+        max: round(Math.max(...scores)),
+        moved: [...moved].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([what, score]) => ({ what, score: round(score) })),
+      };
+    }
+    console.error(`watched every place for shifts on the ${name} profile`);
+  }
+  if (SHIFTS) {
+    const rows = [["place", ...Object.keys(PROFILES).map((name) => `${name} (median, max)`), "what moved most"]];
+    for (const [place, profiles] of Object.entries(shifted)) {
+      const most = Object.values(profiles).flatMap((p) => p!.moved).sort((a, b) => b.score - a.score)[0];
+      rows.push([place, ...Object.keys(PROFILES).map((name) => { const p = profiles[name as Profile]!; return `${p.median.toFixed(4)}  ${p.max.toFixed(4)}`; }), most ? `${most.what} (${most.score})` : ""]);
+    }
+    const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => row[column]!.length)));
+    console.log(`\nLayout shift per place, ${SHIFT_RUNS} returning visits each, watched until ${SETTLE_MS / 1000} s after usable (the sum of every shift):`);
+    console.log(rows.map((row) => row.map((cell, column) => (column && column < row.length - 1 ? cell.padStart(widths[column]!) : cell.padEnd(widths[column]!))).join("  ")).join("\n"));
+  }
+
   // ---------- screenshots ----------
   // (The same addresses on any checkout: an older app is shown at the same places. Each waits for what it is there to show.)
   const shots: string[] = [];
@@ -703,16 +876,41 @@ try {
       { name: "inbox", hash: "#/inbox" },
       { name: "memory", hash: "#/memory", wait: "#memory-results .item" },
       { name: "more", hash: "#/more" },
+      // Every other place the app has, by its own list, each as far down as it goes too.
+      ...places.filter((place) => !["team", "inbox", "memory", "more"].includes(place.id)).map((place) => ({ name: place.id, hash: `#/${place.id}` })),
+    ];
+    // The sheets and forms the places open: where, and what opens it (a button's words, or a script).
+    const press = (...labels: string[]) =>
+      `(() => { const all = [...document.querySelectorAll("button, a.btn, [role=option]")].filter((el) => el.getClientRects().length); const el = ${JSON.stringify(labels)}.map((label) => all.find((b) => b.textContent.trim() === label || b.getAttribute("aria-label") === label)).find(Boolean); if (!el) throw new Error("nothing to press: " + ${JSON.stringify(labels.join(" / "))}); el.click(); })()`;
+    const key = (k: string, meta = false) => `document.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(k)}, metaKey: ${meta}, ctrlKey: ${meta}, bubbles: true }))`;
+    const sheets: { name: string; hash: string; open: string[]; wait?: string }[] = [
+      { name: "sheet-palette", hash: "#/overview", open: [key("k", true)], wait: "dialog.palette[open]" },
+      { name: "sheet-shortcuts", hash: "#/overview", open: [key("?")] },
+      { name: "sheet-chat-menu", hash: "#/chat", open: [press("Chat options")], wait: "dialog.selector-pop[open], dialog.selector-sheet[open]" },
+      { name: "sheet-all-chats", hash: "#/chat", open: [press("Chat options"), press("All chats…", "All chats")] },
+      { name: "sheet-new-knight", hash: "#/team", open: [press("New knight", "Add a knight")] },
+      { name: "sheet-new-project", hash: "#/projects", open: [press("New project")] },
+      { name: "sheet-add-loop", hash: "#/loops", open: [press("Add loop", "Add a loop")] },
+      { name: "sheet-remember", hash: "#/memory", open: [press("Remember something", "Remember")] },
+      { name: "sheet-write-skill", hash: "#/skills", open: [press("Write a skill")] },
+      { name: "sheet-new-idea", hash: "#/archive", open: [press("New idea")] },
+      { name: "sheet-pair-device", hash: "#/fleet", open: [press("Pair a device")] },
+      { name: "sheet-create-sandbox", hash: "#/sandboxes", open: [press("Create sandbox")] },
+      { name: "sheet-add-key", hash: "#/vault", open: [press("Add a key", "Add key")] },
+      { name: "sheet-add-provider", hash: "#/models", open: [press("Add provider")] },
     ];
     const sizes = [[390, 844, true], [1280, 800, false]] as const;
-    const shoot = async (name: string, width: number, theme: string): Promise<void> => {
-      const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, page);
-      const file = join(SHOTS, `${name}-${width}-${theme}.png`);
+    const shoot = async (name: string, width: number, theme: string, whole = false): Promise<void> => {
+      // As far down as it goes: the page's whole height, at one pixel a point (it can be long).
+      const { cssContentSize } = whole ? await browser.send("Page.getLayoutMetrics", {}, page) : { cssContentSize: null };
+      const { data } = await browser.send("Page.captureScreenshot", cssContentSize ? { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width, height: Math.min(Math.ceil(cssContentSize.height), 12_000), scale: 0.5 } } : { format: "png" }, page);
+      const file = join(SHOTS, `${name}-${width}-${theme}${whole ? "-full" : ""}.png`);
       writeFileSync(file, Buffer.from(data, "base64"));
       shots.push(file);
     };
     const look = async (theme: string, width: number, height: number, mobile: boolean): Promise<void> => {
-      await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] }, page);
+      // (Motion reduced, so a sheet is shot where it rests, not on its way there.)
+      await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }, { name: "prefers-reduced-motion", value: "reduce" }] }, page);
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }, page);
       await browser.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }, page);
     };
@@ -722,14 +920,32 @@ try {
         for (const view of views) {
           // A new chat, not the kept one the last round left open (the app comes back to that one).
           await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
-          await open(view.hash, false);
+          await open(view.hash, false).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
           if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`), 20_000).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
           // (A running task's lines, and a desktop's picture, arrive a moment after the page.)
           await sleep(view.name.includes("running") || view.name.includes("desktop") ? 2500 : 500);
           await shoot(view.name, width, theme);
+          if (await evaluate<boolean>(`document.documentElement.scrollHeight > innerHeight + 8`)) await shoot(view.name, width, theme, true);
+        }
+        for (const sheet of sheets) {
+          await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
+          try {
+            await open(sheet.hash, false);
+            await sleep(300);
+            for (const step of sheet.open) {
+              await evaluate(step);
+              await sleep(350);
+            }
+            await until(`${sheet.name} to open`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(sheet.wait ?? "dialog.sheet[open]")}))`), 8_000);
+            await sleep(400);
+            await shoot(sheet.name, width, theme);
+          } catch (error) {
+            console.error(`${sheet.name}: ${(error as Error).message}`);
+          }
         }
       }
     }
+    shots.push(...(await shootGallery(browser, page, SHOTS, REPO)));
     // A task given to the Roundtable, through the page's own form, where the app has one: who took it and why. Last, as it
     // gives Gawain work; stopped again after each, so each is given to the same Roundtable.
     giving: for (const theme of ["light", "dark"]) {
@@ -808,11 +1024,15 @@ try {
     const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => row[column]!.length)));
     console.log(`\nMoving between places in the app already open, ${MOVES} times over (median, fastest–slowest):`);
     console.log(rows.map((row) => row.map((cell, column) => (column ? cell.padStart(widths[column]!) : cell.padEnd(widths[column]!))).join("  ")).join("\n"));
-    if (JSON_OUT && !RUNS) writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, moves: Object.fromEntries(Object.entries(moves).map(([name, spreads]) => [name, Object.fromEntries(PATH.map((hash, i) => [`${i} ${hash}`, spreads[i]]))])) }, null, 2)}\n`);
+  }
+  // (With nothing loaded, what was measured instead: the moves, the shifts.)
+  if (JSON_OUT && !RUNS && (MOVES || SHIFTS)) {
+    const movesJson = Object.fromEntries(Object.entries(moves).map(([name, spreads]) => [name, Object.fromEntries(PATH.map((hash, i) => [`${i} ${hash}`, spreads[i]]))]));
+    writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, ...(MOVES ? { moves: movesJson } : {}), ...(SHIFTS ? { shifts: shifted } : {}) }, null, 2)}\n`);
   }
 
   // ---------- the report ----------
-  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES ? " but the moves" : ""} (--runs 0).`);
+  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES || SHIFTS ? ` but ${[MOVES ? "the moves" : "", SHIFTS ? "the shifts" : ""].filter(Boolean).join(" and ")}` : ""} (--runs 0).`);
   else {
   // (The browser fetches /sw.js itself, outside what the protocol shows of the page and the worker: it is counted here.)
   const files = await Promise.all([...new Set([...firstVisit.filter((w) => !w.path.startsWith("/api/") && !w.path.startsWith("/link/")).map((w) => w.path), "/sw.js"])].map(sizeOf));
@@ -829,6 +1049,7 @@ try {
     chatAtRest,
     roundtableAtRest: atRest,
     ...(MOVES ? { moves } : {}),
+    ...(SHIFTS ? { shifts: shifted } : {}),
     shots,
   };
   if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify(report, null, 2)}\n`);
