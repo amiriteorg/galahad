@@ -42,12 +42,23 @@ struct InboxView: View {
                     Text("He'll learn that a key exists, never what it is.")
                 }
             }
+            if !session.facts.isEmpty {
+                Section {
+                    ForEach(session.facts) { fact in
+                        FactRow(session: session, fact: fact)
+                    }
+                } header: {
+                    Text("Facts he noticed about you")
+                } footer: {
+                    Text("Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note.")
+                }
+            }
         }
         .overlay {
             if !session.inboxLoaded {
                 ProgressView()
             } else if session.inboxCount == 0 {
-                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, keys Galahad asks for and devices asking to join wait here."))
+                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, keys Galahad asks for, facts he noticed about you and devices asking to join wait here."))
             }
         }
         .navigationTitle("Inbox")
@@ -258,6 +269,62 @@ struct KeyRequestRow: View {
 }
 
 /// A device asking to join: its name and the code it shows. Let it in only if the codes match.
+/// A fact about you he proposed: keep it as he put it, or in your words, or drop it.
+struct FactRow: View {
+    let session: Session
+    let fact: Fact
+    @State private var rewording = false
+    @State private var words = ""
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(fact.text)
+            if session.can("mind:write") {
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await act { try await session.keep(fact) } }
+                    } label: {
+                        Label("Keep", systemImage: "checkmark").fontWeight(.semibold).foregroundStyle(Color.onAccent)
+                    }
+                    .buttonStyle(.glassProminent)
+                    Button("In my words") {
+                        words = fact.text
+                        rewording = true
+                    }
+                    .buttonStyle(.glass)
+                    Button("Drop", role: .destructive) { Task { await act { try await session.drop(fact) } } }
+                        .buttonStyle(.glass)
+                }
+            }
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
+            }
+        }
+        .padding(.vertical, 4)
+        .alert("In your words", isPresented: $rewording) {
+            TextField("About you", text: $words)
+            Button("Keep") {
+                let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !said.isEmpty else { return }
+                Task { await act { try await session.keep(fact, text: said) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It goes with every answer of his.")
+        }
+    }
+
+    private func act(_ work: () async throws -> Void) async {
+        do {
+            try await work()
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
 struct JoinRequestRow: View {
     let session: Session
     let pairing: PairingView

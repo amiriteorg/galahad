@@ -16,6 +16,8 @@ import Observation
     private(set) var actions: [ActionView] = []
     private(set) var requests: [SecretRequestView] = []
     private(set) var pairings: [PairingView] = []
+    /// The facts about you he proposed, waiting for you (what you kept goes with every answer of his).
+    private(set) var facts: [Fact] = []
     private(set) var turns: [TurnView] = []
     private(set) var quests: [QuestView] = []
     /// The Inbox has been read at least once, so its count means something.
@@ -33,7 +35,7 @@ import Observation
     func can(_ scope: String) -> Bool { whoami?.scopes.contains(scope) ?? true }
 
     var waiting: [ActionView] { actions.filter { $0.waiting() } }
-    var inboxCount: Int { waiting.count + requests.count + pairings.count }
+    var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count }
     var asks: [Ask] { waiting.map { Ask(by: $0.by, connector: $0.connector, tool: $0.tool) } }
     var rows: [RosterRow] { team.map { Roster.rows(snapshot: $0, asks: asks) } ?? [] }
 
@@ -65,6 +67,7 @@ import Observation
         async let actions = attempt { try await client.get("/api/actions", as: Listed.self).actions ?? [] }
         async let requests = attempt { try await client.get("/api/secret-requests", as: Listed.self).requests ?? [] }
         async let pairings = attempt { try await client.get("/api/pairings", as: Listed.self).pairings ?? [] }
+        async let about = attempt { try await client.get("/api/about-you", as: AboutYou.self) }
         async let turns = attempt { try await client.get("/api/turns", as: Listed.self) }
         async let quests = attempt { try await client.get("/api/quests", as: Listed.self).quests ?? [] }
 
@@ -83,6 +86,7 @@ import Observation
         if case .success(let list) = asked { self.requests = list }
         if case .success = acted, case .success = asked { inboxLoaded = true }
         if case .success(let list) = await pairings { self.pairings = list }
+        if case .success(let about) = await about { self.facts = about.proposed }
         if case .success(let listed) = await turns {
             self.turns = listed.turns ?? []
             // The chat on screen, as the node holds it, when anything kept changed on another device.
@@ -109,6 +113,20 @@ import Observation
     func answer(_ pairing: PairingView, approve: Bool) async throws {
         struct Answer: Encodable { let invite: String; let device: String }
         _ = try await client.post(approve ? "/api/pairings/approve" : "/api/pairings/reject", Answer(invite: pairing.invite, device: pairing.device), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// Keeps a fact he proposed, in your words if you give them: it goes with every answer of his from then on.
+    func keep(_ fact: Fact, text: String? = nil) async throws {
+        struct Keep: Encodable { let id: String; let text: String? }
+        _ = try await client.post("/api/about-you/keep", Keep(id: fact.id, text: text), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// Drops a fact he proposed: it was only his note, and it goes with no answer.
+    func drop(_ fact: Fact) async throws {
+        struct Forget: Encodable { let id: String }
+        _ = try await client.post("/api/memories/forget", Forget(id: fact.id), as: JSONValue.self)
         await refresh()
     }
 

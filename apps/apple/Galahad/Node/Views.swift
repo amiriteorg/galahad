@@ -160,6 +160,20 @@ struct SecretRequestView: Decodable, Sendable, Identifiable, Equatable {
 }
 
 /// `GET /api/pairings`: a device asking to join, with the code it shows.
+/// `GET /api/about-you`: a fact about you, as a memory of the mind. Yours (`owner`) goes with every answer of his; his
+/// (an agent's) is only proposed, and waits for you to keep it.
+struct Fact: Decodable, Sendable, Identifiable, Equatable {
+    let id: String
+    let text: String
+    let trust: String
+}
+
+/// What he knows of you: what you kept, and what he proposed.
+struct AboutYou: Decodable, Sendable {
+    let kept: [Fact]
+    let proposed: [Fact]
+}
+
 struct PairingView: Decodable, Sendable, Identifiable, Equatable {
     let invite: String
     let device: String

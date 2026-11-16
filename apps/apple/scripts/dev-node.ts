@@ -327,6 +327,11 @@ await until("the room's replies", async () => (await admin("teamRoom", { id: stu
 await until("Percival to start thinking", async () => (await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate === "percival" && d.status === "running"));
 
 // ---------- what needs you ----------
+// A fact about you Galahad noticed (an agent's memory, so only proposed), waiting in the Inbox for you to keep.
+{
+  const noticer = (await admin("mintArm", { label: "dev-noticer" })) as { token: string };
+  await call(noticer.token, "remember", { text: "Writes in British English.", tags: ["about-you"] });
+}
 // An agent asks your leave for an outward call (a connector's post), and Galahad asks for a key.
 const forge = { id: "forge", label: "Forge", origin: `http://127.0.0.1:${upstream.port}`, auth: { secret: "forge", scheme: "bearer" }, tools: { post: { description: "Post publicly.", method: "POST", path: "/posts", params: { text: { type: "string", required: true } }, class: "outward" } } };
 await admin("setConnector", { id: "forge", manifest: forge });
