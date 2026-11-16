@@ -63,7 +63,7 @@ enum KnightEyes {
         if line.hasPrefix("Running · ") { return "working" }
         if line.prefixMatch(of: #/Exit -?\d+ · /#) != nil { return "reading" }
         let end = String(line.reversed().drop { $0.isWhitespace }.reversed())
-        if line.prefixMatch(of: #/(Gate \d+\/\d+ · |Gates before the work · |Review · |Submitted for review · )/#) != nil || end.wholeMatch(of: #/gate[sd]/#) != nil {
+        if line.prefixMatch(of: #/(Gate \d+\/\d+ · |Gates · |Gates before the work · |Review · |Submitted for review · )/#) != nil || end.wholeMatch(of: #/gate[sd]/#) != nil {
             return "checking"
         }
         return "working"

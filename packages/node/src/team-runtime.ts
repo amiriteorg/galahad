@@ -180,6 +180,11 @@ export function progress(event: QuestEvent): string {
     case "thought": return `Thinking · ${event.text}`;
     case "format": return `No command to run · ${event.problem}\n${event.reply}`;
     case "baseline": return `Gates before the work · ${event.results.map((g, i) => `${i + 1}. exit ${g.exitCode} · ${g.command}`).join("\n")}`;
+    case "gates": return `Gates · ${event.gates.map((g, i) => `${i + 1}. ${g.command}`).join("\n")}`;
+    case "gated": {
+      const failed = event.results.filter((g) => g.exitCode !== 0).length;
+      return `Gates · ${failed ? `${failed} of ${event.results.length} failed: back to the work` : `all ${event.results.length} passed`}`;
+    }
     case "submitted": return `Submitted for review · ${event.summary}`;
     case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     case "escalated": return `Escalated · the same gate failed twice in a row: the ${event.to}'s models take the work\n$ ${event.gate}`;

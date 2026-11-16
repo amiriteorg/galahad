@@ -368,7 +368,7 @@ const eyes = {
   canvas: CANVAS,
   art: Object.fromEntries(Object.entries(ART).map(([art, { eyes: pair }]) => [art, pair.map(([x, y, r, slit]) => ({ x, y, r, slit }))])),
   shown: Object.fromEntries(Object.entries(SHOWN).map(([expression, { eyes: shape, gaze }]) => [expression, { eyes: shape, gaze }])),
-  steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
+  steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates · 1. bun test", "Gates · all 2 passed", "Gates · 1 of 2 failed: back to the work", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
 };
 
 // ---- where a connector's key or sign-in stands (the PWA's own lib/connector-state.ts) -------------------------------

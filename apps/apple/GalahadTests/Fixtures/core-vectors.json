@@ -3759,6 +3759,18 @@
         "step": "checking"
       },
       {
+        "line": "Gates · 1. bun test",
+        "step": "checking"
+      },
+      {
+        "line": "Gates · all 2 passed",
+        "step": "checking"
+      },
+      {
+        "line": "Gates · 1 of 2 failed: back to the work",
+        "step": "checking"
+      },
+      {
         "line": "Gates before the work · 2",
         "step": "checking"
       },

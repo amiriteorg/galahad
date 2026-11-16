@@ -162,7 +162,8 @@ export function taskStep(progress: string): Extract<AvatarExpression, "thinking"
   if (/^Running · desktop(\s|$)/.test(line)) return "browsing";
   if (line.startsWith("Running · ")) return "working";
   if (/^Exit -?\d+ · /.test(line)) return "reading";
-  if (/^(Gate \d+\/\d+ · |Gates before the work · |Review · |Submitted for review · )/.test(line) || /^gate[sd]$/.test(line.trimEnd())) return "checking";
+  // (A bare "gates" or "gated" is how a task's line said them before they were said in words.)
+  if (/^(Gate \d+\/\d+ · |Gates · |Gates before the work · |Review · |Submitted for review · )/.test(line) || /^gate[sd]$/.test(line.trimEnd())) return "checking";
   return "working";
 }
 
