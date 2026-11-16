@@ -92,6 +92,18 @@ describe("a quest whose work is in a directory", () => {
     expect(evidence.every((c) => c.startsWith("mkdir -p /work/.tmp && export TMPDIR=/work/.tmp && cd '/work/tasks/task-abc_def-1234' && "))).toBe(true);
   });
 
+  test("a quest that goes without memories asks every call to, its pick among attempts included", async () => {
+    const fake = fakeNode();
+    await runNodeQuest(fake.node, { goal: "Fix the parser.", network: "gateway", memories: false, effort: 2, remember: false, trial: true });
+    expect(new Set(fake.chats.map((c) => c.role))).toEqual(new Set(["planner", "engineer", "reviewer"]));
+    expect(fake.chats.some((c) => String(c.messages[0].content).startsWith("You are choosing between"))).toBe(true);
+    expect(fake.chats.every((c) => c.memories === false)).toBe(true);
+    // (Otherwise the node recalls as it always has: nothing is said.)
+    const usual = fakeNode();
+    await runNodeQuest(usual.node, { goal: "Fix the parser.", network: "gateway", remember: false });
+    expect(usual.chats.some((c) => "memories" in c)).toBe(false);
+  });
+
   test("without one, a quest runs its commands as it always has", async () => {
     const fake = fakeNode();
     await runNodeQuest(fake.node, { goal: "Fix the parser.", network: "gateway", gates: ["bun test"], remember: false });

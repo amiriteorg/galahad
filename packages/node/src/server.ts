@@ -1134,7 +1134,7 @@ export function createApp(ctx: AppContext) {
   function prepareAnswer(input: ChatInput, p: Principal, about?: string) {
     // Every message goes to a provider, whoever "said" it, so all of them are scanned.
     guardAgainstSecrets(...input.messages.map((m) => m.content));
-    const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, quest, ...request } = input;
+    const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, memories: wantMemories, attempt, quest, ...request } = input;
     if (quest && !hisOwnQuest(p)) throw new HttpError(403, "only his own quests are given his skills");
     const asked = request.messages.at(-1)!;
     // Kept chats are yours alone: an agent (or a quest) never writes into your history.
@@ -1171,7 +1171,8 @@ export function createApp(ctx: AppContext) {
     // quest is, how its conversation began: a quest sends its whole conversation again on every turn, and recalling
     // for the last message would ask his memory about a command's output and change the prompt's beginning each
     // time, so that no provider could read it from its cache (input tokens are the bill).
-    const recallFor = request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
+    // (A call that asks to go without recalls nothing: a trial of your own work's, whose task the mind may hold the answer to.)
+    const recallFor = wantMemories === false ? undefined : request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
     const known = [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";

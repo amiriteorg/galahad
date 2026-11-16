@@ -425,6 +425,11 @@ export const routes = {
        * the answer has tools, off without them; quests turn it on for the plan only.
        */
       archive: z.boolean().optional(),
+      /**
+       * Recall what the mind holds that bears on it (default yes). A trial of your own work's quest goes without: the
+       * mind may hold what the task it replays taught, and a trial is never handed its answer.
+       */
+      memories: z.boolean().optional(),
       /** Start the role's models at this position: each parallel attempt takes another one first (the rest stay its fallbacks). */
       rotate: z.number().int().min(0).max(15).optional(),
       /** This call is one attempt's (effort): the census counts it as that attempt's, not his own. */

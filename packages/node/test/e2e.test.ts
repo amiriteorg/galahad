@@ -77,6 +77,8 @@ let server: Daemon;
 let upstream: ReturnType<typeof Bun.serve>;
 let upstreamAuth: string | null | undefined = null;
 let upstreamAgent: string | null | undefined = null;
+/** What the stand-in provider was last sent. */
+let upstreamBody: unknown = null;
 
 beforeAll(async () => {
   // A stand-in for any OpenAI-compatible provider (DeepSeek, OrcaRouter, Verda, Ollama…).
@@ -87,6 +89,7 @@ beforeAll(async () => {
       upstreamAuth = req.headers.get("authorization");
       upstreamAgent = req.headers.get("user-agent");
       const body = (await req.json()) as { stream?: boolean; messages: { content: string }[] };
+      upstreamBody = body;
       if (!body.stream) return Response.json({ choices: [{ message: { content: "pong" } }] });
       const chunks = ["Good ", "day, ", "my liege."].map((t) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`);
       return new Response(`${chunks.join("")}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
@@ -254,6 +257,25 @@ describe("M0: one mind, two bodies", () => {
     expect(events.find((e) => e.type === "fallback")?.from).toBe("nowhere/missing");
     expect(events.filter((e) => e.type === "text").map((e) => e.text).join("")).toBe("Good day, my liege.");
     expect(events.at(-1).type).toBe("done");
+  });
+
+  test("a quest's call goes without recalled memories when it asks to (a trial of your own work), and with them otherwise", async () => {
+    const callB = admin(homeB, portB);
+    await callB("remember", { text: "The widgets importer reads two-digit years as this century", tags: ["test"] });
+    const ask = async (extra: object): Promise<string> => {
+      upstreamBody = null;
+      const response = await fetch(`http://127.0.0.1:${portB}/api/chat`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${homeB.adminToken()}`, "content-type": "application/json" },
+        body: JSON.stringify({ role: "swift", tools: false, coding: true, messages: [{ role: "user", content: "Fix the widgets importer's two-digit years" }], ...extra }),
+      });
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(upstreamBody).not.toBeNull();
+      return JSON.stringify(upstreamBody);
+    };
+    expect(await ask({})).toContain("two-digit years as this century");
+    expect(await ask({ memories: false })).not.toContain("two-digit years as this century");
   });
 
   test("keys pasted into chat or memory are refused and redirected to the vault", async () => {
