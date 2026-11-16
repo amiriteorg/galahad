@@ -2880,7 +2880,13 @@
       {
         "id": "zai",
         "kind": "openai",
-        "baseUrl": "https://api.z.ai/api/paas/v4"
+        "baseUrl": "https://api.z.ai/api/paas/v4",
+        "models": [
+          "glm-5.3",
+          "glm-5.3-flash",
+          "glm-5.3-flashx",
+          "glm-5.2"
+        ]
       },
       {
         "id": "zai-coding",
@@ -3180,6 +3186,7 @@
         "id": "cloudflare-ai",
         "kind": "openai",
         "baseUrl": "",
+        "models": [],
         "note": "Cloudflare AI Gateway's OpenAI-compatible endpoint: --base-url https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat. The key is the gateway's token; the providers' own keys stay stored in Cloudflare. Models are named <provider>/<model>, e.g. deepseek/deepseek-chat."
       },
       {

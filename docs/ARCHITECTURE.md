@@ -235,7 +235,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | `orcarouter` | openai | `https://api.orcarouter.ai/v1` |
 | `openrouter` | openai | `https://openrouter.ai/api/v1` |
 | `moonshot` | openai | `https://api.moonshot.ai/v1` |
-| `zai` | openai | `https://api.z.ai/api/paas/v4` |
+| `zai` | openai | `https://api.z.ai/api/paas/v4` (its API lists no models, so the roster is offered the ones its docs name) |
 | `zai-coding` | openai, **coding plan** | `https://api.z.ai/api/coding/paas/v4` (GLM Coding Plan; mainland China: `--base-url https://open.bigmodel.cn/api/coding/paas/v4`) |
 | `kimi-coding` | openai, **coding plan** | `https://api.kimi.ai/coding/v1` (Kimi Code; mainland China: `--base-url https://api.kimi.com/coding/v1`); keys start `sk-kimi-` |
 | `alibaba-coding` | openai, **coding plan** | `https://coding.dashscope.aliyuncs.com/v1` (Alibaba Cloud Coding Plan, now sold as legacy; outside mainland China: `--base-url https://coding-intl.dashscope.aliyuncs.com/v1`) |
@@ -252,7 +252,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | `synthetic` | openai | `https://api.synthetic.new/openai/v1` |
 | `ollama-cloud` | openai | `https://ollama.com/v1` (Ollama's cloud models) |
 | `verda` | openai | `https://inference.verda.com/v1` (Verda's inference API; a serverless container of your own: `--base-url` its address) |
-| `cloudflare-ai` | openai | *Your gateway: `https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat`. The key is the gateway's token, sent as `cf-aig-authorization` (never as `Authorization`, so Cloudflare adds the provider keys you stored with it); models are `<provider>/<model>`, e.g. `deepseek/deepseek-chat`* |
+| `cloudflare-ai` | openai | *Your gateway: `https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat`. The key is the gateway's token, sent as `cf-aig-authorization` (never as `Authorization`, so Cloudflare adds the provider keys you stored with it); models are `<provider>/<model>`, e.g. `deepseek/deepseek-chat`, and yours to name: a gateway lists none* |
 | `ollama`, `llamacpp` | openai (local) | `http://127.0.0.1:11434/v1`, `http://127.0.0.1:9931/v1` (llama-server's default port; an older build's 8080, or its Docker image's, takes `--base-url`) |
 
 - **Anthropic** goes through the official SDK with adaptive thinking, explicit effort and streaming. Server-side refusal fallback (`fallbacks: "default"`) is enabled on the models that support it (Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5).

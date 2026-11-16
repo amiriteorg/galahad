@@ -104,7 +104,7 @@ import {
   keyState,
   type OAuthEndpoints,
   handleGateway,
-  listModels,
+  offeredModels,
   originOf,
   parseRef,
   planOf,
@@ -2069,9 +2069,8 @@ export function createApp(ctx: AppContext) {
     providerModels: async (input) => {
       const provider = resolveProvider(ctx.store, ctx.vault, input.id);
       if (!provider) throw new HttpError(404, `provider ${input.id} is not configured`);
-      // A coding plan isn't his to call, to list its models or for anything else: the ones its preset names.
-      const plan = planOf(input.id);
-      return { models: plan ? [...plan.models] : await listModels(provider) };
+      // A coding plan isn't his to call, to list its models or for anything else: the ones its preset names (offeredModels).
+      return { models: await offeredModels(provider) };
     },
     // (With the plans whose allowance is spent just now, and until when, and what each checked model was seen to do.)
     roster: () => ({

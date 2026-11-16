@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterAll, describe, expect, test } from "bun:test";
 import { newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { GatewayTokens, handleGateway, keyHeaders, listModels, preset, streamAnthropic, streamOpenAICompatible } from "../src/index.ts";
+import { chat, GatewayTokens, handleGateway, keyHeaders, listModels, offeredModels, originOf, preset, streamAnthropic, streamOpenAICompatible } from "../src/index.ts";
 
 /*
  * Where a provider's key goes. Most OpenAI-compatible endpoints take it as
@@ -86,6 +86,67 @@ describe("a preset points where its vendor's docs say", () => {
     expect(preset("verda")).toMatchObject({ kind: "openai", baseUrl: "https://inference.verda.com/v1" });
     // A container of your own on Verda has an endpoint of its own: the note says how to point at it.
     expect(preset("verda")!.note).toContain("--base-url");
+  });
+});
+
+/*
+ * The models the roster is offered for a provider. Most endpoints say what they serve (GET /models). Z.ai's API has
+ * no such endpoint (docs.z.ai's API reference has none), so its preset names the models its docs list; a Cloudflare
+ * AI Gateway routes to whatever you set it up for, so its models are yours to name; a coding plan isn't asked.
+ */
+describe("the models a provider is offered with", () => {
+  const asked = () => {
+    const seen: { url: string; headers: Headers }[] = [];
+    const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), headers: new Headers(init?.headers) });
+      return String(url).endsWith("/models") ? Response.json({ data: [{ id: "m-2" }, { id: "m-1" }] }) : new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+    return { seen, fetch };
+  };
+  const KEY = ["FAKE", "offered", "models", "key"].join("-");
+  const provider = (id: string, baseUrl = preset(id)!.baseUrl) => ({ id, kind: preset(id)?.kind ?? ("openai" as const), baseUrl, apiKey: KEY, local: false });
+
+  test("Z.ai: the models its docs name, and Z.ai is never asked for a list it doesn't have", async () => {
+    const { seen, fetch } = asked();
+    expect(await offeredModels(provider("zai"), fetch)).toEqual(["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"]);
+    expect(seen).toEqual([]);
+  });
+
+  test("whatever Z.ai serves first (zai/*) is the first of them, and the call goes to its chat completions", async () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
+    const vault = new Vault(store, identity);
+    vault.set("zai", KEY, { provider: "zai", origin: originOf(preset("zai")!.baseUrl)! });
+    store.emit(identity, "provider.set", { id: "zai", kind: "openai", baseUrl: preset("zai")!.baseUrl, secret: "zai" });
+    store.emit(identity, "roster.set", { role: "planner", models: ["zai/*"] });
+    const seen: { url: string; body: { model?: string } }[] = [];
+    const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), body: JSON.parse(String(init?.body ?? "{}")) });
+      return new Response('data: {"choices":[{"delta":{"content":"aye"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+    }) as typeof globalThis.fetch;
+    const events = [];
+    for await (const event of chat({ store, vault, fetch }, { messages: [{ role: "user", content: "hello" }] })) events.push(event);
+    expect(events[0]).toEqual({ type: "model", ref: "zai/glm-5.3" });
+    expect(seen.map((s) => [s.url, s.body.model])).toEqual([["https://api.z.ai/api/paas/v4/chat/completions", "glm-5.3"]]);
+  });
+
+  test("Cloudflare AI Gateway: its models are yours to name, and it says so, without asking for a list it doesn't have", async () => {
+    const { seen, fetch } = asked();
+    await expect(offeredModels(provider("cloudflare-ai", "https://gateway.ai.cloudflare.com/v1/0123/galahad/compat"), fetch)).rejects.toThrow("cloudflare-ai doesn't list its models: name them yourself in the roster, as cloudflare-ai/<model>");
+    expect(seen).toEqual([]);
+  });
+
+  test("a coding plan's are the ones its preset names: the plan isn't asked", async () => {
+    const { seen, fetch } = asked();
+    expect(await offeredModels(provider("zai-coding"), fetch)).toEqual(preset("zai-coding")!.plan!.models);
+    expect(seen).toEqual([]);
+  });
+
+  test("any other is asked, with its key, as ever", async () => {
+    const { seen, fetch } = asked();
+    expect(await offeredModels(provider("moonshot"), fetch)).toEqual(["m-1", "m-2"]);
+    expect(seen.map((s) => [s.url, s.headers.get("authorization")])).toEqual([["https://api.moonshot.ai/v1/models", `Bearer ${KEY}`]]);
   });
 });
 

@@ -6,7 +6,7 @@ import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
 import { windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
-import { listModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
+import { offeredModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, roleModels } from "./roster.ts";
 
 export interface BrainContext {
@@ -158,7 +158,7 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
     if (!resolved) continue;
     try {
       // An embedding model can't chat: a local runtime serving the archive's embedder isn't picked for a chat role.
-      const first = (await listModels(resolved, ctx.fetch)).find((m) => !isEmbeddingModel(m));
+      const first = (await offeredModels(resolved, ctx.fetch)).find((m) => !isEmbeddingModel(m));
       if (first) out.push(`${provider}/${first}`);
     } catch {
       /* local runtime not running on this node */

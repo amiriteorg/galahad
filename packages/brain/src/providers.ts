@@ -12,6 +12,11 @@ export interface ProviderPreset {
   /** Runs on the node itself (no key, nothing leaves the machine). */
   local?: boolean;
   note?: string;
+  /**
+   * The models its vendor documents, for an endpoint that lists none (no GET /models): what the roster is offered.
+   * Empty: they are yours to name (a gateway's are whatever you set it up to route to).
+   */
+  models?: string[];
   /** A subscription sold for coding tools, not the vendor's ordinary API (see CodingPlan). */
   plan?: CodingPlan;
 }
@@ -61,7 +66,8 @@ export const PRESETS: ProviderPreset[] = [
   { id: "orcarouter", kind: "openai", baseUrl: "https://api.orcarouter.ai/v1", keyPrefixes: ["sk-orca-"] },
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },
-  { id: "zai", kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4" },
+  // (Z.ai's API lists no models: its docs name them.)
+  { id: "zai", kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4", models: ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"] },
   {
     id: "zai-coding",
     kind: "openai",
@@ -232,6 +238,7 @@ export const PRESETS: ProviderPreset[] = [
     id: "cloudflare-ai",
     kind: "openai",
     baseUrl: "",
+    models: [],
     note: "Cloudflare AI Gateway's OpenAI-compatible endpoint: --base-url https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat. The key is the gateway's token; the providers' own keys stay stored in Cloudflare. Models are named <provider>/<model>, e.g. deepseek/deepseek-chat.",
   },
   {
@@ -438,6 +445,18 @@ export function keyHeaders(provider: { kind: ProviderKind; baseUrl: string; apiK
  */
 export const withoutRedirects = (base: typeof fetch = fetch): typeof fetch =>
   ((input: Parameters<typeof fetch>[0], init?: RequestInit) => base(input, { ...init, redirect: "manual" })) as typeof fetch;
+
+/**
+ * The models the roster is offered for a provider: a coding plan's are the ones its preset names (asking the plan would
+ * be no coding), and so are those of a provider whose endpoint lists none; any other is asked (listModels).
+ */
+export async function offeredModels(provider: ResolvedProvider, fetchImpl: typeof fetch = fetch): Promise<string[]> {
+  const known = preset(provider.id);
+  const named = known?.plan?.models ?? known?.models;
+  if (!named) return listModels(provider, fetchImpl);
+  if (!named.length) throw new Error(`${provider.id} doesn't list its models: name them yourself in the roster, as ${provider.id}/<model>`);
+  return [...named];
+}
 
 /** Ask a provider which models it serves (OpenAI-style and Anthropic `/v1/models`). */
 export async function listModels(provider: ResolvedProvider, fetchImpl: typeof fetch = fetch): Promise<string[]> {
