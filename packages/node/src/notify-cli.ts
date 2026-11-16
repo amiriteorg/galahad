@@ -11,6 +11,8 @@ import { alertReserve, CLOCK, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, ty
  *   galahad notify quiet [on | off | HH:MM-HH:MM] [--tz Europe/Copenhagen]
  *   galahad notify limit <n>                at most n a day
  *   galahad notify off <device>             remove a device's subscription
+ *   galahad notify apple-key < key.json     the Apple push key the iPhone app is notified with:
+ *                                           {"key": "<the .p8's text>", "keyId": "…", "teamId": "…"[, "topic": "<bundle id>"]}
  *
  * A device is turned on from that device (Settings → Notifications): a subscription is a
  * browser's to hand over, never a terminal's to make.
@@ -22,7 +24,7 @@ interface Api {
 
 type Flags = Record<string, string | boolean | (string | boolean)[] | undefined>;
 
-const USAGE = "usage: galahad notify | notify test [device] | notify kinds [<kind> on|off …] | notify quiet [on|off|HH:MM-HH:MM] [--tz zone] | notify limit <n> | notify off <device>";
+const USAGE = "usage: galahad notify | notify test [device] | notify kinds [<kind> on|off …] | notify quiet [on|off|HH:MM-HH:MM] [--tz zone] | notify limit <n> | notify off <device> | notify apple-key < key.json";
 
 const tty = process.stdout.isTTY;
 const dim = (s: string) => (tty ? `\x1b[2m${s}\x1b[0m` : s);
@@ -57,7 +59,7 @@ export function statusLines(view: NotifyView): string[] {
   return out;
 }
 
-export async function notifyCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags, print: (line: string) => void = console.log): Promise<void> {
+export async function notifyCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags, print: (line: string) => void = console.log, readStdin: () => Promise<string> = () => Bun.stdin.text()): Promise<void> {
   if (sub === undefined) {
     for (const line of statusLines(await api.call<NotifyView>("notify"))) print(line);
     return;
@@ -102,6 +104,18 @@ export async function notifyCommand(api: Api, sub: string | undefined, rest: str
     const { prefs } = await api.call<{ prefs: NotifyPrefs }>("setNotify", { perDay: n });
     const kept = alertReserve(prefs.perDay);
     print(`At most ${prefs.perDay} a day${kept ? `, the last ${kept === 1 ? "one" : kept} kept for alerts` : ""}. When ordinary news reaches the limit, one message says so.`);
+    return;
+  }
+  if (sub === "apple-key") {
+    // On stdin, never on a command line (shells and remote sessions keep those): the key, its ID and your Team ID.
+    let input: unknown;
+    try {
+      input = JSON.parse(await readStdin());
+    } catch {
+      throw new Error('give the key on stdin, as JSON: {"key": "<the .p8 file\'s text>", "keyId": "…", "teamId": "…"} (galahad notify apple-key < key.json)');
+    }
+    const kept = await api.call<{ keyId: string; topic: string }>("setApplePushKey", input);
+    print(`Apple push key ${kept.keyId} sealed, for ${kept.topic}: the iPhone app can be notified. Turn it on in the app (Settings → Notifications).`);
     return;
   }
   if (sub === "off") {

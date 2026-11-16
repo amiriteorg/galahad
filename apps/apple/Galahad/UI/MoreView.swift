@@ -17,6 +17,9 @@ struct MoreView: View {
                     LabeledContent("May") { Text(scopes.joined(separator: ", ")).font(.footnote.monospaced()).multilineTextAlignment(.trailing) }
                 }
             }
+            if session.can("mind:read") {
+                NotificationsSection(session: session)
+            }
             if session.can("vault:read") {
                 Section {
                     NavigationLink { KeysView(session: session) } label: {

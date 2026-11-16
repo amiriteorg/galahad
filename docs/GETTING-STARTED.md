@@ -95,6 +95,14 @@ Galahad's icon on the Home Screen then shows how many things wait for you: exact
 
 **In a desktop browser** (Edge, Chrome, Firefox, Safari): step 3 and 4 are the same; nothing needs installing.
 
+**In the Galahad iPhone app** (`apps/apple`): **More → Notifications on this iPhone**, allow them when iOS asks, then **Send a test**. A tap opens what it's about: the Inbox, Galahad's chat (the kept one it names), or More. The app's notifications go through Apple's own push service, so the node needs your **Apple push key** once: in [Apple Developer → Keys](https://developer.apple.com/account/resources/authkeys/list), make a key with *Apple Push Notifications service*, download its `.p8`, note its Key ID and your Team ID, and give all three to the node on stdin (never on a command line, where shells and remote sessions keep them):
+
+```sh
+bun galahad notify apple-key < key.json      # {"key": "<the .p8 file's text>", "keyId": "ABC123DEFG", "teamId": "XYZ987WVUT"}
+```
+
+It is checked (it must sign), sealed in the vault and pinned to Apple's push service; delete `key.json` afterwards. A `"topic"` in it names your own build's bundle id if it isn't `org.amirite.galahad`.
+
 Nothing is needed on the server: the node makes its own key the first time a device turns this on, and keeps it beside its device keys. From a terminal on the node:
 
 ```sh
@@ -105,7 +113,7 @@ bun galahad notify limit 12                # at most this many a day, the last t
 bun galahad notify off phone               # stop notifying a device (it's turned on again from that device)
 ```
 
-What a notification holds is a short title, one line and where it opens, encrypted to that browser: the push service that carries it (Apple's for an iPhone) can't read it. Never a key, never anything about the bank, never a model's own words. Quiet hours (22:00 to 07:00 by default, in the node's own time zone until you set one: a server that keeps UTC reads them in UTC, so give yours with `--tz`) hold everything but an alert until morning, then one message says what waited. A turn you're watching on another device isn't pushed. If a test doesn't arrive, `bun galahad doctor` has a line for it, and the app's Settings says what the push service answered. A browser whose push service isn't Apple's, Google's, Mozilla's or Microsoft's is refused until you allow its host on the node (`GALAHAD_PUSH_HOSTS=push.example.org`).
+What a notification holds is a short title, one line and where it opens, encrypted to that browser: the push service that carries it (Apple's for an iPhone) can't read it. (The iPhone app's go through Apple's push service as Apple carries every app's: over TLS, readable to Apple.) Never a key, never anything about the bank, never a model's own words. Quiet hours (22:00 to 07:00 by default, in the node's own time zone until you set one: a server that keeps UTC reads them in UTC, so give yours with `--tz`) hold everything but an alert until morning, then one message says what waited. A turn you're watching on another device isn't pushed. If a test doesn't arrive, `bun galahad doctor` has a line for it, and the app's Settings says what the push service answered. A browser whose push service isn't Apple's, Google's, Mozilla's or Microsoft's is refused until you allow its host on the node (`GALAHAD_PUSH_HOSTS=push.example.org`).
 
 ## 4. Add the server
 

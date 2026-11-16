@@ -65,23 +65,40 @@ enum Place: Hashable {
 struct PhoneTabs: View {
     let app: AppModel
     let session: Session
+    @State private var place: Place = .roundtable
     @State private var path: [Route] = []
 
     var body: some View {
-        TabView {
-            Tab("Roundtable", systemImage: "person.3") {
+        TabView(selection: $place) {
+            Tab("Roundtable", systemImage: "person.3", value: Place.roundtable) {
                 NavigationStack(path: $path) {
                     RoundtableView(session: session) { path.append($0) }
                         .navigationDestination(for: Route.self) { RouteView(session: session, route: $0) }
                 }
             }
-            Tab("Inbox", systemImage: "tray") {
+            Tab("Inbox", systemImage: "tray", value: Place.inbox) {
                 NavigationStack { InboxView(session: session) }
             }
             .badge(session.inboxCount)
-            Tab("More", systemImage: "ellipsis.circle") {
+            Tab("More", systemImage: "ellipsis.circle", value: Place.more) {
                 NavigationStack { MoreView(app: app, session: session) }
             }
+        }
+        .task(id: PushCenter.shared.opened) { await follow() }
+    }
+
+    /// A notification you tapped: its place, and on the Roundtable the page it names.
+    private func follow() async {
+        guard let opened = PushCenter.shared.opened else { return }
+        PushCenter.shared.opened = nil
+        switch opened {
+        case .inbox: place = .inbox
+        case .settings: place = .more
+        case .overview: place = .roundtable; path = []
+        case .chat(let id):
+            place = .roundtable
+            path = [.galahad]
+            if let id { await session.chat.open(id, with: session.client) }
         }
     }
 }
@@ -111,6 +128,22 @@ struct SplitPlaces: View {
             }
         } detail: {
             NavigationStack { RouteView(session: session, route: route ?? .galahad) }
+        }
+        .task(id: PushCenter.shared.opened) { await follow() }
+    }
+
+    /// A notification you tapped: its place in the sidebar, and Galahad's chat beside when it names one.
+    private func follow() async {
+        guard let opened = PushCenter.shared.opened else { return }
+        PushCenter.shared.opened = nil
+        switch opened {
+        case .inbox: place = .inbox
+        case .settings: place = .more
+        case .overview: place = .roundtable
+        case .chat(let id):
+            place = .roundtable
+            route = .galahad
+            if let id { await session.chat.open(id, with: session.client) }
         }
     }
 }

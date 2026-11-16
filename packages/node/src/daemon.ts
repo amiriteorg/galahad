@@ -45,6 +45,7 @@ import { type DoctorDeps, type DoctorOptions, type DoctorRun, type DoctorSystem,
 import { NotifyService } from "./notify.ts";
 import { Terminals } from "./terminals.ts";
 import { NotifyStore } from "./notify-store.ts";
+import { APPLE_PUSH, APPLE_PUSH_SECRET, ApplePushSender, appleTarget, readApplePushKey } from "./apns-send.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
 
 export interface Daemon {
@@ -115,7 +116,7 @@ export interface DaemonOptions {
    * Notifications (tests): push services to allow beyond the known ones (a stand-in on this machine, by its whole
    * origin), how often he looks (false: only when the test says), his clock, and how a pause before a retry passes.
    */
-  push?: { allow?: string[]; tickMs?: number | false; now?: () => number; sleep?: (ms: number) => Promise<void> };
+  push?: { allow?: string[]; tickMs?: number | false; now?: () => number; sleep?: (ms: number) => Promise<void>; apple?: { development?: string; production?: string } };
 }
 
 /**
@@ -431,19 +432,31 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // home; this node's VAPID key where its device keys are (made at its first use, never logged or put in the mind).
   const notifyDb = new NotifyStore(join(home.dir, "push.db"), opts.push?.now);
   let pushKey: ReturnType<Home["pushKey"]> | null = null;
+  const webPush = new PushSender({
+    // One key for this node's lifetime; a failure to read it is tried again at the next use.
+    key: () => (pushKey ??= home.pushKey(config.keystore).catch((error) => ((pushKey = null), Promise.reject(error)))),
+    contact: env.GALAHAD_PUSH_CONTACT ?? DEFAULT_PUSH_CONTACT,
+    allowed: [...(env.GALAHAD_PUSH_HOSTS?.split(",") ?? []), ...(opts.push?.allow ?? [])],
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...(opts.push?.now ? { now: opts.push.now } : {}),
+    ...(opts.push?.sleep ? { sleep: opts.push.sleep } : {}),
+  });
+  // The iPhone app's: the owner's Apple push key from the vault, used only while it is pinned to Apple's push service.
+  const applePush = new ApplePushSender({
+    key: () => (vault.unlocked() && vault.info(APPLE_PUSH_SECRET)?.origin === APPLE_PUSH.production ? readApplePushKey(vault.reveal(APPLE_PUSH_SECRET)) : null),
+    ...(opts.push?.now ? { now: opts.push.now } : {}),
+    ...(opts.push?.sleep ? { sleep: opts.push.sleep } : {}),
+    ...(opts.push?.apple ? { origins: opts.push.apple } : {}),
+  });
   const notify = new NotifyService({
     mind: store,
     nodeName: config.name,
     db: notifyDb,
-    sender: new PushSender({
-      // One key for this node's lifetime; a failure to read it is tried again at the next use.
-      key: () => (pushKey ??= home.pushKey(config.keystore).catch((error) => ((pushKey = null), Promise.reject(error)))),
-      contact: env.GALAHAD_PUSH_CONTACT ?? DEFAULT_PUSH_CONTACT,
-      allowed: [...(env.GALAHAD_PUSH_HOSTS?.split(",") ?? []), ...(opts.push?.allow ?? [])],
-      ...(opts.fetch ? { fetch: opts.fetch } : {}),
-      ...(opts.push?.now ? { now: opts.push.now } : {}),
-      ...(opts.push?.sleep ? { sleep: opts.push.sleep } : {}),
-    }),
+    sender: {
+      publicKey: () => webPush.publicKey(),
+      send: (target, payload, delivery, signal) => (appleTarget(target.endpoint) ? applePush : webPush).send(target, payload, delivery, signal),
+      close: () => applePush.close(),
+    },
     allowed: [...(env.GALAHAD_PUSH_HOSTS?.split(",") ?? []), ...(opts.push?.allow ?? [])],
     sources: {
       notices: () => store.lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:").flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),

@@ -105,6 +105,7 @@ export const READING_POSTS: ReadonlySet<string> = new Set([
   "/api/archive/file",
   "/api/skills/get",
   "/api/notify/subscribe",
+  "/api/notify/apple",
   "/api/notify/unsubscribe",
   "/api/notify/test",
 ]);

@@ -140,3 +140,18 @@ describe("quiet hours' time zone", () => {
     expect(new NotifyStore(":memory:").prefs().quiet.tz).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   });
 });
+
+describe("the iPhone app", () => {
+  const TOKEN = "ab".repeat(32);
+  const scopes = ["mind:read", "chat", "vault:read"];
+  test("turns notifications on for itself with its Apple token, and is told through it: never as a node, never with another's token", async () => {
+    const h = harness({ devices: [{ id: "c_phone", name: "phone", kind: "client", scopes }, { id: "c_iphone", name: "iPhone app", kind: "client", scopes }, { id: "n_ultra", name: "ultra", kind: "node", scopes: [] }] });
+    expect(h.service.subscribeApple("c_iphone", { token: TOKEN, environment: "production" })).toMatchObject({ device: "c_iphone", name: "iPhone app", service: "Apple" });
+    await h.service.test("c_iphone");
+    expect(h.sent.at(-1)?.to).toBe(`apns:production:${TOKEN}`);
+    expect(() => h.service.subscribeApple("n_ultra", { token: TOKEN, environment: "production" })).toThrow(/only a paired device/);
+    expect(() => h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" })).toThrow(/another paired device's/);
+    // A build from Xcode answers to Apple's development service, and says so.
+    expect(h.service.subscribeApple("c_iphone", { token: TOKEN, environment: "development" })).toMatchObject({ service: "Apple (a development build)" });
+  });
+});

@@ -44,6 +44,12 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         ITSAppUsesNonExemptEncryption: false
+    # Notifications from your node, through Apple's push service (written by XcodeGen like Info.plist). Xcode builds
+    # answer to Apple's development service; an archive for TestFlight is signed for its production one.
+    entitlements:
+      path: Galahad/Galahad.entitlements
+      properties:
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad

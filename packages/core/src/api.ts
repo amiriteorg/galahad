@@ -17,7 +17,7 @@ import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
-import { NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
+import { ApplePushInput, ApplePushKeyInput, NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
 /*
  * The node HTTP API contract, shared by the daemon, the CLI and the PWA.
@@ -941,6 +941,10 @@ export const routes = {
   setNotify: { method: "POST", path: "/api/notify", scope: "brain:write", input: NotifyPrefsInput },
   /** This device turns notifications on, for itself: its browser's push subscription, kept as that device's. Only a paired device may, and only its own. */
   pushSubscribe: { method: "POST", path: "/api/notify/subscribe", scope: "mind:read", input: PushSubscriptionInput },
+  /** The iPhone app turns notifications on, for itself: its Apple push token, kept as that device's (off and test: the two below). */
+  applePushSubscribe: { method: "POST", path: "/api/notify/apple", scope: "mind:read", input: ApplePushInput },
+  /** The owner's Apple push key, which the iPhone app's notifications are sent with: sealed, pinned to Apple's push service. A key: vault:write. */
+  setApplePushKey: { method: "POST", path: "/api/notify/apple-key", scope: "vault:write", input: ApplePushKeyInput },
   /** Off again: this device's own; another's by id only from a terminal or a device that may administer the fleet. */
   pushUnsubscribe: { method: "POST", path: "/api/notify/unsubscribe", scope: "mind:read", input: z.strictObject({ device: NotifyDeviceRef.optional() }) },
   /** One fixed test message: to the device that asks, or from a terminal to every subscribed device (or the one named). */

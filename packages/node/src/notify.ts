@@ -1,5 +1,6 @@
 import {
   actionItem,
+  type ApplePushInput,
   connectorItem,
   inQuietHours,
   isP256Point,
@@ -31,7 +32,8 @@ import type { MindStore } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import type { KeptSummary } from "./chats.ts";
 import type { NotifyStore, Subscription } from "./notify-store.ts";
-import type { PushDelivery, PushSender } from "./push-send.ts";
+import { appleEndpoint } from "./apns-send.ts";
+import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
 import type { LiveTurn } from "./turns.ts";
 
 /*
@@ -68,11 +70,19 @@ export interface NotifySources {
   quests: { list(): QuestView[]; onChange(fn: () => void): () => void };
 }
 
+/** What sends: browsers' push services (push-send.ts) and Apple's, for the iPhone app (apns-send.ts), by the subscription. */
+export interface NotifySender {
+  /** This node's VAPID key, which browsers subscribe to. */
+  publicKey(): Promise<string>;
+  send(target: PushTarget, payload: NotifyPayload, delivery: PushDelivery, signal?: AbortSignal): Promise<PushOutcome>;
+  close?(): void;
+}
+
 export interface NotifyOptions {
   mind: MindStore;
   nodeName: string;
   db: NotifyStore;
-  sender: PushSender;
+  sender: NotifySender;
   /** Push services the owner allowed beyond the known ones. */
   allowed: readonly string[];
   sources: NotifySources;
@@ -135,6 +145,7 @@ export class NotifyService {
     if (this.soon) clearTimeout(this.soon);
     this.stopQuests?.();
     await this.ticking?.catch(() => {});
+    this.o.sender.close?.();
   }
 
   /** Look again shortly: something just happened that may be worth telling. */
@@ -380,6 +391,22 @@ export class NotifyService {
     }
     await this.publicKey();
     const kept = this.o.db.put(device, { endpoint: input.endpoint, p256dh: input.keys.p256dh, auth: input.keys.auth, service: service.service });
+    return this.deviceView(kept, paired.name);
+  }
+
+  /** The iPhone app turns notifications on, for itself: its Apple push token, kept as that device's (one a device). */
+  subscribeApple(device: string, input: ApplePushInput): NotifyDeviceView {
+    const paired = this.o.mind.activeDevice(device);
+    if (!paired || paired.kind !== "client") throw new NotifyError(403, "only a paired device turns notifications on, for itself");
+    const endpoint = appleEndpoint(input.environment, input.token);
+    // A token is one app install's: another paired device can't take it while that device is still yours.
+    const owner = this.o.db.ownerOf(endpoint);
+    if (owner && owner !== device) {
+      if (this.o.mind.activeDevice(owner)) throw new NotifyError(409, "that iPhone's token is another paired device's; turn notifications off there first, or revoke that device");
+      this.o.db.remove(owner);
+    }
+    const kept = this.o.db.put(device, { endpoint, p256dh: "", auth: "", service: input.environment === "production" ? "Apple" : "Apple (a development build)" });
+    this.nudge();
     return this.deviceView(kept, paired.name);
   }
 

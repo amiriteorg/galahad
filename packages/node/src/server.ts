@@ -149,6 +149,7 @@ import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamStore } from "./team-store.ts";
 import { harnessReadiness, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
+import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
@@ -2823,6 +2824,21 @@ export function createApp(ctx: AppContext) {
       // A subscription is one browser's, handed over by that browser: never a terminal's, an agent's or a node's to give.
       if (p.kind !== "client") throw new HttpError(403, "only a paired device turns notifications on, for itself");
       return notifyErrors(async () => ({ device: await ctx.notify.subscribe(p.device, input) }));
+    },
+    applePushSubscribe: (input, p) => {
+      // An iPhone's token is one app install's, handed over by that app: never a terminal's, an agent's or a node's to give.
+      if (p.kind !== "client") throw new HttpError(403, "only a paired device turns notifications on, for itself");
+      return notifyErrors(async () => ({ device: ctx.notify.subscribeApple(p.device, input) }));
+    },
+    setApplePushKey: async (input) => {
+      // A key that can't sign is said so now, not at the first notification.
+      try {
+        await appleProviderToken(input, Math.floor(Date.now() / 1000));
+      } catch {
+        throw new HttpError(400, "that isn't an Apple push key Galahad can sign with: give the .p8 file's text as Apple made it");
+      }
+      ctx.vault.set(APPLE_PUSH_SECRET, storedApplePushKey(input), { label: "Apple push key", origin: APPLE_PUSH.production });
+      return { keyId: `…${input.keyId.slice(-4)}`, topic: input.topic };
     },
     pushUnsubscribe: (input, p) => {
       ownerOfNotify(p);

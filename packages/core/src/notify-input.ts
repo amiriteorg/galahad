@@ -24,6 +24,30 @@ export const PushSubscriptionInput = z.strictObject({
 });
 export type PushSubscriptionInput = z.infer<typeof PushSubscriptionInput>;
 
+/**
+ * The iPhone app's own: the device token Apple's push service gave it (32 bytes today, in hex; Apple may lengthen it)
+ * and which of Apple's two push services its build answers to: `development` for a build from Xcode, `production` for
+ * TestFlight and the App Store. The node sends only to that service, with its owner's Apple push key.
+ */
+export const ApplePushInput = z.strictObject({
+  token: z.string().regex(/^[0-9a-f]{64,200}$/, "an APNs device token, in lowercase hex").refine((token) => token.length % 2 === 0, "whole bytes"),
+  environment: z.enum(["development", "production"]),
+});
+export type ApplePushInput = z.infer<typeof ApplePushInput>;
+
+/**
+ * The owner's Apple push key (Apple Developer: Keys, with Apple Push Notifications service), as the node keeps it: the
+ * .p8 file's text, the key's ID, their Team ID and the app it notifies (its bundle id). Sealed in the vault, pinned to
+ * Apple's push service; given on stdin (`galahad notify apple-key`), never on a command line.
+ */
+export const ApplePushKeyInput = z.strictObject({
+  key: z.string().max(4096).regex(/-----BEGIN PRIVATE KEY-----[A-Za-z0-9+/=\s]+-----END PRIVATE KEY-----/, "the .p8 file's text, from -----BEGIN PRIVATE KEY----- to its end"),
+  keyId: z.string().regex(/^[A-Z0-9]{10}$/, "the key's ID: ten capital letters and digits"),
+  teamId: z.string().regex(/^[A-Z0-9]{10}$/, "your Team ID: ten capital letters and digits"),
+  topic: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,154}$/, "the app's bundle id").default("org.amirite.galahad"),
+});
+export type ApplePushKeyInput = z.infer<typeof ApplePushKeyInput>;
+
 const Clock = z.string().regex(CLOCK, "a time of day, HH:MM");
 
 /** What he sends and when he stays silent: any part of it; what's left out stays as it is. */
