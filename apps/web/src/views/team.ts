@@ -6,19 +6,22 @@ import type { Price } from "@galahad/core/spend";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
+import { GALAHAD } from "../lib/arrange.ts";
 import { hasDesktop } from "../lib/desktop.ts";
-import type { TaskAction } from "../lib/task-card.ts";
-import { activeTeamWork, engramLine, HARNESS, harnessNote, taskDependencies, teamSpeaker, teammateMaker, teammateState, type HarnessStatus } from "../lib/team.ts";
+import { type TaskAction, taskBadge } from "../lib/task-card.ts";
+import { activeTeamWork, engramLine, HARNESS, harnessNote, taskDependencies, teamSpeaker, teammateMaker, type HarnessStatus } from "../lib/team.ts";
 import { giveAgain, timeline, timelineTasks } from "../lib/timeline.ts";
 import { relativeTime } from "../lib/time.ts";
-import { badge, button, callout, dot, empty, errorState, section, skeletonRows } from "../ui/controls.ts";
-import { h, keepPlace, replace, syncChildren } from "../ui/dom.ts";
+import { knightPanelShown, setKnightPanelShown } from "../prefs.ts";
+import { badge, button, callout, dot, empty, errorState, list, listRow, note, section, skeletonRows } from "../ui/controls.ts";
+import { h, keepPlace, prefersReducedMotion, replace, syncChildren } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
-import { workerAvatar } from "../ui/avatar.ts";
+import { leadMark, stateChip, workerAvatar } from "../ui/avatar.ts";
 import { toast } from "../ui/toast.ts";
+import { makePrimary, pending } from "./arrange.ts";
 import { roundtableHome } from "./board.ts";
-import { noteSaid } from "./roster.ts";
+import { noteSaid, seatFace, tableOf } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
@@ -28,8 +31,11 @@ import { openTerminal } from "./terminal.ts";
 /*
  * A knight, or a room, as one timeline: what was said and the tasks given, in the order they happened, each task a
  * card (views/task-card.ts). A knight's Workspace (its VM, its harnesses, its notes store) is a panel opened from its
- * header. Conversations and work belong to the node: polling only observes them, and leaving never stops a knight.
- * Unsaved drafts stay in memory, never storage. Who there is to talk to is the roster's (views/roster.ts).
+ * header. On a wide screen a knight's timeline has a side panel beside it (unless you hid it on this device): the
+ * knight and what it is doing, its tasks, its workspace and its working notes. Conversations and work belong to the
+ * node: polling only observes them, and leaving never stops a knight. Unsaved drafts stay in memory, never storage.
+ * Who there is to talk to is the roster's (views/roster.ts); with no conversation open, the Roundtable's own page is
+ * the board's (views/board.ts).
  */
 const drafts = new Map<string, string>();
 interface WorkspaceStatus {
@@ -89,7 +95,11 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     h("div", { class: "composer-bar" }, icon("shield-check", { size: 14, class: "subtle" }), composerHint, give, send),
   );
   const composerWrap = h("div", { class: "team-composer", hidden: true }, status, problem, composer);
-  const main = h("section", { class: "team-main", "aria-label": "The Roundtable" }, head, notice, content, composerWrap);
+  // A knight's side panel, beside its timeline on a wide screen: shown unless you hid it (remembered on this device).
+  const side = h("aside", { class: "team-side", hidden: true });
+  let sideShown = knightPanelShown();
+  let sideVersion = "";
+  const main = h("section", { class: "team-main", "aria-label": "The Roundtable" }, head, notice, h("div", { class: "team-body" }, h("div", { class: "team-column" }, content, composerWrap), side));
   replace(root, h("div", { class: "team-layout" }, main));
   replace(content, skeletonRows(4));
 
@@ -108,6 +118,11 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     workerAvatar({ id: person.id, name: person.name, profile: person.avatar, size, still: !live, expression: live && snapshot ? avatarExpression(person, snapshot, Date.now()) : "idle" });
   const control = (change: Parameters<typeof controlTeam>[1]) => controlTeam(ctx, change);
   const showPanel = (open: boolean) => roomId && ctx.navigate("team", { room: roomId, ...(open ? { teamTab: "workspace" as const } : {}) });
+  const showSide = (shown: boolean): void => {
+    sideShown = shown;
+    setKnightPanelShown(shown);
+    draw(true);
+  };
   /** A VM made, or made again: shown at once, and asked about again. */
   const madeVm = (person: Teammate) => (made: SandboxView | null) => {
     workspace = { workspace: made };
@@ -128,21 +143,33 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     const current = room;
     const person = knight();
     const active = [...current.tasks, ...current.deliveries].filter(activeTeamWork);
-    const state = person && snapshot ? teammateState(person, snapshot) : null;
+    // A knight's face sits in its seat, its state in a word beside its name, as on the roster.
+    const table = person ? tableOf(ctx) : null;
+    const seated = person ? table!.seats.find((one) => one.id === person.id) : undefined;
+    const leads = Boolean(person && table?.primary === person.id);
     const open = panelOpen();
-    const version = JSON.stringify([current.id, current.name, current.members.map((id) => [id, nameOf(id)]), current.paused, person, state?.text, active.map((job) => [job.id, job.status]), person && snapshot ? avatarExpression(person, snapshot, Date.now()) : null, open]);
+    const version = JSON.stringify([current.id, current.name, current.members.map((id) => [id, nameOf(id)]), current.paused, person, seated, leads, active.map((job) => [job.id, job.status]), person && snapshot ? avatarExpression(person, snapshot, Date.now()) : null, open, sideShown]);
     if (version === headVersion) return;
     headVersion = version;
     const toggle = button("Workspace", { size: "sm", icon: "sandbox", label: open ? "Close the workspace" : "Workspace", onClick: () => showPanel(!open) });
     toggle.classList.add("workspace-toggle");
     toggle.setAttribute("aria-pressed", String(open));
+    const sideToggle = button(sideShown ? "Hide the side panel" : "Show the side panel", { variant: "ghost", size: "sm", iconOnly: true, icon: "panel", onClick: () => showSide(!sideShown) });
+    sideToggle.classList.add("side-toggle");
+    sideToggle.setAttribute("aria-pressed", String(sideShown));
     keepPlace(head, () =>
       replace(
         head,
         backLink(),
-        person ? avatar(person) : h("span", { class: "avatar" }, icon("hash")),
-        h("div", { class: "grow" }, h("h2", {}, person?.name ?? current.name), h("p", { class: "meta ellipsis" }, person ? [person.role, state?.text, madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · "))),
+        person ? (seated ? seatFace(seated, 32) : avatar(person)) : h("span", { class: "avatar" }, icon("hash")),
+        h(
+          "div",
+          { class: "grow" },
+          h("div", { class: "team-head-title" }, h("h2", { class: "ellipsis" }, person?.name ?? current.name), leads ? leadMark(person!.name) : null, person ? stateChip(seated?.state) : null),
+          h("p", { class: "meta ellipsis" }, person ? [person.role, madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · ")),
+        ),
         current.paused ? badge("Paused", "warn") : null,
+        person ? sideToggle : null,
         person ? toggle : null,
         !person && canEdit ? button("Room settings", { variant: "ghost", size: "sm", iconOnly: true, icon: "settings", onClick: () => editRoom(ctx, current) }) : null,
         !person && canChat ? button(current.paused ? "Resume room" : "Pause room", { variant: "ghost", size: "sm", iconOnly: true, icon: current.paused ? "play" : "pause", onClick: () => void control({ room: current.id, action: current.paused ? "resume" : "pause" }) }) : null,
@@ -259,6 +286,72 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     }
   }
 
+  /** A node by its name: this one, one of the fleet's, or one the app can't name. */
+  const nodeName = (id: string): string => (id === ctx.whoami.node ? "this node" : (ctx.live.fleet.value?.devices.find((device) => device.id === id)?.name ?? "another node"));
+
+  /** A knight's task in its side panel: its title and where it stands; a press finds its card in the timeline. */
+  const taskRow = (task: TeamTask): HTMLElement => {
+    const stands = taskBadge(task);
+    return listRow({
+      title: task.title,
+      meta: [badge(stands.text, stands.tone), h("time", { datetime: new Date(task.updatedAt).toISOString() }, relativeTime(task.updatedAt))],
+      key: `side-task:${task.id}`,
+      onClick: () => {
+        if (panelOpen()) return void showPanel(false);
+        content.querySelector(`[data-key="task:${task.id}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      },
+    });
+  };
+
+  /** The side panel beside a knight's timeline on a wide screen: the knight in its seat and what it is doing, its tasks,
+   * its workspace and its working notes. Drawn from the team as the app has it: it asks the node nothing. */
+  function renderSide(): void {
+    const person = knight();
+    side.hidden = !person || !sideShown;
+    if (side.hidden || !person || !snapshot) return;
+    const table = tableOf(ctx);
+    const seated = table.seats.find((one) => one.id === person.id);
+    const leads = table.primary === person.id;
+    const tasks = snapshot.tasks.filter((task) => task.assignee === person.id).sort((a, b) => b.updatedAt - a.updatedAt);
+    const version = JSON.stringify([person, seated, leads, tasks.map((task) => [task.id, task.title, task.status, task.verified, relativeTime(task.updatedAt)]), panelOpen()]);
+    if (version === sideVersion) return;
+    sideVersion = version;
+    side.setAttribute("aria-label", `${person.name}, beside the timeline`);
+    keepPlace(side, () =>
+      replace(
+        side,
+        h(
+          "div",
+          { class: "team-side-who" },
+          seated ? seatFace(seated, 88) : avatar(person, true, 88),
+          h("div", { class: "team-side-name" }, h("h2", { class: "ellipsis" }, person.name), leads ? leadMark(person.name) : null, stateChip(seated?.state)),
+          h("p", { class: "meta" }, [person.role, madeBy(person)].filter(Boolean).join(" · ")),
+          seated ? h("p", { class: "team-side-line" }, seated.line) : null,
+          canEdit
+            ? h(
+                "div",
+                { class: "row wrap" },
+                button(leads ? "Galahad leads" : "Make primary", { size: "sm", title: leads ? "Give the lead back to Galahad" : `What you say to a room ${person.name} sits in without naming anyone becomes ${person.name}'s to answer`, onClick: () => void (leads ? makePrimary(ctx, GALAHAD, "Galahad") : makePrimary(ctx, person.id, person.name)) }),
+                button("Edit", { size: "sm", icon: "edit", onClick: () => void editKnight(ctx, person) }),
+                button(person.enabled ? "Pause" : "Resume", { size: "sm", icon: person.enabled ? "pause" : "play", label: `${person.enabled ? "Pause" : "Resume"} ${person.name}`, onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }),
+              )
+            : null,
+        ),
+        section("Tasks", { count: tasks.length ? String(tasks.length) : undefined, note: tasks.length > 6 ? "The latest six; every one is a card in the timeline." : undefined }, list(tasks.slice(0, 6).map(taskRow), { empty: { icon: "layers", title: "No tasks yet", body: `A task you give ${person.name} is a card in its timeline, and a line here.` } })),
+        section(
+          "Workspace",
+          { actions: button(panelOpen() ? "Back to the timeline" : "Open", { variant: "ghost", size: "sm", onClick: () => showPanel(!panelOpen()) }) },
+          note(person.workspace ? `Its VM is on ${nodeName(person.workspace.node)}: its desktop, a terminal into it and its notes store are in its Workspace.` : "No VM yet. Its Workspace makes one: a place of its own for code, files and tools."),
+        ),
+        section(
+          "Working notes",
+          { actions: canEdit ? button("Edit", { variant: "ghost", size: "sm", label: `Edit ${person.name}'s working notes`, onClick: () => editNotes(ctx, person) }) : null },
+          person.memory.trim() ? h("p", { class: "team-side-notes" }, person.memory.trim()) : note("None yet: what it keeps for itself between tasks, such as an investigation under way or what to pick up next."),
+        ),
+      ),
+    );
+  }
+
   /** The Workspace panel, made once: what is above the desktop and below it is drawn again as it changes, the desktop never. */
   let panel: { top: HTMLElement; slot: HTMLElement; bottom: HTMLElement } | null = null;
   let viewer: DesktopViewer | null = null;
@@ -308,6 +401,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
           ? h(
               "div",
               { class: "row wrap" },
+              (tableOf(ctx).primary === person.id ? button("Galahad leads", { size: "sm", title: "Give the lead back to Galahad", onClick: () => void makePrimary(ctx, GALAHAD, "Galahad") }) : button("Make primary", { size: "sm", title: `What you say to a room ${person.name} sits in without naming anyone becomes ${person.name}'s to answer`, onClick: () => void makePrimary(ctx, person.id, person.name) })),
               button(person.enabled ? "Pause knight" : "Resume knight", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }),
               button("Working notes", { size: "sm", icon: "memory", onClick: () => editNotes(ctx, person) }),
               button("Remove knight", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeKnight(ctx, person) }),
@@ -451,6 +545,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     if (signature === drawn && !force) return;
     drawn = signature;
     renderHead();
+    renderSide();
     composerWrap.hidden = !canChat || panelOpen();
     if (panelOpen()) {
       renderPanel();
@@ -500,6 +595,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   });
   scope.interval(() => void load(), 2000);
   scope.add(ctx.live.team.subscribe(() => draw()));
+  // (Who leads, as you just chose it, before the node has said so.)
+  scope.add(pending.subscribe(() => draw(true)));
   scope.add(ctx.live.teamProblem.subscribe((error) => error && failed(error)));
   // The room as it was last read this session, at once (api.peek); the fresh one is drawn only if it differs.
   if (roomId) room = ctx.api.peek<TeamRoomView>("/api/team/room", { id: roomId }) ?? null;
