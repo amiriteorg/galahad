@@ -26,8 +26,8 @@ export interface PresetView {
   keyPrefixes?: string[];
   local?: boolean;
   note?: string;
-  /** A coding plan: a subscription whose key is for coding, which Galahad and the other knights code on and which answers nothing else. */
-  plan?: { name: string; says: string; terms: string; models: string[] };
+  /** A coding plan: a subscription whose key is for coding and answers nothing else; who may use it is what its vendor's terms allow. */
+  plan?: { name: string; says: string; terms: string; models: string[]; allows: { native: boolean; tools: "unattended" | "interactive" } };
 }
 
 export interface RoleSpec {

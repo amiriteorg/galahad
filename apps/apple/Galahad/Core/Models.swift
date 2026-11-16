@@ -24,6 +24,15 @@ struct ProvidersView: Decodable, Sendable {
         let says: String
         let terms: String
         let models: [String]
+        /// What its vendor's terms let Galahad do with it (an older node says nothing).
+        var allows: Allows? = nil
+    }
+
+    /// `native`: Galahad's own coding calls; `tools`: lent to a knight's coding tool ("unattended"), or only to one you
+    /// run yourself ("interactive").
+    struct Allows: Decodable, Sendable, Equatable {
+        let native: Bool
+        let tools: String
     }
 
     struct Preset: Decodable, Sendable, Identifiable {
@@ -71,9 +80,14 @@ enum Models {
         return best?.id
     }
 
-    /// A coding plan in a line: what it is for (lib/text.ts' `planLine`); nil for a preset that isn't one.
+    /// A coding plan in a line: who uses it, as its vendor's terms allow (lib/text.ts' `planLine`); nil for a preset that
+    /// isn't one.
     static func planLine(_ preset: ProvidersView.Preset?) -> String? {
-        preset?.plan.map { "\($0.name) is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does." }
+        guard let plan = preset?.plan else { return nil }
+        guard let allows = plan.allows else { return "\(plan.name) is a coding plan: its key is for coding, and his talk with you never uses it." }
+        if allows.native { return "\(plan.name) is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does." }
+        if allows.tools == "unattended" { return "\(plan.name) is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself." }
+        return "\(plan.name) is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
     }
 
     /// `POST /api/providers`: a provider pointed at the key sealed under `secret`.

@@ -3330,19 +3330,19 @@
       },
       {
         "id": "zai-coding",
-        "line": "GLM Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "GLM Coding Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "id": "kimi-coding",
-        "line": "Kimi Code is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Kimi Code is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "alibaba-coding",
-        "line": "Alibaba Cloud Coding Plan (legacy) is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Alibaba Cloud Coding Plan (legacy) is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "alibaba-token",
-        "line": "Alibaba Cloud Token Plan (Personal) is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Alibaba Cloud Token Plan (Personal) is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "opencode-go",
@@ -3350,31 +3350,31 @@
       },
       {
         "id": "mimo-token",
-        "line": "Xiaomi MiMo Token Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Xiaomi MiMo Token Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "id": "minimax-mplan",
-        "line": "MiniMax M Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "MiniMax M Plan is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "volcengine-coding",
-        "line": "Volcengine Ark Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Volcengine Ark Coding Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "id": "byteplus-coding",
-        "line": "BytePlus ModelArk Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "BytePlus ModelArk Coding Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "id": "stepfun-plan",
-        "line": "StepFun Step Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "StepFun Step Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "id": "tencent-coding",
-        "line": "Tencent Cloud Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Tencent Cloud Coding Plan is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "qianfan-token",
-        "line": "Baidu Qianfan Token Plan (Personal) is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "line": "Baidu Qianfan Token Plan (Personal) is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work."
       },
       {
         "id": "nanogpt",
@@ -3424,7 +3424,7 @@
           "id": "zai-coding",
           "secret": "zai-coding"
         },
-        "say": "GLM Coding Plan is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does."
+        "say": "GLM Coding Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       },
       {
         "provider": "opencode-go",

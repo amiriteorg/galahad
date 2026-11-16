@@ -83,8 +83,8 @@ export function parseCommand(line: string): ParsedCommand {
 export interface KeyPreset {
   id: string;
   keyPrefixes?: string[];
-  /** A coding plan, when the preset is one (the node says so). */
-  plan?: { name: string; says: string; terms: string; models: string[] };
+  /** A coding plan, when the preset is one (the node says so), and what its vendor's terms let Galahad do with it. */
+  plan?: { name: string; says: string; terms: string; models: string[]; allows: { native: boolean; tools: "unattended" | "interactive" } };
 }
 
 /** A subscription's sign-in, as the node describes the ones it knows: not an API key, and never sealed as one. */
@@ -98,9 +98,13 @@ export function detectSignIn(key: string, signIns: readonly SignInForm[] | undef
   return signIns?.find(({ prefix }) => key.startsWith(prefix))?.signIn ?? null;
 }
 
-/** A coding plan in a line: what it is for. Null for a preset that isn't one. */
+/** A coding plan in a line: who uses it, as its vendor's terms allow (the CLI's planAdvice says the same). Null for a preset that isn't one. */
 export function planLine(preset: KeyPreset | undefined): string | null {
-  return preset?.plan ? `${preset.plan.name} is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does.` : null;
+  const plan = preset?.plan;
+  if (!plan) return null;
+  if (plan.allows.native) return `${plan.name} is a coding plan: Galahad and the other knights code on it, and their coding tools use it. His talk with you never does.`;
+  if (plan.allows.tools === "unattended") return `${plan.name} is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself.`;
+  return `${plan.name} is a coding plan for interactive use only, by its terms: it is lent to a coding tool you run yourself (galahad run), and never to Galahad or a knight's work.`;
 }
 
 /** A role's models as he uses them: his own in the roster's order (the first answers), and the coding plans' models, which do coding and answer nothing else. */

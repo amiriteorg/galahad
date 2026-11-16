@@ -228,7 +228,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
         h("div", { class: "row wrap" }, h("span", { class: "strong" }, p.id), badge(p.kind === "anthropic" ? "Anthropic API" : "OpenAI-compatible", "neutral"), keyBadge, plan ? badge("coding plan", "accent") : null),
         h("div", { class: "meta" }, h("span", { class: "mono" }, p.baseUrl), p.label ? h("span", {}, p.label) : null, p.secret ? h("span", {}, "key: ", h("span", { class: "mono" }, p.secret)) : null),
         plan
-          ? h("div", { class: "meta" }, h("span", {}, `${plan.name}: Galahad and the other knights code on it themselves, as Galahad, and their coding tools use it. His talk with you never does. ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
+          ? h("div", { class: "meta" }, h("span", {}, `${planLine(presets.find((preset) => preset.id === p.id))} ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
           : null,
         modelsBox,
       ),
