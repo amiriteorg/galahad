@@ -94,7 +94,9 @@ export function usageReader(kind: "openai" | "anthropic"): UsageReader {
   return {
     feed(chunk) {
       const s = text.decode(chunk, { stream: true });
-      if (!bodyTooLong) {
+      // A stream is read event by event: the whole of it is kept only until it shows it is one.
+      if (sawEvent) body = "";
+      else if (!bodyTooLong) {
         if (body.length + s.length > MAX_BODY) {
           bodyTooLong = true;
           body = "";
