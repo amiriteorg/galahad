@@ -172,7 +172,8 @@ export interface AgentRunDeps {
 }
 
 export interface AgentRun {
-  status: "finished" | "failed" | "timeout" | "stopped";
+  /** `spent`: its budget was spent, and it was stopped as at its deadline. */
+  status: "finished" | "failed" | "timeout" | "stopped" | "spent";
   /** The agent's last words: its own account of what it did. */
   summary: string;
   /** Tool calls it made. */
@@ -213,11 +214,12 @@ print(json.dumps({"alive": alive, "exit": exit_code, "next": nxt, "lines": lines
 /**
  * One run of a coding agent: write its message, start it in the background (its own
  * process group, so it outlives the command that started it and can be stopped as a
- * whole), follow its events until it ends, the deadline passes or you stop it.
+ * whole), follow its events until it ends, the deadline passes, its budget is spent
+ * (`spent`, asked at each look) or you stop it.
  */
 export async function runAgent(
   driver: AgentDriver,
-  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number },
+  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number; spent?: () => boolean },
   deps: AgentRunDeps,
 ): Promise<AgentRun> {
   const now = deps.now ?? Date.now;
@@ -296,6 +298,10 @@ export async function runAgent(
           return { ...run, status: "failed", error: redact([lastError, poll.exit === null ? "it stopped without an exit code" : `it exited with ${poll.exit}`, stderr.trim()].filter(Boolean).join("\n")).slice(0, 3000) };
         }
         return run;
+      }
+      if (input.spent?.()) {
+        await stop();
+        return { ...run, status: "spent", error: "its budget was spent" };
       }
       if (now() > input.deadline) {
         await stop();

@@ -803,10 +803,37 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     return verdict;
   };
 
+  /** The budget's state now (null: no budget, or no way to tell what is spent). */
+  const money = (): { usd: number; complete: boolean; budget: number } | null => {
+    if (o.budgetUsd === undefined || !deps.spentUsd) return null;
+    return { ...deps.spentUsd(), budget: o.budgetUsd };
+  };
+  const usd = (n: number) => `$${n.toFixed(2)}`;
+  /** How a quest whose budget was spent before he said he was done ends, when nothing judged what was there. */
+  const spentSummary = (): string => `Stopped: its budget (${usd(o.budgetUsd!)}) was spent before he finished.`;
+
   /** A coding agent does the work; each review it doesn't pass continues its session. */
   const agentWork = async (agent: NonNullable<Resolved["agent"]>): Promise<QuestOutcome> => {
     const deadline = Date.now() + agent.minutes * 60_000;
     const trail: Step[] = [];
+    let warned = false;
+    /**
+     * Its budget, at each look at the agent: its own calls through the gateway count as it makes them (deps.spentUsd).
+     * Past four fifths it is said once; spent, it is said and the agent is stopped. It can't be told to wrap up mid-run.
+     */
+    const spentNow = (): boolean => {
+      const now = money();
+      if (!now) return false;
+      if (now.usd >= now.budget) {
+        emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: true });
+        return true;
+      }
+      if (!warned && now.usd >= now.budget * 0.8) {
+        warned = true;
+        emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: false });
+      }
+      return false;
+    };
     for (const [path, content] of Object.entries(agent.driver.files(agent.models, o.engram))) {
       const written = await deps.exec(`mkdir -p "$(dirname '${path}')" && printf %s '${Buffer.from(content, "utf8").toString("base64")}' | base64 -d > '${path}'`, 30);
       if (written.exitCode !== 0) return finish({ status: "gave-up", summary: `Couldn't set up ${agent.driver.name}: ${written.stderr || written.stdout}` });
@@ -819,7 +846,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const model = agent.models[current]!;
       const run = await runAgent(
         agent.driver,
-        { model, prompt, session, deadline, workdir: agent.workdir },
+        { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow },
         {
           exec: deps.exec,
           stopAgent: deps.stopAgent,
@@ -840,6 +867,20 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       );
       session = run.session ?? session;
       if (run.status === "stopped") return finish({ status: "stopped", summary: "Stopped at your request." });
+      // Spent: what it left is judged as it stands (submitAtLimit), as when the engineer's budget runs out.
+      if (run.status === "spent") {
+        if (!o.submitAtLimit || !trail.length) return finish({ status: "stopped", summary: spentSummary() });
+        const verdict = await submit("His budget was spent before he said he was done: this is the work as it stands.", trail.slice(-40));
+        if (verdict.verdict === "pass") {
+          return finish({
+            status: "done",
+            summary: `Its budget (${usd(o.budgetUsd!)}) was spent before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
+            review: verdict.notes || undefined,
+            ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
+          });
+        }
+        return finish({ status: "stopped", summary: `${spentSummary()} What was there was put to ${verdict.by === "gates" ? "the gates, which did not pass" : "the reviewer, who did not accept it"}.`, review: verdict.notes });
+      }
       // A model that fails (an outage, a provider's filter) hands over to the next, which carries on the same session.
       if (run.status === "failed" && current + 1 < agent.models.length) {
         current += 1;
@@ -855,7 +896,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       // The reviewer sees the latest commands; every one of them is in the ledger.
       const verdict = await submit(run.summary || "(the agent ended without a summary)", trail.slice(-40));
       if (verdict.verdict === "pass") return finish({ status: "done", summary: run.summary, review: verdict.notes || undefined });
-      if (revisions >= o.maxRevisions || !session) return finish({ status: "unverified", summary: run.summary, review: verdict.notes });
+      // (Sent back with its budget spent, it isn't taken up again: the reviewer's word stands.)
+      if (revisions >= o.maxRevisions || !session || spentNow()) return finish({ status: "unverified", summary: run.summary, review: verdict.notes });
       revisions += 1;
       prompt = sentBack(verdict, "verify it, then end with a short summary and the evidence.");
     }
@@ -931,12 +973,6 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     };
     /** Whose models do the work: the engineer's, until a gate fails twice in a row (escalate). */
     let worker: QuestRole = "engineer";
-    /** The budget's state now (null: no budget, or no way to tell what is spent). */
-    const money = (): { usd: number; complete: boolean; budget: number } | null => {
-      if (o.budgetUsd === undefined || !deps.spentUsd) return null;
-      return { ...deps.spentUsd(), budget: o.budgetUsd };
-    };
-    const usd = (n: number) => `$${n.toFixed(2)}`;
     let warned = false;
     /** Said with a step's result when there is a budget: what is spent, and past four fifths of it, to wrap up. */
     const spentNote = (): string => {
@@ -1108,7 +1144,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     }
     const ran = steps - malformed;
     const stopped = spentOut
-      ? `Stopped: its budget (${usd(o.budgetUsd!)}) was spent before he finished.`
+      ? spentSummary()
       : malformed
         ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
         : `Stopped after ${o.maxSteps} commands without finishing.`;
