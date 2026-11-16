@@ -22,3 +22,4 @@ export * from "./decisions.ts";
 export * from "./embeddings.ts";
 export * from "./effort.ts";
 export * from "./quest-progress.ts";
+export * from "./tripwires.ts";

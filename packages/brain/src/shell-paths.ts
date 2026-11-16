@@ -8,8 +8,11 @@
  * says whether any of it was unquoted dynamic shell (`$`, a glob, a backtick), which a read can't be judged by. */
 interface Word { text: string; dynamic: boolean; operator?: string }
 
-/** The command without a here-document's body (its lines are data, not commands). A here-string (`<<<`) is not one. */
-function withoutHereDocs(command: string): string {
+/**
+ * The command without a here-document's body (its lines are data, not commands). A here-string (`<<<`) is not one.
+ * `keepUnended`: a body whose end never comes keeps its lines (a `<<` inside quotes looks like one).
+ */
+function withoutHereDocs(command: string, keepUnended = false): string {
   const lines = command.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -18,7 +21,10 @@ function withoutHereDocs(command: string): string {
     const here = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line);
     if (!here) continue;
     const end = lines.findIndex((l, j) => j > i && l.trim() === here[2]);
-    if (end === -1) break;
+    if (end === -1) {
+      if (keepUnended) continue;
+      break;
+    }
     i = end;
   }
   return out.join("\n");
@@ -77,6 +83,31 @@ function segments(command: string): Word[][] {
 }
 
 const clean = (path: string): string => path.replace(/^(\.\/)+/, "");
+
+/** Where a tripwire's word ends besides a space: the shell's quotes, operators and substitutions, and an option's `=`, `,` or `:`. */
+const PUNCTUATION = /[\s;&|<>()$`'"\\{}=,:]+/;
+
+/**
+ * The words a tripwire's globs are matched against (tripwires.ts), every one that might name what a command runs or
+ * touches: each word of each simple command as the shell reads it (quotes and escapes taken away), a word that holds a
+ * command of its own read as one too (`bash -c 'rm -rf x'`, `ssh box "make"`), and every run of text between the shell's
+ * punctuation (a substitution's `$(rm x)`, `--file=bun.lock`, a command with a quote it never closes). Never the lines of
+ * a here-document, which are what a command reads, not what it runs; one whose end never comes is read whole.
+ */
+export function commandWords(command: string): string[] {
+  const words = new Set<string>();
+  const read = (text: string, depth: number): void => {
+    const shown = withoutHereDocs(text, true);
+    for (const word of segments(shown).flat()) {
+      if (word.operator || !word.text) continue;
+      words.add(word.text);
+      if (depth < 2 && /[\s;&|]/.test(word.text)) read(word.text, depth + 1);
+    }
+    for (const piece of shown.split(PUNCTUATION)) if (piece) words.add(piece);
+  };
+  read(command, 0);
+  return [...words];
+}
 
 /** The one file a plain read shows (`cat`, `head`, `tail`, `nl`, `sed -n '…p'`), or null when it is anything more. */
 export function readOf(command: string): string | null {
