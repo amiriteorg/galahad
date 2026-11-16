@@ -140,13 +140,25 @@ class Chrome {
         "--remote-debugging-port=0",
         "about:blank",
       ],
-      { stdout: "ignore", stderr: "ignore" },
+      { stdout: "ignore", stderr: "pipe" },
     );
+    // What it says is kept only while it runs (its last few thousand characters), and read all along, so a full pipe
+    // never stalls it: if it doesn't start, its last lines say why.
+    let said = "";
+    void (async () => {
+      const text = new TextDecoder();
+      for await (const chunk of proc.stderr as ReadableStream<Uint8Array>) said = (said + text.decode(chunk, { stream: true })).slice(-4000);
+    })().catch(() => {});
+    const ended = { code: null as number | null };
+    void proc.exited.then((code) => (ended.code = code));
+    // A cold machine's first start can be slow (a CI runner builds Chrome's font cache then): it is waited for while it
+    // runs, up to a minute. One that exits fails at once, with what it said.
     const portFile = join(profile, "DevToolsActivePort");
-    for (let i = 0; i < 150 && !existsSync(portFile); i++) await sleep(100);
+    for (let i = 0; i < 600 && !existsSync(portFile) && ended.code === null; i++) await sleep(100);
     if (!existsSync(portFile)) {
       proc.kill();
-      throw new Error("Chrome never wrote down its DevTools port");
+      const last = said.trim().split("\n").slice(-6).join("\n");
+      throw new Error(`${ended.code === null ? "Chrome never wrote down its DevTools port in a minute" : `Chrome exited (${ended.code}) before it wrote down its DevTools port`}${last ? `:\n${last}` : ""}`);
     }
     const [port, path] = readFileSync(portFile, "utf8").trim().split("\n");
     const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
