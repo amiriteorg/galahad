@@ -16,8 +16,9 @@ xcodebuild -project Galahad.xcodeproj -scheme Galahad \
 ## Running it against a throwaway node
 
 `scripts/dev-node.ts` starts a node the way `apps/web/measure/first-load.ts` does: a temp home, the file keystore, a
-stand-in Docker and stand-in models, on loopback only (never `~/.galahad`). It seats a few knights at work, has an
-agent ask your leave and Galahad ask for a key, and prints a client invite. The simulator reaches it on 127.0.0.1.
+stand-in Docker and stand-in models, on loopback only (never `~/.galahad`). It seats a few knights in every state the
+Roundtable shows (at work, waiting for your approval, failed, paused, at rest), has an agent ask your leave and Galahad
+ask for a key, and prints a client invite. The simulator reaches it on 127.0.0.1.
 
 ```sh
 bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-dev    # from the repository's root; prints the invite link
@@ -56,7 +57,7 @@ TEAM_ID=… ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=/path/to/AuthKey.p8 ap
 
 Each upload is a new build, numbered by the time (UTC, `yyyymmddHHMM`). `Galahad/PrivacyInfo.xcprivacy` says what the
 App Store asks: the app tracks no one and collects nothing, and the one "required reason" API it uses is UserDefaults,
-for the node it paired with.
+for the node it paired with and whether an iPad shows the Roundtable's knights as cards.
 
 ## What the tests are held to
 
