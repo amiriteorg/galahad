@@ -449,5 +449,33 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     expect(turns.at(-1)!.filter((m) => m.content.includes(page)).length).toBeLessThanOrEqual(12);
     expect(turns.at(-1)!.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(14);
   });
+
+  test("an older run of a command that ran again later, both in the part cut short, is a line, not an excerpt; the beginning still holds between batches", async () => {
+    const n = 26;
+    const page = "y".repeat(3000);
+    // The tests, run again after each change: their older failures are superseded by the newer runs.
+    const commands = Array.from({ length: n }, (_, i) => (i % 2 === 0 ? "bun test" : `sed -i 's/a${i}/b${i}/' src/x.ts`));
+    const h = harness(
+      {
+        engineer: [...commands.map((c) => sh(c)), "DONE\nThe tests pass."],
+        outputs: commands.map((c, i) => (c === "bun test" ? { exitCode: 1, stdout: `${i} fail\n${page}\n` } : { stdout: "" })),
+      },
+      { maxSteps: 30 },
+    );
+    expect((await h.run).status).toBe("done");
+    const turns = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages);
+    let rewritten = 0;
+    for (let t = 1; t < turns.length; t++) if (JSON.stringify(turns[t]!.slice(0, turns[t - 1]!.length)) !== JSON.stringify(turns[t - 1])) rewritten += 1;
+    expect(rewritten).toBeLessThanOrEqual(3);
+    const last = turns.at(-1)!.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
+    const superseded = last.filter((m) => m.content.includes("(superseded:"));
+    // Each is its first line and what superseded it; the newest runs stay whole, and the last cut one of each command an excerpt.
+    expect(superseded.length).toBeGreaterThanOrEqual(8);
+    for (const m of superseded) expect(m.content).toMatch(/^exit 1 · \d+ ms\n\(superseded: `bun test` ran again later, and what it printed then is further on\)$/);
+    expect(last.slice(-4).every((m) => m.content.includes(page) || m.content.startsWith("exit 0"))).toBe(true);
+    const runs = last.filter((m) => m.content.startsWith("exit 1"));
+    expect(runs.at(-1)!.content).toContain(page);
+    expect(runs.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(1);
+  });
 });
 

@@ -463,10 +463,33 @@ function excerptedNow(messages: readonly ChatMessage[], excerpted: number): numb
   return observations - excerpted > COMPACT_AT ? observations - KEEP_WHOLE : excerpted;
 }
 
-/** The conversation as it is sent: its oldest `excerpted` observations as excerpts, everything else as it was said. */
+/**
+ * The conversation as it is sent: its oldest `excerpted` observations as excerpts, everything else as it was said. Of
+ * those, a run of a command that ran again later among them is only its first line, and what superseded it: its
+ * newer output is further on. (Judged among the excerpted alone, so the beginning still changes only between batches.)
+ */
 function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessage[] {
+  // The command each observation answers: the reply before it (one of several at once, or none, is never superseded).
+  const commands: (string | null)[] = [];
+  let asked: string | null = null;
+  messages.forEach((m, i) => {
+    if (m.role === "assistant") {
+      const action = parseAction(m.content);
+      asked = action.kind === "command" ? action.command.trim() : null;
+    } else if (isObservation(m, i)) commands.push(m.content.startsWith("exit ") ? asked : null);
+  });
+  const cut = commands.slice(0, excerpted);
   let seen = 0;
-  return messages.map((m, i) => (isObservation(m, i) && seen++ < excerpted ? { role: m.role, content: clip(m.content, 400, 200) } : m));
+  return messages.map((m, i) => {
+    if (!isObservation(m, i)) return m;
+    const k = seen++;
+    if (k >= excerpted) return m;
+    const command = cut[k];
+    if (command && cut.indexOf(command, k + 1) !== -1) {
+      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${command.split("\n", 1)[0]!.slice(0, 80)}\` ran again later, and what it printed then is further on)` };
+    }
+    return { role: m.role, content: clip(m.content, 400, 200) };
+  });
 }
 
 export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<QuestOutcome> {
