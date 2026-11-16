@@ -15,10 +15,11 @@ import { icon } from "../ui/icons.ts";
 
 /*
  * Trials: is Galahad getting better? Problems posed from a seed, worked as ordinary
- * quests, and graded by a program on the node, never by a model. Three suites:
+ * quests, and graded by a program on the node, never by a model. Four suites:
  * engineering (exact answers, in the Lab), agentic (real work in a small repository,
- * graded by hidden tests in a fresh sandbox) and reviewer (a quest's evidence with a
- * known answer, put to the reviewer). Here: the Galahad Index per run with what it cost
+ * graded by hidden tests in a fresh sandbox), reviewer (a quest's evidence with a
+ * known answer, put to the reviewer) and yours (your knights' tasks that passed review,
+ * worked again and graded by their own gates). Here: the Galahad Index per run with what it cost
  * (tokens as the providers reported them, money at your prices), each problem over
  * every run, every answer or hidden check, and what the records say when runs are
  * compared: per effort, per model in each role, per variant of the harness. Runs
@@ -36,6 +37,7 @@ const SUITE: Record<string, { label: string; about: string }> = {
   engineering: { label: "Engineering", about: "Mathematics, physics and engineering problems with exact answers, solved in the Lab." },
   agentic: { label: "Agentic", about: "Real work in a small repository, graded by hidden tests run in a fresh sandbox against what he left." },
   reviewer: { label: "Reviewer", about: "A quest's evidence with a known answer, put to the reviewer: does it pass what it should fail?" },
+  yours: { label: "Yours", about: "Your knights' tasks that passed review, each worked again from the commit it began at and graded by its own gates." },
 };
 
 const scoreTone = (x: number) => (x >= 0.9 ? "var(--ok)" : x >= 0.6 ? "var(--warn)" : "var(--danger)");
@@ -453,7 +455,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
             body: h(
               "div",
               { class: "stack tight" },
-              h("p", {}, "Three suites, each posed from a seed and graded by a program: engineering problems with exact answers, agentic tasks with hidden tests, and the reviewer's own cases. Start a run from a terminal on a node; a run keeps to a budget and says first what past runs cost."),
+              h("p", {}, "Four suites, each graded by a program: engineering problems with exact answers, agentic tasks with hidden tests, the reviewer's own cases, and your knights' tasks that passed review, worked again and graded by their own gates. Start a run from a terminal on a node; a run keeps to a budget and says first what past runs cost."),
               copyField("galahad trial run"),
               copyField("galahad trial run --suite agentic"),
             ),
