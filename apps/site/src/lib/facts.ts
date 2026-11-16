@@ -55,6 +55,41 @@ export const SIZE = {
   ],
 } as const;
 
+/** Side by side on 16 November 2026, each project from its own releases, docs and App Store listing: docs/COMPARISON.md
+ * has every source. Short enough for a schedule row; the doc has the whole of each. */
+export const COMPARE = {
+  date: "16 November 2026",
+  columns: ["Runs on", "Each agent's work", "Done when", "On an iPhone", "Chat apps"],
+  rows: [
+    { name: "Galahad", ours: true, cells: ["Your machines only", "A KVM microVM per knight", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "None yet"] },
+    { name: "Hermes Agent 0.23", ours: false, cells: ["Your machine, or Hermes Cloud", "On the host by default; sandboxes optional", "No enforced gate found", "None official", "About 30"] },
+    { name: "Rakazo 0.11", ours: false, cells: ["Your server, or hosted", "A Docker computer per bot; a VM per bot on Apple-silicon Macs", "No enforced gate found", "App Store", "Six"] },
+    { name: "OpenMausBot 0.1", ours: false, cells: ["Your machine, a VPS, or its cloud", "Full access by default; a container if you choose", "No gate found", "App Store", "Slack, through its cloud"] },
+    { name: "Grok Bot", ours: false, cells: ["Cursor's cloud, in the US", "One microVM per user, shared by their bots", "A model screens risky actions", "App Store", "Slack, Teams, X"] },
+    { name: "Dots", ours: false, cells: ["OpenAI's cloud", "A computer per dot, \"not an isolation guarantee\"", "A model screens risky actions", "The ChatGPT app", "Slack, Teams, iMessage, calls"] },
+  ],
+} as const;
+
+/** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them. */
+export const PHASING = {
+  date: "16 November 2026",
+  rows: [
+    { state: "built", what: "Galahad leads in rooms", line: "What you say to a room is his; he brings in only the knights the work needs." },
+    { state: "built", what: "Cheaper coding plans", line: "Twelve plans as presets, each used only as far as its vendor's terms allow." },
+    { state: "built", what: "His own computer", line: "A VM with a desktop that is his, kept between conversations." },
+    { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
+    { state: "built", what: "Roles you make", line: "Choose the models each knight works on; the reviewer stays independent." },
+    { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
+    { state: "building", what: "Lean context", line: "Output a later run made stale becomes a line; next, files since edited." },
+    { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
+    { state: "next", what: "Contract first", line: "A gate that passes before the work is refused as proof; test files locked." },
+    { state: "next", what: "A budget per task", line: "An envelope in dollars that the work sees shrinking, and stops at." },
+    { state: "next", what: "Trials from your own work", line: "Every task that passed review becomes a test the next change must pass." },
+    { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },
+    { state: "next", what: "Chat apps", line: "Telegram first, then Slack, Discord, Signal and WhatsApp." },
+  ],
+} as const;
+
 /** 85k, 467k, 1.19M: how a footprint's length is labelled (two of the four were counted to the thousand, so no row
  * claims more precision than that). */
 export function compact(lines: number): string {

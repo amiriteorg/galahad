@@ -4,7 +4,7 @@ import Install from "../components/Install.astro";
 import Knight from "../components/Knight.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
-import { BUN_VERSION, INSTALLER_SHA256, REPO, SIZE, TRIALS, compact, doc } from "../lib/facts.ts";
+import { BUN_VERSION, COMPARE, INSTALLER_SHA256, PHASING, REPO, SIZE, TRIALS, compact, doc } from "../lib/facts.ts";
 
 /* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
    with one line of it as the app's roster says it. Illustrative, and the caption says so. */
@@ -118,6 +118,14 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
               <p class="room-line">Paired with a six-digit code. Every request it sends is signed.</p>
             </div>
             <a class="callout callout-phone" href="#phone" aria-label="Detail E: from your phone">E</a>
+          </div>
+          <span class="annex-line wing-line" aria-hidden="true"></span>
+          <div class="wing">
+            <div>
+              <p class="room-name">The next wing</p>
+              <p class="room-line">Chat apps, events that start work, and a budget per task. Drawn in dashes: not built yet.</p>
+            </div>
+            <a class="callout callout-wing" href="#phasing" aria-label="Detail G: what is built next">G</a>
           </div>
         </div>
 
@@ -366,6 +374,37 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
         Hermes Agent at version 0.21 (it has grown since); Rakazo and OpenMausBot from their main branches that day, to
         the thousand.
       </p>
+
+      <div class="schedule compare">
+        <table>
+          <caption>
+            <b>Room schedule, {COMPARE.date}.</b> The same five questions put to each, answered from its own releases,
+            documentation and App Store listing.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Agent</th>
+              {COMPARE.columns.map((column) => <th scope="col">{column}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              COMPARE.rows.map((row) => (
+                <tr data-ours={row.ours ? "" : undefined}>
+                  <th scope="row">{row.name}</th>
+                  {row.cells.map((cell, i) => (
+                    <td data-label={COMPARE.columns[i]}>{cell}</td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="schedule-note">
+          Where Galahad trails is in it too: no chat apps yet, and the iPhone app is still in testing. Every source, and
+          the web, desktop and Android apps, in <a href={doc("COMPARISON")}>the comparison</a>.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -444,6 +483,47 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
         </p>
       </div>
       <p class="more"><a href={REPO}>The source on GitHub</a></p>
+    </div>
+  </section>
+
+  <section class="detail" id="phasing" aria-labelledby="phasing-title">
+    <div class="wrap">
+      <header class="detail-title">
+        <span class="bubble" aria-hidden="true">G</span>
+        <h2 id="phasing-title">The next wing, drawn in dashes.</h2>
+      </header>
+      <div class="detail-text wide">
+        <p>
+          On a plan, what stands is drawn solid and what is still to be built in dashes. In the plan itself, each item
+          says which of four numbers it should move (correctness, how long a task runs without you, cost, and how fast a
+          bad change comes back out) and how that will be measured.
+        </p>
+      </div>
+      <div class="schedule phasing">
+        <table>
+          <caption><b>Phasing, {PHASING.date}.</b> Built, being built, and next, in the plan's order.</caption>
+          <thead>
+            <tr><th scope="col">State</th><th scope="col">What</th><th scope="col">In a line</th></tr>
+          </thead>
+          <tbody>
+            {
+              PHASING.rows.map((row) => (
+                <tr data-state={row.state}>
+                  <td class="phase">
+                    <span class="phase-mark" aria-hidden="true" />
+                    {row.state === "built" ? "Built" : row.state === "building" ? "Being built" : "Next"}
+                  </td>
+                  <th scope="row">{row.what}</th>
+                  <td>{row.line}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="schedule-note">
+          The whole plan, with why each comes in its order and what was declined: <a href={doc("PLAN")}>the plan</a>.
+        </p>
+      </div>
     </div>
   </section>
 </Base>
