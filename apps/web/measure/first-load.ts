@@ -11,12 +11,15 @@
  *     --moves 5     also times moving between places in the app already open, as a person does (a look at the page,
  *                   a press, the tap; each place twice, so a revisit shows), this many times over on each profile;
  *                   with --runs 0, only that
- *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable, Galahad's timeline, a knight's
+ *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable (as a board, as a list, its
+ *                   knights being arranged, and led by a knight), Galahad's timeline, a knight's
  *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
  *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), every
  *                   place the app has (its lib/nav.ts), each as far down as it goes too ("-full"), the sheets and
  *                   forms its places open, and the gallery of its components (apps/web/design/gallery.ts, where the
- *                   checkout has one). The same addresses on any checkout, so an older app is shown at the same places.
+ *                   checkout has one). The same addresses on any checkout, so an older app is shown at the same places
+ *                   (a mode it doesn't have is said, and not shot).
+ *     --widths 390,1280,1600  the screenshots' widths instead (under 640 is a phone held upright)
  *     --gallery <dir> only the gallery's screenshots: no node is started
  *     --shifts      also what moves on screen once it is there: each place (and Galahad's, a knight's and a room's
  *                   timeline) opened as a returning visit opens it, on both profiles, watched from its first frame
@@ -64,6 +67,8 @@ const REPO = resolve(flag("repo") ?? join(dirname(fileURLToPath(import.meta.url)
 const RUNS = Math.max(0, Number(flag("runs") ?? 9));
 const JSON_OUT = flag("json");
 const SHOTS = flag("shots");
+/** The widths the screenshots are taken at: a phone's (under 640, upright) and any wider screen's. */
+const WIDTHS = (flag("widths") ?? "390,1280").split(",").map((width) => Math.round(Number(width))).filter((width) => width >= 320 && width <= 3840);
 const GALLERY = flag("gallery");
 const SHIFTS = process.argv.includes("--shifts");
 const SHIFT_RUNS = Math.max(1, Number(flag("shift-runs") ?? 3));
@@ -887,8 +892,26 @@ try {
   if (SHOTS) {
     mkdirSync(SHOTS, { recursive: true });
     await setProfile("laptop");
-    const views: { name: string; hash: string; wait?: string }[] = [
+    // The sheets and forms the places open, and the modes a place has: what opens each (a button's words, or a script).
+    const press = (...labels: string[]) =>
+      `(() => { const all = [...document.querySelectorAll("button, a.btn, [role=option]")].filter((el) => el.getClientRects().length); const el = ${JSON.stringify(labels)}.map((label) => all.find((b) => b.textContent.trim() === label || b.getAttribute("aria-label") === label)).find(Boolean); if (!el) throw new Error("nothing to press: " + ${JSON.stringify(labels.join(" / "))}); el.click(); })()`;
+    const key = (k: string, meta = false) => `document.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(k)}, metaKey: ${meta}, ctrlKey: ${meta}, bubbles: true }))`;
+    /** A view: where, what it waits for, this device's choices it is shot with (localStorage, cleared after), what is
+     * pressed once it is there, and what the node is told before it and after (a route an older node lacks skips it). */
+    interface View {
+      name: string;
+      hash: string;
+      wait?: string;
+      prefs?: Record<string, string>;
+      steps?: string[];
+      around?: { route: string; before: unknown; after: unknown };
+    }
+    const views: View[] = [
       { name: "roundtable", hash: "#/team" },
+      // The Roundtable as a list (this device's choice), the knights being arranged, and a knight leading it.
+      { name: "roundtable-list", hash: "#/team", prefs: { "galahad:roundtable-view": "list" } },
+      { name: "roundtable-arrange", hash: "#/team", steps: [press("Arrange")], wait: "[data-arranging]" },
+      { name: "roundtable-lin-leads", hash: "#/team", around: { route: "arrangeTeam", before: { primary: "lin" }, after: { primary: "galahad" } } },
       { name: "galahad", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
       { name: "ada-running-task", hash: `#/team?room=${own.ada}` },
       { name: "kay-kept-changes", hash: `#/team?room=${own.kay}&tab=work`, wait: ".team-task" },
@@ -901,10 +924,6 @@ try {
       // Every other place the app has, by its own list, each as far down as it goes too.
       ...places.filter((place) => !["team", "inbox", "memory", "more"].includes(place.id)).map((place) => ({ name: place.id, hash: `#/${place.id}` })),
     ];
-    // The sheets and forms the places open: where, and what opens it (a button's words, or a script).
-    const press = (...labels: string[]) =>
-      `(() => { const all = [...document.querySelectorAll("button, a.btn, [role=option]")].filter((el) => el.getClientRects().length); const el = ${JSON.stringify(labels)}.map((label) => all.find((b) => b.textContent.trim() === label || b.getAttribute("aria-label") === label)).find(Boolean); if (!el) throw new Error("nothing to press: " + ${JSON.stringify(labels.join(" / "))}); el.click(); })()`;
-    const key = (k: string, meta = false) => `document.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(k)}, metaKey: ${meta}, ctrlKey: ${meta}, bubbles: true }))`;
     const sheets: { name: string; hash: string; open: string[]; wait?: string }[] = [
       { name: "sheet-palette", hash: "#/overview", open: [key("k", true)], wait: "dialog.palette[open]" },
       { name: "sheet-shortcuts", hash: "#/overview", open: [key("?")] },
@@ -922,7 +941,8 @@ try {
       { name: "sheet-add-key", hash: "#/vault", open: [press("Add a key", "Add key")] },
       { name: "sheet-add-provider", hash: "#/models", open: [press("Add provider")] },
     ];
-    const sizes = [[390, 844, true], [1280, 800, false]] as const;
+    // A phone held upright, and screens as wide as asked (--widths), each as tall as a laptop's is for its width.
+    const sizes = WIDTHS.map((width) => (width < 640 ? ([width, 844, true] as const) : ([width, Math.round(width * 0.625), false] as const)));
     const shoot = async (name: string, width: number, theme: string, whole = false): Promise<void> => {
       // As far down as it goes: the page's whole height, at one pixel a point (it can be long).
       const { cssContentSize } = whole ? await browser.send("Page.getLayoutMetrics", {}, page) : { cssContentSize: null };
@@ -941,14 +961,34 @@ try {
       for (const [width, height, mobile] of sizes) {
         await look(theme, width, height, mobile);
         for (const view of views.filter((v) => wanted(v.name))) {
+          if (view.around && !routes[view.around.route]) {
+            console.error(`${view.name}: this node has no route named ${view.around.route}: no screenshot of it`);
+            continue;
+          }
           // A new chat, not the kept one the last round left open (the app comes back to that one).
-          await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
-          await open(view.hash, false).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
-          if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`), 20_000).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
-          // (A running task's lines, and a desktop's picture, arrive a moment after the page.)
-          await sleep(view.name.includes("running") || view.name.includes("desktop") ? 2500 : 500);
-          await shoot(view.name, width, theme);
-          if (await evaluate<boolean>(`document.documentElement.scrollHeight > innerHeight + 8`)) await shoot(view.name, width, theme, true);
+          await evaluate(`try { localStorage.removeItem("galahad:open-chat"); ${Object.entries(view.prefs ?? {}).map(([name, value]) => `localStorage.setItem(${JSON.stringify(name)}, ${JSON.stringify(value)});`).join(" ")} } catch {}`);
+          try {
+            if (view.around) await admin(view.around.route, view.around.before);
+            await open(view.hash, false).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
+            if (view.steps) {
+              await sleep(500);
+              for (const step of view.steps) {
+                await evaluate(step);
+                await sleep(350);
+              }
+            }
+            if (view.wait) await until(`${view.name} to show`, () => evaluate(`Boolean(document.querySelector(${JSON.stringify(view.wait)}))`), 20_000).catch((error) => console.error(`${view.name}: ${(error as Error).message}`));
+            // (A running task's lines, and a desktop's picture, arrive a moment after the page.)
+            await sleep(view.name.includes("running") || view.name.includes("desktop") ? 2500 : 500);
+            await shoot(view.name, width, theme);
+            if (await evaluate<boolean>(`document.documentElement.scrollHeight > innerHeight + 8`)) await shoot(view.name, width, theme, true);
+          } catch (error) {
+            // (A mode this app doesn't have, such as a button it has no such word for: said, and not shot.)
+            console.error(`${view.name}: ${(error as Error).message}`);
+          } finally {
+            if (view.around) await admin(view.around.route, view.around.after).catch(() => {});
+            if (view.prefs) await evaluate(`try { ${Object.keys(view.prefs).map((name) => `localStorage.removeItem(${JSON.stringify(name)});`).join(" ")} } catch {}`).catch(() => {});
+          }
         }
         for (const sheet of sheets.filter((v) => wanted(v.name))) {
           await evaluate(`try { localStorage.removeItem("galahad:open-chat") } catch {}`);
