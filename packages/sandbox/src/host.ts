@@ -656,7 +656,7 @@ export class SandboxHost {
    * smaller this way: what a running VM was given isn't taken from under it (`remakeTeam` makes it again, and a smaller
    * size takes effect then). `fits` says why what it adds doesn't fit the node's ceiling, or null. Returns it as it is now.
    */
-  async resizeTeam(id: string, quest: string, opts: { cpus?: number; memoryGb?: number; diskGb?: number; approvedBy: string; fits?: (more: { cpus: number; memoryGb: number }) => string | null }): Promise<SandboxView> {
+  async resizeTeam(id: string, quest: string, opts: { cpus?: number; memoryGb?: number; diskGb?: number; approvedBy: string; why?: string; fits?: (more: { cpus: number; memoryGb: number }) => string | null }): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -692,8 +692,9 @@ export class SandboxHost {
       class: "modify",
       resource: "docker.container",
       target: name,
-      verdict: "approved",
-      reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
+      // Galahad's own giving (growTeammate) is his, and says why; anything else was approved by a device of yours.
+      verdict: opts.why ? "allow" : "approved",
+      reason: opts.why ? `grown by Galahad: ${redact(opts.why).slice(0, 200)}` : `approved by ${opts.approvedBy.slice(0, 12)}`,
       quest,
       detail: `grown while it runs: ${cpus} cpu · ${memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
     });

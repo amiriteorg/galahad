@@ -271,6 +271,17 @@ export const routes = {
       .refine((input) => input.cpus !== undefined || input.memoryGb !== undefined || input.diskGb !== undefined, "say what it should have: cpus, memoryGb or diskGb"),
   },
   /**
+   * Galahad gives a knight's VM (or his own computer, id "galahad") more while it runs, himself, when its work needs it
+   * (your ruling, 16 November 2026): only more, never past the ceiling, and the ledger says it was him and why. His alone,
+   * from your conversation with him; you give a VM more with resizeTeammate.
+   */
+  growTeammate: {
+    method: "POST", path: "/api/team/grow", scope: "sandbox",
+    input: z
+      .strictObject({ id: z.string().min(1).max(32), cpus: z.number().min(0.25).max(64).optional(), memoryGb: z.number().min(0.25).max(512).optional(), diskGb: z.number().int().min(1).max(4096).optional(), why: z.string().trim().min(3).max(300) })
+      .refine((input) => input.cpus !== undefined || input.memoryGb !== undefined || input.diskGb !== undefined, "say what it should have: cpus, memoryGb or diskGb"),
+  },
+  /**
    * Galahad's own computer, worked on by him alone (his `computer` tool): one command in his VM, run as a knight's task
    * runs its own, with the model gateway, and his eyes when the roster names a model for them. Everyone else is refused.
    */
@@ -283,6 +294,8 @@ export const routes = {
       cpus: z.number().min(0.25).max(64).optional(), memoryGb: z.number().min(0.25).max(512).optional(), diskGb: z.number().int().min(1).max(4096).optional(),
       /** The device whose word it was, when a node passes the request on to the VM's host. */
       onBehalfOf: z.string().max(100).optional(),
+      /** When Galahad grew it himself (growTeammate): why, which the ledger keeps. */
+      why: z.string().trim().min(3).max(300).optional(),
     }),
   },
   /**

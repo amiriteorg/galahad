@@ -43,6 +43,12 @@ const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request)
   const body = await request.json() as (typeof prompts)[number];
   prompts.push(body);
   const turns = body.messages.filter((message) => message.role !== "system");
+  // Galahad asked to give his computer more: the tool once, saying why, then a word on what came of it.
+  if (turns.some((message) => message.content?.includes?.("GROW_HIS_COMPUTER"))) {
+    const call = { tool_calls: [{ index: 0, id: "call_grow", function: { name: "team_grow", arguments: JSON.stringify({ id: "galahad", memoryGb: 6, why: "its build ran out of memory" }) } }] };
+    const delta = turns.some((message) => message.role === "tool") ? { content: "It has more now." } : call;
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+  }
   // Galahad asked to use his computer: the tool once, then a word on what came of it.
   if (turns.some((message) => message.content?.includes?.("USE_YOUR_COMPUTER"))) {
     const call = { tool_calls: [{ index: 0, id: "call_computer", function: { name: "computer", arguments: JSON.stringify({ command: "echo computer-ok" }) } }] };
@@ -495,6 +501,16 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   expect(said).toContain("It ran on my computer.");
   const onHis = docker.execs.slice(execsBefore).filter((exec) => exec.container === `galahad-sbx-${his.workspace.id}`).map((exec) => exec.cmd.join(" "));
   expect(onHis.some((command) => command.includes("echo computer-ok") && command.includes("/work/.galahad-gateway.json"))).toBe(true);
+  // He gives a VM more himself when its work needs it, within the ceiling (your ruling): the ledger says it was him, and why.
+  const growing = await fetch(`http://127.0.0.1:${port}${routes.chat.path}`, { method: "POST", headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "GROW_HIS_COMPUTER: the build keeps running out of memory." }] }) });
+  expect(await growing.text()).toContain("It has more now.");
+  expect((await api<{ workspace: SandboxView }>("teamWorkspace", { id: "galahad" })).workspace).toMatchObject({ id: his.workspace.id, memoryGb: 6 });
+  expect((await api<{ entries: LedgerEntry[] }>("ledger")).entries.find((e) => e.resource === "docker.container" && e.class === "modify" && e.reason?.startsWith("grown by Galahad"))).toMatchObject({
+    reason: "grown by Galahad: its build ran out of memory",
+    detail: expect.stringContaining("6 GB"),
+  });
+  // His route alone: you give a VM more with resizeTeammate; nobody else calls his.
+  await expect(api("growTeammate", { id: "galahad", memoryGb: 7, why: "because" })).rejects.toThrow(/403/);
   await daemon.stop();
   const raw = new Database(join(home.dir, "team.db"));
   const stored = JSON.parse(raw.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("sam")!.value);

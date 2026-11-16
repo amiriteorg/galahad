@@ -703,6 +703,28 @@ export const TOOLS: GalahadTool[] = [
     },
   }),
 
+  tool({
+    name: "team_grow",
+    title: "Give a VM more",
+    description:
+      "Give a knight's VM, or your own computer (id galahad), more threads, memory or disk while it runs, with no restart and its work kept, when its work needs it: a build killed for want of memory, a disk filling up, work held back by too few threads. Give what the work needs, not the most there is. Only more, never past the ceiling your liege set (asking past it is refused, saying why), and the ledger says it was you, and why.",
+    input: {
+      id: z.string().min(1).max(32).describe("The knight's handle, or galahad for your own computer"),
+      cpus: z.number().min(0.25).max(64).describe("Its threads, in all").optional(),
+      memoryGb: z.number().min(0.25).max(512).describe("Its memory in GB, in all").optional(),
+      diskGb: z.number().int().min(1).max(4096).describe("Its /work disk in GB, in all").optional(),
+      why: z.string().min(3).max(300).describe("What its work needs it for, in a line: the ledger keeps it"),
+    },
+    routes: ["growTeammate"],
+    own: true,
+    async run(api, { id, cpus, memoryGb, diskGb, why }) {
+      const { workspace } = await api.call<{ workspace: SandboxView }>("growTeammate", {
+        id, why, ...(cpus !== undefined ? { cpus } : {}), ...(memoryGb !== undefined ? { memoryGb } : {}), ...(diskGb !== undefined ? { diskGb } : {}),
+      });
+      return `${id === TEAM_GALAHAD ? "Your computer" : `${id}'s VM`} has ${workspace.cpus} threads, ${workspace.memoryGb} GB of memory${workspace.disk ? ` and ${workspace.disk.limitGb} GB of disk` : ""} now, while it runs. The ledger says you gave it, and why.`;
+    },
+  }),
+
   // ---- His own computer (docs/ROUNDTABLE.md): a VM that is his, with a desktop, kept between conversations ----
   tool({
     name: "computer",

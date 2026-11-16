@@ -62,8 +62,8 @@ async function settled(): Promise<TeamSnapshot> {
   for (let n = 0; n < 400 && [...state.deliveries, ...state.tasks].some((work) => work.status === "queued" || work.status === "running"); n++) { await Bun.sleep(5); state = await api<TeamSnapshot>("team"); }
   return state;
 }
-// His own tools: the ones to the knights, and his own computer.
-const OWN = ["computer", "team", "team_give", "team_message", "team_recruit"];
+// His own tools: the ones to the knights, his own computer, and giving a VM more.
+const OWN = ["computer", "team", "team_give", "team_grow", "team_message", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -252,8 +252,8 @@ test("within what your device may do: one that may not command the team itself g
   const listed = await lead("chat", { messages: [{ role: "user", content: "Who do you have?" }] });
   expect(listed.status).toBe(200);
   const events = (await listed.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
-  // (His computer is a sandbox: only from a device that may use sandboxes, which this one may not.)
-  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => name !== "computer"));
+  // (His computer is a sandbox, and giving a VM more is a sandbox's: only from a device that may use sandboxes, which this one may not.)
+  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => name !== "computer" && name !== "team_grow"));
   expect(results(events)).toEqual([expect.objectContaining({ name: "team", ok: true })]);
 });
 

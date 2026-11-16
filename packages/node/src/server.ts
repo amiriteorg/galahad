@@ -1659,11 +1659,11 @@ export function createApp(ctx: AppContext) {
   }
   /* A knight's VM made bigger while it runs, on the owner's word (`p`: the device that asked, which the VM's host
    * records). Nothing in it stops, so a knight at work may be grown too. */
-  async function resizeTeamVm(member: Seat, sizes: { cpus?: number; memoryGb?: number; diskGb?: number }, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+  async function resizeTeamVm(member: Seat, sizes: { cpus?: number; memoryGb?: number; diskGb?: number }, p: Principal, signal: AbortSignal, why?: string): Promise<SandboxView> {
     const existing = await teamWorkspace(member, signal);
     if (!existing) throw new HttpError(424, noVm(member.id));
     if (vmProvisioning.has(member.id)) throw new HttpError(409, "this knight's VM is being made; make it bigger once that has finished");
-    const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("resizeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), ...sizes });
+    const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("resizeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), ...sizes, ...(why ? { why } : {}) });
     return sandbox;
   }
   /* A task given to the Roundtable (by you, or by Galahad from your conversation): the knight best suited to it
@@ -1858,6 +1858,12 @@ export function createApp(ctx: AppContext) {
       const { id, ...sizes } = input;
       return longRunning(resizeTeamVm(seatOf(id), sizes, p, req.signal).then((workspace) => ({ teammate: id === TEAM_GALAHAD ? null : teamMember(id), workspace })));
     },
+    growTeammate: (input, p, req) => {
+      // His alone, from your conversation with him (your ruling: within the ceiling; the ledger says it was him, and why).
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself gives a VM more this way; you give one more at the Roundtable");
+      const { id, why, ...sizes } = input;
+      return longRunning(resizeTeamVm(seatOf(id), sizes, teamOwner, req.signal, why).then((workspace) => ({ teammate: id === TEAM_GALAHAD ? null : teamMember(id), workspace })));
+    },
     computerExec: async (input, p, req) => {
       // His own computer, worked on by him alone: no other agent and no knight. You watch it, take it over, or open a terminal there.
       if (p.kind !== "arm" || p.label !== GALAHAD_ARM) throw new HttpError(403, "Galahad's computer is his alone to work on: watch it, take it over or open a terminal there");
@@ -1873,7 +1879,7 @@ export function createApp(ctx: AppContext) {
       if (!approver) throw new HttpError(403, "a knight's VM is made bigger only on your word");
       const { on, ...asked } = input;
       return longRunning(onNode(p, on, routes.resizeTeamWorkspace.path, { ...asked, onBehalfOf: approver }, async () => ({
-        sandbox: await ctx.sandbox!.resizeTeam(input.id, input.quest, { ...(input.cpus !== undefined ? { cpus: input.cpus } : {}), ...(input.memoryGb !== undefined ? { memoryGb: input.memoryGb } : {}), ...(input.diskGb !== undefined ? { diskGb: input.diskGb } : {}), approvedBy: approver }),
+        sandbox: await ctx.sandbox!.resizeTeam(input.id, input.quest, { ...(input.cpus !== undefined ? { cpus: input.cpus } : {}), ...(input.memoryGb !== undefined ? { memoryGb: input.memoryGb } : {}), ...(input.diskGb !== undefined ? { diskGb: input.diskGb } : {}), approvedBy: approver, ...(input.why ? { why: input.why } : {}) }),
       }), { sandbox: input.id }));
     },
     remakeTeamWorkspace: (input, p) => {
