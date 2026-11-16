@@ -563,7 +563,7 @@ In the PWA, **Approve and allow similar…** on any request in the Inbox does th
 
 ## 12½. Chats and projects
 
-Chats are kept on the node you talk to, the app's and the terminal's alike:
+Chats are kept on the node you talk to, the app's and the terminal's alike. Every device that talks to it sees the same chats, and what one changes shows on the others within seconds (a chat begun, answered, renamed or deleted, or one he is still answering). Another node keeps its own, so use one node's address on all your devices:
 
 ```sh
 bun galahad ask "Plan the week"                  # kept; --temp for one that isn't

@@ -25,7 +25,7 @@ import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
-import { applyEvent, beginTurn, endTurn, failTurn, turnOf } from "../../web/src/lib/turns.ts";
+import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
 // The chats list groups at midnight: UTC here, and in the Swift tests, whatever this machine's own zone is.
@@ -518,11 +518,29 @@ const stateCases: Pick<core.ConversationSummary, "state" | "queued" | "held" | "
   { state: "stopped", queued: 0, held: null, needs: null },
   { state: "failed", queued: 0, held: null, needs: null },
 ];
+// A kept chat that changed on another device (the PWA's own keptDiffers): what's on screen against what the node keeps.
+const onScreen = kept.slice(0, 4);
+const changes = {
+  shown: onScreen,
+  cases: [
+    { name: "the same", kept: onScreen },
+    { name: "asked and answered elsewhere", kept: kept.slice(0, 6) },
+    { name: "retried elsewhere", kept: [...kept.slice(0, 3), { ...kept[3]!, id: 40, status: "done" as const, content: "Now it worked.", error: null }] },
+    { name: "stopped elsewhere", kept: [kept[0]!, { ...kept[1]!, status: "stopped" as const }, ...kept.slice(2, 4)] },
+    { name: "deleted from", kept: kept.slice(0, 2) },
+  ].map((c) => ({ ...c, differs: keptDiffers(onScreen.map((m, i) => turnOf(m, "planner", i + 1)), c.kept) })),
+  // This device's own exchange, its ids not yet known on screen: the same words and states are no change.
+  own: [
+    { name: "the same words", kept: onScreen },
+    { name: "other words", kept: [...onScreen.slice(0, 3), { ...onScreen[3]!, content: "Other words." }] },
+  ].map((c) => ({ ...c, differs: keptDiffers(onScreen.map((m, i) => ({ ...turnOf(m, "planner", i + 1), sid: undefined })), c.kept) })),
+};
 const chats = {
   now: NOW,
   list: chatList,
   groups: groupConversations(chatList, NOW).map((g) => ({ label: g.label, ids: g.items.map((c) => c.id) })),
   states: stateCases.map((c) => ({ ...c, words: chatStateWords(c) })),
+  changes,
 };
 
 // ---- an answer's words: Markdown read as the PWA reads it (lib/markdown.ts) -------------------------------------------

@@ -5154,7 +5154,799 @@
         "needs": null,
         "words": "Failed"
       }
-    ]
+    ],
+    "changes": {
+      "shown": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "What's on today?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "The dentist at nine, then **the release**.",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "stand-in/planner"
+            },
+            {
+              "kind": "archive",
+              "entries": [
+                {
+                  "id": "ar_1",
+                  "title": "Calendar",
+                  "kind": "note",
+                  "trust": "trusted"
+                },
+                {
+                  "id": "ar_2",
+                  "title": "Mail",
+                  "kind": "mail",
+                  "trust": "untrusted"
+                }
+              ]
+            },
+            {
+              "kind": "tool",
+              "id": "t1",
+              "name": "recall",
+              "title": "Searching memory",
+              "input": "{\"q\":\"today\"}",
+              "ok": true,
+              "summary": "2 found"
+            },
+            {
+              "kind": "tool",
+              "id": "t2",
+              "name": "web_search",
+              "title": "Searching the web",
+              "input": "{\"q\":\"x\"}",
+              "ok": false,
+              "summary": "refused"
+            }
+          ],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 3,
+          "role": "user",
+          "content": "And tomorrow?",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        },
+        {
+          "id": 4,
+          "role": "assistant",
+          "content": "",
+          "model": "stand-in/planner",
+          "steps": [
+            {
+              "kind": "model",
+              "ref": "a/b"
+            },
+            {
+              "kind": "fallback",
+              "from": "a/b",
+              "error": "429"
+            }
+          ],
+          "status": "error",
+          "error": "Every model on the roster failed.",
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
+        }
+      ],
+      "cases": [
+        {
+          "name": "the same",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 4,
+              "role": "assistant",
+              "content": "",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "error",
+              "error": "Every model on the roster failed.",
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": false
+        },
+        {
+          "name": "asked and answered elsewhere",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 4,
+              "role": "assistant",
+              "content": "",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "error",
+              "error": "Every model on the roster failed.",
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 5,
+              "role": "user",
+              "content": "Try again",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 6,
+              "role": "assistant",
+              "content": "Halfway",
+              "model": "stand-in/planner",
+              "steps": [],
+              "status": "stopped",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": true
+        },
+        {
+          "name": "retried elsewhere",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 40,
+              "role": "assistant",
+              "content": "Now it worked.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": true
+        },
+        {
+          "name": "stopped elsewhere",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "stopped",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 4,
+              "role": "assistant",
+              "content": "",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "error",
+              "error": "Every model on the roster failed.",
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": true
+        },
+        {
+          "name": "deleted from",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": true
+        }
+      ],
+      "own": [
+        {
+          "name": "the same words",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 4,
+              "role": "assistant",
+              "content": "",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "error",
+              "error": "Every model on the roster failed.",
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": false
+        },
+        {
+          "name": "other words",
+          "kept": [
+            {
+              "id": 1,
+              "role": "user",
+              "content": "What's on today?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 2,
+              "role": "assistant",
+              "content": "The dentist at nine, then **the release**.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "stand-in/planner"
+                },
+                {
+                  "kind": "archive",
+                  "entries": [
+                    {
+                      "id": "ar_1",
+                      "title": "Calendar",
+                      "kind": "note",
+                      "trust": "trusted"
+                    },
+                    {
+                      "id": "ar_2",
+                      "title": "Mail",
+                      "kind": "mail",
+                      "trust": "untrusted"
+                    }
+                  ]
+                },
+                {
+                  "kind": "tool",
+                  "id": "t1",
+                  "name": "recall",
+                  "title": "Searching memory",
+                  "input": "{\"q\":\"today\"}",
+                  "ok": true,
+                  "summary": "2 found"
+                },
+                {
+                  "kind": "tool",
+                  "id": "t2",
+                  "name": "web_search",
+                  "title": "Searching the web",
+                  "input": "{\"q\":\"x\"}",
+                  "ok": false,
+                  "summary": "refused"
+                }
+              ],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 3,
+              "role": "user",
+              "content": "And tomorrow?",
+              "model": null,
+              "steps": [],
+              "status": "done",
+              "error": null,
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            },
+            {
+              "id": 4,
+              "role": "assistant",
+              "content": "Other words.",
+              "model": "stand-in/planner",
+              "steps": [
+                {
+                  "kind": "model",
+                  "ref": "a/b"
+                },
+                {
+                  "kind": "fallback",
+                  "from": "a/b",
+                  "error": "429"
+                }
+              ],
+              "status": "error",
+              "error": "Every model on the roster failed.",
+              "createdAt": 1763199940000,
+              "endedAt": 1763199970000
+            }
+          ],
+          "differs": true
+        }
+      ]
+    }
   },
   "markdown": [
     {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatStreamEvent, StoredMessage } from "@galahad/core";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keptDiffers, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
 
 const fresh = (): Thread => ({ turns: [], nextId: 1, target: null, base: null });
 const shape = (thread: Thread) => thread.turns.map((t) => [t.role, t.content, t.status]);
@@ -226,6 +226,30 @@ describe("attaching to a turn already under way", () => {
     feed(thread, [{ type: "text", text: "Half" }]);
     expect(failTurn(thread, "The node restarted while he was answering.", 7)).toMatchObject({ status: "error", content: "Half", error: "The node restarted while he was answering." });
     expect(thread.target).toBeNull();
+  });
+});
+
+describe("a kept chat that changed elsewhere", () => {
+  const kept = (id: number, role: "user" | "assistant", content: string, status: StoredMessage["status"] = "done"): StoredMessage =>
+    ({ id, role, content, status, model: role === "assistant" ? "m" : null, steps: [], error: null, createdAt: id, endedAt: id }) as StoredMessage;
+  const shown = (messages: StoredMessage[]) => messages.map((m, i) => turnOf(m, "planner", i + 1));
+  const chat = [kept(1, "user", "Remember Friday."), kept(2, "assistant", "Noted: Friday.")];
+
+  test("what's on screen is what the node keeps: nothing to show again", () => {
+    expect(keptDiffers(shown(chat), chat)).toBe(false);
+  });
+
+  test("another device asked and was answered, retried, or stopped him: shown again", () => {
+    expect(keptDiffers(shown(chat), [...chat, kept(3, "user", "And Saturday?"), kept(4, "assistant", "Saturday too.")])).toBe(true);
+    expect(keptDiffers(shown(chat), [chat[0]!, kept(5, "assistant", "Friday it is.")])).toBe(true);
+    expect(keptDiffers(shown([chat[0]!, kept(2, "assistant", "Not", "streaming")]), [chat[0]!, kept(2, "assistant", "Noted: Friday.", "stopped")])).toBe(true);
+    expect(keptDiffers(shown(chat), [chat[0]!])).toBe(true);
+  });
+
+  test("a turn of this device's, not yet told its kept id, is matched by its words and state: not shown again for that alone", () => {
+    const own = shown(chat).map((t) => ({ ...t, sid: undefined }));
+    expect(keptDiffers(own, chat)).toBe(false);
+    expect(keptDiffers(own, [chat[0]!, kept(2, "assistant", "Noted: Saturday.")])).toBe(true);
   });
 });
 

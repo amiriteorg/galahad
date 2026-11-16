@@ -10,7 +10,7 @@ import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keptDiffers, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
@@ -369,12 +369,24 @@ async function sync(api: Api): Promise<void> {
   emit(null);
 }
 
+/** What a kept chat holds, to show: with no turn running in it, an answer still marked as being written can't finish any more. */
+const keptMessages = (conversation: ConversationView) => conversation.messages.map((m) => (m.status === "streaming" && !conversation.turn ? { ...m, status: "stopped" as const } : m));
+
 /** Show a kept chat as the node has it, and attach to the turn running in it. */
 function adopt(api: Api, conversation: ConversationView): void {
   const running = conversation.turn;
   unwatchable = running && !running.watchable ? running : null;
   if (live) return;
-  if (!running || !running.watchable) return;
+  if (!running || !running.watchable) {
+    // Nothing to watch: what's shown is what the node keeps (another device may have asked and been answered since).
+    const kept = keptMessages(conversation);
+    if (keptDiffers(thread.turns, kept)) {
+      thread.turns = kept.map((m) => turnOf(m, conversation.role, thread.nextId++));
+      thread.target = null;
+      thread.base = null;
+    }
+    return;
+  }
   // Rebuilt from what the node keeps; the turn's own answers then come from its replay.
   thread.turns = conversation.messages.map((m) => turnOf(m, conversation.role, thread.nextId++));
   thread.target = null;
@@ -388,8 +400,7 @@ function adopt(api: Api, conversation: ConversationView): void {
 export async function openConversation(api: Api, id: string): Promise<void> {
   const { conversation } = await api.post<{ conversation: ConversationView }>("/api/conversations/get", { id });
   leave();
-  // With no turn running, an answer still marked as being written can't finish any more.
-  thread.turns = conversation.messages.map((m) => turnOf(m.status === "streaming" && !conversation.turn ? { ...m, status: "stopped" } : m, conversation.role, thread.nextId++));
+  thread.turns = keptMessages(conversation).map((m) => turnOf(m, conversation.role, thread.nextId++));
   thread.target = null;
   thread.base = null;
   current = { id: conversation.id, title: conversation.title, project: conversation.project, bank: conversation.bank, pinned: conversation.pinned };
@@ -569,23 +580,30 @@ export const queueActions = (api: Api) => {
 
 /**
  * While a chat is on screen: notice a turn that started in it elsewhere (another device, the queue going
- * on) and attach to it; keep the list's states fresh. Asks the node only while the app is visible.
+ * on) and attach to it; keep the list's states fresh; and when anything kept changed (the node's `chats`:
+ * a chat begun, answered or renamed on another device, maybe while this one was hidden), read the list and
+ * the chat on screen again. Asks the node only while the app is visible.
  */
 export function watchTurns(api: Api, signal: AbortSignal): void {
   let known = "";
+  /** Which writing of the chats the last look saw ("": none yet). */
+  let seen = "";
   const look = async (): Promise<void> => {
     if (document.hidden) return;
     try {
-      const view = await api.get<{ turns: TurnView[] }>("/api/turns", signal);
+      const view = await api.get<{ turns: TurnView[]; chats?: string }>("/api/turns", signal);
       const now = view.turns.map((t) => `${t.id}:${t.conversation}`).sort().join(",");
       const mine = current && view.turns.find((t) => t.conversation === current!.id);
       noteTurns(view.turns);
-      if (now !== known) {
+      const changed = Boolean(view.chats && seen && view.chats !== seen);
+      if (view.chats) seen = view.chats;
+      if (now !== known || changed) {
         known = now;
         void refreshKept(api);
       }
       if (mine && !live && (!unwatchable || unwatchable.id !== mine.id)) void sync(api);
       else if (!mine && unwatchable) void sync(api);
+      else if (changed && current && !live) void sync(api);
     } catch {
       /* out of reach just now: the next look tries again */
     }

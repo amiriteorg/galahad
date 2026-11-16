@@ -15,6 +15,18 @@ struct ChatsTests {
         #expect(groups.map { $0.items.map(\.id) } == chats.groups.map(\.ids))
     }
 
+    @Test func aChatChangedOnAnotherDeviceIsShownAgainWhereThePWAWouldShowItAgain() {
+        let shown = ChatThread(kept: chats.changes.shown, role: "planner").turns
+        for change in chats.changes.cases {
+            #expect(Chats.keptDiffers(shown: shown, kept: change.kept) == change.differs, "\(change.name)")
+        }
+        // This device's own exchange, its kept ids not yet known on screen: matched by its words and state.
+        let own = shown.map { turn in var unknown = turn; unknown.sid = nil; return unknown }
+        for change in chats.changes.own {
+            #expect(Chats.keptDiffers(shown: own, kept: change.kept) == change.differs, "\(change.name)")
+        }
+    }
+
     @Test func eachChatsStateIsSaidInThePWAsWords() {
         for state in chats.states {
             #expect(Chats.stateWords(state: state.state, queued: state.queued, held: state.held, needs: state.needs) == state.words)

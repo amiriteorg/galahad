@@ -65,7 +65,7 @@ import Observation
         async let actions = attempt { try await client.get("/api/actions", as: Listed.self).actions ?? [] }
         async let requests = attempt { try await client.get("/api/secret-requests", as: Listed.self).requests ?? [] }
         async let pairings = attempt { try await client.get("/api/pairings", as: Listed.self).pairings ?? [] }
-        async let turns = attempt { try await client.get("/api/turns", as: Listed.self).turns ?? [] }
+        async let turns = attempt { try await client.get("/api/turns", as: Listed.self) }
         async let quests = attempt { try await client.get("/api/quests", as: Listed.self).quests ?? [] }
 
         switch await me {
@@ -83,7 +83,11 @@ import Observation
         if case .success(let list) = asked { self.requests = list }
         if case .success = acted, case .success = asked { inboxLoaded = true }
         if case .success(let list) = await pairings { self.pairings = list }
-        if case .success(let list) = await turns { self.turns = list }
+        if case .success(let listed) = await turns {
+            self.turns = listed.turns ?? []
+            // The chat on screen, as the node holds it, when anything kept changed on another device.
+            await chat.noticed(chats: listed.chats, turns: self.turns, with: client)
+        }
         if case .success(let list) = await quests { self.quests = list }
     }
 
@@ -156,6 +160,8 @@ import Observation
         var requests: [SecretRequestView]?
         var pairings: [PairingView]?
         var turns: [TurnView]?
+        /// Which writing of the chats this is (on `GET /api/turns`).
+        var chats: String?
         var quests: [QuestView]?
     }
 }

@@ -133,6 +133,19 @@ export interface Thread {
 const STEP_ICON: Record<string, string> = { asked: "arrow-up", model: "models", fallback: "alert", archive: "library", answer: "chat", error: "x-circle", stopped: "stop", steered: "arrow-up", tool: "zap" };
 
 /** A kept message as a turn on screen, with its answer's steps. */
+/**
+ * Whether a kept chat holds what isn't on screen: a message more or fewer, another in a place, or one that ended or
+ * changed since (another device asked in it, retried, or stopped him). By the node's own ids, states and words; a turn
+ * of this device's not yet told its kept id is matched by its words and state (redrawing it would only move the screen).
+ */
+export function keptDiffers(shown: readonly Pick<Turn, "sid" | "status" | "content">[], kept: readonly Pick<StoredMessage, "id" | "status" | "content">[]): boolean {
+  if (shown.length !== kept.length) return true;
+  return kept.some((m, i) => {
+    const t = shown[i]!;
+    return (t.sid !== undefined && t.sid !== m.id) || t.status !== m.status || t.content !== m.content;
+  });
+}
+
 export function turnOf(m: StoredMessage, role: string, id: number): Turn {
   const steps: Step[] =
     m.role === "assistant"

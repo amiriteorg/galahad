@@ -182,10 +182,20 @@ struct Vectors: Decodable {
             let words: String
         }
 
+        /// A kept chat that changed on another device: what was on screen, and each change with whether it is shown again.
+        struct Changes: Decodable {
+            struct Case: Decodable { let name: String; let kept: [StoredMessage]; let differs: Bool }
+            let shown: [StoredMessage]
+            let cases: [Case]
+            /// This device's own exchange, not yet told its kept ids.
+            let own: [Case]
+        }
+
         let now: Double
         let list: [ConversationSummary]
         let groups: [Group]
         let states: [State]
+        let changes: Changes
     }
 
     struct MarkdownCase: Decodable {

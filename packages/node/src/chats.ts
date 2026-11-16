@@ -142,6 +142,8 @@ export function foldAt(recent: readonly { role: string; content: string }[], lim
 
 export class ChatStore {
   private readonly db: Database;
+  /** When this node opened it: with the rows written since, which writing of the chats a device saw. */
+  private readonly opened: string;
 
   constructor(
     path: string,
@@ -149,6 +151,7 @@ export class ChatStore {
   ) {
     if (path !== ":memory:" && !existsSync(path)) closeSync(openSync(path, "wx", 0o600));
     this.db = new Database(path);
+    this.opened = this.now().toString(36);
     this.db.exec("PRAGMA secure_delete = ON; PRAGMA foreign_keys = ON;");
     this.db.exec(`CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, project TEXT, role TEXT NOT NULL,
@@ -184,6 +187,16 @@ export class ChatStore {
     const at = this.now();
     this.db.query("INSERT INTO conversations (id, title, project, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, input.title, input.project, input.role, at, at);
     return this.summary(id)!;
+  }
+
+  /**
+   * Which writing of your chats this is: when the node opened them, and how many rows it has written since. A device
+   * that saw another one knows something kept has changed (a chat begun, answered, renamed or deleted, on any device),
+   * and reads the chats again. It says nothing of what.
+   */
+  version(): string {
+    const { n } = this.db.query<{ n: number }, []>("SELECT total_changes() AS n").get()!;
+    return `${this.opened}.${n}`;
   }
 
   summary(id: string): KeptSummary | null {

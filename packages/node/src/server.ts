@@ -2195,6 +2195,8 @@ export function createApp(ctx: AppContext) {
           .filter((turn) => knowsTurn(turn, p))
           .map((turn) => turnView(turn, p)),
         limits: ctx.turns.limits(),
+        // Which writing of the chats this is: another device's chat, answer or rename shows as a new one.
+        chats: ctx.chats.version(),
       };
     },
     attachTurn: (input, p, req) => watchTurn(watchedTurn(input.turn, p), req),

@@ -154,6 +154,27 @@ struct ChatRequest: Encodable, Sendable {
         await open(conversation, with: client)
     }
 
+    /// Which writing of the chats the node said last (`chats` on `GET /api/turns`; nil: none yet).
+    private var seenChats: String?
+
+    /// What the node said on its latest look (every few seconds while the app is open): when anything kept has changed
+    /// (a chat begun, answered or renamed on another device), or he is answering in the chat on screen for another
+    /// device, the chat on screen as the node holds it. Never while this device is sending or watching.
+    func noticed(chats: String?, turns: [TurnView], with client: NodeClient) async {
+        let changed = chats != nil && seenChats != nil && chats != seenChats
+        if let chats { seenChats = chats }
+        guard let conversation, live == nil, !loading else { return }
+        guard changed || turns.contains(where: { $0.conversation == conversation }) else { return }
+        struct Get: Encodable { let id: String }
+        struct Got: Decodable { let conversation: ConversationDetail }
+        guard let detail = try? await client.post("/api/conversations/get", Get(id: conversation), as: Got.self).conversation,
+              self.conversation == conversation, live == nil, !loading else { return }
+        title = detail.title
+        // Shown again only where the node holds what isn't on screen; his turn in it, attached to.
+        if Chats.keptDiffers(shown: thread.turns, kept: detail.messages) { thread = ChatThread(kept: detail.messages, role: detail.role) }
+        if let running = detail.turn { attach(running.id, with: client) }
+    }
+
     private func leave() {
         live?.cancel()
         (live, watching) = (nil, nil)

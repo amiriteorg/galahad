@@ -208,7 +208,7 @@ const ask = async (caller: Caller, content: string, extra: object = {}, signal?:
   return watch(response);
 };
 const chatOf = async (id: string, caller: Caller = admin) => (await json<{ conversation: ConversationView }>(caller("conversation", { id }))).conversation;
-const listed = async (caller: Caller = admin) => json<{ turns: TurnView[]; limits: TurnLimits }>(caller("turns"));
+const listed = async (caller: Caller = admin) => json<{ turns: TurnView[]; limits: TurnLimits; chats: string }>(caller("turns"));
 const summaries = async (caller: Caller = admin) => (await json<{ conversations: ConversationSummary[] }>(caller("conversations"))).conversations;
 const idle = () => until(async () => (await listed()).turns.length === 0);
 
@@ -323,6 +323,35 @@ describe("a turn outlives the connection that started it", () => {
     pace.go();
     // Only one model call was ever made for it: nothing is retried.
     expect(bodies.filter((b) => b.messages.at(-1)?.content === "Write a long report.")).toHaveLength(1);
+  });
+});
+
+describe("the same chats on every device", () => {
+  test("a chat kept from one device is the same from another, and the turns list says when anything kept changed: a turn that ended unseen, a rename", async () => {
+    await idle();
+    script = [say("Noted: Friday.")];
+    const before = (await listed()).chats;
+    expect(before).toMatch(/^[0-9a-z]+\.\d+$/);
+    // The phone asks, and the answer ends while this device isn't looking.
+    const asked = await ask(phone.call, "Remember Friday.", { save: true });
+    await asked.done;
+    const id = asked.turn().conversation!;
+    const after = (await listed()).chats;
+    expect(after).not.toBe(before);
+    // This device sees the chat, and all of it.
+    expect((await summaries()).some((c) => c.id === id)).toBe(true);
+    expect((await chatOf(id)).messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Remember Friday."],
+      ["assistant", "Noted: Friday."],
+    ]);
+    // Renamed here, with no turn at all: the phone can tell too.
+    await json(admin("updateConversation", { id, title: "Friday" }));
+    const renamed = (await listed(phone.call)).chats;
+    expect(renamed).not.toBe(after);
+    // Reading changes nothing.
+    await chatOf(id);
+    await summaries();
+    expect((await listed()).chats).toBe(renamed);
   });
 });
 

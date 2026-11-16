@@ -39,6 +39,16 @@ struct ConversationDetail: Decodable, Sendable {
 /// The chats list as the PWA shows it (`lib/chats.ts`, core's `chatStateWords`): pinned first, then by when each was
 /// last active; each chat's state in words.
 enum Chats {
+    /// Whether a kept chat holds what isn't on screen (the PWA's `keptDiffers`): a message more or fewer, another in a
+    /// place, or one that ended or changed since (another device asked in it, retried, or stopped him). By the node's own
+    /// ids, states and words; a turn of this device's not yet told its kept id is matched by its words and state.
+    static func keptDiffers(shown: [ChatThread.Turn], kept: [StoredMessage]) -> Bool {
+        guard shown.count == kept.count else { return true }
+        return zip(shown, kept).contains { turn, message in
+            (turn.sid != nil && turn.sid != message.id) || turn.status.rawValue != message.status || turn.content != message.content
+        }
+    }
+
     struct Group: Equatable, Sendable {
         let label: String
         var items: [ConversationSummary]
