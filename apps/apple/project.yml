@@ -122,6 +122,11 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         ENABLE_PREVIEWS: YES
+      # A release lets no debugger in (Xcode adds get-task-allow even to a Release build signed to run locally), which
+      # notarization requires: mac-node-bundle.sh refuses a Developer ID signing of a build that does.
+      configs:
+        Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
   GalahadMacTests:
     type: bundle.unit-test
     platform: macOS
