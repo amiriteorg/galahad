@@ -18,7 +18,9 @@ import {
   SECRET_REDIRECT,
   type SkillLearned,
   addUsage,
+  costOf,
   type Price,
+  type Prices,
   TRIAL_QUEST_PREFIX,
   spendLabel,
   type Usage,
@@ -106,6 +108,11 @@ export interface DoOptions {
   gates?: string[];
   /** The planner may add gates of its own from its "Done when:" line, marked as its proposal (yours stay as given). */
   proposeGates?: boolean;
+  /**
+   * Money, in US dollars at your prices, the run's model calls may spend, every attempt's together: past four fifths
+   * the work is told to wrap up, and once it is spent the work stops (quest.ts). Calls with no price aren't counted.
+   */
+  budgetUsd?: number;
   /** Roles held to one model (a trial run's pins): that role asks exactly this model, with no fallback; the rest ask the roster. */
   pins?: Partial<Record<"planner" | "engineer" | "reviewer", string>>;
   /** Offer his skills to the planner and the engineer (default: as `remember`; a trial that measures them offers them and still teaches none). */
@@ -355,6 +362,9 @@ function print(event: QuestEvent): void {
     case "locked":
       console.log(`  ${bold(`Not run: the work changed ${event.changed.join(", ")}`)} ${dim("· the tests its gates run are the contract; the work goes back")}`);
       return;
+    case "budget":
+      console.log(`  ${bold(event.out ? `The budget is spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `$${event.spentUsd.toFixed(2)} of the $${event.budgetUsd.toFixed(2)} budget spent: wrapping up`)}`);
+      return;
     case "finished":
       return;
   }
@@ -390,6 +400,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "locked":
       console.log(`${tag} ${bold(`tests changed: ${event.changed.join(", ")}`)} ${dim("(sent back)")}`);
+      return;
+    case "budget":
+      console.log(`${tag} ${bold(event.out ? "the budget is spent: stopping" : `$${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`)}`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);
@@ -473,7 +486,7 @@ async function workIn(
   options: DoOptions,
   shop: Workshop,
   agent: Agent | undefined,
-  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; prepare?: NodeQuestHooks["prepare"] },
+  run: { emit?: (event: QuestEvent) => void; signal?: AbortSignal; tag?: AttemptTag; instructions?: string; parallelCommands?: number; quest?: string; spent?: NodeQuestHooks["spent"]; spentUsd?: () => { usd: number; complete: boolean }; prepare?: NodeQuestHooks["prepare"] },
 ): Promise<QuestOutcome> {
   const { exec } = shop;
   await run.prepare?.(exec, run.tag && run.tag.of > 1 ? { attempt: run.tag.index } : {});
@@ -513,6 +526,7 @@ async function workIn(
       ...(options.proposeGates ? { proposeGates: true } : {}),
       ...(store ? { engram: store } : {}),
       ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
+      ...(options.budgetUsd !== undefined && run.spentUsd ? { budgetUsd: options.budgetUsd } : {}),
     },
     {
       ask: async (role, messages, turn) => {
@@ -551,6 +565,7 @@ async function workIn(
       exec: store ? (command, timeoutSec) => exec(`${engramShell(store)}${command}`, timeoutSec) : exec,
       emit: (event) => (shop.trail.on(event), run.emit?.(event)),
       signal: run.signal,
+      ...(run.spentUsd ? { spentUsd: run.spentUsd } : {}),
     },
   );
   // A repository's changes are kept as a patch (new files included) to read, and as a
@@ -616,6 +631,14 @@ export async function runNodeQuest(
     addUsage(usage, call.role, call.model, call.usage);
     hooks.spent?.(call);
   };
+  // With a budget: what those calls have cost so far at your prices (asked for once, as the run starts).
+  const prices: Prices = options.budgetUsd !== undefined ? await node.call<{ prices: Prices }>("prices").then((r) => r.prices, () => ({})) : {};
+  const spentUsd = options.budgetUsd !== undefined
+    ? () => {
+        const cost = costOf(usage, prices);
+        return { usd: cost.usd, complete: cost.complete };
+      }
+    : undefined;
   const prepare = hooks.prepare;
 
   let outcome: QuestOutcome;
@@ -633,7 +656,7 @@ export async function runNodeQuest(
       hooks.started?.({ quest, sandbox: shop.sandbox, host: shop.host });
       worked = shop;
       try {
-        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}), spent, ...(prepare ? { prepare } : {}) });
+        outcome = await workIn(node, options, shop, agent, { emit: (event) => (standing.on(event), hooks.emit?.(event)), signal: hooks.signal, ...(tag ? { tag } : {}), spent, ...(spentUsd ? { spentUsd } : {}), ...(prepare ? { prepare } : {}) });
         await hooks.finished?.(shop.exec);
       } finally {
         artifact = await closeWorkshop(node, options, shop, true);
@@ -675,6 +698,8 @@ export async function runNodeQuest(
                 // His skills are chosen once for the quest: every attempt reads the same ones.
                 quest,
                 spent,
+                // One budget for the run: every attempt's calls count against it together.
+                ...(spentUsd ? { spentUsd } : {}),
                 ...(prepare ? { prepare } : {}),
               });
               return { outcome: done, evidence: collect.text(done, await sandboxEvidence(shop.exec, evidenceCommands)), handle: shop };

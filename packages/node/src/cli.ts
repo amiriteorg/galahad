@@ -174,6 +174,9 @@ Work
                                   --effort spends more compute for a better answer: that many attempts at once,
                                   each in its own sandbox and reviewed, the best taken by the independent
                                   reviewer on the evidence alone (auto: what the free slots and the budget allow)
+     … --budget-usd 2              money its model calls may spend at your prices (galahad price), every
+                                  attempt's together: past four fifths the work is told to wrap up, and once
+                                  it is spent the work stops
      … --gate "<command>" [--gate …] [--no-planner-gates]
                                   done means this passes: each gate runs in the quest's sandbox when the
                                   engineer says DONE, and every one must exit 0 before the reviewer is asked
@@ -1115,7 +1118,9 @@ Next:
 
     case "do": {
       const goal = [sub, ...rest].filter(Boolean).join(" ").trim();
-      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--lab] [--on node] [--steps 30] [--timeout 300] [--keep] [--agent opencode --minutes 60 --repo url] "<goal>"');
+      if (!goal) fail('usage: galahad do [--net isolated|gateway|online] [--vm|--container] [--lab] [--on node] [--steps 30] [--timeout 300] [--keep] [--budget-usd 2] [--agent opencode --minutes 60 --repo url] "<goal>"');
+      const budgetUsd = str("budget-usd") === undefined ? undefined : Number(str("budget-usd"));
+      if (budgetUsd !== undefined && (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > 100)) fail("--budget-usd takes an amount in US dollars above 0 and at most 100, e.g. --budget-usd 2");
       const agentName = str("agent");
       // An agent calls models itself, so it needs at least the gateway.
       const network = str("net") ?? (agentName ? "gateway" : "isolated");
@@ -1147,6 +1152,7 @@ Next:
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
         keep: Boolean(flags.keep),
+        ...(budgetUsd !== undefined ? { budgetUsd } : {}),
         ...(effort !== undefined ? { effort } : {}),
         ...(agentName ? { agent: { name: agentName, minutes, ...(repo ? { repo } : {}) } } : {}),
         ...(flags.ship

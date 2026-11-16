@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bodyFingerprint, type Calibration, ceilingThreads, costOf, type Price, REFERENCE_SINGLE, routes, type RouteName, spendTotal, type TrialView, type UsageView } from "@galahad/core";
-import { ENGINEERING_SUITE, pose } from "@galahad/brain";
+import { ENGINEERING_SUITE, pose, type QuestEvent } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import type { Measure } from "../src/compute/service.ts";
@@ -216,6 +216,37 @@ describe("the node's own count, and your prices", () => {
     await expect(call("setPrice", { model: "x/y", input: -1, output: 1 })).rejects.toThrow(/400/);
     expect((await call<{ prices: Record<string, Price> }>("removePrice", { model: "stand-in/*" })).prices).toEqual({ "stand-in/counted": { input: 2, output: 8, cached: 0.2 } });
     await expect(call("removePrice", { model: "stand-in/*" })).rejects.toThrow(/404/);
+  });
+});
+
+/*
+ * `galahad do --budget-usd`: the run's calls are priced as they go, at your prices, and the work stops once they have
+ * cost the budget (quest.ts says when and how; here, through a real node, with a price that makes the plan spend it).
+ */
+describe("a quest with a budget", () => {
+  test("stops once its calls have cost it, says so, and says what they came to", async () => {
+    const { prices: before } = await call<{ prices: Record<string, Price> }>("prices");
+    await call("setPrice", { model: "stand-in/counted", input: 1000, output: 1000 });
+    try {
+      const events: QuestEvent[] = [];
+      const { outcome, usage } = await runNodeQuest(client(), { goal: "make the file", network: "isolated", remember: false, budgetUsd: 0.05 }, { emit: (event) => void events.push(event) });
+      expect(outcome.status).toBe("stopped");
+      expect(outcome.summary).toBe("Stopped: its budget ($0.05) was spent before he finished.");
+      // The plan alone spent it: no command ran.
+      expect(usage.map((l) => [l.role, l.calls])).toEqual([["planner", 1]]);
+      expect(events.filter((e) => e.type === "budget")).toEqual([{ type: "budget", spentUsd: expect.any(Number), budgetUsd: 0.05, out: true }]);
+    } finally {
+      await call("setPrice", { model: "stand-in/counted", ...before["stand-in/counted"]! });
+    }
+  });
+
+  test("with room to spare it runs as ever, told what it has spent as it goes", async () => {
+    const asked: string[] = [];
+    const { outcome } = await runNodeQuest(client(), { goal: "make the file", network: "isolated", remember: false, budgetUsd: 50 }, {
+      spent: () => void asked.push("call"),
+    });
+    expect(outcome.status).toBe("done");
+    expect(asked.length).toBeGreaterThan(2);
   });
 });
 
