@@ -6,9 +6,9 @@ import SwiftUI
  * Galahad on the Mac (docs/MAC.md, M1): the iPhone and iPad app's own views, in a Mac's frame. One main window, the
  * iPad's sidebar and detail; a chat, a knight or a room in a window of its own, each back where it was at the next launch;
  * the places, a new chat and a task for the Roundtable in the menus; Settings; and the Roundtable in the menu bar, which
- * keeps the app running with its windows closed.
+ * keeps the app running with its windows closed. With M2 it is also the node's manager (This Mac, the first run) and its
+ * launcher (MacMain, the app's entry point).
  */
-@main
 struct GalahadMacApp: App {
     @NSApplicationDelegateAdaptor(MacDelegate.self) private var delegate
     private let mac = MacApp.shared
@@ -41,9 +41,10 @@ struct GalahadMacApp: App {
     }
 }
 
-/// What the Mac's main window shows: Galahad's chat, the Roundtable's board, a knight's or a room's page, the Inbox, More.
+/// What the Mac's main window shows: Galahad's chat, the Roundtable's board, a knight's or a room's page, the Inbox, More,
+/// and This Mac (its node).
 enum MacPlace: Hashable, Codable {
-    case galahad, roundtable, inbox, more
+    case galahad, roundtable, inbox, more, thisMac
     case knight(String)
     case room(String)
 
@@ -75,6 +76,10 @@ enum MacWindow: Hashable, Codable {
     static let main = "main"
 
     let app = AppModel()
+    /// The first run, on a Mac that isn't a node and an app that isn't paired.
+    let firstRun = FirstRun()
+    /// This Mac as a node.
+    let thisMac = ThisMac()
     var place: MacPlace = MacApp.keptPlace() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
     }
@@ -97,13 +102,20 @@ enum MacWindow: Hashable, Codable {
     }
 
     /// Reads this Mac's key, then asks the node again every few seconds while the app runs, windows or not (the menu bar
-    /// shows the Roundtable): every 5 s in front, every 15 behind.
+    /// shows the Roundtable), and reads this Mac's own node again (the sidebar's foot shows it): every 5 s in front, every
+    /// 15 behind. A node the app runs is restarted onto a new release once, at launch.
     func run() {
         guard loop == nil else { return }
         app.start()
+        if case .unpaired = app.phase { firstRun.active = FirstRun.wanted(paired: false) }
+        Task {
+            await thisMac.refresh()
+            await thisMac.restartIfNewRelease()
+        }
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 if let session = self?.session { await session.refresh() }
+                await self?.thisMac.refresh()
                 try? await Task.sleep(for: .seconds(NSApplication.shared.isActive ? 5 : 15))
             }
         }
@@ -144,17 +156,23 @@ struct MacRoot: View {
 
     var body: some View {
         Group {
-            switch mac.app.phase {
-            case .loading:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .unpaired:
-                JoinView(app: mac.app, handed: mac.handed)
-                    .frame(maxWidth: 600)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .paired(let session):
-                MacPlaces(mac: mac, session: session)
-            case .broken(let why):
-                KeyUnreadable(why: why) { mac.app.start() }
+            if mac.firstRun.active {
+                FirstRunView(mac: mac, run: mac.firstRun)
+            } else {
+                switch mac.app.phase {
+                case .loading:
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .unpaired where NodeHome.standard.exists:
+                    LocalNodeOpen(mac: mac, run: mac.firstRun)
+                case .unpaired:
+                    JoinView(app: mac.app, handed: mac.handed)
+                        .frame(maxWidth: 600)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .paired(let session):
+                    MacPlaces(mac: mac, session: session)
+                case .broken(let why):
+                    KeyUnreadable(why: why) { mac.app.start() }
+                }
             }
         }
         .frame(minWidth: 820, minHeight: 560)

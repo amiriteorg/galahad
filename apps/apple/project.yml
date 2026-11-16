@@ -71,9 +71,10 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.tests
-  # The Mac's: a native app (not Mac Catalyst), the client for now. It is called Galahad as the iPhone's is, and its module
-  # is too, so the tests import it as they import the iPhone's. M1 is signed to run on this Mac only: its Developer ID,
-  # notarization and what the node needs come with M2 (docs/MAC.md).
+  # The Mac's: a native app (not Mac Catalyst), the client and the node's manager. It is called Galahad as the iPhone's is,
+  # and its module is too, so the tests import it as they import the iPhone's. A build here is signed to run on this Mac
+  # only and carries no node: scripts/mac-node-bundle.sh puts the node in a built app and signs it, with the Developer ID
+  # for a release (docs/MAC.md, M2).
   GalahadMac:
     type: application
     platform: macOS

@@ -1,16 +1,23 @@
 import SwiftUI
 
 /// This device and its node: what it is called, where its key is kept, what it may do; and forgetting it.
-struct MoreView: View {
+struct MoreView<Leading: View>: View {
     let app: AppModel
     let session: Session
     /// Keys and Connectors as places of their own, opened from here (not in a Mac's Settings, where they are tabs).
     var places = true
+    /// What comes before this device's own rows: on a Mac that is a node, the node.
+    let leading: Leading
     @State private var forgetting = false
     @State private var problem: String?
 
+    init(app: AppModel, session: Session, places: Bool = true, @ViewBuilder leading: () -> Leading) {
+        (self.app, self.session, self.places, self.leading) = (app, session, places, leading())
+    }
+
     var body: some View {
         GroupedList {
+            leading
             Section("This device") {
                 LabeledContent("Name", value: session.node.name)
                 LabeledContent("Device") { Text(String(session.key.device.dropFirst(2).prefix(8))).font(.body.monospaced()) }
@@ -76,5 +83,11 @@ struct MoreView: View {
     static var version: String {
         let info = Bundle.main.infoDictionary
         return "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }
+}
+
+extension MoreView where Leading == EmptyView {
+    init(app: AppModel, session: Session, places: Bool = true) {
+        self.init(app: app, session: session, places: places) { EmptyView() }
     }
 }

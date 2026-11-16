@@ -11,7 +11,8 @@ extension Metrics {
 /// The main window once this Mac is paired: the iPad's sidebar and detail. The sidebar is the Roundtable as the PWA's
 /// wide screen has it: its mark, which opens its board; the one who leads, then the knights in your order, each face in
 /// the ring of where it stands with its state in a word (dragged into another order, as a Mac's lists are); the rooms;
-/// then the Inbox and More. The detail is the place chosen; a chat, a knight or a room also opens in a window of its own.
+/// then the Inbox and More; and This Mac at its foot. The detail is the place chosen; a chat, a knight or a room also opens
+/// in a window of its own.
 struct MacPlaces: View {
     @Bindable var mac: MacApp
     let session: Session
@@ -38,6 +39,7 @@ struct MacPlaces: View {
         case .room(let id): RoomView(session: session, id: id)
         case .inbox: InboxView(session: session)
         case .more: MoreView(app: mac.app, session: session)
+        case .thisMac: GroupedList { ThisMacSections(mac: mac) }.navigationTitle("This Mac")
         }
     }
 
@@ -108,13 +110,16 @@ private struct MacSidebar: View {
             // A double click opens it in a window of its own.
             if let place = places.first, let window = window(for: place) { openWindow(value: window) }
         }
-        .safeAreaInset(edge: .bottom) {
-            if let trouble = session.trouble {
-                TroubleRow(trouble: trouble)
-                    .font(.callout)
-                    .padding(Space.s3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.bar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                if let trouble = session.trouble {
+                    TroubleRow(trouble: trouble)
+                        .font(.callout)
+                        .padding(Space.s3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.bar)
+                }
+                ThisMacFoot(mac: mac)
             }
         }
         .alert(refused?.what ?? "", isPresented: .init(get: { refused != nil }, set: { if !$0 { refused = nil } })) {
@@ -166,7 +171,7 @@ private struct MacSidebar: View {
         case .galahad: session.chat.conversation.map(MacWindow.chat)
         case .knight(let id): .knight(id)
         case .room(let id): .room(id)
-        case .roundtable, .inbox, .more: nil
+        case .roundtable, .inbox, .more, .thisMac: nil
         }
     }
 
