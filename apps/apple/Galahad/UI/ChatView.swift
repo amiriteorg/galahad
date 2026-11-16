@@ -186,7 +186,11 @@ struct Composer: View {
     var body: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: 10) {
+                // Made anew with each message sent: clearing a focused multi-line field can leave what was sent on
+                // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
+                // finishing). A new one is empty, and nothing late reaches it.
                 TextField("Message Galahad", text: $chat.draft, axis: .vertical)
+                    .id(chat.sent)
                     .lineLimit(1...6)
                     .focused(composing)
                     .padding(.horizontal, 16)
@@ -205,7 +209,10 @@ struct Composer: View {
                 } else {
                     let empty = chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button {
+                        let typing = composing.wrappedValue
                         chat.send(with: client)
+                        // The new box takes the keyboard where the old one had it, so it stays up for the next message.
+                        if typing { Task { @MainActor in composing.wrappedValue = true } }
                     } label: {
                         Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(empty ? Color.secondary : Color.onAccent).frame(width: 30, height: 30)
                     }

@@ -33,6 +33,8 @@ struct ChatRequest: Encodable, Sendable {
     /// Why the chat couldn't be read.
     private(set) var problem: String?
     var draft = ""
+    /// How many messages this chat screen has sent: the message box is made anew with each one (see `Composer`).
+    private(set) var sent = 0
     private var live: Task<Void, Never>?
     /// The watch whose events the chat on screen takes.
     private var watching: UUID?
@@ -74,6 +76,7 @@ struct ChatRequest: Encodable, Sendable {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard live == nil, !text.isEmpty else { return }
         draft = ""
+        sent += 1
         thread.begin(question: text, role: role)
         let request = ChatRequest(role: role, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text)])
         watch(client.events("/api/chat", request))
