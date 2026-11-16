@@ -280,7 +280,8 @@ struct RoomComposer: View {
                 TextField("Message \(name)", text: $room.draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused(composing)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Space.s4)
+                    // One line high, the field is 44 points: Apple's least for a thing to tap.
                     .padding(.vertical, 11)
                     .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
                 Button {
@@ -397,15 +398,15 @@ private struct KnightAbout: View {
             List {
                 if let knight {
                     Section {
-                        HStack(spacing: 16) {
+                        HStack(spacing: Space.s4) {
                             Portrait(drawing: look, size: 96, expression: row?.expression ?? "idle", id: knight.id, temper: AvatarLook.temperament(id: knight.id, profile: knight.avatar))
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(knight.name).font(.title2.bold())
                                 Text(knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
                                 if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.siege : .primary) }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Space.s1)
                     }
                     if !knight.instructions.isEmpty {
                         Section("Its job") { Text(knight.instructions) }

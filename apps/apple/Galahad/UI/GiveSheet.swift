@@ -83,14 +83,14 @@ struct GiveSheet: View {
     private func taken(_ given: Given) -> some View {
         List {
             Section {
-                HStack(spacing: 14) {
-                    Portrait(drawing: look(given.choice.id, given.choice.name), size: 56)
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Space.s3) {
+                    Portrait(drawing: look(given.choice.id, given.choice.name), size: Metrics.rowFace)
+                    VStack(alignment: .leading, spacing: Space.s1) {
                         Text("\(given.choice.name) took it").font(.headline)
                         Text(given.choice.reasons.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Space.s1)
             } footer: {
                 Text("It's in \(given.choice.name)'s timeline now, where it was given.")
             }
@@ -98,7 +98,7 @@ struct GiveSheet: View {
             if !others.isEmpty {
                 Section("The others") {
                     ForEach(others, id: \.id) { knight in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: Space.line) {
                             Text(knight.name).font(.subheadline.weight(.semibold))
                             Text("\(knight.eligible ? "" : "can't take it: ")\(knight.why.joined(separator: " · "))")
                                 .font(.caption)

@@ -60,15 +60,16 @@ private struct ConnectorRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Space.line) {
                 Text(connector.label).font(.headline)
                 if let description = connector.description { Text(description).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.s2)
             if connector.installed, let state = Connectors.state(key: connector.key, signsIn: connector.oauth != nil) {
                 StateBadge(text: state.label, tone: state.tone)
             }
         }
+        .padding(.vertical, Space.s1)
         .accessibilityElement(children: .combine)
     }
 }
@@ -160,7 +161,7 @@ private struct ConnectorDetail: View {
                 if !connector.tools.isEmpty {
                     Section("What it can do") {
                         ForEach(connector.tools) { tool in
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Space.line) {
                                 HStack {
                                     Text(tool.name).font(.callout.monospaced())
                                     Spacer()
@@ -251,7 +252,7 @@ private struct ConnectorDetail: View {
                 case .page:
                     Text("Finish in the page that opened: choose your account and allow it. This page says when you're signed in.").font(.footnote)
                 case .code(let code, let url):
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Open \(url.host() ?? url.absoluteString), sign in, and type this code:").font(.footnote)
                         HStack {
                             Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)

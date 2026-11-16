@@ -117,14 +117,14 @@ struct ChatRow: View {
     private var needsYou: Bool { chat.state == "waiting" || chat.state == "failed" }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: Space.line) {
+                HStack(spacing: Space.s2) {
                     if chat.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Pinned") }
                     Text(chat.title).font(.body.weight(current ? .semibold : .regular)).lineLimit(1)
                 }
                 if !words.isEmpty {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s2) {
                         // The words say it; the spinner is for the eye, so the row stays a button to VoiceOver.
                         if chat.state == "working" { ProgressView().controlSize(.mini).accessibilityHidden(true) }
                         Text(words).lineLimit(2)
@@ -133,10 +133,10 @@ struct ChatRow: View {
                     .foregroundStyle(needsYou ? Color.siege : .secondary)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.s2)
             Text(when).font(.footnote).foregroundStyle(.secondary).monospacedDigit()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.s1)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(current ? .isSelected : [])
     }

@@ -177,7 +177,8 @@ struct Composer: View {
                     .id(chat.sent)
                     .lineLimit(1...6)
                     .focused(composing)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Space.s4)
+                    // One line high, the field is 44 points: Apple's least for a thing to tap.
                     .padding(.vertical, 11)
                     .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
                     .accessibilityIdentifier("composer")

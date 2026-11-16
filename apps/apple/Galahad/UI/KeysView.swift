@@ -86,13 +86,14 @@ struct KeysView: View {
             if !kept.isEmpty {
                 Section {
                     ForEach(kept) { copy in
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: Space.line) {
                             Text(copy.name).font(.body.monospaced())
                             Text([copy.provider.map { "For \($0)" }, copy.label].compactMap { $0 }.joined(separator: " · ").ifEmpty("A key of your own"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text("Kept \(copy.keptAt.formatted(.relative(presentation: .named)))").font(.caption2).foregroundStyle(.tertiary)
                         }
+                        .padding(.vertical, Space.s1)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { forget(copy) } label: { Label("Delete copy", systemImage: "trash") }
                             if session.can("vault:write") {
@@ -116,7 +117,7 @@ struct KeysView: View {
                 Section("Providers") {
                     ForEach(providers.providers) { provider in
                         HStack {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Space.line) {
                                 Text(provider.id).font(.body.monospaced())
                                 if let plan = plan(of: provider.id) { Text(plan.name).font(.caption).foregroundStyle(.secondary) }
                             }
@@ -243,7 +244,7 @@ private struct KeyRow: View {
     var plan: ProvidersView.Plan? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Space.line) {
             HStack(alignment: .firstTextBaseline) {
                 Text(key.name).font(.body.monospaced())
                 if let hint = key.hint { Text(hint).font(.caption.monospaced()).foregroundStyle(.secondary) }
@@ -263,7 +264,7 @@ private struct KeyRow: View {
                 Text("Sealed \(at.formatted(.relative(presentation: .named)))").font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.s1)
         .accessibilityElement(children: .combine)
     }
 }
@@ -319,7 +320,7 @@ private struct AddKeySheet: View {
                 if let signIn {
                     Section {
                         Label {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: Space.s2) {
                                 Text(signIn.why)
                                 Text("To work on your \(signIn.vendor) subscription, sign \(signIn.tool) in inside a knight's VM, with \(signIn.vendor)'s own sign-in.")
                             }

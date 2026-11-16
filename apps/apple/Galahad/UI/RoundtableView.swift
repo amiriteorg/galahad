@@ -165,7 +165,7 @@ struct TroubleRow: View {
 
     var body: some View {
         Label {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Space.s1) {
                 Text(title).font(.headline)
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }

@@ -217,7 +217,7 @@ private struct ChartBlock: View {
                 if let selected, let index = Int(selected), spec.labels.indices.contains(index) {
                     RuleMark(x: .value("At", selected))
                         .foregroundStyle(.secondary.opacity(0.35))
-                        .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        .annotation(position: .top, spacing: Space.s1, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                             readout(index)
                         }
                 }
@@ -241,7 +241,7 @@ private struct ChartBlock: View {
             .frame(height: Self.plotHeight)
             .accessibilityLabel(spec.title ?? "A chart")
             DisclosureGroup(isExpanded: $showingData) {
-                dataTable.padding(.top, 6)
+                dataTable.padding(.top, Space.s2)
             } label: {
                 Text("The data").font(.caption).foregroundStyle(.secondary)
             }
@@ -274,13 +274,13 @@ private struct ChartBlock: View {
 
     /// What each series reads at the label you touched.
     private func readout(_ index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Space.line) {
             Text(spec.labels[index]).font(.caption.weight(.semibold))
             ForEach(Array(spec.series.enumerated()), id: \.offset) { position, series in
-                HStack(spacing: 6) {
+                HStack(spacing: Space.s2) {
                     Circle().fill(Palette.series[position % Palette.series.count]).frame(width: 7, height: 7)
                     Text(series.name).foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
+                    Spacer(minLength: Space.s2)
                     Text(series.values[index].map { Blocks.withUnit(Blocks.compactNumber($0), spec.unit) } ?? "–").monospacedDigit()
                 }
                 .font(.caption)
@@ -293,7 +293,7 @@ private struct ChartBlock: View {
 
     private var dataTable: some View {
         ScrollView(.horizontal) {
-            Grid(alignment: .trailing, horizontalSpacing: 14, verticalSpacing: 4) {
+            Grid(alignment: .trailing, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     Text("").gridColumnAlignment(.leading)
                     ForEach(Array(spec.series.enumerated()), id: \.offset) { _, series in Text(series.name).fontWeight(.semibold) }
@@ -350,9 +350,9 @@ private struct StatView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.s1) {
             Text(stat.label).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
                 Text(shown).font(.title2.weight(.semibold)).monospacedDigit()
                 if let unit = stat.unit, case .number = stat.value { Text(unit).font(.subheadline).foregroundStyle(.secondary) }
             }

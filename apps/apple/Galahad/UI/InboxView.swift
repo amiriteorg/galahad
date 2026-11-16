@@ -143,7 +143,7 @@ struct ApprovalSheet: View {
             List {
                 Section {
                     Label {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Space.s1) {
                             Text("\(action.connector).\(action.tool)").font(.headline.monospaced())
                             Text(Approval.classLine(action.kind)).font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -155,7 +155,7 @@ struct ApprovalSheet: View {
                 if !action.args.isEmpty {
                     Section("What it sends") {
                         ForEach(action.args.keys.sorted(), id: \.self) { key in
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(key).font(.caption.monospaced()).foregroundStyle(.secondary)
                                 Text(action.args[key]?.text ?? "").font(.body.monospaced()).textSelection(.enabled)
                             }
@@ -182,7 +182,7 @@ struct ApprovalSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if session.can("fleet:admin") {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Space.s3) {
                         Button(role: .destructive) {
                             Task { await decide(false) }
                         } label: {
@@ -198,7 +198,7 @@ struct ApprovalSheet: View {
                         .buttonStyle(.glassProminent)
                     }
                     .disabled(busy)
-                    .padding()
+                    .padding(Metrics.margin)
                 }
             }
             .alert(destructive ? "Approve this delete?" : "Approve and send?", isPresented: $confirming) {

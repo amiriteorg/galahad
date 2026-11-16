@@ -11,7 +11,7 @@ struct JoinView: View {
         NavigationStack {
             Form {
                 Section {
-                    VStack(spacing: 14) {
+                    VStack(spacing: Space.s3) {
                         AppTile(size: 88)
                         Text("Join your fleet").font(.largeTitle.bold())
                         Text("This \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone") gets its own key. It can sign, but it can never be read out, not even by this app.")
@@ -20,7 +20,7 @@ struct JoinView: View {
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Space.s2)
                 }
                 .listRowBackground(Color.clear)
 
@@ -73,7 +73,7 @@ struct JoinView: View {
             Button {
                 model.ask(app: app)
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s2) {
                     if model.stage == .asking { ProgressView().tint(Color.onAccent) }
                     Text("Ask to join").fontWeight(.semibold)
                 }
@@ -91,7 +91,7 @@ struct JoinView: View {
     private func waiting(code: String, note: String) -> some View {
         Group {
             Section {
-                VStack(spacing: 14) {
+                VStack(spacing: Space.s3) {
                     Text("Your code").font(.subheadline).foregroundStyle(.secondary)
                     Text(code)
                         .font(.system(size: 46, weight: .semibold, design: .monospaced))
@@ -100,7 +100,7 @@ struct JoinView: View {
                     Text("On your node, approve \(Text(model.name).bold()) only if it shows this exact code: in Galahad's Inbox on another device, or in the terminal running `galahad invite`.")
                         .font(.footnote)
                         .multilineTextAlignment(.center)
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s2) {
                         ProgressView()
                         Text(note)
                     }
@@ -108,7 +108,7 @@ struct JoinView: View {
                     .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, Space.s2)
             }
             Section {
                 Button("Cancel", role: .cancel) { model.cancel() }

@@ -9,7 +9,7 @@ struct TimelineTitle: View {
     var needs = false
 
     var body: some View {
-        VStack(spacing: 1) {
+        VStack(spacing: Space.line) {
             Text(title).font(.headline).foregroundStyle(.primary)
             Text(line ?? " ")
                 .font(.caption)
