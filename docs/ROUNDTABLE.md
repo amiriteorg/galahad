@@ -170,6 +170,16 @@ bun galahad roundtable resize ada --cpus 4 --mem 8 --disk 60
 
 At the Roundtable it is **Workspace → Give it more**. The microVM takes the threads and memory as it runs (Kata hot-adds them: on a real node a VM went from 2 to 4 threads and 4 to 6 GB of memory this way), and its workspace grows where it is mounted (the root helper's `grow`: the image, its loop device, then ext4 itself). It is more only. What a running VM was given isn't taken from under it: a smaller size takes effect when the VM is made again (above), which keeps the size it has. What it adds must fit the node's ceiling, as a new sandbox's would (`admitGrowth`): refused with the reason, it changes nothing. Its slot is the same one, so every slot taken doesn't stop a VM that is already one of them from growing. More disk is checked against the host's disk budget too, and goes no further than 200 GB a workspace by default. The VM's size is read from what Docker holds it to now and from its workspace as the root helper has it, so a VM grown and then made again keeps what it was given. Like making it again, it is yours alone: no knight, agent or node acting by itself is let through, the ledger records it as approved by the device that asked, and it needs `fleet:admin`.
 
+**Galahad's own computer.** Galahad can have a computer of his own: a VM like a knight's, kept between conversations with everything in its `/work`, with a desktop and a browser unless you say otherwise. It is made, made again and given more exactly as a knight's VM is, under his reserved handle, which no knight can take:
+
+```sh
+bun galahad roundtable provision galahad            # with a desktop; --network gateway for the models alone
+bun galahad roundtable resize galahad --mem 8
+bun galahad roundtable provision galahad --remake
+```
+
+In the app it is **His computer** in his chat: his screen, to watch and take over as you do a knight's, a terminal there, **Give it more** and **Make it again**, or **Give him a computer** while he has none. The iPhone app shows his screen and his terminal once he has one. He works on it with his `computer` tool, one command at a time (two minutes unless he asks for longer, fifteen at most), with the model gateway and his eyes (the roster's `eyes` role), the way a knight's task works in its VM. The tool is his alone: its route (`POST /api/team/computer`, `sandbox` scope) refuses every other caller, you and every knight included, and it is offered only where his tools to the knights are, in your own conversation with him on a device that may manage the Roundtable. You watch it, take it over or open a terminal there instead. It is not a knight: it is in no list of them, runs no harness and no notes store, and the snapshot says where it is (`computer`).
+
 **A desktop, for work that needs a screen.** A knight's VM can have a desktop: a display (1280 by 800), a window manager and a browser (Chromium), with one command in the VM that operates them. Choose it when the VM is made (**Workspace → Provision VM → A desktop**), or have an existing VM made again with one (**Make VM again**):
 
 ```sh

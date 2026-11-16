@@ -23,6 +23,8 @@ struct TeamSnapshot: Decodable, Sendable {
     var tasks: [TeamTask]
     var deliveries: [TeamDelivery]
     var removed: [Removed]?
+    /// Galahad's own computer, once he has one: his VM, made and watched as a knight's is (under his handle).
+    var computer: Teammate.Workspace? = nil
 
     struct Removed: Decodable, Sendable { let id: String; let name: String }
 }
@@ -50,6 +52,27 @@ struct Teammate: Decodable, Sendable, Identifiable {
     var memory: String? = nil
 
     struct Workspace: Decodable, Sendable, Equatable { let node: String; let id: String }
+}
+
+/// Whose VM a screen or a terminal is: a knight's, or Galahad's own computer, under his reserved handle.
+struct VMSeat: Sendable {
+    let id: String
+    let name: String
+    /// Its sandbox, once it has one.
+    let sandbox: String?
+
+    init(_ knight: Teammate) {
+        id = knight.id
+        name = knight.name
+        sandbox = knight.workspace?.id
+    }
+
+    /// Galahad's own computer.
+    init(computer: Teammate.Workspace) {
+        id = "galahad"
+        name = "Galahad"
+        sandbox = computer.id
+    }
 }
 
 struct TeamRoom: Decodable, Sendable {

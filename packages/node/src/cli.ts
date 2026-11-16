@@ -61,6 +61,7 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     its VM made again from the image as it is now (a fix to the image, a newer tool):
                                     the same VM and everything in /work, a new container; not while it is working.
                                     --desktop gives a VM that has none a desktop; --no-desktop takes it away
+  roundtable provision galahad       his own computer: made, made again and given more as a knight's VM is
   roundtable resize <id> [--cpus 4] [--mem 8] [--disk 40]
                                     more threads, memory or disk for its VM while it runs, nothing stopped and
                                     its work kept; never less (a smaller size takes effect when it is made again)

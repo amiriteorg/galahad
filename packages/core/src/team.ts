@@ -24,7 +24,8 @@ export const TeamWorkspaceQuest = z.string().regex(/^arm\.team\.[a-f0-9]{10}\.[a
 /** Controller-local identities must not accidentally share a VM on a fleet host. */
 export function teamArmLabel(controller: string, teammate: string): string {
   const tag = [...sha256Bytes(utf8(controller)).slice(0, 5)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `team.${tag}.${TeammateId.parse(teammate)}`;
+  // (Galahad's own computer goes under his reserved handle, which no knight can ever take.)
+  return `team.${tag}.${teammate === TEAM_GALAHAD ? TEAM_GALAHAD : TeammateId.parse(teammate)}`;
 }
 
 const AvatarColor = z.string().regex(/^#[0-9a-f]{6}$/i, "a six-digit hex color").transform((color) => color.toLowerCase());
@@ -282,6 +283,8 @@ export interface TeamSnapshot {
   removed?: (Pick<Teammate, "id" | "name" | "removedAt"> & { conversations?: string[] })[];
   /** The notes store's switch, said only when it is on (absent: off, which is also what a node from before it says). */
   engram?: boolean;
+  /** Galahad's own computer, when he has one: his persistent VM, made and watched as a knight's is (under his handle). */
+  computer?: TeamWorkspace;
 }
 
 export interface TeamRoomView extends TeamRoom {

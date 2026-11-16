@@ -115,10 +115,10 @@ struct KnightView: View {
             }
         }
         .navigationDestination(isPresented: $watching) {
-            if let knight { KnightScreenView(session: session, knight: knight) }
+            if let knight { KnightScreenView(session: session, knight: VMSeat(knight)) }
         }
         .fullScreenCover(isPresented: $inTerminal) {
-            if let knight { KnightTerminalView(session: session, knight: knight) }
+            if let knight { KnightTerminalView(session: session, knight: VMSeat(knight)) }
         }
         .sheet(isPresented: $about) {
             KnightAbout(session: session, id: id, row: row, look: look) { leave() }

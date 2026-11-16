@@ -114,6 +114,21 @@ export class TeamStore {
   close(): void { this.db.close(); }
   private day(): string { return new Date(this.now()).toISOString().slice(0, 10); }
   private turns(teammate: string): number { return this.db.query<{ turns: number }, [string, string]>("SELECT turns FROM team_usage WHERE teammate = ? AND day = ?").get(teammate, this.day())?.turns ?? 0; }
+  /** Galahad's own computer: his persistent VM, bound as a knight's workspace is (null: he has none yet). */
+  computer(): TeamWorkspace | null {
+    const raw = this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='computer'").get()?.value;
+    const bound = raw ? TeamWorkspace.safeParse(JSON.parse(raw)) : null;
+    return bound?.success ? bound.data : null;
+  }
+  setComputer(raw: TeamWorkspace | null): TeamWorkspace | null {
+    if (raw === null) {
+      this.db.query("DELETE FROM team_settings WHERE key='computer'").run();
+      return null;
+    }
+    const bound = teamInput(TeamWorkspace, raw);
+    this.db.query("INSERT INTO team_settings(key,value) VALUES('computer',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(bound));
+    return bound;
+  }
   /** The VMs' notes store (Engram) for this node's knights: on unless you turned it off, and kept across restarts. */
   engram(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='engram'").get()?.value !== "off"; }
   setEngram(raw: boolean): boolean {
@@ -497,7 +512,8 @@ export class TeamStore {
     // Its kept conversations, yours with it first: they are in no other list.
     const direct = this.rooms().filter((room) => room.direct).sort((a, b) => a.members.length - b.members.length);
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
-    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}) };
+    const computer = this.computer();
+    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}) };
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {

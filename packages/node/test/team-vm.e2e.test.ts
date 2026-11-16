@@ -43,6 +43,12 @@ const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request)
   const body = await request.json() as (typeof prompts)[number];
   prompts.push(body);
   const turns = body.messages.filter((message) => message.role !== "system");
+  // Galahad asked to use his computer: the tool once, then a word on what came of it.
+  if (turns.some((message) => message.content?.includes?.("USE_YOUR_COMPUTER"))) {
+    const call = { tool_calls: [{ index: 0, id: "call_computer", function: { name: "computer", arguments: JSON.stringify({ command: "echo computer-ok" }) } }] };
+    const delta = turns.some((message) => message.role === "tool") ? { content: "It ran on my computer." } : call;
+    return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+  }
   const task = /TASK_(ALPHA|BETA|GAMMA|CLEANUP)/.exec(turns[0]?.content ?? "")?.[1] ?? "UNKNOWN";
   events.push({ kind: "model", target: task, text: body.model });
   let text = "1. Make the change.\n2. Run the required gate.\nDone when: the gate and independent review pass.";
@@ -469,6 +475,26 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   const dex = (await api<{ workspace: SandboxView }>("provisionTeammate", { id: "dex", desktop: true, memoryGb: 2 })).workspace;
   expect(dex).toMatchObject({ image: "galahad/desktop:1", memoryGb: 4, isolation: "vm" });
   expect(await api("removeTeammate", { id: "dex", destroyWorkspace: true })).toMatchObject({ workspace: "destroyed" });
+  // Galahad's own computer: made under his reserved handle, with a desktop unless you say otherwise, and in no list of knights.
+  expect((await snapshot()).computer).toBeUndefined();
+  await expect(api("teamDesktop", { id: "galahad" })).rejects.toThrow(/424 .*Galahad has no computer yet/);
+  const his = (await api<{ teammate: null; workspace: SandboxView }>("provisionTeammate", { id: "galahad" }));
+  expect(his.teammate).toBeNull();
+  expect(his.workspace).toMatchObject({ image: "galahad/desktop:1", isolation: "vm", ephemeral: false, network: "online", quest: expect.stringMatching(/^arm\.team\.[0-9a-f]{10}\.galahad$/) });
+  const bound = await snapshot();
+  expect(bound.computer).toEqual({ node: expect.any(String), id: his.workspace.id });
+  expect(bound.teammates.map((member) => member.id)).not.toContain("galahad");
+  expect(await api("teamWorkspace", { id: "galahad" })).toMatchObject({ workspace: { id: his.workspace.id }, harnesses: [] });
+  expect((await api<{ workspace: SandboxView }>("resizeTeammate", { id: "galahad", memoryGb: 5 })).workspace).toMatchObject({ id: his.workspace.id, memoryGb: 5 });
+  // His alone to work on: you watch it and take it over; nobody calls his tool's route but him.
+  await expect(api("computerExec", { command: "id" })).rejects.toThrow(/403/);
+  // He works on it with his computer tool, in your conversation with him: the command runs in his VM, with the gateway.
+  const execsBefore = docker.execs.length;
+  const reply = await fetch(`http://127.0.0.1:${port}${routes.chat.path}`, { method: "POST", headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "USE_YOUR_COMPUTER: run echo there." }] }) });
+  const said = await reply.text();
+  expect(said).toContain("It ran on my computer.");
+  const onHis = docker.execs.slice(execsBefore).filter((exec) => exec.container === `galahad-sbx-${his.workspace.id}`).map((exec) => exec.cmd.join(" "));
+  expect(onHis.some((command) => command.includes("echo computer-ok") && command.includes("/work/.galahad-gateway.json"))).toBe(true);
   await daemon.stop();
   const raw = new Database(join(home.dir, "team.db"));
   const stored = JSON.parse(raw.query<{ value: string }, [string]>("SELECT value FROM team_teammates WHERE id=?").get("sam")!.value);

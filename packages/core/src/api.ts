@@ -270,6 +270,11 @@ export const routes = {
       .strictObject({ id: z.string().min(1).max(32), cpus: z.number().min(0.25).max(64).optional(), memoryGb: z.number().min(0.25).max(512).optional(), diskGb: z.number().int().min(1).max(4096).optional() })
       .refine((input) => input.cpus !== undefined || input.memoryGb !== undefined || input.diskGb !== undefined, "say what it should have: cpus, memoryGb or diskGb"),
   },
+  /**
+   * Galahad's own computer, worked on by him alone (his `computer` tool): one command in his VM, run as a knight's task
+   * runs its own, with the model gateway, and his eyes when the roster names a model for them. Everyone else is refused.
+   */
+  computerExec: { method: "POST", path: "/api/team/computer", scope: "sandbox", input: z.strictObject({ command: z.string().min(1).max(100_000), timeoutSec: z.number().int().min(1).max(900).optional() }) },
   /** The same, asked of the node that hosts the VM by the team's controller (never by a knight). */
   resizeTeamWorkspace: {
     method: "POST", path: "/api/team/resize-workspace", scope: "fleet:admin",

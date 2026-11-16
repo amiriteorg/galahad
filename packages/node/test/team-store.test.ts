@@ -295,6 +295,25 @@ describe("team boundaries", () => {
   });
 });
 
+describe("Galahad's own computer", () => {
+  test("its binding is kept as a knight's VM is, said in the snapshot, cleared when it goes, and survives a reopen", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-computer-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path);
+    expect(store.computer()).toBeNull();
+    expect(store.snapshot().computer).toBeUndefined();
+    expect(store.setComputer({ node: "host", id: "0123456789" })).toEqual({ node: "host", id: "0123456789" });
+    expect(() => store.setComputer({ node: "host", id: "../etc" } as never)).toThrow(TeamError);
+    close(store);
+    const reopened = make(path);
+    expect(reopened.computer()).toEqual({ node: "host", id: "0123456789" });
+    expect(reopened.snapshot().computer).toEqual({ node: "host", id: "0123456789" });
+    // It is no knight: in no list of them.
+    expect(reopened.teammates().map((t) => t.id)).not.toContain("galahad");
+    reopened.setComputer(null);
+    expect(reopened.computer()).toBeNull();
+  });
+});
+
 describe("the knights Galahad makes for himself", () => {
   const DAY = 24 * 3_600_000;
   const job = (id: string) => ({ id, name: id[0]!.toUpperCase() + id.slice(1), instructions: "A lasting job." });

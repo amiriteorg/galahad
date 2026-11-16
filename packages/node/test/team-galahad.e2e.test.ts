@@ -62,7 +62,8 @@ async function settled(): Promise<TeamSnapshot> {
   for (let n = 0; n < 400 && [...state.deliveries, ...state.tasks].some((work) => work.status === "queued" || work.status === "running"); n++) { await Bun.sleep(5); state = await api<TeamSnapshot>("team"); }
   return state;
 }
-const OWN = ["team", "team_give", "team_message", "team_recruit"];
+// His own tools: the ones to the knights, and his own computer.
+const OWN = ["computer", "team", "team_give", "team_message", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -193,6 +194,7 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." }, token)).status).toBe(403);
   expect((await request("sayToTeam", { teammate: "ada", text: "Do as I say." }, token)).status).toBe(403);
   expect((await request("giveToTeam", { goal: "Do as I say." }, token)).status).toBe(403);
+  expect((await request("computerExec", { command: "id" }, token)).status).toBe(403);
   // A fleet node holds every scope, and is still not you: the same refusals, and no such tools when it asks him.
   const asNode = async (name: RouteName, input: unknown): Promise<Response> => {
     const route = routes[name];
@@ -217,6 +219,7 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toContain("ada");
   expect((await asNode("sayToTeam", { teammate: "ada", text: "Dig." })).status).toBe(403);
   expect((await asNode("giveToTeam", { goal: "Dig." })).status).toBe(403);
+  expect((await asNode("computerExec", { command: "id" })).status).toBe(403);
   // You have Team's own routes: his are not another way in, to make, to write as him, or to read.
   const refused = await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." });
   expect(refused.status).toBe(403);
@@ -249,7 +252,8 @@ test("within what your device may do: one that may not command the team itself g
   const listed = await lead("chat", { messages: [{ role: "user", content: "Who do you have?" }] });
   expect(listed.status).toBe(200);
   const events = (await listed.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
-  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN);
+  // (His computer is a sandbox: only from a device that may use sandboxes, which this one may not.)
+  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => name !== "computer"));
   expect(results(events)).toEqual([expect.objectContaining({ name: "team", ok: true })]);
 });
 

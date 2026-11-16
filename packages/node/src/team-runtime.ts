@@ -37,7 +37,7 @@ export interface TeamRuntimeDeps {
   keep?(teammate: Teammate, path: string, label: string): Promise<string>;
 }
 
-const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+export const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const jsonData = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
 const data = (label: string, value: unknown, nonce = randomId(12)): string => {
   const encoded = jsonData(value);
@@ -98,7 +98,7 @@ const after = (history: TeamMessage[], through: string | undefined): TeamMessage
 };
 
 /** The leased environment is JSON, never executable shell configuration. */
-const withGateway = (command: string): string => {
+export const withGateway = (command: string): string => {
   const script = "import json,os,sys; p='/work/.galahad-gateway.json'; d=json.load(open(p)); allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL'}; os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)}); os.execvp('bash',['bash','-lc',sys.argv[1]])";
   return `python3 -c ${quote(script)} ${quote(command)}`;
 };

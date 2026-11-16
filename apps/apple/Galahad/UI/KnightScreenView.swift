@@ -8,7 +8,7 @@ import SwiftUI
  */
 struct KnightScreenView: View {
     let session: Session
-    let knight: Teammate
+    let knight: VMSeat
     @State private var shot: DesktopShot?
     @State private var picture: UIImage?
     @State private var status = "Looking…"

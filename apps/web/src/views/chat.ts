@@ -23,6 +23,7 @@ import { selector, type SelectorGroup } from "../ui/selector.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { openAside } from "./chat-aside.ts";
+import { openComputer } from "./computer.ts";
 import { queuePanel } from "./chat-queue.ts";
 import { openInHand } from "./in-hand.ts";
 import { openAddKey, secretRequestCard } from "./vault.ts";
@@ -665,6 +666,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   // The Inbox, one tap from him, counting what waits for you that is no other knight's (theirs is on their own rows).
   const inboxCount = h("span", { class: "count", hidden: true });
   const inbox = h("a", { class: "btn ghost sm icon-only chat-inbox", href: "#/inbox", "aria-label": "Inbox", title: "Inbox" }, icon("inbox", { size: 16 }), inboxCount);
+  // His own computer: watched and taken over from here, and given to him here while he has none.
+  const computer = ctx.can("sandbox") ? h("button", { class: "btn ghost sm icon-only chat-computer", type: "button", "aria-label": "His computer", title: "His computer", onclick: () => openComputer(ctx) }, icon("monitor", { size: 16 })) : null;
   let shownFace = "";
   function renderNow(): void {
     const waiting = ctx.live.actions.value.filter((action) => isWaiting(action));
@@ -1321,7 +1324,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       { class: "chat", "aria-labelledby": "chat-title" },
       h("h1", { id: "chat-title", class: "sr-only" }, "Chat with Galahad"),
       announcer,
-      h("div", { class: "chat-head" }, back, who, inbox, options.el),
+      h("div", { class: "chat-head" }, back, who, computer, inbox, options.el),
       subHead,
       threadEl,
       h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, keyAsks, connectorAsks, panel.el, form),

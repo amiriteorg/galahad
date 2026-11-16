@@ -6,6 +6,9 @@ struct ChatView: View {
     let session: Session
     @FocusState private var composing: Bool
     @State private var listing = false
+    /// His own computer, watched from here: its screen, or its terminal.
+    @State private var watching = false
+    @State private var inTerminal = false
 
     private var chat: ChatModel { session.chat }
     private var latestAnswer: Int? { chat.thread.turns.last { $0.role == .assistant }?.id }
@@ -54,6 +57,16 @@ struct ChatView: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                // His own computer, once he has one (made from the web app or a terminal, as a knight's VM is).
+                if session.team?.computer != nil && session.can("sandbox") {
+                    Menu {
+                        Button { watching = true } label: { Label("His screen", systemImage: "display") }
+                        Button { inTerminal = true } label: { Label("His terminal", systemImage: "apple.terminal") }
+                    } label: {
+                        Label("His computer", systemImage: "desktopcomputer")
+                    }
+                    .accessibilityIdentifier("computer")
+                }
                 Button {
                     listing = true
                 } label: {
@@ -68,6 +81,12 @@ struct ChatView: View {
                 }
                 .disabled(chat.answering || chat.thread.isEmpty)
             }
+        }
+        .navigationDestination(isPresented: $watching) {
+            if let computer = session.team?.computer { KnightScreenView(session: session, knight: VMSeat(computer: computer)) }
+        }
+        .fullScreenCover(isPresented: $inTerminal) {
+            if let computer = session.team?.computer { KnightTerminalView(session: session, knight: VMSeat(computer: computer)) }
         }
         .sheet(isPresented: $listing) {
             ChatsView(session: session) { id in

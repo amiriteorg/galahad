@@ -293,7 +293,7 @@ export function provisionVm(ctx: Ctx, person: Teammate, done: (workspace: Sandbo
 }
 
 /** Its VM made again from its image as it is now: the same VM and /work, a new container. `want`: a desktop chosen already. */
-export function remakeVm(ctx: Ctx, person: Teammate, workspace: SandboxView, done: (workspace: SandboxView) => void, want: { desktop?: boolean } = {}): void {
+export function remakeVm(ctx: Ctx, person: Pick<Teammate, "id" | "name">, workspace: SandboxView, done: (workspace: SandboxView) => void, want: { desktop?: boolean } = {}): void {
   const network = networkChoice(workspace.network === "online");
   const desktop = desktopChoice(want.desktop ?? hasDesktop(workspace));
   editor(ctx, `Make ${person.name}'s VM again`, "The same VM, made again from its image as it is now. A fix to the image, or a newer tool in it, reaches a knight only this way.", [
@@ -308,7 +308,7 @@ export function remakeVm(ctx: Ctx, person: Teammate, workspace: SandboxView, don
 }
 
 /** More for its VM while it runs: threads and memory given as it runs, its disk grown where it is mounted. Never less. */
-export function growVm(ctx: Ctx, person: Teammate, workspace: SandboxView, done: (workspace: SandboxView) => void): void {
+export function growVm(ctx: Ctx, person: Pick<Teammate, "id" | "name">, workspace: SandboxView, done: (workspace: SandboxView) => void): void {
   const more = (now: number, max: number, step: number) => h("input", { class: "input", type: "number", min: now, max, step, value: now, required: true });
   const cpus = more(workspace.cpus, 64, 1);
   const memory = more(workspace.memoryGb, 512, 1);

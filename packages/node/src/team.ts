@@ -106,6 +106,8 @@ export class TeamService {
     return saved;
   }
   remember(id: string, text: string): Teammate { this.accepting(); const saved = this.store.remember(id, text); this.changed(); return saved; }
+  /** Galahad's own computer bound, or no longer: yours to make, as a knight's VM is. */
+  setComputer(binding: TeamWorkspace | null): TeamWorkspace | null { this.accepting(); const saved = this.store.setComputer(binding); this.changed(); return saved; }
   /** The VMs' notes store, for every knight here: a task reads the switch as it starts, so one that is running is not changed. */
   setEngram(on: boolean): boolean { this.accepting(); const set = this.store.setEngram(on); this.changed(); return set; }
   planWorkspace(id: string, node: string): Teammate {

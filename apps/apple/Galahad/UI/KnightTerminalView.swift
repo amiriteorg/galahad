@@ -9,16 +9,16 @@ import WebKit
  */
 struct KnightTerminalView: View {
     let session: Session
-    let knight: Teammate
+    let knight: VMSeat
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var terminal: KnightTerminal
     @State private var bridge: TerminalBridge
 
-    init(session: Session, knight: Teammate) {
+    init(session: Session, knight: VMSeat) {
         self.session = session
         self.knight = knight
-        _terminal = State(initialValue: KnightTerminal(sandbox: knight.workspace?.id ?? ""))
+        _terminal = State(initialValue: KnightTerminal(sandbox: knight.sandbox ?? ""))
         _bridge = State(initialValue: TerminalBridge(origin: session.node.origin))
     }
 

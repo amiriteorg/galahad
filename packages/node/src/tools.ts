@@ -703,6 +703,25 @@ export const TOOLS: GalahadTool[] = [
     },
   }),
 
+  // ---- His own computer (docs/ROUNDTABLE.md): a VM that is his, with a desktop, kept between conversations ----
+  tool({
+    name: "computer",
+    title: "Use your computer",
+    description:
+      "Run a shell command on your own computer: a Linux VM that is yours, kept between conversations with everything in its /work, and with a desktop (a display, a window manager and a browser) unless your liege made it without one. Operate its screen with the `desktop` command (`desktop help` lists it: open an address, read the page, click, type, press keys; `desktop look \"question\"` asks a model that can see the screen what is on it, or where). Your liege can watch it, take it over and open a terminal there. One command at a time: two minutes unless you ask for longer, fifteen at most. Long work in a repository belongs with a knight (team_give).",
+    input: {
+      command: z.string().min(1).max(100_000).describe("A bash command, run in /work"),
+      timeoutSec: z.number().int().min(1).max(900).describe("How long it may run, in seconds (default 120)").optional(),
+    },
+    routes: ["computerExec"],
+    flow: "egress",
+    own: true,
+    async run(api, { command, timeoutSec }) {
+      const result = await api.call<ExecResult>("computerExec", { command, ...(timeoutSec ? { timeoutSec } : {}) });
+      return formatExec(result, "your computer");
+    },
+  }),
+
   tool({
     name: "team_give",
     title: "Give the Roundtable a task",

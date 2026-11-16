@@ -151,7 +151,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamAsker, TeamStore } from "./team-store.ts";
-import { galahadInRoom, harnessReadiness, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
+import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime, withGateway } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
@@ -1530,10 +1530,19 @@ export function createApp(ctx: AppContext) {
     if (!ctx.team) throw new HttpError(503, "the team controller is unavailable");
     return ctx.team.store.requireTeammate(id);
   };
+  /** Whose VM: a knight's, or Galahad's own computer, under his reserved handle (which no knight can take). */
+  type Seat = Pick<Teammate, "id" | "workspace" | "workspaceNode" | "repository" | "enabled">;
+  const seatOf = (id: string): Seat => {
+    if (id !== TEAM_GALAHAD) return teamMember(id);
+    if (!ctx.team) throw new HttpError(503, "the team controller is unavailable");
+    const computer = ctx.team.store.computer();
+    return { id: TEAM_GALAHAD, workspace: computer, workspaceNode: computer?.node ?? null, repository: null, enabled: true };
+  };
+  const noVm = (id: string) => (id === TEAM_GALAHAD ? "Galahad has no computer yet: Computer in his chat makes one, or galahad roundtable provision galahad" : `this knight has no VM yet: galahad roundtable provision ${id} makes one`);
   const vmProvisioning = new Map<string, Promise<SandboxView>>();
   /** The providers each knight's VM token covers, as its host last said: those that had a key when the VM was made. */
   const leased = new Map<string, readonly string[]>();
-  async function teamWorkspace(member: Teammate, signal: AbortSignal): Promise<SandboxView | null> {
+  async function teamWorkspace(member: Seat, signal: AbortSignal): Promise<SandboxView | null> {
     if (!member.workspace) return null;
     const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[] }>("sandboxes", { on: member.workspace.node });
     const sandbox = view.sandboxes.find((s) => s.id === member.workspace!.id);
@@ -1545,14 +1554,15 @@ export function createApp(ctx: AppContext) {
     const pending = vmProvisioning.get(id);
     if (pending) return pending;
     const work = (async () => {
-      const member = teamMember(id);
+      const member = seatOf(id);
       const existing = await teamWorkspace(member, signal);
       if (existing) return existing;
       const chosen = member.workspaceNode ?? input.on;
       const hosts = candidates().filter((c) => c.online && c.caps?.sandbox?.vm);
       const best = chosen ? hosts.find((c) => c.device === resolveNode(chosen).id) : sandboxHost(hosts);
       if (!best) throw new HttpError(424, chosen ? "this knight's VM host is unavailable or lacks KVM/Kata" : "no VM-capable host is online; enroll a Linux host with KVM and Kata");
-      teamOf().planWorkspace(id, best.device);
+      // (His own computer has no plan to keep: it is bound once it is made.)
+      if (id !== TEAM_GALAHAD) teamOf().planWorkspace(id, best.device);
       const api = inProcess(teamOwner, signal);
       // A previous attempt may have created its VM before the controller stopped. Recover it by immutable ownership.
       const listed = await api.call<{ sandboxes: SandboxView[] }>("sandboxes", { on: best.device });
@@ -1568,15 +1578,16 @@ export function createApp(ctx: AppContext) {
           memoryGb: input.desktop ? Math.max(4, input.memoryGb ?? 4) : (input.memoryGb ?? 2), diskGb: input.diskGb ?? 20, ttlMinutes: 120, providers, ...(input.desktop ? { desktop: true } : {}) });
         sandbox = made.sandbox;
       }
-      teamOf().setWorkspace(id, { node: best.device, id: sandbox.id });
+      if (id === TEAM_GALAHAD) teamOf().setComputer({ node: best.device, id: sandbox.id });
+      else teamOf().setWorkspace(id, { node: best.device, id: sandbox.id });
       return sandbox;
     })();
     vmProvisioning.set(id, work);
     try { return await work; } finally { vmProvisioning.delete(id); }
   }
-  async function execTeam(member: Teammate, command: string, timeout: number, signal: AbortSignal) {
+  async function execTeam(member: Seat, command: string, timeout: number, signal: AbortSignal) {
     if (signal.aborted) throw new HttpError(409, "knight stopped");
-    const current = teamMember(member.id);
+    const current = seatOf(member.id);
     if (!current.enabled) throw new HttpError(409, "knight paused");
     if (!current.workspace) throw new HttpError(424, "this knight has no VM yet");
     return inProcess(teammatePrincipal(member.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: current.workspace.node, id: current.workspace.id, cmd: ["bash", "-lc", command], timeoutSec: timeout });
@@ -1601,9 +1612,9 @@ export function createApp(ctx: AppContext) {
   /* A knight's VM made again from its image as it is now, on the owner's word (`p`: the device that asked, which the
    * VM's host records). Not while the knight is working: whatever runs in a VM ends with its container. A task that
    * starts meanwhile waits for it, as it would for a VM being made. Its token covers the providers with a key now. */
-  async function remakeTeamVm(member: Teammate, network: "online" | "gateway" | undefined, desktop: boolean | undefined, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+  async function remakeTeamVm(member: Seat, network: "online" | "gateway" | undefined, desktop: boolean | undefined, p: Principal, signal: AbortSignal): Promise<SandboxView> {
     const existing = await teamWorkspace(member, signal);
-    if (!existing) throw new HttpError(424, `this knight has no VM yet: galahad roundtable provision ${member.id} makes one`);
+    if (!existing) throw new HttpError(424, noVm(member.id));
     const state = teamOf().snapshot();
     if (state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running")) {
       throw new HttpError(409, "this knight is working: stop its task or wait for it, then have its VM made again");
@@ -1618,11 +1629,38 @@ export function createApp(ctx: AppContext) {
     vmProvisioning.set(member.id, work);
     try { return await work; } finally { vmProvisioning.delete(member.id); }
   }
+  /**
+   * A VM's eyes (a knight's, or his own computer's): the roster's first `eyes` model on a provider this VM's gateway
+   * token covers (a VM's token covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
+   */
+  function eyesFor(id: string): string | null {
+    const covered = leased.get(id) ?? [];
+    const usable = (ref: string) => {
+      const at = ref.indexOf("/");
+      return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spent(ref.slice(0, at));
+    };
+    // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses.
+    const checks = ctx.store.lwwPrefix("modelcheck:").flatMap((entry) => {
+      const check = readModelCheck(entry.value);
+      return check ? [{ ref: entry.key.slice("modelcheck:".length), check }] : [];
+    });
+    return chooseEyes(roster(ctx.store).eyes?.models ?? [], checks, usable);
+  }
+  /** When his computer last had its gateway lease written, on this node since it started: renewed every six hours. */
+  let computerReady = 0;
+  async function prepareComputer(signal: AbortSignal): Promise<void> {
+    if (Date.now() - computerReady < 6 * 3_600_000) return;
+    const workspace = await teamWorkspace(seatOf(TEAM_GALAHAD), signal);
+    if (!workspace) throw new HttpError(424, noVm(TEAM_GALAHAD));
+    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(TEAM_GALAHAD)) });
+    leased.set(TEAM_GALAHAD, workspace.providers);
+    computerReady = Date.now();
+  }
   /* A knight's VM made bigger while it runs, on the owner's word (`p`: the device that asked, which the VM's host
    * records). Nothing in it stops, so a knight at work may be grown too. */
-  async function resizeTeamVm(member: Teammate, sizes: { cpus?: number; memoryGb?: number; diskGb?: number }, p: Principal, signal: AbortSignal): Promise<SandboxView> {
+  async function resizeTeamVm(member: Seat, sizes: { cpus?: number; memoryGb?: number; diskGb?: number }, p: Principal, signal: AbortSignal): Promise<SandboxView> {
     const existing = await teamWorkspace(member, signal);
-    if (!existing) throw new HttpError(424, `this knight has no VM yet: galahad roundtable provision ${member.id} makes one`);
+    if (!existing) throw new HttpError(424, noVm(member.id));
     if (vmProvisioning.has(member.id)) throw new HttpError(409, "this knight's VM is being made; make it bigger once that has finished");
     const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("resizeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), ...sizes });
     return sandbox;
@@ -1716,19 +1754,7 @@ export function createApp(ctx: AppContext) {
       stopWorker: stopTeamWorker,
       // A knight's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a VM's token
       // covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
-      eyes: (member) => {
-        const covered = leased.get(member.id) ?? [];
-        const usable = (ref: string) => {
-          const at = ref.indexOf("/");
-          return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spent(ref.slice(0, at));
-        };
-        // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses.
-        const checks = ctx.store.lwwPrefix("modelcheck:").flatMap((entry) => {
-          const check = readModelCheck(entry.value);
-          return check ? [{ ref: entry.key.slice("modelcheck:".length), check }] : [];
-        });
-        return chooseEyes(roster(ctx.store).eyes?.models ?? [], checks, usable);
-      },
+      eyes: (member) => eyesFor(member.id),
       // What a task changed in its repository, kept on the VM's host as any sandbox's work is (the controller asks; a knight can't).
       keep: async (member, path, label) => {
         const bound = teamMember(member.id).workspace;
@@ -1769,8 +1795,8 @@ export function createApp(ctx: AppContext) {
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
     teamDesktop: (input, p, req) => {
       ownerOnly(p);
-      const bound = teamMember(input.id).workspace;
-      if (!bound) throw new HttpError(424, `this knight has no VM yet: galahad roundtable provision ${input.id} --desktop makes one with a desktop`);
+      const bound = seatOf(input.id).workspace;
+      if (!bound) throw new HttpError(424, input.id === TEAM_GALAHAD ? noVm(input.id) : `this knight has no VM yet: galahad roundtable provision ${input.id} --desktop makes one with a desktop`);
       return inProcess(p, req.signal).call("teamDesktopOn", { on: bound.node, id: bound.id, quest: armQuest(teammateLabel(input.id)), action: input.action });
     },
     teamDesktopOn: (input, p) => {
@@ -1815,16 +1841,30 @@ export function createApp(ctx: AppContext) {
       if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself writes to the other knights as himself; you write to them at the Roundtable");
       return { message: teamOf().say(input) };
     },
-    provisionTeammate: (input, p, req) => { ownerOnly(p); return longRunning(provisionTeam(input.id, input, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace }))); },
+    provisionTeammate: (input, p, req) => {
+      ownerOnly(p);
+      // His own computer has a desktop unless you say otherwise: it is his PC.
+      const asked = input.id === TEAM_GALAHAD && input.desktop === undefined ? { ...input, desktop: true } : input;
+      return longRunning(provisionTeam(input.id, asked, req.signal).then((workspace) => ({ teammate: input.id === TEAM_GALAHAD ? null : teamMember(input.id), workspace })));
+    },
     remakeTeammate: (input, p, req) => {
       ownerOnly(p);
-      const member = teamMember(input.id);
-      return longRunning(remakeTeamVm(member, input.network, input.desktop, p, req.signal).then((workspace) => ({ teammate: teamMember(input.id), workspace })));
+      const member = seatOf(input.id);
+      return longRunning(remakeTeamVm(member, input.network, input.desktop, p, req.signal).then((workspace) => ({ teammate: input.id === TEAM_GALAHAD ? null : teamMember(input.id), workspace })));
     },
     resizeTeammate: (input, p, req) => {
       ownerOnly(p);
       const { id, ...sizes } = input;
-      return longRunning(resizeTeamVm(teamMember(id), sizes, p, req.signal).then((workspace) => ({ teammate: teamMember(id), workspace })));
+      return longRunning(resizeTeamVm(seatOf(id), sizes, p, req.signal).then((workspace) => ({ teammate: id === TEAM_GALAHAD ? null : teamMember(id), workspace })));
+    },
+    computerExec: async (input, p, req) => {
+      // His own computer, worked on by him alone: no other agent and no knight. You watch it, take it over, or open a terminal there.
+      if (p.kind !== "arm" || p.label !== GALAHAD_ARM) throw new HttpError(403, "Galahad's computer is his alone to work on: watch it, take it over or open a terminal there");
+      const seat = seatOf(TEAM_GALAHAD);
+      if (!seat.workspace) throw new HttpError(424, noVm(TEAM_GALAHAD));
+      await prepareComputer(req.signal);
+      const eyes = eyesFor(TEAM_GALAHAD);
+      return longRunning(execTeam(seat, withGateway(`cd /work && ${eyes ? `export GALAHAD_EYES=${quote(eyes)} && ` : ""}${input.command}`), Math.min(input.timeoutSec ?? 120, TEAM_COMMAND_SECONDS), req.signal));
     },
     resizeTeamWorkspace: (input, p) => {
       // Yours alone, like making it again: an arm (a knight among them) is never let through, whatever its scopes.
@@ -1846,8 +1886,10 @@ export function createApp(ctx: AppContext) {
     },
     teamWorkspace: async (input, p, req) => {
       ownerOnly(p);
-      const member = teamMember(input.id);
+      const member = seatOf(input.id);
       const workspace = await teamWorkspace(member, req.signal);
+      // His own computer runs no harness and no notes store: only he works there.
+      if (member.id === TEAM_GALAHAD) return { workspace, harnesses: [], engram: { on: teamOf().store.engram(), pinned: ENGRAM_VERSION } };
       const state = teamOf().snapshot();
       const busy = state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running");
       // Each harness: is it installed there, and what would it run on (a vendor's tool: its own sign-in, asked of

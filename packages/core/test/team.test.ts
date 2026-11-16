@@ -29,6 +29,13 @@ describe("team contracts", () => {
     expect(TeamWorkspaceQuest.safeParse(`arm.${label}`).success).toBe(true);
     expect(TeamWorkspaceQuest.safeParse("arm.team.ada").success).toBe(false);
   });
+  test("Galahad's own computer is labelled by his reserved handle, which no knight can take; other reserved names never are", () => {
+    const label = teamArmLabel("node-one", "galahad");
+    expect(label.endsWith(".galahad")).toBe(true);
+    expect(TeamWorkspaceQuest.safeParse(`arm.${label}`).success).toBe(true);
+    for (const reserved of ["owner", "system"]) expect(() => teamArmLabel("node-one", reserved)).toThrow();
+    expect(TeammateInput.safeParse({ id: "galahad", name: "Galahad" }).success).toBe(false);
+  });
   test("teammate identity is bounded and never the owner, the system or Galahad himself", () => {
     for (const id of ["owner", "system", "galahad", "Bad Name", "a".repeat(33), "../agent"]) expect(TeammateInput.safeParse({ id, name: "A" }).success).toBe(false);
     expect(TeammateInput.parse({ id: "ada", name: " Ada " })).toEqual({ id: "ada", name: "Ada" });
