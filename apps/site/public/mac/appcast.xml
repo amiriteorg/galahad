@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Galahad for Mac</title>
+    <link>https://galahad.sh</link>
+    <item>
+      <title>Galahad 0.1.0 (202611162140)</title>
+      <pubDate>Mon, 16 Nov 2026 21:43:36 +0000</pubDate>
+      <sparkle:version>202611162140</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/amiriteorg/galahad/releases/download/mac-202611162140/Galahad-for-Mac-202611162140.zip" sparkle:edSignature="Q9/SEMCZ8IIZkwT1+ELuCeOzjjVlt6rGbC398dju/zvgoF7x9QH9qC5QKPlxui13PF3wpQY1ck+Qx4ZoebZvAg==" length="66733812" type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
