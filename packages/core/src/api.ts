@@ -1102,6 +1102,8 @@ export interface ProviderView {
   secret: string | null;
   label: string | null;
   hasKey: boolean;
+  /** The address its key was added for, when that isn't `baseUrl` (it was pointed elsewhere since): the key isn't sent there. An older node says nothing. */
+  keyElsewhere?: string;
 }
 
 export interface PairingView {

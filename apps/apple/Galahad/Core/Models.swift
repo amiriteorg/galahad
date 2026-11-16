@@ -16,6 +16,9 @@ struct ProvidersView: Decodable, Sendable {
         let secret: String?
         let label: String?
         let hasKey: Bool
+        /// The address its key was added for, when that isn't `baseUrl` (it was pointed elsewhere since): the key isn't
+        /// sent there. An older node says nothing.
+        var keyElsewhere: String? = nil
     }
 
     struct Plan: Decodable, Sendable, Equatable {
@@ -100,7 +103,8 @@ enum Models {
 
     /// What a provider needs once a key for it is sealed (lib/text.ts' `providerSetup`): the request that points it at
     /// the key (nil: nothing, or nothing this device may do), and what to say of it (nil: nothing to say). `baseUrl`: the
-    /// address given with the key, for a preset with no address of its own (a Cloudflare AI Gateway).
+    /// address given with the key, for a preset with no address of its own (a Cloudflare AI Gateway), or another than its
+    /// own (its plan's other region): it is set up there, where the key is pinned.
     static func setup(_ view: ProvidersView, provider: String, secret: String, mayConfigure: Bool, baseUrl: String? = nil) -> (request: ProviderRequest?, say: String?) {
         guard mayConfigure else { return (nil, nil) }
         let given = baseUrl.flatMap { $0.isEmpty ? nil : $0 }
@@ -112,6 +116,6 @@ enum Models {
         guard let preset = view.presets.first(where: { $0.id == provider }) else { return (nil, nil) }
         if preset.baseUrl?.isEmpty != false, let given { return (ProviderRequest(id: provider, baseUrl: given, secret: secret), planLine(preset) ?? "\(provider) is configured and ready.") }
         guard preset.baseUrl?.isEmpty == false else { return (nil, preset.note ?? "Add \(provider)'s base URL on the Models page to start using it.") }
-        return (ProviderRequest(id: provider, secret: secret), planLine(preset) ?? "\(provider) is configured and ready.")
+        return (ProviderRequest(id: provider, baseUrl: given == preset.baseUrl ? nil : given, secret: secret), planLine(preset) ?? "\(provider) is configured and ready.")
     }
 }

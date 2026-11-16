@@ -367,13 +367,15 @@ const keys = {
   providers: configured,
   detected: fakeKeys.map((key) => ({ key, provider: detectProvider(key, PRESETS, SIGN_INS), signIn: detectSignIn(key, SIGN_INS) })),
   plans: PRESETS.map((preset) => ({ id: preset.id, line: planLine(preset) })),
-  // (A base URL is given with a key for a preset with no address of its own: a Cloudflare AI Gateway's.)
+  // (A base URL is given with a key for a preset with no address of its own, a Cloudflare AI Gateway's, or for another
+  // region than its own: Xiaomi's Europe.)
   setups: (
     [
       ["anthropic", "anthropic", true], ["zai-coding", "zai-coding", true], ["opencode-go", "opencode-go", true], ["openrouter", "openrouter", true],
       ["openrouter", "openrouter-2", true], ["verda", "verda", true], ["cloudflare-ai", "cf", true], ["mine", "mine", true], ["anthropic", "anthropic", false],
       ["cloudflare-ai", "cloudflare-ai", true, "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/galahad/compat"],
       ["openrouter", "openrouter", true, "https://openrouter.ai/api/v1"], ["openrouter", "openrouter", true, "https://openrouter.example.test/api/v1"],
+      ["mimo-token", "mimo-token", true, "https://token-plan-ams.xiaomimimo.com/v1"], ["mimo-token", "mimo-token", true, "https://token-plan-sgp.xiaomimimo.com/v1"],
     ] as [string, string, boolean, string?][]
   ).map(([provider, secret, may, baseUrl]) => ({ provider, secret, may, baseUrl: baseUrl ?? null, ...providerSetup({ providers: configured, presets: PRESETS }, provider, secret, may, baseUrl) })),
 };

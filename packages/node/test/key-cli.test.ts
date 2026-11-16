@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RouteName } from "@galahad/core";
 import { preset } from "@galahad/brain";
-import { keyAddCommand, planAdvice } from "../src/key-cli.ts";
+import { keyAddCommand, keyElsewhereLine, planAdvice } from "../src/key-cli.ts";
 
 /* `galahad key add` at a terminal, against what the node would answer. */
 
@@ -113,4 +113,19 @@ test("your own address for a provider is what the key is pinned to", async () =>
   expect(calls[0]!.input).toEqual({ name: "zai-coding", value: PLAN_KEY, provider: "zai-coding", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" });
   expect(calls[1]!.input).toMatchObject({ id: "zai-coding", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" });
   expect(lines).toContain("It will only ever be sent to https://open.bigmodel.cn.");
+});
+
+test("a provider pointed elsewhere since its key was added says where the key was for, and the line that adds it where the provider is now", () => {
+  const ams = "https://token-plan-ams.xiaomimimo.com/v1";
+  expect(keyElsewhereLine({ id: "mimo-token", baseUrl: ams, keyElsewhere: "https://token-plan-sgp.xiaomimimo.com" })).toBe(
+    `mimo-token's key was added for https://token-plan-sgp.xiaomimimo.com, and a key goes only where it was added for: add it again for this address with \`galahad key add --provider mimo-token --base-url ${ams}\`.`,
+  );
+  expect(keyElsewhereLine({ id: "mimo-token", baseUrl: ams })).toBeNull();
+});
+
+test("a key added for a preset's other region is pinned there, and its provider set up there", async () => {
+  const ams = "https://token-plan-ams.xiaomimimo.com/v1";
+  const { calls } = await run("tp-FAKE-key-for-tests-0000", { provider: "mimo-token", "base-url": ams });
+  expect(calls.find((c) => c.name === "setSecret")?.input).toMatchObject({ name: "mimo-token", provider: "mimo-token", baseUrl: ams });
+  expect(calls.find((c) => c.name === "setProvider")?.input).toMatchObject({ id: "mimo-token", baseUrl: ams, secret: "mimo-token" });
 });

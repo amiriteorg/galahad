@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterAll, describe, expect, test } from "bun:test";
 import { newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, GatewayTokens, handleGateway, keyHeaders, listModels, offeredModels, originOf, preset, streamAnthropic, streamOpenAICompatible } from "../src/index.ts";
+import { chat, GatewayTokens, handleGateway, keyHeaders, listModels, offeredModels, originOf, preset, providerViews, resolveProvider, streamAnthropic, streamOpenAICompatible } from "../src/index.ts";
 
 /*
  * Where a provider's key goes. Most OpenAI-compatible endpoints take it as
@@ -147,6 +147,55 @@ describe("the models a provider is offered with", () => {
     const { seen, fetch } = asked();
     expect(await offeredModels(provider("moonshot"), fetch)).toEqual(["m-1", "m-2"]);
     expect(seen.map((s) => [s.url, s.headers.get("authorization")])).toEqual([["https://api.moonshot.ai/v1/models", `Bearer ${KEY}`]]);
+  });
+});
+
+/*
+ * A key goes only to the address it was added for (SECURITY.md, finding 2). A provider pointed somewhere else since
+ * keeps its key out of the new address, and says so: which address the key was for, so the owner knows to add it
+ * again there (Xiaomi's Token Plan answers at one of three addresses, by region; its preset knows Singapore's).
+ */
+describe("a provider pointed elsewhere says its key was added for another address", () => {
+  const KEY = ["tp", "FAKE", "elsewhere", "key"].join("-");
+  const AMS = "https://token-plan-ams.xiaomimimo.com/v1";
+  const setUp = () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
+    const vault = new Vault(store, identity);
+    vault.set("mimo-token", KEY, { provider: "mimo-token", origin: originOf(preset("mimo-token")!.baseUrl)! });
+    store.emit(identity, "provider.set", { id: "mimo-token", kind: "openai", baseUrl: preset("mimo-token")!.baseUrl, secret: "mimo-token" });
+    return { identity, store, vault };
+  };
+
+  test("where its key was added for, it has its key and says nothing more", () => {
+    const { store, vault } = setUp();
+    expect(providerViews(store, vault)).toEqual([{ id: "mimo-token", kind: "openai", baseUrl: preset("mimo-token")!.baseUrl, secret: "mimo-token", label: null, hasKey: true }]);
+  });
+
+  test("pointed at another region, the key isn't sent there, and the view says which address it was for", () => {
+    const { identity, store, vault } = setUp();
+    store.emit(identity, "provider.set", { id: "mimo-token", kind: "openai", baseUrl: AMS, secret: "mimo-token" });
+    expect(providerViews(store, vault)[0]).toMatchObject({ baseUrl: AMS, hasKey: false, keyElsewhere: "https://token-plan-sgp.xiaomimimo.com" });
+    expect(resolveProvider(store, vault, "mimo-token", "tool")?.apiKey).toBeNull();
+  });
+
+  test("added again for its address now, it has its key and nothing is said", () => {
+    const { identity, store, vault } = setUp();
+    store.emit(identity, "provider.set", { id: "mimo-token", kind: "openai", baseUrl: AMS, secret: "mimo-token" });
+    vault.set("mimo-token", KEY, { provider: "mimo-token", origin: originOf(AMS)! });
+    const [view] = providerViews(store, vault);
+    expect(view).toMatchObject({ hasKey: true });
+    expect(view).not.toHaveProperty("keyElsewhere");
+  });
+
+  test("a key added for another provider isn't one added for another address: nothing is said of it", () => {
+    const { identity, store, vault } = setUp();
+    vault.set("borrowed", KEY, { provider: "openrouter", origin: originOf(AMS)! });
+    store.emit(identity, "provider.set", { id: "mimo-token", kind: "openai", baseUrl: AMS, secret: "borrowed" });
+    const [view] = providerViews(store, vault);
+    expect(view).toMatchObject({ hasKey: false });
+    expect(view).not.toHaveProperty("keyElsewhere");
   });
 });
 

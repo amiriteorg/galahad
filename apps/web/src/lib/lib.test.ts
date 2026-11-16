@@ -220,8 +220,16 @@ describe("text helpers", () => {
     expect(providerSetup(configured, "cloudflare-ai", "cloudflare-ai", true, gateway)).toEqual({ request: null, say: null });
     expect(providerSetup(configured, "cloudflare-ai", "cf-2", true, gateway)).toEqual({ request: { id: "cloudflare-ai", kind: "openai", baseUrl: gateway, secret: "cf-2" }, say: "cloudflare-ai now uses this key." });
     expect(providerSetup(configured, "cloudflare-ai", "cloudflare-ai", true, `${gateway}-2`)).toEqual({ request: { id: "cloudflare-ai", kind: "openai", baseUrl: `${gateway}-2`, secret: "cloudflare-ai" }, say: "cloudflare-ai now uses this key." });
-    // A preset that has an address keeps its own.
-    expect(providerSetup({ providers: [], presets: [{ id: "anthropic", baseUrl: "https://api.anthropic.com" }] }, "anthropic", "anthropic", true, "https://elsewhere.example.test")).toEqual({ request: { id: "anthropic", secret: "anthropic" }, say: "anthropic is configured and ready." });
+  });
+
+  test("a preset that has an address is set up at another one given with its key (its plan's other region), where the key is pinned", () => {
+    const sgp = "https://token-plan-sgp.xiaomimimo.com/v1";
+    const ams = "https://token-plan-ams.xiaomimimo.com/v1";
+    const data = { providers: [], presets: [{ id: "mimo-token", baseUrl: sgp }] };
+    expect(providerSetup(data, "mimo-token", "mimo-token", true, ams)).toEqual({ request: { id: "mimo-token", baseUrl: ams, secret: "mimo-token" }, say: "mimo-token is configured and ready." });
+    // Its own address given, or none, it is set up at its own, as ever.
+    expect(providerSetup(data, "mimo-token", "mimo-token", true, sgp)).toEqual({ request: { id: "mimo-token", secret: "mimo-token" }, say: "mimo-token is configured and ready." });
+    expect(providerSetup(data, "mimo-token", "mimo-token", true)).toEqual({ request: { id: "mimo-token", secret: "mimo-token" }, say: "mimo-token is configured and ready." });
   });
 
   test("a role's models as he uses them: his own in order, and the plans that do coding", () => {

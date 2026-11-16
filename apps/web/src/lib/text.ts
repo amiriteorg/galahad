@@ -133,7 +133,8 @@ export function providerSetup(
   if (!preset) return { request: null, say: null };
   if (!preset.baseUrl && baseUrl) return { request: { id: providerId, baseUrl, secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
   if (!preset.baseUrl) return { request: null, say: preset.note ?? `Add ${providerId}'s base URL on the Models page to start using it.` };
-  return { request: { id: providerId, secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
+  // Another address given for one that has its own (another region's): it is set up there, where its key is pinned.
+  return { request: { id: providerId, ...(baseUrl && baseUrl !== preset.baseUrl ? { baseUrl } : {}), secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
 }
 
 /** Longest matching key prefix wins (sk-orca- beats sk-). A subscription's sign-in is no provider's key. */

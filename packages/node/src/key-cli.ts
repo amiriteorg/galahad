@@ -26,6 +26,11 @@ export function planAdvice(id: string, plan: CodingPlan, engineer: readonly stri
   return lines;
 }
 
+/** A provider pointed elsewhere since its key was added: the key goes only where it was added for (SECURITY.md, 2), and this says how to add it where the provider is now. */
+export function keyElsewhereLine(p: { id: string; baseUrl: string; keyElsewhere?: string }): string | null {
+  return p.keyElsewhere ? `${p.id}'s key was added for ${p.keyElsewhere}, and a key goes only where it was added for: add it again for this address with \`galahad key add --provider ${p.id} --base-url ${p.baseUrl}\`.` : null;
+}
+
 export async function keyAddCommand(api: Api, value: string, flags: Flags, write: (s: string) => void = console.log, dim: (s: string) => string = (s) => s): Promise<void> {
   const str = (key: string) => (typeof flags[key] === "string" ? (flags[key] as string) : undefined);
   if (!value) throw new Error("no key given");

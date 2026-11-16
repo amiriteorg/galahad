@@ -419,15 +419,30 @@ export function pinLegacyKeys(store: MindStore, vault: Vault): string[] {
   return pinned;
 }
 
+/**
+ * The address a provider's key was added for, when that isn't the provider's address now: you pointed the provider
+ * somewhere else since, and the key doesn't follow it (keyUsable). Null for anything else. It is how a provider with
+ * no usable key says why, and what fixes it: the key added again, for the provider's address now.
+ */
+export function keyElsewhere(vault: Vault, record: ProviderRecord): string | null {
+  if (!record.secret) return null;
+  const info = vault.info(record.secret);
+  return info?.provider === record.id && info.origin && info.origin !== originOf(record.baseUrl) ? info.origin : null;
+}
+
 export function providerViews(store: MindStore, vault: Vault): ProviderView[] {
-  return providerRecords(store).map((p) => ({
-    id: p.id,
-    kind: p.kind,
-    baseUrl: p.baseUrl,
-    secret: p.secret ?? null,
-    label: p.label ?? null,
-    hasKey: keyUsable(vault, p),
-  }));
+  return providerRecords(store).map((p) => {
+    const elsewhere = keyElsewhere(vault, p);
+    return {
+      id: p.id,
+      kind: p.kind,
+      baseUrl: p.baseUrl,
+      secret: p.secret ?? null,
+      label: p.label ?? null,
+      hasKey: keyUsable(vault, p),
+      ...(elsewhere ? { keyElsewhere: elsewhere } : {}),
+    };
+  });
 }
 
 /** Hosts whose OpenAI-compatible endpoint takes the key in a header of its own. */

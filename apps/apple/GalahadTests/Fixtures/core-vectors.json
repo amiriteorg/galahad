@@ -3597,6 +3597,29 @@
           "secret": "openrouter"
         },
         "say": "openrouter now uses this key."
+      },
+      {
+        "provider": "mimo-token",
+        "secret": "mimo-token",
+        "may": true,
+        "baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
+        "request": {
+          "id": "mimo-token",
+          "baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
+          "secret": "mimo-token"
+        },
+        "say": "Xiaomi MiMo Token Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
+      },
+      {
+        "provider": "mimo-token",
+        "secret": "mimo-token",
+        "may": true,
+        "baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
+        "request": {
+          "id": "mimo-token",
+          "secret": "mimo-token"
+        },
+        "say": "Xiaomi MiMo Token Plan is a coding plan its terms allow only inside the coding tools they name: a knight's coding tool runs on it, and so does one you run yourself (galahad run). Galahad never calls it himself."
       }
     ]
   },

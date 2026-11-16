@@ -181,3 +181,44 @@ describe("every preset is configured, on every surface", () => {
     }
   });
 });
+
+/*
+ * A provider pointed at another region than its key was added for (Xiaomi's Token Plan answers at one of three, by
+ * region). The key doesn't follow it (SECURITY.md, 2), and the node says so: which address the key was for. Added again
+ * with the region's address next to it, as the app's and the iPhone's key sheets and `galahad key add --base-url` do,
+ * it is pinned there and the provider set up there.
+ */
+describe("a provider pointed at another region", () => {
+  const SGP = preset("mimo-token")!.baseUrl;
+  const AMS = "https://token-plan-ams.xiaomimimo.com/v1";
+  type View = { id: string; baseUrl: string; hasKey: boolean; keyElsewhere?: string };
+  const mimo = async () => (await ok<{ providers: View[] }>("providers")).providers.find((p) => p.id === "mimo-token");
+
+  test("says which address its key was added for, and has no key there", async () => {
+    await ok("deleteSecret", { name: "mimo-token" });
+    await ok("removeProvider", { id: "mimo-token" });
+    await ok("setSecret", { name: "mimo-token", value: fakeKey("mimo-token"), provider: "mimo-token" });
+    await ok("setProvider", providerSetup(await ok("providers"), "mimo-token", "mimo-token", true).request);
+    expect(await mimo()).toMatchObject({ baseUrl: SGP, hasKey: true });
+    expect(await mimo()).not.toHaveProperty("keyElsewhere");
+
+    const { providers } = await ok<{ providers: View[] }>("setProvider", { id: "mimo-token", baseUrl: AMS, secret: "mimo-token" });
+    expect(providers.find((p) => p.id === "mimo-token")).toMatchObject({ baseUrl: AMS, hasKey: false, keyElsewhere: originOf(SGP)! });
+  });
+
+  test("added again with the region's address next to it, the key is pinned there and the provider set up there", async () => {
+    await ok("setSecret", { name: "mimo-token", value: fakeKey("mimo-token"), provider: "mimo-token", baseUrl: AMS });
+    const { request } = providerSetup(await ok("providers"), "mimo-token", "mimo-token", true, AMS);
+    if (request) await ok("setProvider", request);
+    expect(await mimo()).toMatchObject({ baseUrl: AMS, hasKey: true });
+    expect(await mimo()).not.toHaveProperty("keyElsewhere");
+  });
+
+  test("and a fresh one, keyed for the region from the start, is set up there", async () => {
+    await ok("deleteSecret", { name: "mimo-token" });
+    await ok("removeProvider", { id: "mimo-token" });
+    await ok("setSecret", { name: "mimo-token", value: fakeKey("mimo-token"), provider: "mimo-token", baseUrl: AMS });
+    await ok("setProvider", providerSetup(await ok("providers"), "mimo-token", "mimo-token", true, AMS).request);
+    expect(await mimo()).toMatchObject({ baseUrl: AMS, hasKey: true });
+  });
+});

@@ -70,6 +70,8 @@ export interface AddKeyOptions {
   prefill?: string;
   name?: string;
   provider?: string | null;
+  /** The address field open from the start: the provider is somewhere other than where its key was, or its preset's address. */
+  anotherAddress?: boolean;
 }
 
 export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
@@ -82,19 +84,50 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
   const name = h("input", { class: "input mono", type: "text", id: "key-name", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. anthropic", value: options.name ?? "" });
   const label = h("input", { class: "input", type: "text", id: "key-label", autocomplete: "off", placeholder: "e.g. personal account", maxlength: 128 });
   // A preset with no address of its own (a Cloudflare AI Gateway) is given one here, next to its key: the key is pinned to it.
+  // Any other provider may be given another (its plan's other region), once you ask for the field.
   const address = h("input", { class: "input mono", type: "url", id: "key-base-url", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "https://…" });
-  const addressField = field("Base URL", address, { id: "key-base-url", hint: "It has no address of its own: the key is only ever sent to this one." });
+  const addressHint = h("span");
+  const addressField = field("Base URL", address, { id: "key-base-url", hint: addressHint });
+  let another = options.anotherAddress ?? false;
+  const anotherRow = h(
+    "div",
+    { class: "row" },
+    button("Another address", {
+      size: "sm",
+      variant: "ghost",
+      icon: "globe",
+      onClick: () => {
+        another = true;
+        showAddress();
+        address.focus();
+      },
+    }),
+  );
   const detected = h("div", { class: "row wrap", style: "min-height:24px", "aria-live": "polite" });
   const status = h("div");
   let data: ProvidersResponse = providerCache ?? { providers: [], presets: [] };
   let manual = Boolean(options.provider);
+  const chosenPreset = () => data.presets.find((p) => p.id === providerSelect.value);
   /** The chosen provider is a preset with no address of its own: the key goes only where you say (never one read back from its configuration). */
   const needsAddress = (): boolean => {
-    const chosen = data.presets.find((p) => p.id === providerSelect.value);
+    const chosen = chosenPreset();
     return !!chosen && !chosen.baseUrl;
   };
+  /** Another address than its own, for a provider chosen: only one you type, here, next to the key. */
+  const mayGiveAnother = (): boolean => !!providerSelect.value && providerSelect.value !== "__other" && !needsAddress();
+  const addressShown = (): boolean => needsAddress() || (another && mayGiveAnother());
   const showAddress = () => {
-    addressField.hidden = !needsAddress();
+    addressField.hidden = !addressShown();
+    anotherRow.hidden = addressShown() || !mayGiveAnother();
+    const own = chosenPreset()?.baseUrl;
+    replace(
+      addressHint,
+      needsAddress()
+        ? "It has no address of its own: the key is only ever sent to this one."
+        : own
+          ? `Its own is ${own}. Give another only where its page shows one (another region's): the key is only ever sent to the address you give.`
+          : "The key is only ever sent to the address you give.",
+    );
   };
 
   function syncOptions(): void {
@@ -160,7 +193,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
         const chosen = providerSelect.value;
         const providerId = chosen && chosen !== "__other" ? chosen : null;
         const secretName = (name.value.trim() || providerId || "").trim();
-        const baseUrl = needsAddress() ? address.value.trim() : "";
+        const baseUrl = addressShown() ? address.value.trim() : "";
         if (!value) {
           replace(status, callout("warn", "Paste a key first."));
           secret.input.focus();
@@ -197,6 +230,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
     field("API key or secret", secret.wrap, { id: "key-value", hint: "Recognised from its prefix where possible. Paste it; it is never shown again." }),
     detected,
     h("div", { class: "fields" }, field("Provider", providerSelect), field("Name", name, { hint: "How Galahad refers to it." })),
+    anotherRow,
     addressField,
     field("Label (optional)", label),
     callout("quiet", "Sealed for your full nodes only. Never stored in this browser, never shown again, never seen by a model.", { icon: "shield-check" }),

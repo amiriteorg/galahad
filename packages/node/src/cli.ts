@@ -16,7 +16,7 @@ import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
-import { keyAddCommand } from "./key-cli.ts";
+import { keyAddCommand, keyElsewhereLine } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
@@ -24,7 +24,7 @@ import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCom
 import { ABOUT_YOU_TAG, chatStateWords, checkFacts, type MemoryView, type ModelCheck } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, ProviderView } from "@galahad/core";
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
@@ -920,7 +920,7 @@ Next:
       const admin = new Admin(home);
       if (sub === "add") {
         if (!rest[0]) fail("usage: galahad provider add <id>");
-        await admin.call("setProvider", {
+        const { providers } = await admin.call<{ providers: ProviderView[] }>("setProvider", {
           id: rest[0],
           preset: str("preset"),
           baseUrl: str("base-url"),
@@ -929,6 +929,8 @@ Next:
           label: str("label"),
         });
         console.log(`Provider ${rest[0]} configured.`);
+        const elsewhere = keyElsewhereLine(providers.find((p) => p.id === rest[0]) ?? { id: rest[0], baseUrl: "" });
+        if (elsewhere) console.log(elsewhere);
       } else if (sub === "models") {
         if (!rest[0]) fail("usage: galahad provider models <id>");
         const { models } = await admin.call("providerModels", { id: rest[0] });
@@ -941,7 +943,11 @@ Next:
         const { providers } = await admin.call("providers");
         if (!providers.length) console.log("No providers yet. `galahad key add` configures one.");
         const wide = Math.max(14, ...providers.map((p: { id: string }) => p.id.length));
-        for (const p of providers) console.log(`  ${p.id.padEnd(wide)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}${planOf(p.id) ? dim("  coding plan: for coding only") : ""}`);
+        for (const p of providers as ProviderView[]) {
+          console.log(`  ${p.id.padEnd(wide)} ${p.kind.padEnd(10)} ${p.hasKey ? "key ✓" : p.baseUrl.includes("127.0.0.1") ? "local" : "no key"}  ${dim(p.baseUrl)}${planOf(p.id) ? dim("  coding plan: for coding only") : ""}`);
+          const elsewhere = keyElsewhereLine(p);
+          if (elsewhere) console.log(dim(`  ${" ".repeat(wide)} ${elsewhere}`));
+        }
       }
       return;
     }

@@ -190,9 +190,12 @@ export const modelsView: View = (root, ctx, { scope }) => {
   function providerRow(p: ProviderView): HTMLElement {
     const modelsBox = h("div");
     const local = /^https?:\/\/(127\.0\.0\.1|localhost)/.test(p.baseUrl);
-    const keyBadge = p.hasKey ? badge("key sealed", "ok", "check") : local ? badge("local", "accent") : badge("no key", "warn", "alert");
+    const keyBadge = p.hasKey ? badge("key sealed", "ok", "check") : local ? badge("local", "accent") : badge(p.keyElsewhere ? "key for another address" : "no key", "warn", "alert");
     // A coding plan (the node's presets say which): its key is for coding tools, and its vendor says which.
     const plan = presets.find((preset) => preset.id === p.id)?.plan;
+    // Somewhere other than where its key was added, or than its preset's address: a key added for it needs the address next to it.
+    const own = presets.find((preset) => preset.id === p.id)?.baseUrl;
+    const elsewhere = !!p.keyElsewhere || (!!own && own !== p.baseUrl);
     const list = button("List models", { size: "sm", variant: "ghost", icon: "models" });
     list.addEventListener("click", () =>
       void busy(list, async () => {
@@ -227,6 +230,9 @@ export const modelsView: View = (root, ctx, { scope }) => {
         { class: "grow" },
         h("div", { class: "row wrap" }, h("span", { class: "strong" }, p.id), badge(p.kind === "anthropic" ? "Anthropic API" : "OpenAI-compatible", "neutral"), keyBadge, plan ? badge("coding plan", "accent") : null),
         h("div", { class: "meta" }, h("span", { class: "mono" }, p.baseUrl), p.label ? h("span", {}, p.label) : null, p.secret ? h("span", {}, "key: ", h("span", { class: "mono" }, p.secret)) : null),
+        p.keyElsewhere
+          ? h("div", { class: "meta" }, h("span", {}, "Its key was added for ", h("span", { class: "mono" }, p.keyElsewhere), ", and a key goes only where it was added for: add it again with this address next to it."))
+          : null,
         plan
           ? h("div", { class: "meta" }, h("span", {}, `${planLine(presets.find((preset) => preset.id === p.id))} ${plan.says} `, h("a", { href: plan.terms, target: "_blank", rel: "noopener noreferrer" }, "Its terms")))
           : null,
@@ -236,7 +242,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
         "div",
         { class: "item-actions" },
         list,
-        !p.hasKey && !local && ctx.can("vault:write") ? button("Add key", { size: "sm", icon: "key", onClick: () => openAddKey(ctx, { provider: p.id, name: p.secret ?? p.id }) }) : null,
+        !p.hasKey && !local && ctx.can("vault:write") ? button("Add key", { size: "sm", icon: "key", onClick: () => openAddKey(ctx, { provider: p.id, name: p.secret ?? p.id, anotherAddress: elsewhere }) }) : null,
         write
           ? button(`Remove ${p.id}`, {
               size: "sm",
@@ -380,7 +386,7 @@ function openAddProvider(ctx: Ctx, presets: PresetView[], onDone: () => Promise<
         const secretName = secret.value.trim() || providerId;
         void busy(save, async () => {
           try {
-            await ctx.api.post("/api/providers", {
+            const { providers: now } = await ctx.api.post<{ providers: ProviderView[] }>("/api/providers", {
               id: providerId,
               ...(preset.value ? { preset: preset.value } : {}),
               ...(url.value.trim() ? { baseUrl: url.value.trim() } : {}),
@@ -389,7 +395,14 @@ function openAddProvider(ctx: Ctx, presets: PresetView[], onDone: () => Promise<
               ...(label.value.trim() ? { label: label.value.trim() } : {}),
             });
             sheet.close();
-            toast(`${providerId} configured`, { tone: "ok", description: `Its key is read from the vault secret "${secretName}".` });
+            // Pointed somewhere its key wasn't added for: the key stays where it was, and you're told so at once.
+            const elsewhere = now.find((p) => p.id === providerId)?.keyElsewhere;
+            toast(
+              `${providerId} configured`,
+              elsewhere
+                ? { tone: "warn", description: `Its key was added for ${elsewhere}, and a key goes only where it was added for: add it again for this address.` }
+                : { tone: "ok", description: `Its key is read from the vault secret "${secretName}".` },
+            );
             await onDone();
           } catch (error) {
             replace(status, callout("danger", errorMessage(error)));

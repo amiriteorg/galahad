@@ -120,9 +120,15 @@ struct KeysView: View {
                             VStack(alignment: .leading, spacing: Space.line) {
                                 Text(provider.id).font(.body.monospaced())
                                 if let plan = plan(of: provider.id) { Text(plan.name).font(.caption).foregroundStyle(.secondary) }
+                                // Pointed elsewhere since its key was added: the key stays where it was, and this says so.
+                                if let elsewhere = provider.keyElsewhere {
+                                    Text("Its key was added for \(elsewhere). Add it again with \(provider.baseUrl) as its other address.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                             Spacer()
-                            Text(provider.hasKey ? "Key sealed" : "No key yet")
+                            Text(provider.hasKey ? "Key sealed" : provider.keyElsewhere != nil ? "Key for another address" : "No key yet")
                                 .font(.caption)
                                 .foregroundStyle(provider.hasKey ? Color.secondary : Color.siege)
                         }
@@ -284,6 +290,8 @@ private struct AddKeySheet: View {
     /// A provider you chose yourself is never changed by what the key looks like.
     @State private var chosen = false
     @State private var address = ""
+    /// Another address than a provider's own was asked for (its plan's other region).
+    @State private var another = false
     @State private var label = ""
     @State private var value = ""
     @State private var keepCopy = true
@@ -297,6 +305,10 @@ private struct AddKeySheet: View {
     private var preset: ProvidersView.Preset? { presets.first { $0.id == provider } }
     /// A preset with no address of its own (a Cloudflare AI Gateway): its key goes only to the address you give with it.
     private var needsAddress: Bool { preset.map { $0.baseUrl?.isEmpty != false } ?? false }
+    /// Another address than its own, for a provider chosen: only one you type, here, next to the key (never one read
+    /// back from its configuration).
+    private var mayGiveAnother: Bool { !provider.isEmpty && provider != Self.own && !needsAddress }
+    private var addressShown: Bool { provider == Self.own || needsAddress || (another && mayGiveAnother) }
     private var signIn: ProvidersView.SignIn? { providers.flatMap { Models.signIn(value.trimmingCharacters(in: .whitespacesAndNewlines), in: $0) } }
     /// Your own providers that aren't one of the node's presets.
     private var yours: [ProvidersView.Provider] { (providers?.providers ?? []).filter { mine in !presets.contains { $0.id == mine.id } } }
@@ -354,16 +366,20 @@ private struct AddKeySheet: View {
                             Text("A key of your own").tag(Self.own)
                         }
                         .accessibilityIdentifier("key-provider")
-                        if provider == Self.own || needsAddress {
-                            TextField((needsAddress ? "Its address, https://…" : "Only sent to, e.g. https://api.example.com") as String, text: $address)
+                        if addressShown {
+                            TextField((needsAddress ? "Its address, https://…" : provider == Self.own ? "Only sent to, e.g. https://api.example.com" : "Another address, https://…") as String, text: $address)
                                 .keyboardType(.URL)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
+                        } else if mayGiveAnother {
+                            Button("Another address") { another = true }
                         }
                     } header: {
                         Text("What it's for")
                     } footer: {
-                        if let line = Models.planLine(preset), let plan = preset?.plan {
+                        if another, mayGiveAnother {
+                            Text("Its own is \(preset?.baseUrl ?? "the one it has"). Give another only where its page shows one (another region's): the key is only ever sent to the address you give.")
+                        } else if let line = Models.planLine(preset), let plan = preset?.plan {
                             Text("\(line) \(plan.says)")
                         } else if let note = preset?.note, preset?.baseUrl?.isEmpty != false {
                             Text(note)
@@ -437,7 +453,7 @@ private struct AddKeySheet: View {
             // Pinned where it was: the address it was entered with is given again, so the node pins it there.
             (replacing.name, replacing.provider, replacing.label, replacing.origin)
         } else {
-            (name, provider == Self.own ? nil : trimmed(provider), trimmed(label), provider == Self.own || needsAddress ? trimmed(address) : nil)
+            (name, provider == Self.own ? nil : trimmed(provider), trimmed(label), addressShown ? trimmed(address) : nil)
         }
         sealing = true
         defer { sealing = false }
