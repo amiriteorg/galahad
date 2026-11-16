@@ -3410,6 +3410,7 @@
         "provider": "anthropic",
         "secret": "anthropic",
         "may": true,
+        "baseUrl": null,
         "request": {
           "id": "anthropic",
           "secret": "anthropic"
@@ -3420,6 +3421,7 @@
         "provider": "zai-coding",
         "secret": "zai-coding",
         "may": true,
+        "baseUrl": null,
         "request": {
           "id": "zai-coding",
           "secret": "zai-coding"
@@ -3430,6 +3432,7 @@
         "provider": "opencode-go",
         "secret": "opencode-go",
         "may": true,
+        "baseUrl": null,
         "request": {
           "id": "opencode-go",
           "secret": "opencode-go"
@@ -3440,6 +3443,7 @@
         "provider": "openrouter",
         "secret": "openrouter",
         "may": true,
+        "baseUrl": null,
         "request": null,
         "say": null
       },
@@ -3447,6 +3451,7 @@
         "provider": "openrouter",
         "secret": "openrouter-2",
         "may": true,
+        "baseUrl": null,
         "request": {
           "id": "openrouter",
           "kind": "openai",
@@ -3459,6 +3464,7 @@
         "provider": "verda",
         "secret": "verda",
         "may": true,
+        "baseUrl": null,
         "request": {
           "id": "verda",
           "secret": "verda"
@@ -3469,6 +3475,7 @@
         "provider": "cloudflare-ai",
         "secret": "cf",
         "may": true,
+        "baseUrl": null,
         "request": null,
         "say": "Cloudflare AI Gateway's OpenAI-compatible endpoint: --base-url https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat. The key is the gateway's token; the providers' own keys stay stored in Cloudflare. Models are named <provider>/<model>, e.g. deepseek/deepseek-chat."
       },
@@ -3476,6 +3483,7 @@
         "provider": "mine",
         "secret": "mine",
         "may": true,
+        "baseUrl": null,
         "request": null,
         "say": null
       },
@@ -3483,8 +3491,42 @@
         "provider": "anthropic",
         "secret": "anthropic",
         "may": false,
+        "baseUrl": null,
         "request": null,
         "say": null
+      },
+      {
+        "provider": "cloudflare-ai",
+        "secret": "cloudflare-ai",
+        "may": true,
+        "baseUrl": "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/galahad/compat",
+        "request": {
+          "id": "cloudflare-ai",
+          "baseUrl": "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/galahad/compat",
+          "secret": "cloudflare-ai"
+        },
+        "say": "cloudflare-ai is configured and ready."
+      },
+      {
+        "provider": "openrouter",
+        "secret": "openrouter",
+        "may": true,
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "request": null,
+        "say": null
+      },
+      {
+        "provider": "openrouter",
+        "secret": "openrouter",
+        "may": true,
+        "baseUrl": "https://openrouter.example.test/api/v1",
+        "request": {
+          "id": "openrouter",
+          "kind": "openai",
+          "baseUrl": "https://openrouter.example.test/api/v1",
+          "secret": "openrouter"
+        },
+        "say": "openrouter now uses this key."
       }
     ]
   },

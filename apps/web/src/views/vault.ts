@@ -38,24 +38,28 @@ async function loadProviders(ctx: Ctx): Promise<ProvidersResponse> {
   return providerCache;
 }
 
-async function ensureProviderConfigured(ctx: Ctx, data: ProvidersResponse, providerId: string, secretName: string): Promise<string | null> {
-  const { request, say } = providerSetup(data, providerId, secretName, ctx.can("brain:write"));
+async function ensureProviderConfigured(ctx: Ctx, data: ProvidersResponse, providerId: string, secretName: string, baseUrl?: string): Promise<string | null> {
+  const { request, say } = providerSetup(data, providerId, secretName, ctx.can("brain:write"), baseUrl);
   if (request) await ctx.api.post("/api/providers", request);
   return say;
 }
 
-/** Seals a value into the vault, then wires up the provider if it's a known preset. */
-export async function sealSecret(ctx: Ctx, name: string, value: string, providerId: string | null, label?: string): Promise<string | null> {
+/**
+ * Seals a value into the vault, then wires up the provider if it's a known preset. `baseUrl`: where the key may go, for
+ * a preset with no address of its own (a Cloudflare AI Gateway): the key is pinned there, and the provider set up there.
+ */
+export async function sealSecret(ctx: Ctx, name: string, value: string, providerId: string | null, label?: string, baseUrl?: string): Promise<string | null> {
   await ctx.api.post("/api/secrets", {
     name,
     value,
     ...(providerId ? { provider: providerId } : {}),
     ...(label ? { label } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
   });
   vaultChanged.update((n) => n + 1);
   if (!providerId) return null;
   try {
-    return await ensureProviderConfigured(ctx, providerCache ?? (await loadProviders(ctx)), providerId, name);
+    return await ensureProviderConfigured(ctx, providerCache ?? (await loadProviders(ctx)), providerId, name, baseUrl);
   } catch (error) {
     return `The key is sealed, but configuring ${providerId} failed: ${errorMessage(error)}`;
   }
@@ -77,10 +81,21 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
   const providerSelect = h("select", { class: "select", id: "key-provider" }, h("option", { value: "" }, "Choose a provider…"));
   const name = h("input", { class: "input mono", type: "text", id: "key-name", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "e.g. anthropic", value: options.name ?? "" });
   const label = h("input", { class: "input", type: "text", id: "key-label", autocomplete: "off", placeholder: "e.g. personal account", maxlength: 128 });
+  // A preset with no address of its own (a Cloudflare AI Gateway) is given one here, next to its key: the key is pinned to it.
+  const address = h("input", { class: "input mono", type: "url", id: "key-base-url", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "https://…" });
+  const addressField = field("Base URL", address, { id: "key-base-url", hint: "It has no address of its own: the key is only ever sent to this one." });
   const detected = h("div", { class: "row wrap", style: "min-height:24px", "aria-live": "polite" });
   const status = h("div");
   let data: ProvidersResponse = providerCache ?? { providers: [], presets: [] };
   let manual = Boolean(options.provider);
+  /** The chosen provider is a preset with no address of its own: the key goes only where you say (never one read back from its configuration). */
+  const needsAddress = (): boolean => {
+    const chosen = data.presets.find((p) => p.id === providerSelect.value);
+    return !!chosen && !chosen.baseUrl;
+  };
+  const showAddress = () => {
+    addressField.hidden = !needsAddress();
+  };
 
   function syncOptions(): void {
     const ids = [...new Set([...data.presets.map((p) => p.id), ...data.providers.map((p) => p.id)])].sort();
@@ -97,6 +112,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
     const value = secret.input.value.trim();
     if (!value) {
       replace(detected);
+      showAddress();
       return;
     }
     // A subscription's sign-in is not a key: said at once, before anything is chosen or sent.
@@ -112,6 +128,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
     }
     // A coding plan says what it is for, whether it was recognised or chosen.
     const plan = planLine(data.presets.find((p) => p.id === providerSelect.value));
+    showAddress();
     replace(
       detected,
       found
@@ -143,6 +160,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
         const chosen = providerSelect.value;
         const providerId = chosen && chosen !== "__other" ? chosen : null;
         const secretName = (name.value.trim() || providerId || "").trim();
+        const baseUrl = needsAddress() ? address.value.trim() : "";
         if (!value) {
           replace(status, callout("warn", "Paste a key first."));
           secret.input.focus();
@@ -153,6 +171,11 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
           name.focus();
           return;
         }
+        if (baseUrl && !/^https:\/\/[^\s/]+/.test(baseUrl)) {
+          replace(status, callout("warn", "The base URL is an https:// address, then paste the key again. The field was cleared for safety."));
+          address.focus();
+          return;
+        }
         // Never sealed as a provider's key (the node refuses it too); as a secret of your own, with no provider, it is yours to keep.
         const pasted = providerId ? detectSignIn(value, data.signIns) : null;
         if (pasted) {
@@ -161,7 +184,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
         }
         void busy(seal, async () => {
           try {
-            const extra = await sealSecret(ctx, secretName, value, providerId, label.value.trim() || undefined);
+            const extra = await sealSecret(ctx, secretName, value, providerId, label.value.trim() || undefined, baseUrl || undefined);
             sheet.close();
             toast(`${secretName} sealed`, { tone: "ok", description: extra ?? "Every full node can use it. No model ever sees it." });
           } catch (error) {
@@ -174,6 +197,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
     field("API key or secret", secret.wrap, { id: "key-value", hint: "Recognised from its prefix where possible. Paste it; it is never shown again." }),
     detected,
     h("div", { class: "fields" }, field("Provider", providerSelect), field("Name", name, { hint: "How Galahad refers to it." })),
+    addressField,
     field("Label (optional)", label),
     callout("quiet", "Sealed for your full nodes only. Never stored in this browser, never shown again, never seen by a model.", { icon: "shield-check" }),
     status,
@@ -191,6 +215,7 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
   });
 
   syncOptions();
+  showAddress();
   if (options.prefill) {
     secret.input.value = options.prefill;
     replace(status, callout("info", "Moved here from your message. It was not sent anywhere. Check the provider, then seal it."));

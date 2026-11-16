@@ -115,19 +115,23 @@ export function roleParts(models: readonly string[], presets: readonly KeyPreset
 
 /** What a provider needs once a key for it is sealed under `secretName`: the request that points it at the key (null:
  * nothing, or nothing this device may do), and what to say of it (null: nothing to say). A known preset is configured
- * from its own settings; one already configured is pointed at the new key. */
+ * from its own settings, and one with no address of its own (a Cloudflare AI Gateway) at the `baseUrl` given with the
+ * key, if one was; one already configured is pointed at the new key (and at that address, when one was given). */
 export function providerSetup(
   data: { providers: readonly { id: string; kind: string; baseUrl: string; secret: string | null }[]; presets: readonly (KeyPreset & { baseUrl?: string; note?: string })[] },
   providerId: string,
   secretName: string,
   mayConfigure: boolean,
+  baseUrl?: string,
 ): { request: { id: string; kind?: string; baseUrl?: string; secret: string } | null; say: string | null } {
   if (!mayConfigure) return { request: null, say: null };
   const existing = data.providers.find((p) => p.id === providerId);
-  if (existing?.secret === secretName) return { request: null, say: null };
-  if (existing) return { request: { id: providerId, kind: existing.kind, baseUrl: existing.baseUrl, secret: secretName }, say: `${providerId} now uses this key.` };
+  const at = baseUrl || existing?.baseUrl;
+  if (existing?.secret === secretName && at === existing.baseUrl) return { request: null, say: null };
+  if (existing) return { request: { id: providerId, kind: existing.kind, baseUrl: at, secret: secretName }, say: `${providerId} now uses this key.` };
   const preset = data.presets.find((p) => p.id === providerId);
   if (!preset) return { request: null, say: null };
+  if (!preset.baseUrl && baseUrl) return { request: { id: providerId, baseUrl, secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
   if (!preset.baseUrl) return { request: null, say: preset.note ?? `Add ${providerId}'s base URL on the Models page to start using it.` };
   return { request: { id: providerId, secret: secretName }, say: planLine(preset) ?? `${providerId} is configured and ready.` };
 }

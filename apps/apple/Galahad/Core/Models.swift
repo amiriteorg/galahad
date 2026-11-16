@@ -99,14 +99,18 @@ enum Models {
     }
 
     /// What a provider needs once a key for it is sealed (lib/text.ts' `providerSetup`): the request that points it at
-    /// the key (nil: nothing, or nothing this device may do), and what to say of it (nil: nothing to say).
-    static func setup(_ view: ProvidersView, provider: String, secret: String, mayConfigure: Bool) -> (request: ProviderRequest?, say: String?) {
+    /// the key (nil: nothing, or nothing this device may do), and what to say of it (nil: nothing to say). `baseUrl`: the
+    /// address given with the key, for a preset with no address of its own (a Cloudflare AI Gateway).
+    static func setup(_ view: ProvidersView, provider: String, secret: String, mayConfigure: Bool, baseUrl: String? = nil) -> (request: ProviderRequest?, say: String?) {
         guard mayConfigure else { return (nil, nil) }
+        let given = baseUrl.flatMap { $0.isEmpty ? nil : $0 }
         if let existing = view.providers.first(where: { $0.id == provider }) {
-            if existing.secret == secret { return (nil, nil) }
-            return (ProviderRequest(id: provider, kind: existing.kind, baseUrl: existing.baseUrl, secret: secret), "\(provider) now uses this key.")
+            let at = given ?? existing.baseUrl
+            if existing.secret == secret, at == existing.baseUrl { return (nil, nil) }
+            return (ProviderRequest(id: provider, kind: existing.kind, baseUrl: at, secret: secret), "\(provider) now uses this key.")
         }
         guard let preset = view.presets.first(where: { $0.id == provider }) else { return (nil, nil) }
+        if preset.baseUrl?.isEmpty != false, let given { return (ProviderRequest(id: provider, baseUrl: given, secret: secret), planLine(preset) ?? "\(provider) is configured and ready.") }
         guard preset.baseUrl?.isEmpty == false else { return (nil, preset.note ?? "Add \(provider)'s base URL on the Models page to start using it.") }
         return (ProviderRequest(id: provider, secret: secret), planLine(preset) ?? "\(provider) is configured and ready.")
     }

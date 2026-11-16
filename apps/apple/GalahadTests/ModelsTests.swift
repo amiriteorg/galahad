@@ -29,7 +29,7 @@ struct ModelsTests {
 
     @Test func aSealedKeysProviderIsSetUpAsThePWASetsItUp() {
         for item in cases.setups {
-            let setup = Models.setup(view, provider: item.provider, secret: item.secret, mayConfigure: item.may)
+            let setup = Models.setup(view, provider: item.provider, secret: item.secret, mayConfigure: item.may, baseUrl: item.baseUrl)
             #expect(setup.say == item.say, "\(item.provider)")
             let request = setup.request.map { Vectors.KeyCases.Request(id: $0.id, kind: $0.kind, baseUrl: $0.baseUrl, secret: $0.secret) }
             #expect(request == item.request, "\(item.provider)")

@@ -111,7 +111,7 @@ struct Vectors: Decodable {
         struct Detected: Decodable { let key: String; let provider: String?; let signIn: ProvidersView.SignIn? }
         struct PlanLine: Decodable { let id: String; let line: String? }
         struct Request: Decodable, Equatable { let id: String; let kind: String?; let baseUrl: String?; let secret: String }
-        struct Setup: Decodable { let provider: String; let secret: String; let may: Bool; let request: Request?; let say: String? }
+        struct Setup: Decodable { let provider: String; let secret: String; let may: Bool; let baseUrl: String?; let request: Request?; let say: String? }
         let presets: [ProvidersView.Preset]
         let signIns: [ProvidersView.SignInForm]
         let providers: [ProvidersView.Provider]

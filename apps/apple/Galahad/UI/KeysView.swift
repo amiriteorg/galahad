@@ -221,7 +221,7 @@ extension String {
     static func seal(session: Session, providers: ProvidersView?, name: String, value: String, provider: String?, label: String?, baseUrl: String?) async throws -> String? {
         _ = try await session.client.post("/api/secrets", Secret(name: name, value: value, provider: provider, label: label, baseUrl: baseUrl), as: JSONValue.self)
         guard let provider, let providers else { return nil }
-        let setup = Models.setup(providers, provider: provider, secret: name, mayConfigure: session.can("brain:write"))
+        let setup = Models.setup(providers, provider: provider, secret: name, mayConfigure: session.can("brain:write"), baseUrl: baseUrl)
         if let request = setup.request {
             do {
                 _ = try await session.client.post("/api/providers", request, as: JSONValue.self)
@@ -291,6 +291,8 @@ private struct AddKeySheet: View {
     private var nameOK: Bool { name.range(of: "^[A-Za-z0-9._:-]{1,128}$", options: .regularExpression) != nil }
     private var presets: [ProvidersView.Preset] { providers?.presets ?? [] }
     private var preset: ProvidersView.Preset? { presets.first { $0.id == provider } }
+    /// A preset with no address of its own (a Cloudflare AI Gateway): its key goes only to the address you give with it.
+    private var needsAddress: Bool { preset.map { $0.baseUrl?.isEmpty != false } ?? false }
     private var signIn: ProvidersView.SignIn? { providers.flatMap { Models.signIn(value.trimmingCharacters(in: .whitespacesAndNewlines), in: $0) } }
     /// Your own providers that aren't one of the node's presets.
     private var yours: [ProvidersView.Provider] { (providers?.providers ?? []).filter { mine in !presets.contains { $0.id == mine.id } } }
@@ -348,8 +350,8 @@ private struct AddKeySheet: View {
                             Text("A key of your own").tag(Self.own)
                         }
                         .accessibilityIdentifier("key-provider")
-                        if provider == Self.own {
-                            TextField("Only sent to, e.g. https://api.example.com", text: $address)
+                        if provider == Self.own || needsAddress {
+                            TextField(needsAddress ? "Its address, https://…" : "Only sent to, e.g. https://api.example.com", text: $address)
                                 .keyboardType(.URL)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
@@ -431,7 +433,7 @@ private struct AddKeySheet: View {
             // Pinned where it was: the address it was entered with is given again, so the node pins it there.
             (replacing.name, replacing.provider, replacing.label, replacing.origin)
         } else {
-            (name, provider == Self.own ? nil : trimmed(provider), trimmed(label), provider == Self.own ? trimmed(address) : nil)
+            (name, provider == Self.own ? nil : trimmed(provider), trimmed(label), provider == Self.own || needsAddress ? trimmed(address) : nil)
         }
         sealing = true
         defer { sealing = false }

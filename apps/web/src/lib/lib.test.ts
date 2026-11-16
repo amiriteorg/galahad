@@ -209,6 +209,21 @@ describe("text helpers", () => {
     expect(providerSetup(data, "anthropic", "anthropic", false)).toEqual({ request: null, say: null });
   });
 
+  test("a preset with no address of its own (a Cloudflare AI Gateway) is set up at the address given with its key", () => {
+    const data = { providers: [], presets: [{ id: "cloudflare-ai", baseUrl: "", note: "Your gateway's address: --base-url …" }] };
+    const gateway = "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/galahad/compat";
+    expect(providerSetup(data, "cloudflare-ai", "cloudflare-ai", true, gateway)).toEqual({ request: { id: "cloudflare-ai", baseUrl: gateway, secret: "cloudflare-ai" }, say: "cloudflare-ai is configured and ready." });
+    // With none given, it says what is still needed, as ever.
+    expect(providerSetup(data, "cloudflare-ai", "cloudflare-ai", true)).toEqual({ request: null, say: "Your gateway's address: --base-url …" });
+    // Configured already, it is pointed at the new key, at the address given with it.
+    const configured = { providers: [{ id: "cloudflare-ai", kind: "openai", baseUrl: gateway, secret: "cloudflare-ai" }], presets: data.presets };
+    expect(providerSetup(configured, "cloudflare-ai", "cloudflare-ai", true, gateway)).toEqual({ request: null, say: null });
+    expect(providerSetup(configured, "cloudflare-ai", "cf-2", true, gateway)).toEqual({ request: { id: "cloudflare-ai", kind: "openai", baseUrl: gateway, secret: "cf-2" }, say: "cloudflare-ai now uses this key." });
+    expect(providerSetup(configured, "cloudflare-ai", "cloudflare-ai", true, `${gateway}-2`)).toEqual({ request: { id: "cloudflare-ai", kind: "openai", baseUrl: `${gateway}-2`, secret: "cloudflare-ai" }, say: "cloudflare-ai now uses this key." });
+    // A preset that has an address keeps its own.
+    expect(providerSetup({ providers: [], presets: [{ id: "anthropic", baseUrl: "https://api.anthropic.com" }] }, "anthropic", "anthropic", true, "https://elsewhere.example.test")).toEqual({ request: { id: "anthropic", secret: "anthropic" }, say: "anthropic is configured and ready." });
+  });
+
   test("a role's models as he uses them: his own in order, and the plans that do coding", () => {
     const presets = [{ id: "zai-coding", plan: { name: "GLM Coding Plan", says: "", terms: "", models: [], allows: { native: false, tools: "unattended" as const } } }, { id: "zai" }, { id: "anthropic" }];
     expect(roleParts(["zai-coding/glm-5.3", "anthropic/claude-opus-5-5", "zai/glm-5.3"], presets)).toEqual({ own: ["anthropic/claude-opus-5-5", "zai/glm-5.3"], plans: ["zai-coding/glm-5.3"] });
