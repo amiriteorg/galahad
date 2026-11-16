@@ -5,7 +5,7 @@ import { type Ctx, errorMessage, type View } from "../context.ts";
 import { type ArchiveFilter, bytesShort, deleteName, embeddedShare, embedderLine, emptyFilter, filtering, filterSummary, KIND_INFO, kindInfo, searchBody, SPANS, type Span, TRUST_LABEL, type Trust } from "../lib/archive.ts";
 import { fileKind, imageDataUrl, previewText, sha256Hex, shortSha, shownAs } from "../lib/artifacts.ts";
 import { absoluteTime, relativeTime } from "../lib/time.ts";
-import { badge, busy, button, callout, chipInput, dot, empty, errorState, field, meter, pageHead, section, skeletonRows } from "../ui/controls.ts";
+import { badge, busy, button, callout, chipInput, dot, empty, errorState, field, formActions, meter, pageBody, pageHead, section, skeletonRows } from "../ui/controls.ts";
 import { openSheet, type Sheet } from "../ui/dialog.ts";
 import { debounce, h, keepPlace, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -79,14 +79,14 @@ export function openNewIdea(ctx: Ctx): void {
     field("Details", text, { hint: "Plain text. Galahad finds it again by its words and its meaning." }),
     h("div", { class: "field" }, h("label", { for: "idea-tags" }, "Tags (optional)"), tags.el),
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), save),
   );
   const sheet = openSheet({ title: "New idea", description: "Kept for good, in the archive.", body: form, initialFocus: () => title });
 }
 
 function list(title: string, items: string[]): HTMLElement | null {
   if (!items.length) return null;
-  return h("div", { class: "stack tight" }, h("h3", { class: "small strong" }, title), h("ul", { class: "small", style: "margin:0;padding-left:1.2em" }, ...items.map((i) => h("li", {}, i))));
+  return h("div", { class: "stack tight" }, h("h3", { class: "small strong" }, title), h("ul", { class: "plain-list small" }, ...items.map((i) => h("li", {}, i))));
 }
 
 /** Delete for good, with a reason; you type its name. A tombstone keeps it from coming back. */
@@ -121,7 +121,7 @@ function openDelete(ctx: Ctx, entry: ArchiveEntryView, done: () => void): void {
     field("Reason", reason, { hint: "Kept in the tombstone." }),
     field(`Type ${name} to confirm`, confirm),
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), go),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), go),
   );
   const sheet = openSheet({ title: "Delete for good?", body: form, role: "alertdialog", initialFocus: () => reason });
 }
@@ -160,7 +160,7 @@ export function openEntry(ctx: Ctx, id: string): void {
           let shown: HTMLElement;
           if (kind === "image") {
             const url = imageDataUrl(data, type);
-            shown = url ? h("img", { src: url, alt: f.path, style: "max-width:100%;height:auto;border-radius:8px;border:1px solid var(--border)" }) : callout("quiet", "This one can only be saved.");
+            shown = url ? h("img", { class: "preview-img", src: url, alt: f.path }) : callout("quiet", "This one can only be saved.");
           } else if (kind === "download") shown = callout("quiet", "The node sends this one only as a file to save, so it isn't shown here.");
           else {
             const { text, clipped } = previewText(data);
@@ -188,8 +188,8 @@ export function openEntry(ctx: Ctx, id: string): void {
                 "div",
                 { class: "item" },
                 h("span", { class: "avatar" }, icon(f.text ? "code" : "file", { size: 14 })),
-                h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "mono small wrap-anywhere" }, f.path), h("div", { class: "meta tnum" }, h("span", {}, bytesShort(f.size)), h("span", { class: "mono", title: f.sha256 }, shortSha(f.sha256)))),
-                h("div", { class: "row", style: "gap:4px" }, viewable ? view : null, save),
+                h("div", { class: "grow" }, h("div", { class: "mono small wrap-anywhere" }, f.path), h("div", { class: "meta" }, h("span", {}, bytesShort(f.size)), h("span", { class: "mono", title: f.sha256 }, shortSha(f.sha256)))),
+                h("div", { class: "row tight" }, viewable ? view : null, save),
               );
             }),
           ),
@@ -208,7 +208,7 @@ export function openEntry(ctx: Ctx, id: string): void {
                 "button",
                 { class: "item item-button", type: "button", onclick: () => (sheet.close(), openEntry(ctx, l.id)) },
                 h("span", { class: "avatar" }, icon(kindIcon(l.kind), { size: 14 })),
-                h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "small strong" }, l.title), h("div", { class: "meta" }, h("span", {}, l.rel.replace(/-/g, " ")), h("span", {}, kindInfo(l.kind).label.toLowerCase()), l.score !== null ? h("span", { class: "tnum" }, l.score.toFixed(2)) : null)),
+                h("div", { class: "grow" }, h("div", { class: "small strong" }, l.title), h("div", { class: "meta" }, h("span", {}, l.rel.replace(/-/g, " ")), h("span", {}, kindInfo(l.kind).label.toLowerCase()), l.score !== null ? h("span", { class: "tnum" }, l.score.toFixed(2)) : null)),
                 trustBadge(l.trust),
               ),
             ),
@@ -241,7 +241,7 @@ export function openEntry(ctx: Ctx, id: string): void {
             h("p", { class: "tiny subtle" }, `Understood by ${u.model}, ${relativeTime(u.at)}. Model output: data, like the entry.`),
           )
         : null,
-      section("Description", {}, h("div", { class: "card flat pad small wrap-anywhere", style: "white-space:pre-wrap;max-height:420px;overflow:auto" }, description)),
+      section("Description", {}, h("div", { class: "card flat pad small wrap-anywhere pre-wrap scroll-box" }, description)),
       files ? section("Files", { count: String(entry.files.length) }, files, preview) : null,
       links ? section("Linked", { count: String(entry.links.length) }, links) : null,
       entry.redactions.length || entry.refused.length
@@ -294,7 +294,7 @@ function statusCard(ctx: Ctx, s: ArchiveStatusView, refresh: () => void): HTMLEl
               },
             },
             field("Summaries a day", input, { hint: "The swift role writes each entry's summary, facts, tags and lessons. A budget you set lets its models in order do it; a cloud model among them gets the entries' text. 0 stops it." }),
-            h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+            formActions(button("Cancel", { onClick: () => sheet.close() }), save),
           );
           const sheet = openSheet({ title: "Summary budget", body: form, size: "small", initialFocus: () => input });
         },
@@ -337,7 +337,7 @@ function statusCard(ctx: Ctx, s: ArchiveStatusView, refresh: () => void): HTMLEl
     h("div", { class: "card-head" }, icon("library", { size: 16 }), h("h3", { class: "grow" }, `On ${s.node}`), s.paused ? badge("waiting: the node is busy", "neutral", "pause") : null),
     h(
       "div",
-      { class: "stack", style: "padding:var(--sp-4)" },
+      { class: "card-body" },
       h(
         "dl",
         { class: "kv" },
@@ -346,14 +346,14 @@ function statusCard(ctx: Ctx, s: ArchiveStatusView, refresh: () => void): HTMLEl
         h("dt", {}, "Passages"),
         h("dd", { class: "stack tight" }, h("span", { class: "tnum" }, `${s.embedded} of ${s.embedded + s.backlog} embedded${s.backlog ? ` · ${s.backlog} waiting` : ""}`), s.embedder.model ? meter(share, undefined, "Passages embedded") : null),
         h("dt", {}, "Embedder"),
-        h("dd", {}, h("span", { class: "row", style: "gap:6px" }, dot(emb.tone === "ok" ? "ok" : emb.tone === "warn" ? "warn" : null), h("span", { class: "mono small wrap-anywhere" }, emb.text)), emb.hint ? h("div", { class: "tiny subtle", style: "margin-top:4px" }, emb.hint) : null),
+        h("dd", { class: "stack snug" }, h("span", { class: "row tight" }, dot(emb.tone === "ok" ? "ok" : emb.tone === "warn" ? "warn" : null), h("span", { class: "mono small wrap-anywhere" }, emb.text)), emb.hint ? h("div", { class: "tiny subtle" }, emb.hint) : null),
         h("dt", {}, "Summaries"),
         h("dd", {}, h("span", { class: "tnum" }, `${u.usedToday} of ${u.perDay} today`), u.backlog ? h("span", { class: "subtle tnum" }, ` · ${u.backlog} waiting`) : null, u.localOnly ? h("div", { class: "tiny subtle" }, "A local model only, until you set a budget: nothing leaves.") : null, u.lastError ? h("div", { class: "tiny subtle" }, u.lastError) : null, budget),
         h("dt", {}, "Files checked"),
         h(
           "dd",
           {},
-          i.lastAt === null ? h("span", { class: "subtle" }, "Not yet (daily)") : h("span", { class: "row", style: "gap:6px" }, dot(i.ok ? "ok" : "danger"), `${i.ok ? "All match" : `${i.problems.length} problem(s)`} · ${relativeTime(i.lastAt)}`),
+          i.lastAt === null ? h("span", { class: "subtle" }, "Not yet (daily)") : h("span", { class: "row tight" }, dot(i.ok ? "ok" : "danger"), `${i.ok ? "All match" : `${i.problems.length} problem(s)`} · ${relativeTime(i.lastAt)}`),
           ...i.problems.slice(0, 3).map((p) => h("div", { class: "tiny mono wrap-anywhere" }, p)),
         ),
         h("dt", {}, "Disk"),
@@ -365,17 +365,17 @@ function statusCard(ctx: Ctx, s: ArchiveStatusView, refresh: () => void): HTMLEl
       { class: "card-foot" },
       h(
         "div",
-        { class: "stack tight", style: "width:100%" },
+        { class: "stack tight grow" },
         h("span", { class: "tiny subtle" }, "Sources"),
         ...s.sources.map((src) =>
           h(
             "div",
-            { class: "row between small", style: "gap:8px" },
+            { class: "row between small" },
             h("span", {}, src.name),
-            h("span", { class: "tiny subtle tnum", style: "text-align:right" }, src.waiting ? "not hooked up yet" : src.lastError ? `failing: ${src.lastError}` : src.lastRun ? `${src.pulled} · ${relativeTime(src.lastRun)}` : "not yet"),
+            h("span", { class: "tiny subtle tnum text-end" }, src.waiting ? "not hooked up yet" : src.lastError ? `failing: ${src.lastError}` : src.lastRun ? `${src.pulled} · ${relativeTime(src.lastRun)}` : "not yet"),
           ),
         ),
-        verify || reindex ? h("div", { class: "row wrap", style: "gap:6px;margin-top:6px" }, verify, reindex) : null,
+        verify || reindex ? h("div", { class: "row wrap" }, verify, reindex) : null,
       ),
     ),
   );
@@ -432,9 +432,9 @@ export const archiveView: View = (root, ctx, { scope, opts }) => {
       h("span", { class: "avatar" }, icon(kindIcon(hit.kind), { size: 14 })),
       h(
         "div",
-        { class: "grow", style: "min-width:0" },
-        h("div", { class: "row wrap", style: "gap:6px" }, h("span", { class: "strong small" }, hit.title), trustBadge(hit.trust)),
-        h("div", { class: "small muted wrap-anywhere", style: "margin-top:2px" }, hit.summary ?? hit.snippet),
+        { class: "item-text" },
+        h("div", { class: "row wrap" }, h("span", { class: "strong small" }, hit.title), trustBadge(hit.trust)),
+        h("div", { class: "small muted wrap-anywhere" }, hit.summary ?? hit.snippet),
         h(
           "div",
           { class: "meta tnum" },
@@ -473,7 +473,7 @@ export const archiveView: View = (root, ctx, { scope, opts }) => {
         view.hits.length >= limit && limit < 50
           ? h(
               "div",
-              { class: "card-foot", style: "justify-content:center" },
+              { class: "card-foot centered" },
               button("Show more", {
                 variant: "ghost",
                 icon: "chevron-down",
@@ -533,7 +533,9 @@ export const archiveView: View = (root, ctx, { scope, opts }) => {
         "Everything Galahad made, was taught or thought of, kept for good on this node and searched by words and meaning together. He searches it before new work; you see what he used with each answer.",
         ctx.can("mind:write") ? button("New idea", { variant: "primary", icon: "lightbulb", onClick: () => openNewIdea(ctx) }) : null,
       ),
-      h("div", { class: "two-col" }, h("div", { class: "stack" }, bar, section("Entries", {}, results)), h("div", { class: "stack loose" }, statusBox)),
+      // Shown whole once the entries and the index's state have answered: on a phone the state is under the entries,
+      // and moved as they came in.
+      pageBody(h("div", { class: "two-col" }, h("div", { class: "stack" }, bar, section("Entries", {}, results)), h("div", { class: "stack loose" }, statusBox))),
     ),
   );
   root.querySelector(".section-head h2")?.after(countLabel);
