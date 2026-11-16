@@ -27,6 +27,17 @@ struct ChatsTests {
         }
     }
 
+    @Test func aSendTheNodeNeverTookStaysOnScreenWithWhyAsInThePWA() {
+        #expect(!chats.changes.again.isEmpty)
+        for item in chats.changes.again {
+            var thread = ChatThread(kept: chats.changes.shown, role: "planner")
+            thread.begin(question: chats.changes.refused.question, role: "planner")
+            thread.fail(chats.changes.refused.error)
+            let again = Chats.shownAgain(shown: thread.turns, kept: item.kept, role: "planner")
+            #expect(again?.turns.map { [$0.role.rawValue, $0.content, $0.status.rawValue, $0.error ?? "-"] } == item.shown?.map { [$0.role, $0.content, $0.status, $0.error ?? "-"] }, "\(item.name)")
+        }
+    }
+
     @Test func eachChatsStateIsSaidInThePWAsWords() {
         for state in chats.states {
             #expect(Chats.stateWords(state: state.state, queued: state.queued, held: state.held, needs: state.needs) == state.words)

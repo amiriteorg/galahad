@@ -42,6 +42,24 @@ enum Chats {
     /// Whether a kept chat holds what isn't on screen (the PWA's `keptDiffers`): a message more or fewer, another in a
     /// place, or one that ended or changed since (another device asked in it, retried, or stopped him). By the node's own
     /// ids, states and words; a turn of this device's not yet told its kept id is matched by its words and state.
+    /// A kept chat read again with no turn in it to watch: the thread to show, or nil when what's on screen is what the
+    /// node keeps. A message of this device's the node never took (it refused it, or never heard it) is kept nowhere else:
+    /// it stays at the end, with why and Retry, unless the node holds that question after all (the PWA's `shownAgain`).
+    static func shownAgain(shown: [ChatThread.Turn], kept: [StoredMessage], role: String) -> ChatThread? {
+        let lastAsked = kept.last { $0.role == "user" }
+        var untaken: [ChatThread.Turn] = []
+        if shown.count >= 2 {
+            let asked = shown[shown.count - 2], answer = shown[shown.count - 1]
+            if answer.role == .assistant, answer.status == .error, answer.sid == nil, asked.role == .user, asked.sid == nil, lastAsked?.content != asked.content {
+                untaken = [asked, answer]
+            }
+        }
+        guard keptDiffers(shown: Array(shown.dropLast(untaken.count)), kept: kept) else { return nil }
+        var thread = ChatThread(kept: kept, role: role)
+        thread.keep(untaken)
+        return thread
+    }
+
     static func keptDiffers(shown: [ChatThread.Turn], kept: [StoredMessage]) -> Bool {
         guard shown.count == kept.count else { return true }
         return zip(shown, kept).contains { turn, message in

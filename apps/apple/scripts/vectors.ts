@@ -25,7 +25,7 @@ import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { knightRoleLine, knightRoles, removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
-import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, turnOf } from "../../web/src/lib/turns.ts";
+import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
 // The chats list groups at midnight: UTC here, and in the Swift tests, whatever this machine's own zone is.
@@ -559,6 +559,19 @@ const changes = {
     { name: "the same words", kept: onScreen },
     { name: "other words", kept: [...onScreen.slice(0, 3), { ...onScreen[3]!, content: "Other words." }] },
   ].map((c) => ({ ...c, differs: keptDiffers(onScreen.map((m, i) => ({ ...turnOf(m, "planner", i + 1), sid: undefined })), c.kept) })),
+  // A message of this device's the node never took (it was full): what is shown when the chat is read again (shownAgain).
+  refused: { question: "And Sunday?", error: "This node is already working on 3 turns, its limit." },
+  again: [
+    { name: "nothing changed: it stays, with why", kept: onScreen },
+    { name: "asked elsewhere meanwhile: shown, and it after", kept: [...onScreen, stored(90, "user", "And Saturday?"), stored(91, "assistant", "Saturday too.")] },
+    { name: "the node took it after all: shown once, as kept", kept: [...onScreen, stored(90, "user", "And Sunday?"), stored(91, "assistant", "Sunday as well.")] },
+  ].map((c) => {
+    const thread = { turns: onScreen.map((m, i) => turnOf(m, "planner", i + 1)), nextId: onScreen.length + 1, target: null, base: null };
+    beginTurn(thread, "And Sunday?", "planner", 10);
+    failTurn(thread, "This node is already working on 3 turns, its limit.", 11);
+    const again = shownAgain(thread.turns, c.kept, (m) => turnOf(m, "planner", thread.nextId++));
+    return { ...c, shown: again ? again.map((t) => ({ role: t.role, content: t.content, status: t.status, error: t.error ?? null })) : null };
+  }),
 };
 const chats = {
   now: NOW,

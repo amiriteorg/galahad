@@ -191,6 +191,8 @@ struct TurnView: Decodable, Sendable, Equatable {
     let conversation: String?
     let title: String?
     let step: String?
+    /// Whether this device may watch it (false: it read the bank, and this device may not). Absent from an older node.
+    let watchable: Bool?
 }
 
 /// `GET /api/quests`: a quest in hand.

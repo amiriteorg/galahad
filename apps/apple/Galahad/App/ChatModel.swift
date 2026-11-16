@@ -66,7 +66,8 @@ struct ChatRequest: Encodable, Sendable {
             let detail = try await client.post("/api/conversations/get", Get(id: id), as: Got.self).conversation
             (conversation, title, role, problem, turn) = (detail.id, detail.title, detail.role, nil, nil)
             thread = ChatThread(kept: detail.messages, role: detail.role)
-            if let running = detail.turn { attach(running.id, with: client) }
+            // (A turn this device may not watch is refused if asked for: the chat shows as the node keeps it.)
+            if let running = detail.turn, running.watchable != false { attach(running.id, with: client) }
         } catch {
             problem = error.localizedDescription
         }
@@ -173,9 +174,10 @@ struct ChatRequest: Encodable, Sendable {
         guard let detail = try? await client.post("/api/conversations/get", Get(id: conversation), as: Got.self).conversation,
               self.conversation == conversation, live == nil, !loading else { return }
         title = detail.title
-        // Shown again only where the node holds what isn't on screen; his turn in it, attached to.
-        if Chats.keptDiffers(shown: thread.turns, kept: detail.messages) { thread = ChatThread(kept: detail.messages, role: detail.role) }
-        if let running = detail.turn { attach(running.id, with: client) }
+        // Shown again only where the node holds what isn't on screen (a send it never took stays, with why); his turn in it,
+        // attached to when this device may watch it (one it may not is refused, so it isn't asked for again and again).
+        if let again = Chats.shownAgain(shown: thread.turns, kept: detail.messages, role: detail.role) { thread = again }
+        if let running = detail.turn, running.watchable != false { attach(running.id, with: client) }
     }
 
     private func leave() {

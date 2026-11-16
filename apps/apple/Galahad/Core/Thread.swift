@@ -95,6 +95,13 @@ struct ChatThread: Equatable, Sendable {
 
     var isEmpty: Bool { turns.isEmpty }
 
+    /// Turns kept from what was on screen (a send the node never took), after the kept chat: as they were, with ids of this thread.
+    mutating func keep(_ kept: [Turn]) {
+        for turn in kept {
+            turns.append(Turn(id: take(), sid: turn.sid, role: turn.role, content: turn.content, answeredAs: turn.answeredAs, model: turn.model, steps: turn.steps, status: turn.status, error: turn.error))
+        }
+    }
+
     /// You send a message: it, and the answer to come (what the stream then writes), join the thread.
     mutating func begin(question: String, role: String) {
         turns.append(Turn(id: take(), role: .user, content: question, steps: [], status: .done))

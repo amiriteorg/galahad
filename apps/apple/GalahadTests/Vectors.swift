@@ -193,6 +193,12 @@ struct Vectors: Decodable {
             let cases: [Case]
             /// This device's own exchange, not yet told its kept ids.
             let own: [Case]
+            struct Refused: Decodable { let question: String; let error: String }
+            struct Shown: Decodable { let role: String; let content: String; let status: String; let error: String? }
+            struct Again: Decodable { let name: String; let kept: [StoredMessage]; let shown: [Shown]? }
+            /// A send the node never took, and what is shown when the chat is read again (the PWA's shownAgain).
+            let refused: Refused
+            let again: [Again]
         }
 
         let now: Double
