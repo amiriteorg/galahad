@@ -1,7 +1,7 @@
 import { readdirSync, statSync, statfsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
-import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, resolveProvider, roster, windowsOf } from "@galahad/brain";
+import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, resolveProvider, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
@@ -9,7 +9,7 @@ import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, servedOriginFrom } from "./capabilities.ts";
 import type { Governor } from "./compute/governor.ts";
 import type { ComputeService } from "./compute/service.ts";
-import { type Diagnosis, diagnose, type DoctorFacts, type DoctorFinding, doctorFindings, type FileFact, reportOf, type RoleFact } from "./doctor.ts";
+import { type Diagnosis, diagnose, type DoctorFacts, type DoctorFinding, doctorFindings, type FileFact, reportOf, type RoleFact, TOOL_ROLES, VM_TOOLS_CANT } from "./doctor.ts";
 import { hlcMs, loopRecords } from "./loops.ts";
 
 /*
@@ -278,7 +278,11 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
   const roles: RoleFact[] = Object.entries(roster(deps.store)).map(([role, spec]) => ({
     role,
     chats: !SILENT_ROLES.has(role),
-    models: spec.models.slice(0, 16).map((ref) => ({ ref, problem: modelProblem(deps, ref), ...(onPlan(ref) ? { plan: true } : {}) })),
+    models: spec.models.slice(0, 16).map((ref) => {
+      // A role a VM's tools play can't have a plan its terms keep to a tool you run yourself (the gateway refuses a VM it).
+      const kept = TOOL_ROLES.has(role) && onPlan(ref) && planOf(ref.slice(0, ref.indexOf("/")))?.allows.tools !== "unattended";
+      return { ref, problem: kept ? VM_TOOLS_CANT : modelProblem(deps, ref), ...(onPlan(ref) ? { plan: true } : {}) };
+    }),
     probe: null,
   }));
   if (!ask) return roles;

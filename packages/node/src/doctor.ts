@@ -121,6 +121,13 @@ export interface Diagnosis extends DoctorCheck {
 const CORE_ROLES = new Set(["planner", "engineer", "reviewer"]);
 /** The roles whose own work is all coding (a quest's engineering and its review): a coding plan alone can play them. */
 const CODING_ROLES = new Set(["engineer", "reviewer"]);
+/**
+ * The roles a VM's own tools play, through the gateway, and never he himself (a VM's eyes): a coding plan its tools may
+ * use (one whose terms allow unattended tools) plays them alone.
+ */
+export const TOOL_ROLES = new Set(["eyes"]);
+/** Why a plan can't play a role a VM's tools play: its terms keep it to a tool you run yourself. */
+export const VM_TOOLS_CANT = "its plan is for a tool you run yourself, and a VM's tools are not that";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -280,13 +287,20 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
         "models",
         `${id}.plan`,
         "needs-you",
-        `${unlent.map((m) => `${m.ref} (${m.problem})`).join("; ")}: on ${role.role} for coding, which can't use ${unlent.length === 1 ? "it" : "them"}`,
-        `Add the plan's key: galahad key add --provider ${unlent[0]!.ref.slice(0, unlent[0]!.ref.indexOf("/"))}.`,
+        `${unlent.map((m) => `${m.ref} (${m.problem})`).join("; ")}: on ${role.role}${TOOL_ROLES.has(role.role) ? "" : " for coding"}, which can't use ${unlent.length === 1 ? "it" : "them"}`,
+        unlent.every((m) => m.problem === VM_TOOLS_CANT)
+          ? `Hire a model a VM's tools may use: galahad roster set ${role.role} <provider/model>.`
+          : `Add the plan's key: galahad key add --provider ${unlent[0]!.ref.slice(0, unlent[0]!.ref.indexOf("/"))}.`,
       );
     }
     const tools = lent.length ? `; his coding and the knights' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
     const usable = own.filter((m) => m.problem === null);
     const first = own[0];
+    // A VM's eyes are asked by its tools, never by him: a plan they may use plays them alone (one they may not, said above).
+    if (!own.length && TOOL_ROLES.has(role.role)) {
+      if (lent.length) add("models", id, "ok", `${role.role}: ${lent[0]!.ref} looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)`);
+      continue;
+    }
     // A role whose work is all coding is played by a plan alone.
     if (!own.length && lent.length && CODING_ROLES.has(role.role)) {
       add("models", id, "ok", `${role.role}: ${lent[0]!.ref} does his coding (a coding plan: it is asked nothing else, so not a word)`);

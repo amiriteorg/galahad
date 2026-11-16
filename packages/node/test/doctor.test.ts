@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { doctorExit, doctorLines, doctorTally, doctorVerdict } from "@galahad/core";
-import { type Diagnosis, type DoctorFacts, diagnose, doctorFindings, reportOf, span } from "../src/doctor.ts";
+import { type Diagnosis, type DoctorFacts, diagnose, doctorFindings, reportOf, span, VM_TOOLS_CANT } from "../src/doctor.ts";
 
 /*
  * The doctor's rules, exactly: a healthy node answers ok on every line, and each kind
@@ -240,6 +240,21 @@ describe("each fault gives its own line and advice", () => {
     }, "role.planner");
     expect(lacking.state).toBe("broken");
     expect(lacking.line).toContain("no model can play planner");
+  });
+
+  test("models: a VM's eyes are asked by its tools, so a plan they may use plays them alone; one they may not is said once, with whom to hire", () => {
+    const seeing = healthy();
+    seeing.roles.push({ role: "eyes", chats: true, models: [{ ref: "opencode-go/gpt-6-luna", problem: null, plan: true }], probe: null });
+    expect(byId(diagnose(seeing), "role.eyes")).toMatchObject({
+      state: "ok",
+      line: "eyes: opencode-go/gpt-6-luna looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)",
+    });
+    const blind = healthy();
+    blind.roles.push({ role: "eyes", chats: true, models: [{ ref: "kimi-coding/k3", problem: VM_TOOLS_CANT, plan: true }], probe: null });
+    const said = diagnose(blind).filter((c) => c.id.startsWith("role.eyes"));
+    expect(said.map((c) => [c.id, c.state])).toEqual([["role.eyes.plan", "needs-you"]]);
+    expect(said[0]!.line).toBe(`kimi-coding/k3 (${VM_TOOLS_CANT}): on eyes, which can't use it`);
+    expect(said[0]!.fix).toBe("Hire a model a VM's tools may use: galahad roster set eyes <provider/model>.");
   });
 
   test("models: the first model skipped on every answer, none usable, a refusal, a filter, a refused key, a timeout", () => {

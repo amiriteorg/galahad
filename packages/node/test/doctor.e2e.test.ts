@@ -333,6 +333,30 @@ describe("faults the owner's server has had, each with its own line and advice",
     }
   });
 
+  test("a VM's eyes on a coding plan its tools may use are well, not a model he lacks; on one for a tool you run yourself, they can't see", async () => {
+    // Two plans with their keys in the vault (fakes, made here), as `galahad key add` leaves them.
+    for (const id of ["opencode-go", "kimi-coding"]) {
+      await json(admin("setSecret", { name: id, value: `FAKE-${id}-${"0".repeat(24)}`, provider: id }));
+      await json(admin("setProvider", { id, secret: id }));
+    }
+    try {
+      await json(admin("setRoster", { role: "eyes", models: ["opencode-go/gpt-6-luna"] }));
+      const report = await doctor({ offline: true });
+      expect(check(report, "role.eyes")).toMatchObject({ state: "ok", line: "eyes: opencode-go/gpt-6-luna looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)" });
+      // Kimi Code is for interactive use only: a tool you run yourself, which a VM's tools are not.
+      await json(admin("setRoster", { role: "eyes", models: ["kimi-coding/k3"] }));
+      const blind = check(await doctor({ offline: true }), "role.eyes.plan");
+      expect(blind.state).toBe("needs-you");
+      expect(blind.fix).toBe("Hire a model a VM's tools may use: galahad roster set eyes <provider/model>.");
+    } finally {
+      await json(admin("setRoster", { role: "eyes", models: [] }));
+      for (const id of ["opencode-go", "kimi-coding"]) {
+        await json(admin("removeProvider", { id }));
+        await json(admin("deleteSecret", { name: id }));
+      }
+    }
+  });
+
   test("a reply ended by the provider's content filter, and a key the provider refuses (never printed)", async () => {
     modelMode = "filter";
     try {
