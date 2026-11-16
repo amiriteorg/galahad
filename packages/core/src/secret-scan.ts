@@ -17,6 +17,8 @@ const PATTERNS: [kind: string, pattern: RegExp][] = [
   ["API key (sk-…)", /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g],
   // Zhipu's and Z.ai's keys (the GLM Coding Plan's too): an id of 32 hex digits, a dot, a secret of 16 letters and digits.
   ["Zhipu / Z.ai API key", /\b[0-9a-f]{32}\.[A-Za-z0-9]{16}\b/g],
+  // Xiaomi MiMo's Token Plan keys (tp-, ttp- for a team): their docs say no more of the form, so any long body is one.
+  ["Xiaomi MiMo Token Plan key", /\btt?p-[A-Za-z0-9]{24,}/g],
   ["GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g],
   ["AWS access key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/g],
