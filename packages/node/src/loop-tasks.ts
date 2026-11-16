@@ -115,13 +115,14 @@ function roleUsable(deps: LoopTaskDeps, models: string[]): boolean {
  */
 function rolePlayable(deps: LoopTaskDeps, role: string, models: string[]): boolean {
   if (roleUsable(deps, models)) return true;
-  if (!CODING_ROLES.has(role) && !TOOL_ROLES.has(role)) return false;
-  return models.some((ref) => {
-    if (!onPlan(ref)) return false;
-    const provider = ref.slice(0, ref.indexOf("/"));
-    if (TOOL_ROLES.has(role) && planOf(provider)?.allows.tools !== "unattended") return false;
-    return !!resolveProvider(deps.store, deps.vault, provider, "tool")?.apiKey;
-  });
+  return models.some((ref) => planMayPlay(role, ref) && !!resolveProvider(deps.store, deps.vault, ref.slice(0, ref.indexOf("/")), "tool")?.apiKey);
+}
+
+/** Whether a coding plan's terms let it play a role at all, keyed here or not: one that is all coding, or a VM's eyes when its tools may use it unattended. */
+function planMayPlay(role: string, ref: string): boolean {
+  if (!onPlan(ref)) return false;
+  if (CODING_ROLES.has(role)) return true;
+  return TOOL_ROLES.has(role) && planOf(ref.slice(0, ref.indexOf("/")))?.allows.tools === "unattended";
 }
 
 /** The roles his background writing tries, cheapest first. */
@@ -168,7 +169,8 @@ export async function heartbeatSnapshot(deps: LoopTaskDeps): Promise<HeartbeatSn
       role,
       models: spec.models,
       usable: rolePlayable(deps, role, spec.models),
-      ...(spec.models.length && spec.models.every(onPlan) ? { plans: true } : {}),
+      // (Plans alone that their terms keep from it; one that may play it and can't lacks its key, which is said as that.)
+      ...(spec.models.length && spec.models.every(onPlan) && !spec.models.some((ref) => planMayPlay(role, ref)) ? { plans: true } : {}),
     })),
     sandboxes: sandboxes?.map((s) => ({ id: s.id, expiresAt: s.expiresAt, ephemeral: s.ephemeral })) ?? null,
     sandboxHost,

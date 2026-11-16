@@ -570,6 +570,21 @@ describe("loops over the API", () => {
     }
   });
 
+  test("a coding plan whose key isn't here, on a role its terms let it play, is a key to add, not a model to hire", async () => {
+    const before = (await admin<{ roster: Record<string, { models: string[] }> }>("roster")).body.roster;
+    try {
+      // OpenCode Go may do the engineer's coding and a VM's eyes: what it lacks here is only its key.
+      for (const role of ["engineer", "eyes"]) {
+        await admin("setRoster", { role, models: ["opencode-go/gpt-6-luna"] });
+        const found = (await admin<{ findings: { key: string; body: string }[] }>("heartbeat", {})).body.findings.find((f) => f.key === `no-model:${role}`);
+        expect(found?.body).toContain("has a key here");
+        expect(found?.body).not.toContain("can't play");
+      }
+    } finally {
+      for (const role of ["engineer", "eyes"]) await admin("setRoster", { role, models: before[role]?.models ?? [] });
+    }
+  });
+
   test("a loop that calls a connector: reads report back, outward calls wait for you", async () => {
     const set = await admin<{ loop: LoopView }>("setLoop", { name: "poll", schedule: "every 15m", task: { kind: "call", connector: "forge", tool: "me" } });
     expect(set.status).toBe(200);
