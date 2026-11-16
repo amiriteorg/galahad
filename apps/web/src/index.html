@@ -194,6 +194,8 @@
       .row.top { align-items: flex-start; }
       .row.between { justify-content: space-between; }
       .row.end { justify-content: flex-end; }
+      /* Centred, words and rows alike (a pairing's code and its answer). */
+      .centered { text-align: center; justify-content: center; }
       .row.tight { gap: var(--sp-1); }
       .stack { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
       .stack.tight { gap: var(--sp-2); }
@@ -1406,6 +1408,7 @@
       .place-row.first { border-color: var(--accent-border); background: var(--accent-soft); }
       .place-row .rank { font: 600 12px/1 var(--font-mono); color: var(--text-3); text-align: center; }
       .place-row.first .rank { color: var(--accent); }
+      .best-fit { color: var(--accent); font-size: var(--fs-12); font-weight: 600; }
       .place-row.rejected { background: transparent; border-style: dashed; color: var(--text-3); }
       /* A card that opens on request: one line (with what it's about) until it's wanted. */
       .disclosure > summary { display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-2) var(--card-pad); cursor: pointer; list-style: none; font-size: var(--fs-13); font-weight: 550; color: var(--text-2); border-radius: var(--r-lg); flex-wrap: wrap; }
@@ -1459,6 +1462,7 @@
       .invite-qr svg { display: block; width: 100%; height: 100%; }
       .scope { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); font-size: var(--fs-13); }
       .scope svg { margin-top: 2px; }
+      label.scope { cursor: pointer; }
       .scope.on svg { color: var(--ok); }
       .scope.off { background: transparent; border-style: dashed; color: var(--text-3); }
       .scope .scope-name { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text); }

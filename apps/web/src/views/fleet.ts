@@ -12,11 +12,16 @@ import {
   button,
   callout,
   copyField,
+  disclosure,
   dot,
   empty,
   errorState,
+  listRow,
   meter,
+  note as noteLine,
+  pageBody,
   pageHead,
+  rows,
   rangeControl,
   sasCode,
   section,
@@ -24,6 +29,7 @@ import {
   skeletonBlock,
   skeletonRows,
   skeletonStat,
+  spinner,
   statTile,
 } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -74,12 +80,12 @@ export function capChips(caps: Caps | null): HTMLElement[] {
 }
 
 function statusLine(fleet: FleetView, d: DeviceView): HTMLElement {
-  if (d.id === fleet.self) return h("span", { class: "row", style: "gap:6px" }, dot("ok", { live: true }), "online · serving you");
+  if (d.id === fleet.self) return h("span", { class: "row tight" }, dot("ok", { live: true }), "online · serving you");
   const peer = peerOf(fleet, d.id);
-  if (peer?.online) return h("span", { class: "row tnum", style: "gap:6px" }, dot("ok", { live: true }), `online${peer.rttMs !== null ? ` · ${peer.rttMs} ms` : ""}`);
+  if (peer?.online) return h("span", { class: "row tight tnum" }, dot("ok", { live: true }), `online${peer.rttMs !== null ? ` · ${peer.rttMs} ms` : ""}`);
   return h(
     "span",
-    { class: "row", style: "gap:6px", title: peer?.error ?? "" },
+    { class: "row tight", title: peer?.error ?? "" },
     dot(null),
     peer?.lastSeen ? `offline · seen ${relativeTime(peer.lastSeen)}` : "offline",
   );
@@ -163,26 +169,19 @@ function clientRow(ctx: Ctx, fleet: FleetView, d: DeviceView): HTMLElement {
   const joined = hlcMs(d.enrolledAt);
   const revokedAt = d.revokedAt ? hlcMs(d.revokedAt) : null;
   const all = SCOPE_INFO.filter((s) => s.scope !== "sandbox").every((s) => d.scopes.includes(s.scope as never));
-  return h(
-    "div",
-    { class: "item center" },
-    h("span", { class: "avatar" }, icon(/iPhone|Android|iPad/.test(d.name) ? "phone" : "laptop", { size: 16 })),
-    h(
-      "div",
-      { class: "grow" },
-      h("div", { class: "row wrap" }, h("span", { class: "strong" }, d.name), me ? badge("this browser", "accent") : null, d.revokedAt ? badge("revoked", "danger") : null),
-      h(
-        "div",
-        { class: "meta" },
-        h("span", { title: d.scopes.join(", ") }, all ? "all scopes" : d.scopes.join(" · ") || "no scopes"),
-        joined ? h("span", {}, `joined ${relativeTime(joined)}`) : null,
-        revokedAt ? h("span", {}, `revoked ${relativeTime(revokedAt)}`) : null,
-      ),
-    ),
-    ctx.can("fleet:admin") && !d.revokedAt && d.id !== fleet.self
-      ? h("div", { class: "item-actions reveal" }, button(me ? "Revoke this browser" : `Revoke ${d.name}`, { variant: "ghost", size: "sm", icon: "logout", label: `Revoke ${d.name}`, onClick: () => void revoke(ctx, d) }))
-      : null,
-  );
+  return listRow({
+    lead: /iPhone|Android|iPad/.test(d.name) ? "phone" : "laptop",
+    title: h("span", { class: "row wrap" }, d.name, me ? badge("this browser", "accent") : null, d.revokedAt ? badge("revoked", "danger") : null),
+    meta: [
+      h("span", { title: d.scopes.join(", ") }, all ? "all scopes" : d.scopes.join(" · ") || "no scopes"),
+      joined ? h("span", {}, `joined ${relativeTime(joined)}`) : null,
+      revokedAt ? h("span", {}, `revoked ${relativeTime(revokedAt)}`) : null,
+    ],
+    trail:
+      ctx.can("fleet:admin") && !d.revokedAt && d.id !== fleet.self
+        ? h("span", { class: "reveal" }, button(me ? "Revoke this browser" : `Revoke ${d.name}`, { variant: "ghost", size: "sm", icon: "logout", label: `Revoke ${d.name}`, onClick: () => void revoke(ctx, d) }))
+        : null,
+  });
 }
 
 /** A pending pairing, with its code. Approving a machine asks once more: it receives the vault. */
@@ -257,8 +256,8 @@ export function pairingCard(ctx: Ctx, p: PairingView, onDone?: (outcome: "approv
               ),
               { title: "Approve machines from a terminal" },
             )
-          : h("p", { class: "small muted", style: "text-align:center" }, `Approve only if ${p.name} shows exactly this code.`),
-      h("div", { class: "row wrap", style: "justify-content:center" }, ...(node ? [reject] : [reject, approve])),
+          : h("p", { class: "small muted centered" }, `Approve only if ${p.name} shows exactly this code.`),
+      h("div", { class: "row wrap centered" }, ...(node ? [reject] : [reject, approve])),
       note,
     ),
   );
@@ -334,7 +333,7 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
       ...KNOWN_SCOPES(ctx).map((s) => {
         const input = h("input", { type: "checkbox", checked: chosen.has(s.scope) });
         input.addEventListener("change", () => (input.checked ? chosen.add(s.scope) : chosen.delete(s.scope)));
-        return h("label", { class: "scope", style: "cursor:pointer" }, input, h("span", {}, h("div", { class: "scope-name" }, s.scope), h("div", { class: "tiny subtle" }, s.label)));
+        return h("label", { class: "scope" }, input, h("span", {}, h("div", { class: "scope-name" }, s.scope), h("div", { class: "tiny subtle" }, s.label)));
       }),
     );
     const accessControl = segmented(
@@ -403,9 +402,9 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
         h("div", { class: "row small muted" }, ring, left),
       ),
       callout("warn", "Treat it like a password. When the device asks to join, its code appears below: approve only if both screens show the same code.", { icon: "shield" }),
-      scopes ? h("p", { class: "tiny subtle" }, `It may: ${scopes.join(", ")}`) : null,
+      scopes ? noteLine(`It may: ${scopes.join(", ")}`) : null,
       pending,
-      h("div", { class: "row", style: "justify-content:space-between" }, button("Start over", { variant: "ghost", icon: "chevron-left", onClick: chooser }), button("Done", { onClick: () => sheet.close() })),
+      h("div", { class: "row between" }, button("Start over", { variant: "ghost", icon: "chevron-left", onClick: chooser }), button("Done", { onClick: () => sheet.close() })),
     );
     outcome = null;
     const renderPending = (list: PairingView[]) => {
@@ -428,7 +427,7 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
                 renderPending(ctx.live.pairings.value);
               }),
             )
-          : [h("div", { class: "row small muted", style: "justify-content:center" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Waiting for the device…")]),
+          : [h("div", { class: "row small muted centered" }, spinner("sm"), "Waiting for the device…")]),
       );
     };
     inviteScope.add(ctx.live.pairings.watch(renderPending));
@@ -470,7 +469,7 @@ function placementPlayground(ctx: Ctx, scope: Scope): HTMLElement {
             "div",
             { class: `place-row${i === 0 ? " first" : ""}` },
             h("span", { class: "rank" }, String(i + 1)),
-            h("div", { class: "grow" }, h("div", { class: "strong" }, r.name, i === 0 ? h("span", { class: "tiny", style: "color:var(--accent);margin-left:8px;font-weight:600" }, "best fit") : null), r.reasons.length ? h("div", { class: "chips", style: "margin-top:6px" }, ...r.reasons.map((reason) => h("span", { class: "chip" }, reason))) : null),
+            h("div", { class: "grow stack tight" }, h("div", { class: "row" }, h("span", { class: "strong" }, r.name), i === 0 ? h("span", { class: "best-fit" }, "best fit") : null), r.reasons.length ? h("div", { class: "chips" }, ...r.reasons.map((reason) => h("span", { class: "chip" }, reason))) : null),
             h("span", { class: "mono small tnum", title: "score" }, String(r.score)),
           ),
         ),
@@ -560,22 +559,14 @@ function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
       replace(
         box,
         arms.length
-          ? h(
-              "div",
-              { class: "rows" },
+          ? rows(
               ...arms.map((arm) =>
-                h(
-                  "div",
-                  { class: "item center" },
-                  h("span", { class: "avatar" }, icon("terminal", { size: 16 })),
-                  h(
-                    "div",
-                    { class: "grow" },
-                    h("div", { class: "strong mono" }, arm.label),
-                    h("div", { class: "meta" }, ...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null),
-                  ),
-                  h("div", { class: "item-actions" }, button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm) })),
-                ),
+                listRow({
+                  lead: "terminal",
+                  title: h("span", { class: "mono" }, arm.label),
+                  meta: [...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null],
+                  trail: button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm) }),
+                }),
               ),
             )
           : empty({ icon: "terminal", title: "No agents yet", body: "A coding agent gets Galahad's mind and sandboxes from a terminal on a node.", compact: true }),
@@ -586,7 +577,7 @@ function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
   }
 
   void load();
-  const section_ = section("Agents", {}, box, h("p", { class: "tiny subtle" }, "Coding agents with their own key to Galahad. Add one on a node: ", h("span", { class: "mono" }, "galahad mcp install claude"), " (or opencode, codex, hermes)."));
+  const section_ = section("Agents", { note: ["Coding agents with their own key to Galahad. Add one on a node: ", h("span", { class: "mono" }, "galahad mcp install claude"), " (or opencode, codex, hermes)."] }, box);
   section_.querySelector(".section-head h2")?.after(count);
   return section_;
 }
@@ -653,12 +644,7 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
     replace(
       revokedBox,
       revoked.length
-        ? h(
-            "details",
-            { class: "card" },
-            h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), h("span", { class: "small strong" }, `Revoked devices (${revoked.length})`)),
-            h("div", { class: "rows", style: "border-top:1px solid var(--border)" }, ...revoked.map((d) => clientRow(ctx, fleet, d))),
-          )
+        ? disclosure(`Revoked devices (${revoked.length})`, { flush: true }, rows(...revoked.map((d) => clientRow(ctx, fleet, d))))
         : null,
     );
   }
@@ -674,13 +660,8 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
         admin ? [button("Add a machine", { icon: "server", onClick: () => openInvite(ctx, "node") }), button("Pair a device", { variant: "primary", icon: "plus", onClick: () => openInvite(ctx, "client") })] : null,
       ),
       errorBox,
-      stats,
-      section("Nodes", {}, nodesBox),
-      computeSection,
-      section("Phones and browsers", {}, clientsBox),
-      revokedBox,
-      agentsSection(ctx, scope),
-      section("Placement", {}, placementPlayground(ctx, scope)),
+      // Shown whole once the fleet, its compute and its agents have answered: a node's card grows by its capacity.
+      pageBody(stats, section("Nodes", {}, nodesBox), computeSection, section("Phones and browsers", {}, clientsBox), revokedBox, agentsSection(ctx, scope), section("Placement", {}, placementPlayground(ctx, scope))),
     ),
   );
 

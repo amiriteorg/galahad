@@ -63,15 +63,15 @@ export function capacityBlock(ctx: Ctx, node: ComputeNodeView, changed: () => vo
     // Everything it measured, the full width of the card.
     facts.length ? h("div", { class: "chips cap-facts" }, ...facts.map((f) => h("span", { class: "chip", title: f.title }, h("span", { class: "subtle" }, f.label), f.value))) : null,
     node.calibration?.note ? h("div", { class: "tiny subtle" }, node.calibration.note) : null,
-    row("Ceiling", h("div", { class: "stack", style: "gap:2px" }, h("span", { class: "tnum" }, ceilingText(node)), h("span", { class: "tiny subtle" }, ceilingOwner(node))), ceiling),
+    row("Ceiling", h("div", { class: "stack snug" }, h("span", { class: "tnum" }, ceilingText(node)), h("span", { class: "tiny subtle" }, ceilingOwner(node))), ceiling),
     row(
       "Slots",
       h(
         "div",
-        { class: "stack", style: "gap:4px" },
+        { class: "stack snug" },
         h(
           "div",
-          { class: "row wrap", style: "gap:6px 10px" },
+          { class: "row wrap" },
           node.use && node.capacity ? pips(node.use.sandboxes, node.capacity.sandboxes) : null,
           h("span", { class: "tnum" }, slots.text),
           slots.waiting ? badge(`${slots.waiting} waiting`, "warn", "clock") : null,
@@ -128,7 +128,7 @@ function openCeiling(ctx: Ctx, node: ComputeNodeView, changed: () => void): void
       body.sandboxHost ? switchControl("Sandboxes on this node", sandboxesOn, (on) => (sandboxesOn = on), { hint: "Off: quests and trials go to other nodes." }) : null,
       note,
     ),
-    footer: h("div", { class: "row", style: "justify-content:space-between;width:100%" }, reset, save),
+    footer: h("div", { class: "row between grow" }, reset, save),
   });
   const send = async (payload: Record<string, unknown>, said: string): Promise<void> => {
     try {
@@ -185,7 +185,7 @@ function openEffort(ctx: Ctx, view: ComputeView, changed: () => void): void {
       h("p", { class: "tiny subtle" }, "Each attempt beyond a quest's first counts against the day's budget. A level you name yourself (galahad do --effort 3) stands whatever the budget."),
       note,
     ),
-    footer: h("div", { class: "row", style: "justify-content:flex-end;width:100%" }, save),
+    footer: save,
   });
   save.addEventListener("click", () =>
     void busy(save, async () => {
@@ -210,11 +210,11 @@ export function computeBody(ctx: Ctx, view: ComputeView, changed: () => void): H
     { class: "card pad" },
     h(
       "div",
-      { class: "row wrap", style: "justify-content:space-between;gap:var(--sp-3)" },
+      { class: "row wrap between" },
       h(
         "div",
-        { class: "stack", style: "gap:2px" },
-        h("div", { class: "row wrap", style: "gap:6px 10px" }, h("span", { class: "strong" }, "Effort"), h("span", {}, effortText(view)), badge(`budget: ${budgetText(view.budget)}`, view.budget.usedToday >= view.budget.perDay ? "warn" : "neutral")),
+        { class: "stack snug" },
+        h("div", { class: "row wrap" }, h("span", { class: "strong" }, "Effort"), h("span", {}, effortText(view)), badge(`budget: ${budgetText(view.budget)}`, view.budget.usedToday >= view.budget.perDay ? "warn" : "neutral")),
         h("div", { class: "tiny subtle" }, "Several attempts at a quest in parallel sandboxes, each reviewed, the best taken by the independent reviewer on the evidence alone."),
       ),
       mayPolicy ? button("Change", { size: "sm", icon: "settings", label: "Change effort and the budget", onClick: () => openEffort(ctx, view, changed) }) : null,
