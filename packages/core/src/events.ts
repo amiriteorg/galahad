@@ -7,6 +7,7 @@ import { type DeviceId, domain, isNodeId, type NodeIdentity, verifyDeviceSignatu
 import { ProjectId } from "./chats.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome } from "./investigations.ts";
 import { OrderId, OrderTerms } from "./orders.ts";
+import { RuleName } from "./rules.ts";
 import { Scope } from "./scopes.ts";
 import { SkillId, SkillVersionId } from "./skills-input.ts";
 import { TrialId, TrialRecord, TrialRunId } from "./trials.ts";
@@ -299,6 +300,13 @@ export const Bodies = {
    * them, never a prompt or an answer. Recorded once, by the node that recorded the trial; the first stands.
    */
   "trial.spent": z.strictObject({ trial: TrialId, spent: Open }),
+  /*
+   * Your rules (rules.ts): tripwires on the commands his work runs. Yours alone: every replica refuses one that isn't
+   * your word (its prov's trust) or wasn't written by a full node. The last writer wins, by name.
+   */
+  /** A rule, set or replaced. Open in the log: a newer node's rule never makes this one refuse the event (core's readRule reads it). */
+  "rule.set": z.strictObject({ name: RuleName, rule: Open }),
+  "rule.removed": z.strictObject({ name: RuleName }),
 } as const;
 
 export type EventKind = keyof typeof Bodies;

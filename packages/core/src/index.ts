@@ -26,6 +26,7 @@ export * from "./identity.ts";
 export * from "./investigations.ts";
 export * from "./oath.ts";
 export * from "./orders.ts";
+export * from "./rules.ts";
 export * from "./pairing.ts";
 export * from "./qr.ts";
 export * from "./request-auth.ts";
