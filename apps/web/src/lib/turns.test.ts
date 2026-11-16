@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatStreamEvent, StoredMessage } from "@galahad/core";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keptDiffers, keysAskedIn, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keptDiffers, keysAskedIn, shownAgain, stateBadge, type Step, stopsIn, type Thread, type Turn, turnOf } from "./turns.ts";
 
 const fresh = (): Thread => ({ turns: [], nextId: 1, target: null, base: null });
 const shape = (thread: Thread) => thread.turns.map((t) => [t.role, t.content, t.status]);
@@ -250,6 +250,42 @@ describe("a kept chat that changed elsewhere", () => {
     const own = shown(chat).map((t) => ({ ...t, sid: undefined }));
     expect(keptDiffers(own, chat)).toBe(false);
     expect(keptDiffers(own, [chat[0]!, kept(2, "assistant", "Noted: Saturday.")])).toBe(true);
+  });
+
+  /** The chat on screen after a message of this device's that the node never took (it was full): its question, and why. */
+  const refused = (): Thread => {
+    const thread: Thread = { turns: shown(chat), nextId: 3, target: null, base: null };
+    beginTurn(thread, "And Sunday?", "planner", 10);
+    failTurn(thread, "This node is already working on 3 turns, its limit.", 11);
+    return thread;
+  };
+  const again = (thread: Thread, messages: StoredMessage[]) => shownAgain(thread.turns, messages, (m) => turnOf(m, "planner", thread.nextId++));
+
+  test("a message the node never took is kept nowhere else: it stays on screen, with why, when the chat is read again", () => {
+    expect(again(refused(), chat)).toBeNull();
+  });
+
+  test("what another device asked meanwhile is shown, and the message the node never took stays after it", () => {
+    const shownNow = again(refused(), [...chat, kept(3, "user", "And Saturday?"), kept(4, "assistant", "Saturday too.")]);
+    expect(shownNow?.map((t) => [t.role, t.content, t.status, t.error ?? null])).toEqual([
+      ["user", "Remember Friday.", "done", null],
+      ["assistant", "Noted: Friday.", "done", null],
+      ["user", "And Saturday?", "done", null],
+      ["assistant", "Saturday too.", "done", null],
+      ["user", "And Sunday?", "done", null],
+      ["assistant", "", "error", "This node is already working on 3 turns, its limit."],
+    ]);
+  });
+
+  test("a message the node did take after all (it holds that question) is shown as the node keeps it, once", () => {
+    const shownNow = again(refused(), [...chat, kept(3, "user", "And Sunday?"), kept(4, "assistant", "Sunday as well.")]);
+    expect(shownNow?.map((t) => t.content)).toEqual(["Remember Friday.", "Noted: Friday.", "And Sunday?", "Sunday as well."]);
+  });
+
+  test("an answer the node kept (its kept id is known) that failed is never held back: the node's chat is shown as it is", () => {
+    const thread: Thread = { turns: shown([...chat, kept(3, "user", "And Sunday?"), kept(4, "assistant", "", "error")]), nextId: 5, target: null, base: null };
+    const shownNow = again(thread, [...chat, kept(3, "user", "And Sunday?"), kept(4, "assistant", "", "error"), kept(5, "user", "And Monday?"), kept(6, "assistant", "Monday.")]);
+    expect(shownNow?.map((t) => t.content)).toEqual(["Remember Friday.", "Noted: Friday.", "And Sunday?", "", "And Monday?", "Monday."]);
   });
 });
 

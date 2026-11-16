@@ -10,7 +10,7 @@ import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
-import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keptDiffers, keysAskedIn, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
+import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, shownAgain, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
@@ -379,9 +379,9 @@ function adopt(api: Api, conversation: ConversationView): void {
   if (live) return;
   if (!running || !running.watchable) {
     // Nothing to watch: what's shown is what the node keeps (another device may have asked and been answered since).
-    const kept = keptMessages(conversation);
-    if (keptDiffers(thread.turns, kept)) {
-      thread.turns = kept.map((m) => turnOf(m, conversation.role, thread.nextId++));
+    const again = shownAgain(thread.turns, keptMessages(conversation), (m) => turnOf(m, conversation.role, thread.nextId++));
+    if (again) {
+      thread.turns = again;
       thread.target = null;
       thread.base = null;
     }

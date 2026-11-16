@@ -146,6 +146,22 @@ export function keptDiffers(shown: readonly Pick<Turn, "sid" | "status" | "conte
   });
 }
 
+/**
+ * A kept chat read again with no turn in it to watch: the turns to show, or null when what's on screen is what the node
+ * keeps (keptDiffers), so nothing is redrawn. A message of this device's that the node never took (it refused it, or
+ * never heard it: the answer failed before the node said which it is) is kept nowhere else: it stays at the end, with
+ * why and Retry, unless the node turns out to hold that question after all.
+ */
+export function shownAgain(shown: readonly Turn[], kept: readonly StoredMessage[], turn: (m: StoredMessage) => Turn): Turn[] | null {
+  const answer = shown.at(-1);
+  const asked = shown.at(-2);
+  const lastAsked = kept.filter((m) => m.role === "user").at(-1);
+  const untaken =
+    answer?.role === "assistant" && answer.status === "error" && answer.sid === undefined && asked?.role === "user" && asked.sid === undefined && lastAsked?.content !== asked.content ? [asked, answer] : [];
+  const rest = shown.slice(0, shown.length - untaken.length);
+  return keptDiffers(rest, kept) ? [...kept.map(turn), ...untaken] : null;
+}
+
 export function turnOf(m: StoredMessage, role: string, id: number): Turn {
   const steps: Step[] =
     m.role === "assistant"
