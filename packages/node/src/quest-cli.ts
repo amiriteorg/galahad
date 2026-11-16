@@ -130,6 +130,8 @@ export interface DoOptions {
    * except with the engineer held to one model: what is measured then is that model. A trial's variant sets it.
    */
   escalate?: boolean;
+  /** The quest's constraints said again every ten commands (quest.ts `remind`): off unless a trial's variant says so. */
+  remind?: boolean;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
@@ -596,6 +598,7 @@ async function workIn(
       ...(options.proposeGates ? { proposeGates: true } : {}),
       ...(store ? { engram: store } : {}),
       ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
+      ...(options.remind ? { remind: true } : {}),
       ...(options.budgetUsd !== undefined && run.spentUsd ? { budgetUsd: options.budgetUsd } : {}),
     },
     {

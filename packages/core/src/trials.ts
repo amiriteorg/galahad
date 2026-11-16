@@ -66,7 +66,8 @@ export type TrialPins = z.infer<typeof TrialPins>;
  * `archive`: the archive's context goes with the plan · `revisions`: how many times work may be sent back ·
  * `engram`: the engineer is given the sandbox's notes store (Engram: its two commands, and how far to trust a
  * note) · `diff`: the reviewer is shown the work itself, the repository's diff, beside what was run and what the
- * tests print · `escalate`: a gate that fails twice in a row moves the rest of the work to the planner's models.
+ * tests print · `escalate`: a gate that fails twice in a row moves the rest of the work to the planner's models ·
+ * `remind`: the quest's constraints (its goal, the plan's "Done when:", the gates) are said again every ten commands.
  * A run recorded before a switch existed lacks it and reads as off, which is what it was run with.
  */
 export const HarnessOptions = z.object({
@@ -79,11 +80,12 @@ export const HarnessOptions = z.object({
   engram: z.boolean().default(false),
   diff: z.boolean().default(false),
   escalate: z.boolean().default(false),
+  remind: z.boolean().default(false),
 });
 export type HarnessOptions = z.infer<typeof HarnessOptions>;
 
 /** How trials are run when nothing says otherwise: what `galahad trial run` has always done, with a task's gates on. */
-export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false };
+export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false };
 
 export const VariantName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "a variant's name is lowercase letters, digits and - (max 40)");
 export const TrialVariant = z.object({ name: VariantName, options: HarnessOptions });
@@ -123,7 +125,8 @@ export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   engram: { ...BASELINE, engram: true },
   "shown-diff": { ...BASELINE, diff: true },
   escalate: { ...BASELINE, escalate: true },
-  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false, diff: false, escalate: false },
+  remind: { ...BASELINE, remind: true },
+  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false, diff: false, escalate: false, remind: false },
 };
 
 const ON = new Set(["on", "yes", "true", "1"]);
@@ -151,10 +154,10 @@ export function parseVariant(spelling: string): TrialVariant {
       if (OFF.has(value)) return false;
       throw new Error(`${key} is on or off, not "${value}"`);
     };
-    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate") options[key] = flag();
+    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate" || key === "remind") options[key] = flag();
     else if (key === "planner-gates" || key === "plannerGates") options.plannerGates = flag();
     else if (key === "effort" || key === "revisions") options[key] = Number(value);
-    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate)`);
+    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind)`);
   }
   return { name, options: z.strictObject(HarnessOptions.shape).parse(options) };
 }
@@ -171,6 +174,7 @@ export function describeVariant(options: HarnessOptions): string {
   if (options.engram !== BASELINE.engram) said.push(options.engram ? "the notes store (Engram)" : "no notes store");
   if (options.diff !== BASELINE.diff) said.push(options.diff ? "the reviewer is shown the diff" : "the reviewer isn't shown the diff");
   if (options.escalate !== BASELINE.escalate) said.push(options.escalate ? "a gate failing twice moves the work to the planner" : "no escalation");
+  if (options.remind !== BASELINE.remind) said.push(options.remind ? "the quest's constraints said again every ten commands" : "no constraints said again");
   return said.join(", ") || "as the baseline";
 }
 

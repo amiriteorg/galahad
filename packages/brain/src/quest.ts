@@ -114,6 +114,13 @@ export interface QuestOptions {
    */
   escalate?: boolean;
   /**
+   * Every REMIND_EVERY commands, the quest's constraints are said again at the end of what the engineer is told (the
+   * goal, the plan's "Done when:", the gates): twenty turns in, the briefing is far behind, and that is where a model
+   * forgets what it was asked. The beginning a provider caches is never rewritten. Default off: a trial variant
+   * (`remind`) measures it before anything turns it on.
+   */
+  remind?: boolean;
+  /**
    * The sandbox's notes store (engram.ts), by the project its notes are kept under, when the caller found the
    * store there. Whoever does the engineer's part is told how far to trust a note and how to reach the store:
    * a coding agent is started with its tools; the engineer's own loop is told its two shell commands (the
@@ -484,6 +491,15 @@ const checkSaid = (name: string, run: string, exitCode: number, seen: string): s
     ? `\n\n(Your liege's check "${name}" ran after this, and passed: $ ${run})`
     : `\n\nYour liege's check "${name}" ran after this, and failed:\n$ ${run}\n${seen}\nFix what it found before you go on.`;
 
+/** How many of his commands between two sayings of the quest's constraints (QuestOptions.remind). */
+export const REMIND_EVERY = 10;
+
+/** The quest's constraints, said again: its goal, the plan's "Done when:" (when it has one), and each gate. */
+export function questReminder(goal: string, plan: string, gates: readonly { command: string }[]): string {
+  const done = /^\s*Done when:\s*(.+)$/im.exec(plan)?.[1]?.trim();
+  return `(Still your quest: ${clip(goal.trim(), 600, 200)}${done ? `\nDone when: ${done}` : ""}${gates.map((g) => `\nGate: $ ${g.command.split("\n")[0]}`).join("")})`;
+}
+
 /** How a quest a tripwire halted ends: which rule, why, and the command it stopped. */
 const haltedSummary = (trip: Trip, command: string): string => `Halted by your tripwire "${trip.rule}": ${trip.why}.\n$ ${command.split("\n")[0]}`;
 
@@ -595,6 +611,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     gatesFirst: Boolean(options.gatesFirst),
     submitAtLimit: Boolean(options.submitAtLimit),
     escalate: Boolean(options.escalate),
+    remind: Boolean(options.remind),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
@@ -1003,6 +1020,15 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     };
     /** Spent: the work stops (said once, as an event). */
     let spentOut = false;
+    /** The command count at which the constraints are said again next (remind). */
+    let remindAt = REMIND_EVERY;
+    const remindNote = (): string => {
+      if (!o.remind || steps < remindAt) return "";
+      while (remindAt <= steps) remindAt += REMIND_EVERY;
+      return `\n\n${questReminder(o.goal, plan, gates)}`;
+    };
+    /** What follows a step's result: commands left, the constraints again, money spent. */
+    const afterStep = async (): Promise<string> => `${leftNote(o.maxSteps - steps)}${remindNote()}${await spentNote()}`;
     /** The gates the last submission failed (none: it passed them, or it was the reviewer who sent it back). */
     let failedLast = new Set<string>();
     const looped = (command: string, seen: string) =>
@@ -1032,7 +1058,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (malformedRun >= MALFORMED_RUN) {
           return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
         }
-        messages.push({ role: "user", content: `${action.problem}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
+        messages.push({ role: "user", content: `${action.problem}${cut}${await afterStep()}` });
         continue;
       }
       malformedRun = 0;
@@ -1091,8 +1117,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
             checked +
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
             cut +
-            leftNote(o.maxSteps - steps) +
-            (await spentNote()),
+            (await afterStep()),
         });
         continue;
       }
@@ -1110,7 +1135,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           trail.push({ command: trailCommand(action.command), exitCode: -1, excerpt: said });
           const again = repeated(action.command, steps, NOT_RUN, `not run\n${said}`);
           if (again.stop) return looped(action.command, said);
-          messages.push({ role: "user", content: `${said}${again.note}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
+          messages.push({ role: "user", content: `${said}${again.note}${cut}${await afterStep()}` });
           continue;
         }
         emit({ type: "command", step: steps, command: action.command });
@@ -1128,7 +1153,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (again.stop) return looped(action.command, seen);
         // Your checks after it, if it ran clean and one matches it.
         const checked = result.exitCode === 0 ? await runChecks(checksAfter(rules, action.command), steps, trail) : "";
-        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${leftNote(o.maxSteps - steps)}${await spentNote()}` });
+        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${await afterStep()}` });
         continue;
       }
 

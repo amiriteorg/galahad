@@ -194,6 +194,8 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     ...(h?.engram ? { engram: true } : {}),
     // A trial escalates only when its variant says so: a run without one is measured as trials always were.
     escalate: h?.escalate ?? false,
+    // Nor are its constraints said again unless its variant says so.
+    ...(h?.remind ? { remind: true } : {}),
   };
 }
 
