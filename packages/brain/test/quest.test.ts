@@ -477,5 +477,34 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     expect(runs.at(-1)!.content).toContain(page);
     expect(runs.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(1);
   });
+
+  test("a file read before a later command changed it, both in the part cut short, is a line saying so; one never changed stays an excerpt", async () => {
+    const n = 26;
+    const page = "z".repeat(3000);
+    // Each file is read, then edited in place; the last file is only read, never edited.
+    const commands = Array.from({ length: n }, (_, i) => (i % 2 === 0 ? `cat src/f${i}.ts` : `sed -i 's/a/b/' src/f${i - 1}.ts`));
+    commands[0] = "cat src/kept.ts";
+    const h = harness(
+      {
+        engineer: [...commands.map((c) => sh(c)), "DONE\nEdited."],
+        outputs: commands.map((c) => (c.startsWith("cat") ? { stdout: `${page}\n` } : { stdout: "" })),
+      },
+      { maxSteps: 30 },
+    );
+    expect((await h.run).status).toBe("done");
+    const turns = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages);
+    let rewritten = 0;
+    for (let t = 1; t < turns.length; t++) if (JSON.stringify(turns[t]!.slice(0, turns[t - 1]!.length)) !== JSON.stringify(turns[t - 1])) rewritten += 1;
+    expect(rewritten).toBeLessThanOrEqual(3);
+    const last = turns.at(-1)!.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
+    const stale = last.filter((m) => m.content.includes("(stale:"));
+    expect(stale.length).toBeGreaterThanOrEqual(8);
+    for (const m of stale) expect(m.content).toMatch(/^exit 0 · \d+ ms\n\(stale: `src\/f\d+\.ts` was changed later, by `sed -i 's\/a\/b\/' src\/f\d+\.ts`; read it again for what it holds now\)$/);
+    // The file never edited is still an excerpt of what it held.
+    expect(last[0]!.content).toMatch(/characters cut/);
+    expect(last[0]!.content).not.toContain("(stale:");
+    // The newest reads stay whole.
+    expect(last.slice(-4).some((m) => m.content.includes(page))).toBe(true);
+  });
 });
 

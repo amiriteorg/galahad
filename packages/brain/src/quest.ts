@@ -1,6 +1,7 @@
 import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, redact } from "@galahad/core";
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
+import { readOf, writesOf } from "./shell-paths.ts";
 
 /*
  * A quest: plan → work → independent review, in a sandbox.
@@ -466,19 +467,27 @@ function excerptedNow(messages: readonly ChatMessage[], excerpted: number): numb
 /**
  * The conversation as it is sent: its oldest `excerpted` observations as excerpts, everything else as it was said. Of
  * those, a run of a command that ran again later among them is only its first line, and what superseded it: its
- * newer output is further on. (Judged among the excerpted alone, so the beginning still changes only between batches.)
+ * newer output is further on. So is a file's contents that a later command among them changed (shell-paths: a plain
+ * read, and a write that exited 0), which say what changed it. (Judged among the excerpted alone, so the beginning
+ * still changes only between batches.)
  */
 function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessage[] {
   // The command each observation answers: the reply before it (one of several at once, or none, is never superseded).
   const commands: (string | null)[] = [];
+  const exits: (number | null)[] = [];
   let asked: string | null = null;
   messages.forEach((m, i) => {
     if (m.role === "assistant") {
       const action = parseAction(m.content);
       asked = action.kind === "command" ? action.command.trim() : null;
-    } else if (isObservation(m, i)) commands.push(m.content.startsWith("exit ") ? asked : null);
+    } else if (isObservation(m, i)) {
+      const ran = /^exit (-?\d+) · /.exec(m.content);
+      commands.push(ran ? asked : null);
+      exits.push(ran ? Number(ran[1]) : null);
+    }
   });
   const cut = commands.slice(0, excerpted);
+  const line = (command: string): string => command.split("\n", 1)[0]!.slice(0, 80);
   let seen = 0;
   return messages.map((m, i) => {
     if (!isObservation(m, i)) return m;
@@ -486,7 +495,12 @@ function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessa
     if (k >= excerpted) return m;
     const command = cut[k];
     if (command && cut.indexOf(command, k + 1) !== -1) {
-      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${command.split("\n", 1)[0]!.slice(0, 80)}\` ran again later, and what it printed then is further on)` };
+      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${line(command)}\` ran again later, and what it printed then is further on)` };
+    }
+    const read = command ? readOf(command) : null;
+    const by = read ? cut.findIndex((later, j) => j > k && later !== null && exits[j] === 0 && writesOf(later).includes(read)) : -1;
+    if (read && by !== -1) {
+      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(stale: \`${read}\` was changed later, by \`${line(cut[by]!)}\`; read it again for what it holds now)` };
     }
     return { role: m.role, content: clip(m.content, 400, 200) };
   });

@@ -80,7 +80,7 @@ export const PHASING = {
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on; the reviewer stays independent." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
-    { state: "building", what: "Lean context", line: "Output a later run made stale becomes a line; next, files since edited." },
+    { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
     { state: "next", what: "Contract first", line: "A gate that passes before the work is refused as proof; test files locked." },
     { state: "next", what: "A budget per task", line: "An envelope in dollars that the work sees shrinking, and stops at." },
