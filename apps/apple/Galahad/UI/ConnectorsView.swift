@@ -73,17 +73,24 @@ private struct ConnectorRow: View {
     }
 }
 
-/// A word in a tone, as the PWA's badges are.
+/// A word in a tone, as the PWA's badges are: a connector's key, a task's state. Its words are its baseline, so it sits on
+/// the line of what it is beside.
 struct StateBadge: View {
     let text: String
     let tone: String
+    /// Work in hand: a spinner before the words.
+    var busy = false
 
     var body: some View {
         Text(text)
             .font(.caption.weight(.semibold))
             .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.leading, busy ? Space.s4 : 0)
+            .overlay(alignment: .leading) {
+                if busy { ProgressView().controlSize(.mini).accessibilityHidden(true) }
+            }
+            .padding(.horizontal, Space.s2)
+            .padding(.vertical, Space.s1)
             .background(color.opacity(0.12), in: .capsule)
     }
 

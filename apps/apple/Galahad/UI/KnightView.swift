@@ -193,7 +193,8 @@ struct TeamBubble: View {
 }
 
 /// A task where it was given: what it is, where it stands, how it ended and why, what it kept, and what you can do. One
-/// a knight proposed waits for you here, with Approve and Decline.
+/// a knight proposed waits for you here, with Approve and Decline. Its badge says where it stands, so nothing else does,
+/// and every line of it starts at one edge.
 struct TaskCardView: View {
     let task: TeamTask
     /// The name of the knight that proposed it, when one did.
@@ -203,20 +204,11 @@ struct TaskCardView: View {
     private var badge: (text: String, tone: TaskCard.Tone) { TaskCard.badge(task) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: symbol).foregroundStyle(color(badge.tone))
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Text(task.title).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                HStack(spacing: 4) {
-                    if task.status == "running" { ProgressView().controlSize(.mini).accessibilityHidden(true) }
-                    Text(badge.text)
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(color(badge.tone))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(color(badge.tone).opacity(0.12), in: .capsule)
+                Spacer(minLength: Space.s1)
+                StateBadge(text: badge.text, tone: badge.tone.rawValue, busy: task.status == "running")
             }
             if let proposed = TaskCard.proposed(task, proposer: proposer) { Text(proposed).font(.caption).foregroundStyle(.secondary) }
             if let given = TaskCard.given(task) { Text(given).font(.caption).foregroundStyle(.secondary) }
@@ -229,8 +221,10 @@ struct TaskCardView: View {
                         .lineLimit(3)
                 }
             }
-            if task.status == "running", !Roster.firstLine(task.progress).isEmpty {
-                Text(Roster.firstLine(task.progress)).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+            if task.status == "running" {
+                // Two lines kept from the start, so the card doesn't grow as its latest line comes and lengthens.
+                let latest = Roster.firstLine(task.progress)
+                Text(latest.isEmpty ? " " : latest).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2, reservesSpace: true)
             }
             if let end = TaskCard.end(task) {
                 if let why = end.why {
@@ -245,22 +239,21 @@ struct TaskCardView: View {
             }
             let actions = TaskCard.actions(task)
             if !actions.isEmpty {
-                HStack(spacing: 8) {
+                // One size for every card's buttons, big enough for a thumb.
+                HStack(spacing: Space.s2) {
                     ForEach(actions, id: \.rawValue) { action in
                         if action == .approve {
                             Button("Approve") { act(action) }
                                 .buttonStyle(.borderedProminent)
-                                .controlSize(.regular)
                                 .tint(.ink)
                         } else {
                             Button(Self.label[action] ?? action.rawValue) { act(action) }
                                 .buttonStyle(.bordered)
-                                .controlSize(action == .decline ? .regular : .small)
                                 .tint(action == .stop ? Color.siege : .ink)
                         }
                     }
                 }
-                .padding(.top, 2)
+                .controlSize(.regular)
             }
         }
         .padding(Space.s3)
@@ -270,27 +263,6 @@ struct TaskCardView: View {
     }
 
     private static let label: [TaskCard.Action: String] = [.decline: "Decline", .stop: "Stop", .resume: "Resume", .again: "Give again"]
-
-    private var symbol: String {
-        switch task.status {
-        case "proposed": "hand.raised"
-        case "running": "hammer"
-        case "queued": "clock"
-        case "done": task.verified ? "checkmark.seal.fill" : "checkmark.circle"
-        case "failed", "interrupted": "exclamationmark.triangle.fill"
-        default: "stop.circle"
-        }
-    }
-
-    private func color(_ tone: TaskCard.Tone) -> Color {
-        switch tone {
-        case .ok: .green
-        case .warn: .orange
-        case .danger: .siege
-        case .accent: .ink
-        case .neutral: .secondary
-        }
-    }
 }
 
 /// The message box at the foot of a conversation: a knight's own, or a room's.
