@@ -84,7 +84,16 @@ export interface SandboxHostOptions {
   /** How a terminal's process is started (tests pass one that starts a local shell instead of `docker exec`). */
   spawnTerminal?: SpawnTerminal;
   now?: () => number;
+  /** How long to wait before starting a sandbox once more (tests pass one that doesn't). */
+  pause?: (ms: number) => Promise<void>;
 }
+
+/**
+ * Kata's rootless runtime gives each microVM a user of its own and hands a UID out again as soon as it is free: a VM
+ * started while a finished one's teardown is still removing that UID's runtime directory loses its files, and Docker
+ * says this (ultra, 16 November 2026, under parallel trials). The runtime's race, not the sandbox's fault.
+ */
+const lostItsFiles = (stderr: string): boolean => /failed to create shim task/.test(stderr) && /no such file or directory/.test(stderr);
 
 /** One docker command: its arguments in, its exit code and output out. */
 export type DockerRunner = (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string }>;
@@ -428,7 +437,13 @@ export class SandboxHost {
         const volume = await this.docker(["volume", "create", "--label", `${LABEL}=1`, "--label", `${LABEL}.id=${id}`, volumeName(id)]);
         if (volume.code !== 0) throw new SandboxError(`could not create workspace: ${volume.stderr.trim()}`, 500);
       }
-      const run = await this.docker(runArgs(spec), 10 * 60_000);
+      let run = await this.docker(runArgs(spec), 10 * 60_000);
+      // A microVM that lost its files as it started (lostItsFiles) is started once more, once the teardown it raced is done.
+      if (run.code !== 0 && lostItsFiles(run.stderr)) {
+        await this.docker(["rm", "--force", containerName(id)]);
+        await (this.opts.pause ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(2_000);
+        run = await this.docker(runArgs(spec), 10 * 60_000);
+      }
       if (run.code !== 0) {
         await this.docker(["rm", "--force", containerName(id)]);
         if (spec.workspace) await this.opts.workspaces!.remove(id).catch(() => {});
