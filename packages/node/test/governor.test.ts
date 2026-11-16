@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NodeCapacity } from "@galahad/core";
-import { CapacityError, Governor } from "../src/compute/governor.ts";
+import { CapacityError, Governor, KEPT_WORK_MS } from "../src/compute/governor.ts";
 
 /*
  * The governor: a node's slots. Work that fits is admitted; work that doesn't waits
@@ -77,28 +77,63 @@ describe("sandbox slots", () => {
     expect(g.usage()).toMatchObject({ sandboxes: 0, cores: 0, memoryGb: 0 });
   });
 
-  test("a knight's own VM takes no slot: it holds its threads and memory of the ceiling, and the slots stay for work that comes and goes", async () => {
-    const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }) });
-    for (const knight of ["ada", "lin", "sam"]) await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: `arm.team.abcdef0123.${knight}`, kept: true });
-    expect(g.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 6, memoryGb: 12 });
-    // Every slot is still there for work.
+  test("a knight's own VM takes no slot, and holds its memory of the ceiling; its threads only while it works, and a while after", async () => {
+    let t = 1_000_000;
+    const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }), now: () => t });
+    for (const knight of ["ada", "lin", "sam"]) g.bind(await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: `arm.team.abcdef0123.${knight}`, kept: true }), knight);
+    // Resting: its memory is held, its threads are not (it isn't using them).
+    expect(g.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 0, memoryGb: 12 });
+    // At work: its threads count while a command runs in it, and for a while after the last one ends (it thinks between them).
+    const done = g.work("ada");
+    expect(g.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 2, memoryGb: 12 });
+    done();
+    done();
+    t += KEPT_WORK_MS - 1;
+    expect(g.usage().cores).toBe(2);
+    t += 2;
+    expect(g.usage().cores).toBe(0);
+    // Every slot is still there for work, and the ceiling bounds it: what runs in a slot holds its threads all along.
     const a = await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "q-a" });
     await g.acquire({ cpus: 2, memoryGb: 4 }, { quest: "q-b" });
-    expect(g.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 10, memoryGb: 20 });
-    // The ceiling still bounds them all: another VM of 4 threads would pass its 12, so it waits, and says why.
-    let made = false;
-    const dex = g.acquire({ cpus: 4, memoryGb: 4 }, { quest: "arm.team.abcdef0123.dex", kept: true }).then((ticket) => { made = true; return ticket; });
-    await settle();
-    expect(made).toBe(false);
-    expect(g.queue()[0]!.why).toMatch(/threads he may use/);
-    g.release(a);
-    await dex;
-    expect(g.usage()).toMatchObject({ sandboxes: 1, kept: 4, cores: 12 });
+    expect(g.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 4, memoryGb: 20 });
+    // Work in a sandbox that isn't a kept VM, or in one it doesn't hold, changes nothing.
+    g.work(a.id)();
+    g.work("nobody")();
+    expect(g.usage().cores).toBe(4);
   });
 
-  test("a persistent sandbox in Docker's list is a kept VM again after a restart", () => {
+  test("resting knights never keep work waiting; working ones hold their threads, and what doesn't fit beside them waits until they rest", async () => {
+    let t = 1_000_000;
+    // The owner's server on 16 November 2026: a ceiling of 16 threads, four knights' VMs of 2 threads and Galahad's
+    // of 1, each with a microVM's own thread and 2 GB. Every thread but 2 was held, so no sandbox could start.
+    const { g } = governor({ capacity: () => capacity({ cores: 16, memoryGb: 91, sandboxes: 4 }), now: () => t, retryMs: 5 });
+    g.adopt([
+      ...["k1", "k2", "k3", "k4"].map((id) => ({ id, cpus: 2, memoryGb: 4, isolation: "vm" as const, kept: true })),
+      { id: "galahad", cpus: 1, memoryGb: 4, isolation: "vm" as const, kept: true },
+    ]);
+    expect(g.usage()).toMatchObject({ sandboxes: 0, kept: 5, cores: 0, memoryGb: 30 });
+    // They rest: a quest's sandbox is admitted at once.
+    g.release(await g.acquire(slot, { quest: "q-a" }));
+    // Three at work hold 9 threads: one sandbox fits beside them, and the next would pass 16, so it waits.
+    const ends = ["k1", "k2", "k3"].map((id) => g.work(id));
+    await g.acquire(slot, { quest: "q-b" });
+    let admitted = false;
+    const next = g.acquire(slot, { quest: "q-c" }).then(() => void (admitted = true));
+    await settle();
+    expect(admitted).toBe(false);
+    expect(g.queue()[0]!.why).toMatch(/threads he may use/);
+    // They finish and rest: once the while has passed, the governor looks again by itself and admits it.
+    for (const end of ends) end();
+    t += KEPT_WORK_MS + 1;
+    await next;
+    expect(g.usage()).toMatchObject({ sandboxes: 2, kept: 5, cores: 8 });
+  });
+
+  test("a persistent sandbox in Docker's list is a kept VM again after a restart, resting until it works", () => {
     const { g } = governor({ capacity: () => capacity({ cores: 12, memoryGb: 32, sandboxes: 2 }) });
     g.adopt([{ id: "0123456789", cpus: 1, memoryGb: 2, isolation: "vm", kept: true }, { id: "9876543210", cpus: 2, memoryGb: 4, isolation: "container" }]);
+    expect(g.usage()).toMatchObject({ sandboxes: 1, kept: 1, cores: 2, memoryGb: 8 });
+    g.work("0123456789");
     expect(g.usage()).toMatchObject({ sandboxes: 1, kept: 1, cores: 4, memoryGb: 8 });
   });
 

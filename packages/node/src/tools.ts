@@ -274,7 +274,7 @@ export const TOOLS: GalahadTool[] = [
         const slots = !n.body.sandboxHost
           ? "no sandboxes"
           : n.use
-            ? `${n.use.sandboxes} of ${n.capacity.sandboxes} sandbox slots in use, ${n.use.queued} waiting${n.use.kept ? `, and ${n.use.kept} knights' VMs (no slot each, their threads and memory counted)` : ""}`
+            ? `${n.use.sandboxes} of ${n.capacity.sandboxes} sandbox slots in use, ${n.use.queued} waiting${n.use.kept ? `, and ${n.use.kept} knights' VMs (no slot each: their memory counted, their threads while they work)` : ""}`
             : `${n.capacity.sandboxes} sandbox slots (in use: not known)`;
         return `- ${n.name} (${n.self ? "this node" : n.online ? "online" : "offline"}): ${measured}; he may use ${n.capacity.cores} of ${n.body.cores} threads and ${n.capacity.memoryGb} of ${Math.round(n.body.memoryGb)} GB; ${slots}; ${n.capacity.modelCalls} model calls at once`;
       });

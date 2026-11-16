@@ -36,15 +36,28 @@ export interface Ticket {
   id: string;
 }
 
+/**
+ * How long a knight's VM counts as at work after its last command ended: it thinks between commands, and a sandbox
+ * admitted into that pause would find it working again. After this it rests, and its threads are free.
+ */
+export const KEPT_WORK_MS = 3 * 60_000;
+
 interface Held {
   cpus: number;
   memoryGb: number;
-  /** A knight's own VM, kept between its tasks: it holds its threads and memory of the ceiling, never a slot. */
+  /**
+   * A knight's own VM, kept between its tasks: never a slot; its memory of the ceiling all along, its threads only while
+   * it works (a command runs in it, or ran less than KEPT_WORK_MS ago) or is being made. Resting, it uses none.
+   */
   kept: boolean;
   /** Not yet a sandbox Docker lists: being created. */
   creating: boolean;
   /** When it became a sandbox (the governor's own count of such moments): a listing taken before that can't speak for it. */
   bound: number;
+  /** A kept VM's commands running now. */
+  running?: number;
+  /** When a kept VM's last command ended. */
+  workedAt?: number;
 }
 
 interface Waiting {
@@ -84,17 +97,47 @@ export class Governor {
     return this.opts.now?.() ?? Date.now();
   }
 
-  /** What his sandboxes hold now: every one's threads and memory, and the slots of those that aren't knights' own VMs. */
+  /**
+   * What his sandboxes hold now: every one's memory, the threads of all but knights' VMs at rest, and the slots of those
+   * that aren't knights' own VMs.
+   */
   use(): ComputeUse {
     let cores = 0;
     let memoryGb = 0;
     let slots = 0;
     for (const h of this.held.values()) {
-      cores += h.cpus;
+      if (!h.kept || h.creating || this.working(h)) cores += h.cpus;
       memoryGb += h.memoryGb;
       if (!h.kept) slots += 1;
     }
     return { sandboxes: slots, cores, memoryGb };
+  }
+
+  private working(h: Held): boolean {
+    return (h.running ?? 0) > 0 || (h.workedAt !== undefined && this.now() - h.workedAt < KEPT_WORK_MS);
+  }
+
+  /**
+   * A command runs in a knight's VM: its threads count against the ceiling from now until KEPT_WORK_MS after it ends.
+   * It never waits (the VM is there, and its work is under way); new work sees the less room. Returns how to say it
+   * ended (once is enough). Anything that isn't a kept VM it holds is left as it is: its threads are held anyway.
+   */
+  work(id: string): () => void {
+    const held = this.held.get(id);
+    if (!held?.kept) return () => {};
+    const resting = !this.working(held);
+    held.running = (held.running ?? 0) + 1;
+    if (resting) {
+      this.remember();
+      this.changed();
+    }
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      held.running = Math.max(0, (held.running ?? 1) - 1);
+      held.workedAt = this.now();
+    };
   }
 
   usage(): ComputeUsage {

@@ -60,16 +60,33 @@ describe("every sandbox takes a slot first", () => {
     expect(governor.usage().sandboxes).toBe(2);
   });
 
-  test("a persistent sandbox (a knight's own VM) takes no slot, and is held by its size; Docker's list says so again after a restart", async () => {
+  test("a persistent sandbox (a knight's own VM) takes no slot, and is held by its size (its threads while it works); Docker's list says so again after a restart", async () => {
     const { sandbox, governor } = host({ capacity: () => capacity({ cores: 32, memoryGb: 64 }) });
     for (const knight of ["ada", "lin", "sam"]) await sandbox.create(request({ quest: `arm.team.abcdef0123.${knight}`, persistent: true, cpus: 1, memoryGb: 2 }));
-    expect(governor.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 3, memoryGb: 6 });
+    expect(governor.usage()).toMatchObject({ sandboxes: 0, kept: 3, cores: 0, memoryGb: 6 });
     // Both slots are still there for work that comes and goes.
     await sandbox.create(request({ quest: "q-a" }));
     await sandbox.create(request({ quest: "q-b" }));
     expect(governor.usage()).toMatchObject({ sandboxes: 2, kept: 3 });
     await sandbox.reconcile();
-    expect(governor.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 11, memoryGb: 22 });
+    expect(governor.usage()).toMatchObject({ sandboxes: 2, kept: 3, cores: 8, memoryGb: 22 });
+  });
+
+  test("a command in a knight's VM holds its threads of the ceiling while it runs, and a while after; one in a quest's sandbox changes nothing", async () => {
+    const { sandbox, governor, docker } = host({ capacity: () => capacity({ cores: 32, memoryGb: 64 }) });
+    const vm = await sandbox.create(request({ quest: "arm.team.abcdef0123.ada", persistent: true, cpus: 2, memoryGb: 2 }));
+    const quest = await sandbox.create(request({ quest: "q-a" }));
+    expect(governor.usage()).toMatchObject({ kept: 1, sandboxes: 1, cores: 4, memoryGb: 10 });
+    let during = -1;
+    docker.onExec = () => {
+      during = governor.usage().cores;
+      return { code: 0, stdout: "" };
+    };
+    await sandbox.exec(vm.id, ["true"], 30);
+    expect(during).toBe(6);
+    expect(governor.usage().cores).toBe(6);
+    await sandbox.exec(quest.id, ["true"], 30);
+    expect(governor.usage().cores).toBe(6);
   });
 
   test("more than the ceiling gets the ceiling; a microVM's overhead comes out of it", async () => {

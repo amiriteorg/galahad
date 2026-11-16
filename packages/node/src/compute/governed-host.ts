@@ -1,4 +1,4 @@
-import { clampNeed, type Decision, type NodeCapacity, type SandboxView, VM_OVERHEAD } from "@galahad/core";
+import { clampNeed, type Decision, type ExecResult, type NodeCapacity, type SandboxView, VM_OVERHEAD } from "@galahad/core";
 import { chooseIsolation, type CreateInput, SandboxError, SandboxHost, type SandboxHostOptions } from "@galahad/sandbox";
 import { CapacityError, type Governor } from "./governor.ts";
 
@@ -40,7 +40,7 @@ export class GovernedSandboxHost extends SandboxHost {
     const need = clampNeed(capacity, { cpus, memoryGb }, vm);
     let ticket: Awaited<ReturnType<Governor["acquire"]>>;
     try {
-      // A persistent one (a knight's own VM) takes no slot: it holds what it is given of the ceiling.
+      // A persistent one (a knight's own VM) takes no slot: it holds its memory of the ceiling, and its threads while it works.
       ticket = await this.governed.governor.acquire(need, { quest: input.quest ?? "adhoc", kept: input.persistent }, wait.signal);
     } catch (error) {
       if (error instanceof CapacityError) throw new SandboxError(error.message, error.status);
@@ -53,6 +53,16 @@ export class GovernedSandboxHost extends SandboxHost {
     } catch (error) {
       this.governed.governor.release(ticket);
       throw error;
+    }
+  }
+
+  /** A command in a knight's VM: its threads count against the ceiling while it runs, and a while after (the governor's `work`). */
+  override async exec(id: string, cmd: string[], timeoutSec?: number): Promise<ExecResult> {
+    const ended = this.governed.governor.work(id);
+    try {
+      return await super.exec(id, cmd, timeoutSec);
+    } finally {
+      ended();
     }
   }
 

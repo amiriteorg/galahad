@@ -259,7 +259,7 @@ export function deriveCapacity(body: ComputeBody, calibration: Calibration | nul
     } else {
       reasons.push(`${plural(sandboxes, "sandbox", "sandboxes")} at once (${SLOT_CPUS} threads and ${SLOT_MEMORY_GB} GB each: the threads allow ${Math.max(1, byCores)}, the memory ${Math.max(1, byMemory)}).`);
     }
-    reasons.push("A knight's own VM takes no slot: it holds its threads and memory of the ceiling, as long as it is kept.");
+    reasons.push("A knight's own VM takes no slot: it holds its memory of the ceiling as long as it is kept, and its threads while it works (and a few minutes after).");
   }
   const modelCalls = limit?.modelCalls ?? MODEL_CALLS_DEFAULT;
   reasons.push(`${plural(modelCalls, "model call")} at once (${limit?.modelCalls !== undefined ? "your ceiling" : "the default"}).`);

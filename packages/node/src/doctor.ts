@@ -366,7 +366,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       else add("sandbox", "sandbox.networks", "ok", "both sandbox networks are there");
 
       if (host.start === null) add("sandbox", "sandbox.start", "skipped", f.quick ? "no sandbox was started (a full check starts one and removes it)" : "no sandbox was started: the image is missing");
-      else if (host.start === "busy") add("sandbox", "sandbox.start", "skipped", "no sandbox was started: every slot is in use, and the doctor doesn't queue behind real work");
+      else if (host.start === "busy") add("sandbox", "sandbox.start", "skipped", "no sandbox was started: there is no room for one now, and the doctor doesn't queue behind real work");
       else {
         for (const run of host.start) {
           const what = run.kind === "vm" ? "a microVM sandbox" : "a sandbox";
