@@ -1757,6 +1757,30 @@
           "updatedAt": 1763199760000
         },
         {
+          "id": "gave",
+          "name": "Gave",
+          "members": [
+            "ada"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199760000
+        },
+        {
+          "id": "unsure",
+          "name": "Unsure",
+          "members": [
+            "bea"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199760000
+        },
+        {
           "id": "held",
           "name": "Held",
           "members": [
@@ -1875,6 +1899,40 @@
           "output": "",
           "error": "No Postgres here.\nMore.",
           "chainId": "chain-failed1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-gave10000000",
+          "room": "gave",
+          "assignee": "ada",
+          "title": "The gave1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": "gave-up",
+          "chainId": "chain-gave1",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000
+        },
+        {
+          "id": "task-unsure100000",
+          "room": "unsure",
+          "assignee": "bea",
+          "title": "The unsure1 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": "unverified",
+          "chainId": "chain-unsure1",
           "createdAt": 1763194600000,
           "updatedAt": 1763198200000
         },
@@ -2030,6 +2088,16 @@
       {
         "id": "failed",
         "line": "Failed: “The failed1 task” · No Postgres here.",
+        "needs": true
+      },
+      {
+        "id": "gave",
+        "line": "Failed: “The gave1 task” · gave up",
+        "needs": true
+      },
+      {
+        "id": "unsure",
+        "line": "Failed: “The unsure1 task” · not verified",
         "needs": true
       },
       {

@@ -292,6 +292,8 @@ const roomsSnapshot: core.TeamSnapshot = {
     { id: "broken", name: "Broken", members: ["cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(6) },
     { id: "cut", name: "Cut", members: ["cy"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(5) },
     { id: "failed", name: "Failed", members: ["ada"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(4) },
+    { id: "gave", name: "Gave", members: ["ada"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(4) },
+    { id: "unsure", name: "Unsure", members: ["bea"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(4) },
     { id: "held", name: "Held", members: ["ada", "bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
     { id: "rest", name: "Rest", members: ["bea"], direct: false, turnBudget: 8, paused: true, createdAt: at(600), updatedAt: at(3) },
     { id: "quiet", name: "Quiet", members: ["ada", "bea", "gone"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(2) },
@@ -302,6 +304,9 @@ const roomsSnapshot: core.TeamSnapshot = {
     task("pair1", "ada", "running", inRoom("pair")),
     task("pair2", "cy", "running", inRoom("pair")),
     task("failed1", "ada", "failed", { ...inRoom("failed"), error: "No Postgres here.\nMore." }),
+    // (A quest's own word for how it ended, as a task keeps it: said as words.)
+    task("gave1", "ada", "failed", { ...inRoom("gave"), error: "gave-up" }),
+    task("unsure1", "bea", "failed", { ...inRoom("unsure"), error: "unverified" }),
     task("held1", "ada", "queued", inRoom("held")),
     task("held2", "bea", "queued", inRoom("held")),
     task("asks1", "ada", "running", inRoom("asks")),

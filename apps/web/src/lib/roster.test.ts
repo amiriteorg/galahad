@@ -41,7 +41,7 @@ describe("the roster: each knight, then each room", () => {
   });
 
   test("a latest task that failed or was interrupted marks the row, with what it said", () => {
-    expect(ada({ tasks: [task("ada", "failed", { error: "gave-up\nmore" })] })).toMatchObject({ line: "Failed: “Fix the importer” · gave-up", needs: true });
+    expect(ada({ tasks: [task("ada", "failed", { error: "gave-up\nmore" })] })).toMatchObject({ line: "Failed: “Fix the importer” · gave up", needs: true });
     expect(ada({ tasks: [task("ada", "failed")] }).line).toBe("Failed: “Fix the importer”");
     expect(ada({ tasks: [task("ada", "interrupted")] })).toMatchObject({ line: "Interrupted: “Fix the importer” · review it before resuming", needs: true });
     // A reply that failed needs you too: nothing was said.

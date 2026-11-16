@@ -198,8 +198,12 @@ enum Roster {
 
     private static func titled(_ task: TeamTask) -> String { "“\(task.title)”" }
 
+    /// How a quest said it ended, as a task keeps it, in words (lib/roster.ts' `ENDED`); any other reason, its first line.
+    private static let ended = ["gave-up": "gave up", "unverified": "not verified"]
+
     private static func withWhy(_ line: String, _ why: String?) -> String {
-        firstLine(why).isEmpty ? line : "\(line) · \(firstLine(why))"
+        let reason = firstLine(why)
+        return reason.isEmpty ? line : "\(line) · \(ended[reason] ?? reason)"
     }
 
     /// The latest by when it last moved; of two at once, the first.

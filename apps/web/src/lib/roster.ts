@@ -53,7 +53,9 @@ export const galahadNeeds = (inbox: number, asks: readonly Pick<Ask, "by">[], kn
 type Job = (TeamTask & { task: true }) | (TeamDelivery & { task?: undefined });
 const firstLine = (text: string | null | undefined): string => (text ?? "").trim().split("\n")[0]?.trim() ?? "";
 const titled = (task: Pick<TeamTask, "title">): string => `“${task.title}”`;
-const withWhy = (line: string, why: string | null): string => (firstLine(why) ? `${line} · ${firstLine(why)}` : line);
+/** How a quest said it ended, as a task keeps it, in words (QuestStatus); any other reason, its first line. */
+const ENDED: Record<string, string> = { "gave-up": "gave up", unverified: "not verified" };
+const withWhy = (line: string, why: string | null): string => (firstLine(why) ? `${line} · ${ENDED[firstLine(why)] ?? firstLine(why)}` : line);
 const latestOf = (jobs: Job[]): Job | undefined => jobs.reduce<Job | undefined>((latest, job) => (!latest || job.updatedAt > latest.updatedAt ? job : latest), undefined);
 const waitingIn = (jobs: Job[]): number => jobs.filter((job) => job.status === "queued").length;
 
