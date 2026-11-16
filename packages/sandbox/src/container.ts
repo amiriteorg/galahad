@@ -1,0 +1,304 @@
+import type { SandboxNetwork } from "@galahad/core";
+import { containerName, LABEL, labels, NETWORKS, type SandboxSpec, volumeName } from "./spec.ts";
+
+/*
+ * Apple's `container` (github.com/apple/container, 1.x): Linux containers on a Mac, each in a lightweight VM of its
+ * own, as Kata gives on Linux. This module is pure, as spec.ts is for Docker: it turns a spec into `container`'s
+ * arguments and reads what `container` prints, so the posture is unit-tested. Every flag and output format here is
+ * from its documentation at the 1.7.1 tag (docs/command-reference.md, and networking.md, volumes.md,
+ * resource-usage.md, ulimits.md, runtime-configuration.md and container-inspection.md beside it); each is there
+ * from 1.0.0 on. A flag Docker's path sets that `container` hasn't says why its promise holds without it
+ * (DOCKER_ON_A_MAC), and what a Mac can't give is refused with the reason (CONTAINER_CANNOT): never weaker.
+ */
+
+/** The major release whose command line this driver speaks. */
+export const CONTAINER_MAJOR = 1;
+
+/** The network `container system start` makes (vmnet, with a way out): an online sandbox's egress. */
+export const DEFAULT_NETWORK = "default";
+
+/** How long a sandbox has to stop before it is killed (Docker's path gives 10 s too). */
+const STOP_SECONDS = 10;
+
+/** What a Mac can't make yet, each with why: its capabilities carry the list, so placement sends such work elsewhere. */
+export const CONTAINER_CANNOT = {
+  isolated:
+    "a Mac can't make a sandbox with no network at all: Apple's container has no network like Docker's none, and none of its networks is proven to isolate yet, so an isolated sandbox is made on a Linux host with Docker",
+  desktop: "the desktop image (Computer Use) isn't built for Apple silicon yet: a desktop is made on a Linux host",
+  lab: "the Lab isn't proven on Apple silicon yet: a Lab sandbox is made on a Linux host",
+  gazebo: "Gazebo's image is built for x86-64 alone: a Gazebo sandbox is made on a Linux host",
+} as const;
+export type Unmade = keyof typeof CONTAINER_CANNOT;
+export const CONTAINER_UNMADE = Object.keys(CONTAINER_CANNOT) as Unmade[];
+
+/** A sandbox as asked for, as far as what a host can't make goes. */
+export interface SandboxAsk {
+  network?: SandboxNetwork;
+  desktop?: boolean;
+  lab?: boolean;
+  gazebo?: boolean;
+}
+
+/** Why a host that can't make `cannot` can't make this sandbox (its first reason), or null when it can. */
+export function cannotMake(ask: SandboxAsk, cannot: readonly string[]): string | null {
+  const why = (what: Unmade) => (cannot.includes(what) ? CONTAINER_CANNOT[what] : null);
+  return (ask.network === "isolated" ? why("isolated") : null) ?? (ask.desktop ? why("desktop") : null) ?? (ask.lab ? why("lab") : null) ?? (ask.gazebo ? why("gazebo") : null);
+}
+
+/** Why a Mac can't make this sandbox, or null when it can. */
+export const containerCannot = (ask: SandboxAsk): string | null => cannotMake(ask, CONTAINER_UNMADE);
+
+/**
+ * What each flag of Docker's run and network commands (spec.ts) becomes on a Mac, and whether its promise holds:
+ * `same` (container has the flag), `replaced` (another of its flags or its own way keeps it), `vm` (no flag, and the
+ * VM of its own keeps the promise), `moot` (no promise rides on it), `refused` (what needs it isn't made on a Mac),
+ * `weaker` (no flag, and the promise doesn't hold here: said, never hidden). A test holds every Docker flag to an entry.
+ */
+export const DOCKER_ON_A_MAC: Readonly<Record<string, { container: string | null; holds: "same" | "replaced" | "vm" | "moot" | "refused" | "weaker"; why: string }>> = {
+  "--detach": { container: "--detach", holds: "same", why: "It runs the container and detaches from it, as Docker's does." },
+  "--name": { container: "--name", holds: "same", why: "The name is the container's ID in container, so every command finds it by name, as on Docker." },
+  "--hostname": { container: null, holds: "moot", why: "container has no flag for it: the VM is named after its container. A name, not a defence." },
+  "--init": { container: "--init", holds: "same", why: "An init process forwards signals and reaps what its children leave." },
+  "--user": { container: "--user", holds: "same", why: "uid 1000 for the container, and for every command and terminal too: container's default user for exec isn't documented, so it is never left to it." },
+  "--cap-drop": { container: "--cap-drop", holds: "same", why: "Every capability dropped (`--cap-drop ALL`), and none added back." },
+  "--security-opt": {
+    container: null,
+    holds: "vm",
+    why: "container has no no-new-privileges. A setuid file in the image could still make a process uid 0 inside the container, but with every capability dropped it has none of root's powers, the root it would write is read-only, and the VM is the boundary to the host either way. To be confirmed on the Mac mini: NoNewPrivs and CapBnd in /proc/self/status.",
+  },
+  "--read-only": { container: "--read-only", holds: "same", why: "The image's root is read-only; it writes only to /work and /tmp." },
+  "--tmpfs": {
+    container: "--tmpfs /tmp:size=2G,mode=1777",
+    holds: "replaced",
+    why: "container's tmpfs takes size and mode alone (volumes.md), not nosuid or nodev. Their promise holds by the dropped capabilities: no device can be made there (CAP_MKNOD), and no file can be made setuid to root (CAP_CHOWN, CAP_FSETID).",
+  },
+  "--mount": {
+    container: "--mount type=volume,source=…,target=/work",
+    holds: "replaced",
+    why: "/work is the sandbox's own named volume, made with a fixed size (`volume create -s`): an ext4 image of its own, as the workspace helper gives on Linux, and the one thing of the host's it is given. An online microVM's read-only resolv.conf isn't needed: container writes a VM's resolver itself.",
+  },
+  "--workdir": { container: "--workdir", holds: "same", why: "Its commands start in /work." },
+  "--env": { container: "--env", holds: "same", why: "HOME=/work and the gateway's lease go in as the environment, never as a label." },
+  "--cpus": { container: "--cpus", holds: "same", why: "A VM's CPUs are whole: a part of one is given as a whole one, and the governor counts what it gets." },
+  "--memory": { container: "--memory", holds: "same", why: "The VM's memory, in MiB as container takes it." },
+  "--memory-swap": {
+    container: null,
+    holds: "vm",
+    why: "No flag: the VM has its memory and no more (its guest has no swap, to be confirmed on the Mac mini: /proc/swaps). macOS may page a VM's memory out under pressure, which never gives the sandbox more.",
+  },
+  "--pids-limit": {
+    container: "--ulimit nproc=1024:1024",
+    holds: "vm",
+    why: "No cgroup limit on processes: a fork bomb fills its own VM (its CPUs and memory) and never the host. RLIMIT_NPROC holds the knight's own processes near Docker's count.",
+  },
+  "--ulimit": { container: "--ulimit", holds: "same", why: "nofile=8192:8192, as on Docker (ulimits.md)." },
+  "--network": {
+    container: "--network default --network galahad-gw (online) · --network galahad-gw --no-dns (gateway)",
+    holds: "refused",
+    why: "online: container's default network, then the gateway network, egress first, as on Docker. gateway: the internal network alone, with no resolver (it reaches the gateway by its address). isolated (--network none) has no counterpart: it isn't made on a Mac (CONTAINER_CANNOT).",
+  },
+  "--runtime": { container: null, holds: "vm", why: "Every container is its own lightweight VM, with its own kernel: what Kata's runtime gives on Linux." },
+  "--label": { container: "--label", holds: "same", why: "The same labels, and the image it was made from (a VM made again is made from it)." },
+  "--internal": {
+    container: "--internal",
+    holds: "same",
+    why: "Host-only, with no way out (the reference: \"Restrict to host-only network\"). What UFW adds on Ultra, one port of the host and nothing else, has no counterpart: a gateway sandbox reaches whatever the Mac serves on that network (docs/MAC.md).",
+  },
+  "--subnet": { container: "--subnet", holds: "same", why: "Docker's subnet, 172.31.250.0/24, so the gateway's address and the lease's URL are the same." },
+  "--gateway": {
+    container: null,
+    holds: "replaced",
+    why: "No flag: vmnet gives the host the subnet's first address (the documentation shows 192.168.64.1 on 192.168.64.0/24), which is Docker's 172.31.250.1. To be confirmed on the Mac mini.",
+  },
+  "-o": {
+    container: null,
+    holds: "weaker",
+    why: "Docker's bridge options: its name (moot here) and enable_icc=false, which keeps sandboxes on one network from reaching each other. container has no such option: \"every container gets an IP address on its network, always reachable by that IP from the host and from other containers on the same network\" (networking.md). The VM boundary doesn't change that, so on a Mac it is weaker (docs/MAC.md).",
+  },
+};
+
+/** `container run` arguments for a sandbox: Docker's posture (runArgs), flag for flag, as DOCKER_ON_A_MAC says. */
+export function containerRunArgs(spec: SandboxSpec): string[] {
+  const cannot = containerCannot({ network: spec.network });
+  if (cannot) throw new Error(cannot);
+  const args = [
+    "run",
+    "--detach",
+    "--name",
+    containerName(spec.id),
+    "--init",
+    // Nobody inside is root and no capability is left; the VM is its own kernel.
+    "--user",
+    "1000:1000",
+    "--cap-drop",
+    "ALL",
+    // The image is immutable; the knight writes only to its workspace and /tmp.
+    "--read-only",
+    "--tmpfs",
+    "/tmp:size=2G,mode=1777",
+    "--mount",
+    `type=volume,source=${volumeName(spec.id)},target=/work`,
+    "--workdir",
+    "/work",
+    "--env",
+    "HOME=/work",
+    // Bounded: a VM's whole CPUs and its memory.
+    "--cpus",
+    String(Math.max(1, Math.ceil(spec.cpus))),
+    "--memory",
+    `${Math.round(spec.memoryGb * 1024)}M`,
+    "--ulimit",
+    "nofile=8192:8192",
+    "--ulimit",
+    `nproc=${spec.pidsLimit}:${spec.pidsLimit}`,
+    // Online joins its egress first (it holds the default route), then the gateway's network.
+    ...(spec.network === "online" ? ["--network", DEFAULT_NETWORK, "--network", NETWORKS.gateway.name] : ["--network", NETWORKS.gateway.name, "--no-dns"]),
+  ];
+  for (const [key, value] of Object.entries({ ...labels(spec), [`${LABEL}.image`]: spec.image })) args.push("--label", `${key}=${value}`);
+  for (const [key, value] of Object.entries(spec.env)) args.push("--env", `${key}=${value}`);
+  args.push(spec.image, "sleep", "infinity");
+  return args;
+}
+
+/** The gateway network: host-only (`--internal`), on Docker's subnet. `default` is container's own, never made here. */
+export const containerNetworkCreateArgs = (): string[] => ["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", `${LABEL}=1`, NETWORKS.gateway.name];
+
+/** A command as uid 1000 in /work, under a hard deadline inside the VM (killing `container exec` alone may not stop it). */
+export const containerExecArgs = (id: string, cmd: string[], timeoutSec: number): string[] => [
+  "exec",
+  "--interactive",
+  "--user",
+  "1000:1000",
+  "--workdir",
+  "/work",
+  containerName(id),
+  "timeout",
+  "--signal=KILL",
+  `${timeoutSec}s`,
+  ...cmd,
+];
+
+/** A login shell on a terminal of its own, as uid 1000, tagged (TERMINAL_HANG_UP finds what it started by its tag). */
+export const containerTerminalArgs = (id: string, tag: string): string[] => [
+  "exec",
+  "--interactive",
+  "--tty",
+  "--user",
+  "1000:1000",
+  "--workdir",
+  "/work",
+  "--env",
+  "TERM=xterm-256color",
+  "--env",
+  `GALAHAD_TERMINAL=${tag}`,
+  containerName(id),
+  "sh",
+  "-c",
+  "command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l",
+];
+
+/** A directory under /work copied out as a tar from inside the VM (its entries start with the directory's own name). */
+export function containerCollectArgs(id: string, path: string): string[] {
+  const parts = path.split("/").filter(Boolean);
+  const base = parts.pop()!;
+  return ["exec", "--user", "1000:1000", containerName(id), "timeout", "--signal=KILL", "900s", "tar", "-C", `/${parts.join("/")}`, "-cf", "-", base];
+}
+
+export const containerVersionArgs = (): string[] => ["system", "version", "--format", "json"];
+export const containerListArgs = (): string[] => ["list", "--all", "--format", "json"];
+export const containerInspectArgs = (names: string[]): string[] => ["inspect", ...names];
+export const containerStopArgs = (name: string): string[] => ["stop", "--time", String(STOP_SECONDS), name];
+export const containerStartArgs = (name: string): string[] => ["start", name];
+export const containerDeleteArgs = (name: string): string[] => ["delete", "--force", name];
+export const containerStatsArgs = (names: string[]): string[] => ["stats", "--format", "json", "--no-stream", ...names];
+export const containerImageInspectArgs = (image: string): string[] => ["image", "inspect", image];
+export const containerNetworkInspectArgs = (): string[] => ["network", "inspect", NETWORKS.gateway.name];
+/** Galahad's images on a Mac: Apple silicon's, their base pulled afresh. */
+export const containerBuildArgs = (image: string, contextDir: string): string[] => ["build", "--pull", "--platform", "linux/arm64", "--tag", image, contextDir];
+/** A workspace: a volume whose size is fixed as it is made, labelled as its sandbox's (and kept for good: a knight's). */
+export const containerVolumeCreateArgs = (id: string, gib: number, retained: boolean): string[] => [
+  "volume",
+  "create",
+  "-s",
+  `${gib}G`,
+  "--label",
+  `${LABEL}=1`,
+  "--label",
+  `${LABEL}.id=${id}`,
+  ...(retained ? ["--label", `${LABEL}.retained=1`] : []),
+  volumeName(id),
+];
+export const containerVolumeDeleteArgs = (id: string): string[] => ["volume", "delete", volumeName(id)];
+export const containerVolumeListArgs = (): string[] => ["volume", "list", "--format", "json"];
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const strings = (v: unknown): Record<string, string> => (isObj(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")) : {});
+const number = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+function array(text: string): unknown[] | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `system version --format json`: the CLI's version, and whether its service answered (the API server's row is there only then). */
+export function parseContainerVersion(text: string): { version: string; major: number; running: boolean } | null {
+  const rows = array(text)?.filter(isObj);
+  const cli = rows?.find((r) => r.appName === "container");
+  if (!rows || typeof cli?.version !== "string") return null;
+  const major = Number.parseInt(cli.version, 10);
+  if (!Number.isInteger(major)) return null;
+  return { version: cli.version, major, running: rows.some((r) => r.appName === "container-apiserver") };
+}
+
+/** A container as `list --format json` gives it, read: its labels, its image, its state in Docker's words, what it was given. */
+export interface ListedContainer {
+  id: string;
+  labels: Record<string, string>;
+  image: string;
+  status: string;
+  cpus: number | null;
+  memoryBytes: number | null;
+}
+
+/** `list --all --format json` (or `inspect`), read; null when it isn't a list (never mistaken for "none"). */
+export function parseContainers(text: string): ListedContainer[] | null {
+  const rows = array(text);
+  if (!rows) return null;
+  return rows.flatMap((row) => {
+    const config = isObj(row) && isObj(row.configuration) ? row.configuration : null;
+    const id = config?.id;
+    if (!config || typeof id !== "string") return [];
+    const given = strings(config.labels);
+    const image = given[`${LABEL}.image`] ?? (isObj(config.image) && typeof config.image.reference === "string" ? config.image.reference : "");
+    const status = isObj(row) && isObj(row.status) ? row.status : {};
+    const state = typeof status.state === "string" ? status.state : "unknown";
+    const resources = isObj(config.resources) ? config.resources : {};
+    // (A stopped container is what Docker calls exited: the rest of the node reads Docker's words.)
+    return [{ id, labels: given, image, status: state === "stopped" ? "exited" : state, cpus: number(resources.cpus), memoryBytes: number(resources.memoryInBytes) }];
+  });
+}
+
+/** `stats --format json --no-stream`, read: each container's memory, its use of CPUs (1.0 a whole one) and its processes. */
+export function parseContainerStats(text: string): { id: string; memoryUsedBytes: number | null; memoryLimitBytes: number | null; cpus: number | null; processes: number | null }[] | null {
+  const rows = array(text);
+  if (!rows) return null;
+  return rows.flatMap((r) =>
+    isObj(r) && typeof r.id === "string" ? [{ id: r.id, memoryUsedBytes: number(r.memoryUsageBytes), memoryLimitBytes: number(r.memoryLimitBytes), cpus: number(r.cpuUtilization), processes: number(r.numProcesses) }] : [],
+  );
+}
+
+/** `volume list --format json`, read: each volume's name, labels, the size it may grow to, its image on the host, and when it was made. */
+export function parseContainerVolumes(text: string): { name: string; labels: Record<string, string>; sizeBytes: number; source: string | null; createdAt: number }[] | null {
+  const rows = array(text);
+  if (!rows) return null;
+  return rows.flatMap((r) => {
+    const config = isObj(r) && isObj(r.configuration) ? r.configuration : null;
+    const name = typeof config?.name === "string" ? config.name : isObj(r) && typeof r.id === "string" ? r.id : null;
+    if (!config || !name) return [];
+    const made = typeof config.creationDate === "string" ? Date.parse(config.creationDate) : Number.NaN;
+    return [{ name, labels: strings(config.labels), sizeBytes: number(config.sizeInBytes) ?? 0, source: typeof config.source === "string" ? config.source : null, createdAt: Number.isFinite(made) ? made : 0 }];
+  });
+}
