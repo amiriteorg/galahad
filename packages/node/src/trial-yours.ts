@@ -44,7 +44,10 @@ export interface YourCase {
 }
 
 /** Why one of your knights' tasks isn't a case. */
-export type NotACase = "not verified" | "no change kept" | "no record of its run" | "no gates" | "knight removed" | "no repository";
+export type NotACase = "not verified" | "no change kept" | "no record of its run" | "no gates" | "needs a desktop" | "knight removed" | "no repository";
+
+/** A gate that runs the desktop's own command (a knight's VM with a screen has it; a trial's sandbox doesn't, yet). */
+const looksAtADesktop = (gate: string): boolean => /(^|[;&|(]\s*|\$\(\s*)desktop\s/.test(gate);
 
 export interface YourCases {
   /** Hardest first. */
@@ -58,8 +61,9 @@ export const caseId = (task: string): string => task.replace(/_/g, "-");
 
 /**
  * Your cases, from the tasks the team's controller keeps (its latest 512). A task's gates are its own: a knight's task
- * proposes none, so one given none isn't a case. A removed knight's task isn't one either: the snapshot no longer says
- * which repository it worked in. Its repository is its knight's as it is now.
+ * proposes none, so one given none isn't a case. Nor is one whose gate looks at a desktop: a trial's sandbox has none,
+ * so that gate could only fail there. A removed knight's task isn't one either: the snapshot no longer says which
+ * repository it worked in. Its repository is its knight's as it is now.
  */
 export function yourCases(team: Pick<TeamSnapshot, "tasks" | "teammates">): YourCases {
   const cases: YourCase[] = [];
@@ -71,6 +75,7 @@ export function yourCases(team: Pick<TeamSnapshot, "tasks" | "teammates">): Your
     else if (!task.changes) leave("no change kept");
     else if (!task.record) leave("no record of its run");
     else if (!task.gates.length) leave("no gates");
+    else if (task.gates.some(looksAtADesktop)) leave("needs a desktop");
     else if (!knight) leave("knight removed");
     else if (!knight.repository) leave("no repository");
     else {

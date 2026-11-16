@@ -52,6 +52,21 @@ describe("your cases", () => {
     ]);
   });
 
+  test("a task whose gate looks at a desktop isn't a case yet: a trial's sandbox has none, so its gate couldn't pass there", () => {
+    const team = teamOf([
+      taskOf({ id: "task-desktopxxx", gates: ["test -s answer.txt && grep -qi oath answer.txt && desktop text | head -2 | grep -qi oath"] }),
+      taskOf({ id: "task-desktop2xx", gates: ["desktop screenshot out.png"] }),
+      // A gate that only names the word is no desktop's.
+      taskOf({ id: "task-wordonlyxx", gates: ["grep -q desktop README.md"] }),
+    ]);
+    const { cases, left } = yourCases(team);
+    expect(cases.map((c) => c.task)).toEqual(["task-wordonlyxx"]);
+    expect(left).toEqual([
+      { task: "task-desktopxxx", why: "needs a desktop" },
+      { task: "task-desktop2xx", why: "needs a desktop" },
+    ]);
+  });
+
   test("the hardest first, by what the original run took: revisions, then commands, then tokens, then the latest", () => {
     const tokens = (n: number) => [{ role: "engineer", model: "example/coder", calls: 1, unknown: 0, input: n, output: 0, cached: 0, reasoning: 0 }];
     const team = teamOf([
