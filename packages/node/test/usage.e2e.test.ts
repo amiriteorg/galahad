@@ -289,12 +289,21 @@ describe("a quest with a budget", () => {
     }
   });
 
-  test("an agent may ask what a sandbox spent only of its own", async () => {
+  test("what a sandbox spent: all of it, or since a moment (a knight's VM outlives its tasks); an agent may ask only of its own", async () => {
     const { sandbox } = await call<{ sandbox: { id: string } }>("createSandbox", { network: "isolated" });
     try {
       expect(await call("sandboxSpend", { id: sandbox.id })).toEqual({ lines: [] });
-      const { token } = await call<{ token: string }>("mintArm", { label: "nosy" });
-      await expect(call("sandboxSpend", { id: sandbox.id }, token)).rejects.toThrow(/403 that sandbox belongs to another quest/);
+      const { token } = await call<{ token: string }>("mintToken", { label: `sandbox:${sandbox.id}`, providers: ["stand-in"] });
+      const asked = await fetch(`http://127.0.0.1:${port}/gw/stand-in/chat/completions`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: "counted", stream: true, stream_options: { include_usage: true }, messages: [{ role: "user", content: "Quest: one call" }] }),
+      });
+      await asked.text();
+      expect((await call<{ lines: { role: string; calls: number }[] }>("sandboxSpend", { id: sandbox.id })).lines.map((l) => [l.role, l.calls])).toEqual([["tool", 1]]);
+      expect(await call("sandboxSpend", { id: sandbox.id, since: Date.now() + 60_000 })).toEqual({ lines: [] });
+      const { token: nosy } = await call<{ token: string }>("mintArm", { label: "nosy" });
+      await expect(call("sandboxSpend", { id: sandbox.id }, nosy)).rejects.toThrow(/403 that sandbox belongs to another quest/);
     } finally {
       await call("destroySandbox", { id: sandbox.id });
     }

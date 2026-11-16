@@ -307,6 +307,19 @@ test("a task's budget counts its coding tool's own calls through the gateway too
   expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
 });
 
+test("a VM on another node: its node is asked what the tool spent, and that is counted the same", async () => {
+  const tool = { prompt_tokens: 0, completion_tokens: 0 };
+  const toolSpent = async () => {
+    await Bun.sleep(1);
+    return [{ role: "tool", model: "plan/coder", calls: 2, unknown: 0, input: 200_000, output: 10_000, cached: 0, reasoning: 0 }];
+  };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("PASS\nFine.")], { prices: () => ({ "plan/coder": { input: 3, output: 10 } }), toolSpent }, tool);
+  const trail: string[] = [];
+  const outcome = await f.runtime.executeTask(member, { ...task, budgetUsd: 0.5 }, { ...f.context, emit: (line) => trail.push(String(line)) });
+  expect(trail).toContain("Budget · spent ($0.70 of $0.50): the work stops");
+  expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
+});
+
 test("a knight's task is given the skills that bear on its goal (its planner and engineer, never its reviewer), and its verified work is told so it can teach one", async () => {
   const SKILLS = "<galahad-skills>Run the migrations before the importer.</galahad-skills>";
   const asked: { teammate: string; task: string }[] = [];

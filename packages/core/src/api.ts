@@ -590,6 +590,8 @@ export const routes = {
     scope: "sandbox",
     input: z.strictObject({
       id: SandboxId,
+      /** Calls since then (ms; absent: all it made, as for a fresh sandbox). A knight's VM outlives its tasks. */
+      since: z.number().int().min(0).optional(),
       on: NodeRef.optional(),
       /** Set by a full node relaying an arm's request: the arm may only ask of its own sandboxes. */
       quest: z.string().max(64).optional(),

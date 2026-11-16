@@ -76,6 +76,7 @@ import {
   TrialSpent,
   TRIAL_ARCHIVE_KIND,
   type Usage,
+  type UsageLine,
   type UsageView,
   ComputeLimit,
   COMPUTE_RESOURCE,
@@ -1837,7 +1838,17 @@ export function createApp(ctx: AppContext) {
         );
       },
       // (A knight's VM on another node calls that node's gateway: its calls aren't counted here.)
-      toolSpent: (member, since) => (member.workspace && member.workspace.node === ctx.identity.id ? toolSpend.since(`sandbox:${member.workspace.id}`, since) : []),
+      toolSpent: async (member, since) => {
+        if (!member.workspace) return [];
+        if (member.workspace.node === ctx.identity.id) return toolSpend.since(`sandbox:${member.workspace.id}`, since);
+        // A VM on another node: its gateway counted the calls, so that node says (nothing, if it can't).
+        const host = ctx.store.activeDevice(member.workspace.node);
+        if (!host) return [];
+        return forward<{ lines: UsageLine[] }>(host, routes.sandboxSpend.path, { id: member.workspace.id, since }).then(
+          (answer) => answer.lines,
+          () => [],
+        );
+      },
       models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,
       modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),
@@ -2511,7 +2522,7 @@ export function createApp(ctx: AppContext) {
             if (!sandbox) throw new HttpError(404, "no such sandbox on this node");
             if (sandbox.quest !== quest) throw new HttpError(403, "that sandbox belongs to another quest");
           }
-          return { lines: toolSpend.since(`sandbox:${rest.id}`, 0) };
+          return { lines: toolSpend.since(`sandbox:${rest.id}`, rest.since ?? 0) };
         },
         { sandbox: rest.id },
       );

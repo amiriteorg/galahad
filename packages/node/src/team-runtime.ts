@@ -23,9 +23,9 @@ export interface TeamRuntimeDeps {
   learned?(teammate: Teammate, task: TeamTask, evidence: QuestEvidence): void;
   /**
    * What the knight's coding tool's own calls cost since `since` (ms), through its VM's gateway token, by model (role
-   * "tool"): a task's budget counts them beside its own calls. Absent, or a VM on another node: none are known.
+   * "tool"): a task's budget counts them beside its own calls. A VM on another node is that node's to say (a promise).
    */
-  toolSpent?(teammate: Teammate, since: number): UsageLine[];
+  toolSpent?(teammate: Teammate, since: number): UsageLine[] | Promise<UsageLine[]>;
   /** The roster models of this knight's role that its harness can run on through the gateway, from its VM. */
   models(teammate: Teammate): AgentModel[];
   /** When there are none: roster models it could speak to, on providers its VM's gateway token doesn't cover. */
@@ -466,8 +466,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         ...(deps.rules ? { rules: deps.rules } : {}),
         tripped: (trip) => deps.tripped?.(teammate, task, trip),
         // What this task's calls have cost so far, at your prices: its own, and its coding tool's through the gateway.
-        spentUsd: () => {
-          const cost = costOf(mergeSpend(spent, deps.toolSpent?.(teammate, startedAt)), deps.prices?.() ?? {});
+        spentUsd: async () => {
+          const cost = costOf(mergeSpend(spent, await deps.toolSpent?.(teammate, startedAt)), deps.prices?.() ?? {});
           return { usd: cost.usd, complete: cost.complete };
         },
         stopAgent: () => deps.stopWorker(teammate),
@@ -479,7 +479,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       });
       // (A reply with no command to run spent a turn and ran nothing: it is not one of the commands.)
       // (Its coding tool's calls are in what it spent, under the role "tool".)
-      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent: mergeSpend(spent, deps.toolSpent?.(teammate, startedAt)) };
+      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent: mergeSpend(spent, await deps.toolSpent?.(teammate, startedAt)) };
       const verified = outcome.status === "done";
       // Its verified work may teach a skill, as his own quests do (it waits for you): told, never waited on.
       if (verified) deps.learned?.(teammate, task, questEvidence({ quest: `team:${task.id}`, goal: task.goal, network: "online", repo: !!teammate.repository, agent: agent?.driver.name, outcome, trail }));
