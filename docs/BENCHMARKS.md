@@ -159,6 +159,10 @@ Words alone find half (they can't tell a topic from its sibling), meaning alone 
 
 The chat loop and the quest runner driven by stand-in models that answer at once and tools that return at once, in the provider's own wire format: 0.145 ms a tool round, 0.351 ms an answer without tools, 0.123 ms a quest step. Next to a model's seconds it is nothing, which is the point of holding it: a change that makes the loop slow shows here, where no model's latency hides it.
 
+### context: what a quest sends its engineer
+
+The characters of every turn's conversation with the engineer, summed over a whole quest, for three kinds of work a stand-in engineer does the same way every time: the tests run after each of 13 edits (336,141 characters on 16 November 2026), ten files each read, edited and tested (379,806; its last turn 20,250), and thirty different searches that each print a page (647,513). And how many turns, over the three, didn't begin with the turn before's conversation (6): each of those is a beginning a provider can't read from its cache. The engineer's conversation is most of what a quest costs, so a change that sends more, or rewrites what was cached, fails here before it costs anything. Lean context ([PLAN](PLAN.md) #5) is told here: outputs a later run superseded, and file contents a later edit made stale, are lines instead of excerpts (the second kind sent 420,792 characters, its last turn 23,286, before stale contents were cut on 16 November 2026).
+
 ## Adding a metric, or a suite
 
 - A metric: in its suite, `ctx.quality(id, value, unit, "higher" | "lower", { note, resolution? })` for something exact, `ctx.time(id, fn, { n, warm, batch, per, note })` for something timed (or `ctx.speed(id, samples, unit, better, [from, to], note)` for samples timed elsewhere, with when they were taken). Names are lower case with dots and dashes; one only `--full` measures starts `full.`. Say in the note what the number is. Then record the baseline on purpose and commit it with the change.

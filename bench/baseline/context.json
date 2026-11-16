@@ -1,0 +1,18 @@
+{
+  "suite": "context",
+  "commit": "55ef0e45ed52+dirty",
+  "at": 1794834546311,
+  "seed": 20261112,
+  "machine": {
+    "name": "Apple M3 Pro",
+    "calibration": 90202,
+    "cores": 12
+  },
+  "metrics": [
+    {"id":"context.quest.tests-after-edits","value":336141,"unit":"chars","kind":"quality","better":"lower","note":"every engineer turn's conversation, summed: the tests run after each of 13 edits, failing until the last (26 commands)"},
+    {"id":"context.quest.read-edit-test","value":379806,"unit":"chars","kind":"quality","better":"lower","note":"every engineer turn's conversation, summed: ten files, each read, edited in place and tested (30 commands)"},
+    {"id":"context.quest.read-edit-test.last-turn","value":20250,"unit":"chars","kind":"quality","better":"lower","note":"the last turn of the same quest: what a long quest's every turn tends to"},
+    {"id":"context.quest.survey","value":647513,"unit":"chars","kind":"quality","better":"lower","note":"every engineer turn's conversation, summed: thirty different searches that each print a page (30 commands)"},
+    {"id":"context.quest.rewrites","value":6,"unit":"turns","kind":"quality","better":"lower","note":"turns, over the three quests, whose conversation doesn't begin with the turn before's (a batch cut is one)"}
+  ]
+}
