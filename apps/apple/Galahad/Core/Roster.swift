@@ -25,6 +25,36 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     let needs: Bool
     /// What its face shows (KnightEyes): asking when it asks your leave or your approval, else what it is doing.
     var expression = "idle"
+    /// Where it stands at a glance: the ring round its face, and the word beside its name.
+    var standing = Standing.resting
+}
+
+/// Where someone at the Roundtable stands, at a glance: the colour of the ring round its face, and the word beside its
+/// name, so the colour is never the only sign. At work; waiting for you (your leave, or your approval of work it
+/// proposes); its latest work failed or was interrupted; paused by you, or held by its spent allowance; at rest. The
+/// words are short, so a name keeps its room beside them.
+struct Standing: Sendable, Equatable {
+    enum Kind: Sendable, Equatable { case working, waiting, failed, paused, resting }
+    let kind: Kind
+    let word: String
+
+    /// Said as the app says what waits for you everywhere ("3 things need you").
+    static let waiting = Standing(kind: .waiting, word: "Needs you")
+    static let resting = Standing(kind: .resting, word: "Resting")
+
+    /// At work, in the word its eyes act out: thinking, working, reading, browsing or checking.
+    static func working(_ expression: String) -> Standing {
+        Standing(kind: .working, word: expression.prefix(1).uppercased() + expression.dropFirst())
+    }
+
+    /// Galahad's, from his line: what needs you first, then what he is doing (thinking while he answers here).
+    static func of(_ now: GalahadNow, answering: Bool) -> Standing {
+        switch now.tone {
+        case .warn: .waiting
+        case .accent: .working(answering ? "thinking" : "working")
+        case .neutral: .resting
+        }
+    }
 }
 
 /// A room of the Roundtable: its knights' conversation together, and one line of where it stands (lib/roster.ts' room row).
@@ -50,6 +80,29 @@ enum Roster {
     /// Every knight, as the node lists them. `now`: what "just now" is, in milliseconds, for a face that has just been pleased or concerned.
     static func rows(snapshot: TeamSnapshot, asks: [Ask], now: Double = Date.now.timeIntervalSince1970 * 1000) -> [RosterRow] {
         snapshot.teammates.map { row(for: $0, in: snapshot, asks: asks, now: now) }
+    }
+
+    /// Who leads the Roundtable: the knight you made primary, while it is one of `knights`; nil: Galahad.
+    static func leader(of knights: [String], primary: String?) -> String? {
+        primary.flatMap { knights.contains($0) ? $0 : nil }
+    }
+
+    /// Who sits where at the Roundtable, top to bottom (`galahad` is Galahad): the one who leads, then Galahad when a
+    /// knight leads, then the rest of `knights` as the node lists them, which is your order.
+    static func seats(knights: [String], primary: String?) -> [String] {
+        guard let leader = leader(of: knights, primary: primary) else { return ["galahad"] + knights }
+        return [leader, "galahad"] + knights.filter { $0 != leader }
+    }
+
+    /// Your order once the knights under the one who leads are moved (`offsets` to `destination`, as a list moves its
+    /// rows): the one who leads keeps its place in the order, which is where it goes back to when Galahad leads again.
+    static func order(_ knights: [String], leader: String?, moving offsets: IndexSet, to destination: Int) -> [String] {
+        let rest = knights.filter { $0 != leader }
+        let moving = offsets.filter { $0 < rest.count }.map { rest[$0] }
+        var order = rest.enumerated().filter { !offsets.contains($0.offset) }.map(\.element)
+        order.insert(contentsOf: moving, at: min(max(destination - offsets.count(where: { $0 < destination }), 0), order.count))
+        if let leader, let place = knights.firstIndex(of: leader) { order.insert(leader, at: min(place, order.count)) }
+        return order
     }
 
     /// Every room that isn't a knight's own conversation with you, the latest spoken in first.
@@ -94,30 +147,34 @@ enum Roster {
         // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
         let asking = !asked.isEmpty || jobs.contains { $0.status == "proposed" && $0.task != nil }
         let expression = asking ? "asking" : KnightEyes.expression(of: person, in: snapshot, now: now)
-        let say = { (line: String, needs: Bool) in RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression) }
+        let say = { (line: String, needs: Bool, standing: Standing) in
+            RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression, standing: standing)
+        }
 
         // What only you can answer comes first: it is what the row is marked for.
         if let ask = asked.first {
-            return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true)
+            return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true, .waiting)
         }
-        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true) }
+        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true, .waiting) }
         if let running = jobs.first(where: { $0.status == "running" && $0.task != nil })?.task {
             let progress = firstLine(running.progress)
-            return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false)
+            return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false, .working(expression))
         }
-        if jobs.contains(where: { $0.status == "running" }) { return say("Writing a reply", false) }
-        if let wrong = trouble(latest(of: jobs)) { return say(wrong, true) }
+        if jobs.contains(where: { $0.status == "running" }) { return say("Writing a reply", false, .working(expression)) }
+        let last = latest(of: jobs)
+        if let wrong = trouble(last) { return say(wrong, true, Standing(kind: .failed, word: last?.status == "interrupted" ? "Interrupted" : "Failed")) }
         let waiting = jobs.filter { $0.status == "queued" }.count
-        let held = !person.enabled ? "Paused" : person.turnsToday >= person.dailyTurns ? "Daily allowance spent" : nil
-        if let held { return say(waiting > 0 ? "\(held) · \(waiting) waiting" : held, waiting > 0) }
-        if let queued = jobs.first(where: { $0.status == "queued" && $0.task != nil })?.task {
-            let blocking = dependencies(of: queued, in: snapshot.tasks).first { !$0.satisfied }
-            return say(blocking.map { "Waiting for “\($0.title)”" } ?? "Queued: \(titled(queued))", false)
+        let held = !person.enabled ? ("Paused", "Paused") : person.turnsToday >= person.dailyTurns ? ("Daily allowance spent", "Out of turns") : nil
+        if let held { return say(waiting > 0 ? "\(held.0) · \(waiting) waiting" : held.0, waiting > 0, Standing(kind: .paused, word: held.1)) }
+        let queued = Standing(kind: .resting, word: "Queued")
+        if let task = jobs.first(where: { $0.status == "queued" && $0.task != nil })?.task {
+            let blocking = dependencies(of: task, in: snapshot.tasks).first { !$0.satisfied }
+            return say(blocking.map { "Waiting for “\($0.title)”" } ?? "Queued: \(titled(task))", false, queued)
         }
-        if waiting > 0 { return say("Reply queued", false) }
-        if let task = latest(of: jobs.filter { $0.task != nil })?.task { return say(ended(task), false) }
+        if waiting > 0 { return say("Reply queued", false, queued) }
+        if let task = latest(of: jobs.filter { $0.task != nil })?.task { return say(ended(task), false, .resting) }
         let job = firstLine(person.instructions).isEmpty ? person.role : firstLine(person.instructions)
-        return say(maker(of: person, in: snapshot).map { "Made by \($0) · \(job)" } ?? job, false)
+        return say(maker(of: person, in: snapshot).map { "Made by \($0) · \(job)" } ?? job, false, .resting)
     }
 
     /// The first line of a text, trimmed (the PWA's `firstLine`).

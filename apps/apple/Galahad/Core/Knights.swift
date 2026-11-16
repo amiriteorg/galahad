@@ -56,6 +56,13 @@ struct RoomInput: Encodable, Sendable, Equatable {
     var turnBudget: Int
 }
 
+/// `POST /api/team/arrange`: your order of the knights, and who leads the Roundtable (`galahad`, or a knight of yours),
+/// core's `TeamArrangeInput`; what is unchanged is left out. The node answers with both, as it keeps them.
+struct Arrangement: Codable, Sendable, Equatable {
+    var order: [String]?
+    var primary: String?
+}
+
 enum Knights {
     /// The harnesses a knight can work in, as they are named to you (the PWA's HARNESS), in its order.
     static let harnesses: [(id: String, name: String)] = [("native", "Galahad"), ("opencode", "OpenCode"), ("hermes", "Hermes Agent"), ("claude", "Claude Code"), ("codex", "Codex")]

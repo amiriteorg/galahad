@@ -25,6 +25,10 @@ struct TeamSnapshot: Decodable, Sendable {
     var removed: [Removed]?
     /// Galahad's own computer, once he has one: his VM, made and watched as a knight's is (under his handle).
     var computer: Teammate.Workspace? = nil
+    /// Your order of the knights (`teammates` comes in it already); absent from an older node.
+    var order: [String]? = nil
+    /// Who leads the Roundtable: `galahad`, or the knight you made primary (absent from an older node: Galahad).
+    var primary: String? = nil
 
     struct Removed: Decodable, Sendable { let id: String; let name: String }
 }

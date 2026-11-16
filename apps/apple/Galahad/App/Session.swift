@@ -24,6 +24,10 @@ import Observation
     private(set) var inboxLoaded = false
     /// The node is away, or won't accept this device: said once, above everything.
     private(set) var trouble: NodeError?
+    /// Your order of the knights, or who leads, while the node is told it: shown over what it last answered.
+    private(set) var arranging: Arrangement?
+    /// Your changes to the arrangement so far: a snapshot asked for before the latest of them is stale, and isn't shown.
+    private var arrangements = 0
 
     init(key: DeviceKey, node: PairedNode) {
         self.key = key
@@ -51,6 +55,18 @@ import Observation
         ))
     }
 
+    /// Your knights' handles in your order: as you just arranged them while the node is told (less any knight removed
+    /// since, and with any seated since after them), else as it lists them.
+    var order: [String] {
+        let here = team?.teammates.map(\.id) ?? []
+        guard let mine = arranging?.order else { return here }
+        return mine.filter(here.contains) + here.filter { !mine.contains($0) }
+    }
+    /// Who leads the Roundtable: `galahad`, or the knight you made primary.
+    var primary: String { Roster.leader(of: order, primary: arranging?.primary ?? team?.primary) ?? "galahad" }
+    /// Who sits where, top to bottom: the one who leads, Galahad next when a knight leads, then the rest in your order.
+    var seats: [String] { Roster.seats(knights: order, primary: primary) }
+
     func teammate(_ id: String) -> Teammate? { team?.teammates.first { $0.id == id } }
     func room(_ id: String) -> TeamRoom? { team?.rooms.first { $0.id == id } }
     var roomRows: [RoomRow] { team.map { Roster.roomRows(snapshot: $0) } ?? [] }
@@ -62,6 +78,7 @@ import Observation
 
     func refresh() async {
         let client = self.client
+        let arranged = arrangements
         async let me = attempt { try await client.get("/api/whoami", as: WhoAmI.self) }
         async let team = attempt { try await client.get("/api/team", as: TeamSnapshot.self) }
         async let actions = attempt { try await client.get("/api/actions", as: Listed.self).actions ?? [] }
@@ -77,7 +94,9 @@ import Observation
         case .failure: break
         }
         switch await team {
-        case .success(let team): (self.team, teamProblem) = (team, nil)
+        case .success(let team) where arranged == arrangements: (self.team, teamProblem) = (team, nil)
+        // Asked for before your latest change to the arrangement: the refresh after it brings what the node keeps.
+        case .success: break
         case .failure(let error as NodeError) where [404, 424, 501].contains(error.status): teamProblem = "This node seats no other knights yet."
         case .failure(let error): teamProblem = error.localizedDescription
         }
@@ -155,6 +174,25 @@ import Observation
         struct Control: Encodable { let room: String?; let teammate: String?; let action: String }
         _ = try await client.post("/api/team/control", Control(room: room, teammate: knight, action: action), as: JSONValue.self)
         await refresh()
+    }
+
+    /// Your order of the knights (every handle, in order), or who leads the Roundtable (`galahad`, or a knight of yours):
+    /// shown at once, then told to the node, which keeps it for every device. Refused, the Roundtable goes back to what
+    /// the node keeps, and the error says why.
+    func arrange(order: [String]? = nil, primary: String? = nil) async throws {
+        let shown = Arrangement(order: order ?? arranging?.order, primary: primary ?? arranging?.primary)
+        arranging = shown
+        arrangements += 1
+        do {
+            _ = try await client.post("/api/team/arrange", Arrangement(order: order, primary: primary), as: Arrangement.self)
+        } catch {
+            if arranging == shown { arranging = nil }
+            throw error
+        }
+        // What was asked for while the node was told is stale too.
+        arrangements += 1
+        await refresh()
+        if arranging == shown { arranging = nil }
     }
 
     /// A knight taken off the Roundtable for good; its VM goes with it only when `destroyWorkspace` says so.
