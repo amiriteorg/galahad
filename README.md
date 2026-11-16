@@ -64,6 +64,7 @@ bun galahad ask "Good morning, Galahad."
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | The mind, the Link, pairing, vault, brain, placement, R2, growth, roadmap |
 | [PLAN](docs/PLAN.md) | What's built next, in order, why, and what was declined |
 | [COMPARISON](docs/COMPARISON.md) | Galahad next to Hermes Agent, Rakazo, OpenMausBot, Grok Bot and Dots, surface by surface, with sources |
+| [MAC](docs/MAC.md) | The Mac app: the client and a node in one, to make a Mac mini a node with no Terminal (designed, not built) |
 | [ROUNDTABLE](docs/ROUNDTABLE.md) | Persistent workers, rooms and DMs, shared knowledge, VM workspaces, task supervision and current limits |
 | [OATH](docs/OATH.md) | Character, duties, limits, autonomy classes |
 | [TRIALS](docs/TRIALS.md) | How we prove quality holds and intelligence grows |
