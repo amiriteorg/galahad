@@ -10,6 +10,7 @@ import Foundation
  *   Galahad --serve-node                                          the node, its output in ~/.galahad/logs/node.log
  *   Galahad --cli <arguments>                                     the bundled CLI: Galahad --cli doctor
  *   Galahad --agent [status | register | unregister | restart]    the node's agent
+ *   Galahad --this-mac                                            what This Mac shows: the node, and staying on
  *   Galahad --first-run start [--name <name>] [--fleet <fleet>]   Start a fleet, then keep it on, as the first run does
  *   Galahad --first-run join <invite> [--name <name>]             Join my fleet, then keep it on
  */
@@ -20,7 +21,7 @@ enum MacMain {
         switch arguments.first {
         case "--serve-node": NodeBundle.main.become(["serve"], log: NodeHome.standard.log)
         case "--cli": NodeBundle.main.become(Array(arguments.dropFirst()), log: nil)
-        case "--agent", "--first-run":
+        case "--agent", "--first-run", "--this-mac":
             // Each line as it is said, even into a file (open --stdout).
             setvbuf(stdout, nil, _IOLBF, 0)
             Task { exit(await Headless.run(arguments)) }
@@ -68,8 +69,10 @@ enum MacMain {
             }
         case ("--first-run", let way?) where way == "start" || way == "join":
             return await firstRun(way, Array(arguments.dropFirst(2)))
+        case ("--this-mac", nil):
+            return await thisMac()
         default:
-            print("usage: Galahad --agent [status|register|unregister|restart] | --first-run start [--name <name>] [--fleet <fleet>] | --first-run join <invite> [--name <name>]")
+            print("usage: Galahad --agent [status|register|unregister|restart] | --first-run start [--name <name>] [--fleet <fleet>] | --first-run join <invite> [--name <name>] | --this-mac")
             return 2
         }
     }
@@ -80,6 +83,25 @@ enum MacMain {
         case .off: "not registered"
         case .needsApproval: "waiting for approval in System Settings → General → Login Items"
         }
+    }
+
+    /// This Mac, as its page shows it: the node, then each line of staying on, read as the page reads them.
+    private static func thisMac() async -> Int32 {
+        let node = ThisMac()
+        await node.refresh()
+        guard let config = node.config else {
+            print(node.bundle.carriesNode ? "This Mac isn't a node." : "This build carries no node.")
+            return 0
+        }
+        print("\(config.name): \(node.running ? "running" : "not answering") · service \(words(node.service))\(node.scripted ? " (install.sh's)" : "")")
+        if let revision = node.bundle.revision { print("  revision \(revision.prefix(12))") }
+        if let started = node.started { print("  up since \(started.formatted(date: .abbreviated, time: .standard))") }
+        print("  galahad on your PATH: \(node.command)")
+        for line in node.stayingOn?.lines ?? [] {
+            let mark = line.holds == true ? "✓" : line.holds == false ? "○" : "–"
+            print("\(mark) \(line.item.title): \(line.said)\(line.fix.map { " [\($0)]" } ?? "")")
+        }
+        return 0
     }
 
     /// Step 1's Start a fleet or Join my fleet, then step 2's keep-awake, as the window's buttons run them.
