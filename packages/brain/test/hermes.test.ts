@@ -70,6 +70,16 @@ for raw in sys.stdin:
             continue
         send({"id": 800, "method": "session/request_permission", "params": {"sessionId": "hermes-test-session", "options": [{"optionId": "yes", "kind": "allow_always"}]}})
         send({"id": 801, "method": "fs/read_text_file", "params": {"path": "/owner/secret"}})
+        # As an agent does, it waits for both answers before it goes on. (Going on at once, its turn could end and the
+        # bridge stop it before it had read them: the trace then lacked one, on a busy machine.)
+        waiting = {800, 801}
+        while waiting:
+            raw = sys.stdin.readline()
+            if not raw:
+                break
+            answer = json.loads(raw)
+            record(answer)
+            waiting.discard(answer.get("id"))
         text("New ")
         tool("new")
         # A duplicate completion must not count twice.
