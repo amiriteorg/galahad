@@ -438,6 +438,22 @@ describe("what he knows of you", () => {
     expect((await listed()).kept.map((m) => m.text)).toEqual(["Uses tabs, never spaces."]);
     expect((await cli("about", "rm", "nothing-like-it")).code).not.toBe(0);
   });
+
+  test("what you kept goes with his answers, and is listed, however many facts he has proposed since", async () => {
+    const admin = home.adminToken();
+    const { token } = (await (await call("mintArm", { label: "eager" }, admin)).json()) as { token: string };
+    for (let i = 0; i < 200; i++) expect((await call("remember", { text: `Proposed fact number ${i}.`, tags: ["about-you"] }, token)).status).toBe(200);
+    try {
+      script = [say("Hello.")];
+      await ask(admin, "Hello after all those.");
+      expect(bodies[0].messages[0].content).toContain("Uses tabs, never spaces.");
+      const about = await listed();
+      expect(about.kept.map((m) => m.text)).toEqual(["Uses tabs, never spaces."]);
+      expect(about.proposed.length).toBe(200);
+    } finally {
+      for (const m of (await listed()).proposed) await call("forget", { id: m.id }, admin);
+    }
+  });
 });
 
 describe("one answer's tools", () => {

@@ -550,8 +550,7 @@ export function createApp(ctx: AppContext) {
   function aboutYouContext(): string | undefined {
     let room = 4000;
     const kept = ctx.store
-      .memoriesTagged(ABOUT_YOU_TAG, 100)
-      .filter((m) => m.trust === "owner")
+      .memoriesTagged(ABOUT_YOU_TAG, 100, true)
       .reverse()
       .filter((m) => (room -= m.text.length + 3) >= 0);
     if (!kept.length) return undefined;
@@ -1972,14 +1971,11 @@ export function createApp(ctx: AppContext) {
       });
       return { id: event.id, trust };
     },
-    aboutYou: () => {
-      const facts = ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200);
-      return { kept: facts.filter((m) => m.trust === "owner"), proposed: facts.filter((m) => m.trust !== "owner") };
-    },
+    aboutYou: () => ({ kept: ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200, true), proposed: ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200, false) }),
     keepAboutYou: (input, p) => {
       // Yours alone: an agent (Galahad among them) proposes, and only you keep what goes with every answer.
       if (p.kind === "arm" || p.kind === "node") throw new HttpError(403, "only you keep a fact about you: he proposes, you keep");
-      const fact = ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200).find((m) => m.id === input.id);
+      const fact = [...ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200, false), ...ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200, true)].find((m) => m.id === input.id);
       if (!fact) throw new HttpError(404, "no such fact about you (galahad about lists them)");
       const text = input.text ?? fact.text;
       guardAgainstSecrets(text);

@@ -1247,10 +1247,14 @@ export class MindStore {
     return this.emit(signer, "memory.added", { text, ...(opts.tags?.length ? { tags: opts.tags } : {}) }, opts.prov ?? { trust: "owner" });
   }
 
-  /** The most recent memories carrying one tag (a project's, say), newest first. */
-  memoriesTagged(tag: string, limit = 10): Memory[] {
+  /**
+   * The most recent memories carrying one tag (a project's, say), newest first. `owner`: only yours (true) or only
+   * others' (false), chosen before the limit, so many of one kind never crowd out the other.
+   */
+  memoriesTagged(tag: string, limit = 10, owner?: boolean): Memory[] {
+    const whose = owner === undefined ? "" : owner ? " AND m.trust = 'owner'" : " AND m.trust != 'owner'";
     return this.db
-      .query<MemoryRow, [string, number]>("SELECT m.* FROM v_memories m, json_each(m.tags) t WHERE t.value = ? AND m.forgotten = 0 ORDER BY m.hlc DESC LIMIT ?")
+      .query<MemoryRow, [string, number]>(`SELECT m.* FROM v_memories m, json_each(m.tags) t WHERE t.value = ? AND m.forgotten = 0${whose} ORDER BY m.hlc DESC LIMIT ?`)
       .all(tag, limit)
       .map((row) => ({ ...row, tags: JSON.parse(row.tags) as string[] }));
   }
