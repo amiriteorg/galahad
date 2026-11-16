@@ -291,7 +291,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       microVMs,
       resolvConf,
       },
-      { governor, capacity: () => computeService!.selfCapacity(), microVMs },
+      { governor, capacity: () => computeService!.selfCapacity() },
     );
     try {
       await sandbox.ensureNetworks();
@@ -326,7 +326,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
                 load: () => liveHost().load,
                 now: Date.now,
                 bench: spawnBench,
-                ...(measuring ? { sandboxStart: () => sandboxStart(measuring, governor, () => computeService!.selfCapacity(), !!caps.sandbox?.vm) } : {}),
+                ...(measuring ? { sandboxStart: () => sandboxStart(measuring, governor, () => computeService!.selfCapacity()) } : {}),
                 modelSpeed: () => modelSpeed({ store, vault, ...(opts.fetch ? { fetch: opts.fetch } : {}) }, caps, (o, signal) => governor.enterModel(o, signal)),
               })));
   const compute = new ComputeService({ store, identity, nodeName: config.name, caps: () => caps, peers: () => sync.status(), governor, ledger, log, measure });

@@ -1,5 +1,5 @@
 import { clampNeed, type Decision, type ExecResult, type NodeCapacity, type SandboxView, VM_OVERHEAD } from "@galahad/core";
-import { chooseIsolation, type CreateInput, type DesktopAction, type DesktopView, SandboxError, SandboxHost, type SandboxHostOptions } from "@galahad/sandbox";
+import { type CreateInput, type DesktopAction, type DesktopView, SandboxError, SandboxHost, type SandboxHostOptions } from "@galahad/sandbox";
 import { CapacityError, type Governor } from "./governor.ts";
 
 /*
@@ -14,8 +14,6 @@ export interface GovernedOptions {
   governor: Governor;
   /** What this node may carry, derived now. */
   capacity(): NodeCapacity;
-  /** Whether this host runs microVMs (as the host itself was told). */
-  microVMs: boolean;
 }
 
 export class GovernedSandboxHost extends SandboxHost {
@@ -28,14 +26,19 @@ export class GovernedSandboxHost extends SandboxHost {
 
   /** `wait.signal`: the caller went away while it queued, so it leaves the queue (a sandbox being created is finished). */
   override async create(input: CreateInput, wait: { signal?: AbortSignal } = {}): Promise<SandboxView> {
+    // What this host won't make (on a Mac: no network at all, an image not built for it) never waits for a slot first.
+    const cannot = this.refusal(input);
+    if (cannot) throw new SandboxError(cannot, 424);
     const capacity = this.governed.capacity();
-    const vm = chooseIsolation(input.network, input.isolation, this.governed.microVMs) === "vm";
+    // (What it runs as is the host's to say: on a Mac every sandbox is a VM, its overhead counted.)
+    const vm = this.isolationFor(input.network, input.isolation) === "vm";
     // A microVM's own kernel and VMM take room on top of the sandbox: a ceiling that can't hold both carries none.
     if (vm && (capacity.cores < VM_OVERHEAD.cpus + 0.25 || capacity.memoryGb < VM_OVERHEAD.memoryGb + 0.25)) {
       throw new SandboxError(`this node's ceiling (${capacity.cores} threads, ${capacity.memoryGb} GB) is too small for a microVM, which takes ${VM_OVERHEAD.cpus} thread and ${VM_OVERHEAD.memoryGb} GB of its own`, 409);
     }
-    // What the sandbox itself gets: never more than the ceiling, less a microVM's own overhead.
-    const cpus = Math.max(0.25, Math.min(input.cpus, capacity.cores - (vm ? VM_OVERHEAD.cpus : 0)));
+    // What the sandbox itself gets: never more than the ceiling, less a microVM's own overhead; whole CPUs where a VM's are.
+    const within = Math.max(0.25, Math.min(input.cpus, capacity.cores - (vm ? VM_OVERHEAD.cpus : 0)));
+    const cpus = this.wholeCpus ? Math.max(1, Math.ceil(within)) : within;
     const memoryGb = Math.max(0.25, Math.min(input.memoryGb, capacity.memoryGb - (vm ? VM_OVERHEAD.memoryGb : 0)));
     const need = clampNeed(capacity, { cpus, memoryGb }, vm);
     let ticket: Awaited<ReturnType<Governor["acquire"]>>;

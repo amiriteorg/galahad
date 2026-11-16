@@ -7,6 +7,9 @@ import { GovernedSandboxHost } from "../src/compute/governed-host.ts";
 import { Governor, KEPT_WORK_MS } from "../src/compute/governor.ts";
 import { modelSpeed, sandboxStart } from "../src/compute/measure.ts";
 import { fakeDocker } from "./fake-docker.ts";
+// (The sandbox package's stand-in for Apple's container: a Mac's host, behind the same governor.)
+import { fakeContainer } from "../../sandbox/test/fake-container.ts";
+import { ContainerVolumes } from "@galahad/sandbox";
 
 /*
  * The governed sandbox host: the real host's own logic above a stand-in Docker, behind
@@ -35,7 +38,7 @@ function host(over: { capacity?: () => NodeCapacity; microVMs?: boolean; maxWait
       microVMs: over.microVMs ?? false,
       ...(over.spawnTerminal ? { spawnTerminal: over.spawnTerminal } : {}),
     },
-    { governor, capacity: cap, microVMs: over.microVMs ?? false },
+    { governor, capacity: cap },
   );
   return { sandbox, governor, docker, ledger };
 }
@@ -152,7 +155,7 @@ describe("every sandbox takes a slot first", () => {
         maxMemoryGb: 512,
         runner: async (args, ms) => (args[0] === "run" ? { code: 125, stdout: "", stderr: "no space left on device" } : failing.docker.runner(args, ms)),
       },
-      { governor: failing.governor, capacity: () => capacity(), microVMs: false },
+      { governor: failing.governor, capacity: () => capacity() },
     );
     await expect(broken.create(request())).rejects.toThrow(/could not start sandbox/);
     expect(failing.governor.usage().sandboxes).toBe(0);
@@ -177,7 +180,7 @@ describe("Docker's list is the truth, read carefully", () => {
         maxMemoryGb: 512,
         runner: async (args, ms) => (down ? { code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" } : first.docker.runner(args, ms)),
       },
-      { governor, capacity: () => capacity(), microVMs: false },
+      { governor, capacity: () => capacity() },
     );
     expect(governor.usage().sandboxes).toBe(0);
     await again.reconcile();
@@ -206,7 +209,7 @@ describe("what a calibration measures of this node, through the same door", () =
   test("a sandbox's start-up, per kind, with its own sandboxes gone afterwards; never when the node is full", async () => {
     const { sandbox, governor, docker, ledger } = host({ microVMs: true });
     docker.startMs = 15;
-    const starts = await sandboxStart(sandbox, governor, () => capacity(), true);
+    const starts = await sandboxStart(sandbox, governor, () => capacity());
     expect(starts.map((s) => s.kind)).toEqual(["container", "vm"]);
     expect(starts.every((s) => s.startMs >= 10)).toBe(true);
     expect(docker.running()).toBe(0);
@@ -217,7 +220,7 @@ describe("what a calibration measures of this node, through the same door", () =
     // Full: he doesn't queue behind real work, nor in front of it.
     await sandbox.create(request());
     await sandbox.create(request());
-    expect(await sandboxStart(sandbox, governor, () => capacity(), true)).toEqual([]);
+    expect(await sandboxStart(sandbox, governor, () => capacity())).toEqual([]);
     expect(docker.running()).toBe(2);
   });
 
@@ -270,4 +273,61 @@ describe("what a calibration measures of this node, through the same door", () =
     expect(asked).toEqual([]);
     store.close();
   }, 20_000);
+});
+
+describe("on a Mac (Apple's container), behind the same governor", () => {
+  function mac(cap = () => capacity({ cores: 12, memoryGb: 24, sandboxes: 2 })) {
+    const fake = fakeContainer();
+    const ledger: LedgerEntryInput[] = [];
+    const governor = new Governor({ capacity: cap, host: () => null, retryMs: 5, maxWaitMs: 2_000 });
+    const sandbox = new GovernedSandboxHost(
+      {
+        node: "n_mac",
+        engine: "container",
+        tokens: { mint: () => ({ token: "gw_mac", info: { hash: "h_mac" } }), revoke: () => true },
+        ledger: (entry) => void ledger.push(entry),
+        maxCpus: 64,
+        maxMemoryGb: 512,
+        runner: fake.runner,
+        workspaces: new ContainerVolumes(fake.runner, () => ({ totalBytes: 1000 * 2 ** 30, freeBytes: 900 * 2 ** 30 })),
+        microVMs: true,
+      },
+      { governor, capacity: cap },
+    );
+    return { sandbox, governor, fake, ledger };
+  }
+
+  test("every sandbox is a VM, so each one's own overhead counts against the ceiling, whatever its network", async () => {
+    const { sandbox, governor } = mac();
+    const made = await sandbox.create(request({ network: "gateway", cpus: 2, memoryGb: 4 }));
+    expect(made.isolation).toBe("vm");
+    expect(governor.usage()).toMatchObject({ sandboxes: 1, cores: 2 + VM_OVERHEAD.cpus, memoryGb: 4 + VM_OVERHEAD.memoryGb });
+  });
+
+  test("a VM's CPUs are whole: a part of one is given as one, and the governor counts what it gets", async () => {
+    const { sandbox, governor, fake } = mac();
+    const made = await sandbox.create(request({ network: "gateway", cpus: 0.5, memoryGb: 1 }));
+    expect(made.cpus).toBe(1);
+    expect(fake.vms.get(made.name)!.cpus).toBe(1);
+    expect(governor.usage().cores).toBe(1 + VM_OVERHEAD.cpus);
+  });
+
+  test("an isolated sandbox is refused there at once, never after waiting for a slot", async () => {
+    const { sandbox, governor } = mac();
+    await sandbox.create(request({ network: "gateway", quest: "q-1" }));
+    await sandbox.create(request({ network: "gateway", quest: "q-2" }));
+    // Every slot taken: a sandbox Galahad could make would wait; one a Mac can't make is told so now.
+    await expect(sandbox.create(request({ network: "isolated", quest: "q-3" }))).rejects.toThrow(/no network at all/);
+    expect(governor.queue()).toEqual([]);
+    expect(governor.usage().sandboxes).toBe(2);
+  });
+
+  test("a calibration measures what a Mac makes: a VM, on the gateway network, the most a Mac cuts one off", async () => {
+    const { sandbox, governor, fake, ledger } = mac();
+    const starts = await sandboxStart(sandbox, governor, () => capacity({ cores: 12, memoryGb: 24, sandboxes: 2 }));
+    expect(starts.map((s) => s.kind)).toEqual(["vm"]);
+    expect(ledger.filter((e) => e.class === "create" && e.resource === "docker.container").map((e) => e.detail)).toEqual(["microVM · gateway · 1 cpu · 1 GB · 20 GB disk · galahad/sandbox:1"]);
+    expect(fake.vms.size).toBe(0);
+    expect(fake.volumes.size).toBe(0);
+  });
 });

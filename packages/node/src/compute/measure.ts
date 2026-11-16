@@ -16,15 +16,16 @@ import type { Governor } from "./governor.ts";
 const PROBE = { cpus: 1, memoryGb: 1, ttlMinutes: 5, persistent: false, quest: SELF_ACTION_QUEST } as const;
 
 /**
- * How long a sandbox takes from asked-for to running its first command, for each kind this host has. Only
- * when a slot is free now (a calibration never queues behind real work, nor in front of it).
+ * How long a sandbox takes from asked-for to running its first command, for each kind this host has (a Mac's are
+ * all VMs), cut off as far as this host cuts one off (no network; on a Mac, which has none such, the gateway's
+ * alone). Only when a slot is free now (a calibration never queues behind real work, nor in front of it).
  */
-export async function sandboxStart(host: SandboxHost, governor: Governor, capacity: () => NodeCapacity, microVMs: boolean): Promise<{ kind: "container" | "vm"; startMs: number }[]> {
+export async function sandboxStart(host: SandboxHost, governor: Governor, capacity: () => NodeCapacity): Promise<{ kind: "container" | "vm"; startMs: number }[]> {
   const out: { kind: "container" | "vm"; startMs: number }[] = [];
-  for (const kind of microVMs ? (["container", "vm"] as const) : (["container"] as const)) {
+  for (const kind of host.kinds) {
     if (freeSlots(capacity(), governor.use(), governor.hostNow()) < 1 || governor.usage().queued > 0) break;
     const started = performance.now();
-    const sandbox = await host.create({ ...PROBE, network: "isolated", isolation: kind });
+    const sandbox = await host.create({ ...PROBE, network: host.strictest, isolation: kind });
     try {
       const ran = await host.exec(sandbox.id, ["true"], 30);
       if (ran.exitCode === 0) out.push({ kind, startMs: Math.round(performance.now() - started) });

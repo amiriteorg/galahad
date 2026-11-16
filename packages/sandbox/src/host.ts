@@ -19,6 +19,7 @@ import {
   containerVolumeDeleteArgs,
   parseContainers,
   parseContainerVersion,
+  type SandboxAsk,
 } from "./container.ts";
 import { ContainerVolumes } from "./container-volumes.ts";
 import {
@@ -325,6 +326,16 @@ export class SandboxHost {
     return !this.apple;
   }
 
+  /** Whether a sandbox's CPUs are whole here (a Mac's VM is given whole ones: a part of one is a whole one). */
+  get wholeCpus(): boolean {
+    return this.apple;
+  }
+
+  /** Why this host won't make the sandbox asked for (a Mac: no network at all, an image not built for it), or null. */
+  refusal(ask: SandboxAsk): string | null {
+    return this.apple ? containerCannot(ask) : null;
+  }
+
   /** A command's arguments in a sandbox, for this host's engine. */
   private commandArgs(id: string, cmd: string[], timeoutSec: number): string[] {
     return this.apple ? containerExecArgs(id, cmd, timeoutSec) : execArgs(id, cmd, timeoutSec);
@@ -446,7 +457,7 @@ export class SandboxHost {
   async create(input: CreateInput): Promise<SandboxView> {
     const providers = sandboxScopes(input);
     // Never weaker than asked: what a Mac can't give (no network at all, an image not built for it) isn't made here.
-    const cannot = this.apple ? containerCannot(input) : null;
+    const cannot = this.refusal(input);
     if (cannot) throw new SandboxError(cannot, 424);
     if (!(await this.available())) throw new SandboxError(this.apple ? "Apple's container isn't answering on this Mac: its service has to be running (container system start), at a 1.x release" : "docker is not available on this node", 424);
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);

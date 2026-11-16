@@ -308,15 +308,16 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
   return roles;
 }
 
-/** A sandbox of each kind this host has: started, one command run, removed. Never when no slot is free. */
-async function startSandboxes(host: SandboxHost, governor: Governor, capacity: () => NodeCapacity, microVMs: boolean): Promise<NonNullable<NonNullable<DoctorFacts["sandbox"]["host"]>["start"]>> {
+/** A sandbox of each kind this host has (a Mac's are all VMs): started, one command run, removed. Never when no slot is free. */
+async function startSandboxes(host: SandboxHost, governor: Governor, capacity: () => NodeCapacity): Promise<NonNullable<NonNullable<DoctorFacts["sandbox"]["host"]>["start"]>> {
   const out: { kind: "container" | "vm"; ok: boolean; ms: number; error: string | null }[] = [];
-  for (const kind of microVMs ? (["container", "vm"] as const) : (["container"] as const)) {
+  for (const kind of host.kinds) {
     if (freeSlots(capacity(), governor.use(), governor.hostNow()) < 1 || governor.usage().queued > 0) return out.length ? out : "busy";
     const started = performance.now();
     let id: string | null = null;
     try {
-      const sandbox = await host.create({ cpus: 1, memoryGb: 1, ttlMinutes: 5, persistent: false, quest: DOCTOR_QUEST, network: "isolated", isolation: kind });
+      // (As cut off as this host cuts one off: no network, or on a Mac, which has none such, the gateway's alone.)
+      const sandbox = await host.create({ cpus: 1, memoryGb: 1, ttlMinutes: 5, persistent: false, quest: DOCTOR_QUEST, network: host.strictest, isolation: kind });
       id = sandbox.id;
       const ran = await host.exec(sandbox.id, ["true"], 30);
       out.push({ kind, ok: ran.exitCode === 0, ms: Math.round(performance.now() - started), error: ran.exitCode === 0 ? null : `its command exited ${ran.exitCode}: ${message(ran.stderr || ran.stdout)}` });
@@ -350,7 +351,7 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
     if (unit) firewall = unit.stdout === "active" ? "active" : (await deps.system.run(["systemctl", "cat", "galahad-firewall.service"]))?.code === 0 ? "inactive" : "missing";
   }
   // Never when the image is missing: creating a sandbox would rebuild it, and the doctor changes nothing.
-  const start = deep && status.docker && status.image ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity(), microVMs).catch(() => null) : null;
+  const start = deep && status.docker && status.image ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity()).catch(() => null) : null;
   return {
     host: { docker: status.docker, image: status.image, networks: status.networks.gateway && status.networks.online, diskLimited, kvm: !!caps?.vm.kvm, microVMs, firewall, start },
     others,
