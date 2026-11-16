@@ -126,6 +126,30 @@ Then it shows the code to pair your iPhone, as install.sh does, and offers Tails
 | M2 | The node inside | First run (start, join, or just the app), *This Mac*, the CLI on PATH and staying on; signed, notarized and on galahad.sh |
 | M3 | Knights' VMs and models on the Mac | The `container` driver in the node, placement that knows a Mac's VMs don't grow live, the MLX preset, the Roundtable in the menu bar, and updates |
 
+## The spike, 16 November
+
+The first half of M0, run in a macOS 27.2 VM on the owner's MacBook (Tart, Cirrus Labs' plain macOS 27 image, which logs in by itself). The spike's app is a launcher of 60 lines of Swift, the pinned Bun (1.4.4, checksum-verified), the node at `origin/main` with its dependencies, and the agent's plist, every Mach-O signed ad hoc with the hardened runtime: 207 MB.
+
+What held:
+
+- **Bun under the hardened runtime needs only `allow-jit`:** the CLI and the node's `serve` ran on it for minutes, measuring the machine and answering requests.
+- **The app registers the node's agent itself.** `SMAppService.agent(plistName:)`, called from the app's own binary, gave `enabled` with no prompt. Before it is registered the status reads `notFound`, not `notRegistered`, so the app treats the two alike.
+- **launchd runs the app's binary,** which turns into Bun running the node (`exec`): one process, which launchd keeps alive, with its log in `~/.galahad/logs`.
+- **A restart brings it back untouched.** The VM restarted, logged in by itself, and the node answered again 17 seconds after the restart was asked for. That is the owner's choice for the Mac mini, and it works.
+- **Leaving is clean.** Unregistered, launchd no longer knows the agent, no process is left, the port is closed, and nothing was written to `~/Library/LaunchAgents`: the plist stays inside the app.
+- **A fresh node there** found its fleet, its vault and its loop, and the doctor's complaints were only a fresh node's: no models without keys, no sandboxes, no backup yet.
+
+What it found, now part of the design:
+
+- **`init` must run in your session.** Over SSH, `init` fell back to the file keystore, because the login keychain isn't reachable from there; the app runs it as itself, in your session, so the keys go to the Keychain.
+- **A flat `node_modules`.** Bun links its dependencies with thousands of symbolic links, which the VM's shared folder couldn't copy (a tar stream did). The app is built with Bun's hoisted layout and without development dependencies; the one native binary in them was TypeScript's compiler, which the node never runs.
+
+Not tried yet:
+
+- **Gatekeeper and notarization:** the prepared image has assessments turned off, so this waits for a Developer ID build, downloaded the way you would download it.
+- **`container`:** it can't run inside a macOS VM; it waits for the Mac mini.
+- **The client's windows and the menu bar,** which come with M1.
+
 ## How it is told
 
 Against the [mandate](MANDATE.md):
