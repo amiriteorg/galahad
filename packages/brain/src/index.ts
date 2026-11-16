@@ -23,3 +23,5 @@ export * from "./embeddings.ts";
 export * from "./effort.ts";
 export * from "./quest-progress.ts";
 export * from "./tripwires.ts";
+// The test files a gate names: a quest locks them, and a trial of your own work grades by the same lock.
+export { testFilesOf } from "./shell-paths.ts";
