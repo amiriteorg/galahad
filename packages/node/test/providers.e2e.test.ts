@@ -2,11 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { detectProvider as recognised, originOf, PRESETS, preset } from "@galahad/brain";
 import { type RouteName, routes } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
+import { detectProvider, providerSetup } from "../../../apps/web/src/lib/text.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { keyAddCommand } from "../src/key-cli.ts";
 
 /*
  * Providers through a real node (a temp home, the file keystore, loopback only): what the routes every surface
@@ -108,5 +111,73 @@ describe("a provider's models, listed through the node", () => {
     const response = await call("providerModels", { id: "cloudflare-ai" });
     expect(response.status).toBe(502);
     expect(((await response.json()) as { error: string }).error).toBe("cloudflare-ai doesn't list its models: name them yourself in the roster, as cloudflare-ai/<model>");
+  });
+});
+
+/*
+ * Every preset configured the way each surface does it, against the node's own routes: `galahad key add` (key-cli.ts),
+ * and the app's add-key sheet with the iPhone's Keys page (both run lib/text.ts' providerSetup, the iPhone through the
+ * shared vectors). Each ends with its key sealed for it, pinned to its address, and usable by its provider. A
+ * Cloudflare AI Gateway has no address of its own: the one given with its key is where it goes.
+ */
+describe("every preset is configured, on every surface", () => {
+  const GATEWAY = "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/camelot/compat";
+  const addressOf = (id: string) => preset(id)!.baseUrl || GATEWAY;
+
+  async function usable() {
+    const [{ providers }, { secrets }] = await Promise.all([ok<{ providers: { id: string; baseUrl: string; hasKey: boolean }[] }>("providers"), ok<{ secrets: { name: string; provider: string | null; origin: string | null }[] }>("secrets")]);
+    return PRESETS.map((p) => ({
+      id: p.id,
+      baseUrl: providers.find((r) => r.id === p.id)?.baseUrl,
+      hasKey: providers.find((r) => r.id === p.id)?.hasKey,
+      pinned: secrets.find((s) => s.name === p.id && s.provider === p.id)?.origin,
+    }));
+  }
+  const expected = () => PRESETS.map((p) => ({ id: p.id, baseUrl: addressOf(p.id), hasKey: true, pinned: originOf(addressOf(p.id)) }));
+  async function forget() {
+    for (const p of PRESETS) {
+      await ok("deleteSecret", { name: p.id });
+      await ok("removeProvider", { id: p.id });
+    }
+  }
+
+  test("with galahad key add: --provider for each, and --base-url for the one with no address of its own", async () => {
+    for (const p of PRESETS) {
+      const lines: string[] = [];
+      await keyAddCommand({ call: (name, input) => ok(name, input) }, fakeKey(p.id), { provider: p.id, ...(p.baseUrl ? {} : { "base-url": GATEWAY }) }, (line) => lines.push(line));
+      expect([p.id, lines.join("\n")]).toEqual([p.id, expect.stringContaining(`provider "${p.id}" configured`)]);
+    }
+    expect(await usable()).toEqual(expected());
+    await forget();
+  });
+
+  test("in the app and on the iPhone: the key sealed, then the provider set up as their providerSetup says", async () => {
+    for (const p of PRESETS) {
+      const baseUrl = p.baseUrl ? undefined : GATEWAY;
+      await ok("setSecret", { name: p.id, value: fakeKey(p.id), provider: p.id, ...(baseUrl ? { baseUrl } : {}) });
+      const { request } = providerSetup(await ok("providers"), p.id, p.id, true, baseUrl);
+      expect([p.id, request]).toEqual([p.id, expect.objectContaining({ id: p.id, secret: p.id })]);
+      await ok("setProvider", request);
+    }
+    expect(await usable()).toEqual(expected());
+  });
+
+  test("a key whose form says whose it is is recognised as such by the node, the CLI and the app; one that doesn't is chosen", () => {
+    for (const p of PRESETS) {
+      for (const prefix of p.keyPrefixes ?? []) {
+        const key = `${prefix}${fakeKey(p.id)}`;
+        expect([key, recognised(key), detectProvider(key, PRESETS)]).toEqual([key, p.id, p.id]);
+      }
+    }
+    // (Those with no form of their own are chosen: in the app's and the iPhone's lists, and with --provider.)
+    expect(PRESETS.filter((p) => !p.keyPrefixes?.length).length).toBeGreaterThan(0);
+  });
+
+  test("the models the roster is offered for a provider its vendor says lists none, through the node, without asking it", async () => {
+    // (On the providers the test above configured.)
+    for (const p of PRESETS.filter((q) => q.plan || q.models?.length)) {
+      const { models } = await ok<{ models: string[] }>("providerModels", { id: p.id });
+      expect([p.id, models]).toEqual([p.id, p.plan?.models ?? p.models ?? []]);
+    }
   });
 });
