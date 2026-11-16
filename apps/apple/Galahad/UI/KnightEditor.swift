@@ -20,6 +20,8 @@ struct KnightEditor: View {
     @State private var role: String
     @State private var dailyTurns: Int
     @State private var enabled: Bool
+    /// It leads the Roundtable (it is your primary knight), as the node is told when it is saved.
+    @State private var leads: Bool
     @State private var roles: [String: Knights.RoleInfo]?
     @State private var working = false
     @State private var problem: String?
@@ -38,6 +40,7 @@ struct KnightEditor: View {
         _role = State(initialValue: existing?.role ?? "engineer")
         _dailyTurns = State(initialValue: existing?.dailyTurns ?? 40)
         _enabled = State(initialValue: existing?.enabled ?? true)
+        _leads = State(initialValue: existing.map { session.primary == $0.id } ?? false)
     }
 
     private var taken: [String] { (session.team?.teammates.map(\.id) ?? []) + (session.team?.removed?.map(\.id) ?? []) }
@@ -161,6 +164,12 @@ struct KnightEditor: View {
                     Text("Replies and jobs a day, not a money limit. Zero holds new work; off pauses it.")
                 }
 
+                Section {
+                    Toggle("Primary knight", isOn: $leads)
+                } footer: {
+                    Text("Your primary knight leads the Roundtable: it comes first, and what you say to a room it sits in without naming anyone is its to answer. Off, Galahad leads.")
+                }
+
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
                 }
@@ -188,13 +197,24 @@ struct KnightEditor: View {
             harness: harness, role: role, enabled: enabled, dailyTurns: dailyTurns,
             avatar: AvatarLook.profile(look: look, temperament: AvatarLook.temperament(id: handle, profile: existing?.avatar))
         )
+        let knight: Teammate
         do {
-            let knight = try await session.save(knight: input)
-            saved(knight)
-            dismiss()
+            knight = try await session.save(knight: input)
         } catch {
             problem = error.localizedDescription
+            return
         }
+        // Who leads is the Roundtable's, kept apart from the knight: told only when it changed.
+        if leads != (session.primary == knight.id) {
+            do {
+                try await session.arrange(primary: leads ? knight.id : "galahad")
+            } catch {
+                problem = "\(knight.name) is saved, but who leads didn't change: \(error.localizedDescription)"
+                return
+            }
+        }
+        saved(knight)
+        dismiss()
     }
 }
 

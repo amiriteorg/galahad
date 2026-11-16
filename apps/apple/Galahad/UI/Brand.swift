@@ -24,8 +24,18 @@ enum Space {
 enum Metrics {
     /// A page's side margins, and the space between the items of a timeline.
     static let margin = Space.s4
-    /// A face in a row of the Roundtable: Galahad's, a knight's, a room's members' (so every name starts at one edge).
+    /// A face in a row of the Roundtable: Galahad's, a knight's, a room's members'.
     static let rowFace: CGFloat = 56
+    /// What the ring round a face at the Roundtable takes of each side, its stroke and the gap inside it: in a row, and
+    /// on a card.
+    static let rowRing = Space.s1
+    static let cardRing = Space.s2
+    /// The column the faces of the Roundtable's rows stand in, ring and all, so every name starts at one edge.
+    static let rowSeat = rowFace + 2 * rowRing
+    /// A face on a card of the Roundtable: large enough for its eyes to follow its work (`KnightEyes.wandersFrom`).
+    static let cardFace: CGFloat = 104
+    /// The narrowest a card of the Roundtable is: its face in its ring, and room either side.
+    static let cardWidth = cardFace + 2 * cardRing + 2 * Space.s4
     /// A speaker's face beside what it said.
     static let speakerFace: CGFloat = 32
     /// What your bubble leaves free at its side: a speaker's face and its gap, and the room a reply leaves at the other

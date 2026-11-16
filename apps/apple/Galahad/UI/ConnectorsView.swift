@@ -81,6 +81,8 @@ struct StateBadge: View {
     let tone: String
     /// Work in hand: a spinner before the words.
     var busy = false
+    /// On the row an iPad shows selected, in the list's tint: white, as the row's words are, whatever its tone.
+    var selected = false
 
     var body: some View {
         Text(text)
@@ -92,11 +94,12 @@ struct StateBadge: View {
             }
             .padding(.horizontal, Space.s2)
             .padding(.vertical, Space.s1)
-            .background(color.opacity(0.12), in: .capsule)
+            .background(color.opacity(selected ? 0.22 : 0.12), in: .capsule)
     }
 
     private var color: Color {
-        switch tone {
+        if selected { return .white }
+        return switch tone {
         case "ok": .green
         case "warn": .orange
         case "danger": .siege
