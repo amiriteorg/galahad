@@ -359,6 +359,18 @@ The planner may add gates of its own from its "Done when:" line (they're marked 
 
 The sandbox has no network unless you pass `--net`. Ctrl-C stops after the current step. The exit code is 0 only when the reviewer passed the work.
 
+**Say what never runs.** A tripwire is a rule of yours on the commands his work runs: globs matched against each word of a command, quoted or not (`*` any run of characters but `/`, `**` any run, `?` one character: `*.lock` is a lockfile in any folder, `migrations/**` that folder and everything in it), and if you like a piece of text the command must hold as well. One that halts stops the quest or the task, saying which rule; one that refuses leaves that command unrun, tells him which rule and why, and the work goes on.
+
+```sh
+bun galahad rule add no-lockfiles --refuse '*.lock' package-lock.json
+bun galahad rule add no-env --halt '.env*'
+bun galahad rule add no-force-push --refuse git --contains --force
+bun galahad rule ls
+bun galahad rule rm no-env
+```
+
+They're checked before every command of his quests (these, his loops', a trial's) and of a knight's task on his own runner, and before every gate, as your rules stand at that moment; each trip is a line in the ledger (`galahad ledger`), in what `galahad do` prints and on a knight's task trail. Quote your globs, or your shell expands them first. A rule is data, never code: only you set one (here, or on the app's Loops page from a device of yours), never an agent. A coding agent (below) runs its own commands inside its sandbox, where they aren't seen: only its gates are checked.
+
 For bigger work, let a full coding agent do it. OpenCode works for up to `--minutes`, with models through the gateway (it never sees a key), and the independent review still decides:
 
 ```sh
