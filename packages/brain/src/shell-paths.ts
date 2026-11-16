@@ -107,6 +107,24 @@ export function readOf(command: string): string | null {
   return clean(files[0]!.text);
 }
 
+/** A test's file: named as one (`x.test.ts`, `a_spec.rb`, `test_x.py`), or a file in a tests folder. Never a folder. */
+const TEST_FILE = /[._-](test|spec)s?\.[A-Za-z0-9]+$|(^|\/)test_[^/]+\.[A-Za-z0-9]+$|(^|\/)(tests?|specs?|__tests__)\/(.+\/)?[^/]+\.[A-Za-z0-9]+$/;
+
+/**
+ * The test files a gate names, word for word: the contract its work may not change (quest.ts locks them). A bare test
+ * run, a folder or a pattern names none, so a task that must change a test can, when its gate doesn't name it.
+ */
+export function testFilesOf(command: string): string[] {
+  const out: string[] = [];
+  for (const words of segments(withoutHereDocs(command))) {
+    for (const [i, w] of words.entries()) {
+      if (i === 0 || w.operator || w.dynamic || w.text.startsWith("-") || (i > 0 && words[i - 1]!.operator)) continue;
+      if (TEST_FILE.test(w.text)) out.push(clean(w.text));
+    }
+  }
+  return [...new Set(out)];
+}
+
 /** The files a command writes, moves, removes or restores, in the order it names them (none it can't read for certain). */
 export function writesOf(command: string): string[] {
   const out: string[] = [];

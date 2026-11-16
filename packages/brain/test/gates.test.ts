@@ -424,3 +424,43 @@ describe("gates in an attempt's evidence (effort)", () => {
     expect(text).not.toContain("1 fail");
   });
 });
+
+describe("the test files a gate names are the contract (locked)", () => {
+  const digest = (hex: string) => ({ stdout: `${hex.repeat(64)}  src/sum.test.ts\n` });
+
+  test("changing one sends the work back before any gate runs on it, saying which; put back, the gates and the reviewer decide as ever", async () => {
+    const h = harness(
+      {
+        engineer: [sh("sed -i 's/3/4/' src/sum.test.ts"), "DONE\nIt passes now.", sh("git checkout -- src/sum.test.ts"), sh("sed -i 's/a+b/a+b+0/' src/sum.ts"), "DONE\nFixed the code."],
+        exec: (command, nth) => (command.includes("sha256sum") ? digest(nth === 2 ? "b" : "a") : {}),
+      },
+      { gates: ["bun test src/sum.test.ts"] },
+    );
+    expect((await h.run).status).toBe("done");
+    expect(h.events.filter((e) => e.type === "locked")).toEqual([{ type: "locked", changed: ["src/sum.test.ts"] }]);
+    // The gate ran once, on the work with its tests as they were: never on the changed ones.
+    expect(gateEvents(h.events)).toHaveLength(1);
+    const told = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+    expect(told.some((m) => m.includes("You changed src/sum.test.ts"))).toBe(true);
+  });
+
+  test("the engineer is told up front which test files are the contract", async () => {
+    const h = harness({ engineer: ["DONE\nNothing to change."], exec: (command) => (command.includes("sha256sum") ? digest("a") : {}) }, { gates: ["bun test src/sum.test.ts"] });
+    await h.run;
+    const briefing = h.seen.find((s) => s.role === "engineer")!.messages[0]!.content;
+    expect(briefing).toContain("The test files they run are the contract: src/sum.test.ts.");
+  });
+
+  test("a gate that names no test file locks nothing, and nothing is read for it", async () => {
+    const h = harness({ engineer: ["DONE\nDone."] }, { gates: ["bun test"] });
+    expect((await h.run).status).toBe("done");
+    expect(h.commands.some((c) => c.includes("sha256sum"))).toBe(false);
+  });
+
+  test("a test file the work is to write (not there before) is not locked", async () => {
+    const h = harness({ engineer: [sh("printf 'x' > src/new.test.ts"), "DONE\nWrote it."], exec: (command) => (command.includes("sha256sum") ? { stdout: "" } : {}) }, { gates: ["bun test src/new.test.ts"] });
+    expect((await h.run).status).toBe("done");
+    expect(h.commands.filter((c) => c.includes("sha256sum"))).toHaveLength(1);
+    expect(h.events.some((e) => e.type === "locked")).toBe(false);
+  });
+});

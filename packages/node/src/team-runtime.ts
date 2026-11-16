@@ -189,6 +189,7 @@ export function progress(event: QuestEvent): string {
     case "submitted": return `Submitted for review · ${event.summary}`;
     case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     case "escalated": return `Escalated · the same gate failed twice in a row: the ${event.to}'s models take the work\n$ ${event.gate}`;
+    case "locked": return `Tests changed · ${event.changed.join(", ")}: the tests its gates run are the contract, so the work goes back`;
     default: return event.type;
   }
 }

@@ -1,5 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { readOf, writesOf } from "../src/shell-paths.ts";
+import { readOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
+
+describe("which test files a gate names", () => {
+  test("a file by a test's name, or a file in a tests folder, is one", () => {
+    for (const [command, paths] of [
+      ["bun test src/sum.test.ts", ["src/sum.test.ts"]],
+      ["npx vitest run ./src/a.spec.tsx src/b.test.js", ["src/a.spec.tsx", "src/b.test.js"]],
+      ["python3 -m pytest tests/test_parse.py -q", ["tests/test_parse.py"]],
+      ["go test ./... && node test/check.mjs", ["test/check.mjs"]],
+      ["cargo test --test integration && cat __tests__/x.json", ["__tests__/x.json"]],
+    ] as const) expect(testFilesOf(command), command).toEqual([...paths]);
+  });
+
+  test("a gate that names no test file locks nothing: a bare test run, a folder, a pattern", () => {
+    for (const command of ["bun test", "npm test", "pytest tests", "go test ./...", "bun test src/*.test.ts", "make check", "test -f out.txt"]) expect(testFilesOf(command), command).toEqual([]);
+  });
+});
 
 describe("which file a command shows", () => {
   test("a plain read of one file names it", () => {

@@ -82,7 +82,7 @@ export const PHASING = {
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "building", what: "Escalate when stuck", line: "A gate failing twice hands the rest to the planner's models; next, any turn." },
-    { state: "next", what: "Contract first", line: "A gate that passes before the work is refused as proof; test files locked." },
+    { state: "building", what: "Contract first", line: "The tests a gate names are locked; next, a gate that passes before the work isn't proof." },
     { state: "next", what: "A budget per task", line: "An envelope in dollars that the work sees shrinking, and stops at." },
     { state: "next", what: "Trials from your own work", line: "Every task that passed review becomes a test the next change must pass." },
     { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },

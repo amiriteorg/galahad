@@ -352,6 +352,9 @@ function print(event: QuestEvent): void {
     case "escalated":
       console.log(`  ${bold(`The same gate failed twice in a row: the ${event.to}'s models take the work`)} ${dim(`· $ ${firstLines(event.gate, 1)}`)}`);
       return;
+    case "locked":
+      console.log(`  ${bold(`Not run: the work changed ${event.changed.join(", ")}`)} ${dim("· the tests its gates run are the contract; the work goes back")}`);
+      return;
     case "finished":
       return;
   }
@@ -384,6 +387,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "escalated":
       console.log(`${tag} ${bold(`a gate failed twice: the ${event.to} takes the work`)}`);
+      return;
+    case "locked":
+      console.log(`${tag} ${bold(`tests changed: ${event.changed.join(", ")}`)} ${dim("(sent back)")}`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);
