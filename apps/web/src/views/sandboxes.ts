@@ -5,7 +5,7 @@ import { diskUse, gatewayUse, IMAGES, isLab, ISOLATION, type IsolationChoice, is
 import { gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
 import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
-import { badge, busy, button, callout, empty, errorState, field, meter, pageHead, rangeControl, section, segmented, skeletonBlock, switchControl, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, disclosure, empty, errorState, field, formActions, meter, pageBody, pageHead, rangeControl, section, segmented, skeletonBlock, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -215,7 +215,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     },
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Network"), networkControl.el, explain),
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "Image"), h("div", {}, imageControl.el), imageNote),
-    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Isolation"), h("div", {}, isolationControl.el), h("div", { class: "stack", style: "gap:2px" }, isolationNote, vmNote)),
+    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Isolation"), h("div", {}, isolationControl.el), h("div", { class: "stack snug" }, isolationNote, vmNote)),
     h("div", { class: "fields" }, cpus.el, memory.el),
     h("div", { class: "stack tight" }, disk.el, h("p", { class: "tiny subtle" }, "Its workspace can't grow past this. On a machine that can't cap disks, the sandbox says so.")),
     ttl.el,
@@ -229,7 +229,7 @@ export function openCreateSandbox(ctx: Ctx): void {
     field("Where", where, { hint: nodes.length ? `${plural(nodes.length, "machine")} can host sandboxes right now.` : "No online machine reports Docker or a VM runtime; Galahad will try this node." }),
     summary,
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), create),
+    formActions(button("Cancel", { onClick: () => sheet.close() }), create),
   );
   const sheet = openSheet({ title: "Create a sandbox", description: "A disposable machine with a clear network boundary.", body: form, size: "wide" });
   sync();
@@ -313,7 +313,7 @@ export function openConsole(ctx: Ctx, sandbox: SandboxView, on: string | null): 
 
   openSheet({
     title: sandbox.name,
-    description: h("span", { class: "row wrap", style: "gap:6px" }, badge(NETWORK[sandbox.network]?.label ?? sandbox.network, NETWORK[sandbox.network]?.tone ?? "neutral", NETWORK[sandbox.network]?.icon), h("span", {}, `${plural(sandbox.cpus, "CPU")} · ${gb(sandbox.memoryGb)} · ${sandbox.image}`)),
+    description: h("span", { class: "row wrap" }, badge(NETWORK[sandbox.network]?.label ?? sandbox.network, NETWORK[sandbox.network]?.tone ?? "neutral", NETWORK[sandbox.network]?.icon), h("span", {}, `${plural(sandbox.cpus, "CPU")} · ${gb(sandbox.memoryGb)} · ${sandbox.image}`)),
     size: "wide",
     body: h("form", { class: "console", onsubmit: (event: Event) => void exec(event) }, out, h("div", { class: "console-in" }, h("span", { "aria-hidden": "true" }, "$"), input, run)),
     initialFocus: () => input,
@@ -518,21 +518,13 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
         "Disposable machines for untrusted or risky work. Each has a clear network boundary and expires on its own.",
         ctx.can("sandbox") ? button("Create sandbox", { variant: "primary", icon: "plus", onClick: () => openCreateSandbox(ctx) }) : null,
       ),
-      body,
-      // What each network boundary means: one line until it's wanted (the create form explains the one you pick).
-      h(
-        "details",
-        { class: "card disclosure" },
-        h(
-          "summary",
+      // Shown whole once every host has answered: the hosts' sections came in one by one, and pushed this down.
+      pageBody(
+        body,
+        // What each network boundary means: one line until it's wanted (the create form explains the one you pick).
+        disclosure(
+          [h("span", { class: "grow" }, "How a sandbox reaches the network"), h("span", { class: "row wrap" }, ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) => badge(NETWORK[mode].label, NETWORK[mode].tone, NETWORK[mode].icon)))],
           {},
-          icon("chevron-right", { size: 14, class: "chev" }),
-          h("span", { class: "grow" }, "How a sandbox reaches the network"),
-          h("span", { class: "row", style: "gap:6px" }, ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) => badge(NETWORK[mode].label, NETWORK[mode].tone, NETWORK[mode].icon))),
-        ),
-        h(
-          "div",
-          { class: "disclosure-body" },
           ...(Object.keys(NETWORK) as NetworkMode[]).map((mode) =>
             h(
               "div",
@@ -543,7 +535,7 @@ export const sandboxesView: View = (root, ctx, { scope, opts }) => {
                 { class: "small" },
                 h("strong", {}, NETWORK[mode].label),
                 h("div", { class: "muted" }, NETWORK[mode].explain),
-                mode === "online" ? h("div", { class: "muted", style: "margin-top:4px" }, "It runs in its own microVM where the host supports it.") : null,
+                mode === "online" ? h("div", { class: "muted" }, "It runs in its own microVM where the host supports it.") : null,
               ),
             ),
           ),
