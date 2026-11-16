@@ -331,6 +331,15 @@ describe("your chat history", () => {
     expect(kept.messages[1].steps[1]).toMatchObject({ kind: "tool", name: "recall", ok: true });
   });
 
+  test("asking again a question the chat never had (it never reached the node) asks it, and what was kept stays", async () => {
+    script = [say("Paris.")];
+    const { id } = conversationOf(await ask(home.adminToken(), "What is the capital of France?", { save: true }));
+    // The app's next question never reached the node (it was offline, or the node refused it): its Retry asks it again.
+    script = [say("Rome.")];
+    await ask(home.adminToken(), "And of Italy?", { conversation: id, retry: true });
+    expect((await get(id)).messages.map((m: any) => m.content)).toEqual(["What is the capital of France?", "Paris.", "And of Italy?", "Rome."]);
+  });
+
   test("yours alone: an agent can't read your history or keep chats in it", async () => {
     const { token } = (await (await call("mintArm", { label: "nosy" }, home.adminToken())).json()) as { token: string };
     expect((await call("conversations", undefined, token)).status).toBe(403);

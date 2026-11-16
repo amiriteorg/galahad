@@ -1118,7 +1118,7 @@ export function createApp(ctx: AppContext) {
       kept = ctx.chats.summary(continued);
       if (!kept || !visibleTo(kept, p)) throw new HttpError(404, "no such conversation");
       if (asked.role !== "user") throw new HttpError(400, "the last message must be yours");
-      if (retry) ctx.chats.dropLastExchange(kept.id);
+      if (retry) ctx.chats.dropLastExchange(kept.id, asked.content);
       // The kept conversation leads: what's stored (once it is long, its story and what came after it whole), then
       // your new question.
       const told = ctx.chats.told(kept.id);

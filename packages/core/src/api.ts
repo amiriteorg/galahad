@@ -415,7 +415,7 @@ export const routes = {
       conversation: ConversationId.optional(),
       /** A new conversation's project: its instructions and memories go with every answer. */
       project: ProjectId.optional(),
-      /** Ask again: the conversation's last exchange is replaced by this one. */
+      /** Ask again: the conversation's last exchange is replaced by this one, when it asked the same (one it never had is just asked). */
       retry: z.boolean().optional(),
       /**
        * Offer the archive's most relevant entries as context (fenced as data). Default: on when

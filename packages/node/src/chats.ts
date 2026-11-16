@@ -296,10 +296,13 @@ export class ChatStore {
     return this.summary(id);
   }
 
-  /** Asked again: the last question and its answer go, so the new ones take their place. */
-  dropLastExchange(id: string): void {
-    const last = this.db.query<{ id: number }, [string]>("SELECT id FROM messages WHERE conversation = ? AND role = 'user' ORDER BY id DESC LIMIT 1").get(id);
-    if (last) this.db.query("DELETE FROM messages WHERE conversation = ? AND id >= ?").run(id, last.id);
+  /**
+   * Asked again: the last question and its answer go, so the new ones take their place. Only when it was this question:
+   * one the chat never had (it never reached the node) is simply asked, and nothing kept before it goes.
+   */
+  dropLastExchange(id: string, question: string): void {
+    const last = this.db.query<{ id: number; content: string }, [string]>("SELECT id, content FROM messages WHERE conversation = ? AND role = 'user' ORDER BY id DESC LIMIT 1").get(id);
+    if (last && last.content === question) this.db.query("DELETE FROM messages WHERE conversation = ? AND id >= ?").run(id, last.id);
   }
 
   /** Gone for good: secure_delete overwrites its pages in the file (what was queued behind it goes with it). */
