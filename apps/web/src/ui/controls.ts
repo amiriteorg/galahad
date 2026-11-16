@@ -544,7 +544,7 @@ export function note(...children: Child[]): HTMLElement {
 
 /**
  * A page's body that appears whole (.page-body): its parts are drawn at once, hidden, while one placeholder stands in;
- * when none of them is still loading (no .skeleton, nothing aria-busy) it is shown in one frame, or after `ms` whatever
+ * when none of them is still loading (no .skeleton, nothing aria-busy) it is shown in one frame, or after 1.5 s whatever
  * is still loading. Parts that answer at different times don't push each other down as they arrive: what you see first
  * is where it stays. A part that loads without a skeleton says so with aria-busy until its first answer.
  */
@@ -612,7 +612,8 @@ export function rows(...items: Child[]): HTMLElement {
 
 /**
  * A list in a card: its rows, or, with none, what will appear there (an empty state in the same card, so the page
- * doesn't change shape when the first one arrives). `nav` makes it a list of places, named `label`.
+ * doesn't change shape when the first one arrives). With `nav` it is a list of places, named by it (a nav card, no head
+ * or foot).
  */
 export function list(items: Child[], options: Omit<CardOptions, "flush"> & { empty?: Parameters<typeof empty>[0]; nav?: string } = {}): HTMLElement {
   const { empty: none, nav, ...framing } = options;
