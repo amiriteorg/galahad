@@ -67,6 +67,13 @@ describe("which bodies are servers", () => {
     expect(isAlwaysOn({ os: "darwin", hasBattery: false })).toBe(false);
   });
 
+  test("a Mac with no battery that its node keeps awake is a server too (a Mac mini set to stay on); a laptop never is", () => {
+    expect(isAlwaysOn({ os: "darwin", hasBattery: false, awake: true })).toBe(true);
+    expect(isAlwaysOn({ os: "darwin", hasBattery: false, awake: false })).toBe(false);
+    expect(isAlwaysOn({ os: "darwin", hasBattery: true, awake: true })).toBe(false);
+    expect(isAlwaysOn({ os: "win32", hasBattery: false, awake: true })).toBe(false);
+  });
+
   test("unknown capabilities are not a server", () => {
     expect(isAlwaysOn(undefined)).toBe(false);
     expect(isAlwaysOn({})).toBe(false);

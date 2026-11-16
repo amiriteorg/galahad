@@ -57,17 +57,17 @@ Galahad.app/Contents/
 
 ### 3. A Mac that stays on
 
-A node is only useful while it is up. Today the node counts every Mac as a personal machine that sleeps and travels (`isAlwaysOn` in `packages/node/src/capabilities.ts` is true only for Linux with no battery), and it guesses a Mac's battery from its host name (whether it contains "book"). The app makes "stays on" true, and then the node says so:
+A node is only useful while it is up. The node counted every Mac as a personal machine that sleeps and travels, and guessed a Mac's battery from its host name. Now a Mac's battery is read from the Mac (`pmset -g batt`), and `galahad awake on` keeps the Mac from sleeping while its node runs (`packages/node/src/keep-awake.ts`: `caffeinate -s -w <the node's pid>`, so off mains power, or once the node stops, it lets go). A Mac with no battery that its node keeps awake reports `awake` and counts as always on (`isAlwaysOn`), as a Linux server does; a laptop never does. The app makes "stays on" true, and then the node says so:
 
 | | How | What it needs |
 |---|---|---|
 | Runs when you're not there | The launchd agent, started at login | Your approval in Login Items, once |
 | Comes back after a restart | Automatic login for the account it runs under, with FileVault off (the owner's choice, 16 November: the Mac mini stays unlocked, so its disk isn't encrypted at rest). The other way, FileVault on and the disk unlocked over SSH after each restart (macOS 26 and later on Apple silicon, Remote Login on, Ethernet safest), stays documented for a Mac that needs it ([Apple](https://support.apple.com/guide/security/sec8447f5049/web)) | Automatic login turned on in System Settings → Users & Groups, once |
-| Doesn't sleep | The node holds a power assertion while it runs, as `caffeinate -s` does; the display may sleep | Nothing |
+| Doesn't sleep | `galahad awake on`: the node holds a power assertion while it runs (`caffeinate -s`); the display may sleep | Nothing |
 | Starts after a power cut | System Settings → Energy → *Start up automatically after a power failure* | You, once. The app shows the setting and reads it back (`pmset -g`); it never changes it for you |
 | Reachable from anywhere | Tailscale, then `galahad expose`, as install.sh does | Tailscale signed in |
 
-Each row is a line of the app's *This Mac* pane, its state read live: a tick, or what is missing. With all of them true and no battery (read from the power sources IOKit reports, not the host name), the node reports itself always on, and placement treats the Mac as a server.
+Each row is a line of the app's *This Mac* pane, its state read live: a tick, or what is missing. With all of them true and no battery (read from the Mac's own power sources, not the host name), the node reports itself always on, and placement treats the Mac as a server.
 
 ### 4. Knights' VMs on the Mac
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -302,6 +302,8 @@ Agents (MCP)
   arms | arms revoke <label>      list or revoke agent credentials
 
 Maintenance
+  awake on|off|status             a Mac set to stay on (a Mac mini serving the fleet) is kept from sleeping while its
+                                  node runs, and counts as always on (no battery); a laptop on its battery never is
   doctor [--offline] [--quick] [--json]
                                   is everything well? One look at this node's whole installation, in plain lines
                                   (ok, needs you, broken) with what to do: its keys, the mind, its clock, sync and
@@ -927,6 +929,26 @@ Next:
       const start = () => Bun.spawn(cmd, { env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       process.exit(await runWithToken(start, () => admin.call("revokeToken", { hash: minted.info.hash })));
     }
+    case "awake": {
+      // A Mac set to stay on (a Mac mini serving the fleet) is kept from sleeping while its node runs (keep-awake.ts).
+      if (!existsSync(home.configPath)) fail("this machine isn't a node yet: galahad init, or galahad join <invite>");
+      const config = home.readConfig();
+      const mac = process.platform === "darwin";
+      if (sub === "on" || sub === "off") {
+        home.writeConfig({ ...config, keepAwake: sub === "on" });
+        if (sub === "off") console.log("It may sleep again once the node next starts.");
+        else if (mac) console.log("This Mac will be kept awake while its node runs, from the node's next start (the app restarts it; a node install.sh made: launchctl kickstart -k gui/$(id -u)/sh.galahad.node).");
+        else console.log("Kept on. Only a Mac is kept awake this way: a Linux server doesn't sleep.");
+        return;
+      }
+      if (sub && sub !== "status") fail("usage: galahad awake on|off|status");
+      const fleet = await new Admin(home).call<FleetView>("fleet").catch(() => null);
+      const self = fleet?.devices.find((d) => d.id === fleet.self);
+      const holding = self?.caps ? self.caps.awake === true : null;
+      console.log(`keep-awake: ${config.keepAwake ? "on" : "off"}${holding === null ? " (the node isn't running, or didn't say)" : holding ? " · the running node is keeping this Mac awake" : config.keepAwake ? " · the running node isn't holding it yet: restart it" : ""}`);
+      return;
+    }
+
     case "vault": {
       if (sub !== "rotate") fail("usage: galahad vault rotate");
       const result = await new Admin(home).call("rotateVault", {});

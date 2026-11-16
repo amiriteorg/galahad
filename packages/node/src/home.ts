@@ -24,6 +24,8 @@ const Config = z.strictObject({
   keystore: z.enum(["os", "file"]),
   /** Address this node advertises to peers (normally its tailnet IP). */
   advertise: z.string().nullable(),
+  /** On a Mac: keep it from sleeping while the node runs (`galahad awake on`; keep-awake.ts). Absent: off. */
+  keepAwake: z.boolean().optional(),
 });
 export type NodeConfig = z.infer<typeof Config>;
 

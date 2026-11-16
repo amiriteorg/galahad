@@ -31,6 +31,7 @@ import { QuestBoard } from "./quests.ts";
 import { skillAsker, SkillsService } from "./skills.ts";
 import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
+import { keepAwake } from "./keep-awake.ts";
 import { ConnectorService } from "./connectors.ts";
 import { loopNotice } from "./heartbeat.ts";
 import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
@@ -204,7 +205,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const upkeepSpent: NonNullable<BrainContext["spent"]> = (call) => usage.note("galahad", call.role, call.ref, call.usage);
 
   const port = env.GALAHAD_PORT ?? config.port;
-  let caps = opts.capabilities ?? (await probeCapabilities());
+  // A Mac set to stay on is kept from sleeping while the node runs, and says so in its capabilities (isAlwaysOn).
+  const awake = config.keepAwake ? keepAwake() : null;
+  if (config.keepAwake && !awake) log("keep-awake is on, but only a Mac with caffeinate can be kept awake: this machine isn't");
+  const withAwake = (c: Capabilities): Capabilities => (awake ? { ...c, awake: true } : c);
+  let caps = opts.capabilities ?? withAwake(await probeCapabilities());
   const advertise = env.GALAHAD_ADVERTISE ?? config.advertise ?? caps.tailscale?.ip ?? "127.0.0.1";
   const endpoint = `http://${advertise}:${port}`;
 
@@ -621,7 +626,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const refresh = opts.capabilities
     ? null
     : setInterval(() => {
-        void refreshCapabilities(probeCapabilities, (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
+        void refreshCapabilities(async () => withAwake(await probeCapabilities()), (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
           if (fresh) caps = fresh;
           // A GPU, a local runtime, more memory, a new ceiling: it measures itself again.
           upkeep();
@@ -686,6 +691,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       archiveStore.close(); // requests may still have been searching it
       local.close();
       store.close();
+      awake?.stop();
     },
   };
 }

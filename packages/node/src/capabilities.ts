@@ -26,6 +26,8 @@ export interface Capabilities {
   /** Present when this node can host sandboxes (Docker reachable). */
   /** vm: it can also run sandboxes as KVM microVMs (Kata). */
   sandbox?: { image: boolean; networks: boolean; vm?: boolean } | null;
+  /** This node keeps its Mac from sleeping while it runs (`galahad awake on`: keep-awake.ts). Absent: it doesn't. */
+  awake?: boolean;
 }
 
 const TOOLS = [
@@ -123,28 +125,34 @@ export async function servedOrigin(proxyPort: number): Promise<string | null> {
 }
 
 /**
- * A server: Linux and no battery. Windows and macOS machines are personal bodies that
- * sleep and travel, battery or not (Windows doesn't always report a laptop's battery).
+ * A server: Linux and no battery; or a Mac with no battery that its node keeps awake (a Mac mini set to stay on:
+ * `galahad awake on`, docs/MAC.md). Other Windows and macOS machines are personal bodies that sleep and travel,
+ * battery or not (Windows doesn't always report a laptop's battery).
  */
-export const isAlwaysOn = (caps: Partial<Pick<Capabilities, "os" | "hasBattery">> | null | undefined): boolean =>
-  caps?.os === "linux" && caps.hasBattery === false;
+export const isAlwaysOn = (caps: Partial<Pick<Capabilities, "os" | "hasBattery" | "awake">> | null | undefined): boolean =>
+  caps?.hasBattery === false && (caps.os === "linux" || (caps.os === "darwin" && caps.awake === true));
 
-function hasBattery(): boolean {
+function hasBattery(macPower: string | null): boolean {
   if (process.platform === "linux") {
     return ["BAT0", "BAT1"].some((b) => existsSync(`/sys/class/power_supply/${b}`));
   }
-  return process.platform === "darwin" ? os.hostname().toLowerCase().includes("book") : false;
+  // A Mac's own word (pmset), not a guess from its name: a laptop has an internal battery, a Mac mini none.
+  return process.platform === "darwin" ? macHasBattery(macPower) : false;
 }
+
+/** Whether `pmset -g batt` speaks of an internal battery (null: it couldn't be asked, so none is assumed). */
+export const macHasBattery = (pmsetBatt: string | null): boolean => !!pmsetBatt && /InternalBattery/.test(pmsetBatt);
 
 export async function probeCapabilities(): Promise<Capabilities> {
   const tools = TOOLS.filter((tool) => Bun.which(tool));
-  const [gpu, models, docker, tailscale, windowsBattery, sandbox] = await Promise.all([
+  const [gpu, models, docker, tailscale, windowsBattery, sandbox, macPower] = await Promise.all([
     gpus(),
     localModels(),
     tools.includes("docker") ? run(["docker", "info", "--format", "{{.ServerVersion}}"], 5000) : Promise.resolve(null),
     tailscaleInfo(),
     process.platform === "win32" ? batteryWindows() : Promise.resolve(null),
     tools.includes("docker") ? probeSandbox() : Promise.resolve(null),
+    process.platform === "darwin" ? run(["pmset", "-g", "batt"]) : Promise.resolve(null),
   ]);
   const cpus = os.cpus();
   return {
@@ -154,7 +162,7 @@ export async function probeCapabilities(): Promise<Capabilities> {
     cores: cpus.length,
     cpu: cpus[0]?.model?.trim() ?? "unknown",
     memoryGb: Math.round(os.totalmem() / 2 ** 30),
-    hasBattery: process.platform === "win32" ? windowsBattery !== null : hasBattery(),
+    hasBattery: process.platform === "win32" ? windowsBattery !== null : hasBattery(macPower),
     gpu,
     docker: !!docker,
     vm: {
