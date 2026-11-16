@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoIsolation, diskUse, gatewayUse, isLab, isolationPlan } from "./sandbox.ts";
+import { autoIsolation, diskUse, gatewayUse, isLab, isolationPlan, makesSandboxes } from "./sandbox.ts";
 import { gb } from "./text.ts";
 
 const ultra = { name: "ultra", vm: true };
@@ -33,6 +33,28 @@ describe("sandbox isolation", () => {
     expect(refused).toMatchObject({ isolation: "container", vmAvailable: false, vmReason: "laptop can't run microVMs (it needs KVM and Kata)." });
     // Falls back to Automatic rather than asking for what the node would refuse (424).
     expect(refused.send).toBeUndefined();
+  });
+});
+
+describe("a Mac's sandboxes (Apple's container)", () => {
+  const mini = { name: "mini", vm: true, mac: true };
+
+  test("every sandbox there is a VM of its own, whatever is chosen, and the note says so", () => {
+    for (const choice of ["auto", "container", "vm"] as const) {
+      expect(isolationPlan(choice, "online", mini)).toMatchObject({ isolation: "vm", vmAvailable: true, vmReason: null, note: "On mini, a Mac, every sandbox is a VM of its own (Apple's container)." });
+    }
+    expect(isolationPlan("auto", "gateway", mini).send).toBeUndefined();
+  });
+
+  test("an isolated one isn't made on a Mac: placed by Galahad it goes to a Linux host, and on the Mac itself it is refused", () => {
+    expect(isolationPlan("auto", "isolated", mini).note).toBe("mini is a Mac, which makes no sandbox with no network at all: placed by Galahad, it goes to a Linux host with Docker; asked of mini, it is refused.");
+  });
+
+  test("a Mac with container makes sandboxes; one without, as before, only with Docker", () => {
+    expect(makesSandboxes({ docker: false, vm: { kvm: false, tools: [] }, sandbox: { image: true, networks: true, vm: true, engine: "container" } })).toBe(true);
+    expect(makesSandboxes({ docker: false, vm: { kvm: false, tools: [] }, sandbox: null })).toBe(false);
+    expect(makesSandboxes({ docker: true })).toBe(true);
+    expect(makesSandboxes({ vm: { kvm: true, tools: [] } })).toBe(true);
   });
 });
 

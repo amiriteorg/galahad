@@ -1,3 +1,4 @@
+import type { Caps } from "../types.ts";
 import { gb } from "./text.ts";
 
 /*
@@ -44,12 +45,23 @@ export interface IsolationPlan {
   note: string;
 }
 
+/** Whether a node makes sandboxes: Docker, KVM or a VM tool, or on a Mac Apple's container. */
+export const makesSandboxes = (caps: Pick<Caps, "docker" | "vm" | "sandbox">): boolean => !!(caps.docker || caps.vm?.kvm || caps.vm?.tools.length || caps.sandbox?.engine === "container");
+
 /**
  * The isolation for a sandbox about to be made on `host`. MicroVM on a host
  * without microVMs falls back to Automatic (the form disables it; the node would
- * refuse it with a 424).
+ * refuse it with a 424). On a Mac (`mac`: Apple's container) every sandbox is a VM
+ * of its own, whatever is chosen, and none is made with no network at all.
  */
-export function isolationPlan(choice: IsolationChoice, network: string, host: { name: string; vm: boolean }): IsolationPlan {
+export function isolationPlan(choice: IsolationChoice, network: string, host: { name: string; vm: boolean; mac?: boolean }): IsolationPlan {
+  if (host.mac) {
+    const note =
+      network === "isolated"
+        ? `${host.name} is a Mac, which makes no sandbox with no network at all: placed by Galahad, it goes to a Linux host with Docker; asked of ${host.name}, it is refused.`
+        : `On ${host.name}, a Mac, every sandbox is a VM of its own (Apple's container).`;
+    return { isolation: "vm", ...(choice === "auto" ? {} : { send: choice }), vmAvailable: true, vmReason: null, note };
+  }
   const chosen: IsolationChoice = choice === "vm" && !host.vm ? "auto" : choice;
   const isolation = chosen === "auto" ? autoIsolation(network, host.vm) : chosen;
   const vmReason = host.vm ? null : `${host.name} can't run microVMs (it needs KVM and Kata).`;

@@ -1,7 +1,7 @@
 import type { FleetView, ProviderView, SandboxView } from "@galahad/core";
 import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { diskUse, gatewayUse, IMAGES, isLab, ISOLATION, type IsolationChoice, isolationPlan } from "../lib/sandbox.ts";
+import { diskUse, gatewayUse, IMAGES, isLab, ISOLATION, type IsolationChoice, isolationPlan, makesSandboxes } from "../lib/sandbox.ts";
 import { gb, parseCommand, plural } from "../lib/text.ts";
 import { duration, minutesLabel, relativeTime } from "../lib/time.ts";
 import { asCaps, type ExecResult, type NetworkMode } from "../types.ts";
@@ -51,13 +51,13 @@ const sandboxesChanged = signal(0);
 
 const statusTone = (status: string): Tone => (/run|ready|up/i.test(status) ? "ok" : /start|creat|pull/i.test(status) ? "info" : /err|fail|dead/i.test(status) ? "danger" : "neutral");
 
-function sandboxNodes(fleet: FleetView | null): { name: string; cores: number; memoryGb: number; vm: boolean }[] {
+function sandboxNodes(fleet: FleetView | null): { name: string; cores: number; memoryGb: number; vm: boolean; mac: boolean }[] {
   if (!fleet) return [];
   return fleet.devices
     .filter((d) => d.kind === "node" && !d.revokedAt && isOnline(fleet, d))
     .map((d) => ({ d, caps: asCaps(d.caps) }))
-    .filter(({ caps }) => caps && (caps.docker || caps.vm?.kvm || caps.vm?.tools.length))
-    .map(({ d, caps }) => ({ name: d.name, cores: caps?.cores ?? 4, memoryGb: caps?.memoryGb ?? 8, vm: Boolean(caps?.sandbox?.vm) }));
+    .filter(({ caps }) => caps && makesSandboxes(caps))
+    .map(({ d, caps }) => ({ name: d.name, cores: caps?.cores ?? 4, memoryGb: caps?.memoryGb ?? 8, vm: Boolean(caps?.sandbox?.vm), mac: caps?.sandbox?.engine === "container" }));
 }
 
 export function openCreateSandbox(ctx: Ctx): void {
@@ -113,7 +113,8 @@ export function openCreateSandbox(ctx: Ctx): void {
   // Without a choice, it's made on the node this device talks to.
   const host = () => {
     const name = where.value || ctx.whoami.nodeName;
-    return { name, vm: nodes.find((n) => n.name === name)?.vm ?? false };
+    const node = nodes.find((n) => n.name === name);
+    return { name, vm: node?.vm ?? false, mac: node?.mac ?? false };
   };
   const plan = () => isolationPlan(isolation, network, host());
 

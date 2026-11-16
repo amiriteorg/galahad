@@ -161,7 +161,7 @@ import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfAc
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
 import { SignInError, SignIns } from "./sign-ins.ts";
-import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from "./placement.ts";
+import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost, type SandboxNeeds, sandboxRefusals } from "./placement.ts";
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
@@ -415,11 +415,16 @@ export function createApp(ctx: AppContext) {
 
   /**
    * Pick the best sandbox host in the fleet for work nobody pinned to a node: the one with room (this node
-   * among them), by what each measured; when every host is full, the one with the shortest queue.
+   * among them) that can make it (a Mac makes no isolated sandbox), by what each measured; when every host is
+   * full, the one with the shortest queue. None that can: the hosts that can't, each with why.
    */
-  function placeSandbox(): Device {
-    const best = sandboxHost(candidates());
-    if (!best) throw new HttpError(424, "no sandbox host is online in this fleet");
+  function placeSandbox(needs: SandboxNeeds = {}): Device {
+    const all = candidates();
+    const best = sandboxHost(all, needs);
+    if (!best) {
+      const refused = sandboxRefusals(all, needs);
+      throw new HttpError(424, refused.length ? `no sandbox host in this fleet can make it: ${refused.map((r) => `${r.name}: ${r.reason}`).join(" · ")}` : "no sandbox host is online in this fleet");
+    }
     return resolveNode(best.device);
   }
 
@@ -505,12 +510,12 @@ export function createApp(ctx: AppContext) {
     path: string,
     body: Record<string, unknown>,
     local: () => Promise<T>,
-    /** A new sandbox goes where there's room; what follows goes where its sandbox is. */
-    where: { create?: boolean; sandbox?: string } = {},
+    /** A new sandbox goes where there's room and it can be made (`needs`); what follows goes where its sandbox is. */
+    where: { create?: boolean; needs?: SandboxNeeds; sandbox?: string } = {},
   ): Promise<T> {
     const elsewhere = where.sandbox ? placed.get(where.sandbox) : undefined;
     const target =
-      p.kind === "node" ? null : on ? resolveNode(on) : elsewhere ? (ctx.store.activeDevice(elsewhere) ?? null) : where.create ? placeSandbox() : ctx.sandbox ? null : placeSandbox();
+      p.kind === "node" ? null : on ? resolveNode(on) : elsewhere ? (ctx.store.activeDevice(elsewhere) ?? null) : where.create ? placeSandbox(where.needs) : ctx.sandbox ? null : placeSandbox();
     if (!target || target.id === ctx.identity.id) {
       if (!ctx.sandbox) throw new HttpError(424, "this node is not a sandbox host");
       return local();
@@ -1614,9 +1619,17 @@ export function createApp(ctx: AppContext) {
       const existing = await teamWorkspace(member, signal);
       if (existing) return existing;
       const chosen = member.workspaceNode ?? input.on;
+      // A knight's own VM: kept, and maybe given more (a host whose VMs grow live is leaned to); a desktop isn't made on a Mac.
+      const needs: SandboxNeeds = { network: input.network ?? "online", kept: true, ...(input.desktop ? { desktop: true } : {}) };
       const hosts = candidates().filter((c) => c.online && c.caps?.sandbox?.vm);
-      const best = chosen ? hosts.find((c) => c.device === resolveNode(chosen).id) : sandboxHost(hosts);
-      if (!best) throw new HttpError(424, chosen ? "this knight's VM host is unavailable or lacks KVM/Kata" : "no VM-capable host is online; enroll a Linux host with KVM and Kata");
+      const pinned = chosen ? hosts.find((c) => c.device === resolveNode(chosen).id) : undefined;
+      const cannot = pinned ? sandboxRefusals([pinned], needs)[0] : undefined;
+      if (cannot) throw new HttpError(424, `this knight's VM host can't make it: ${cannot.reason}`);
+      const best = chosen ? pinned : sandboxHost(hosts, needs);
+      if (!best) {
+        const refused = chosen ? [] : sandboxRefusals(hosts, needs);
+        throw new HttpError(424, chosen ? "this knight's VM host is unavailable or lacks KVM/Kata" : refused.length ? `no VM host in this fleet can make it: ${refused.map((r) => `${r.name}: ${r.reason}`).join(" · ")}` : "no VM-capable host is online; enroll a Linux host with KVM and Kata, or a Mac with Apple's container");
+      }
       // (His own computer has no plan to keep: it is bound once it is made.)
       if (id !== TEAM_GALAHAD) teamOf().planWorkspace(id, best.device);
       const api = inProcess(teamOwner, signal);
@@ -2493,7 +2506,11 @@ export function createApp(ctx: AppContext) {
       // Creating may pull an image: long-running.
       // It takes a slot on its host first, and waits for one when the host is full (a caller that goes away leaves the queue).
       return longRunning(
-        onNode<{ sandbox: { id: string; node: string } }>(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped, { signal: req.signal }) }), { create: true }).then((made) => {
+        onNode<{ sandbox: { id: string; node: string } }>(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped, { signal: req.signal }) }), {
+          create: true,
+          // (What it asks of its host: a Mac makes no isolated sandbox, no desktop, no Lab, no Gazebo.)
+          needs: { network: scoped.network, kept: scoped.persistent, ...(scoped.desktop ? { desktop: true } : {}), ...(scoped.lab ? { lab: true } : {}), ...(scoped.gazebo ? { gazebo: true } : {}) },
+        }).then((made) => {
           remember(made.sandbox.id, made.sandbox.node);
           if (attempt) ctx.compute.attemptSandbox(attempt, made.sandbox.id, ctx.store.device(made.sandbox.node)?.name ?? made.sandbox.node);
           return made;

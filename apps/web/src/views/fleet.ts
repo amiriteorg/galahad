@@ -3,6 +3,7 @@ import { isAbort } from "../api.ts";
 import { capacityBlock, computeBody, slotsTile } from "./fleet-compute.ts";
 import { encodeQr, qrPath } from "@galahad/core/qr";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { makesSandboxes } from "../lib/sandbox.ts";
 import { gb, plural, shortId } from "../lib/text.ts";
 import { countdown, hlcMs, relativeTime } from "../lib/time.ts";
 import { type AnyScope, asCaps, type Caps, type InviteResponse, type PlacementResult } from "../types.ts";
@@ -73,8 +74,9 @@ export function capChips(caps: Caps | null): HTMLElement[] {
   else if (caps.vm?.tools.length) out.push(chip("layers", caps.vm.tools.join(", "), true));
   const models = (caps.localModels ?? []).flatMap((r) => r.models);
   if (models.length) out.push(chip("models", `${plural(models.length, "local model")}`, true, models.join(", ")));
-  if (caps.docker || caps.vm?.kvm || caps.vm?.tools.length) out.push(chip("shield-check", "Sandbox-ready", true));
-  if (caps.sandbox?.vm) out.push(chip("shield", "microVMs", true, "Sandboxes can run in their own KVM microVM, with their own kernel (Kata)"));
+  if (makesSandboxes(caps)) out.push(chip("shield-check", "Sandbox-ready", true));
+  if (caps.sandbox?.engine === "container") out.push(chip("shield", "VMs (Apple's container)", true, "Every sandbox is a VM of its own, through Apple's container. A running VM pauses to take more, and none is made with no network at all."));
+  else if (caps.sandbox?.vm) out.push(chip("shield", "microVMs", true, "Sandboxes can run in their own KVM microVM, with their own kernel (Kata)"));
   if (caps.hasBattery) out.push(chip("battery", "Battery"));
   return out;
 }

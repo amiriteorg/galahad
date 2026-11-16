@@ -98,6 +98,15 @@ describe("a node on a Mac with Apple's container", () => {
     expect(entries.find((e) => e.resource === "docker.container" && e.class === "create" && e.target === sandbox.name)?.detail).toBe("microVM · gateway · 1 cpu · 1 GB · 20 GB disk · galahad/sandbox:1");
   });
 
+  test("placed without being pinned: its sandbox is made on the Mac; one asked to be isolated finds no host here, and says why", async () => {
+    const { sandbox } = await api<{ sandbox: SandboxView }>("createSandbox", { network: "online", cpus: 1, memoryGb: 1, quest: "q-placed" });
+    expect(sandbox).toMatchObject({ node: daemon.identity.id, network: "online", isolation: "vm" });
+    expect(fake.vms.get(sandbox.name)!.networks).toEqual(["default", NETWORKS.gateway.name]);
+    await api("destroySandbox", { id: sandbox.id });
+    await expect(api("createSandbox", { network: "isolated", cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.isolated}`);
+    await expect(api("createSandbox", { network: "online", desktop: true, cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.desktop}`);
+  });
+
   test("an isolated sandbox asked of it is refused with the reason, and nothing is made", async () => {
     const before = fake.vms.size;
     await expect(api("createSandbox", { on: "mini", network: "isolated", cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 ${CONTAINER_CANNOT.isolated}`);

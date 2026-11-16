@@ -1,4 +1,5 @@
 import type { ComputeNodeView, NodeCapacity, PeerStatus, PlacementNeeds, Presence } from "@galahad/core";
+import { cannotMake, type SandboxAsk } from "@galahad/sandbox";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 
 /*
@@ -12,7 +13,14 @@ import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
  *  - local-model work prefers GPUs; heavy work prefers free memory and idle cores
  *  - a node's strength is what it measured (its calibration), not its core count
  *  - a node with a slot free is preferred; a full one is ranked behind (work would wait there)
+ *  - a Mac with Apple's container hosts sandboxes, each a VM of its own; what it can't make goes elsewhere
  */
+
+/** A sandbox as placement reads it: what it asks of a host, and whether it is kept (a knight's own VM, which may be given more). */
+export type SandboxNeeds = SandboxAsk & { kept?: boolean };
+
+/** A Mac whose sandboxes are Apple's container's: every one a VM of its own. */
+const containerHost = (caps: Capabilities): boolean => caps.sandbox?.engine === "container";
 
 export interface Candidate {
   device: string;
@@ -119,13 +127,29 @@ export function fleetCandidates(fleet: {
 }
 
 /**
- * The host for a sandbox nobody pinned to a node: the best-ranked candidate that hosts sandboxes at all (the one
- * with room, by what each measured; when every host is full, the one with the shortest queue). Null: none is online.
+ * The host for a sandbox nobody pinned to a node: the best-ranked candidate that hosts sandboxes at all and can make
+ * this one (a Mac makes no isolated sandbox, no desktop, no Lab, no Gazebo: its `cannot`), the one with room, by what
+ * each measured; when every host is full, the one with the shortest queue. A knight's own VM leans a little to a host
+ * whose VMs grow while they run (a Mac's pause to), and its reasons say which. Null: none online can.
  */
-export function sandboxHost(candidates: readonly Candidate[]): Placement | null {
+export function sandboxHost(candidates: readonly Candidate[], needs: SandboxNeeds = {}): Placement | null {
   const { ranked } = place({ docker: true, untrusted: true }, [...candidates]);
-  const hosts = new Set(candidates.filter((c) => !!c.caps?.sandbox).map((c) => c.device));
-  return ranked.find((p) => hosts.has(p.device)) ?? null;
+  const hosts = new Map(candidates.filter((c) => !!c.caps?.sandbox && !cannotMake(needs, c.caps.sandbox.cannot ?? [])).map((c) => [c.device, c.caps!.sandbox!]));
+  const able = ranked.filter((p) => hosts.has(p.device));
+  if (!needs.kept) return able[0] ?? null;
+  const leaning = able.map((p) => {
+    const grows = hosts.get(p.device)!.grows !== false;
+    return { ...p, score: p.score + (grows ? 5 : 0), reasons: [...p.reasons, grows ? "its VMs grow while they run" : "its VMs pause to grow (a Mac's can't grow while they run)"] };
+  });
+  return leaning.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))[0] ?? null;
+}
+
+/** The sandbox hosts online that can't make this sandbox, each with why (what placement says when none can). */
+export function sandboxRefusals(candidates: readonly Candidate[], needs: SandboxNeeds): { name: string; reason: string }[] {
+  return candidates.flatMap((c) => {
+    const why = (c.online || c.self) && c.caps?.sandbox ? cannotMake(needs, c.caps.sandbox.cannot ?? []) : null;
+    return why ? [{ name: c.name, reason: why }] : [];
+  });
 }
 
 export interface Placement {
@@ -144,14 +168,15 @@ function hardCheck(needs: PlacementNeeds, c: Candidate): string | null {
   if (!c.online && !c.self) return "offline";
   const caps = c.caps;
   if (!caps) return "no capability profile yet";
-  if (needs.docker && !caps.docker) return "no docker";
-  if (needs.vm && !(caps.vm.kvm || caps.vm.tools.length)) return "no VM support";
+  // (A Mac's container runs containers, each in a VM of its own: Docker's need, and a VM's, are met there.)
+  if (needs.docker && !caps.docker && !containerHost(caps)) return "no docker";
+  if (needs.vm && !(caps.vm.kvm || caps.vm.tools.length || containerHost(caps))) return "no VM support";
   if (needs.gpu && !caps.gpu.length) return "no GPU";
   if (needs.minMemoryGb && caps.memoryGb < needs.minMemoryGb) return `only ${caps.memoryGb} GB RAM`;
   const missing = (needs.tools ?? []).filter((t) => !caps.tools.includes(t));
   if (missing.length) return `missing ${missing.join(", ")}`;
   if (needs.localModels && !caps.localModels.some((r) => r.models.length)) return "no local models running";
-  if (needs.untrusted && !caps.docker && !(caps.vm.kvm || caps.vm.tools.length)) return "cannot sandbox untrusted work";
+  if (needs.untrusted && !caps.docker && !(caps.vm.kvm || caps.vm.tools.length) && !containerHost(caps)) return "cannot sandbox untrusted work";
   // The owner's ceiling: a node told to carry no sandboxes takes none.
   if ((needs.docker || needs.untrusted) && caps.sandbox && c.compute && c.compute.capacity.sandboxes <= 0) return "its ceiling takes no sandboxes";
   return null;
@@ -192,7 +217,7 @@ export function place(needs: PlacementNeeds, candidates: Candidate[]): Placement
     if (needs.untrusted) {
       const microVMs = !!caps.sandbox?.vm;
       score += microVMs ? 15 : caps.vm.kvm ? 10 : 5;
-      reasons.push(microVMs ? "KVM microVMs" : caps.vm.kvm ? "VM isolation available" : "container isolation");
+      reasons.push(containerHost(caps) ? "a VM of its own for each (Apple's container)" : microVMs ? "KVM microVMs" : caps.vm.kvm ? "VM isolation available" : "container isolation");
       if (caps.sandbox?.image && caps.sandbox.networks) {
         score += 15;
         reasons.push("sandbox host ready");

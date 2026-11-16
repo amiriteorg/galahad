@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { type Calibration, bodyFingerprint, computeBody, type ComputeNodeView, deriveCapacity, KERNEL, type PeerStatus, REFERENCE_SINGLE } from "@galahad/core";
 import type { Capabilities } from "../src/capabilities.ts";
-import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost, withDispatched } from "../src/placement.ts";
+import { CONTAINER_CANNOT, CONTAINER_UNMADE } from "@galahad/sandbox";
+import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost, sandboxRefusals, withDispatched } from "../src/placement.ts";
 
 /*
  * Placement with compute: a node's measured strength counts instead of its core
@@ -179,5 +180,57 @@ describe("sandboxes asked for between two syncs", () => {
     expect(withDispatched({ ...room, free: 0, queued: 2 }, -3)).toMatchObject({ free: 1, queued: 0 });
     expect(withDispatched({ ...room, free: null }, 3)).toMatchObject({ free: null, queued: 0 });
     expect(withDispatched(room, 0)).toBe(room);
+  });
+});
+
+describe("a Mac with Apple's container", () => {
+  /** A Mac mini as its probe finds it: no Docker, no KVM, and container answering. */
+  const mac = (over: Partial<Capabilities> = {}): Capabilities =>
+    caps({ os: "darwin", arch: "arm64", cores: 14, memoryGb: 48, docker: false, vm: { kvm: false, tools: [] }, sandbox: { image: true, networks: true, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false }, ...over });
+
+  test("hosts sandboxes and VMs: sandbox work is placed there, and the reason says each is a VM of its own", () => {
+    const mini = node("mini", mac(), { delivered: 12 }, { free: 2 });
+    const { ranked, rejected } = place({ docker: true, untrusted: true }, [mini]);
+    expect(rejected).toEqual([]);
+    expect(ranked[0]!.reasons).toContain("a VM of its own for each (Apple's container)");
+    expect(place({ vm: true }, [mini]).rejected).toEqual([]);
+    expect(sandboxHost([mini])?.name).toBe("mini");
+  });
+
+  test("a Mac without container hosts nothing, as before", () => {
+    const bare = node("bare", mac({ sandbox: null }), { delivered: 12 });
+    expect(place({ docker: true, untrusted: true }, [bare]).rejected).toEqual([{ device: "n_bare", name: "bare", reason: "no docker" }]);
+    expect(sandboxHost([bare])).toBeNull();
+  });
+
+  test("an isolated sandbox goes past a Mac to a host that can isolate it, however the Mac ranks; with none, the reason says why", () => {
+    const mini = node("mini", mac(), { delivered: 40 }, { free: 4 });
+    const ultra = node("ultra", caps({ cores: 16, sandbox: { image: true, networks: true, vm: true } }), { delivered: 8 }, { free: 1 });
+    expect(sandboxHost([mini, ultra], { network: "gateway" })?.name).toBe("mini");
+    expect(sandboxHost([mini, ultra], { network: "isolated" })?.name).toBe("ultra");
+    expect(sandboxHost([mini], { network: "isolated" })).toBeNull();
+    expect(sandboxRefusals([mini, ultra], { network: "isolated" })).toEqual([{ name: "mini", reason: CONTAINER_CANNOT.isolated }]);
+  });
+
+  test("the desktop, the Lab and Gazebo go past it too", () => {
+    const mini = node("mini", mac(), { delivered: 40 }, { free: 4 });
+    const ultra = node("ultra", caps({ cores: 16, sandbox: { image: true, networks: true, vm: true } }), { delivered: 8 }, { free: 1 });
+    for (const ask of [{ desktop: true }, { lab: true }, { gazebo: true }]) expect(sandboxHost([mini, ultra], { network: "online", ...ask })?.name).toBe("ultra");
+    expect(sandboxRefusals([mini], { network: "online", desktop: true })).toEqual([{ name: "mini", reason: CONTAINER_CANNOT.desktop }]);
+  });
+
+  test("a knight's VM leans to a host whose VMs grow while they run; a Mac's line says its VMs pause to grow, and room still decides", () => {
+    const mini = node("mini", mac(), { delivered: 8 }, { free: 2 });
+    const ultra = node("ultra", caps({ cores: 16, sandbox: { image: true, networks: true, vm: true } }), { delivered: 8 }, { free: 2 });
+    const kept = sandboxHost([mini, ultra], { network: "online", kept: true })!;
+    expect(kept.name).toBe("ultra");
+    expect(kept.reasons).toContain("its VMs grow while they run");
+    // A full Linux host doesn't win for it: the Mac with room does, and says what its VMs can't do.
+    const full = node("ultra", caps({ cores: 16, sandbox: { image: true, networks: true, vm: true } }), { delivered: 8 }, { free: 0, queued: 3 });
+    const onMac = sandboxHost([mini, full], { network: "online", kept: true })!;
+    expect(onMac.name).toBe("mini");
+    expect(onMac.reasons).toContain("its VMs pause to grow (a Mac's can't grow while they run)");
+    // Work that comes and goes isn't told either.
+    expect(sandboxHost([mini, ultra], { network: "online" })!.reasons.join(" ")).not.toMatch(/grow/);
   });
 });
