@@ -615,6 +615,11 @@ try {
     headers: { authorization: `Bearer ${noticer}`, "content-type": "application/json" },
     body: JSON.stringify({ text: "Writes in British English.", tags: ["about-you"] }),
   });
+  // Your tripwires, where the checkout has them (an older one's Loops page has none to show).
+  if (routes.setRule) {
+    await admin("setRule", { name: "no-lockfiles", does: "refuse", words: ["*.lock", "package-lock.json"] });
+    await admin("setRule", { name: "no-env-files", does: "halt", words: [".env*"] });
+  }
   const team = await admin("team");
   const faces = Object.fromEntries(team.teammates.map((member: { id: string }) => [member.id, core.avatarExpression(member, team, Date.now())]));
 
@@ -908,6 +913,7 @@ try {
       { name: "sheet-new-knight", hash: "#/team", open: [press("New knight", "Add a knight")] },
       { name: "sheet-new-project", hash: "#/projects", open: [press("New project")] },
       { name: "sheet-add-loop", hash: "#/loops", open: [press("Add loop", "Add a loop")] },
+      { name: "sheet-add-tripwire", hash: "#/loops", open: [press("Add tripwire")] },
       { name: "sheet-remember", hash: "#/memory", open: [press("Remember something", "Remember")] },
       { name: "sheet-write-skill", hash: "#/skills", open: [press("Write a skill")] },
       { name: "sheet-new-idea", hash: "#/archive", open: [press("New idea")] },
