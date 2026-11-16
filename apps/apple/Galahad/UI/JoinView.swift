@@ -5,6 +5,7 @@ import SwiftUI
 struct JoinView: View {
     let app: AppModel
     @State private var model = PairingModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -31,7 +32,8 @@ struct JoinView: View {
                 case .refusedKey: refusedKey
                 }
             }
-            .animation(.default, value: model.stage)
+            // Asking turning into waiting for your approval is shown moving, unless the device asks for less motion.
+            .animation(reduceMotion ? nil : .default, value: model.stage)
         }
     }
 
