@@ -2,7 +2,7 @@
 
 **One app that is both the client and a node.** On any Mac it is Galahad's client, as the iPhone and iPad app is. On a Mac that should serve (a Mac mini on a shelf), the same app makes the Mac a node: the node Ultra runs, carried inside the app, kept running through restarts and power cuts, with its knights' VMs on the Mac's own silicon. Setting one up is opening the app and answering three questions, with no Terminal.
 
-Status: designed (16 November 2026); its first phase, the client, built the same day (*M1, built*, below), and its second, the node inside, the same evening (*M2, built*, below); its knights' VMs not yet: [PLAN](PLAN.md) #25. It is for **macOS 27** (the owner's word, 16 November), which runs on Apple silicon alone: Apple made macOS 26 the last release for Intel Macs ([MacRumors](https://www.macrumors.com/2026/04/18/macos-27-compatibility-change/)). So every Mac it runs on can give its knights VMs of their own, and nothing below has an Intel path. What follows is the design, the facts it rests on (each with where it was read) and what is still unknown, with the spike that answers it.
+Status: designed (16 November 2026); its first phase, the client, built the same day (*M1, built*, below), and its second, the node inside, the same evening (*M2, built*, below); its third, knights' VMs, begun on 17 November: the `container` driver, built against a stand-in (*M3, the driver*, below), its first real run waiting for the Mac mini: [PLAN](PLAN.md) #25. It is for **macOS 27** (the owner's word, 16 November), which runs on Apple silicon alone: Apple made macOS 26 the last release for Intel Macs ([MacRumors](https://www.macrumors.com/2026/04/18/macos-27-compatibility-change/)). So every Mac it runs on can give its knights VMs of their own, and nothing below has an Intel path. What follows is the design, the facts it rests on (each with where it was read) and what is still unknown, with the spike that answers it.
 
 ## What it must do
 
@@ -73,22 +73,28 @@ Each row is a line of the app's *This Mac* pane, its state read live: a tick, or
 
 Apple's `container` (1.0 in June 2026; Apple silicon, macOS 26 or later; Apache-2.0) runs each Linux container in a lightweight VM of its own ([apple/container](https://github.com/apple/container)). On a Mac it keeps the promise Kata keeps on Ultra, a VM for each knight, natively and with no Docker Desktop.
 
-The node's sandbox host speaks Docker's command line today (`packages/sandbox/src/host.ts`: the `docker` binary, or a `DockerRunner` in tests). A second driver speaks `container`'s ([its command reference](https://github.com/apple/container/blob/main/docs/command-reference.md)):
+The node's sandbox host spoke Docker's command line alone (`packages/sandbox/src/host.ts`: the `docker` binary, or a `DockerRunner` in tests). A second driver speaks `container`'s ([its command reference at 1.7.1](https://github.com/apple/container/blob/1.7.1/docs/command-reference.md)), built on 17 November (*M3, the driver*, below):
 
 | The node | Docker (Ultra) | `container` (a Mac) |
 |---|---|---|
-| Makes a sandbox | `docker run -d --cpus --memory --label --network …` | `container run -d --cpus --memory --label --network …` |
-| Runs a command | `docker exec` | `container exec` (`-i -t -u -w -e`) |
-| Opens a terminal | `docker exec --tty` under a pseudo-terminal | `container exec -i -t` under a pseudo-terminal |
-| Lists and reads | `docker ps`, `docker inspect` | `container list --format json`, `container inspect` |
-| Stops, starts, removes | `docker stop`, `start`, `rm` | `container stop`, `start`, `delete` |
-| Reads its use | `docker stats` | `container stats --format json` |
-| Builds its images | `docker build` | `container build`, for linux/arm64 |
-| Grows a knight's VM | `docker update` (Kata adds cores and memory live) | Not while it runs: it stops, changes and starts again (the knight pauses for a few seconds), and says so |
+| Makes a sandbox | `docker run -d --cpus --memory --label --network …` | `container run -d --cpus --memory --label --network …`, each of Docker's flags as the table in *M3, the driver* says |
+| Runs a command | `docker exec` | `container exec -i -u 1000:1000 -w /work` |
+| Opens a terminal | `docker exec --tty` under a pseudo-terminal | `container exec -i -t -u 1000:1000` under a pseudo-terminal |
+| Lists and reads | `docker ps`, `docker inspect` | `container list --all --format json` (labels, state, resources), `container inspect` |
+| Stops, starts, removes | `docker stop`, `start`, `rm` | `container stop --time 10`, `start`, `delete --force` |
+| Its `/work` | the root helper's ext4 image, or a Docker volume | `container volume create -s 20G`: a volume of its own, of a fixed size, with no root helper |
+| Reads its use | `docker stats` | `container stats --format json --no-stream` (read, and shown nowhere yet) |
+| Builds its images | `docker build` | `container build --pull --platform linux/arm64` |
+| Copies its work out | `docker cp <id>:/work/out -` | the VM's own `tar` through `container exec` (container's `cp` names no stream), into the same parser that treats it as hostile |
+| Grows a knight's VM | `docker update` (Kata adds cores and memory live) | Not while it runs: it stops, is made again with more on the same volume, and starts (the knight's VM pauses, and what ran in it stops), and every surface says so. Its disk keeps the size it was made with |
 
 **Networks.** *Online* is `container`'s default network. *Gateway* (only the node's gateway, on the host) is a network made with `--internal`, which reaches the host alone. *Isolated* (no network at all) has no plain equivalent: the reference names no network like Docker's `none`. Until the spike finds one that holds, an isolated quest isn't placed on a Mac: it goes to a node that can isolate it, or it is refused with the reason. It never runs with less isolation than it asked for.
 
-On macOS 27 `container` always runs (it needs macOS 26 and Apple silicon), so the app has no Docker path of its own. `container` isn't part of macOS: it is Apple's signed installer package, from its releases on GitHub. The app fetches it, checks that Apple signed it, and opens it; Apple's installer asks for your password. A Mac made a node by install.sh on an older macOS keeps Docker Desktop, OrbStack or Colima as today: containers in one shared VM, which the node already tells apart from microVMs (`isolation: "container"`). The desktop image (Computer Use) has yet to be built for arm64; Xvfb and Chromium both build for it.
+Built so (17 November): online is `--network default --network galahad-gw`, egress first, as an online sandbox on Ultra joins both of its networks; gateway is `galahad-gw` alone (made with `--internal --subnet 172.31.250.0/24`, so the gateway's address is Ultra's 172.31.250.1), with `--no-dns`, since it reaches the gateway by its address; isolated is refused on a Mac, and placement sends it elsewhere. Two of Ultra's promises don't hold on these networks, and the VM boundary doesn't change that. **Sandboxes on one of container's networks can reach each other:** container has no counterpart to Docker's `enable_icc=false` ("always reachable by that IP from the host and from other containers on the same network", networking.md). **A gateway sandbox reaches whatever the Mac serves on that network**, not only the gateway's port: on Ultra UFW lets one port through and nothing else, and a Mac has no counterpart the node can set without root. Both are said, in the code (`DOCKER_ON_A_MAC`) and here, never hidden. Closing them is the owner's call: a network per sandbox (container's networks are isolated from one another), or packet-filter rules from a root helper, as `deploy.sh --sudo` installs one on Linux.
+
+On macOS 27 `container` always runs (it needs macOS 26 and Apple silicon), so the app has no Docker path of its own. `container` isn't part of macOS: it is Apple's signed installer package, from its releases on GitHub. The app fetches it, checks that Apple signed it, and opens it; Apple's installer asks for your password. A Mac made a node by install.sh on an older macOS keeps Docker Desktop, OrbStack or Colima as today: containers in one shared VM, which the node already tells apart from microVMs (`isolation: "container"`).
+
+**Its images.** The workshop image builds for Apple silicon since 17 November: it fetched x86-64 binaries whatever it was built for, so a Mac's image would have held an OpenCode and an Engram that can't run there; now each is fetched for the platform BuildKit names (`TARGETARCH`), and checked against that platform's SHA-256, the digest GitHub records for the asset (its x86-64 digests are the pins reviewed before, to the byte). Debian, Bun's installer and the tools from apt are arm64 already. Not yet built for arm64, and so refused on a Mac until they are (placement sends them to Linux): the desktop image (Computer Use), made from the workshop with Debian's Xvfb, openbox, Chromium, xdotool and scrot, which Debian builds for arm64, so it needs the workshop's arm64 build first, then a run of `desktop` (its screenshot, its clicks, Chromium under the read-only root) in a VM on the Mac mini, with the 4 GB a browser takes as on Ultra; the Lab, whose Debian stacks are built for arm64 but whose pinned wheels may not be (OpenSees' among them); and Gazebo, whose image pins Open Robotics' amd64 packages and an x86_64 library path.
 
 ### 5. Local models
 
@@ -124,7 +130,7 @@ Then it shows the code to pair your iPhone, as install.sh does, and offers Tails
 | M0 | This design, and a spike that answers its unknowns | The node runs from a signed, notarized bundle under `SMAppService`. A knight's VM is made, worked in, given a terminal and removed through `container`, and its start is timed beside Kata's on Ultra. An isolated network that holds is found, or the reason there isn't one |
 | M1 | The client on the Mac | It pairs with any node and does everything the iPad app does, with the Mac's windows, menus and shortcuts; the vectors pass on both |
 | M2 | The node inside | First run (start, join, or just the app), *This Mac*, the CLI on PATH and staying on; signed, notarized and on galahad.sh |
-| M3 | Knights' VMs and models on the Mac | The `container` driver in the node, placement that knows a Mac's VMs don't grow live, the MLX preset, the Roundtable in the menu bar, and updates |
+| M3 | Knights' VMs and models on the Mac | The `container` driver in the node, placement that knows a Mac's VMs don't grow live, the MLX preset, the Roundtable in the menu bar, and updates. The driver and placement built against a stand-in, 17 November (*M3, the driver*, below); their first real run is the Mac mini's |
 
 ## The spike, 16 November
 
@@ -192,6 +198,78 @@ What the VM showed, run through the app's own code (`--first-run`, `--agent`, `-
 - **An update signed ad hoc asks first.** A new ad hoc build put in its place, as Sparkle swaps it: the agent stayed enabled and the node ran on, but the app's window blocked at launch, reading its device key (`SecItemCopyMatching` waiting for SecurityAgent): to the login keychain it is another app. The node's own Bun was unaffected (signed ad hoc from the same pinned binary, its code hash didn't change).
 - **An update signed with the Developer ID doesn't.** In a fresh clone, the notarized Developer ID build made the Mac a node (15 s again), then a newer Developer ID build was swapped in: no prompt, and the app, opened with no one at the screen, restarted the node onto the new release 4 s after it was put in place, its window and Sparkle loaded under the hardened runtime.
 - *Join my fleet,* with a second node in the same VM inviting it: the app showed the code the inviting node showed, was approved only once the two matched, and 14 s after it started was a node of that fleet (the other node online beside it), paired and kept awake.
+
+## M3, the driver (17 November): built against a stand-in
+
+The node hosts knights' VMs and quests' sandboxes on a Mac through Apple's `container`, as Ultra hosts them through Docker and Kata. It is built and tested against a stand-in for `container` (`packages/sandbox/test/fake-container.ts`) that answers as container's documentation says it does, at the 1.7.1 tag (`docs/command-reference.md`, and `networking.md`, `volumes.md`, `resource-usage.md`, `ulimits.md`, `runtime-configuration.md` and `container-inspection.md` beside it); every flag and output format it uses is there from 1.0.0 on. It has never run against the real one: the MacBook is never made a node, and `container` is installed on the Mac mini alone, with the owner's word.
+
+- **The driver.** `engine: "container"` (`packages/sandbox/src/container.ts`, `container-volumes.ts`, `host.ts`): the same sandbox host as on Docker above it (scopes, leases, the workspace budget, labels, the ledger's lines, the oath gate, the reaper), container's command line under it. Each sandbox is a VM of its own; its `/work` is container's own volume, of a fixed size (`volume create -s`), a knight's made to be kept (a volume's labels are fixed as it is made, so it says so then).
+- **Found on a Mac.** `container` on the PATH, then `container system version --format json`, whose API server row is there only while its service answers (the documentation's own sample). Running at 1.x, the node is a sandbox host whose capabilities say `engine: "container"`, `vm: true`, what it won't make (`cannot`) and `grows: false`, beside `container: { version, running }`. A Mac with container hosts through it, running or not, never through Docker one day and container the next; a Mac without it is as it was. The doctor says "Apple's container answers", and tells a Mac whose container isn't running to start it.
+- **What a Mac refuses, and why**, each before anything is made (424), and placement sends the work to a host that can: an isolated sandbox (no network like `none`, and none of container's proven to isolate); the desktop image (not built for Apple silicon yet); the Lab (unproven there); Gazebo (its image is x86-64's alone); a bigger disk for a knight's VM (409: container fixes a volume's size as it makes it). A sandbox asked for as a container is given a VM: more, never less.
+- **Growing, and making again.** container changes no container that exists and renames none. So a knight's VM grows by stopping, being made again with more on the same volume, and starting; and it is made again the same way. A new VM that won't start is cleared away and the old one made again as it was, and the error says so; the reaper never takes its volume meanwhile. The answer says `paused`, and the CLI, Galahad's `team_grow` and the PWA's *Give it more* say that it paused and what was running in it stopped (the form says so before, and offers no bigger disk). The knight itself isn't told in words: a command it was running fails as its VM stops, and it reads that failure.
+- **The governor.** Every sandbox on a Mac is a VM, so each one's overhead counts against the ceiling (Kata's, a thread and 2 GB, until the Mac mini measures Apple's: check 19); its CPUs are whole, and counted so; what a Mac won't make is refused before it waits for a slot. The calibration's start-up and the doctor's start test measure a VM on the gateway network, the most a Mac cuts one off.
+- **Placement.** A Mac with container meets sandbox work's needs and a knight's VM's, its reason "a VM of its own for each (Apple's container)"; work it can't make passes it by, however it ranks, and when no host can, the answer names each and why. A knight's own VM leans a little to a host whose VMs grow while they run (its reasons say "its VMs pause to grow" of a Mac); room still decides.
+- **The PWA** lists a Mac with container as a sandbox host (it looked for Docker or KVM alone), says on the sandbox form that every sandbox there is a VM and that an isolated one goes to Linux, and the Fleet page shows *VMs (Apple's container)*.
+
+Each of Docker's flags on a Mac (`DOCKER_ON_A_MAC` in `container.ts`, and a test fails if Docker's run or network commands gain a flag it doesn't account for):
+
+| Docker's | On a Mac | Its promise there |
+|---|---|---|
+| `--detach`, `--name`, `--init`, `--workdir /work`, `--env HOME=/work`, `--label` | the same | holds |
+| `--user 1000:1000` | the same, and on every exec and terminal | holds: exec's default user isn't documented, so it is never left to it |
+| `--cap-drop ALL` | the same | holds |
+| `--security-opt no-new-privileges:true` | none | held by the VM and the dropped capabilities: a setuid file in the image could make a process uid 0 inside, with none of root's powers, on a read-only root (check 6) |
+| `--read-only` | the same | holds |
+| `--tmpfs /tmp:rw,nosuid,nodev,size=2g,mode=1777` | `--tmpfs /tmp:size=2G,mode=1777` (its tmpfs takes size and mode alone) | holds: no device can be made there (CAP_MKNOD dropped), no file made setuid to root (CAP_CHOWN, CAP_FSETID) |
+| `--mount …,dst=/work` | `--mount type=volume,source=galahad-sbx-<id>-work,target=/work` | holds: its own volume of a fixed size, the one thing of the host's it is given |
+| `--cpus`, `--memory` | the same (CPUs whole) | holds |
+| `--memory-swap` | none | held by the VM: it has its memory and no more (check 4) |
+| `--pids-limit 1024` | `--ulimit nproc=1024:1024` | held by the VM: a fork bomb fills its own VM, never the Mac (check 23) |
+| `--ulimit nofile=8192:8192` | the same | holds (check 23) |
+| `--network none` | none | **refused**: no isolated sandbox on a Mac |
+| `--network galahad-gw` | `--network galahad-gw --no-dns` | **weaker**: it reaches what the Mac serves on that network, and the other gateway sandboxes |
+| `--network galahad-net --network galahad-gw` | `--network default --network galahad-gw` | **weaker**: online sandboxes reach each other on `default` |
+| `--runtime io.containerd.kata.v2`, an online VM's resolv.conf | none | holds: every container is its own VM, and container writes its resolver |
+| `--hostname knight` | none | moot: the VM is named after its container |
+| `network create --internal --subnet 172.31.250.0/24` | the same | holds: host-only, no way out |
+| `network create --gateway 172.31.250.1` | none | assumed: vmnet gives the host the subnet's first address, as the documentation shows for 192.168.64.0/24 (check 10) |
+| `-o com.docker.network.bridge.enable_icc=false` | none | **weaker**: sandboxes on one network reach each other |
+
+**What only the Mac mini can tell.** Each assumption about `container` the driver rests on, as a check to run there once `container` 1.x is installed (Apple's signed package) and `container system start` has run, with what the driver expects:
+
+1. **The service.** `container system version --format json`: two rows, `container` at 1.x and `container-apiserver`. After `container system stop`, the CLI's row alone. (The probe and the host read exactly this.)
+2. **What a list says.** `container run -d --name t1 --label dev.galahad=1 --label dev.galahad.image=galahad/sandbox:1 --cpus 2 --memory 2048M alpine sleep 600`, then `container list --all --format json`: its entry has `.configuration.id` "t1", `.configuration.labels["dev.galahad"]` "1", `.configuration.resources.cpus` 2 and `.memoryInBytes` 2147483648, and `.status.state` "running"; after `container stop t1`, "stopped". `container inspect t1` gives the same shape.
+3. **Whole CPUs.** Inside t1, `nproc` prints 2. `container run --cpus 0.5 …` is refused or rounded (the driver gives whole ones either way: record which).
+4. **No swap.** `container exec t1 cat /proc/swaps` prints its header alone; `free -m` shows about 2 GB in all.
+5. **Exec's user and environment.** `container run -d --name t2 --user 1000:1000 --env HOME=/work --env PROBE=1 alpine sleep 600`: `container exec t2 id -u` prints 1000 (record it either way: the driver passes `--user` on every exec), and `container exec --user 1000:1000 t2 sh -c 'echo $PROBE $HOME'` prints `1 /work`: the gateway's lease is given at `run` and must reach every command.
+6. **Capabilities.** On one run with `--cap-drop ALL --user 1000:1000`: `grep -E 'CapBnd|CapEff|NoNewPrivs' /proc/self/status` prints CapBnd and CapEff all zeros; record NoNewPrivs (0 or 1).
+7. **Its root and /tmp.** With `--read-only --tmpfs /tmp:size=2G,mode=1777`: `touch /etc/x` fails (read-only file system), `stat -c %a /tmp` prints 1777, `df -h /tmp` shows 2.0G.
+8. **Its /work.** `container volume create -s 20G --label dev.galahad=1 --label dev.galahad.id=0123456789 galahad-sbx-0123456789-work`; a sandbox image run with `--user 1000:1000 --mount type=volume,source=galahad-sbx-0123456789-work,target=/work`: `touch /work/ok` succeeds (a new volume must take the image's `/work`, uid 1000's, as Docker's do, or the knight can't write its own workspace), `df -h /work` shows about 20G, and `container volume list --format json` gives `.configuration.labels`, `.sizeInBytes` (21474836480), `.source` and `.creationDate` as `volume inspect` does.
+9. **A volume outlives its container.** `container delete --force` the sandbox: the volume is still listed; `container volume delete` it is refused while a container uses it and done once none does.
+10. **The gateway's address.** `container network create --internal --subnet 172.31.250.0/24 --label dev.galahad=1 galahad-gw`, then on the Mac `ifconfig | grep 172.31.250.1`: the Mac has the address before any container is on that network. (The node binds its sandbox gateway there once, as it starts; if the address comes only with a VM, the node's log says "sandbox gateway listener unavailable", and it must bind it later, which isn't built.)
+11. **The gateway network.** In a sandbox on `galahad-gw` alone with `--no-dns`: `curl -m 5 http://172.31.250.1:7779/` reaches the node (an answer without a token, not a timeout); `curl -m 5 https://example.com` and `getent hosts example.com` fail. Record which of the Mac's own services answer from it (`lsof -nP -iTCP -sTCP:LISTEN` on the Mac, then `nc -z -w 3 172.31.250.1 <port>` from the sandbox, sshd's 22 first): the weaker promise above, measured.
+12. **Online.** In a sandbox on `--network default --network galahad-gw`: `curl -m 5 https://example.com` works, names resolve, `curl http://172.31.250.1:7779/` reaches the node, and `ip route` shows the default route through `default`'s gateway (192.168.64.1), not `galahad-gw`'s.
+13. **Sandboxes reach each other** (expected, per networking.md): two sandboxes on `galahad-gw`, a listener in one (`nc -l -p 8000`), `nc -z -w 3 <its address> 8000` from the other succeeds. The same on `default`.
+14. **The deadline.** `container exec --user 1000:1000 <id> timeout --signal=KILL 2s sleep 10` ends with 137 after about 2 s.
+15. **A terminal.** `container exec -i -t --user 1000:1000 --env TERM=xterm-256color <id> sh -c 'command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l'` under a pseudo-terminal gives a login shell that takes a resize; record whether it outlives its client (the hang-up handles both).
+16. **Copying out.** `container exec --user 1000:1000 <id> timeout --signal=KILL 900s tar -C /work -cf - out > out.tar` gives a tar that `tar -tf` lists whole: `container exec`'s stdout carries bytes unchanged.
+17. **Stop, start, delete.** `container stop --time 10 t1` stops it within 10 s; `container start t1` runs it again on the same volume; `container delete --force` removes a running one.
+18. **The image.** `container build --pull --platform linux/arm64 --tag galahad/sandbox:1 <repo>/sandbox` builds; `container run --rm galahad/sandbox:1 sh -c 'opencode --version; engram version; bun --version'` prints OpenCode 2.2.6, Engram 3.7.2 and Bun 1.4.4, and `file /opt/opencode/bin/opencode` says ARM aarch64.
+19. **A VM's own cost.** With one 1-CPU, 1 GB sandbox idle, the Mac's memory and CPU taken by its VM beyond what the guest uses (Activity Monitor, or `ps` for its `container-runtime-linux`): the governor holds a thread and 2 GB for it, as for Kata, and should hold what this measures.
+20. **Its start.** `galahad compute calibrate` on the node measures a VM's start-up; beside Kata's 1.7 s on Ultra.
+21. **Its use.** `container stats --format json --no-stream <id>` gives `memoryUsageBytes`, `memoryLimitBytes`, `cpuUtilization` and `numProcesses`, as read.
+22. **The node, end to end.** `galahad doctor` says "Apple's container answers: every sandbox here is a VM of its own" and starts one; `galahad sandbox run -- true` runs; `galahad sandbox run --net isolated -- true` goes to Ultra (or is refused, saying why, with no Linux host online); a knight provisioned there and `galahad roundtable resize <id> --mem 4` says it paused, and its `/work` is as it was.
+23. **Limits on commands.** `container exec --user 1000:1000 <id> sh -c 'ulimit -n; ulimit -u'` prints 8192 and 1024 if commands get the run's limits; record it: the VM bounds them either way.
+
+**Open, and next.**
+
+- Sandboxes reaching each other, and a gateway sandbox reaching the Mac's own services (checks 11 and 13): the owner's call, between a network per sandbox (container's networks are isolated from one another) and packet-filter rules from a root helper.
+- The knight told in words when its VM paused mid-task; today it reads the failure of the command that was running.
+- Its disk grown: container has no way to grow a volume, so it would be a new, bigger volume and a copy.
+- `container stats` is read, and shown nowhere yet: *This Mac*'s VMs can show it.
+- The gateway's listener bound later, if check 10 finds the address only once a VM is on the network.
+- The governor's VM overhead from check 19, and the desktop image, the Lab and Gazebo on arm64.
+- The app's step 3, *Give its knights VMs* (`container` found or installed, its service started, the images built), which is the Mac app's.
 
 ## How it is told
 
