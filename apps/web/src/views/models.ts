@@ -3,7 +3,7 @@ import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { planLine, roleParts } from "../lib/text.ts";
 import type { PresetView, RoleSpec } from "../types.ts";
-import { badge, busy, button, callout, copyText, empty, errorState, field, pageHead, section, segmented, skeletonBlock, skeletonRows } from "../ui/controls.ts";
+import { badge, busy, button, callout, copyText, empty, errorState, field, pageBody, pageHead, section, segmented, skeletonBlock, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -299,9 +299,12 @@ export const modelsView: View = (root, ctx, { scope }) => {
       { class: "page" },
       pageHead("Models", "Hired by role, not by vendor. The roster is shared by every node; keys stay sealed in the vault.", write ? button("Add provider", { icon: "plus", onClick: () => openAddProvider(ctx, presets, refresh) }) : null),
       write ? null : callout("quiet", "This device can see the roster but not change it (no brain:write scope)."),
-      section("Roster", { actions: write ? button("New role", { size: "sm", icon: "plus", onClick: () => openRole() }) : null }, rosterBox),
-      section("Providers", {}, providersBox),
-      cost.el,
+      // (Shown in one frame once none of its parts is still loading: nothing below moves as the roster arrives.)
+      pageBody(
+        section("Roster", { actions: write ? button("New role", { size: "sm", icon: "plus", onClick: () => openRole() }) : null }, rosterBox),
+        section("Providers", {}, providersBox),
+        cost.el,
+      ),
       knownModels,
     ),
   );
