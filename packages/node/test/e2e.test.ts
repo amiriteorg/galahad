@@ -383,6 +383,17 @@ describe("M0: one mind, two bodies", () => {
     await expect(callA("sandboxes", { on: "nowhere" })).rejects.toThrow(/404/);
   });
 
+  test("a repository is put in a sandbox only by you, through a GitHub connector, and only under /work", async () => {
+    const callA = admin(homeA, portA);
+    const asked = { id: "0123456789", repository: "https://github.com/example/widgets", commit: "0123456789abcdef0123456789abcdef01234567", path: "/work/tasks/task-abc_def-1234" };
+    await expect(callA("checkoutRepository", asked)).rejects.toThrow(/424.*add the GitHub connector/);
+    // An agent may have sandboxes, never read a repository into one: the lease it takes is yours to give.
+    const { token } = await callA<{ token: string }>("mintArm", { label: "outsider", scopes: ["sandbox"] });
+    const asAgent = await fetch(`http://127.0.0.1:${portA}${routes.checkoutRepository.path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(asked) });
+    expect(asAgent.status).toBe(403);
+    for (const path of ["/work", "/work/../etc", "/etc/repo", "/work/tasks/./x"]) await expect(callA("checkoutRepository", { ...asked, path })).rejects.toThrow(/400/);
+  });
+
   test("a kept file is fetched from whichever node holds it, under the same scope, fenced the same way", async () => {
     // The server keeps a sandbox's work (the collector stands in for docker cp).
     const kept = (await server.artifacts.save(

@@ -626,6 +626,28 @@ export const routes = {
       quest: z.string().max(64).optional(),
     }),
   },
+  /**
+   * A commit of a GitHub repository put in one of your sandboxes that isn't a knight's VM (a trial of your own work's),
+   * through the node's read-only git gateway: a lease for that one repository is written inside the sandbox and
+   * revoked once the fetch is over, so its token is never in a command or an answer. The commit, with up to 50
+   * commits of its history and nothing after it, is checked out at `path`.
+   */
+  checkoutRepository: {
+    method: "POST",
+    path: "/api/sandboxes/checkout",
+    scope: "fleet:admin",
+    input: z.strictObject({
+      id: SandboxId,
+      on: NodeRef.optional(),
+      repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/),
+      commit: z.string().regex(/^[0-9a-f]{40}$/),
+      path: z
+        .string()
+        .max(256)
+        .regex(/^\/work(\/[A-Za-z0-9._-]+)+$/, "a directory under /work")
+        .refine((path) => !path.split("/").some((part) => part === "." || part === ".."), "no . or .. in the path"),
+    }),
+  },
   buildSandboxImage: {
     method: "POST",
     path: "/api/sandboxes/build",

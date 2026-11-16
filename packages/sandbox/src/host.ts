@@ -186,6 +186,34 @@ export function sandboxScopes(input: { network: CreateInput["network"]; provider
   return [...(input.providers ?? []), ...(input.search ? [SEARCH_SCOPE] : [])];
 }
 
+/** Where a sandbox reads a repository through the git gateway, beside the model gateway (`…/gw`). */
+const repositoryUrl = (gateway: string, git: { connector: string; owner: string; repo: string }): string =>
+  `${gateway.replace(/\/gw$/, "")}/git/${git.connector}/${git.owner}/${git.repo}.git`;
+
+/**
+ * A commit fetched into a sandbox, run there as `python3 -c CHECKOUT_SCRIPT <path> <commit>`: the lease is read and
+ * removed before anything else, and its token goes to git only as a header of that one fetch (never into the
+ * repository's configuration). The commit and up to 50 commits of its history, checked out detached, with no remote.
+ */
+export const CHECKOUT_SCRIPT = `import json,os,subprocess,sys
+root, commit, lease = sys.argv[1], sys.argv[2], '/work/.galahad-gateway.json'
+d = json.load(open(lease))
+os.remove(lease)
+def git(*a):
+    try:
+        r = subprocess.run(['git','-C',root,*a],capture_output=True,text=True,timeout=540)
+    except subprocess.TimeoutExpired:
+        sys.exit('git took too long')
+    if r.returncode: sys.exit((r.stderr or r.stdout).strip()[-400:] or 'git failed')
+    return r.stdout.strip()
+os.makedirs(root,exist_ok=True)
+git('init','-q')
+git('-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'fetch','--quiet','--no-tags','--depth','50',d['GALAHAD_REPO_URL'],commit)
+git('-c','advice.detachedHead=false','checkout','--quiet','--detach','FETCH_HEAD')
+head = git('rev-parse','HEAD')
+if head != commit: sys.exit('the checkout is at '+head+', not '+commit)
+print(head)`;
+
 interface Run {
   code: number;
   stdout: string;
@@ -520,18 +548,54 @@ export class SandboxHost {
     const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: 30, maxRequests: 500 });
     this.tokenStore.put(id, minted.info.hash);
     const env = gatewayEnv(minted.token, sandbox.providers);
-    if (git) env.GALAHAD_REPO_URL = `${env.GALAHAD_GATEWAY!.replace(/\/gw$/, "")}/git/${git.connector}/${git.owner}/${git.repo}.git`;
-    const payload = Buffer.from(JSON.stringify(env)).toString("base64");
-    const write = "import os,sys,base64,tempfile; f,p=tempfile.mkstemp(prefix='.galahad-gateway-',dir='/work'); os.write(f,base64.b64decode(sys.argv[1])); os.fsync(f); os.close(f); os.replace(p,'/work/.galahad-gateway.json')";
-    try {
-      const wrote = await this.docker(execArgs(id, ["python3", "-c", write, payload], 30), 45_000);
-      if (wrote.code !== 0) throw new Error("lease write failed");
-    } catch {
+    if (git) env.GALAHAD_REPO_URL = repositoryUrl(env.GALAHAD_GATEWAY!, git);
+    if (!(await this.writeLease(id, env))) {
       this.opts.tokens.revoke(minted.info.hash);
       throw new SandboxError("could not prepare the teammate's model access", 424);
     }
     this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: "existing VM resumed; model access capped at 30 minutes and 500 requests" });
     return { ...sandbox, status: "running" };
+  }
+
+  /** A lease written inside a sandbox as /work/.galahad-gateway.json: JSON, never a shell's configuration. Whether it was. */
+  private async writeLease(id: string, env: Record<string, string>): Promise<boolean> {
+    const payload = Buffer.from(JSON.stringify(env)).toString("base64");
+    const write = "import os,sys,base64,tempfile; f,p=tempfile.mkstemp(prefix='.galahad-gateway-',dir='/work'); os.write(f,base64.b64decode(sys.argv[1])); os.fsync(f); os.close(f); os.replace(p,'/work/.galahad-gateway.json')";
+    try {
+      return (await this.docker(execArgs(id, ["python3", "-c", write, payload], 30), 45_000)).code === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Owner only. A commit of a GitHub repository put in a sandbox that isn't a knight's VM (a trial of your own work's),
+   * through the git gateway: a lease for that one repository is written inside the sandbox, where the fetch reads it
+   * and removes it (it is in no command, answer or ledger line), and revoked once the fetch is over, whatever happened.
+   * The commit and up to 50 commits of its history are checked out at `path`, detached, with no remote: nothing after it.
+   */
+  async checkoutRepository(id: string, git: { connector: string; owner: string; repo: string }, commit: string, path: string): Promise<{ commit: string }> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
+    if (!sandbox.ephemeral) throw new SandboxError("a knight's VM is given its repository as it is prepared, not this way", 409);
+    if (sandbox.network === "isolated") throw new SandboxError("a sandbox with no network can't reach the git gateway", 409);
+    if (sandbox.status !== "running") throw new SandboxError(`sandbox is ${sandbox.status}`, 409);
+    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: [`git:${git.connector}:${git.owner}:${git.repo}`], ttlMinutes: 15, maxRequests: 100 });
+    try {
+      const { GALAHAD_GATEWAY } = gatewayEnv(minted.token, []);
+      if (!(await this.writeLease(id, { GALAHAD_GATEWAY: GALAHAD_GATEWAY!, GALAHAD_TOKEN: minted.token, GALAHAD_REPO_URL: repositoryUrl(GALAHAD_GATEWAY!, git) }))) {
+        throw new SandboxError("could not give the sandbox its lease on the repository", 424);
+      }
+      const fetched = await this.docker(execArgs(id, ["python3", "-c", CHECKOUT_SCRIPT, path, commit], 600), 615_000);
+      if (fetched.code !== 0) {
+        const said = redact((fetched.stderr || fetched.stdout).replaceAll(minted.token, "…")).trim().split("\n").at(-1) ?? "";
+        throw new SandboxError(`couldn't fetch ${commit.slice(0, 12)} of ${git.owner}/${git.repo}: ${said.slice(0, 300) || `exit ${fetched.code}`}`, 424);
+      }
+      this.opts.ledger({ class: "read", resource: "sandbox.checkout", target: sandbox.name, verdict: "allow", quest: sandbox.quest, detail: `${git.owner}/${git.repo} at ${commit.slice(0, 12)} through ${git.connector}, into ${path}; its lease revoked once fetched` });
+      return { commit };
+    } finally {
+      this.opts.tokens.revoke(minted.info.hash);
+    }
   }
 
   /**

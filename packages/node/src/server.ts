@@ -2023,6 +2023,16 @@ export function createApp(ctx: AppContext) {
       }
       return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git), { sandbox: input.id }));
     },
+    checkoutRepository: (input, p) => {
+      if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only you put a repository in a sandbox");
+      const repo = githubRepo(input.repository);
+      if (!repo) throw new HttpError(400, "an HTTPS GitHub repository");
+      // Read through your connector for its owner when you added one, else through github's.
+      const own = `github-${repo.owner.toLowerCase()}`;
+      const connector = installedConnector(ctx.store, own) ? own : "github";
+      if (!installedConnector(ctx.store, connector)) throw new HttpError(424, "add the GitHub connector before a repository can be read (galahad connector add github)");
+      return longRunning(onNode(p, input.on, routes.checkoutRepository.path, input, () => ctx.sandbox!.checkoutRepository(input.id, { connector, ...repo }, input.commit, input.path), { sandbox: input.id }));
+    },
     whoami: (_input, p) => ({
       device: p.device,
       kind: p.kind,
