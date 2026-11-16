@@ -1,6 +1,26 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxView, TeamWorkspaceQuest } from "@galahad/core";
+import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxNetwork, type SandboxView, TeamWorkspaceQuest } from "@galahad/core";
+import {
+  CONTAINER_MAJOR,
+  containerBuildArgs,
+  containerCannot,
+  containerCollectArgs,
+  containerDeleteArgs,
+  containerExecArgs,
+  containerImageInspectArgs,
+  containerListArgs,
+  containerNetworkCreateArgs,
+  containerNetworkInspectArgs,
+  containerRunArgs,
+  containerStopArgs,
+  containerTerminalArgs,
+  containerVersionArgs,
+  containerVolumeDeleteArgs,
+  parseContainers,
+  parseContainerVersion,
+} from "./container.ts";
+import { ContainerVolumes } from "./container-volumes.ts";
 import {
   chooseIsolation,
   containerName,
@@ -69,7 +89,10 @@ export interface SandboxHostOptions {
   maxMemoryGb: number;
   /** The largest workspace one sandbox may have (default 200 GB). */
   maxDiskGb?: number;
-  /** Size-limited workspaces; null or absent: /work is an unlimited Docker volume (the heartbeat says so). */
+  /**
+   * Size-limited workspaces; null or absent: /work is an unlimited Docker volume (the heartbeat says so). On a Mac
+   * they are container's own volumes (ContainerVolumes), each of a fixed size, unless others are given.
+   */
   workspaces?: Workspaces | null;
   /** The sandbox directory (its Dockerfile, and lab/ for the Lab), so a missing image is rebuilt instead of failing. */
   imageContext?: string;
@@ -78,8 +101,14 @@ export interface SandboxHostOptions {
   /** The resolv.conf online microVMs get (see vmResolvConf). */
   resolvConf?: string;
   tokenStore?: SandboxTokenStore;
+  /**
+   * The command line that runs sandboxes here: Docker's (the default), or Apple's `container` on a Mac, where every
+   * sandbox is a lightweight VM of its own (container.ts: each of Docker's flags there, and what a Mac can't make).
+   */
+  engine?: "docker" | "container";
+  /** The engine's binary (default: docker, or container). */
   docker?: string;
-  /** How Docker is run (tests pass a stand-in that answers its commands; nothing is spawned then). */
+  /** How the engine is run (tests pass a stand-in that answers its commands; nothing is spawned then). */
   runner?: DockerRunner;
   /** How a terminal's process is started (tests pass one that starts a local shell instead of `docker exec`). */
   spawnTerminal?: SpawnTerminal;
@@ -258,17 +287,52 @@ async function readCapped(stream: ReadableStream<Uint8Array>, max: number): Prom
  * quest clean up its own ephemeral sandboxes and asks for everything else.
  */
 export class SandboxHost {
+  private readonly opts: SandboxHostOptions;
   private readonly bin: string;
+  /** Sandboxes here are Apple's `container`'s, on a Mac: every one a VM of its own, its /work a volume. */
+  private readonly apple: boolean;
   private readonly now: () => number;
   private readonly tokenStore: SandboxTokenStore;
   /** Workspaces made for a sandbox that hasn't started yet (so a cleanup never takes them). */
   private readonly creating = new Set<string>();
   private readonly building = new Map<string, Promise<{ ok: boolean; output: string }>>();
 
-  constructor(private readonly opts: SandboxHostOptions) {
-    this.bin = opts.docker ?? "docker";
+  constructor(opts: SandboxHostOptions) {
+    this.apple = opts.engine === "container";
+    this.opts = this.apple && !opts.workspaces ? { ...opts, workspaces: new ContainerVolumes((args, timeoutMs) => this.docker(args, timeoutMs)) } : opts;
+    this.bin = opts.docker ?? (this.apple ? "container" : "docker");
     this.now = opts.now ?? Date.now;
     this.tokenStore = opts.tokenStore ?? memoryTokenStore();
+  }
+
+  /** What a sandbox asked for runs as: on a Mac always its own VM (more than a container, never less); with Docker, chooseIsolation's. */
+  isolationFor(network: SandboxNetwork, asked: "container" | "vm" | undefined): "container" | "vm" {
+    return this.apple ? "vm" : chooseIsolation(network, asked, !!this.opts.microVMs);
+  }
+
+  /** The kinds of sandbox made here: a Mac's are all VMs. */
+  get kinds(): readonly ("container" | "vm")[] {
+    return this.apple ? ["vm"] : this.opts.microVMs ? ["container", "vm"] : ["container"];
+  }
+
+  /** The most a sandbox is cut off here: no network at all, or on a Mac, which has no such network, the gateway's alone. */
+  get strictest(): SandboxNetwork {
+    return this.apple ? "gateway" : "isolated";
+  }
+
+  /** Whether a VM here grows while it runs (Kata's take more as they run; a Mac's stop and start again: resizeTeam). */
+  get growsLive(): boolean {
+    return !this.apple;
+  }
+
+  /** A command's arguments in a sandbox, for this host's engine. */
+  private commandArgs(id: string, cmd: string[], timeoutSec: number): string[] {
+    return this.apple ? containerExecArgs(id, cmd, timeoutSec) : execArgs(id, cmd, timeoutSec);
+  }
+
+  /** Removing a sandbox's container (or VM), whatever it is doing. */
+  private removeArgs(name: string): string[] {
+    return this.apple ? containerDeleteArgs(name) : ["rm", "--force", name];
   }
 
   private async docker(args: string[], timeoutMs = 60_000, max = MAX_OUTPUT): Promise<Run> {
@@ -282,11 +346,21 @@ export class SandboxHost {
 
   async available(): Promise<boolean> {
     if (!this.opts.runner && !Bun.which(this.bin)) return false;
+    if (this.apple) {
+      // Its service answers when the API server's row is there; a major release this driver doesn't speak is no host.
+      const version = parseContainerVersion((await this.docker(containerVersionArgs(), 8000)).stdout);
+      return !!version?.running && version.major === CONTAINER_MAJOR;
+    }
     return (await this.docker(["info", "--format", "{{.ServerVersion}}"], 8000)).code === 0;
   }
 
   async status() {
     if (!(await this.available())) return { docker: false, image: false, networks: { gateway: false, online: false } };
+    if (this.apple) {
+      // (`docker`: its engine answers. Online is container's default network, its service's own.)
+      const [image, gw] = await Promise.all([this.docker(containerImageInspectArgs(DEFAULT_IMAGE)), this.docker(containerNetworkInspectArgs())]);
+      return { docker: true, image: image.code === 0, networks: { gateway: gw.code === 0, online: true } };
+    }
     const [image, gw, net] = await Promise.all([
       this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"]),
       this.docker(["network", "inspect", NETWORKS.gateway.name, "--format", "{{.Id}}"]),
@@ -295,8 +369,18 @@ export class SandboxHost {
     return { docker: true, image: image.code === 0, networks: { gateway: gw.code === 0, online: net.code === 0 } };
   }
 
-  /** Idempotent: creates the sandbox networks if missing. */
+  /**
+   * Idempotent: creates the sandbox networks if missing. (On a Mac only the gateway's: online is container's own
+   * default network. The ledger's resource names are the kinds of thing Galahad reads them as, whichever engine.)
+   */
   async ensureNetworks(): Promise<void> {
+    if (this.apple) {
+      if ((await this.docker(containerNetworkInspectArgs())).code === 0) return;
+      const result = await this.docker(containerNetworkCreateArgs());
+      if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS.gateway.name}: ${result.stderr.trim()}`, 500);
+      this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS.gateway.name, verdict: "allow", detail: "host-only (container network create --internal)" });
+      return;
+    }
     for (const kind of ["gateway", "online"] as const) {
       const exists = (await this.docker(["network", "inspect", NETWORKS[kind].name, "--format", "{{.Id}}"])).code === 0;
       if (exists) continue;
@@ -311,7 +395,7 @@ export class SandboxHost {
     let pending = this.building.get(image);
     if (!pending) {
       pending = (async () => {
-        const result = await this.docker(["build", "--pull", "-t", image, contextDir], 60 * 60_000);
+        const result = await this.docker(this.apple ? containerBuildArgs(image, contextDir) : ["build", "--pull", "-t", image, contextDir], 60 * 60_000);
         this.opts.ledger({
           class: "create",
           resource: "docker.image",
@@ -328,7 +412,7 @@ export class SandboxHost {
   }
 
   private async hasImage(image = DEFAULT_IMAGE): Promise<boolean> {
-    return (await this.docker(["image", "inspect", image, "--format", "{{.Id}}"])).code === 0;
+    return (await this.docker(this.apple ? containerImageInspectArgs(image) : ["image", "inspect", image, "--format", "{{.Id}}"])).code === 0;
   }
 
   /** Keep every one of Galahad's images that's built here. */
@@ -343,7 +427,8 @@ export class SandboxHost {
    */
   async keepImage(tag = DEFAULT_IMAGE): Promise<boolean> {
     const keeper = OWN_IMAGES[tag]?.keeper;
-    if (!keeper) return false;
+    // (On a Mac nothing prunes images by itself: no keeper is needed, and container has no network to park one on.)
+    if (!keeper || this.apple) return false;
     const image = (await this.docker(["image", "inspect", tag, "--format", "{{.Id}}"])).stdout.trim();
     if (!image) return false;
     const kept = (await this.docker(["container", "inspect", keeper, "--format", "{{.Image}}"])).stdout.trim();
@@ -360,10 +445,13 @@ export class SandboxHost {
 
   async create(input: CreateInput): Promise<SandboxView> {
     const providers = sandboxScopes(input);
-    if (!(await this.available())) throw new SandboxError("docker is not available on this node", 424);
+    // Never weaker than asked: what a Mac can't give (no network at all, an image not built for it) isn't made here.
+    const cannot = this.apple ? containerCannot(input) : null;
+    if (cannot) throw new SandboxError(cannot, 424);
+    if (!(await this.available())) throw new SandboxError(this.apple ? "Apple's container isn't answering on this Mac: its service has to be running (container system start), at a 1.x release" : "docker is not available on this node", 424);
     if (input.cpus > this.opts.maxCpus) throw new SandboxError(`at most ${this.opts.maxCpus} CPUs on this node`);
     if (input.memoryGb > this.opts.maxMemoryGb) throw new SandboxError(`at most ${this.opts.maxMemoryGb} GB memory per sandbox on this node`);
-    const isolation = chooseIsolation(input.network, input.isolation, !!this.opts.microVMs);
+    const isolation = this.isolationFor(input.network, input.isolation);
     if (isolation === "vm" && !this.opts.microVMs) {
       throw new SandboxError("this host can't run microVMs: it needs KVM and Kata Containers, which a deploy with sudo installs", 424);
     }
@@ -422,7 +510,7 @@ export class SandboxHost {
     try {
       if (limited) {
         try {
-          spec.workspace = await this.opts.workspaces!.create(id, diskGb);
+          spec.workspace = await this.opts.workspaces!.create(id, diskGb, { retain: input.persistent && quest.startsWith("arm.team.") });
           spec.diskGb = diskGb;
           if (input.persistent && quest.startsWith("arm.team.")) {
             if (!this.opts.workspaces!.retain) throw new Error("the workspace helper needs persistent teammate support");
@@ -437,15 +525,16 @@ export class SandboxHost {
         const volume = await this.docker(["volume", "create", "--label", `${LABEL}=1`, "--label", `${LABEL}.id=${id}`, volumeName(id)]);
         if (volume.code !== 0) throw new SandboxError(`could not create workspace: ${volume.stderr.trim()}`, 500);
       }
-      let run = await this.docker(runArgs(spec), 10 * 60_000);
+      const args = this.apple ? containerRunArgs(spec) : runArgs(spec);
+      let run = await this.docker(args, 10 * 60_000);
       // A microVM that lost its files as it started (lostItsFiles) is started once more, once the teardown it raced is done.
       if (run.code !== 0 && lostItsFiles(run.stderr)) {
-        await this.docker(["rm", "--force", containerName(id)]);
+        await this.docker(this.removeArgs(containerName(id)));
         await (this.opts.pause ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(2_000);
-        run = await this.docker(runArgs(spec), 10 * 60_000);
+        run = await this.docker(args, 10 * 60_000);
       }
       if (run.code !== 0) {
-        await this.docker(["rm", "--force", containerName(id)]);
+        await this.docker(this.removeArgs(containerName(id)));
         if (spec.workspace) await this.opts.workspaces!.remove(id).catch(() => {});
         else await this.docker(["volume", "rm", "-f", volumeName(id)]);
         if (tokenHash) this.opts.tokens.revoke(tokenHash);
@@ -480,7 +569,8 @@ export class SandboxHost {
     }
     // A stand-in for Docker has no files to copy out.
     if (this.opts.runner) return null;
-    const proc = Bun.spawn([this.bin, "cp", `${containerName(id)}:${path}`, "-"], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    // (container's cp names no tar stream, so on a Mac the VM's own tar writes one: as hostile as Docker's, to the same parser.)
+    const proc = Bun.spawn([this.bin, ...(this.apple ? containerCollectArgs(id, path) : ["cp", `${containerName(id)}:${path}`, "-"])], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => proc.kill(), 15 * 60_000);
     try {
       const [result, err, code] = await Promise.all([
@@ -508,6 +598,17 @@ export class SandboxHost {
   /** This node's sandboxes as Docker lists them, or null when Docker couldn't say (never mistaken for "none"). */
   async listed(): Promise<SandboxView[] | null> {
     if (!(await this.available())) return null;
+    if (this.apple) {
+      const listing = await this.docker(containerListArgs());
+      const found = listing.code === 0 ? parseContainers(listing.stdout) : null;
+      if (!found) return null;
+      const usage = await this.workspaceStats();
+      return found
+        .filter((c) => c.labels[LABEL] === "1" && c.labels[`${LABEL}.node`] === this.opts.node)
+        .map((c) => toView(c.labels, c.image, c.status, usage, { ...(c.cpus ? { NanoCpus: c.cpus * 1e9 } : {}), ...(c.memoryBytes ? { Memory: c.memoryBytes } : {}) }))
+        .filter((v): v is SandboxView => v !== null)
+        .sort((a, b) => b.createdAt - a.createdAt);
+    }
     const listing = await this.docker(["ps", "-aq", "--filter", `label=${LABEL}=1`, "--filter", `label=${LABEL}.node=${this.opts.node}`]);
     if (listing.code !== 0) return null;
     const ids = listing.stdout
@@ -583,7 +684,7 @@ export class SandboxHost {
     const payload = Buffer.from(JSON.stringify(env)).toString("base64");
     const write = "import os,sys,base64,tempfile; f,p=tempfile.mkstemp(prefix='.galahad-gateway-',dir='/work'); os.write(f,base64.b64decode(sys.argv[1])); os.fsync(f); os.close(f); os.replace(p,'/work/.galahad-gateway.json')";
     try {
-      return (await this.docker(execArgs(id, ["python3", "-c", write, payload], 30), 45_000)).code === 0;
+      return (await this.docker(this.commandArgs(id, ["python3", "-c", write, payload], 30), 45_000)).code === 0;
     } catch {
       return false;
     }
@@ -607,7 +708,7 @@ export class SandboxHost {
       if (!(await this.writeLease(id, { GALAHAD_GATEWAY: GALAHAD_GATEWAY!, GALAHAD_TOKEN: minted.token, GALAHAD_REPO_URL: repositoryUrl(GALAHAD_GATEWAY!, git) }))) {
         throw new SandboxError("could not give the sandbox its lease on the repository", 424);
       }
-      const fetched = await this.docker(execArgs(id, ["python3", "-c", CHECKOUT_SCRIPT, path, commit], 600), 615_000);
+      const fetched = await this.docker(this.commandArgs(id, ["python3", "-c", CHECKOUT_SCRIPT, path, commit], 600), 615_000);
       if (fetched.code !== 0) {
         const said = redact((fetched.stderr || fetched.stdout).replaceAll(minted.token, "…")).trim().split("\n").at(-1) ?? "";
         throw new SandboxError(`couldn't fetch ${commit.slice(0, 12)} of ${git.owner}/${git.repo}: ${said.slice(0, 300) || `exit ${fetched.code}`}`, 424);
@@ -639,7 +740,23 @@ export class SandboxHost {
     const providers = sandboxScopes({ network, providers: opts.providers, search: sandbox.providers.includes(SEARCH_SCOPE) });
     // With a desktop from now on, or without one, when asked; else the image it has (by its name: as it is built now).
     const image = opts.desktop === true ? DESKTOP_IMAGE : opts.desktop === false ? DEFAULT_IMAGE : sandbox.image;
+    const cannot = this.apple ? containerCannot({ desktop: image === DESKTOP_IMAGE }) : null;
+    if (cannot) throw new SandboxError(cannot, 424);
     if (!(await this.hasImage(image))) throw new SandboxError(`${image} is not built on this node: run \`galahad sandbox build${image === DESKTOP_IMAGE ? " --desktop" : ""}\` first`, 424);
+    if (this.apple) {
+      // On a Mac: stopped, deleted and made again on the same volume (no rename there), or put back as it was.
+      await this.replaceTeamVm(sandbox, quest, { image, network, providers, cpus: sandbox.cpus, memoryGb: sandbox.memoryGb });
+      this.opts.ledger({
+        class: "modify",
+        resource: "docker.container",
+        target: containerName(id),
+        verdict: "approved",
+        reason: `approved by ${opts.approvedBy.slice(0, 12)}`,
+        quest,
+        detail: `made again from ${image} as it is now · /work kept · ${network} · ${sandbox.cpus} cpu · ${sandbox.memoryGb} GB`,
+      });
+      return (await this.get(id))!;
+    }
     const ws = this.opts.workspaces;
     if (sandbox.disk && (!ws?.mount || !ws.retain)) throw new SandboxError("update the workspace helper before making this teammate's VM again", 424);
     // A remake that was cut short after the old container was set aside left it there: it gets its name back first.
@@ -741,7 +858,7 @@ export class SandboxHost {
    * smaller this way: what a running VM was given isn't taken from under it (`remakeTeam` makes it again, and a smaller
    * size takes effect then). `fits` says why what it adds doesn't fit the node's ceiling, or null. Returns it as it is now.
    */
-  async resizeTeam(id: string, quest: string, opts: { cpus?: number; memoryGb?: number; diskGb?: number; approvedBy: string; why?: string; fits?: (more: { cpus: number; memoryGb: number }) => string | null }): Promise<SandboxView> {
+  async resizeTeam(id: string, quest: string, opts: { cpus?: number; memoryGb?: number; diskGb?: number; approvedBy: string; why?: string; fits?: (more: { cpus: number; memoryGb: number }) => string | null; /** Told when it had to stop and start again to take it (a Mac's VM). */ paused?: () => void }): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -759,6 +876,8 @@ export class SandboxHost {
     const more = { cpus: cpus - sandbox.cpus, memoryGb: memoryGb - sandbox.memoryGb };
     const grows = disk !== null && opts.diskGb !== undefined && opts.diskGb > disk;
     if (!more.cpus && !more.memoryGb && !grows) return sandbox;
+    // (container fixes a volume's size as it makes it, and has no way to change it after.)
+    if (grows && this.apple) throw new SandboxError("a VM's disk on a Mac keeps the size it was made with: container fixes a volume's size as it makes it, so it can't grow there yet", 409);
     if (grows) {
       if (!this.opts.workspaces?.grow) throw new SandboxError("update the workspace helper before growing a teammate's disk", 424);
       const problem = budgetProblem(await this.opts.workspaces.stats(), opts.diskGb! - disk!);
@@ -776,8 +895,15 @@ export class SandboxHost {
         verdict: opts.why ? "allow" : "approved",
         reason: opts.why ? `grown by Galahad: ${redact(opts.why).slice(0, 200)}` : `approved by ${opts.approvedBy.slice(0, 12)}`,
         quest,
-        detail: `grown while it runs: ${now.cpus} cpu · ${now.memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
+        detail: `${this.apple ? "paused to grow (a Mac's VM can't grow while it runs)" : "grown while it runs"}: ${now.cpus} cpu · ${now.memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
       });
+    if (this.apple) {
+      // A Mac's VM can't take more as it runs: it stops, is made again with more on its own /work, and starts.
+      await this.replaceTeamVm(sandbox, quest, { image: sandbox.image, network: sandbox.network === "isolated" ? "gateway" : sandbox.network, providers: sandbox.providers, cpus, memoryGb });
+      opts.paused?.();
+      record({ cpus, memoryGb });
+      return (await this.get(id))!;
+    }
     // The disk first: it isn't the governor's, so when it can't grow nothing the governor counts has changed, and its
     // giving back (governed-host) is true. Threads and memory after: when they can't be added, the disk has grown, and
     // the ledger and the error both say so.
@@ -844,11 +970,11 @@ export class SandboxHost {
       throw new SandboxError(`the desktop could not do that: ${redact(run.stderr.trim().split("\n").at(-1) ?? "").slice(0, 300) || `exit ${run.code}`}`, 424);
     };
     if (argv) {
-      const ran = await this.docker(execArgs(id, argv, 60), 75_000);
+      const ran = await this.docker(this.commandArgs(id, argv, 60), 75_000);
       if (ran.code !== 0) failed(ran);
       this.opts.ledger({ class: "modify", resource: "sandbox.desktop", target: sandbox.name, verdict: "allow", quest, detail: did || redact(argv.slice(1).join(" ")).slice(0, 300) });
     }
-    const shot = await this.docker(execArgs(id, ["sh", "-c", 'f="${TMPDIR:-/tmp}/watch-$$.jpg"; desktop shot "$f" >/dev/null && base64 -w0 "$f"; code=$?; rm -f "$f"; exit $code'], 60), 75_000);
+    const shot = await this.docker(this.commandArgs(id, ["sh", "-c", 'f="${TMPDIR:-/tmp}/watch-$$.jpg"; desktop shot "$f" >/dev/null && base64 -w0 "$f"; code=$?; rm -f "$f"; exit $code'], 60), 75_000);
     if (shot.code !== 0 || !shot.stdout.trim()) failed(shot);
     return { shot: { mediaType: "image/jpeg", data: shot.stdout.trim() }, width: 1280, height: 800 };
   }
@@ -858,7 +984,7 @@ export class SandboxHost {
     if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
     if (sandbox.status !== "running") throw new SandboxError(`sandbox is ${sandbox.status}`, 409);
     const started = performance.now();
-    const result = await this.docker(execArgs(id, cmd, timeoutSec), (timeoutSec + 15) * 1000);
+    const result = await this.docker(this.commandArgs(id, cmd, timeoutSec), (timeoutSec + 15) * 1000);
     this.opts.ledger({
       class: "modify",
       resource: "sandbox.exec",
@@ -887,8 +1013,8 @@ export class SandboxHost {
     if (!sandbox) throw new SandboxError("no such sandbox on this node", 404);
     if (sandbox.status !== "running") throw new SandboxError(`sandbox is ${sandbox.status}`, 409);
     const tag = hex(randomBytes(8));
-    const shell = (this.opts.spawnTerminal ?? spawnTerminal)([this.bin, ...terminalArgs(id, tag)], size, onData);
-    const hangUp = () => void this.docker(execArgs(id, ["sh", "-c", TERMINAL_HANG_UP, "hang-up", tag], 30), 45_000).catch(() => {});
+    const shell = (this.opts.spawnTerminal ?? spawnTerminal)([this.bin, ...(this.apple ? containerTerminalArgs(id, tag) : terminalArgs(id, tag))], size, onData);
+    const hangUp = () => void this.docker(this.commandArgs(id, ["sh", "-c", TERMINAL_HANG_UP, "hang-up", tag], 30), 45_000).catch(() => {});
     return {
       name: sandbox.name,
       quest: sandbox.quest || null,
@@ -931,13 +1057,13 @@ export class SandboxHost {
       });
       return decision;
     }
-    await this.docker(["rm", "--force", "--volumes", containerName(id)]);
+    await this.docker(this.apple ? containerDeleteArgs(containerName(id)) : ["rm", "--force", "--volumes", containerName(id)]);
     if (sandbox.disk) {
       const ws = this.opts.workspaces;
       const remove = opts.approvedBy && !sandbox.ephemeral && ws?.removeRetained ? ws.removeRetained.bind(ws) : ws?.remove.bind(ws);
       await remove?.(id).catch((error) => this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: id, verdict: "allow", detail: `not removed: ${(error as Error).message}` }));
     }
-    else await this.docker(["volume", "rm", "--force", volumeName(id)]);
+    else await this.docker(this.apple ? containerVolumeDeleteArgs(id) : ["volume", "rm", "--force", volumeName(id)]);
     const tokenHash = this.tokenStore.take(id);
     if (tokenHash) this.opts.tokens.revoke(tokenHash);
     this.opts.ledger({
@@ -965,12 +1091,11 @@ export class SandboxHost {
     // disk for nothing: its data was the sandbox's, which no longer exists.
     const stats = await this.workspaceStats();
     if (stats) {
-      const listed = await this.docker(["ps", "-a", "--filter", `label=${LABEL}=1`, "--format", `{{.Label "${LABEL}.id"}}`]);
-      const alive = new Set(listed.stdout.split("\n").map((s) => s.trim()));
+      const alive = await this.aliveIds();
       for (const image of stats.images) {
         // Any galahad container on this Docker counts (another node or a test may share the host), and a
         // young workspace may belong to a sandbox that is still starting in another process.
-        if (image.retained || listed.code !== 0 || alive.has(image.id) || this.creating.has(image.id) || now - image.createdAt < 10 * 60_000) continue;
+        if (image.retained || !alive || alive.has(image.id) || this.creating.has(image.id) || now - image.createdAt < 10 * 60_000) continue;
         await this.opts.workspaces!.remove(image.id).catch(() => {});
         this.opts.ledger({ class: "delete", resource: "sandbox.workspace", target: image.id, verdict: "allow", reason: "cleaning up the workspace of a sandbox that no longer exists" });
         reaped.push(`workspace ${image.id}`);
@@ -979,6 +1104,94 @@ export class SandboxHost {
     return reaped;
   }
 
+  /** The ids of every galahad sandbox the engine has, any node's; null when it couldn't say (never read as "none"). */
+  private async aliveIds(): Promise<Set<string> | null> {
+    if (this.apple) {
+      const listing = await this.docker(containerListArgs());
+      const found = listing.code === 0 ? parseContainers(listing.stdout) : null;
+      return found ? new Set(found.filter((c) => c.labels[LABEL] === "1").map((c) => c.labels[`${LABEL}.id`] ?? "")) : null;
+    }
+    const listed = await this.docker(["ps", "-a", "--filter", `label=${LABEL}=1`, "--format", `{{.Label "${LABEL}.id"}}`]);
+    return listed.code === 0 ? new Set(listed.stdout.split("\n").map((s) => s.trim())) : null;
+  }
+
+  /**
+   * A knight's VM on a Mac made again as `next`, its /work kept. container can't change a container that exists, nor
+   * rename one, so the old one is stopped and deleted (its /work is a volume of its own, made to be kept, which
+   * stays), and the new one is made under the same name on the same volume. What ran in it stops, so it paused.
+   * One that won't start is cleared away, and the old one is made again as it was (from its image's name, with a
+   * fresh lease for what it had) and the error says so. The token store keeps the lease it runs with after.
+   */
+  private async replaceTeamVm(sandbox: SandboxView, quest: string, next: { image: string; network: "online" | "gateway"; providers: string[]; cpus: number; memoryGb: number }): Promise<void> {
+    const id = sandbox.id;
+    const name = containerName(id);
+    const asWas = { image: sandbox.image, network: sandbox.network === "isolated" ? "gateway" as const : sandbox.network, providers: sandbox.providers, cpus: sandbox.cpus, memoryGb: sandbox.memoryGb };
+    const made: string[] = [];
+    /** Run it as `as`, with a lease of its own; the lease's hash, or the error. */
+    const runAs = async (as: typeof next): Promise<{ hash?: string; error?: string }> => {
+      let env: Record<string, string> = {};
+      let minted: { token: string; hash: string } | undefined;
+      if (as.providers.length) {
+        const lease = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: as.providers, ttlMinutes: 7 * 24 * 60, maxRequests: 100_000 });
+        env = gatewayEnv(lease.token, as.providers);
+        minted = { token: lease.token, hash: lease.info.hash };
+      }
+      const spec: SandboxSpec = {
+        id,
+        quest,
+        node: this.opts.node,
+        image: as.image,
+        network: as.network,
+        cpus: as.cpus,
+        memoryGb: as.memoryGb,
+        pidsLimit: 1024,
+        ttlMinutes: Math.max(0, Math.round((sandbox.expiresAt - sandbox.createdAt) / 60_000)),
+        ephemeral: false,
+        providers: as.providers,
+        createdAt: sandbox.createdAt,
+        env,
+        isolation: "vm",
+        ...(minted ? { tokenHash: minted.hash } : {}),
+        ...(sandbox.disk ? { workspace: volumeName(id), diskGb: sandbox.disk.limitGb } : {}),
+      };
+      const run = await this.docker(containerRunArgs(spec), 10 * 60_000);
+      if (run.code === 0) return minted ? { hash: minted.hash } : {};
+      await this.docker(containerDeleteArgs(name));
+      if (minted) this.opts.tokens.revoke(minted.hash);
+      // (container may say the new VM's arguments back, and its lease is among them.)
+      let why = redact(run.stderr.trim() || `container run exited ${run.code}`).split("\n")[0]!.slice(0, 300);
+      if (minted) why = why.replaceAll(minted.token, "[its lease]");
+      return { error: why };
+    };
+    // Its volume is never an orphan's while this runs (the reaper skips what is being made).
+    this.creating.add(id);
+    try {
+      await this.ensureNetworks();
+      await this.docker(containerStopArgs(name), 60_000);
+      const removed = await this.docker(containerDeleteArgs(name));
+      if (removed.code !== 0) {
+        if (sandbox.status === "running") await this.docker(["start", name], 120_000);
+        throw new SandboxError(`could not set the teammate's VM aside, so it is as it was: ${redact(removed.stderr).split("\n")[0]!.slice(0, 300)}`, 424);
+      }
+      const now = await runAs(next);
+      if (now.error) {
+        const back = await runAs(asWas);
+        if (back.error) throw new SandboxError(`could not make the teammate's VM again (${now.error}), nor put it back as it was (${back.error}): its /work is kept, in ${volumeName(id)}`, 424);
+        if (sandbox.status !== "running") await this.docker(containerStopArgs(name), 60_000);
+        made.push(...(back.hash ? [back.hash] : []));
+        throw new SandboxError(`could not make the teammate's VM again, so it is as it was: ${now.error}`, 424);
+      }
+      made.push(...(now.hash ? [now.hash] : []));
+    } finally {
+      this.creating.delete(id);
+      // The lease it runs with now (new, or the one it was put back with) is the one the store keeps.
+      if (made.length) {
+        const previous = this.tokenStore.take(id);
+        if (previous) this.opts.tokens.revoke(previous);
+        this.tokenStore.put(id, made[0]!);
+      }
+    }
+  }
 }
 
 /** Where Kata's shim may be: on containerd's PATH (installed by scripts/remote-setup.sh). */

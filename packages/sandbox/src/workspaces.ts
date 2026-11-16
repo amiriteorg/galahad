@@ -26,8 +26,11 @@ export interface WorkspaceStats {
 /** What the sandbox host needs from the helper (a fake in tests). */
 export interface Workspaces {
   available(): Promise<boolean>;
-  /** Creates and mounts an empty workspace; returns its host path. */
-  create(id: string, gib: number): Promise<string>;
+  /**
+   * Creates and mounts an empty workspace; returns its host path (on a Mac, its volume's name). `retain`: it is a
+   * persistent teammate's, kept from the start (the helper is told by `retain` after; a Mac's volume only as it is made).
+   */
+  create(id: string, gib: number, opts?: { retain?: boolean }): Promise<string>;
   /** Remount existing data after a host restart; never creates an empty image. */
   mount?(id: string): Promise<void>;
   /** Protect a persistent teammate's data even if its container is lost. */
