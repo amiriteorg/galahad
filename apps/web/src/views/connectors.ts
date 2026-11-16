@@ -5,7 +5,7 @@ import { KEY_STATE, OAUTH_STATE } from "../lib/connector-state.ts";
 import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonBlock, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, field, formActions, pageBody, pageHead, secretInput, section, skeletonBlock, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -291,7 +291,7 @@ export function openRunTool(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView)
     classNote(tool.class, "you"),
     args.el,
     status,
-    h("div", { class: "row", style: "justify-content:flex-end" }, button("Close", { onClick: () => sheet.close() }), run),
+    formActions(button("Close", { onClick: () => sheet.close() }), run),
     out,
   );
   const sheet = openSheet({ title: `${c.label} · ${tool.name}`, description: tool.description, body: form, size: "wide" });
@@ -310,7 +310,7 @@ function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView, orders: nu
     h("span", { class: "avatar", "data-tone": info?.tone ?? "neutral", title: info?.label ?? tool.class }, icon(info?.icon ?? "eye", { size: 14 })),
     h(
       "div",
-      { class: "grow" },
+      { class: "item-text" },
       h(
         "div",
         { class: "row wrap" },
@@ -325,10 +325,10 @@ function toolRow(ctx: Ctx, c: ConnectorView, tool: ConnectorToolView, orders: nu
             )
           : null,
       ),
-      mcp ? h("div", { class: "tiny subtle", style: "margin-top:2px" }, claimSentence(tool.hints)) : null,
-      mcp ? h("div", { style: "margin-top:6px" }, serverWords(tool.description)) : h("div", { class: "small muted" }, tool.description),
+      mcp ? h("div", { class: "tiny subtle" }, claimSentence(tool.hints)) : null,
+      mcp ? h("div", { class: "item-body" }, serverWords(tool.description)) : h("div", { class: "small muted" }, tool.description),
       params ? h("div", { class: "meta mono" }, params) : null,
-      pick ? h("div", { class: "row wrap", style: "margin-top:8px" }, h("span", { class: "tiny subtle" }, "Class"), classSelect(tool, pick)) : null,
+      pick ? h("div", { class: "row wrap item-body" }, h("span", { class: "tiny subtle" }, "Class"), classSelect(tool, pick)) : null,
     ),
     c.installed && ctx.can("connect")
       ? h("div", { class: "item-actions" }, button(`Run ${tool.name}`, { size: "sm", variant: "ghost", icon: "play", label: `Run ${c.id}.${tool.name}`, onClick: () => openRunTool(ctx, c, tool) }))
@@ -467,8 +467,8 @@ function accessBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
       ? h(
           "p",
           // (An icon is a block of its own: beside the words it needs a row, or it takes a line.)
-          { class: "small row top", style: "gap:6px" },
-          h("span", { style: "padding-top:4px;color:var(--text-3)" }, icon("shield-check", { size: 13 })),
+          { class: "small row top tight" },
+          h("span", { class: "line-icon" }, icon("shield-check", { size: 13 })),
           h(
             "span",
             {},
@@ -519,7 +519,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
   const saveNote = h("div");
   const save = button("Save classes", { size: "sm", variant: "primary", icon: "check" });
   const undo = button("Undo", { size: "sm", variant: "ghost" });
-  const saveBar = h("div", { class: "row wrap", hidden: true, style: "justify-content:flex-end" }, h("span", { class: "tiny subtle grow" }, ""), undo, save);
+  const saveBar = h("div", { class: "row wrap end", hidden: true }, h("span", { class: "tiny subtle grow" }, ""), undo, save);
   const syncSave = () => {
     saveBar.hidden = !picked.size;
     saveBar.firstElementChild!.textContent = picked.size ? `${plural(picked.size, "class", "classes")} changed, not saved yet.` : "";
@@ -556,7 +556,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
         h("span", { class: "avatar" }, icon("plug", { size: 16 })),
         h(
           "div",
-          { class: "grow" },
+          { class: "item-text" },
           h(
             "div",
             { class: "row wrap" },
@@ -566,7 +566,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
           ),
           h(
             "div",
-            { class: "tiny subtle row wrap", style: "margin-top:2px" },
+            { class: "tiny subtle row wrap" },
             h("span", { class: "mono" }, c.id),
             mcp && c.url
               ? h("span", { class: "mono wrap-anywhere", title: "Galahad talks to this server and nowhere else" }, `only to ${c.url.replace(/^https?:\/\//, "")}`)
@@ -607,7 +607,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
             ),
             h(
               "div",
-              { class: "card flat", style: "margin-top:8px" },
+              { class: "card flat process-body" },
               h("div", { class: "rows" }, ...c.tools.map((t) => toolRow(ctx, c, t, orders.get(`${c.id}.${t.name}`) ?? 0, mcp && write ? pick(t) : null))),
             ),
           )
@@ -640,12 +640,10 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
   addOrder.hidden = true;
   const ordersSection = section(
     "Standing orders",
-    { actions: admin ? addOrder : null },
-    h(
-      "p",
-      { class: "tiny subtle" },
-      "Your answers given in advance. A call an order covers goes out at once instead of waiting for you, and still shows up in your Inbox. Each names one tool, narrows its arguments and expires.",
-    ),
+    {
+      actions: admin ? addOrder : null,
+      note: "Your answers given in advance. A call an order covers goes out at once instead of waiting for you, and still shows up in your Inbox. Each names one tool, narrows its arguments and expires.",
+    },
     ordersBox,
   );
   ordersSection.hidden = !read;
@@ -745,10 +743,13 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
       pageHead("Connectors", "How Galahad reaches the services you use. Reading, creating and changing are his to do, and logged. Anything outward, and every delete, asks you first."),
       ctx.can("brain:write") ? null : callout("quiet", "This device can see connectors but not install or remove them (no brain:write scope)."),
       note,
-      installedSection,
-      ordersSection,
-      availableSection,
-      h("p", { class: "tiny subtle" }, "A service of your own: describe it in a manifest and run ", h("span", { class: "mono" }, "galahad connector add --manifest file.json"), " on a node."),
+      // Shown whole once the connectors and the orders have answered: each part came in on its own, pushing the next.
+      pageBody(
+        installedSection,
+        ordersSection,
+        availableSection,
+        h("p", { class: "note" }, "A service of your own: describe it in a manifest and run ", h("span", { class: "mono" }, "galahad connector add --manifest file.json"), " on a node."),
+      ),
     ),
   );
 
