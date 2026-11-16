@@ -116,6 +116,30 @@ const SUMMARY = `SELECT c.*,
     (SELECT m.status FROM messages m WHERE m.conversation = c.id AND m.role = 'assistant' ORDER BY m.id DESC LIMIT 1) AS last
   FROM conversations c`;
 
+/** A long chat's older messages, summed up: what it says, and the last message it covers. */
+export interface ChatStory {
+  text: string;
+  through: number;
+}
+
+/**
+ * When a chat is folded, and how far: once the messages after its story pass `high` characters, all but the newest are
+ * folded into it; the newest that fit in `keep` stay whole, starting with one of yours (a model is given a conversation
+ * that starts with the user). Rarely, so what a provider keeps in its cache, the beginning, changes rarely.
+ */
+export const FOLD = { high: 48_000, keep: 16_000 } as const;
+
+/** Where to fold: the index of the first message said whole (one of yours), or null when there is nothing to fold yet. */
+export function foldAt(recent: readonly { role: string; content: string }[], limits: { high: number; keep: number } = FOLD): number | null {
+  const tail: number[] = [];
+  let size = 0;
+  for (let i = recent.length - 1; i >= 0; i--) tail[i] = size += recent[i]!.content.length;
+  if (size <= limits.high) return null;
+  const yours = recent.flatMap((message, i) => (i > 0 && message.role === "user" ? [i] : []));
+  // The earliest of yours whose tail fits; if none does, your last, so at least it and what answered it stay whole.
+  return yours.find((i) => tail[i]! <= limits.keep) ?? yours.at(-1) ?? null;
+}
+
 export class ChatStore {
   private readonly db: Database;
 
@@ -141,7 +165,10 @@ export class ChatStore {
         conversation TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
         ord INTEGER NOT NULL, content TEXT NOT NULL, role TEXT,
         by_kind TEXT NOT NULL, by_device TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS queue_by_conversation ON queue (conversation, ord, id);`);
+      CREATE INDEX IF NOT EXISTS queue_by_conversation ON queue (conversation, ord, id);
+      CREATE TABLE IF NOT EXISTS stories (
+        conversation TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+        text TEXT NOT NULL, through INTEGER NOT NULL, updated_at INTEGER NOT NULL);`);
     // A database from before queues: two more columns on a conversation (why its queue is held; what waits on you).
     const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().map((c) => c.name));
     if (!columns.has("queue_held")) this.db.exec("ALTER TABLE conversations ADD COLUMN queue_held TEXT");
@@ -189,6 +216,24 @@ export class ChatStore {
         }),
       );
     return { ...summary, messages };
+  }
+
+  /**
+   * What the model is told of it, once it is long: its story (its older messages summed up, through message `through`)
+   * and every question and answer with words in it after that, whole, up to message `upTo` (absent: the newest). Null
+   * story: nothing folded yet.
+   */
+  told(id: string, upTo: number = Number.MAX_SAFE_INTEGER): { story: ChatStory | null; recent: (ChatMessage & { id: number })[] } {
+    const story = this.db.query<ChatStory, [string]>("SELECT text, through FROM stories WHERE conversation = ?").get(id) ?? null;
+    const recent = this.db
+      .query<{ id: number; role: "user" | "assistant"; content: string }, [string, number, number]>("SELECT id, role, content FROM messages WHERE conversation = ? AND content != '' AND id > ? AND id <= ? ORDER BY id")
+      .all(id, story?.through ?? 0, upTo);
+    return { story, recent };
+  }
+
+  /** Its older messages, through `through`, folded into its story. */
+  keepStory(id: string, text: string, through: number): void {
+    this.db.query("INSERT INTO stories (conversation, text, through, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(conversation) DO UPDATE SET text = excluded.text, through = excluded.through, updated_at = excluded.updated_at").run(id, text, through, this.now());
   }
 
   /** What the model sees of it: every question, and every answer that has words in it. */

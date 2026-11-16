@@ -106,7 +106,7 @@ test("a conversation's turns are sent the same beginning, so a provider reads it
   expect(after.endsWith("Recalled for And the notes?")).toBe(true);
 });
 
-test("a long conversation is kept as a story: its older part is summed up once, by the knight's model, for the room, and later turns start from it", async () => {
+test("a long conversation is kept as a story: its older part is summed up once (by the knight's own model while the swift role has none that answers), for the room, and later turns start from it", async () => {
   let kept: { text: string; through: string } | null = null;
   const stories: string[] = [];
   const f = fixture([say("Ada drafts the notes; Kay plans the release for Monday."), say("Understood."), say("Still on it.")], {
@@ -132,6 +132,19 @@ test("a long conversation is kept as a story: its older part is summed up once, 
   const next = f.bodies[2].messages.find((m: any) => m.role === "user").content as string;
   const head = asked.indexOf(`Message ${through + 1} `);
   expect(next.slice(0, head)).toBe(asked.slice(0, head));
+});
+
+test("a room's story is a chore: told on the swift role, while the knight's reply stays its own model's", async () => {
+  let kept: { text: string; through: string } | null = null;
+  const f = fixture([say("Ada drafts the notes."), say("Understood.")], {
+    story: () => kept,
+    keepStory: (_where: string, text: string, through: string) => { kept = { text, through }; },
+  });
+  f.setRoster("swift", ["local/swift-model"]);
+  const long = Array.from({ length: 40 }, (_, i) => said(i + 1, i % 2 ? "ada" : "owner", `Message ${i + 1} ${"x".repeat(1000)}`));
+  await f.runtime.respond(member, room, long, f.context);
+  expect(f.bodies.map((body) => body.model)).toEqual(["swift-model", "fake"]);
+  expect(kept!.text).toBe("Ada drafts the notes.");
 });
 
 test("a knight searches everything said in its conversations, older than it was shown included, with its own tool", async () => {

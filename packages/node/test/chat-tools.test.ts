@@ -257,6 +257,58 @@ describe("your chat history", () => {
     expect(conversations.find((c) => c.id === id)!.count).toBe(4);
   });
 
+  test("a long chat is folded on the swift role: its older words summed up once, the planner told that and only the newest whole", async () => {
+    const admin = home.adminToken();
+    expect((await call("setRoster", { role: "swift", models: ["stand-in/swift"] }, admin)).status).toBe(200);
+    const long = (letter: string) => `${letter.repeat(20_000)} (note ${letter})`;
+    // What the model was given: short messages whole, a long note by its last words.
+    const said = (body: any) => (body.messages as { role: string; content: string }[]).filter((m) => m.role !== "system").map((m) => (m.content.length > 40 ? m.content.slice(-8) : m.content));
+    const system = (body: any) => (body.messages as { role: string; content: string }[]).filter((m) => m.role === "system").map((m) => m.content).join("\n");
+    script = [say("Noted A.")];
+    const { id } = conversationOf(await ask(admin, long("A"), { save: true }));
+    script = [say("Noted B.")];
+    await ask(admin, long("B"), { conversation: id });
+    script = [say("Noted C.")];
+    await ask(admin, long("C"), { conversation: id });
+    // Past the threshold now: the swift role sums up the older words first, then the planner answers.
+    script = [say("You sent notes A and B; Galahad noted each."), say("Here is D.")];
+    await ask(admin, "And D?", { conversation: id });
+    expect(bodies.map((b) => b.model)).toEqual(["swift", "m"]);
+    expect(bodies[0].messages.at(-1).content).toContain("You keep the record of a conversation between the owner and Galahad");
+    expect(bodies[0].messages.at(-1).content).toContain("(note B)");
+    expect(bodies[0].messages.at(-1).content).not.toContain("(note C)");
+    expect(said(bodies[1])).toEqual(["(note C)", "Noted C.", "And D?"]);
+    expect(system(bodies[1])).toContain("This conversation's story so far");
+    expect(system(bodies[1])).toContain("You sent notes A and B; Galahad noted each.");
+    const storyIn = (text: string) => /This conversation's story so far[\s\S]*?<\/chat-story-\d+>/.exec(text)?.[0];
+    const told = storyIn(system(bodies[1]));
+    expect(told).toBeDefined();
+    // The next turn finds it folded already: no call to the swift role, and the story told again as it was.
+    script = [say("Here is E.")];
+    await ask(admin, "And E?", { conversation: id });
+    expect(bodies.map((b) => b.model)).toEqual(["m"]);
+    expect(said(bodies[0])).toEqual(["(note C)", "Noted C.", "And D?", "Here is D.", "And E?"]);
+    expect(system(bodies[0])).toContain("You sent notes A and B; Galahad noted each.");
+    // Told the same way on both turns, so what a provider caches of the beginning still holds.
+    expect(storyIn(system(bodies[0]))).toBe(told!);
+    // Everything is still kept, to read.
+    expect((await get(id)).messages).toHaveLength(10);
+  });
+
+  test("a chat that can't be folded now is sent as it was, and the answer still comes", async () => {
+    const admin = home.adminToken();
+    expect((await call("setRoster", { role: "swift", models: ["stand-in/swift"] }, admin)).status).toBe(200);
+    script = [say("One.")];
+    const { id } = conversationOf(await ask(admin, "x".repeat(30_000), { save: true }));
+    script = [say("Two.")];
+    await ask(admin, "y".repeat(30_000), { conversation: id });
+    script = [() => new Response("the swift model is down", { status: 500 }), say("Three.")];
+    const events = await ask(admin, "And three?", { conversation: id });
+    expect(events.some((e) => e.type === "text" && e.text === "Three.")).toBe(true);
+    expect((bodies.at(-1).messages as { role: string }[]).filter((m) => m.role !== "system")).toHaveLength(5);
+    expect(logs.some((line) => line.startsWith(`fold ${id}:`))).toBe(true);
+  });
+
   test("asking again replaces the last exchange; tool steps are kept with the answer", async () => {
     script = [say("First try.")];
     const { id } = conversationOf(await ask(home.adminToken(), "Try me.", { save: true }));

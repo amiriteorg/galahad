@@ -241,10 +241,13 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     while (cut > 1 && kept + sizeOf(recent[cut - 1]!) <= STORY.keep) kept += sizeOf(recent[--cut]!);
     const older = recent.slice(0, cut);
     const fence = fenceOf(teammate.id);
-    const work = ask(teammate, teammate.role, [{
-      role: "user",
-      content: [told ? data("The story so far", told.text, fence) : null, data("Messages to fold into it", older.map(({ speaker, speakerName, text }) => ({ speaker, speakerName, text })), fence)].filter(Boolean).join("\n\n"),
-    }], signal, STORY_BRIEF).then(({ text }) => { if (text.trim()) deps.keepStory!(room.id, text.trim(), older.at(-1)!.id); });
+    const content = [told ? data("The story so far", told.text, fence) : null, data("Messages to fold into it", older.map(({ speaker, speakerName, text }) => ({ speaker, speakerName, text })), fence)].filter(Boolean).join("\n\n");
+    const fold = (role: string) => ask(teammate, role, [{ role: "user", content }], signal, STORY_BRIEF);
+    // A chore, on the swift role as a chat's story is (what to keep needs no costly model); the knight's own role when
+    // swift has no model that answers, so a room never stalls on its story.
+    const work = fold("swift")
+      .catch(() => fold(teammate.role))
+      .then(({ text }) => { if (text.trim()) deps.keepStory!(room.id, text.trim(), older.at(-1)!.id); });
     telling.set(room.id, work);
     try { await work; } finally { telling.delete(room.id); }
     return deps.story(room.id);
