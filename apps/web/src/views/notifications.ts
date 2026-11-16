@@ -3,7 +3,7 @@ import { type Api, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
 import { clockProblem, isIos, keyBytes, perDayProblem, PUSH_STATE_TEXT, type PushEnv, type PushState, pushState, quietLine, sameKey, todayLine, WHAT_IS_SENT } from "../lib/push.ts";
 import { relativeTime } from "../lib/time.ts";
-import { busy, button, section, switchControl } from "../ui/controls.ts";
+import { busy, button, list, listRow, note as noteLine, section, switchControl } from "../ui/controls.ts";
 import { h, replace, type Scope } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 
@@ -175,7 +175,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
 
     replace(
       nodeCards,
-      h("div", { class: "stack tight" }, h("div", { class: "label" }, "What he tells you"), h("div", { class: "card rows" }, ...NOTIFY_KINDS.map(kindRow)), h("p", { class: "tiny subtle" }, "He's silent when there's nothing to say: “all quiet” is never a notification.")),
+      h("div", { class: "stack tight" }, h("div", { class: "label" }, "What he tells you"), h("div", { class: "card rows" }, ...NOTIFY_KINDS.map(kindRow)), noteLine("He's silent when there's nothing to say: “all quiet” is never a notification.")),
       h(
         "div",
         { class: "stack tight" },
@@ -190,31 +190,23 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
             h("div", { class: "notify-hours" }, from, h("span", { class: "tiny subtle" }, "to"), to),
           ),
           h("div", { class: "item" }, hoursNote),
-          h(
-            "div",
-            { class: "item center notify-row wrap" },
-            h("div", { class: "grow", style: "min-width:200px" }, h("label", { class: "strong small", for: "notify-per-day", style: "display:block" }, "At most a day"), h("div", { class: "tiny subtle" }, "So a fault can't buzz you all day. The last one or two are kept for alerts; when ordinary news reaches the limit, one message says so.")),
-            h("div", { class: "field" }, perDay),
-          ),
+          listRow({ title: h("label", { for: "notify-per-day" }, "At most a day"), sub: "So a fault can't buzz you all day. The last one or two are kept for alerts; when ordinary news reaches the limit, one message says so.", trail: perDay, wrap: true }),
           h("div", { class: "item" }, perDayNote),
         ),
-        locked ? h("p", { class: "tiny subtle" }, locked) : null,
+        locked ? noteLine(locked) : null,
       ),
       view.devices.length
         ? h(
             "div",
             { class: "stack tight" },
             h("div", { class: "label" }, "Devices he can reach"),
-            h(
-              "div",
-              { class: "card rows" },
-              ...view.devices.map((d) =>
-                h(
-                  "div",
-                  { class: "item center" },
-                  icon(/iPhone|iPad|Android|phone/i.test(d.name) ? "phone" : "laptop", { size: 16 }),
-                  h("div", { class: "grow small" }, h("div", { class: "strong" }, d.name, d.device === ctx.identity.device ? h("span", { class: "tiny subtle" }, " · this device") : null), h("div", { class: "tiny subtle" }, d.lastError ? `Not arriving: ${d.lastError}` : `Through ${d.service}, turned on ${relativeTime(d.since)}`)),
-                ),
+            list(
+              view.devices.map((d) =>
+                listRow({
+                  lead: /iPhone|iPad|Android|phone/i.test(d.name) ? "phone" : "laptop",
+                  title: [d.name, d.device === ctx.identity.device ? h("span", { class: "subtle" }, " · this device") : null],
+                  sub: d.lastError ? `Not arriving: ${d.lastError}` : `Through ${d.service}, turned on ${relativeTime(d.since)}`,
+                }),
               ),
             ),
           )

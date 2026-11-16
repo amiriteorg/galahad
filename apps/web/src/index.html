@@ -539,7 +539,6 @@
       .rows > a.item:hover { background: var(--surface-2); }
       .rows > a.item:first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
       .rows > a.item:last-child { border-radius: 0 0 var(--r-lg) var(--r-lg); }
-      .more-about { display: block; color: var(--text-2); font-size: var(--fs-13); }
       /* A row's text (listRow): its title, the line under it, its meta line; 2 px apart, as the lines of one thing. */
       .item-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
       .item-title { font-weight: 550; }
@@ -1431,6 +1430,8 @@
       .trust-strip svg { width: 14px; height: 14px; }
 
       /* ---------- misc ---------- */
+      /* The app's own icon, in About. */
+      .about-icon { flex: none; border-radius: 10px; }
       .scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: var(--sp-2); }
       /* An invite's QR code: white paper whatever the theme (a camera needs the contrast), big enough to scan across a desk. */
       .invite-qr { align-self: center; width: min(240px, 72vw); aspect-ratio: 1; padding: 0; border-radius: var(--r-md); background: #fff; box-shadow: var(--shadow-1); overflow: hidden; }
