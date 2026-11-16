@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -38,6 +38,9 @@ export interface Live {
   loopDrafts: Signal<LoopDraftView[]>;
   /** Connectors an agent asked you for. */
   connectorRequests: Signal<ConnectorRequestView[]>;
+  /** Facts about you he proposed, waiting for you to keep or drop (what you kept goes with every answer). */
+  aboutYou: Signal<MemoryView[]>;
+  refreshAboutYou(): Promise<void>;
   online: Signal<boolean>;
   /** The inbox has been asked at least once (until then, "nothing needs you" would be a guess). */
   inboxLoaded: Signal<boolean>;

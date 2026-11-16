@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
@@ -35,6 +35,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const secretRequests = signal<SecretRequestView[]>([]);
   const loopDrafts = signal<LoopDraftView[]>([]);
   const connectorRequests = signal<ConnectorRequestView[]>([]);
+  const aboutYou = signal<MemoryView[]>([]);
   const actions = signal<ActionView[]>([]);
   const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
@@ -57,12 +58,14 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         actions.value.filter((a) => isWaiting(a)).length +
         notices.value.filter((n) => !n.dismissed).length +
         loopDrafts.value.length +
-        connectorRequests.value.length,
+        connectorRequests.value.length +
+        aboutYou.value.length,
     );
   pairings.subscribe(recount);
   secretRequests.subscribe(recount);
   loopDrafts.subscribe(recount);
   connectorRequests.subscribe(recount);
+  aboutYou.subscribe(recount);
   actions.subscribe(recount);
   notices.subscribe(recount);
 
@@ -131,6 +134,17 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     }
   }
 
+  /** The facts about you he proposed, waiting for you (what you kept is on the Memory page). */
+  async function refreshAboutYou(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { proposed } = await api.get<{ proposed: MemoryView[] }>("/api/about-you");
+      if (JSON.stringify(proposed.map((m) => m.id)) !== JSON.stringify(aboutYou.value.map((m) => m.id))) aboutYou.set(proposed);
+    } catch {
+      /* transient, or an older node that keeps nothing about you */
+    }
+  }
+
   async function refreshActions(): Promise<void> {
     if (!can("mind:read")) return;
     try {
@@ -195,7 +209,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   }
 
   const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests()]);
+    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
     inboxLoaded.set(true);
   };
 
@@ -209,6 +223,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     timers.push(setInterval(() => void refreshRequests(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshLoopDrafts(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshConnectorRequests(), REQUESTS_MS));
+    timers.push(setInterval(() => void refreshAboutYou(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
     watchTeam();
@@ -233,5 +248,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, notices, loopDrafts, connectorRequests, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
 }

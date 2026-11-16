@@ -474,6 +474,14 @@ try {
   PAGES.push({ name: "Kept chat", hash: `#/chat?c=${conversation}` });
   await admin("questProgress", { quest: "measure-1", goal: "Make sync resume after a dropped connection", state: "working", plan: "1. Reproduce the drop.\n2. Resume from the last acknowledged entry.\n3. Run the gate.", step: 3, maxSteps: 30, doing: "bun test packages/link", revisions: 0, gates: [{ command: "bun test packages/link", by: "owner", exitCode: null }] });
   await admin("requestSecret", { name: "github-token", purpose: "To open the pull request for the sync fix." });
+  // What he knows of you (with routes any checkout has): a fact you kept, and one he noticed, waiting for you.
+  await admin("remember", { text: "Short answers, the command first.", tags: ["about-you"] });
+  const { token: noticer } = await admin("mintArm", { label: "measure-noticer" });
+  await fetch(`http://127.0.0.1:${port}${routes.remember!.path}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${noticer}`, "content-type": "application/json" },
+    body: JSON.stringify({ text: "Writes in British English.", tags: ["about-you"] }),
+  });
   const team = await admin("team");
   const faces = Object.fromEntries(team.teammates.map((member: { id: string }) => [member.id, core.avatarExpression(member, team, Date.now())]));
 
@@ -693,6 +701,7 @@ try {
       { name: "forge-work", hash: "#/team?room=forge&tab=work", wait: ".team-task" },
       { name: "gawain-workspace-desktop", hash: `#/team?room=${own.gawain}&tab=workspace`, wait: ".team-panel .card, .desktop-shot img[data-shown]" },
       { name: "inbox", hash: "#/inbox" },
+      { name: "memory", hash: "#/memory", wait: "#memory-results .item" },
       { name: "more", hash: "#/more" },
     ];
     const sizes = [[390, 844, true], [1280, 800, false]] as const;

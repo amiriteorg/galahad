@@ -11,6 +11,7 @@ import { icon, type IconName } from "../ui/icons.ts";
 import { highlighted } from "../ui/markdown.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
+import { aboutYouChanged, factRow, openAboutYou } from "./about-you.ts";
 import { openAddKey } from "./vault.ts";
 
 /*
@@ -117,6 +118,26 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
   const summary = h("span", { class: "count-label tnum", role: "status" });
   let seq = 0;
 
+  // What he knows of you: his proposals (waiting for you) and what you kept (with every answer of his).
+  const about = h("div", { class: "card", id: "about-you", "aria-busy": "true" }, skeletonRows(2));
+  async function drawAbout(): Promise<void> {
+    try {
+      const { kept, proposed } = await ctx.api.get<{ kept: MemoryView[]; proposed: MemoryView[] }>("/api/about-you", scope.signal);
+      if (scope.disposed) return;
+      const rows = [...proposed.map((m) => factRow(ctx, m, true)), ...kept.map((m) => factRow(ctx, m, false))];
+      replace(
+        about,
+        rows.length
+          ? h("div", { class: "rows" }, ...rows)
+          : empty({ icon: "user", title: "Nothing about you yet", body: "Tell him a preference, a convention or what not to do: it goes with every answer of his. What he notices of you waits here for you to keep.", compact: true }),
+      );
+    } catch (error) {
+      if (!scope.disposed) replace(about, errorState("Couldn't read what he knows of you", error, () => void drawAbout()));
+    } finally {
+      about.setAttribute("aria-busy", "false");
+    }
+  }
+
   function item(m: MemoryView, q: string): HTMLElement {
     const ms = hlcMs(m.hlc);
     return h(
@@ -218,6 +239,7 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
     }
   });
 
+  const memories = section("Memories", {}, results);
   replace(
     root,
     h(
@@ -231,12 +253,15 @@ export const memoryView: View = (root, ctx, { scope, opts }) => {
         h("div", { role: "search", class: "input-wrap" }, icon("search", { size: 16 }), h("label", { class: "sr-only", for: "memory-q" }, "Search memory"), query),
         ctx.can("mind:write") ? button("Remember", { variant: "primary", icon: "plus", onClick: () => openRemember(ctx) }) : null,
       ),
-      section("Memories", {}, results),
+      section("About you", { actions: ctx.can("mind:write") ? button("Tell him something", { size: "sm", icon: "plus", onClick: () => openAboutYou(ctx) }) : null }, about),
+      memories,
     ),
   );
-  root.querySelector(".section-head h2")?.after(summary);
+  memories.querySelector(".section-head h2")?.after(summary);
 
-  scope.add(memoryChanged.subscribe(() => void search()));
+  scope.add(memoryChanged.subscribe(() => (void search(), void drawAbout())));
+  scope.add(aboutYouChanged.subscribe(() => (void search(), void drawAbout())));
+  void drawAbout();
   void search();
   if (opts.query || !matchMedia("(pointer: coarse)").matches) query.focus();
   if (opts.intent === "remember") openRemember(ctx);

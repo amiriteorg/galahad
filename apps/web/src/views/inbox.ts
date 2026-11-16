@@ -9,6 +9,7 @@ import { confirmAction } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
+import { factRow } from "./about-you.ts";
 import { CLASS_INFO, deviceName } from "./activity.ts";
 import { connectorRequestCard } from "./connectors.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
@@ -377,6 +378,13 @@ export const inboxView: View = (root, ctx, { scope }) => {
     renderAllClear();
   };
 
+  const renderAboutYou = () => {
+    const facts = ctx.live.aboutYou.value;
+    replace(aboutYouBox, ...facts.map((m) => factRow(ctx, m, true)));
+    aboutYouSection.hidden = !facts.length;
+    renderAllClear();
+  };
+
   const renderConnectorRequests = () => {
     const requests = ctx.live.connectorRequests.value;
     replace(connectorsBox, ...requests.map((r) => connectorRequestCard(ctx, r)));
@@ -385,7 +393,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
 
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.connectorRequests.value.length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.aboutYou.value.length + ctx.live.connectorRequests.value.length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -432,6 +440,13 @@ export const inboxView: View = (root, ctx, { scope }) => {
     h("p", { class: "tiny subtle" }, "You asked in chat for something on a schedule. Each runs only once you add it."),
     draftsBox,
   );
+  const aboutYouBox = h("div", { class: "card rows" });
+  const aboutYouSection = section(
+    "Facts he noticed about you",
+    { actions: h("a", { href: "#/memory", class: "btn ghost sm" }, "Memory", icon("chevron-right", { size: 14 })) },
+    h("p", { class: "tiny subtle" }, "Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note."),
+    aboutYouBox,
+  );
   const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
   const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);
   // Kept across re-renders so it stays open while the outbox changes.
@@ -449,6 +464,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       requestsSection,
       connectorsSection,
       draftsSection,
+      aboutYouSection,
       noticesSection,
       read ? history : null,
       read ? fixed : null,
@@ -459,6 +475,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.secretRequests.subscribe(renderRequests));
   scope.add(ctx.live.loopDrafts.subscribe(renderDrafts));
   scope.add(ctx.live.connectorRequests.subscribe(renderConnectorRequests));
+  scope.add(ctx.live.aboutYou.subscribe(renderAboutYou));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
@@ -466,6 +483,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   renderRequests();
   renderDrafts();
   renderConnectorRequests();
+  renderAboutYou();
   renderActions();
   renderNotices();
   void ctx.live.refreshInbox();
