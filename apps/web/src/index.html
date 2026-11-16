@@ -380,24 +380,48 @@
       }
       .rail-tip .rail-keys { opacity: 0.6; font-weight: 500; letter-spacing: 0.04em; }
 
-      /* The roster: Galahad, then each knight, then each room. A face, a name, one line of latest activity, and a mark
-         when the row needs you. The sidebar on a wide screen; on a phone, the first screen. */
-      .roster { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-1)); padding: 0 var(--sp-1); scrollbar-width: none; }
+      /* The roster: who leads, Galahad, each knight, then each room. A face in its seat (its ring says its state), a name,
+         one line of latest activity; a room's face a mark when it needs you. The sidebar on a wide screen; on a phone,
+         the first screen. */
+      .roster { position: relative; display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-1)); padding: 0 var(--sp-1); scrollbar-width: none; }
       .roster-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px var(--sp-2); border-radius: var(--r-md); color: var(--text); text-decoration: none; min-width: 0; }
       .roster-row:hover { background: var(--surface-3); }
       .roster-row[aria-current="page"] { background: linear-gradient(180deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-      .roster-face { position: relative; flex: none; display: grid; place-items: center; width: 32px; height: 32px; }
+      .roster-face { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; }
       .roster-face .avatar { width: 32px; height: 32px; border-radius: 50%; }
-      .roster-mark { position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--sidebar); }
+      .roster-mark { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: var(--oxblood); box-shadow: 0 0 0 2px var(--sidebar); }
       .roster-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
-      .roster-name { font-weight: 600; font-size: var(--fs-14); letter-spacing: -0.005em; }
+      .roster-name { flex: 0 1 auto; font-weight: 600; font-size: var(--fs-14); letter-spacing: -0.005em; }
       .roster-line { color: var(--text-3); font-size: var(--fs-12); }
-      .roster-row[data-needs] .roster-line { color: var(--warn); }
+      .roster-row[data-needs] .roster-line { color: var(--oxblood); }
       .roster-row > .btn { flex: none; }
-      .roster-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+      .roster-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .roster-head > .state-chip { margin-left: auto; flex: none; }
       .roster-knights { display: flex; flex-direction: column; gap: 1px; }
-      .roster-badge, .roster-add { display: none; }
+      .roster-add { display: none; }
       .roster-label { display: flex; align-items: center; min-height: 32px; margin-top: var(--sp-3); padding: 0 2px 0 var(--sp-2); color: var(--text-3); font-size: var(--fs-12); font-weight: 600; }
+      /* A section's head folds it, on a wide screen (remembered on this device): the knights but who leads and Galahad,
+         or the rooms. Not while the sidebar is only faces. */
+      .roster-fold { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+      .roster-fold:hover { color: var(--text-2); }
+      .roster-fold .chev { transition: transform var(--d-1) var(--ease-out); }
+      .roster-fold[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+      @media (min-width: 960px) {
+        :root:not([data-sidebar="collapsed"]) .roster[data-folded~="knights"] .roster-row[data-rest],
+        :root:not([data-sidebar="collapsed"]) .roster[data-folded~="rooms"] .roster-row[data-key^="room:"] { display: none; }
+      }
+      /* A knight dragged into your order (ui/drag.ts): lifted under the pointer, a line of ink where it would go. */
+      .roster-row.dragging, .knight-card.dragging { position: relative; z-index: 5; transition: none; background: var(--surface); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--border); }
+      .drop-mark { position: absolute; top: 0; left: 0; z-index: 6; border-radius: 1px; background: var(--accent); pointer-events: none; }
+      [data-sorting], [data-sorting] * { cursor: grabbing; }
+      /* Arranging the knights with buttons (views/arrange.ts): each seat's row, who leads, and its two moves; the places
+         of the moves kept for who leads and Galahad, who don't move, so the buttons line up. */
+      .roster-arrange { display: flex; flex-direction: column; gap: 1px; }
+      .arrange-row { cursor: default; }
+      .arrange-row:hover { background: none; }
+      .arrange-controls { display: flex; align-items: center; gap: 2px; flex: none; }
+      .arrange-controls > .arrange-lead { margin-right: var(--sp-1); }
+      .arrange-still { flex: none; width: calc(2 * var(--control-h-sm) + 2px); }
       .roster-note { padding: var(--sp-1) var(--sp-2) var(--sp-2); color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
       .roster .sk-row { padding: 8px var(--sp-2); }
       /* A way back to the roster, where a timeline is the whole screen. (Two classes: .btn would show it.) */
@@ -428,34 +452,24 @@
         .shell[data-pane="roster"] .sidebar-head > .btn.head-search { display: inline-flex; margin-left: auto; }
         .roster { overflow: visible; }
         .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
-        .roster-face, .roster-face .worker-avatar, .roster-face .avatar { width: 40px; height: 40px; }
+        .roster-face .avatar { width: 40px; height: 40px; }
         .roster-mark { box-shadow: 0 0 0 2px var(--bg); }
         .roster-name { font-size: var(--fs-15); }
-        /* The Roundtable on a phone: Galahad's card, then the knights as cards, two to a row, each drawing on its panel. */
-        .shell[data-pane="roster"] .roster-galahad { min-height: 0; gap: 14px; margin: 2px 0 10px; padding: 10px 14px 10px 10px; border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-        .shell[data-pane="roster"] .roster-galahad .roster-face, .shell[data-pane="roster"] .roster-galahad .roster-face .worker-avatar { width: 84px; height: 84px; }
-        .shell[data-pane="roster"] .roster-galahad .roster-name { font-size: var(--fs-20); letter-spacing: -0.02em; }
-        .shell[data-pane="roster"] .roster-galahad .roster-mark { display: none; }
-        .shell[data-pane="roster"] .roster-galahad[data-needs] .roster-line { color: var(--text-2); }
-        .shell[data-pane="roster"] :is(.roster-galahad, .roster-knights) .roster-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+        /* The Roundtable on a phone: who leads as a card across the top (Galahad, unless you made a knight primary), then
+           the others as cards, two to a row, each in its seat, its state in a word beside its name. */
+        .shell[data-pane="roster"] .roster-lead { min-height: 0; gap: 14px; margin: 2px 0 10px; padding: 10px 14px 10px 10px; border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
+        .shell[data-pane="roster"] .roster-lead .roster-face { width: auto; height: auto; }
+        .shell[data-pane="roster"] .roster-lead .roster-name { font-size: var(--fs-20); letter-spacing: -0.02em; }
+        .shell[data-pane="roster"] .roster-lead[data-needs] .roster-line { color: var(--text-2); }
+        .shell[data-pane="roster"] :is(.roster-lead, .roster-knights) .roster-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
         .shell[data-pane="roster"] .roster-knights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        .shell[data-pane="roster"] .roster-knights .roster-row { flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 6px 6px 10px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-        .shell[data-pane="roster"] .roster-knights .roster-face { width: auto; height: 104px; border-radius: 15px; background: var(--surface-2); place-items: end center; overflow: hidden; }
-        .shell[data-pane="roster"] .roster-knights .roster-face .worker-avatar { width: 94px; height: 94px; margin-bottom: -3px; }
+        .shell[data-pane="roster"] .roster-knights .roster-row { flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 10px 6px 10px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
+        .shell[data-pane="roster"] .roster-knights .roster-face { width: auto; height: auto; }
         .shell[data-pane="roster"] .roster-knights .roster-text { gap: 2px; padding: 0 4px; }
-        .shell[data-pane="roster"] .roster-knights .roster-mark { display: none; }
-        .shell[data-pane="roster"] .roster-knights .roster-row[data-needs] { box-shadow: var(--shadow-1), inset 0 0 0 1px color-mix(in srgb, var(--oxblood) 40%, var(--border)), 0 0 0 3px var(--oxblood-soft); }
-        .shell[data-pane="roster"] .roster-knights .roster-row[data-needs] .roster-face { background: color-mix(in srgb, var(--oxblood) 7%, var(--surface-2)); }
         .shell[data-pane="roster"] .roster-knights .roster-row[data-needs] .roster-line { color: var(--text-3); }
-        .shell[data-pane="roster"] .roster-badge { display: inline-flex; flex: none; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-full); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0; }
-        .shell[data-pane="roster"] .roster-badge[data-tone="needs"] { color: var(--oxblood); background: var(--oxblood-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oxblood) 28%, transparent); }
-        .shell[data-pane="roster"] .roster-badge[data-tone="quiet"] { color: var(--text-3); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
-        .shell[data-pane="roster"] .roster-badge[data-tone="ok"] { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 25%, transparent); }
         .shell[data-pane="roster"] .roster-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 164px; border: 1px dashed var(--border-strong); border-radius: 20px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-14); font-weight: 500; cursor: pointer; }
         .shell[data-pane="roster"] .roster-add:active { background: var(--surface-2); }
         .shell[data-pane="roster"] .roster-add-plus { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
-        .shell[data-pane="roster"] .roster-label > [data-new-knight] { display: none; }
-        .shell[data-pane="roster"] .roster-label > [data-give] { height: 32px; padding: 0 14px 0 11px; border-radius: var(--r-full); background: var(--accent-fill); color: var(--on-accent); }
         .roster-line { font-size: var(--fs-13); }
         .roster-label { min-height: 40px; }
       }
@@ -1158,7 +1172,7 @@
       /* A task given to the Roundtable: who took it and why, then how each of the others stood. */
       .give-choice { display: flex; align-items: center; gap: var(--sp-3); }
       .give-choice h3 { font-size: var(--fs-18); font-weight: 650; letter-spacing: -0.015em; }
-      .roster-label > .btn:not(.icon-only) { color: var(--text-2); }
+      .roster-label > .btn:not(.icon-only):not(.primary) { color: var(--text-2); }
       .team-person-summary { display: flex; align-items: flex-start; gap: var(--sp-3); }
       .team-workspace-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
       @media (min-width: 960px) { .team-layout { height: calc(100dvh - var(--topbar-h)); } }
