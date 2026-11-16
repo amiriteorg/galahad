@@ -50,7 +50,7 @@ describe("private team persistence", () => {
     const store = make(path); setup(store);
     store.remember("ada", "The fixture uses Bun.");
     store.setWorkspace("ada", { node: "host", id: "0123456789" });
-    store.post({ room: "workshop", text: "Discuss the fixture." });
+    store.post({ room: "workshop", text: "@ada @lin: discuss the fixture." });
     close(store);
     const reopened = make(path);
     expect(reopened.teammate("ada")).toMatchObject({ memory: "The fixture uses Bun.", workspace: { node: "host", id: "0123456789" } });
@@ -66,7 +66,7 @@ describe("private team persistence", () => {
     const after = new Database(path); expect(after.query("SELECT value FROM previous_data").get()).toEqual({ value: "kept" }); after.close();
   });
   test("restart marks in-flight side effects interrupted, holds that room, and keeps queued work", () => {
-    const store = make(); setup(store); store.post({ room: "workshop", text: "Work" });
+    const store = make(); setup(store); store.post({ room: "workshop", text: "@ada @lin: work" });
     const first = store.queued()[0]!;
     expect(store.claim(first.id)).toBe(true);
     store.recover();
@@ -163,7 +163,7 @@ describe("team boundaries", () => {
     store.finish(old.id, "done", null, { verified: true, output: "private old output" });
     const running = store.createTask({ room: "workshop", assignee: "ada", title: "private active title", goal: "private active goal" }); store.claim(running.id);
     for (let n = 0; n < 3; n++) store.createTask({ room: "workshop", assignee: "ada", title: `private queued ${n}`, goal: "private goal" });
-    store.post({ room: "workshop", text: "private conversation" });
+    store.post({ room: "workshop", text: "@ada @lin: private conversation" });
     const delivery = store.queued().find((job) => job.kind === "delivery" && job.teammate === "lin")!; store.claim(delivery.id);
     now += 120_000;
     const failed = store.createTask({ room: "workshop", assignee: "lin", title: "private failure", goal: "private goal" });
@@ -220,7 +220,7 @@ describe("team boundaries", () => {
   });
   test("posts and delegated tasks cannot cross membership boundaries", () => {
     const store = make(); setup(store); store.saveTeammate({ id: "outsider", name: "Outside" });
-    const message = store.post({ room: "workshop", text: "Work" });
+    const message = store.post({ room: "workshop", text: "@ada @lin: work" });
     expect(() => store.post({ room: "workshop", text: "Pretend I am inside" }, { teammate: "outsider", chainId: message.chainId })).toThrow(/not a member/);
     expect(() => store.post({ room: "workshop", text: "Fresh budget" }, { teammate: "ada" })).toThrow(/current conversation/);
     expect(() => store.createTask({ room: "workshop", assignee: "outsider", title: "Work", goal: "Work" })).toThrow(/not a member/);
@@ -260,10 +260,10 @@ describe("team boundaries", () => {
   });
   test("a full queue refuses a whole owner post without leaving an unserviceable message", () => {
     const store = make(); setup(store);
-    for (let n = 0; n < 128; n++) store.post({ room: "workshop", text: `Question ${n}` });
+    for (let n = 0; n < 128; n++) store.post({ room: "workshop", text: `@ada @lin: question ${n}` });
     expect(store.queued()).toHaveLength(256);
     const before = store.messages("workshop");
-    expect(() => store.post({ room: "workshop", text: "Too much" })).toThrow(/queue is full/);
+    expect(() => store.post({ room: "workshop", text: "@ada @lin: too much" })).toThrow(/queue is full/);
     expect(store.messages("workshop")).toEqual(before);
   });
   test("old running and queued work stays visible after more than 512 newer finished jobs", () => {
@@ -272,15 +272,15 @@ describe("team boundaries", () => {
     store.claim(running.id);
     const queued = store.createTask({ room: "workshop", assignee: "ada", title: "Waiting", goal: "Waiting" });
     store.saveRoom({ id: "messages", name: "Messages", members: ["lin"] });
-    store.post({ room: "messages", text: "A long conversation" });
+    store.post({ room: "messages", text: "@lin: a long conversation" });
     const liveDelivery = store.queued().find((job) => job.room === "messages")!;
     store.claim(liveDelivery.id);
-    store.post({ room: "messages", text: "Waiting on that conversation" });
+    store.post({ room: "messages", text: "@lin: waiting on that conversation" });
     const queuedDelivery = store.queued().find((job) => job.room === "messages")!;
     for (let n = 0; n < 520; n++) {
       const task = store.createTask({ room: "workshop", assignee: "lin", title: `Finished ${n}`, goal: "Finished" });
       store.finish(task.id, "done", null, { verified: true, output: "Verified" });
-      const message = store.post({ room: "messages", text: `Finished conversation ${n}` });
+      const message = store.post({ room: "messages", text: `@lin: finished conversation ${n}` });
       const delivery = store.queued().find((job) => job.room === "messages" && job.chainId === message.chainId)!;
       store.finish(delivery.id, "done");
     }
@@ -446,7 +446,7 @@ describe("the knights Galahad makes for himself", () => {
     store.remember("ada", "private working note");
     store.recruit(job("scout"), "galahad");
     store.enable("lin", false);
-    store.post({ room: "workshop", text: "The newest question." });
+    store.post({ room: "workshop", text: "@ada @lin: the newest question." });
     store.claim(store.queued().find((queued) => queued.teammate === "ada")!.id);
     const task = store.createTask({ room: "workshop", assignee: "ada", title: "Fix the parser", goal: "private goal text" });
     const view = store.overview();
@@ -460,7 +460,7 @@ describe("the knights Galahad makes for himself", () => {
     expect(JSON.stringify(view)).not.toContain("private");
     const room = store.overview("workshop").room!;
     expect(room).toMatchObject({ id: "workshop", name: "Workshop", members: ["ada", "lin"] });
-    expect(room.messages).toEqual([{ speaker: "owner", speakerName: "You", text: "The newest question.", createdAt: now }]);
+    expect(room.messages).toEqual([{ speaker: "owner", speakerName: "You", text: "@ada @lin: the newest question.", createdAt: now }]);
     expect(room.tasks).toEqual([{ id: task.id, title: "Fix the parser", assignee: "ada", status: "queued", verified: false }]);
     expect(() => store.overview("no-such-room")).toThrow(/No such team room/);
     // Long conversations come as their latest part, each message clipped.
@@ -490,7 +490,7 @@ describe("removing a knight", () => {
     setup(store);
     const dm = store.direct("ada");
     const peers = store.direct("lin", "ada");
-    store.post({ room: "workshop", text: "Start." });
+    store.post({ room: "workshop", text: "@ada @lin: start." });
     reply(store, "ada", "workshop", "On it.");
     store.post({ room: dm.id, text: "Only you." });
     const task = store.createTask({ room: "workshop", assignee: "ada", title: "Fix it", goal: "Fix the parser." });
@@ -549,7 +549,7 @@ describe("removing a knight", () => {
     store.setWorkspace("ada", { node: "host", id: "0123456789" });
     expect(() => store.remove("ada")).toThrow(/workspace/);
     store.setWorkspace("ada", null);
-    store.post({ room: "workshop", text: "Go." });
+    store.post({ room: "workshop", text: "@ada @lin: go." });
     const running = store.queued().find((j) => j.teammate === "ada")!;
     expect(store.claim(running.id)).toBe(true);
     expect(() => store.remove("ada")).toThrow(/Stop this knight's work/);
@@ -607,7 +607,7 @@ describe("removing a knight", () => {
     const store = make(); setup(store);
     const peers = store.direct("lin", "ada");
     // Ada had written to Lin there, and Lin's reply was still waiting when Ada was removed.
-    const opened = store.post({ room: "workshop", text: "Talk it over." });
+    const opened = store.post({ room: "workshop", text: "@ada @lin: talk it over." });
     const adas = store.queued().find((j) => j.teammate === "ada")!;
     expect(store.claim(adas.id)).toBe(true);
     store.post({ room: peers.id, text: "Between us." }, { teammate: "ada", chainId: opened.chainId });
@@ -633,7 +633,7 @@ describe("removing a knight", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-remove-")); dirs.push(dir); const path = join(dir, "team.db");
     const store = make(path); setup(store);
     const peers = store.direct("lin", "ada");
-    const opened = store.post({ room: "workshop", text: "Talk." });
+    const opened = store.post({ room: "workshop", text: "@ada @lin: talk." });
     const adas = store.queued().find((j) => j.teammate === "ada")!;
     store.claim(adas.id);
     store.post({ room: peers.id, text: "Between us." }, { teammate: "ada", chainId: opened.chainId });

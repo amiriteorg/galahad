@@ -4,7 +4,7 @@ import {
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
   type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview,
 } from "../../core/src/team.ts";
-import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamJob, type TeamSelection } from "./team-store.ts";
+import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamAnswer, type TeamAsker, type TeamJob, type TeamSelection } from "./team-store.ts";
 
 export { TeamError } from "./team-store.ts";
 
@@ -27,6 +27,9 @@ export interface TeamServiceOptions {
   store: TeamStore;
   respond(teammate: Teammate, room: TeamRoom, history: TeamMessage[], context: TeamRunContext): Promise<string | { text: string }>;
   executeTask(teammate: Teammate, task: TeamTask, context: TeamRunContext): Promise<{ verified: boolean; output: string; error?: string; record?: TeamTaskRecord; changes?: TeamTaskChanges }>;
+  /** Galahad's answer in a room he was asked in (TeamStore.post says when): his words, posted for him. Absent: he
+   * sits in no room on this node, and what was for him waits. */
+  answer?(room: TeamRoom, history: TeamMessage[], ask: { asker: TeamAsker; trigger: TeamMessage | null }, signal: AbortSignal): Promise<string>;
   concurrency?: number;
   timeoutMs?: number;
   /** A task's own limit (work in a repository takes longer than a reply); absent: the same as `timeoutMs`. */
@@ -50,6 +53,9 @@ interface Active {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+/** Galahad answers in this many rooms at once, and takes this long at most over one answer. */
+const ANSWERS = { atOnce: 3, timeoutMs: 10 * 60_000 } as const;
+
 const Destination = z.union([z.strictObject({ room: TeamRoomId }), z.strictObject({ teammate: TeammateId })]);
 const selected = (job: TeamJob, select: TeamSelection): boolean => (!select.room || job.room === select.room) && (!select.teammate || job.teammate === select.teammate) && (!select.task || job.id === select.task);
 
@@ -57,6 +63,8 @@ const selected = (job: TeamJob, select: TeamSelection): boolean => (!select.room
  * this service owns identity, delivery, persistence, budgets, dependencies and exclusive access. */
 export class TeamService {
   private readonly active = new Map<string, Active>();
+  /** His answers under way, by answer. */
+  private readonly answering = new Map<string, { answer: TeamAnswer; controller: AbortController; done: Promise<void> }>();
   /** Workers on their way out: between the pause and the record's retirement nothing may bring one back. */
   private readonly removing = new Set<string>();
   private readonly concurrency: number;
@@ -114,7 +122,8 @@ export class TeamService {
     return saved;
   }
   direct(teammate: string): TeamRoom { this.accepting(); const room = this.store.direct(teammate); this.changed(); return room; }
-  post(input: TeamPostInput): TeamMessage { this.accepting(); const message = this.store.post(input); this.changed(); this.kick(); return message; }
+  /** Your words to a room, from the device you wrote on (`asker`), whose own scopes Galahad answers with. */
+  post(input: TeamPostInput, asker?: Exclude<TeamAsker, { kind: "knight" }>): TeamMessage { this.accepting(); const message = this.store.post(input, asker ? { asker } : {}); this.changed(); this.kick(); return message; }
   /** His workers as Galahad himself reads them. */
   overview(room?: string): TeamOverview { return this.store.overview(room); }
   /** What was said in the conversations a knight is part of (its own with you and other knights included) that holds every word of `query`. */
@@ -170,10 +179,15 @@ export class TeamService {
       active.timer = null;
       active.controller.abort(new Error("The node is restarting."));
     }
+    // An answer of his is never given twice: one cut off is said to be, and is yours to ask for again.
+    for (const { answer, controller } of this.answering.values()) {
+      this.store.finishAnswer(answer.id, "interrupted", "The node restarted while Galahad was answering. Ask him again.");
+      controller.abort(new Error("The node is restarting."));
+    }
     this.changed();
     // A runner that ignores cancellation keeps its teammate's lock until it really ends. Shutdown itself is bounded.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([Promise.all([...this.active.values()].map((a) => a.done)), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.options.shutdownGraceMs ?? 10_000); })]);
+    await Promise.race([Promise.all([...this.active.values(), ...this.answering.values()].map((a) => a.done)), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.options.shutdownGraceMs ?? 10_000); })]);
     if (timer) clearTimeout(timer);
   }
 
@@ -257,7 +271,7 @@ export class TeamService {
     for (;;) {
       await Promise.resolve();
       this.pump();
-      const active = [...this.active.values()].map((a) => a.done);
+      const active = [...this.active.values(), ...this.answering.values()].map((a) => a.done);
       if (!active.length) return;
       await Promise.all(active);
     }
@@ -284,6 +298,11 @@ export class TeamService {
       if (this.active.has(job.teammate) || waiting.has(job.teammate) || !this.store.claim(job.id)) continue;
       this.launch(job);
     }
+    if (!this.options.answer) return;
+    for (const answer of this.store.queuedAnswers()) {
+      if (this.answering.size >= ANSWERS.atOnce) break;
+      if (this.store.claimAnswer(answer.id)) this.answerIn(this.store.answer(answer.id)!);
+    }
   }
   private cancel(select: TeamSelection, status: "interrupted" | "stopped", error: string): void {
     for (const active of this.active.values()) {
@@ -293,6 +312,43 @@ export class TeamService {
       active.timer = null;
       active.controller.abort(new Error(error));
     }
+    // His answer in a room stops with the room: a knight's or a task's stopping leaves it be.
+    if (!select.teammate && !select.task) {
+      for (const { answer, controller } of this.answering.values()) {
+        if (select.room && answer.room !== select.room) continue;
+        this.store.finishAnswer(answer.id, status, error);
+        controller.abort(new Error(error));
+      }
+    }
+    this.changed();
+  }
+  /** His answer, asked of the injected `answer` and posted in its room. One that fails says so there; one you stopped,
+   * or the node cut off, says nothing (its record does). */
+  private answerIn(answer: TeamAnswer): void {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error(`it took longer than ${ANSWERS.timeoutMs / 60_000} minutes`)), ANSWERS.timeoutMs);
+    const run = async () => {
+      const room = this.store.requireRoom(answer.room);
+      const history = this.store.messages(room.id);
+      const text = await this.options.answer!(room, history, { asker: answer.asker, trigger: history.find((m) => m.id === answer.trigger) ?? null }, controller.signal);
+      controller.signal.throwIfAborted();
+      const said = teamOutput(text, TEAM_LIMITS.message).trim();
+      this.store.answered(answer.id, said === "[SILENT]" ? "" : said);
+    };
+    const done = run().catch((error) => {
+      if (!this.running || this.store.answer(answer.id)?.status !== "running") return;
+      const why = (controller.signal.aborted ? String((controller.signal.reason as Error)?.message ?? controller.signal.reason) : String((error as Error)?.message ?? error)).trim() || "no reason was given";
+      try {
+        this.store.answered(answer.id, `I couldn't answer: ${why}`, why);
+      } catch {
+        this.store.finishAnswer(answer.id, "failed", why);
+      }
+    }).finally(() => {
+      clearTimeout(timer);
+      this.answering.delete(answer.id);
+      if (this.running) { this.changed(); this.kick(); }
+    });
+    this.answering.set(answer.id, { answer, controller, done });
     this.changed();
   }
   private launch(job: TeamJob): void {

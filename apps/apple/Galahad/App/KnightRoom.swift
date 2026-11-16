@@ -29,10 +29,11 @@ import Observation
         fixed = room
     }
 
-    /// Its replies on their way: the knight is writing.
+    /// Its replies on their way: the knight is writing (in its own conversation, the knight's alone: Galahad's answer, when
+    /// you named him there, isn't its).
     var writing: Bool {
         guard let deliveries = view?.deliveries else { return false }
-        return deliveries.contains { delivery in delivery.status == "queued" || delivery.status == "running" }
+        return deliveries.contains { delivery in (delivery.status == "queued" || delivery.status == "running") && (knight.isEmpty || delivery.teammate == knight) }
     }
 
     /// The room on the node: the one the Roundtable knows, or the knight's own, made now if it has none yet.

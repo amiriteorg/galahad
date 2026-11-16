@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { TEAM_LIMITS } from "../../core/src/team-limits.ts";
 import { TeamStore } from "../src/team-store.ts";
 import { TeamError, TeamService, type TeamServiceOptions } from "../src/team.ts";
 
@@ -16,15 +17,15 @@ function setup(options: Partial<Omit<TeamServiceOptions, "store">> = {}, budget 
 }
 
 describe("knights converse through the node", () => {
-  test("an owner message reaches every member without mentions; silence does not fan out", async () => {
+  test("an owner message reaches the knights it names; silence does not fan out", async () => {
     const heard: string[] = [];
     const { store, service } = setup({ respond: async (teammate, _room, history) => { heard.push(teammate.id); expect(history[0]?.speaker).toBe("owner"); return ""; } });
-    service.post({ room: "workshop", text: "Review this together." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada, @lin: review this together." }); service.start(); await service.settled();
     expect(heard.sort()).toEqual(["ada", "lin"]);
     expect(store.messages("workshop")).toHaveLength(1);
     expect(store.deliveries().every((d) => d.status === "done")).toBe(true);
   });
-  test("a message that names knights with @ reaches only them; one that names nobody here reaches everyone", async () => {
+  test("a message that names knights with @ reaches only them; yours that names none of them here is Galahad's (he names who takes it up)", async () => {
     const heard: string[] = [];
     const { service } = setup({ respond: async (teammate) => { heard.push(teammate.id); return ""; } });
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada", "lin", "sam"] });
@@ -32,9 +33,9 @@ describe("knights converse through the node", () => {
     const expected: [string, string[]][] = [
       ["@lin, check the parser.", ["lin"]],
       ["@Ada and @SAM: the release?", ["ada", "sam"]],
-      ["Everyone: the release?", ["ada", "lin", "sam"]],
-      ["@bors is not here: who takes it?", ["ada", "lin", "sam"]],
-      ["mail me at a@lin.example", ["ada", "lin", "sam"]],
+      ["Everyone: the release?", []],
+      ["@bors is not here: who takes it?", []],
+      ["mail me at a@lin.example", []],
     ];
     for (const [text, hearers] of expected) {
       heard.length = 0;
@@ -44,7 +45,7 @@ describe("knights converse through the node", () => {
   });
   test("ordinary replies preserve identity and conversation ping-pong stops at the shared budget", async () => {
     const { store, service } = setup({ respond: async (teammate) => `I am ${teammate.name}.` }, 3);
-    service.post({ room: "workshop", text: "Discuss." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada @lin: discuss." }); service.start(); await service.settled();
     const messages = store.messages("workshop");
     expect(messages).toHaveLength(4);
     expect(new Set(messages.map((m) => m.chainId)).size).toBe(1);
@@ -57,7 +58,7 @@ describe("knights converse through the node", () => {
     let turns = 0;
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => { turns++; context.send({ teammate: teammate.id === "ada" ? "lin" : "ada" }, "Please discuss."); return ""; } }, 4);
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
-    service.post({ room: "workshop", text: "Ask Lin." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada, ask Lin." }); service.start(); await service.settled();
     expect(turns).toBe(4);
     const direct = store.rooms().find((r) => r.direct)!;
     expect(direct.members.sort()).toEqual(["ada", "lin"]);
@@ -68,7 +69,7 @@ describe("knights converse through the node", () => {
     const { store, service } = setup({ respond: async (_teammate, _room, _history, context) => { context.send({ room: "private" }, "Intrusion"); return ""; } });
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
     service.saveRoom({ id: "private", name: "Private", members: ["sam"] });
-    service.post({ room: "workshop", text: "Work." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada, work." }); service.start(); await service.settled();
     expect(store.messages("private")).toHaveLength(0);
     expect(store.deliveries()[0]?.status).toBe("failed");
     expect(store.deliveries()[0]?.error).toContain("not a member");
@@ -76,11 +77,151 @@ describe("knights converse through the node", () => {
   test("model memory is private to the callback's identity and secret output never lands in history", async () => {
     const fake = "sk-ant-" + "obviouslyfaketest".repeat(3);
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => { context.remember(`${teammate.name}'s note.`); return fake; } }, 2);
-    service.post({ room: "workshop", text: "Remember." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada @lin, remember." }); service.start(); await service.settled();
     expect(store.teammate("ada")?.memory).toBe("Ada's note.");
     expect(store.teammate("lin")?.memory).toBe("Lin's note.");
     expect(store.teammate("sam")?.memory).toBe("");
     expect(JSON.stringify(store.messages("workshop"))).not.toContain(fake);
+  });
+});
+
+describe("Galahad sits in rooms", () => {
+  test("your word to a room that names no knight is his: he answers in the room, and only the knights he names hear it", async () => {
+    const heard: string[] = [];
+    const asked: unknown[] = [];
+    const { store, service } = setup({
+      respond: async (teammate) => { heard.push(teammate.id); return ""; },
+      answer: async (room, history, ask) => { asked.push([room.id, ask.asker, ask.trigger?.text, history.length]); return "@lin, check the parser please."; },
+    });
+    service.post({ room: "workshop", text: "Is the parser right?" }, { kind: "client", device: "d_phone" }); service.start(); await service.settled();
+    expect(asked).toEqual([["workshop", { kind: "client", device: "d_phone" }, "Is the parser right?", 1]]);
+    expect(heard).toEqual(["lin"]);
+    const said = store.messages("workshop");
+    expect(said.map((m) => [m.speaker, m.speakerName])).toEqual([["owner", "You"], ["galahad", "Galahad"]]);
+    expect(new Set(said.map((m) => m.chainId)).size).toBe(1);
+    expect(store.roomView("workshop").deliveries.find((d) => d.teammate === "galahad")).toMatchObject({ status: "done", trigger: said[0]!.id });
+  });
+  test("@galahad reaches him and @knights reach them; in a knight's own conversation your words stay the knight's unless you name him", async () => {
+    const heard: string[] = [];
+    const { service } = setup({ respond: async (teammate) => { heard.push(teammate.id); return ""; }, answer: async () => { heard.push("galahad"); return ""; } });
+    const own = service.direct("ada");
+    service.start();
+    const expected: [string, string, string[]][] = [
+      ["workshop", "@galahad, what do you make of it?", ["galahad"]],
+      ["workshop", "@lin, check the parser.", ["lin"]],
+      ["workshop", "@Galahad and @ada: the release?", ["ada", "galahad"]],
+      ["workshop", "Everyone: the release?", ["galahad"]],
+      ["workshop", "mail me at a@galahad.example", ["galahad"]],
+      [own.id, "How is the fixture?", ["ada"]],
+      [own.id, "@galahad, is Ada right?", ["galahad"]],
+    ];
+    for (const [room, text, hearers] of expected) {
+      heard.length = 0;
+      service.post({ room, text }); await service.settled();
+      expect([text, heard.sort()]).toEqual([text, hearers]);
+    }
+  });
+  test("a knight that names him gets his answer with no hands: it is said to be a knight's asking, and his answer that names nobody reaches nobody", async () => {
+    let turns = 0;
+    const asks: unknown[] = [];
+    const { store, service } = setup({
+      respond: async (teammate) => { turns++; return teammate.id === "ada" ? "@galahad, which branch do I take?" : "Lin here."; },
+      answer: async (_room, _history, ask) => { asks.push(ask.asker); return "Take main."; },
+    });
+    service.post({ room: "workshop", text: "@ada, start the release." }); service.start(); await service.settled();
+    expect(asks).toEqual([{ kind: "knight", teammate: "ada" }]);
+    expect(store.messages("workshop").map((m) => m.speaker)).toEqual(["owner", "ada", "galahad"]);
+    expect(turns).toBe(1);
+  });
+  test("[SILENT] posts nothing; a knight's word to the room without @galahad never reaches him", async () => {
+    const answers = ["Done: the parser is right.", "[SILENT]"];
+    let asked = 0;
+    const { store, service } = setup({ respond: async () => "", answer: async () => { asked++; return answers.shift()!; } });
+    service.start();
+    service.post({ room: "workshop", text: "Is the parser right?" }); await service.settled();
+    service.post({ room: "workshop", text: "Thanks." }); await service.settled();
+    expect(asked).toBe(2);
+    expect(store.messages("workshop").map((m) => m.speaker)).toEqual(["owner", "galahad", "owner"]);
+    expect(store.roomView("workshop").deliveries.filter((d) => d.teammate === "galahad").map((d) => d.status)).toEqual(["done", "done"]);
+    const opened = service.post({ room: "workshop", text: "@ada, @lin: talk it over." }); await service.settled();
+    store.post({ room: "workshop", text: "Lin, shall we?" }, { teammate: "ada", chainId: opened.chainId }); await service.settled();
+    expect(asked).toBe(2);
+  });
+  test("one answer of his waits per room, for its newest words; when you asked as well as a knight, it is yours", () => {
+    const store = new TeamStore(":memory:");
+    for (const [id, name] of [["ada", "Ada"], ["lin", "Lin"]] as const) store.saveTeammate({ id, name });
+    store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada", "lin"] });
+    const go = store.post({ room: "workshop", text: "@ada, go." });
+    store.post({ room: "workshop", text: "@galahad, which branch?" }, { teammate: "ada", chainId: go.chainId });
+    expect(store.queuedAnswers()).toEqual([expect.objectContaining({ asker: { kind: "knight", teammate: "ada" } })]);
+    const yours = store.post({ room: "workshop", text: "@galahad, and check the tests." }, { asker: { kind: "client", device: "d_phone" } });
+    store.post({ room: "workshop", text: "@galahad, main?" }, { teammate: "ada", chainId: go.chainId });
+    const [waiting, ...more] = store.queuedAnswers();
+    expect(more).toEqual([]);
+    expect(waiting).toMatchObject({ asker: { kind: "client", device: "d_phone" }, chainId: go.chainId, trigger: store.messages("workshop").at(-1)!.id });
+    // One under way, and one waits behind it for what came after.
+    expect(store.claimAnswer(waiting!.id)).toBe(true);
+    store.post({ room: "workshop", text: "Anything else?" });
+    expect(store.queuedAnswers()).toHaveLength(1);
+    expect(store.claimAnswer(store.queuedAnswers()[0]!.id)).toBe(false);
+    store.answered(waiting!.id, "Main, and the tests pass.");
+    expect(store.claimAnswer(store.queuedAnswers()[0]!.id)).toBe(true);
+    expect(yours.speaker).toBe("owner");
+    store.close();
+  });
+  test("his answers spend the conversation's budget as any turn does", async () => {
+    const { store, service } = setup({ respond: async (teammate) => `@galahad, ${teammate.name} here.`, answer: async () => "@ada @lin, carry on." }, 4);
+    service.post({ room: "workshop", text: "Start." }); service.start(); await service.settled();
+    const said = store.messages("workshop");
+    expect(said.map((m) => m.speaker).filter((s) => s === "galahad")).toHaveLength(2);
+    expect(said).toHaveLength(5);
+    expect(new Set(said.map((m) => m.chainId)).size).toBe(1);
+    expect(store.queuedAnswers()).toEqual([]);
+    expect(store.deliveries().some((d) => d.error?.includes("turn budget"))).toBe(true);
+  });
+  test("an answer that fails says so in the room; one stopped by your pause says nothing and waits for nothing", async () => {
+    const { store, service } = setup({ answer: async () => { throw new Error("no model in the planner role answered"); } });
+    service.post({ room: "workshop", text: "Is the parser right?" }); service.start(); await service.settled();
+    expect(store.messages("workshop").at(-1)).toMatchObject({ speaker: "galahad", text: "I couldn't answer: no model in the planner role answered" });
+    expect(store.roomView("workshop").deliveries.find((d) => d.teammate === "galahad")).toMatchObject({ status: "failed", error: "no model in the planner role answered" });
+
+    const started = deferred();
+    const held = setup({ answer: (_room, _history, _ask, signal) => new Promise((_, reject) => { started.resolve(); signal.addEventListener("abort", () => reject(signal.reason)); }) });
+    held.service.post({ room: "workshop", text: "Take your time." }); held.service.start();
+    await started.promise;
+    held.service.control({ room: "workshop", action: "pause" });
+    await held.service.settled();
+    expect(held.store.messages("workshop").map((m) => m.speaker)).toEqual(["owner"]);
+    expect(held.store.roomView("workshop").deliveries.find((d) => d.teammate === "galahad")).toMatchObject({ status: "interrupted", error: "Paused by you." });
+    // Asked while the room is paused, he waits for you to resume it.
+    held.service.post({ room: "workshop", text: "Still there?" }); await held.service.settled();
+    expect(held.store.queuedAnswers()).toHaveLength(1);
+  });
+  test("his answers are no part of his allowance: only what he says from his own conversation counts", () => {
+    const store = new TeamStore(":memory:");
+    for (const [id, name] of [["ada", "Ada"], ["lin", "Lin"]] as const) store.saveTeammate({ id, name });
+    store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada", "lin"] });
+    for (let n = 0; n < TEAM_LIMITS.saysPerDay; n++) {
+      store.post({ room: "workshop", text: `Question ${n}?` });
+      const [answer] = store.queuedAnswers();
+      expect(store.claimAnswer(answer!.id)).toBe(true);
+      store.answered(answer!.id, `Answer ${n}.`);
+    }
+    expect(store.post({ room: "workshop", text: "From my own conversation." }, { galahad: true }).speaker).toBe("galahad");
+    store.close();
+  });
+  test("a crash leaves his answer under way interrupted, never given twice", () => {
+    const store = new TeamStore(":memory:");
+    store.saveTeammate({ id: "ada", name: "Ada" });
+    store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
+    store.post({ room: "workshop", text: "Is the parser right?" });
+    const [answer] = store.queuedAnswers();
+    store.claimAnswer(answer!.id);
+    store.recover();
+    expect(store.answer(answer!.id)).toMatchObject({ status: "interrupted" });
+    expect(store.queuedAnswers()).toEqual([]);
+    expect(store.room("workshop")!.paused).toBe(false);
+    store.close();
   });
 });
 
@@ -99,7 +240,7 @@ describe("Galahad seats and briefs knights", () => {
       },
     }, 6);
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
-    const asked = service.post({ room: "workshop", text: "Fix the parser, and have it reviewed." }); service.start(); await service.settled();
+    const asked = service.post({ room: "workshop", text: "@ada, fix the parser, and have it reviewed." }); service.start(); await service.settled();
     expect(store.teammate("rev")).toMatchObject({ createdBy: "ada", instructionsBy: "ada", enabled: true, instructions: "Review Ada's diffs independently." });
     expect(recruited).toEqual(["rev by ada"]);
     expect(store.room("workshop")!.members).toEqual(["ada", "rev"]);
@@ -123,7 +264,7 @@ describe("Galahad seats and briefs knights", () => {
       return "";
     } });
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
-    service.post({ room: "workshop", text: "Get help." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada, get help." }); service.start(); await service.settled();
     // Eight in a day; asking again is an action too, and a turn has sixty-four of those.
     expect(outcomes.slice(0, 8)).toEqual(Array(8).fill("made"));
     expect(outcomes.slice(8, 64)).toEqual(Array(56).fill("allowance"));
@@ -139,7 +280,7 @@ describe("Galahad seats and briefs knights", () => {
       return "";
     } });
     service.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"] });
-    service.post({ room: "workshop", text: "Get help." }); service.start(); await service.settled();
+    service.post({ room: "workshop", text: "@ada, get help." }); service.start(); await service.settled();
     expect(outcome).toContain("may no longer act");
     expect(store.teammate("after-pause")).toBeNull();
   });
@@ -224,7 +365,7 @@ describe("task orchestration", () => {
     const chat = deferred<string>(); const task = deferred<{ verified: boolean; output: string }>();
     const starts: string[] = [];
     const { store, service } = setup({ respond: async (teammate) => { starts.push(`chat:${teammate.id}`); return teammate.id === "ada" ? chat.promise : ""; }, executeTask: async (teammate) => { starts.push(`task:${teammate.id}`); return task.promise; } });
-    service.post({ room: "workshop", text: "Discuss." });
+    service.post({ room: "workshop", text: "@ada @lin: discuss." });
     service.createTask({ room: "workshop", assignee: "ada", title: "Implement", goal: "Implement" });
     service.start(); await until(() => starts.length === 2);
     expect(starts.sort()).toEqual(["chat:ada", "chat:lin"]);
@@ -253,7 +394,7 @@ describe("task orchestration", () => {
   });
   test("delegated tasks inherit identity, room and conversation, and spend none of its budget while they wait for you", async () => {
     const { store, service } = setup({ respond: async (_teammate, _room, _history, context) => { context.delegate({ assignee: "lin", title: "Check", goal: "Check", gates: ["bun test"] }); return ""; } }, 1);
-    const owner = service.post({ room: "workshop", text: "Delegate." });
+    const owner = service.post({ room: "workshop", text: "@ada @lin: delegate." });
     service.start(); await service.settled();
     expect(store.tasks()).toHaveLength(1);
     expect(store.tasks()[0]).toMatchObject({ room: "workshop", assignee: "lin", chainId: owner.chainId, status: "proposed", gates: ["bun test"] });
@@ -267,7 +408,7 @@ describe("task orchestration", () => {
       },
       executeTask: async (_teammate, task) => { ran.push(task.title); return { verified: true, output: "Verified" }; },
     });
-    const asked = service.post({ room: "workshop", text: "Get the release ready." });
+    const asked = service.post({ room: "workshop", text: "@ada @lin: get the release ready." });
     service.start(); await service.settled();
     const [lin, ada] = store.tasks("workshop");
     expect([ada, lin].map((task) => [task!.title, task!.status, task!.proposedBy, task!.chainId])).toEqual([["Draft the notes", "proposed", "ada", asked.chainId], ["Check migrations", "proposed", "ada", asked.chainId]]);
@@ -417,7 +558,7 @@ describe("stopping, interruption and resource bounds", () => {
   test("pause cancels an active knight, keeps queued work, and requires explicit resume", async () => {
     let calls = 0;
     const { store, service } = setup({ respond: async (teammate, _room, _history, context) => { if (teammate.id !== "ada") return ""; calls++; if (calls > 1) return ""; return new Promise<string>((resolve) => context.signal.addEventListener("abort", () => resolve("late words"), { once: true })); } });
-    service.post({ room: "workshop", text: "Work." }); service.start(); await until(() => calls === 1);
+    service.post({ room: "workshop", text: "@ada @lin: work." }); service.start(); await until(() => calls === 1);
     service.control({ teammate: "ada", action: "pause" }); await service.settled();
     expect(store.teammate("ada")?.enabled).toBe(false);
     expect(store.room("workshop")?.paused).toBe(false);
@@ -426,7 +567,7 @@ describe("stopping, interruption and resource bounds", () => {
   });
   test("room stop cancels work and old manually stopped jobs do not replay when a room resumes", async () => {
     const { store, service } = setup();
-    service.post({ room: "workshop", text: "Work." }); service.control({ room: "workshop", action: "stop" });
+    service.post({ room: "workshop", text: "@ada @lin: work." }); service.control({ room: "workshop", action: "stop" });
     service.start(); await service.settled();
     expect(store.deliveries().every((d) => d.status === "stopped")).toBe(true);
     service.control({ room: "workshop", action: "resume" }); await service.settled();
@@ -473,7 +614,7 @@ describe("removing a knight", () => {
       calls++;
       return new Promise<string>((resolve) => context.signal.addEventListener("abort", () => resolve("late words"), { once: true }));
     } });
-    service.post({ room: "workshop", text: "Work." }); service.start(); await until(() => calls === 1);
+    service.post({ room: "workshop", text: "@ada @lin: work." }); service.start(); await until(() => calls === 1);
     const next = service.createTask({ room: "workshop", assignee: "ada", title: "Next", goal: "Next" });
     const removed = await service.remove("ada");
     expect(removed).toMatchObject({ id: "ada", enabled: false });
@@ -484,7 +625,7 @@ describe("removing a knight", () => {
     expect(store.messages("workshop").some((m) => m.text === "late words")).toBe(false);
     expect(store.deliveries().find((d) => d.teammate === "ada")).toMatchObject({ status: "stopped", error: "Stopped to remove its knight." });
     expect(store.task(next.id)).toMatchObject({ status: "stopped", error: "Its knight was removed." });
-    service.post({ room: "workshop", text: "Carry on." }); await service.settled();
+    service.post({ room: "workshop", text: "@lin, carry on." }); await service.settled();
     expect(heard.filter((id) => id === "lin")).toHaveLength(2);
     expect(store.deliveries().filter((d) => d.teammate === "ada")).toHaveLength(1);
     expect(() => service.control({ teammate: "ada", action: "resume" })).toThrow(/was removed/);

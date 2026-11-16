@@ -39,7 +39,7 @@ afterAll(async () => { await daemon?.stop(); model.stop(true); rmSync(root, { re
 test("real API: knights converse autonomously under a shared bound and write to the same mind", async () => {
   for (const id of ["ada", "lin"]) await api("saveTeammate", { id, name: id.toUpperCase(), role: "planner" });
   await api("saveTeamRoom", { id: "forge", name: "Forge", members: ["ada", "lin"], turnBudget: 3 });
-  await api("postTeamMessage", { room: "forge", text: "Coordinate on the project together." });
+  await api("postTeamMessage", { room: "forge", text: "@ada @lin: coordinate on the project together." });
   let state: TeamSnapshot = await api("team");
   for (let n = 0; n < 200 && state.deliveries.some((d) => d.status === "queued" || d.status === "running"); n++) { await Bun.sleep(5); state = await api("team"); }
   expect(state.deliveries.some((d) => d.status === "queued" || d.status === "running")).toBe(false);
@@ -53,10 +53,25 @@ test("real API: knights converse autonomously under a shared bound and write to 
   expect(shared?.trust).toBe("agent");
   expect(daemon.store.event(shared!.id)?.prov?.source).toMatch(new RegExp(`^arm:(${["ada", "lin"].map((id) => teamArmLabel(daemon.identity.id, id).replace(/\./g, "\\.")).join("|")})$`));
   // What a knight is told of the others: fellows at one table, none beneath another, the best suited takes the task.
-  expect(prompts.some((p) => JSON.stringify(p).includes("a knight of your liege's Roundtable, with a lasting job and a voice of your own. Galahad is his first knight and your fellow, not your master"))).toBe(true);
+  expect(prompts.some((p) => JSON.stringify(p).includes("a knight of your liege's Roundtable, with a lasting job and a voice of your own. Galahad is his first knight and leads the Roundtable for him"))).toBe(true);
   expect(prompts.some((p) => JSON.stringify(p).includes("the Roundtable is a technocracy, where the one best suited to a task takes it"))).toBe(true);
   expect(prompts.some((p) => /hivemind|sub-Galahad/i.test(JSON.stringify(p)))).toBe(false);
   expect(prompts.flatMap((p) => p.tools ?? []).map((t: any) => t.function?.name)).not.toContain("bank_accounts");
+}, 10000);
+
+test("real API: your word to a room that names no knight is Galahad's, and he answers it there as himself, with his own tools", async () => {
+  const before = prompts.length;
+  await api("postTeamMessage", { room: "forge", text: "Where does the project stand?" });
+  let room = await api<TeamRoomView>("teamRoom", { id: "forge" });
+  for (let n = 0; n < 400 && !room.messages.some((m) => m.speaker === "galahad"); n++) { await Bun.sleep(5); room = await api<TeamRoomView>("teamRoom", { id: "forge" }); }
+  expect(room.messages.at(-1)).toMatchObject({ speaker: "galahad", speakerName: "Galahad", text: "A useful contribution." });
+  expect(room.deliveries.find((d) => d.teammate === "galahad")).toMatchObject({ status: "done", trigger: room.messages.at(-2)!.id });
+  // He named nobody, so no knight was asked for a turn.
+  expect(room.deliveries.filter((d) => d.trigger === room.messages.at(-1)!.id)).toEqual([]);
+  const asked = prompts.slice(before);
+  expect(JSON.stringify(asked)).toContain("where you lead the knights for the owner");
+  expect(JSON.stringify(asked)).toContain(JSON.stringify("The owner's message you answer:\nWhere does the project stand?").slice(1, -1));
+  expect(asked.flatMap((p) => p.tools ?? []).map((t: any) => t.function?.name)).toContain("team_message");
 }, 10000);
 
 test("team owner routes reject external arms, spoofed speakers and fake VM availability", async () => {

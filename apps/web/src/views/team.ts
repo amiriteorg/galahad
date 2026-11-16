@@ -92,7 +92,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   replace(root, h("div", { class: "team-layout" }, main));
   replace(content, skeletonRows(4));
 
-  const nameOf = (id: string): string => snapshot?.teammates.find((person) => person.id === id)?.name ?? snapshot?.removed?.find((person) => person.id === id)?.name ?? id;
+  const nameOf = (id: string): string => (id === "galahad" ? "Galahad" : snapshot?.teammates.find((person) => person.id === id)?.name ?? snapshot?.removed?.find((person) => person.id === id)?.name ?? id);
   const roomName = (id: string): string => snapshot?.rooms.find((candidate) => candidate.id === id)?.name ?? id;
   /** "made by Galahad", for a knight he (or another knight) made; nothing for one of yours. */
   const madeBy = (person: Teammate): string => {
@@ -135,7 +135,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         head,
         h("a", { class: "btn ghost sm icon-only pane-back", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("chevron-left", { size: 16 })),
         person ? avatar(person) : h("span", { class: "avatar" }, icon("hash")),
-        h("div", { class: "grow" }, h("h2", {}, person?.name ?? current.name), h("p", { class: "meta ellipsis" }, person ? [person.role, state?.text, madeBy(person)].filter(Boolean).join(" · ") : current.members.map(nameOf).join(" · "))),
+        h("div", { class: "grow" }, h("h2", {}, person?.name ?? current.name), h("p", { class: "meta ellipsis" }, person ? [person.role, state?.text, madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · "))),
         current.paused ? badge("Paused", "warn") : null,
         person ? toggle : null,
         !person && canEdit ? button("Room settings", { variant: "ghost", size: "sm", iconOnly: true, icon: "settings", onClick: () => editRoom(ctx, current) }) : null,
@@ -143,7 +143,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         !person && canChat && active.length ? button("Stop the room's work", { variant: "ghost", size: "sm", iconOnly: true, icon: "stop", onClick: () => void control({ room: current.id, action: "stop" }) }) : null,
       ),
     );
-    composerHint.textContent = current.paused ? "Paused · messages are kept" : active.length ? (person ? "Replies when its work ends" : "A busy knight replies when free") : `Up to ${current.turnBudget} replies a chain`;
+    composerHint.textContent = current.paused ? "Paused · messages are kept" : active.length ? (person ? "Replies when its work ends" : "A busy knight replies when free") : person || current.direct ? `Up to ${current.turnBudget} replies a chain` : "Galahad answers; name a knight with @ to ask it";
     input.placeholder = `Message ${person?.name ?? current.name}…`;
     input.setAttribute("aria-label", `Message ${person?.name ?? current.name}`);
     const writing = current.deliveries.filter((delivery) => activeTeamWork(delivery));
@@ -229,7 +229,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
             empty({
               icon: "chat",
               title: person ? `Talk with ${person.name}` : `Welcome to ${current.name}`,
-              body: person ? `Give ${person.name} a job, share context, or ask a question. A task you give it is a card here, from its first line to what it kept.` : "Give these knights a goal. They can talk to you and each other within this room's reply budget.",
+              body: person ? `Give ${person.name} a job, share context, or ask a question. A task you give it is a card here, from its first line to what it kept.` : "Galahad sits here with these knights: say what you need and he answers, or brings in the knights it needs. Name a knight with @ to ask it yourself.",
               compact: true,
             }),
           ],

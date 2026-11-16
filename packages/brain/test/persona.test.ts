@@ -42,11 +42,12 @@ describe("what he knows about his own work", () => {
     expect(TOOL_GUIDE).toMatch(/only when the tool says so/);
     // He only adds: what he cannot do to a worker he says is his liege's, rather than claiming it done.
     expect(TOOL_GUIDE).toMatch(/You only add: pausing, changing or removing a knight is your liege's to do there/);
-    // The others are his liege's knights and his fellows: never his own, never beneath him, never parts of him.
+    // The others are his liege's knights and his fellows, whom he leads for his liege: never his own, never parts of him.
     expect(TOOL_GUIDE).toMatch(/Your liege's other knights have lasting jobs of their own/);
     expect(TOOL_GUIDE + GALAHAD_SYSTEM).not.toMatch(/hivemind|sub-Galahad|parts of you|your knights/i);
-    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/None of them is beneath you and none is a part of you: they are your fellows, respectful, capable and brave/);
-    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/The Roundtable is a technocracy: the one best suited to a task takes it, and evidence decides, never rank/);
+    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/You lead them for your liege: you sit in every room/);
+    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/None is a part of you: they are your fellows, respectful, capable and brave/);
+    expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/the Roundtable is a technocracy: the one best suited to a task takes it, and evidence decides/);
   });
 
   test("it stays small: the guide and the persona are sent with every answer", () => {

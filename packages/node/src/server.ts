@@ -62,6 +62,8 @@ import {
   type TerminalEvent,
   type Teammate,
   type TeamEngramStatus,
+  type TeamMessage,
+  type TeamRoom,
   TEAM_GALAHAD,
   TeammateId,
   teamArmLabel,
@@ -113,6 +115,7 @@ import {
   signIn,
   windowsOf,
   checkModel,
+  Steering,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -147,8 +150,8 @@ import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost } from 
 import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
-import type { TeamStore } from "./team-store.ts";
-import { harnessReadiness, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
+import type { TeamAsker, TeamStore } from "./team-store.ts";
+import { galahadInRoom, harnessReadiness, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
@@ -1079,7 +1082,7 @@ export function createApp(ctx: AppContext) {
    * its turn comes): the secret check on every message, whose chat it is and whether they may keep one, the
    * kept history that leads, the project, the memories. Nothing here depends on who's listening.
    */
-  function prepareAnswer(input: ChatInput, p: Principal) {
+  function prepareAnswer(input: ChatInput, p: Principal, about?: string) {
     // Every message goes to a provider, whoever "said" it, so all of them are scanned.
     guardAgainstSecrets(...input.messages.map((m) => m.content));
     const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, attempt, quest, ...request } = input;
@@ -1113,10 +1116,11 @@ export function createApp(ctx: AppContext) {
     // for the last message would ask his memory about a command's output and change the prompt's beginning each
     // time, so that no provider could read it from its cache (input tokens are the bill).
     const recallFor = request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
-    const known = [project ? projectContext(project) : null, recallFor ? memoryContext(recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
+    const known = [project ? projectContext(project) : null, recallFor ? memoryContext(about ?? recallFor.content, !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
-    return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest };
+    // What it is about, for the archive and his skills: the question, or `about` when the last message holds more (a room's answer).
+    return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest, topic: about ?? asked.content };
   }
 
   /** His tools' way into the node, noting what a turn leaves waiting on you: approvals it filed, keys it asked for. */
@@ -1140,7 +1144,7 @@ export function createApp(ctx: AppContext) {
    * instead of a request's, so nothing about it depends on a connection.
    */
   function turnSpec(ready: ReturnType<typeof prepareAnswer>, p: Principal): TurnSpec {
-    const { request, messages, asked, project, known, fromArchive, kept } = ready;
+    const { request, messages, asked, project, known, fromArchive, kept, topic } = ready;
     const agent = galahadFor(p);
     const role = request.role ?? "planner";
     const waits: TurnSpec["waits"] = { actions: [], secrets: [] };
@@ -1167,7 +1171,7 @@ export function createApp(ctx: AppContext) {
           answered = ctx.archive.answering();
           let context = known;
           if (fromArchive) {
-            const found = await ctx.archive.context(asked.content, { hideKinds: contextHidden(p) }).catch((error) => {
+            const found = await ctx.archive.context(topic, { hideKinds: contextHidden(p) }).catch((error) => {
               ctx.log(`archive context: ${(error as Error).message}`);
               return null;
             });
@@ -1178,7 +1182,7 @@ export function createApp(ctx: AppContext) {
               yield event;
             }
             // His skills that bear on your question, fenced as data like the rest (skills.ts).
-            const skills = answerSkills(asked.content);
+            const skills = answerSkills(topic);
             if (skills) {
               context = [context, skills.text].filter(Boolean).join("\n\n");
               const event = skillsStep(skills);
@@ -1216,6 +1220,24 @@ export function createApp(ctx: AppContext) {
     const input = routes.chat.input.parse({ role: queued.role ?? kept.role, conversation, messages: [{ role: "user", content: queued.text }] });
     return turnSpec(prepareAnswer(input, p), p);
   });
+
+  /**
+   * Galahad's answer in a room (TeamService's `answer`): a turn of his own, as in your chat with him, about the message he
+   * answers, with the tools of the device you wrote on as it stands now. Asked by a knight, he has none and no archive:
+   * a knight's words never give him hands.
+   */
+  async function answerInRoom(room: TeamRoom, history: TeamMessage[], ask: { asker: TeamAsker; trigger: TeamMessage | null }, signal: AbortSignal): Promise<string> {
+    const byKnight = ask.asker.kind === "knight";
+    const p: Principal = ask.asker.kind === "knight" ? { device: ctx.identity.id, kind: "client", scopes: [] } : askerNow(ask.asker.kind === "admin" ? { kind: "admin", device: ctx.identity.id } : ask.asker);
+    const content = galahadInRoom(room, teamOf().overview().workers, history, { trigger: ask.trigger, byKnight });
+    const input = routes.chat.input.parse({ role: "planner", messages: [{ role: "user", content }], ...(byKnight ? { tools: false, archive: false } : {}) });
+    let text = "";
+    for await (const event of turnSpec(prepareAnswer(input, p, ask.trigger?.text), p).run(new Steering(), signal)) {
+      if (event.type === "text") text += event.text;
+      else if (event.type === "error") throw new Error(event.error);
+    }
+    return text;
+  }
 
   /**
    * A turn as server-sent events: what it is, everything so far, then live, to its end. Whoever was watching
@@ -1671,7 +1693,7 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad seated a knight, in your conversation with him" : `the knight ${made.createdBy} seated another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
     ctx.team.service.start();
   }
 
@@ -1694,7 +1716,7 @@ export function createApp(ctx: AppContext) {
       const { on, ...asked } = input;
       return onNode(p, on, routes.teamDesktopOn.path, asked, () => ctx.sandbox!.desktop(input.id, input.quest, input.action), { sandbox: input.id });
     },
-    postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input) }; },
+    postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device }) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
     giveTeamTask: (input, p, req) => { ownerOnly(p); return giveTask(input, TEAM_OWNER, req.signal); },
     giveToTeam: (input, p, req) => {

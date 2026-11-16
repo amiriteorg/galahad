@@ -35,11 +35,20 @@ export function teamOutput(text: string, max: number = TEAM_LIMITS.output): stri
 interface DocRow { value: string }
 interface MessageRow { id: string; room: string; speaker: string; speaker_name: string; text: string; created_at: number; chain_id: string }
 interface JobRow { id: string; kind: "delivery" | "task"; room: string; teammate: string; chain_id: string; status: TeamWorkStatus; data: string; error: string | null; created_at: number; updated_at: number }
+interface AnswerRow { id: string; room: string; chain_id: string; trigger: string; asker: string; status: TeamWorkStatus; error: string | null; reply: string | null; created_at: number; updated_at: number }
 export interface TeamJob { id: string; kind: "delivery" | "task"; room: string; teammate: string; chainId: string; status: TeamWorkStatus; createdAt: number }
 export interface TeamSelection { room?: string; teammate?: string; task?: string }
+/** Who asked Galahad to answer in a room: you, from the device you wrote on (as it stands when he answers), or a knight,
+ * whose words give him no hands. */
+export type TeamAsker = { kind: "admin" } | { kind: "client"; device: string } | { kind: "knight"; teammate: string };
+/** Galahad's answer to a room: one waits per room, for its newest words. */
+export interface TeamAnswer { id: string; room: string; chainId: string; trigger: string; asker: TeamAsker; status: TeamWorkStatus; error: string | null; createdAt: number; updatedAt: number }
 
 const messageOf = (r: MessageRow): TeamMessage => ({ id: r.id, room: r.room, speaker: r.speaker, speakerName: r.speaker_name, text: r.text, createdAt: r.created_at, chainId: r.chain_id });
 const jobOf = (r: JobRow): TeamJob => ({ id: r.id, kind: r.kind, room: r.room, teammate: r.teammate, chainId: r.chain_id, status: r.status, createdAt: r.created_at });
+const answerOf = (r: AnswerRow): TeamAnswer => ({ id: r.id, room: r.room, chainId: r.chain_id, trigger: r.trigger, asker: JSON.parse(r.asker) as TeamAsker, status: r.status, error: r.error, createdAt: r.created_at, updatedAt: r.updated_at });
+/** His seat in every room, for the mentions that call him. */
+const GALAHAD_SEAT = [{ id: TEAM_GALAHAD, name: "Galahad" }] as const;
 const id = (prefix: string): string => `${prefix}-${randomId(9).toLowerCase()}`;
 /**
  * The knights a message names with @: by handle, by name, or by the first word of its name (case aside), each once and
@@ -92,7 +101,14 @@ export class TeamStore {
       CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);
       CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));
-      CREATE TABLE IF NOT EXISTS team_stories (room TEXT PRIMARY KEY REFERENCES team_rooms(id), text TEXT NOT NULL, through TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS team_stories (room TEXT PRIMARY KEY REFERENCES team_rooms(id), text TEXT NOT NULL, through TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS team_answers (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, room TEXT NOT NULL REFERENCES team_rooms(id),
+        chain_id TEXT NOT NULL REFERENCES team_chains(id), trigger TEXT NOT NULL, asker TEXT NOT NULL, status TEXT NOT NULL,
+        error TEXT, reply TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS team_answers_queue ON team_answers(status, seq);
+      CREATE INDEX IF NOT EXISTS team_answers_room ON team_answers(room, seq);
+      CREATE INDEX IF NOT EXISTS team_answers_reply ON team_answers(reply);`);
   }
 
   close(): void { this.db.close(); }
@@ -295,14 +311,15 @@ export class TeamStore {
     if (!room.members.includes(teammate)) throw new TeamError(403, "That knight is not a member of this room.");
   }
   /** Owner posts start a bounded chain, and so do Galahad's own from your conversation (`galahad`), within his
-   * allowance for the day. Brokered posts keep their originating chain across rooms. */
-  post(raw: TeamPostInput, by: { teammate?: string; chainId?: string; output?: boolean; galahad?: boolean } = {}): TeamMessage {
+   * allowance for the day. Brokered posts keep their originating chain across rooms, and so does his answer in a room
+   * (`reply`): that was asked for, so it is no part of his allowance. `asker`: the device you wrote on. */
+  post(raw: TeamPostInput, by: { teammate?: string; chainId?: string; output?: boolean; galahad?: boolean; reply?: boolean; asker?: Exclude<TeamAsker, { kind: "knight" }> } = {}): TeamMessage {
     const input = teamInput(TeamPostInput, raw);
     if (!by.output) teamText(input.text);
     return this.db.transaction(() => {
       const room = this.requireRoom(input.room);
-      if (by.galahad && (by.teammate || by.chainId)) throw new TeamError(400, "Galahad speaks for himself, in a conversation of his own.");
-      if (by.galahad && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_messages WHERE speaker = ? AND created_at > ?").get(TEAM_GALAHAD, this.now() - DAY)!.n >= TEAM_LIMITS.saysPerDay) {
+      if (by.reply ? !by.galahad || by.teammate || !by.chainId : by.galahad && (by.teammate || by.chainId)) throw new TeamError(400, "Galahad speaks for himself, in a conversation of his own.");
+      if (by.galahad && !by.reply && this.saidToday() >= TEAM_LIMITS.saysPerDay) {
         throw new TeamError(429, `Galahad has sent ${TEAM_LIMITS.saysPerDay} messages to the Roundtable in the last day, which is his allowance. The owner can message the knights at the Roundtable.`);
       }
       if (by.teammate) this.roomMember(room, by.teammate);
@@ -310,9 +327,13 @@ export class TeamStore {
       for (const member of room.members) this.requireTeammate(member);
       if (by.teammate && !by.chainId) throw new TeamError(403, "A knight message must belong to its current conversation.");
       if (by.chainId && !this.db.query("SELECT id FROM team_chains WHERE id = ?").get(by.chainId)) throw new TeamError(404, "No such conversation chain.");
-      // Those it names with @ (by handle or name) hear it; one that names nobody here reaches everyone.
       const named = mentioned(input.text, room.members.map((member) => this.requireTeammate(member)));
-      const recipients = (named.length ? named : room.members).filter((member) => member !== by.teammate);
+      // Galahad hears what names him, and what you say to a room of knights without naming one: he answers it, or names
+      // who should take it up. In a knight's own conversation with you, your words stay the knight's unless you name him.
+      const forGalahad = !by.galahad && (mentioned(input.text, GALAHAD_SEAT).length > 0 || (!by.teammate && !room.direct && !named.length));
+      // Those it names with @ (by handle or name) hear it. One that names nobody here reaches everyone, unless it was his
+      // to answer, or is his answer: that was for whoever asked.
+      const recipients = (named.length || forGalahad || by.reply ? named : room.members).filter((member) => member !== by.teammate);
       if (this.pending() + recipients.length > TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
       // His own words never fill it: half is always left for yours, however much of his waits in held rooms.
       if (by.galahad && this.pending() + recipients.length > TEAM_LIMITS.pending / 2) throw new TeamError(429, "Half the team queue is waiting work already. Let some of it finish before writing to them again.");
@@ -321,9 +342,66 @@ export class TeamStore {
       const message: TeamMessage = { id: id("message"), room: room.id, speaker: by.teammate ?? (by.galahad ? TEAM_GALAHAD : TEAM_OWNER), speakerName: by.teammate ? this.requireTeammate(by.teammate).name : by.galahad ? "Galahad" : "You", text: by.output ? teamOutput(input.text, TEAM_LIMITS.message) : input.text, createdAt: at, chainId };
       this.db.query("INSERT INTO team_messages(id,room,speaker,speaker_name,text,created_at,chain_id) VALUES(?,?,?,?,?,?,?)").run(message.id, message.room, message.speaker, message.speakerName, message.text, at, chainId);
       for (const member of recipients) this.insertJob("delivery", room.id, member, chainId, { trigger: message.id });
+      if (forGalahad) this.queueAnswer(room.id, message, by.teammate ? { kind: "knight", teammate: by.teammate } : (by.asker ?? { kind: "admin" }));
       this.putRoom({ ...room, updatedAt: at });
       return message;
     })();
+  }
+  /** What Galahad said to the Roundtable in the last day from his own conversation: his allowance. His answers in rooms were asked for. */
+  private saidToday(): number {
+    return this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_messages m WHERE m.speaker = ? AND m.created_at > ? AND NOT EXISTS (SELECT 1 FROM team_answers a WHERE a.reply = m.id)").get(TEAM_GALAHAD, this.now() - DAY)!.n;
+  }
+  /** One answer of his waits per room, for its newest words, in their conversation; if you asked as well as a knight, it is yours. */
+  private queueAnswer(room: string, message: TeamMessage, asker: TeamAsker): void {
+    const at = this.now();
+    const waiting = this.db.query<AnswerRow, [string]>("SELECT * FROM team_answers WHERE room=? AND status='queued'").get(room);
+    if (!waiting) {
+      this.db.query("INSERT INTO team_answers(id,room,chain_id,trigger,asker,status,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,?)").run(id("answer"), room, message.chainId, message.id, JSON.stringify(asker), at, at);
+      return;
+    }
+    const before = JSON.parse(waiting.asker) as TeamAsker;
+    this.db.query("UPDATE team_answers SET chain_id=?,trigger=?,asker=?,updated_at=? WHERE id=?").run(message.chainId, message.id, JSON.stringify(before.kind === "knight" ? asker : before), at, waiting.id);
+  }
+  private answerRow(key: string): AnswerRow | null { return this.db.query<AnswerRow, [string]>("SELECT * FROM team_answers WHERE id=?").get(key); }
+  answer(key: string): TeamAnswer | null { const row = this.answerRow(key); return row ? answerOf(row) : null; }
+  /** His answers waiting their turn, oldest first. */
+  queuedAnswers(): TeamAnswer[] { return this.db.query<AnswerRow, []>("SELECT * FROM team_answers WHERE status='queued' ORDER BY seq").all().map(answerOf); }
+  /** His turn to answer: the room open and not paused, no answer of his already under way in it, and the conversation's
+   * budget not spent (his turn spends it as a knight's does). */
+  claimAnswer(key: string): boolean {
+    return this.db.transaction(() => {
+      const row = this.answerRow(key);
+      if (!row || row.status !== "queued") return false;
+      const room = this.requireRoom(row.room);
+      if (this.closed(room)) { this.finishAnswer(key, "stopped", CLOSED); return false; }
+      if (room.paused || this.db.query("SELECT id FROM team_answers WHERE room=? AND status='running'").get(row.room)) return false;
+      const chain = this.db.query<{ budget: number; spent: number }, [string]>("SELECT budget,spent FROM team_chains WHERE id=?").get(row.chain_id);
+      if (!chain || chain.spent >= chain.budget) { this.finishAnswer(key, "stopped", "This conversation reached its turn budget. Start a new message to continue."); return false; }
+      this.db.query("UPDATE team_chains SET spent=spent+1 WHERE id=?").run(row.chain_id);
+      this.db.query("UPDATE team_answers SET status='running',error=NULL,updated_at=? WHERE id=? AND status='queued'").run(this.now(), key);
+      return true;
+    })();
+  }
+  /** His answer, posted in its room and its record closed together. It reaches only the knights it names; empty: he had
+   * nothing to add. With `error` it failed, and the text says so. */
+  answered(key: string, text: string, error: string | null = null): TeamMessage | null {
+    return this.db.transaction(() => {
+      const row = this.answerRow(key);
+      if (!row || row.status !== "running") throw new TeamError(409, "This answer has stopped.");
+      const message = text ? this.post({ room: row.room, text }, { galahad: true, reply: true, chainId: row.chain_id, output: true }) : null;
+      this.db.query("UPDATE team_answers SET status=?,error=?,reply=?,updated_at=? WHERE id=?").run(error ? "failed" : "done", error ? teamOutput(error, 2000) : null, message?.id ?? null, this.now(), key);
+      return message;
+    })();
+  }
+  finishAnswer(key: string, status: "stopped" | "interrupted" | "failed", error: string): void {
+    this.db.query("UPDATE team_answers SET status=?,error=?,updated_at=? WHERE id=? AND status IN ('queued','running')").run(status, teamOutput(error, 2000), this.now(), key);
+  }
+  /** His answers as a room's deliveries are shown: what is under way, then the latest that ended. */
+  private galahadAnswers(room?: string): TeamDelivery[] {
+    const rows = room
+      ? this.db.query<AnswerRow, [string]>("SELECT * FROM team_answers WHERE room=? ORDER BY status IN ('queued','running') DESC,seq DESC LIMIT 16").all(room)
+      : this.db.query<AnswerRow, []>("SELECT * FROM team_answers WHERE status IN ('queued','running') ORDER BY seq DESC LIMIT 128").all();
+    return rows.map((r) => ({ id: r.id, room: r.room, teammate: TEAM_GALAHAD, trigger: r.trigger, chainId: r.chain_id, status: r.status, error: r.error, createdAt: r.created_at, updatedAt: r.updated_at }));
   }
   /** Galahad's own words to one worker (in the conversation you have with it) or to a room: all of it or nothing,
    * so a message that is refused leaves no conversation behind. */
@@ -419,7 +497,7 @@ export class TeamStore {
     // Its kept conversations, yours with it first: they are in no other list.
     const direct = this.rooms().filter((room) => room.direct).sort((a, b) => a.members.length - b.members.length);
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
-    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: this.deliveries(), ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}) };
+    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}) };
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {
@@ -439,7 +517,7 @@ export class TeamStore {
       spare: this.spare(all),
     };
   }
-  roomView(id: string): TeamRoomView { return { ...this.requireRoom(id), messages: this.messages(id), tasks: this.tasks(id), deliveries: this.deliveries(id) }; }
+  roomView(id: string): TeamRoomView { return { ...this.requireRoom(id), messages: this.messages(id), tasks: this.tasks(id), deliveries: [...this.deliveries(id), ...this.galahadAnswers(id)] }; }
 
   /** Daily allowance and the cross-room causal allowance are reserved together, before any callback runs. */
   claim(key: string): boolean {
@@ -573,12 +651,16 @@ export class TeamStore {
         this.finish(row.id, "interrupted", "The node stopped during this work. Review it before resuming.");
         this.pauseRoom(row.room, true);
       }
+      // His answer is never given twice: one the node stopped during is said to be cut off, and asked for again by you.
+      this.db.query("UPDATE team_answers SET status='interrupted',error=?,updated_at=? WHERE status='running'").run("The node stopped while Galahad was answering. Ask him again.", this.now());
     })();
   }
   pauseRoom(id: string, paused: boolean): TeamRoom { return this.putRoom({ ...this.requireRoom(id), paused, updatedAt: this.now() }); }
   enable(id: string, enabled: boolean): Teammate { return this.putTeammate({ ...this.requireTeammate(id), enabled, updatedAt: this.now() }); }
   stopQueued(select: TeamSelection): void {
     for (const job of this.queued()) if (matches(job, select)) this.finish(job.id, "stopped", "Stopped by you.");
+    // His answers wait in rooms: a knight's or a task's stopping leaves them be.
+    if (!select.teammate && !select.task) for (const answer of this.queuedAnswers()) if (!select.room || answer.room === select.room) this.finishAnswer(answer.id, "stopped", "Stopped by you.");
     // A proposal you stop is declined: it never ran.
     for (const row of this.db.query<JobRow, []>("SELECT * FROM team_jobs WHERE status='proposed' ORDER BY seq").all()) if (matches(jobOf(row), select)) this.finish(row.id, "stopped", "Declined by you.");
   }

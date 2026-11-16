@@ -32,7 +32,7 @@ struct RoomView: View {
 
     /// Who is writing a reply now, by name.
     private var writing: [String] {
-        (room.view?.deliveries ?? []).filter { $0.status == "queued" || $0.status == "running" }.map { session.teammate($0.teammate)?.name ?? $0.teammate }
+        (room.view?.deliveries ?? []).filter { $0.status == "queued" || $0.status == "running" }.map { $0.teammate == "galahad" ? "Galahad" : session.teammate($0.teammate)?.name ?? $0.teammate }
     }
 
     var body: some View {
@@ -139,7 +139,7 @@ struct RoomView: View {
                 }
             }
             Text(name).font(.title2.bold())
-            Text("Say something to the room: \(ListFormatter.localizedString(byJoining: members.map(\.name))) hear it, and each answers when it has something to add. They can also hand work to each other.")
+            Text("Say what you need: Galahad sits here, answers, and brings in whichever of \(ListFormatter.localizedString(byJoining: members.map(\.name))) the work needs. Name a knight with @ to ask it yourself.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
