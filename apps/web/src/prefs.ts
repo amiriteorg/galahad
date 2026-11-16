@@ -1,8 +1,10 @@
 /*
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
- * sidebar state, the last chat role, what Enter does while Galahad is working, and
- * which kept chat you had open (its id only). Never secrets, never a word of a chat,
- * never anything else from the server. boot.ts reads the same keys before paint.
+ * sidebar state, the last chat role, what Enter does while Galahad is working,
+ * which kept chat you had open (its id only), and how the Roundtable is laid out on
+ * this device (a board or a list, the sidebar's sections folded, a knight's side
+ * panel shown). Never secrets, never a word of a chat, never anything else from the
+ * server. boot.ts reads the same keys before paint.
  */
 
 export type ThemePref = "system" | "light" | "dark";
@@ -15,6 +17,9 @@ const KEYS = {
   role: "galahad:chat-role",
   enter: "galahad:chat-enter",
   chat: "galahad:open-chat",
+  roundtable: "galahad:roundtable-view",
+  folded: "galahad:roster-folded",
+  panel: "galahad:knight-panel",
 } as const;
 
 type PrefKey = keyof typeof KEYS;
@@ -107,3 +112,22 @@ export const openChatId = (): string | null => {
   return id && /^cv_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
 };
 export const rememberOpenChat = (id: string | null): void => write("chat", id);
+
+/** How the Roundtable's own page shows the knights on this device: as a board of cards (the default) or as a list. */
+export type RoundtableView = "board" | "list";
+export const roundtableView = (): RoundtableView => (read("roundtable") === "list" ? "list" : "board");
+export const setRoundtableView = (view: RoundtableView): void => write("roundtable", view === "board" ? null : view);
+
+/** The sidebar's sections folded on this device: the knights (but who leads and Galahad), the rooms. */
+export type RosterSection = "knights" | "rooms";
+export const rosterFolded = (): Set<RosterSection> => new Set((read("folded") ?? "").split(",").filter((part): part is RosterSection => part === "knights" || part === "rooms"));
+export function setRosterFolded(section: RosterSection, folded: boolean): void {
+  const now = rosterFolded();
+  if (folded) now.add(section);
+  else now.delete(section);
+  write("folded", now.size ? [...now].sort().join(",") : null);
+}
+
+/** Whether a knight's page shows its side panel beside the timeline on a wide screen (it does unless you hid it). */
+export const knightPanelShown = (): boolean => read("panel") !== "hidden";
+export const setKnightPanelShown = (shown: boolean): void => write("panel", shown ? null : "hidden");

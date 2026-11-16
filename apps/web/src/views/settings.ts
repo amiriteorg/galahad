@@ -125,7 +125,7 @@ export const settingsView: View = (root, ctx, { scope }) => {
         {},
         list([
           listRow({ lead: "key", top: true, title: "A device key", sub: "In IndexedDB, created non-extractable: it can sign, but nothing can read it out, not even this page." }),
-          listRow({ lead: "settings", top: true, title: "Display preferences", sub: "Theme, motion, sidebar, chat role, what Enter does while he works, and which kept chat you had open (its id, never a word of it), in localStorage. Nothing else." }),
+          listRow({ lead: "settings", top: true, title: "Display preferences", sub: "Theme, motion, sidebar, chat role, what Enter does while he works, which kept chat you had open (its id, never a word of it), and how the Roundtable is laid out here (a board or a list, the sidebar's folded sections, a knight's side panel), in localStorage. Nothing else." }),
           listRow({ lead: "bell", top: true, title: "A push subscription, once you turn notifications on", sub: "Made by your browser, with keys only it can read with; the node is handed its address and public key, as this device's. Turning notifications off removes it in both places." }),
           listRow({ lead: "chat", top: true, title: "Chats: not on this device", sub: "Kept privately on the node you talk to, with what you queued behind them, and deleted there when you delete them; temporary chats aren't kept at all. Keys you paste are never kept." }),
         ]),
