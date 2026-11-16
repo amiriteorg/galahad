@@ -3,7 +3,7 @@ import { type Ctx, errorMessage, type View } from "../context.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup, type SignInForm } from "../lib/text.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { PresetView } from "../types.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, secretInput, section, skeletonRows } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, field, listRow, pageBody, pageHead, rows, secretInput, section, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -372,34 +372,26 @@ export const vaultView: View = (root, ctx, { scope, opts }) => {
 
   function row(s: SecretView): HTMLElement {
     const ms = hlcMs(s.updatedAt);
-    return h(
-      "div",
-      { class: "item center" },
-      h("span", { class: "avatar" }, icon("key", { size: 16 })),
-      h(
-        "div",
-        { class: "grow" },
-        h("div", { class: "row wrap" }, h("span", { class: "strong mono" }, s.name), s.provider ? badge(s.provider, "neutral") : null, s.hint ? h("span", { class: "mono subtle small", title: "Only the last characters are ever shown" }, s.hint) : null),
-        h(
-          "div",
-          { class: "meta" },
-          s.label ? h("span", {}, s.label) : null,
-          // Keys are pinned: shown so you can see exactly where this one may ever go.
-          s.origin
-            ? h("span", { class: "mono", title: "This key is only ever sent to this host" }, `only to ${s.origin.replace(/^https?:\/\//, "")}`)
-            : h("span", { title: "Unpinned keys are never used; replace it to pin it" }, "unpinned · not used"),
-          ms ? h("span", { title: new Date(ms).toLocaleString() }, `updated ${relativeTime(ms)}`) : null,
-        ),
-      ),
-      write
+    return listRow({
+      lead: "key",
+      title: h("span", { class: "row wrap" }, h("span", { class: "mono" }, s.name), s.provider ? badge(s.provider, "neutral") : null, s.hint ? h("span", { class: "mono subtle small", title: "Only the last characters are ever shown" }, s.hint) : null),
+      meta: [
+        s.label ? h("span", {}, s.label) : null,
+        // Keys are pinned: shown so you can see exactly where this one may ever go.
+        s.origin
+          ? h("span", { class: "mono", title: "This key is only ever sent to this host" }, `only to ${s.origin.replace(/^https?:\/\//, "")}`)
+          : h("span", { title: "Unpinned keys are never used; replace it to pin it" }, "unpinned · not used"),
+        ms ? h("span", { title: new Date(ms).toLocaleString() }, `updated ${relativeTime(ms)}`) : null,
+      ],
+      trail: write
         ? h(
-            "div",
-            { class: "item-actions reveal" },
+            "span",
+            { class: "row tight reveal" },
             button("Replace", { size: "sm", variant: "ghost", icon: "edit", onClick: () => openAddKey(ctx, { name: s.name, provider: s.provider }) }),
             button(`Delete ${s.name}`, { size: "sm", variant: "ghost", iconOnly: true, icon: "trash", onClick: () => void remove(s) }),
           )
         : null,
-    );
+    });
   }
 
   async function refresh(): Promise<void> {
@@ -420,7 +412,7 @@ export const vaultView: View = (root, ctx, { scope, opts }) => {
       replace(
         listBox,
         secrets.secrets.length
-          ? h("div", { class: "rows" }, ...secrets.secrets.map(row))
+          ? rows(...secrets.secrets.map(row))
           : empty({
               icon: "vault",
               title: "The vault is empty",
@@ -444,9 +436,8 @@ export const vaultView: View = (root, ctx, { scope, opts }) => {
         write ? button("Add key", { variant: "primary", icon: "plus", onClick: () => openAddKey(ctx) }) : null,
       ),
       write ? null : callout("quiet", "This device can see secret names, but not add or change keys."),
-      requestsBox,
-      explainerBox,
-      listSection,
+      // Shown whole once the vault has answered: what he asks for and the explainer came in above the keys, and pushed them.
+      pageBody(requestsBox, explainerBox, listSection),
     ),
   );
 
