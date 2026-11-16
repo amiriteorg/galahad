@@ -23,7 +23,8 @@ import { fakeDocker } from "./fake-docker.ts";
  * look writes no event, a full one only the ledger lines every sandbox leaves.
  */
 
-const caps: Capabilities = { os: "linux", arch: "x64", hostname: "doctor-test", cores: 16, cpu: "test", memoryGb: 64, hasBattery: false, gpu: [], docker: true, vm: { kvm: false, tools: [] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true } };
+// (A machine with no KVM, said whole: its sandbox host makes no microVMs, whatever the machine running this test can.)
+const caps: Capabilities = { os: "linux", arch: "x64", hostname: "doctor-test", cores: 16, cpu: "test", memoryGb: 64, hasBattery: false, gpu: [], docker: true, vm: { kvm: false, tools: [] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true, vm: false } };
 
 const freePort = () => {
   const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
