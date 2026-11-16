@@ -191,7 +191,7 @@ export function skeletonRows(n = 3, options: { avatar?: boolean } = {}): HTMLEle
       h(
         "div",
         { class: "sk-row" },
-        options.avatar ? h("div", { class: "skeleton", style: "width:28px;height:28px;border-radius:8px;flex:none" }) : null,
+        options.avatar ? h("div", { class: "skeleton sk-avatar" }) : null,
         h(
           "div",
           { class: "grow stack tight" },
@@ -209,7 +209,7 @@ export function skeletonStat(): HTMLElement {
 }
 
 export function skeletonBlock(height: number): HTMLElement {
-  return h("div", { class: "skeleton", style: `height:${height}px;border-radius:12px`, "aria-hidden": "true" });
+  return h("div", { class: "skeleton sk-block", style: `height:${height}px`, "aria-hidden": "true" });
 }
 
 export async function copyText(text: string, what = "Copied", options: { quiet?: boolean } = {}): Promise<boolean> {
@@ -362,7 +362,7 @@ export function switchControl(label: Child, checked: boolean, onChange: (checked
     { class: "switch" },
     input,
     h("span", { class: "track", "aria-hidden": "true" }),
-    h("span", { class: "stack", style: "gap:0" }, h("span", { class: "small strong" }, label), options.hint ? h("span", { class: "tiny subtle" }, options.hint) : null),
+    h("span", { class: "switch-text" }, h("span", { class: "small strong" }, label), options.hint ? h("span", { class: "tiny subtle" }, options.hint) : null),
   );
 }
 
