@@ -4,7 +4,7 @@ import Install from "../components/Install.astro";
 import Knight from "../components/Knight.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
-import { BUN_VERSION, COMPARE, INSTALLER_SHA256, PHASING, REPO, SIZE, TRIALS, compact, doc } from "../lib/facts.ts";
+import { BUN_VERSION, COMPARE, INSTALLER_SHA256, PHASING, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
 
 /* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
    with one line of it as the app's roster says it. Illustrative, and the caption says so. */
@@ -254,6 +254,30 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
           With the {TRIALS.models}. Every number is the trial runner's own record, kept on the node.{" "}
           <a href={doc("TRIALS")}>How the trials work</a>
         </p>
+      </div>
+
+      <div class="schedule trials">
+        <table>
+          <caption>
+            <b>Harder, {TRIALS_HARD.date}.</b> The same eight at level 3, where each task hides more and says less. The
+            two it missed: a refactor that changed one edge it should have kept, and a contradiction between two tests it
+            didn't name.
+          </caption>
+          <thead>
+            <tr><th scope="col">Measure</th><th scope="col">Revision <code>{TRIALS_HARD.revision}</code></th></tr>
+          </thead>
+          <tbody>
+            {
+              TRIALS_HARD.rows.map((row) => (
+                <tr>
+                  <th scope="row">{row.what}</th>
+                  <td class="num">{row.value}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="schedule-note">With the {TRIALS_HARD.models}; run <code>{TRIALS_HARD.run}</code>.</p>
       </div>
     </div>
   </section>

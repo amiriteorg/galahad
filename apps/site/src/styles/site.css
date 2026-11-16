@@ -1480,6 +1480,11 @@ h2 {
   }
 }
 
+/* B: the harder run's schedule, under the first. */
+.schedule.trials + .schedule.trials {
+  margin-top: 40px;
+}
+
 /* D: the room schedule, one agent a row; Galahad's row is drawn in heavier ink, as its footprint is. */
 .schedule.compare {
   margin-top: 40px;

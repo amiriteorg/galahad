@@ -42,6 +42,21 @@ export const TRIALS = {
   models: "planner and engineer glm-5.3, reviewer qwen3.8-max, on a coding plan",
 } as const;
 
+/** The same eight tasks at level 3 (the harder end of the dial), 16 November 2026: docs/TRIALS.md, run r-mwj8wtir. */
+export const TRIALS_HARD = {
+  date: "16 November 2026",
+  run: "r-mwj8wtir",
+  revision: "cb2a259",
+  rows: [
+    { what: "Solved outright", value: "6 of 8" },
+    { what: "Galahad Index", value: `${pct(95)} (90–100 %)` },
+    { what: "Called done and wasn't", value: "1 of 7" },
+    { what: "Input read from a cache", value: pct(72) },
+    { what: "A task, at list prices", value: "$0.39, 237k tokens, 18 minutes" },
+  ],
+  models: "planner glm-5.3, engineer deepseek-v4-pro, reviewer qwen3.8-max, on a coding plan",
+} as const;
+
 /** Lines of source, test files left out, counted with `git ls-files` on 15 November 2026. Galahad's at `commit`;
  * Hermes Agent's at its 0.21 checkout; Rakazo's and OpenMausBot's from their main branches that day, to the thousand. */
 export const SIZE = {

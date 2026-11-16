@@ -11,7 +11,7 @@ What he is built towards is [the mandate](docs/MANDATE.md): the best coding agen
 Galahad runs every day on its owner's machines, a Linux server with KVM among them, and every change ships only with the whole suite green: `bun run check`, about 2,260 tests including property tests and two-node end-to-end tests over HTTP, and the iPhone app's own. Where it stands:
 
 - **What's next:** the feature plan, in order and with why ([PLAN](docs/PLAN.md)); the milestones ([ARCHITECTURE §13](docs/ARCHITECTURE.md#13-roadmap)).
-- **How well it does:** its trials, with every run's record (on 14 November 2026, Galahad Index 94 to 98 % on the agentic suite at level 2, at $0.27 to $0.54 a task on a coding plan: [TRIALS](docs/TRIALS.md)), and the scorecard of what is measured without a model ([BENCHMARKS](docs/BENCHMARKS.md)).
+- **How well it does:** its trials, with every run's record (on 14 November 2026, Galahad Index 94 to 98 % on the agentic suite at level 2, at $0.27 to $0.54 a task on a coding plan; at level 3 on 16 November, 95 % at $0.39 a task: [TRIALS](docs/TRIALS.md)), and the scorecard of what is measured without a model ([BENCHMARKS](docs/BENCHMARKS.md)).
 - **How it compares:** with Hermes Agent, Rakazo, OpenMausBot, Grok Bot and Dots, surface by surface, every fact sourced and dated ([COMPARISON](docs/COMPARISON.md)).
 
 Working and tested today:
