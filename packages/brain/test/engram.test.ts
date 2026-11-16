@@ -145,11 +145,14 @@ describe("the knights' image", () => {
 
   test("holds the release this code pins, checked against its SHA-256 before anything of it is kept", () => {
     expect(dockerfile).toContain(`ARG ENGRAM_VERSION=${ENGRAM_VERSION}\n`);
-    // (The Linux x86_64 asset of v3.7.2, as its release's checksums.txt and GitHub's own digest give it.)
+    // (The Linux x86_64 asset of v3.7.2, as its release's checksums.txt and GitHub's own digest give it; and its
+    // arm64 asset, for a Mac's image, as GitHub's digest gives it. Which is checked is the platform's: image-arch.test.ts.)
     expect(dockerfile).toContain("ARG ENGRAM_SHA256=8db9d5db1c1574b8b830aac4ffbe86c024014aed6b9a3f0406ac3361a152cdf0\n");
-    expect(fetched).toContain('"https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_amd64.tar.gz"');
+    expect(dockerfile).toContain("ARG ENGRAM_SHA256_ARM64=cdbbcb68d3e842d3e52e27edccef55e6fe98ce3cdbc90cd79894323b029efb50\n");
+    expect(fetched).toContain('"https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_${TARGETARCH:-amd64}.tar.gz"');
     const steps = fetched.split("&&").map((step) => step.trim());
-    const checked = steps.findIndex((step) => step === 'echo "${ENGRAM_SHA256}  /tmp/engram.tgz" | sha256sum -c -');
+    expect(steps[0]).toBe('RUN case "${TARGETARCH:-amd64}" in amd64) sum="${ENGRAM_SHA256}" ;; arm64) sum="${ENGRAM_SHA256_ARM64}" ;; *) echo "no Engram is pinned for ${TARGETARCH}" >&2; exit 1 ;; esac');
+    const checked = steps.findIndex((step) => step === 'echo "${sum}  /tmp/engram.tgz" | sha256sum -c -');
     const unpacked = steps.findIndex((step) => step.includes("tar -xzf /tmp/engram.tgz"));
     expect(checked).toBeGreaterThan(0);
     expect(unpacked).toBeGreaterThan(checked);
