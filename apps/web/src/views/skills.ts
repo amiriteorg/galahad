@@ -3,7 +3,7 @@ import { ApiError, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { budgetLine, docFromForm, formOf, originWords, shownVersion, type SkillForm, skillGroups, stateBadge, trustWords, waitingVersion } from "../lib/skills.ts";
 import { relativeTime } from "../lib/time.ts";
-import { badge, busy, button, callout, empty, errorState, field, pageHead, section, skeletonBlock, skeletonRows } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, field, formActions, pageBody, pageHead, section, skeletonBlock, skeletonRows } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -65,7 +65,7 @@ async function approve(ctx: Ctx, skill: SkillDetail, version: SkillVersionView):
   const ok = await confirmAction({
     title: "Approve this version?",
     body: [
-      h("p", { class: "wrap-anywhere", style: "color:var(--text)" }, version.doc?.title ?? skill.title),
+      h("p", { class: "wrap-anywhere plain" }, version.doc?.title ?? skill.title),
       h("p", {}, originWords(version)),
       h("p", {}, "Approved, he's given it as a note when it bears on a quest or a question: data, fenced, still marked untrusted. It never runs anything by itself, and you can retire it or roll it back."),
     ],
@@ -355,7 +355,7 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
                   },
                   field("Tokens a day", input, { hint: "About four characters a token; one distillation is at most 2,500." }),
                   status,
-                  h("div", { class: "row", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), save),
+                  formActions(button("Cancel", { onClick: () => sheet.close() }), save),
                 ),
                 initialFocus: () => input,
               });
@@ -427,10 +427,8 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
         "How he did a kind of work that passed its review, kept as notes he's given again when they bear on what he's doing. A skill is words he reads: nothing in one runs. One shaped by the outside world waits here for you first.",
         ctx.can("mind:write") ? button("Write a skill", { variant: "primary", icon: "plus", onClick: () => openSkillEditor(ctx) }) : null,
       ),
-      budgetSlot,
-      waitingSlot,
-      section("In use", {}, list),
-      retiredSlot,
+      // Shown whole once his skills have answered: the budget and what waits for you came in above those in use.
+      pageBody(budgetSlot, waitingSlot, section("In use", {}, list), retiredSlot),
     ),
   );
   scope.add(skillsChanged.subscribe(() => void load()));
