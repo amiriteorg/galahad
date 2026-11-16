@@ -200,7 +200,10 @@
       .stack { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
       .stack.tight { gap: var(--sp-2); }
       .stack.snug { gap: var(--sp-1); }
-      .stack.loose { gap: var(--sp-5); }
+      /* A column of sections (the Overview's, Activity's) is spaced as a page is. */
+      .stack.loose { gap: var(--page-gap); }
+      /* What's in a form or a sheet is spaced as a form's fields are, whichever stack it was given. */
+      form.stack, form.stack.tight, form.stack.loose, .sheet-body .stack.loose { gap: var(--form-gap); }
       .spacer { flex: 1; }
       kbd, .kbd {
         display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px;
