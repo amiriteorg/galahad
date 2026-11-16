@@ -36,7 +36,7 @@ const LIST = [
   { id: "more", label: "More", icon: "more", under: null, scope: null, key: ".", keywords: ["everything", "all", "index", "menu"], about: "" },
   { id: "overview", label: "Overview", icon: "overview", under: "work", scope: null, key: "o", keywords: ["dashboard", "health", "doctor"], about: "Health, what's in hand and recent activity" },
   { id: "projects", label: "Projects", icon: "folder", under: "work", scope: "mind:read", key: "p", keywords: ["workspaces", "instructions", "repositories", "folders"], about: "Instructions and chats, by project" },
-  { id: "loops", label: "Loops", icon: "repeat", under: "work", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring"], about: "What he does on a schedule" },
+  { id: "loops", label: "Loops", icon: "repeat", under: "work", scope: "mind:read", key: "r", keywords: ["schedule", "cron", "heartbeat", "routine", "recurring", "tripwires", "rules", "hooks", "guardrails"], about: "What he does on a schedule, and your tripwires" },
   { id: "activity", label: "Activity", icon: "activity", under: "work", scope: "mind:read", key: "a", keywords: ["ledger", "log", "audit", "history"], about: "Everything he did, and why it was allowed" },
   { id: "artifacts", label: "Artifacts", icon: "archive", under: "work", scope: "mind:read", key: "w", keywords: ["work", "results", "files", "outputs", "kept", "reports", "plots"], about: "Files his work kept" },
   { id: "trials", label: "Trials", icon: "gauge", under: "work", scope: "mind:read", key: "t", keywords: ["benchmarks", "evals", "galahad index", "score", "tests", "progress"], about: "Whether he is getting better" },

@@ -1,0 +1,152 @@
+import type { RuleView } from "@galahad/core";
+import { findSecrets } from "@galahad/core/secret-scan";
+import { type Ctx, errorMessage } from "../context.ts";
+import { type RuleDoes, ruleFromForm, ruleParts, ruleWhen } from "../lib/rules.ts";
+import { absoluteTime, relativeTime } from "../lib/time.ts";
+import { busy, button, callout, card, errorState, field, formActions, list, listRow, note, section, segmented, skeletonRows } from "../ui/controls.ts";
+import { confirmAction, openSheet } from "../ui/dialog.ts";
+import { h, keepPlace, replace, type Scope } from "../ui/dom.ts";
+import { toast } from "../ui/toast.ts";
+import { deviceName } from "./activity.ts";
+
+/*
+ * Tripwires, on the Loops page: your rules on the commands his work runs (core's rules.ts). Before each command of
+ * his quests (yours from a terminal, his loops', a trial's) and of a knight's task on his own runner, and before each
+ * gate, a rule halts the work or refuses that command, and he is told which and why. Data you write, never code and
+ * never a model's judgment; yours alone to set (fleet:admin). A coding tool's own commands inside its VM aren't seen,
+ * and the section says so.
+ */
+
+const PATH = "/api/rules";
+
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** What a rule does, and when, as a sentence: what it matches shown as written. */
+const sentence = (rule: NonNullable<RuleView["rule"]>): HTMLElement =>
+  h("span", {}, ...ruleParts(rule).map((part, i) => (part.kind === "words" ? (i ? part.text : capital(part.text)) : h("span", { class: "mono" }, part.text))), ".");
+
+/** The Tripwires section, and how to bring it up to date (the page asks now and then). */
+export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; refresh(): Promise<void> } {
+  const yours = ctx.can("fleet:admin");
+  const box = h("div", {}, card({ flush: true }, skeletonRows(2)));
+  let signature = "";
+
+  function row(r: RuleView): HTMLElement {
+    const halts = r.rule?.does === "halt";
+    return listRow({
+      lead: halts ? "ban" : "shield",
+      leadTone: r.rule ? (halts ? "danger" : "warn") : "neutral",
+      top: true,
+      title: h("span", { class: "mono" }, r.name),
+      sub: r.rule ? sentence(r.rule) : "A newer node's rule: this node doesn't understand it, and doesn't apply it.",
+      meta: [h("span", { title: absoluteTime(r.setAt) }, `Set ${relativeTime(r.setAt)}`), h("span", {}, r.setVia ? `from ${deviceName(ctx, r.setVia)}` : "from a terminal")],
+      trail: yours ? button(`Remove ${r.name}`, { size: "sm", variant: "ghost", iconOnly: true, icon: "trash", onClick: () => void remove(r) }) : null,
+      key: `rule:${r.name}`,
+    });
+  }
+
+  function render(rules: RuleView[]): void {
+    replace(
+      box,
+      list(rules.map(row), {
+        empty: { icon: "shield", title: "No tripwires", body: "A tripwire halts the work, or refuses a command, whose words match a glob of yours: *.lock, .env*, migrations/**, rm." },
+      }),
+    );
+  }
+
+  async function refresh(): Promise<void> {
+    try {
+      const { rules } = await ctx.api.get<{ rules: RuleView[] }>(PATH, scope.signal);
+      if (scope.disposed) return;
+      const next = JSON.stringify(rules);
+      if (next === signature) return;
+      signature = next;
+      keepPlace(box, () => render(rules));
+    } catch (error) {
+      if (!scope.disposed && !signature) replace(box, card({ flush: true }, errorState("Couldn't load tripwires", error, () => void refresh())));
+    }
+  }
+
+  async function remove(r: RuleView): Promise<void> {
+    const ok = await confirmAction({ title: `Remove ${r.name}?`, body: "No command is held to it any more, on any node.", confirmLabel: "Remove tripwire" });
+    if (!ok) return;
+    try {
+      await ctx.api.post(`${PATH}/remove`, { name: r.name });
+      toast(`${r.name} removed`, { tone: "ok" });
+      signature = "";
+      void refresh();
+    } catch (error) {
+      toast("Couldn't remove it", { tone: "error", description: errorMessage(error) });
+    }
+  }
+
+  function openAdd(): void {
+    const input = (placeholder: string, maxlength: number) => h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength, placeholder });
+    const name = input("e.g. no-lockfiles", 40);
+    const globs = input("*.lock .env* migrations/** rm", 900);
+    const contains = input("e.g. git push", 200);
+    let does: RuleDoes = "refuse";
+    const doesControl = segmented<RuleDoes>(
+      [
+        { value: "refuse", label: "Refuse the command" },
+        { value: "halt", label: "Halt the work" },
+      ],
+      does,
+      (value) => (does = value),
+      { label: "What it does" },
+    );
+    const status = h("div");
+    const save = button("Add tripwire", { variant: "primary", type: "submit", icon: "check" });
+    const form = h(
+      "form",
+      {
+        class: "stack loose",
+        onsubmit: (event: Event) => {
+          event.preventDefault();
+          const made = ruleFromForm({ name: name.value, does, globs: globs.value, contains: contains.value });
+          if ("problem" in made) return void replace(status, callout("warn", made.problem));
+          const secret = [...made.rule.words, made.rule.contains ?? ""].map((text) => findSecrets(text)[0]).find(Boolean);
+          if (secret) return void replace(status, callout("warn", `That looks like a ${secret.kind}: a rule's words reach the ledger and his conversation, so it wasn't set. A key belongs in the vault.`));
+          void busy(save, async () => {
+            try {
+              await ctx.api.post(PATH, made.rule);
+              sheet.close();
+              toast(`${made.rule.name} set`, { tone: "ok", description: `${capital(ruleWhen(made.rule))}.` });
+              signature = "";
+              void refresh();
+            } catch (error) {
+              replace(status, callout("danger", errorMessage(error), { title: "Not set" }));
+            }
+          });
+        },
+      },
+      field("Name", name, { hint: "Lowercase: letters, digits, . _ - (a rule with the same name is replaced)." }),
+      field("Words that trip it", globs, {
+        hint: "Globs, separated by spaces, matched against each word of a command, quoted or not: * is any run of characters but /, ** any run, ? one character. *.lock is a lockfile in any folder; migrations/** is that folder and everything in it.",
+      }),
+      field("Text it holds (optional)", contains, { hint: "The command must hold this as well, here-documents included: git push, --force." }),
+      h("div", { class: "stack tight" }, h("div", { class: "label" }, "What it does"), doesControl.el, note("Refuse: that command isn't run, he is told which rule and why, and the work goes on. Halt: the quest or task stops, saying which rule.")),
+      status,
+      formActions(button("Cancel", { onClick: () => sheet.close() }), save),
+    );
+    const sheet = openSheet({ title: "Add a tripwire", description: "A rule of yours on the commands his work runs.", body: form, initialFocus: () => name });
+  }
+
+  const el = section(
+    "Tripwires",
+    {
+      actions: yours ? button("Add tripwire", { size: "sm", icon: "plus", onClick: () => openAdd() }) : null,
+      note: `Checked before every command of his quests and of a knight's task on his own runner, and every gate. A coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands inside its VM, where they aren't seen.${yours ? "" : " This device can see them, not change them (no fleet:admin)."}`,
+    },
+    box,
+  );
+
+  // What this page showed last time, at once (api.peek); the fresh answer replaces it only if something changed.
+  const last = ctx.api.peek<{ rules: RuleView[] }>(PATH);
+  if (last) {
+    signature = JSON.stringify(last.rules);
+    render(last.rules);
+  }
+  void refresh();
+  return { el, refresh };
+}

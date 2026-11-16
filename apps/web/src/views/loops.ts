@@ -15,6 +15,7 @@ import { toast } from "../ui/toast.ts";
 import { deviceName } from "./activity.ts";
 import { argFields, type ArgsRead, classNote, loadConnectors } from "./connectors.ts";
 import { NETWORK } from "./sandboxes.ts";
+import { tripwiresSection } from "./tripwires.ts";
 
 /*
  * Loops: work Galahad does on a schedule ("every 30m", or a cron line in a time
@@ -671,6 +672,9 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
     }
   }
 
+  // Your tripwires on the commands his work runs: what he may never do, beside what he does on his own and may fix.
+  const tripwires = tripwiresSection(ctx, scope);
+
   const checkButton = button("Check now", { icon: "review", onClick: () => void check(checkButton) });
   replace(
     root,
@@ -684,8 +688,8 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
       ),
       write ? null : callout("quiet", "This device can see loops but not change or run them (no brain:write scope)."),
       checkBox,
-      // The loops, then what he may fix after them: shown whole once both have answered (the second pushed the first).
-      pageBody(section("Loops", {}, listBox), section("Self-action", {}, selfBox)),
+      // The loops, what he may fix after them, and your tripwires: shown whole once all have answered (each pushed the one before).
+      pageBody(section("Loops", {}, listBox), section("Self-action", {}, selfBox), tripwires.el),
     ),
   );
 
@@ -699,7 +703,10 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
   let tick = 0;
   scope.interval(() => {
     if (pending.size || ++tick % 3 === 0) void refresh();
-    if (tick % 5 === 0) void refreshSelf();
+    if (tick % 5 === 0) {
+      void refreshSelf();
+      void tripwires.refresh();
+    }
   }, 3000);
   // What this page showed last time, at once (api.peek); the fresh answers replace it only if something changed.
   const lastLoops = ctx.api.peek<{ loops: LoopView[] }>("/api/loops");
