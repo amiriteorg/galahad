@@ -1,0 +1,5 @@
+# Reviewed false positives, by fingerprint (commit:file:rule:line). Each names what matched and why it is no secret.
+#
+# 791b19d, notify-input.ts:44: the zod pattern that checks an Apple push key's shape, and its error message, quoted the
+# PEM header and footer; no key was in it. Rewritten in the next commit so it no longer reads as one.
+791b19d8cdaaf8b7a5319f056a33e5cef4928a2f:packages/core/src/notify-input.ts:private-key:44

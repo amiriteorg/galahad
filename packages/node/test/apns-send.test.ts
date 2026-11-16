@@ -28,7 +28,7 @@ beforeAll(async () => {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const der = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
   // As the secure prompt hands it over: the .p8's text on one line.
-  key = { teamId: "TEAM000001", keyId: "KEY0000001", topic: "org.example.galahad", key: `-----BEGIN PRIVATE KEY-----${btoa(String.fromCharCode(...der))}-----END PRIVATE KEY-----` };
+  key = { teamId: "TEAM000001", keyId: "KEY0000001", topic: "org.example.galahad", key: `${"-".repeat(5)}BEGIN PRIVATE KEY${"-".repeat(5)}${btoa(String.fromCharCode(...der))}${"-".repeat(5)}END PRIVATE KEY${"-".repeat(5)}` };
   publicKey = pair.publicKey;
   server = http2.createServer();
   server.on("stream", (stream: http2.ServerHttp2Stream, headers: http2.IncomingHttpHeaders) => {
