@@ -4,8 +4,44 @@ import UIKit
 /*
  * Galahad's accents, and nothing more: his red for what needs you and for his seat, the cream ink and the black tile
  * (scripts/brand.ts writes them from apps/web/src/brand.ts), the Roundtable's mark, and the knights as the owner drew
- * them. Everything else is the system's own.
+ * them; and the one scale every screen is spaced on. Everything else is the system's own.
  */
+
+/// The app's one spacing scale: the PWA's (`--sp-*` in apps/web/src/index.html; each step named as there), in points.
+/// Every gap, margin and padding is one of these, so the same thing is spaced the same way wherever it is.
+enum Space {
+    /// Between the lines of one thing: a name and the line under it.
+    static let line: CGFloat = 2
+    static let s1: CGFloat = 4
+    static let s2: CGFloat = 8
+    static let s3: CGFloat = 12
+    static let s4: CGFloat = 16
+    static let s6: CGFloat = 24
+    static let s10: CGFloat = 40
+}
+
+/// What the screens share beyond the scale: a page's margins, the faces' sizes, and the corners of what sits on a page.
+enum Metrics {
+    /// A page's side margins, and the space between the items of a timeline.
+    static let margin = Space.s4
+    /// A face in a row of the Roundtable: Galahad's, a knight's, a room's members' (so every name starts at one edge).
+    static let rowFace: CGFloat = 56
+    /// A speaker's face beside what it said.
+    static let speakerFace: CGFloat = 32
+    /// The face that welcomes you to a timeline with nothing in it yet.
+    static let welcomeFace: CGFloat = 120
+    /// The column an icon stands in beside its words, so the words start at one edge whatever the icon.
+    static let iconColumn: CGFloat = 28
+    /// The smallest a thing to tap is, and the height of a field beside a button (Apple's 44 points).
+    static let touch: CGFloat = 44
+    /// The corners of a bubble and of a card in a timeline.
+    static let cardRadius: CGFloat = 20
+    /// The corners of what sits inside one (code, figures, a page, a screen), and of a field.
+    static let innerRadius: CGFloat = 12
+    /// What a bubble's words keep from its edges (Messages' own); a card keeps `Space.s3` all round, so the words of
+    /// both start the same distance in.
+    static let bubblePadding = EdgeInsets(top: Space.s2, leading: Space.s3, bottom: Space.s2, trailing: Space.s3)
+}
 
 extension Color {
     /// The ink, the app's accent: the black tile on light, the cream on dark. Set as the tint at the root, since the

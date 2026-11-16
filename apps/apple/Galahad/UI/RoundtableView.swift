@@ -108,26 +108,42 @@ struct RoundtableView: View {
     }
 }
 
+/// A row of the Roundtable, whoever's it is: a face in the one column every face stands in, a name, and what it is doing
+/// in a line or two (always as tall as two, so a row keeps its height when its line changes), marked in Galahad's red
+/// when it needs you.
+struct RosterLine<Face: View>: View {
+    let name: String
+    let line: String
+    let needs: Bool
+    @ViewBuilder let face: Face
+
+    var body: some View {
+        HStack(spacing: Space.s3) {
+            face.frame(width: Metrics.rowFace, height: Metrics.rowFace)
+            VStack(alignment: .leading, spacing: Space.line) {
+                Text(name).font(.headline)
+                Text(line)
+                    .font(.subheadline)
+                    .foregroundStyle(needs ? Color.siege : .secondary)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            Spacer(minLength: 0)
+            if needs { NeedsMark() }
+        }
+        .padding(.vertical, Space.s1)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct GalahadRow: View {
     let now: GalahadNow
     /// What his face shows: thinking while he answers, asking while something waits for you.
     var expression = "idle"
 
     var body: some View {
-        HStack(spacing: 14) {
-            Portrait(drawing: "galahad", size: 56, expression: expression, id: "galahad")
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Galahad").font(.headline)
-                Text(now.text)
-                    .font(.subheadline)
-                    .foregroundStyle(now.tone == .warn ? Color.siege : .secondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-            if now.tone == .warn { NeedsMark() }
+        RosterLine(name: "Galahad", line: now.text, needs: now.tone == .warn) {
+            Portrait(drawing: "galahad", size: Metrics.rowFace, expression: expression, id: "galahad")
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -137,20 +153,9 @@ struct KnightRow: View {
     var temper = "calm"
 
     var body: some View {
-        HStack(spacing: 14) {
-            Portrait(drawing: look, size: 48, expression: row.expression, id: row.id, temper: temper)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.name).font(.headline)
-                Text(row.line)
-                    .font(.subheadline)
-                    .foregroundStyle(row.needs ? Color.siege : .secondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-            if row.needs { NeedsMark() }
+        RosterLine(name: row.name, line: row.line, needs: row.needs) {
+            Portrait(drawing: look, size: Metrics.rowFace, expression: row.expression, id: row.id, temper: temper)
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
     }
 }
 

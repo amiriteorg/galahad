@@ -176,31 +176,21 @@ struct RoomView: View {
     }
 }
 
-/// A room on the Roundtable: who is in it, its name, and one line of where it stands.
+/// A room on the Roundtable: who is in it (up to three faces, centred where a knight's face stands), its name, and one
+/// line of where it stands.
 struct RoomRowView: View {
     let row: RoomRow
     let looks: [String]
 
     var body: some View {
-        HStack(spacing: 14) {
+        RosterLine(name: row.name, line: row.line, needs: row.needs) {
+            let shown = Array(looks.prefix(3))
             ZStack {
-                ForEach(Array(looks.prefix(3).enumerated()), id: \.offset) { index, look in
-                    Portrait(drawing: look, size: 30)
-                        .offset(x: CGFloat(index - min(looks.count, 3) / 2) * 12, y: index % 2 == 0 ? -6 : 6)
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, look in
+                    Portrait(drawing: look, size: Metrics.rowFace * 0.6)
+                        .offset(x: (CGFloat(index) - CGFloat(shown.count - 1) / 2) * Metrics.rowFace * 0.2, y: index % 2 == 0 ? -Space.s1 : Space.s1)
                 }
             }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.name).font(.headline)
-                Text(row.line)
-                    .font(.subheadline)
-                    .foregroundStyle(row.needs ? Color.siege : .secondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-            if row.needs { NeedsMark() }
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
     }
 }
