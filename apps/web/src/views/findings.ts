@@ -24,7 +24,7 @@ const VERDICT: Record<string, { label: string; tone: Tone }> = {
 function openFinding(ctx: Ctx, i: InvestigationView): void {
   const state = findingState(i);
   const r = i.registration;
-  const block = (title: string, text: string | null) => (text ? h("div", { class: "stack tight" }, h("h3", { class: "small strong" }, title), h("p", { class: "small wrap-anywhere", style: "white-space:pre-wrap" }, text)) : null);
+  const block = (title: string, text: string | null) => (text ? h("div", { class: "stack tight" }, h("h3", { class: "small strong" }, title), h("p", { class: "small wrap-anywhere pre-wrap" }, text)) : null);
   const body = h(
     "div",
     { class: "stack" },
@@ -54,7 +54,7 @@ function openFinding(ctx: Ctx, i: InvestigationView): void {
                   h("span", { class: "avatar mono tiny" }, p.id),
                   h(
                     "div",
-                    { class: "grow stack tight", style: "min-width:0" },
+                    { class: "grow stack tight" },
                     h("span", { class: "small" }, p.statement),
                     h("span", { class: "tiny subtle" }, `Expected ${p.expected}. Refuted if ${p.refutedIf}.`),
                     p.value ? h("span", { class: "small mono tnum" }, p.value) : null,
@@ -68,7 +68,7 @@ function openFinding(ctx: Ctx, i: InvestigationView): void {
             "div",
             { class: "stack tight" },
             h("h3", { class: "small strong" }, "How the instruments were checked"),
-            h("ul", { class: "small", style: "margin:0;padding-left:1.2em" }, ...r.verification.map((v) => h("li", {}, v))),
+            h("ul", { class: "plain-list small" }, ...r.verification.map((v) => h("li", {}, v))),
           ),
           block("Decision rule", r.decision),
         )
@@ -78,7 +78,7 @@ function openFinding(ctx: Ctx, i: InvestigationView): void {
     i.artifact
       ? h(
           "div",
-          { class: "row", style: "justify-content:flex-end" },
+          { class: "row end" },
           button("Open the evidence", {
             icon: "archive",
             onClick: () => {
@@ -105,7 +105,7 @@ export const findingsView: View = (root, ctx, { scope, opts }) => {
       h("span", { class: "avatar" }, icon("flask", { size: 14 })),
       h(
         "div",
-        { class: "grow", style: "min-width:0" },
+        { class: "grow" },
         h("div", { class: "row wrap" }, h("span", { class: "strong small" }, i.question), badge(state.label, state.tone)),
         h(
           "div",

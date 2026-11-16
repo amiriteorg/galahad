@@ -100,7 +100,7 @@ export const projectsView: View = (root, ctx, { scope, opts }) => {
       "button",
       { class: "item chat-row", type: "button", onclick: () => ctx.navigate("chat", { conversation: c.id }) },
       h("span", { class: "avatar" }, icon("chat", { size: 14 })),
-      h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, `${c.count} message${c.count === 1 ? "" : "s"} · ${relativeTime(c.updatedAt)}${c.bank ? " · bank" : ""}`)),
+      h("div", { class: "grow" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, `${c.count} message${c.count === 1 ? "" : "s"} · ${relativeTime(c.updatedAt)}${c.bank ? " · bank" : ""}`)),
     );
 
   function list(): HTMLElement {
@@ -141,7 +141,7 @@ export const projectsView: View = (root, ctx, { scope, opts }) => {
         replace(
           memories,
           mine.length
-            ? h("div", { class: "card" }, h("div", { class: "rows" }, ...mine.slice(0, 20).map((m) => h("div", { class: "item" }, h("span", { class: "avatar" }, icon("memory", { size: 14 })), h("div", { class: "grow small", style: "min-width:0;overflow-wrap:anywhere" }, m.text, h("div", { class: "meta" }, m.trust))))))
+            ? h("div", { class: "card" }, h("div", { class: "rows" }, ...mine.slice(0, 20).map((m) => h("div", { class: "item" }, h("span", { class: "avatar" }, icon("memory", { size: 14 })), h("div", { class: "grow small wrap-anywhere" }, m.text, h("div", { class: "meta" }, m.trust))))))
             : h("p", { class: "small muted" }, "Nothing remembered in this project yet. What Galahad remembers in its chats lands here."),
         );
       })

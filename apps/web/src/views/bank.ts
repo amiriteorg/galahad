@@ -2,7 +2,7 @@ import type { BankStatusView } from "@galahad/core";
 import { isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { type BankCallback, budgetLabel, consentLeft, offReason } from "../lib/bank.ts";
-import { badge, busy, button, callout, empty, errorState, meter, pageHead, section, skeletonRows, switchControl } from "../ui/controls.ts";
+import { badge, busy, button, callout, empty, errorState, meter, pageHead, section, skeletonRows, spinner, switchControl } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -38,7 +38,7 @@ export const bankView: View = (root, ctx, { scope }) => {
       replace(outcome, callout("danger", callback.error ?? "The bank sent you back without an authorisation code.", { title: "Not connected" }));
       return;
     }
-    replace(outcome, callout("info", h("span", { class: "row", style: "gap:8px" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Confirming with the bank…")));
+    replace(outcome, callout("info", h("span", { class: "row" }, spinner("sm"), "Confirming with the bank…")));
     try {
       const done = await ctx.api.post<{ accounts: number; ibans: string[]; validUntil: string }>("/api/bank/complete", { code: callback.code, state: callback.state }, scope.signal);
       replace(outcome, callout("ok", `${done.accounts} account${done.accounts === 1 ? "" : "s"} (${done.ibans.join(", ")}), read-only, until ${new Date(done.validUntil).toLocaleDateString()}.`, { title: "Connected" }));
@@ -141,7 +141,7 @@ export const bankView: View = (root, ctx, { scope }) => {
                     "div",
                     { class: "item" },
                     h("span", { class: "avatar" }, icon("vault", { size: 14 })),
-                    h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "row wrap" }, h("span", { class: "strong small" }, a.name || "Account"), h("span", { class: "mono small" }, a.iban ?? ""), a.currency ? h("span", { class: "tiny subtle" }, a.currency) : null), b ? h("div", { class: "meta" }, h("span", {}, budgetLabel(b))) : null),
+                    h("div", { class: "grow" }, h("div", { class: "row wrap" }, h("span", { class: "strong small" }, a.name || "Account"), h("span", { class: "mono small" }, a.iban ?? ""), a.currency ? h("span", { class: "tiny subtle" }, a.currency) : null), b ? h("div", { class: "meta" }, h("span", {}, budgetLabel(b))) : null),
                   );
                 }),
               ),

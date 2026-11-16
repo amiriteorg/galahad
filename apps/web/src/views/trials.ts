@@ -50,13 +50,13 @@ function openTrial(ctx: Ctx, t: TrialView, prices: Record<string, Price>): void 
     ...t.answers.map((a) =>
       isCheck(a)
         ? // A hidden test or a verdict: it passed or it didn't.
-          h("div", { class: "item" }, h("div", { class: "grow", style: "min-width:0" }, h("span", { class: "mono strong small wrap-anywhere" }, a.key)), badge(checkLabel(a), a.got === null ? "neutral" : a.ok ? "ok" : "danger", a.ok ? "check" : "x"))
+          h("div", { class: "item" }, h("div", { class: "grow" }, h("span", { class: "mono strong small wrap-anywhere" }, a.key)), badge(checkLabel(a), a.got === null ? "neutral" : a.ok ? "ok" : "danger", a.ok ? "check" : "x"))
         : h(
             "div",
             { class: "item" },
             h(
               "div",
-              { class: "grow", style: "min-width:0" },
+              { class: "grow" },
               h("div", { class: "row wrap" }, h("span", { class: "mono strong small" }, a.key), h("span", { class: "tiny subtle" }, a.units)),
               h(
                 "div",
@@ -100,7 +100,7 @@ function openTrial(ctx: Ctx, t: TrialView, prices: Record<string, Price>): void 
             h(
               "div",
               { class: "item" },
-              h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "row wrap" }, h("span", { class: "strong small" }, l.role), h("span", { class: "mono tiny subtle wrap-anywhere" }, l.model))),
+              h("div", { class: "grow" }, h("div", { class: "row wrap" }, h("span", { class: "strong small" }, l.role), h("span", { class: "mono tiny subtle wrap-anywhere" }, l.model))),
               h("span", { class: "small muted tnum" }, `${plural(l.calls, "call")}${l.unknown ? ` (${l.unknown} unreported)` : ""} · ${tokensLabel(l.input)} in · ${tokensLabel(l.output)} out`),
             ),
           ),
@@ -117,7 +117,7 @@ function openTrial(ctx: Ctx, t: TrialView, prices: Record<string, Price>): void 
     t.artifact
       ? h(
           "div",
-          { class: "row", style: "justify-content:flex-end" },
+          { class: "row end" },
           button("Open its work", {
             icon: "archive",
             onClick: () => {
@@ -140,7 +140,7 @@ function trialRow(ctx: Ctx, t: TrialView, prices: Record<string, Price>): HTMLEl
     h("span", { class: "avatar" }, icon(t.status === "crashed" ? "alert" : t.score === 1 ? "check" : "x", { size: 14 })),
     h(
       "div",
-      { class: "grow", style: "min-width:0" },
+      { class: "grow" },
       h("div", { class: "row wrap" }, h("span", { class: "strong small" }, t.title), badge(mark.label, mark.tone)),
       h(
         "div",
@@ -171,7 +171,7 @@ function costNote(trials: readonly TrialView[], prices: Record<string, Price>): 
 function doneNote(trials: readonly TrialView[]): HTMLElement | null {
   const report = doneReport(trials);
   if (!report) return null;
-  return h("p", { class: "small muted", style: report.falseDone.count ? "color:var(--danger)" : null }, `His "done": ${doneLine(report)}.`);
+  return h("p", { class: report.falseDone.count ? "small danger-text" : "small muted" }, `His "done": ${doneLine(report)}.`);
 }
 
 function openRun(ctx: Ctx, r: RunSummary, held: string[], prices: Record<string, Price>): void {
@@ -225,7 +225,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
               h("span", { class: "avatar tnum strong" }, String(l.effort)),
               h(
                 "div",
-                { class: "grow stack tight", style: "min-width:0" },
+                { class: "grow stack tight" },
                 h("div", { class: "row wrap" }, h("span", { class: "strong small tnum" }, `Index ${percent(l.mean)}`), h("span", { class: "tiny subtle tnum" }, `${percent(l.low)}–${percent(l.high)}`)),
                 meter(l.mean, scoreTone(l.mean), `Galahad Index at effort ${l.effort}`),
                 h("div", { class: "meta tnum" }, h("span", {}, l.effort === 1 ? "one attempt a trial" : `${l.effort} attempts a trial`), h("span", {}, plural(l.n, "trial")), h("span", {}, plural(l.runs, "run"))),
@@ -252,7 +252,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
       h("span", { class: "avatar" }, icon("models", { size: 14 })),
       h(
         "div",
-        { class: "grow stack tight", style: "min-width:0" },
+        { class: "grow stack tight" },
         h("div", { class: "row wrap" }, h("span", { class: row.model ? "mono strong small wrap-anywhere" : "strong small" }, row.model ?? "The roster as it is"), h("span", { class: "strong small tnum" }, percent(row.quality.mean)), h("span", { class: "tiny subtle tnum" }, `${percent(row.quality.low)}–${percent(row.quality.high)}`)),
         meter(row.quality.mean, scoreTone(row.quality.mean), `Index with ${row.model ?? "the roster"}`),
         h("div", { class: "meta tnum" }, h("span", {}, plural(row.quality.n, "trial")), ...cost.map((c) => h("span", {}, c)), row.crashed ? h("span", {}, `${row.crashed} crashed`) : null),
@@ -308,13 +308,13 @@ export const trialsView: View = (root, ctx, { scope }) => {
               h("span", { class: "avatar" }, icon("review", { size: 14 })),
               h(
                 "div",
-                { class: "grow stack tight", style: "min-width:0" },
+                { class: "grow stack tight" },
                 h("div", { class: "row wrap" }, h("span", { class: "mono strong small wrap-anywhere" }, row.model), h("span", { class: "strong small tnum" }, `right ${percent(row.right.mean)}`), h("span", { class: "tiny subtle tnum" }, `${percent(row.right.low)}–${percent(row.right.high)}`)),
                 meter(row.right.mean, scoreTone(row.right.mean), `How often ${row.model} was right`),
                 h(
                   "div",
                   { class: "meta tnum" },
-                  h("span", { style: row.passedWrong.count ? "color:var(--danger)" : null }, `passed what it should fail: ${rate(row.passedWrong)}`),
+                  h("span", { class: row.passedWrong.count ? "danger-text" : null }, `passed what it should fail: ${rate(row.passedWrong)}`),
                   h("span", {}, `failed what it should pass: ${rate(row.failedRight)}`),
                   row.tokensPerCase !== null ? h("span", {}, `${tokensLabel(row.tokensPerCase)} tokens a case`) : null,
                 ),
@@ -337,7 +337,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
       h("span", { class: "avatar" }, icon("gauge", { size: 14 })),
       h(
         "div",
-        { class: "grow stack tight", style: "min-width:0" },
+        { class: "grow stack tight" },
         h(
           "div",
           { class: "row wrap" },
@@ -352,7 +352,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
           { class: "meta tnum" },
           h("span", { title: absoluteTime(r.startedAt) }, relativeTime(r.startedAt)),
           h("span", {}, `${r.solved}/${r.index.n} solved`),
-          falseDone ? h("span", { style: "color:var(--danger)" }, `${falseDone} called done and found short`) : null,
+          falseDone ? h("span", { class: "danger-text" }, `${falseDone} called done and found short`) : null,
           cost ? h("span", {}, cost.money ? `${cost.tokens} · ${cost.money}` : cost.tokens) : null,
           h("span", { class: "mono" }, r.version),
           r.models.length ? h("span", { class: "wrap-anywhere" }, r.models.join(", ")) : null,
@@ -421,7 +421,7 @@ export const trialsView: View = (root, ctx, { scope }) => {
               h("span", { class: "avatar" }, icon(p.solved === p.tries ? "check" : p.solved ? "minus" : "x", { size: 14 })),
               h(
                 "div",
-                { class: "grow stack tight", style: "min-width:0" },
+                { class: "grow stack tight" },
                 h("div", { class: "row wrap" }, h("span", { class: "strong small" }, p.title), h("span", { class: "tiny subtle" }, suite === "engineering" ? p.domain : `${p.domain} · ${p.problem}`)),
                 meter(p.mean, scoreTone(p.mean)),
                 h("div", { class: "meta tnum" }, h("span", {}, `${p.solved} of ${plural(p.tries, "try", "tries")} solved`), h("span", {}, `mean ${percent(p.mean)}`), h("span", {}, `latest ${relativeTime(p.latest.recordedAt)}`)),
