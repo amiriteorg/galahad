@@ -512,6 +512,43 @@ describe("work a planned restart cuts off", () => {
     }
   });
 
+  test("a reply cut off after it had done something waits for you; one that had only thought is taken up again by itself", async () => {
+    for (const acted of [true, false]) {
+      const clock = { now: 1_000_000 };
+      const store = new TeamStore(":memory:", () => clock.now);
+      store.saveTeammate({ id: "ada", name: "Ada" });
+      store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada"], turnBudget: 8 });
+      let replies = 0;
+      const node = () => {
+        const service = new TeamService({ store, restartWaitMs: 16 * MINUTE, shutdownGraceMs: 1, tickMs: 2, executeTask: async () => ({ verified: false, output: "" }), respond: async (_teammate, _room, _history, context) => {
+          replies += 1;
+          // (A message sent is something done; so are its notes, a task proposed, a knight made, a command run.)
+          if (acted) context.send({ room: "workshop" }, "On it.");
+          return new Promise<string>((resolve) => context.signal.addEventListener("abort", () => resolve(""), { once: true }));
+        } });
+        fixtures.push({ store, service });
+        return service;
+      };
+      const before = node();
+      before.post({ room: "workshop", text: "@ada, look into it." });
+      before.start(); await until(() => store.deliveries("workshop").some((d) => d.status === "running"));
+      await before.stop();
+      const reply = () => store.deliveries("workshop")[0]!;
+      expect([acted, reply().status, store.room("workshop")?.paused]).toEqual([acted, "interrupted", acted]);
+      expect(reply().error).toMatch(acted ? /after it had already done something .* so it waits for you/ : /picks up again by itself/);
+
+      const after = node(); after.start();
+      clock.now += 20 * MINUTE;
+      if (acted) {
+        await tick();
+        expect([reply().status, replies]).toEqual(["interrupted", 1]);
+      } else {
+        await until(() => replies === 2);
+      }
+      await after.stop();
+    }
+  });
+
   test("a crash leaves no such mark: what it cut off waits for you, its room held", async () => {
     const { clock, store, runs, node } = restartable();
     const before = node();

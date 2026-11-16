@@ -21,6 +21,12 @@ export interface TeamRunContext {
    * direct conversation, and what it then does here spends this same causal budget. */
   recruit(worker: TeamRecruitInput): Teammate;
   emit(progress: string): void;
+  /**
+   * Before anything that changes something (a message, notes, a task proposed, a knight made, a command in its VM, a
+   * connector's action): a reply a planned restart cuts off after this waits for you, instead of being taken up again
+   * by itself and doing it twice (TeamStore.interruptForRestart).
+   */
+  acting?(): void;
 }
 
 export interface TeamServiceOptions {
@@ -383,10 +389,11 @@ export class TeamService {
       const room = this.store.requireRoom(job.room);
       if (!member.enabled || room.paused || !room.members.includes(member.id)) throw new TeamError(403, "This knight may no longer act in this room.");
     };
-    const budget = () => { current(); if (++calls > 64) throw new TeamError(429, "This turn reached its team action limit."); };
+    const budget = () => { current(); if (++calls > 64) throw new TeamError(429, "This turn reached its team action limit."); this.store.acted(job.id); };
     const context: TeamRunContext = {
       signal,
       chainId: job.chainId,
+      acting: () => this.store.acted(job.id),
       send: (raw, text) => {
         budget();
         const target = teamInput(Destination, raw);

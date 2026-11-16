@@ -645,13 +645,28 @@ export class TeamStore {
       if (!row || row.status !== "running") return;
       const data = JSON.parse(row.data);
       const again = data.restart?.resumed === true;
-      data.restart = again ? { resumed: true } : { until };
+      // A reply is begun again from its start: one that had already done something (acted) would do it twice.
+      const acted = row.kind === "delivery" && data.acted === true;
+      if (again) data.restart = { resumed: true };
+      else if (acted) delete data.restart;
+      else data.restart = { until };
       const error = again
         ? "Galahad restarted during this work again. It was taken up once by itself already, so it waits for you: review it before resuming."
-        : `Galahad restarted during this work. It picks up again by itself once the command it was running has surely ended: at most ${minutes} minutes after the restart.`;
+        : acted
+          ? "Galahad restarted during this reply, after it had already done something (a message sent, a task proposed, a command run). Begun again it could do that twice, so it waits for you: review it before resuming."
+          : `Galahad restarted during this work. It picks up again by itself once the command it was running has surely ended: at most ${minutes} minutes after the restart.`;
       this.db.query("UPDATE team_jobs SET status='interrupted',data=?,error=?,updated_at=? WHERE id=?").run(JSON.stringify(data), error, this.now(), key);
-      if (again) this.pauseRoom(row.room, true);
+      if (again || acted) this.pauseRoom(row.room, true);
     })();
+  }
+  /** Running work did something that changes something (TeamRunContext.acting): said once, in its own row. */
+  acted(key: string): void {
+    const row = this.jobRow(key);
+    if (!row || row.status !== "running") return;
+    const data = JSON.parse(row.data);
+    if (data.acted === true) return;
+    data.acted = true;
+    this.db.query("UPDATE team_jobs SET data=? WHERE id=?").run(JSON.stringify(data), key);
   }
   /** Knights with work a restart cut off that isn't due yet: nothing else of theirs starts before it, in the same VM. */
   restartWaits(): Set<string> {

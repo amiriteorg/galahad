@@ -294,6 +294,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         describe: (call) => call.name in schema ? { title: call.name.replace(/_/g, " "), input: redact(JSON.stringify(call.input)).slice(0, 300) } : extra.describe(call),
         readOnly: (call) => call.name in schema ? call.name === "search_conversations" : extra.readOnly?.(call) ?? false,
         async run(call, signal) {
+          // Something that changes something: this reply, cut off by a restart from here on, waits for you (TeamRunContext.acting).
+          if (!tools.readOnly?.(call)) ctx.acting?.();
           if (!(call.name in schema)) return extra.run(call, signal);
           try {
             if (ctx.signal.aborted) throw new Error("Stopped");
