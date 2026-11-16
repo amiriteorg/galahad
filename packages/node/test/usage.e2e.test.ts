@@ -194,6 +194,19 @@ describe("the node's own count, and your prices", () => {
     expect(view.rows.find((r) => r.who === "arm:scribe")).toMatchObject({ role: "planner", model: "stand-in/counted", calls: 1, unknown: 0 });
   });
 
+  test("a coding tool's calls through the gateway are counted too, as its token's, under the role tool", async () => {
+    // (A knight's VM calls with a token labelled for the VM: sandbox:<its id>.)
+    const { token } = await call<{ token: string }>("mintToken", { label: "sandbox:0123456789", providers: ["stand-in"] });
+    const response = await fetch(`http://127.0.0.1:${port}/gw/stand-in/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "counted", stream: true, stream_options: { include_usage: true }, messages: [{ role: "user", content: "Quest: make the file" }] }),
+    });
+    expect(await response.text()).toContain('"usage"');
+    const view = await call<UsageView>("usage", {});
+    expect(view.rows.find((r) => r.who === "sandbox:0123456789")).toMatchObject({ role: "tool", model: "stand-in/counted", calls: 1, unknown: 0 });
+  });
+
   test("tokens always; money only where you've stated a price, yours alone to state", async () => {
     const before = await call<UsageView>("usage", {});
     expect(before.prices).toEqual({});

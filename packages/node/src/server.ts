@@ -140,6 +140,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
 import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
+import { GatewaySpend } from "./gateway-spend.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
 import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
@@ -1586,6 +1587,14 @@ export function createApp(ctx: AppContext) {
   const vmProvisioning = new Map<string, Promise<SandboxView>>();
   /** The providers each knight's VM token covers, as its host last said: those that had a key when the VM was made. */
   const leased = new Map<string, readonly string[]>();
+  /** What tools' calls through this node's gateway cost lately, by caller: a knight's task counts its VM's in its budget. */
+  const toolSpend = new GatewaySpend();
+  /** A tool's call through the gateway, answered: counted on the usage page (role "tool"), and kept for budgets. */
+  const toolCalled = (call: { label: string; provider: string; model: string; usage: Usage | null }): void => {
+    const model = `${call.provider}/${call.model}`;
+    ctx.usage.note(call.label, "tool", model, call.usage);
+    toolSpend.add(call.label, model, call.usage);
+  };
   async function teamWorkspace(member: Seat, signal: AbortSignal): Promise<SandboxView | null> {
     if (!member.workspace) return null;
     const view = await inProcess(teamOwner, signal).call<{ sandboxes: SandboxView[] }>("sandboxes", { on: member.workspace.node });
@@ -1808,6 +1817,8 @@ export function createApp(ctx: AppContext) {
         return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
       },
       prices: () => pricesOf(ctx.store),
+      // (A knight's VM on another node calls that node's gateway: its calls aren't counted here.)
+      toolSpent: (member, since) => (member.workspace && member.workspace.node === ctx.identity.id ? toolSpend.since(`sandbox:${member.workspace.id}`, since) : []),
       models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,
       modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),
@@ -3145,7 +3156,7 @@ export function createApp(ctx: AppContext) {
       if (path === "/search") return handleSandboxSearch(req, { tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}) });
       if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
-      return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
+      return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, onUsage: toolCalled });
     }
 
     if (req.method === "GET" && ctx.assets.has(path)) return ctx.assets.serve(path, req);
@@ -3154,7 +3165,7 @@ export function createApp(ctx: AppContext) {
 
     if (path.startsWith("/gw/")) {
       if (listener !== "loopback") throw new HttpError(404, "not found");
-      return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens });
+      return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, onUsage: toolCalled });
     }
 
     if (req.method === "POST" && path === "/link/pair/request") return json(ctx.pairing.request(await req.json()));

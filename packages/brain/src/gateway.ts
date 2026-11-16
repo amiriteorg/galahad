@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { randomId, redact, sha256B64u } from "@galahad/core";
+import { randomId, redact, sha256B64u, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
+import { usageReader } from "./gateway-usage.ts";
 import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers.ts";
 
 /*
@@ -114,6 +115,23 @@ export interface GatewayContext {
   vault: Vault;
   tokens: GatewayTokens;
   fetch?: typeof fetch;
+  /**
+   * Each model call a tool made through the gateway, once its answer has ended: who called (its token's label), the
+   * provider and the model it asked for, and its tokens as the answer said them (null: it said none). Read as the
+   * answer is forwarded (gateway-usage.ts), never changing or holding back a byte of it.
+   */
+  onUsage?(call: { label: string; provider: string; model: string; usage: Usage | null }): void;
+}
+
+/** The model a call asks for, from its body (JSON with a `model`), or "unknown". */
+function modelOf(body: ArrayBuffer | undefined): string {
+  if (!body || body.byteLength > 4 << 20) return "unknown";
+  try {
+    const model = (JSON.parse(new TextDecoder().decode(body)) as { model?: unknown }).model;
+    return typeof model === "string" && /^[\x21-\x7e]{1,200}$/.test(model) ? model : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 const json = (status: number, error: string) =>
@@ -155,10 +173,11 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   }
   for (const [name, value] of Object.entries(keyHeaders(provider))) headers.set(name, value);
   const target = `${provider.baseUrl.replace(/\/$/, "")}/${rest}${url.search}`;
+  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
   const upstream = await (ctx.fetch ?? fetch)(target, {
     method: request.method,
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    body,
     // The key is pinned to this provider's origin: it never chases a Location header to another host.
     redirect: "manual",
     signal: request.signal,
@@ -173,5 +192,29 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
     const text = redact(await upstream.text(), [provider.apiKey]);
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }
-  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+  // A model call (a POST) is counted as its answer goes by; a listing or a lookup isn't one.
+  const report = ctx.onUsage;
+  if (!report || request.method !== "POST" || !upstream.body) return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+  const reader = usageReader(provider.kind);
+  const call = { label: ctx.tokens.labelOf(token) ?? "unknown", provider: providerId, model: modelOf(body) };
+  const counted = upstream.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        try {
+          reader.feed(chunk);
+        } catch {
+          /* counting never gets in the answer's way */
+        }
+      },
+      flush() {
+        try {
+          report({ ...call, usage: reader.end() });
+        } catch {
+          /* nor does the one told of it */
+        }
+      },
+    }),
+  );
+  return new Response(counted, { status: upstream.status, headers: responseHeaders });
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addUsage, costOf, type NamedRule, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
+import { addUsage, costOf, mergeSpend, type NamedRule, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
 import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
@@ -13,6 +13,11 @@ export interface TeamRuntimeDeps {
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
   /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
   prices?(): Prices;
+  /**
+   * What the knight's coding tool's own calls cost since `since` (ms), through its VM's gateway token, by model (role
+   * "tool"): a task's budget counts them beside its own calls. Absent, or a VM on another node: none are known.
+   */
+  toolSpent?(teammate: Teammate, since: number): UsageLine[];
   /** The roster models of this knight's role that its harness can run on through the gateway, from its VM. */
   models(teammate: Teammate): AgentModel[];
   /** When there are none: roster models it could speak to, on providers its VM's gateway token doesn't cover. */
@@ -443,9 +448,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // Your tripwires, as the mind holds them before each command; each trip told to the ledger.
         ...(deps.rules ? { rules: deps.rules } : {}),
         tripped: (trip) => deps.tripped?.(teammate, task, trip),
-        // What this task's calls have cost so far, at your prices (a coding tool's own calls go through the gateway and aren't in it yet).
+        // What this task's calls have cost so far, at your prices: its own, and its coding tool's through the gateway.
         spentUsd: () => {
-          const cost = costOf(spent, deps.prices?.() ?? {});
+          const cost = costOf(mergeSpend(spent, deps.toolSpent?.(teammate, startedAt)), deps.prices?.() ?? {});
           return { usd: cost.usd, complete: cost.complete };
         },
         stopAgent: () => deps.stopWorker(teammate),
@@ -456,7 +461,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         },
       });
       // (A reply with no command to run spent a turn and ran nothing: it is not one of the commands.)
-      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent };
+      // (Its coding tool's calls are in what it spent, under the role "tool".)
+      const record: TeamTaskRecord = { startedAt, endedAt: Date.now(), ended: outcome.status, commands: commandsRun(outcome), revisions: outcome.revisions, spent: mergeSpend(spent, deps.toolSpent?.(teammate, startedAt)) };
       const verified = outcome.status === "done";
       // In a repository, the work itself is kept to read and to ship: a patch and a shipment of everything since the
       // start (what the knight committed included), as an artifact on the VM's host. Whatever happens is said.

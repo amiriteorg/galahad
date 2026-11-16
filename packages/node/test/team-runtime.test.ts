@@ -289,6 +289,24 @@ test("a task given a budget is told what is spent, wraps up past four fifths, an
   expect(f.bodies[2].messages.at(-1).content).toContain("(Spent $0.40 of $0.50: wrap up.");
 });
 
+test("a task's budget counts its coding tool's own calls through the gateway too, since the task began, and its record keeps them", async () => {
+  // Its own calls cost nothing at these prices; its tool's, $0.35 a call (100k in at $3 a million, 5k out at $10).
+  const tool = { prompt_tokens: 0, completion_tokens: 0 };
+  const asked: { teammate: string; since: number }[] = [];
+  const toolSpent = (teammate: Teammate, since: number) => {
+    asked.push({ teammate: teammate.id, since });
+    return [{ role: "tool", model: "plan/coder", calls: 2, unknown: 0, input: 200_000, output: 10_000, cached: 0, reasoning: 0 }];
+  };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("PASS\nFine.")], { prices: () => ({ "plan/coder": { input: 3, output: 10 } }), toolSpent }, tool);
+  const trail: string[] = [];
+  const started = Date.now();
+  const outcome = await f.runtime.executeTask(member, { ...task, budgetUsd: 0.5 }, { ...f.context, emit: (line) => trail.push(String(line)) });
+  // $0.70 spent by the tool alone: past the budget before the first command, so the work stops and is judged as it is.
+  expect(trail).toContain("Budget · spent ($0.70 of $0.50): the work stops");
+  expect(asked.every((a) => a.teammate === member.id && a.since >= started - 1000 && a.since <= Date.now())).toBe(true);
+  expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
+});
+
 test("a knight on the reviewer's role talks on it, but its work is the engineer's: the reviewer never does the work it checks", async () => {
   const knight: Teammate = { ...member, role: "reviewer" };
   const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => knight });
