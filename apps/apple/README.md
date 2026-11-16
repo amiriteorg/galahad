@@ -15,7 +15,7 @@ xcodebuild -project Galahad.xcodeproj -scheme Galahad \
 xcodebuild -project Galahad.xcodeproj -scheme GalahadMac -destination 'platform=macOS' -derivedDataPath build test
 ```
 
-The Mac's build is signed to run on this Mac only: no team, no account. Its Developer ID comes with M2.
+The Mac's build is signed to run on this Mac only: no team, no account, and no node inside (below: *Its node*).
 
 ## Running it against a throwaway node
 
@@ -55,7 +55,39 @@ small ways goes through `Galahad/UI/Platform.swift`, whose helpers are exactly t
 views are in `Galahad/Mac` (left out of the iOS target).
 
 Its key is made in the Secure Enclave and kept, wrapped by it, in the login keychain (`Core/DeviceKey.swift` says why).
-It keeps no copies of keys and takes no notifications yet: both need the profile its Developer ID brings (M2).
+It keeps no copies of keys and takes no notifications yet: both need a provisioning profile with its Developer ID.
+
+### Its node
+
+The app is also the node (docs/MAC.md, M2): its first run makes a Mac with no `~/.galahad` a node (start a fleet, join
+yours, or just the app), This Mac shows it (Settings, and the sidebar's foot), and its binary is the node's launcher. An
+everyday build carries no node, and says so. `scripts/mac-node-bundle.sh` puts it into a built app (the pinned Bun, the
+repository at HEAD with its dependencies, the agent's plist) and signs it; then the app must be in an Applications folder
+before it registers anything.
+
+```sh
+cd apps/apple && xcodegen generate
+xcodebuild -scheme GalahadMac -configuration Release -destination 'platform=macOS' -derivedDataPath build build
+scripts/mac-node-bundle.sh build/Build/Products/Release/Galahad.app                                   # ad hoc: this Mac
+GALAHAD_MAC_SIGN=developer-id scripts/mac-node-bundle.sh build/Build/Products/Release/Galahad.app     # a release
+ditto -c -k --keepParent build/Build/Products/Release/Galahad.app /tmp/Galahad.zip
+xcrun notarytool submit /tmp/Galahad.zip --keychain-profile galahad-notary --wait && xcrun stapler staple build/Build/Products/Release/Galahad.app
+```
+
+The same binary, from a terminal (what a Mac with no screen to click is tried with):
+
+```sh
+Galahad.app/Contents/MacOS/Galahad --serve-node                     # the node, as launchd runs it
+Galahad.app/Contents/MacOS/Galahad --cli doctor                     # the bundled CLI
+Galahad.app/Contents/MacOS/Galahad --agent status                   # register | unregister | restart
+open --stdout /tmp/out.txt /Applications/Galahad.app --args --first-run start --name mini --fleet camelot
+Galahad.app/Contents/MacOS/Galahad --this-mac                       # what This Mac shows
+```
+
+`--first-run` makes the Mac a node, so run it in a VM or on the Mac that will serve, never on a laptop by mistake; through
+`open`, it runs in your session, where the keys go to the Keychain. Updates come through Sparkle (2.10.1), from
+`https://galahad.sh/mac/appcast.xml`; they stay off until `GALAHAD_SPARKLE_PUBLIC_KEY` holds the owner's public key (Sparkle's
+`generate_keys`, the private half kept in their keychain, never here).
 
 `MacShots` pictures the Mac app as it looks, light and dark, against a dev node: it pairs as you would, the codes
 compared before it approves, and pictures the app's own windows (an app may picture its own windows without being let
