@@ -169,7 +169,35 @@ export class TeamStore {
     const kept = this.record(id);
     return kept && kept.removedAt === undefined ? kept : null;
   }
-  teammates(): Teammate[] { return this.records().filter((t) => t.removedAt === undefined); }
+  /** Your knights in the order you gave them; one you didn't place comes after, by handle. */
+  teammates(): Teammate[] {
+    const here = this.records().filter((t) => t.removedAt === undefined);
+    const order = this.arrangement().order;
+    const at = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
+    return here.sort((a, b) => at(a.id) - at(b.id) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+  /** Your order of the knights (only those still here), and who leads the Roundtable: Galahad (`galahad`) unless you chose a knight. */
+  arrangement(): { order: string[]; primary: string } {
+    const here = new Set(this.records().filter((t) => t.removedAt === undefined).map((t) => t.id));
+    const setting = (key: string) => this.db.query<DocRow, [string]>("SELECT value FROM team_settings WHERE key=?").get(key)?.value;
+    const order = ((): string[] => { try { const parsed = JSON.parse(setting("order") ?? "[]"); return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && here.has(id)) : []; } catch { return []; } })();
+    const primary = setting("primary");
+    return { order, primary: primary && here.has(primary) ? primary : TEAM_GALAHAD };
+  }
+  /** Yours alone (the route says so): the knights' order, and who leads. Every name must be a knight of yours (or, to lead, Galahad). */
+  arrange(input: { order?: string[]; primary?: string }): { order: string[]; primary: string } {
+    const here = new Set(this.teammates().map((t) => t.id));
+    if (input.order) {
+      const unknown = input.order.filter((id) => !here.has(id));
+      if (unknown.length) throw new TeamError(400, `No knight of yours is ${unknown.map((id) => `"${id}"`).join(", ")}.`);
+      if (new Set(input.order).size !== input.order.length) throw new TeamError(400, "Each knight is in the order once.");
+    }
+    if (input.primary !== undefined && input.primary !== TEAM_GALAHAD && !here.has(input.primary)) throw new TeamError(400, `No knight of yours is "${input.primary}": the Roundtable is led by Galahad or one of your knights.`);
+    const put = (key: string, value: string) => this.db.query("INSERT INTO team_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
+    if (input.order) put("order", JSON.stringify(input.order));
+    if (input.primary !== undefined) put("primary", input.primary);
+    return this.arrangement();
+  }
   /** The workers you removed. Their handles stay taken and their names stay beside what they said. */
   removed(): Teammate[] { return this.records().filter((t) => t.removedAt !== undefined); }
   private putTeammate(value: Teammate): Teammate {
@@ -342,10 +370,15 @@ export class TeamStore {
       for (const member of room.members) this.requireTeammate(member);
       if (by.teammate && !by.chainId) throw new TeamError(403, "A knight message must belong to its current conversation.");
       if (by.chainId && !this.db.query("SELECT id FROM team_chains WHERE id = ?").get(by.chainId)) throw new TeamError(404, "No such conversation chain.");
-      const named = mentioned(input.text, room.members.map((member) => this.requireTeammate(member)));
-      // Galahad hears what names him, and what you say to a room of knights without naming one: he answers it, or names
-      // who should take it up. In a knight's own conversation with you, your words stay the knight's unless you name him.
-      const forGalahad = !by.galahad && (mentioned(input.text, GALAHAD_SEAT).length > 0 || (!by.teammate && !room.direct && !named.length));
+      let named = mentioned(input.text, room.members.map((member) => this.requireTeammate(member)));
+      // What you say to a room of knights without naming one is the lead's: the knight you made primary when it sits
+      // here (it alone hears it), Galahad otherwise.
+      const primary = this.arrangement().primary;
+      const unnamed = !by.galahad && !by.teammate && !by.reply && !room.direct && !named.length;
+      if (unnamed && primary !== TEAM_GALAHAD && room.members.includes(primary)) named = [primary];
+      // Galahad hears what names him, and what you say to a room of knights without naming one when he leads it: he answers
+      // it, or names who should take it up. In a knight's own conversation with you, your words stay the knight's unless you name him.
+      const forGalahad = !by.galahad && (mentioned(input.text, GALAHAD_SEAT).length > 0 || (unnamed && !named.length));
       // Those it names with @ (by handle or name) hear it. One that names nobody here reaches everyone, unless it was his
       // to answer, or is his answer: that was for whoever asked.
       const recipients = (named.length || forGalahad || by.reply ? named : room.members).filter((member) => member !== by.teammate);
@@ -513,7 +546,8 @@ export class TeamStore {
     const direct = this.rooms().filter((room) => room.direct).sort((a, b) => a.members.length - b.members.length);
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
     const computer = this.computer();
-    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}) };
+    const { order, primary } = this.arrangement();
+    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary };
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {

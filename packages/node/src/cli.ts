@@ -69,6 +69,8 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a knight's harness can search and keep notes in its own VM, where the
                                     VM's image has the pinned Engram; off (the default), nothing is given
+  roundtable order <knight,knight,...>  your order of the knights, on every device (those not named come after)
+  roundtable primary <knight|galahad>   who leads the Roundtable: it answers what you say to a room without a name
   roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]
                   [--temperament calm|curious|lively] [--reset]
                                     choose which of the drawings that knight is, or read its saved appearance

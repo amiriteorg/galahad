@@ -47,7 +47,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const state = await api.call<TeamSnapshot>("team");
     // (One Galahad made for himself says so: in your conversation with him, or by the worker that asked for it.)
     const maker = (m: Teammate) => (!m.createdBy || m.createdBy === "owner" ? "" : ` · made by ${m.createdBy === "galahad" ? "Galahad" : m.createdBy}`);
-    for (const m of state.teammates) print(`${m.id} · ${plainLine(m.name)} · ${m.harness} · ${m.enabled ? "enabled" : "paused"} · ${m.turnsToday}/${m.dailyTurns} turns today · ${m.workspace ? `VM ${m.workspace.id} on ${m.workspace.node}` : "VM not provisioned"}${maker(m)}`);
+    for (const m of state.teammates) print(`${m.id} · ${plainLine(m.name)}${state.primary === m.id ? " · leads the Roundtable" : ""} · ${m.harness} · ${m.enabled ? "enabled" : "paused"} · ${m.turnsToday}/${m.dailyTurns} turns today · ${m.workspace ? `VM ${m.workspace.id} on ${m.workspace.node}` : "VM not provisioned"}${maker(m)}`);
     // (One you removed is named still: its handle stays taken.)
     for (const m of state.removed ?? []) print(`${m.id} · ${plainLine(m.name)} · removed${m.conversations?.length ? ` · its conversations, kept to read: ${m.conversations.map((room) => `galahad roundtable chat ${room}`).join(", ")}` : ""}`);
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
@@ -61,6 +61,19 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const id = args[0];
     const result = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: string("name") ?? id, ...(string("instructions") ? { instructions: string("instructions") } : {}), ...(string("role") ? { role: string("role") } : {}), ...(string("agent") ? { harness: string("agent") } : {}), ...(string("repo") ? { repository: string("repo") } : {}), ...(string("limit") ? { dailyTurns: Number(string("limit")) } : {}) });
     print(`${plainLine(result.teammate.name)} is ready to chat. VM work is provisioned on a KVM/Kata host when first needed.`); return;
+  }
+  if (sub === "order") {
+    // Your order of the knights: every device shows them so. Those not named come after, by handle.
+    const ids = args.flatMap((arg) => arg.split(",")).map((id) => id.trim()).filter(Boolean);
+    if (!ids.length) throw new Error("usage: galahad roundtable order <knight,knight,...>");
+    const { order } = await api.call<{ order: string[] }>("arrangeTeam", { order: ids });
+    print(`In this order now: ${order.join(", ")}.`); return;
+  }
+  if (sub === "primary") {
+    // Who leads the Roundtable: what you say to a room without naming anyone is theirs to answer, and they come first.
+    if (args.length !== 1) throw new Error("usage: galahad roundtable primary <knight|galahad>");
+    const { primary } = await api.call<{ primary: string }>("arrangeTeam", { primary: args[0] });
+    print(primary === "galahad" ? "Galahad leads the Roundtable." : `${primary} leads the Roundtable: what you say to a room it sits in without naming anyone is its to answer.`); return;
   }
   if (sub === "avatar") {
     const state = await api.call<TeamSnapshot>("team");

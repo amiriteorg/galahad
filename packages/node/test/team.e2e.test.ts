@@ -172,3 +172,18 @@ test("real API: a role you made is yours to remove, but not while a knight works
   expect((await api("setRoster", { role: "swift", models: [] })).roster.swift).toMatchObject({ configured: false, custom: false });
   await api("removeTeammate", { id: "rolly" });
 });
+
+test("real API: you arrange the knights and choose who leads; no agent can, and every device reads it from the team", async () => {
+  await api("saveTeammate", { id: "zed", name: "Zed", role: "engineer" });
+  const before = (await api<TeamSnapshot>("team")).teammates.map((m) => m.id);
+  const order = [...before].reverse();
+  expect(await api("arrangeTeam", { order, primary: "zed" })).toEqual({ order, primary: "zed" });
+  const after = await api<TeamSnapshot>("team");
+  expect(after.teammates.map((m) => m.id)).toEqual(order);
+  expect(after).toMatchObject({ order, primary: "zed" });
+  const { token } = await api("mintArm", { label: "arranger", scopes: ["chat", "mind:read", "mind:write", "sandbox"] });
+  expect((await request("arrangeTeam", { primary: "galahad" }, token)).status).toBe(403);
+  expect((await request("arrangeTeam", { primary: "nobody" })).status).toBe(400);
+  expect(await api("arrangeTeam", { primary: "galahad" })).toMatchObject({ primary: "galahad" });
+  await api("removeTeammate", { id: "zed" });
+});

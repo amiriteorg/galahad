@@ -119,6 +119,13 @@ export const TeamGiveInput = z.strictObject({
 });
 export type TeamGiveInput = z.infer<typeof TeamGiveInput>;
 
+/** Your order of the knights, and who leads the Roundtable (`galahad`, or one of your knights). Each is optional. */
+export const TeamArrangeInput = z.strictObject({
+  order: z.array(TeammateId).max(64).refine((ids) => new Set(ids).size === ids.length, "each knight is in the order once").optional(),
+  primary: z.union([z.literal(TEAM_GALAHAD), TeammateId]).optional(),
+});
+export type TeamArrangeInput = z.infer<typeof TeamArrangeInput>;
+
 /** `approve`: a task a knight proposed starts (a task only); `stop` declines one. */
 export const TeamControlInput = z.strictObject({
   room: TeamRoomId.optional(),
@@ -292,6 +299,10 @@ export interface TeamSnapshot {
   engram?: boolean;
   /** Galahad's own computer, when he has one: his persistent VM, made and watched as a knight's is (under his handle). */
   computer?: TeamWorkspace;
+  /** Your order of the knights (`teammates` comes in it already; absent from an older node). */
+  order?: string[];
+  /** Who leads the Roundtable: `galahad`, or the knight you chose (absent from an older node: Galahad). */
+  primary?: string;
 }
 
 export interface TeamRoomView extends TeamRoom {

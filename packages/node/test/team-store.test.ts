@@ -743,3 +743,46 @@ test("what was said is searched in the rooms asked, every word of the question, 
   expect(store.searchMessages([], "release")).toEqual([]);
   store.close();
 });
+
+describe("your order of the knights, and who leads", () => {
+  test("the knights come in the order you gave; one you didn't place comes after them, by handle", () => {
+    const store = make(); setup(store); store.saveTeammate({ id: "bors", name: "Bors" });
+    expect(store.teammates().map((t) => t.id)).toEqual(["ada", "bors", "lin"]);
+    store.arrange({ order: ["lin", "bors"] });
+    expect(store.teammates().map((t) => t.id)).toEqual(["lin", "bors", "ada"]);
+    expect(store.snapshot()).toMatchObject({ order: ["lin", "bors"], primary: "galahad" });
+  });
+
+  test("Galahad leads by default: your words to a room that name nobody are his to answer", () => {
+    const store = make(); setup(store);
+    store.post({ room: "workshop", text: "What's next?" });
+    expect(store.queuedAnswers()).toHaveLength(1);
+    expect(store.deliveries("workshop")).toEqual([]);
+  });
+
+  test("a knight you made primary leads a room it sits in: what names nobody goes to it alone; a room without it stays Galahad's", () => {
+    const store = make(); setup(store);
+    store.arrange({ primary: "lin" });
+    expect(store.snapshot().primary).toBe("lin");
+    store.post({ room: "workshop", text: "What's next?" });
+    expect(store.queuedAnswers()).toEqual([]);
+    expect(store.deliveries("workshop").map((d) => d.teammate)).toEqual(["lin"]);
+    // Naming him still reaches him; a room the primary isn't in is still his to lead.
+    store.post({ room: "workshop", text: "@galahad what do you think?" });
+    expect(store.queuedAnswers()).toHaveLength(1);
+    store.saveRoom({ id: "corner", name: "Corner", members: ["ada"] });
+    store.post({ room: "corner", text: "And here?" });
+    expect(store.queuedAnswers().map((a) => a.room)).toContain("corner");
+  });
+
+  test("the primary must be Galahad or a knight of yours, and the order names only yours; a primary removed hands the lead back", () => {
+    const store = make(); setup(store);
+    expect(() => store.arrange({ primary: "nobody" })).toThrow(TeamError);
+    expect(() => store.arrange({ order: ["ada", "nobody"] })).toThrow(TeamError);
+    store.arrange({ primary: "ada", order: ["lin", "ada"] });
+    store.remove("ada");
+    expect(store.snapshot()).toMatchObject({ primary: "galahad", order: ["lin"] });
+    store.arrange({ primary: "galahad" });
+    expect(store.snapshot().primary).toBe("galahad");
+  });
+});

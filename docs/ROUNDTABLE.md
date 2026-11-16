@@ -52,6 +52,10 @@ What he makes is bounded, marked and yours to change:
 
 His knights answer on the Roundtable page, in their own time, not inside the answer that briefed them. Ask Galahad later what came of it and he reads the conversation. He cannot remove a knight: that is yours, described under [Removing a knight](#removing-a-knight).
 
+## Your order, and who leads
+
+The knights come in the order you give them, on every device: drag them in the app (on the iPhone, Edit), or `galahad roundtable order lin,ada,bors`; those you didn't place come after, by handle. One leads the Roundtable: Galahad, unless you choose a knight (**Make primary** in the app, `galahad roundtable primary lin`; `galahad` gives it back to him). The one who leads comes first, and what you say to a room it sits in without naming anyone is its to answer: it is told it leads, answers itself when it can, and brings in only the knights the work needs. A room it doesn't sit in is still Galahad's to lead, and `@galahad` still reaches him anywhere. A knight you remove hands the lead back to him. (`arrangeTeam`, yours alone: no agent can reorder your knights or choose who leads.)
+
 ## Rooms, DMs and bounded coordination
 
 **Galahad sits in every room, and leads it.** What you say in a room without naming a knight is his: he answers it there, as himself, with the tools he has in your chat with him (within what the device you wrote on may do now), and brings in the knights the work needs by naming them with `@` in his answer. Only those he names hear it, so one question costs his turn and theirs, not a turn of every knight's. Name him (`@galahad`) to ask him anywhere, a knight's own conversation with you included, where your words are otherwise the knight's alone. His answer spends a turn of the conversation's allowance as a knight's reply does, and one answer of his waits per room, for its newest words. A knight can name him too, and he answers, but with no tools: a knight's words never give him leave to act. Pausing or stopping a room stops his answer there; if the node stops while he is answering, the answer is marked cut off and is never given twice: ask again.
