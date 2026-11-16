@@ -631,6 +631,8 @@ export interface ListRowOptions {
   sub?: Child;
   /** Small facts under that, side by side: a time, a count, a badge (meta()). */
   meta?: Child[];
+  /** More under its text, a step below it: a quotation, a receipt that opens. */
+  body?: Child;
   /** At its end: its actions, a badge, a control. */
   trail?: Child;
   /** The whole row goes somewhere (a link) or does something (a button). */
@@ -666,6 +668,7 @@ export function listRow(options: ListRowOptions): HTMLElement {
       h("div", { class: "item-title" }, options.title),
       options.sub ? h("div", { class: "item-sub" }, options.sub) : null,
       options.meta?.some(Boolean) ? meta(...options.meta) : null,
+      options.body ? h("div", { class: "item-body" }, options.body) : null,
     ),
     options.trail ? h("div", { class: "item-actions" }, options.trail) : null,
     options.chevron ? icon("chevron-right", { size: 16, class: "item-chevron" }) : null,

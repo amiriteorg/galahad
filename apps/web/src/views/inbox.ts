@@ -4,7 +4,7 @@ import { isWaiting } from "../live.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { ActionClass } from "../types.ts";
-import { badge, busy, button, callout, empty, pageHead, section, skeletonRows, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, card, disclosure, empty, formActions, linkButton, listRow, note, pageBody, pageHead, rows, section, skeletonRows, type Tone } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -71,7 +71,7 @@ function keptWork(ctx: Ctx, action: ActionView): HTMLElement | null {
 /** An action Galahad wants to take that the oath says to ask about. Nothing leaves until you approve it. */
 /** A loop Galahad drafted when you asked for one in chat: it runs nothing until you add it here (or dismiss it). */
 function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
-  const note = h("div");
+  const outcome = h("div");
   const mayAdd = ctx.can("brain:write");
   const add = button(draft.replaces ? "Add, replacing yours" : "Add loop", { variant: "primary", icon: "check" });
   const dismiss = button("Dismiss", { icon: "x" });
@@ -87,38 +87,29 @@ function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
           toast("Dismissed", { tone: "info", description: "Nothing was added." });
         }
       } catch (error) {
-        replace(note, callout("danger", errorMessage(error), { title: adding ? "Couldn't add it" : "Couldn't dismiss it" }));
+        replace(outcome, callout("danger", errorMessage(error), { title: adding ? "Couldn't add it" : "Couldn't dismiss it" }));
       }
       await ctx.live.refreshLoopDrafts();
     });
   add.addEventListener("click", () => void answer(add, true));
   dismiss.addEventListener("click", () => void answer(dismiss, false));
-  return h(
-    "article",
-    { class: "card accent", "aria-label": `Galahad drafted a loop: ${draft.label ?? draft.name}` },
-    h(
-      "div",
-      { class: "card-body stack" },
-      h(
-        "div",
-        { class: "row top" },
-        h("span", { class: "avatar agent" }, icon("repeat", { size: 16 })),
-        h(
-          "div",
-          { class: "grow stack tight" },
-          h("div", { class: "row wrap" }, h("span", { class: "strong" }, draft.label ?? draft.name), h("span", { class: "mono tiny subtle" }, draft.name)),
-          h("div", { class: "small" }, `${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}`),
-          h("div", { class: "small muted" }, describeTask(draft.task)),
-          h("div", { class: "tiny subtle row wrap" }, h("span", {}, `Drafted by ${draft.by === "galahad" ? "Galahad" : draft.by}`), h("span", { title: new Date(draft.at).toLocaleString() }, relativeTime(draft.at))),
-        ),
-      ),
-      draft.why ? h("div", { class: "quote small" }, draft.why) : null,
-      h("p", { class: "tiny subtle" }, draft.replaces ? `Adding it replaces your loop ${draft.name}. ` : "", `It runs nothing until you add it. Unanswered, it's gone ${relativeTime(draft.expires)}.`),
-      mayAdd
-        ? h("div", { class: "row wrap", style: "justify-content:flex-end" }, dismiss, add)
-        : callout("quiet", h("span", {}, "This device can't add loops (no brain:write scope). Add it from one that can, or on a node: ", h("code", {}, `galahad loop add --draft ${draft.id}`))),
-      note,
-    ),
+  return card(
+    { tone: "accent", label: `Galahad drafted a loop: ${draft.label ?? draft.name}` },
+    listRow({
+      lead: "repeat",
+      leadTone: "agent",
+      top: true,
+      title: h("span", { class: "row wrap" }, h("span", {}, draft.label ?? draft.name), h("span", { class: "mono tiny subtle" }, draft.name)),
+      sub: `${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}`,
+      meta: [h("span", {}, `Drafted by ${draft.by === "galahad" ? "Galahad" : draft.by}`), h("span", { title: new Date(draft.at).toLocaleString() }, relativeTime(draft.at))],
+    }),
+    h("p", { class: "small muted wrap-anywhere" }, describeTask(draft.task)),
+    draft.why ? h("div", { class: "quote small" }, draft.why) : null,
+    note(draft.replaces ? `Adding it replaces your loop ${draft.name}. ` : "", `It runs nothing until you add it. Unanswered, it's gone ${relativeTime(draft.expires)}.`),
+    mayAdd
+      ? formActions(dismiss, add)
+      : callout("quiet", h("span", {}, "This device can't add loops (no brain:write scope). Add it from one that can, or on a node: ", h("code", {}, `galahad loop add --draft ${draft.id}`))),
+    outcome,
   );
 }
 
@@ -128,7 +119,7 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const node = deviceName(ctx, action.node);
   const asked = hlcMs(action.requestedAt);
   const expires = h("span", { class: "tnum expires", "data-expires": String(action.expires) }, `Expires ${relativeTime(action.expires)}`);
-  const note = h("div");
+  const outcome = h("div");
   const admin = ctx.can("fleet:admin");
   const approve = button(destructive ? "Approve delete…" : "Approve…", { variant: "primary", icon: "check" });
   const decline = button("Decline", { variant: "danger", icon: "x" });
@@ -145,7 +136,7 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
         });
         await ctx.live.refreshActions();
       } catch (error) {
-        replace(note, callout("danger", errorMessage(error), { title: yes ? "Couldn't approve" : "Couldn't decline" }));
+        replace(outcome, callout("danger", errorMessage(error), { title: yes ? "Couldn't approve" : "Couldn't decline" }));
         await ctx.live.refreshActions();
       }
     });
@@ -183,75 +174,53 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
     }),
   );
 
-  return h(
-    "article",
-    { class: `card ${destructive ? "danger" : "accent"}`, "aria-label": `Galahad asks to ${info?.label.toLowerCase() ?? action.class}: ${action.target}` },
-    h(
-      "div",
-      { class: "card-body stack" },
-      h(
-        "div",
-        { class: "row top" },
-        h("span", { class: "avatar agent" }, icon("mark", { size: 16 })),
-        h(
-          "div",
-          { class: "grow stack tight" },
-          h(
-            "div",
-            { class: "row wrap" },
-            h("span", { class: "strong mono" }, `${action.connector}.${action.tool}`),
-            info ? badge(info.label.toLowerCase(), info.tone, info.icon) : badge(action.class, "warn"),
-          ),
-          h("div", { class: "mono small wrap-anywhere" }, action.target),
-          h("div", { class: "tiny subtle row wrap" }, h("span", {}, "Asked by ", askedBy(action.by)), h("span", {}, `on ${node}`), asked ? h("span", { title: new Date(asked).toLocaleString() }, relativeTime(asked)) : null),
-        ),
-      ),
-      action.why ? h("div", { class: "quote small" }, action.why) : null,
-      argsList(action.args),
-      keptWork(ctx, action),
-      h(
-        "p",
-        { class: "tiny subtle" },
-        expires,
-        ". No answer means no. ",
-        destructive
-          ? "Deleting anything persistent asks you, unless a standing order of yours names exactly this."
-          : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them.",
-      ),
-      admin
-        ? h("div", { class: "row wrap", style: "justify-content:flex-end" }, decline, similar, approve)
-        : callout("quiet", h("span", {}, "This device can't answer (no fleet:admin scope). Answer from one that can, or on a node: ", h("code", {}, `galahad action approve ${action.id}`))),
-      note,
+  return card(
+    { tone: destructive ? "danger" : "accent", label: `Galahad asks to ${info?.label.toLowerCase() ?? action.class}: ${action.target}` },
+    listRow({
+      lead: "mark",
+      leadTone: "agent",
+      top: true,
+      title: h("span", { class: "row wrap" }, h("span", { class: "mono" }, `${action.connector}.${action.tool}`), info ? badge(info.label.toLowerCase(), info.tone, info.icon) : badge(action.class, "warn")),
+      sub: h("span", { class: "mono" }, action.target),
+      meta: [h("span", {}, "Asked by ", askedBy(action.by)), h("span", {}, `on ${node}`), asked ? h("span", { title: new Date(asked).toLocaleString() }, relativeTime(asked)) : null],
+    }),
+    action.why ? h("div", { class: "quote small" }, action.why) : null,
+    argsList(action.args),
+    keptWork(ctx, action),
+    note(
+      expires,
+      ". No answer means no. ",
+      destructive
+        ? "Deleting anything persistent asks you, unless a standing order of yours names exactly this."
+        : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them.",
     ),
+    admin
+      ? formActions(decline, similar, approve)
+      : callout("quiet", h("span", {}, "This device can't answer (no fleet:admin scope). Answer from one that can, or on a node: ", h("code", {}, `galahad action approve ${action.id}`))),
+    outcome,
   );
 }
 
 function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
   const state = STATE[action.state] ?? { label: action.state, tone: "neutral" as Tone };
   const asked = hlcMs(action.requestedAt);
-  return h(
-    "div",
-    { class: "item" },
-    h("span", { class: "avatar", "data-tone": state.tone }, icon(action.state === "done" ? "check" : action.state === "failed" ? "x" : action.state === "approved" ? "external" : "minus", { size: 14 })),
-    h(
-      "div",
-      { class: "grow" },
-      h("div", { class: "row wrap" }, h("span", { class: "strong mono small" }, `${action.connector}.${action.tool}`), badge(state.label, state.tone)),
-      h("div", { class: "mono tiny subtle wrap-anywhere" }, action.target),
-      h(
-        "div",
-        { class: "meta" },
-        h("span", {}, "asked by ", askedBy(action.by)),
-        asked ? h("span", {}, relativeTime(asked)) : null,
-        action.order
-          ? h("span", { class: "row", style: "gap:4px" }, icon("scroll", { size: 12 }), `answered by your standing order "${action.order.label}"`)
-          : action.decidedVia
-            ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`)
-            : null,
-      ),
-      action.receipt ? h("details", { class: "process", style: "margin-top:6px" }, h("summary", { "data-key": `receipt:${action.id}` }, icon("chevron-right", { size: 14, class: "chev" }), "Receipt"), h("pre", { class: "result", style: "margin-top:6px" }, action.receipt)) : null,
-    ),
-  );
+  return listRow({
+    lead: action.state === "done" ? "check" : action.state === "failed" ? "x" : action.state === "approved" ? "external" : "minus",
+    leadTone: state.tone,
+    top: true,
+    title: h("span", { class: "row wrap" }, h("span", { class: "mono" }, `${action.connector}.${action.tool}`), badge(state.label, state.tone)),
+    sub: h("span", { class: "mono" }, action.target),
+    meta: [
+      h("span", {}, "asked by ", askedBy(action.by)),
+      asked ? h("span", {}, relativeTime(asked)) : null,
+      action.order
+        ? h("span", { class: "row tight" }, icon("scroll", { size: 12 }), `answered by your standing order "${action.order.label}"`)
+        : action.decidedVia
+          ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`)
+          : null,
+    ],
+    body: action.receipt ? h("details", { class: "process" }, h("summary", { "data-key": `receipt:${action.id}` }, icon("chevron-right", { size: 14, class: "chev" }), "Receipt"), h("pre", { class: "result process-body" }, action.receipt)) : null,
+  });
 }
 
 export const inboxView: View = (root, ctx, { scope }) => {
@@ -260,8 +229,8 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const draftsBox = h("div", { class: "stack" });
   const connectorsBox = h("div", { class: "stack" });
   const actionsBox = h("div", { class: "stack" });
-  const noticesBox = h("div", { class: "card" });
-  const historyRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
+  const noticesBox = card({ flush: true });
+  const historyRows = rows();
   const historySummary = h("span", { class: "small strong" });
   const allClear = h("div");
   const admin = ctx.can("fleet:admin");
@@ -318,9 +287,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
     const write = ctx.can("fleet:admin");
     replace(
       noticesBox,
-      h(
-        "div",
-        { class: "rows" },
+      rows(
         ...list.map((n) =>
           findingRow(
             ctx,
@@ -364,11 +331,10 @@ export const inboxView: View = (root, ctx, { scope }) => {
     replace(
       allClear,
       !loaded
-        ? h("div", { class: "card" }, skeletonRows(2, { avatar: true }))
+        ? card({ flush: true }, skeletonRows(2, { avatar: true }))
         : pending === 0
-        ? h(
-            "div",
-            { class: "card" },
+        ? card(
+            { flush: true },
             empty({
               icon: "check-circle",
               title: "Nothing needs you",
@@ -383,37 +349,26 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const pairingsSection = section("Devices asking to join", {}, pairingsBox);
   const actionsSection = section(
     "Galahad asks your leave",
-    {},
-    h(
-      "p",
-      { class: "tiny subtle" },
-      "Anything outward, and every delete, waits for you unless a standing order answers it. Approved, it's sent once; no answer in 24 hours means no.",
-    ),
+    { note: "Anything outward, and every delete, waits for you unless a standing order answers it. Approved, it's sent once; no answer in 24 hours means no." },
     actionsBox,
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);
+  const go = (text: string, place: string) => linkButton(text, `#/${place}`, { variant: "ghost", size: "sm", next: true });
   const connectorsSection = section(
     "Connectors asked for",
-    { actions: h("a", { href: "#/connectors", class: "btn ghost sm" }, "Connectors", icon("chevron-right", { size: 14 })) },
-    h("p", { class: "tiny subtle" }, "A service Galahad or a knight needs and doesn't have. Asking installs nothing; once you add it, every one of them can use it."),
+    { actions: go("Connectors", "connectors"), note: "A service Galahad or a knight needs and doesn't have. Asking installs nothing; once you add it, every one of them can use it." },
     connectorsBox,
   );
-  const draftsSection = section(
-    "Loops Galahad drafted",
-    { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) },
-    h("p", { class: "tiny subtle" }, "You asked in chat for something on a schedule. Each runs only once you add it."),
-    draftsBox,
-  );
+  const draftsSection = section("Loops Galahad drafted", { actions: go("Loops", "loops"), note: "You asked in chat for something on a schedule. Each runs only once you add it." }, draftsBox);
   const aboutYouBox = h("div", { class: "card rows" });
   const aboutYouSection = section(
     "Facts he noticed about you",
-    { actions: h("a", { href: "#/memory", class: "btn ghost sm" }, "Memory", icon("chevron-right", { size: 14 })) },
-    h("p", { class: "tiny subtle" }, "Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note."),
+    { actions: go("Memory", "memory"), note: "Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note." },
     aboutYouBox,
   );
-  const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
+  const noticesSection = section("Noticed by the heartbeat", { actions: go("Loops", "loops") }, noticesBox);
   // Kept across re-renders so it stays open while the outbox changes.
-  const history = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), historySummary), historyRows);
+  const history = disclosure(historySummary, { flush: true, hidden: true }, historyRows);
 
   replace(
     root,
@@ -421,15 +376,8 @@ export const inboxView: View = (root, ctx, { scope }) => {
       "div",
       { class: "page narrow" },
       pageHead("Inbox", "Everything that needs you. Nothing here happens without your say."),
-      allClear,
-      pairingsSection,
-      actionsSection,
-      requestsSection,
-      connectorsSection,
-      draftsSection,
-      aboutYouSection,
-      noticesSection,
-      read ? history : null,
+      // Shown whole once the Inbox has been read: what waits comes in at once, not section by section.
+      pageBody(allClear, pairingsSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
     ),
   );
 
