@@ -2,7 +2,7 @@
 
 **One app that is both the client and a node.** On any Mac it is Galahad's client, as the iPhone and iPad app is. On a Mac that should serve (a Mac mini on a shelf), the same app makes the Mac a node: the node Ultra runs, carried inside the app, kept running through restarts and power cuts, with its knights' VMs on the Mac's own silicon. Setting one up is opening the app and answering three questions, with no Terminal.
 
-Status: designed (16 November 2026), not built: [PLAN](PLAN.md) #25. It is for **macOS 27** (the owner's word, 16 November), which runs on Apple silicon alone: Apple made macOS 26 the last release for Intel Macs ([MacRumors](https://www.macrumors.com/2026/04/18/macos-27-compatibility-change/)). So every Mac it runs on can give its knights VMs of their own, and nothing below has an Intel path. What follows is the design, the facts it rests on (each with where it was read) and what is still unknown, with the spike that answers it.
+Status: designed (16 November 2026); its first phase, the client, built the same day (*M1, built*, below); the node inside and its knights' VMs not yet: [PLAN](PLAN.md) #25. It is for **macOS 27** (the owner's word, 16 November), which runs on Apple silicon alone: Apple made macOS 26 the last release for Intel Macs ([MacRumors](https://www.macrumors.com/2026/04/18/macos-27-compatibility-change/)). So every Mac it runs on can give its knights VMs of their own, and nothing below has an Intel path. What follows is the design, the facts it rests on (each with where it was read) and what is still unknown, with the spike that answers it.
 
 ## What it must do
 
@@ -156,7 +156,21 @@ Signed, notarized and judged by Gatekeeper (the same evening, once the owner had
 Not tried yet:
 
 - **`container`:** it can't run inside a macOS VM; it waits for the Mac mini.
-- **The client's windows and the menu bar,** which come with M1.
+- **The client's windows and the menu bar:** built with M1 (below).
+
+## M1, built (16 November)
+
+`GalahadMac`, beside the iOS target in `apps/apple/project.yml`: a native macOS 27 app from the iPhone app's own sources. What one platform alone has is marked `#if os(iOS)` or `#if os(macOS)`; what differs in small ways goes through `UI/Platform.swift`, whose helpers are, on iOS, exactly the modifier or call they stand for. The iPhone's Roundtable is what it was: the build before and the build after, pictured against one node a minute apart, differ in 147 of 2.9 million pixels (a working ring turning, a blink).
+
+- **The window:** the iPad's sidebar and detail. The sidebar is the Roundtable as the PWA's wide screen has it: its mark, which opens the board; the one who leads, then the knights in your order (dragged into another, as a Mac's lists are), each face in its ring with its state in a word; the rooms; then the Inbox (its count in red) and More. A timeline's title and line are the window's title and subtitle; a conversation keeps to a reading width; a page of rows is the Mac's grouped form.
+- **Windows of their own:** a knight, a room or one of Galahad's chats opens in a window of its own (a double click, or Open in New Window), and macOS brings each back where it was.
+- **Menus:** ⌘N a new chat (its message box takes the keys), ⌘K a task for the Roundtable, ⌘1 to ⌘4 Galahad, the Roundtable, the Inbox and More, and ⌘, Settings: this Mac and its node, Keys and Connectors.
+- **The menu bar:** the Roundtable's mark, with how many things need you beside it; opened, every seat in your order with its face, ring, chip and line, what needs you (it opens the Inbox), the node in a line, and Open Galahad. The app asks the node every 5 s in front and every 15 behind, with its windows open or not.
+- **Pairing:** paste the invite, or open a `galahad:` link carrying one (`galahad:https://keep.example.ts.net/#pair=gi1.…`, or the invite alone); then the codes are compared, as on the iPhone.
+- **The key** is made in the Secure Enclave, as the iPhone's is, but held otherwise: the Keychain an iPhone keeps enclave keys in opens on a Mac only to an app signed with a profile, which a build signed to run on its own Mac isn't (measured: `errSecMissingEntitlement`, -34018). So the Mac's key is CryptoKit's, and the login keychain keeps only the enclave's wrapping of it, which is no key and opens in no other Mac's enclave.
+- **Tests:** `GalahadMacTests` runs the shared tests on macOS (the vectors, the roster, seats, the key, pairing and the rest), and `MacShots` pictures the app's own windows against a dev node when asked (`apps/apple/README.md`).
+
+Left for M2, which signs the app with its Developer ID and a profile: notifications (Apple's push service needs the profile), copies of keys kept on the Mac (the Keychain that asks for Touch ID first needs it too), and the data protection keychain for the key. Until then each local build is, to the login keychain, a new app: it is expected (not tried here) to ask once before a new build uses a key an older one made.
 
 ## How it is told
 
