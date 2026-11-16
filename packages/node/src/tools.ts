@@ -716,6 +716,8 @@ export const TOOLS: GalahadTool[] = [
       why: z.string().min(3).max(300).describe("What its work needs it for, in a line: the ledger keeps it"),
     },
     routes: ["growTeammate"],
+    // (Its reason is written into the ledger: a record, which the bank's gate covers.)
+    flow: "record",
     own: true,
     async run(api, { id, cpus, memoryGb, diskGb, why }) {
       const { workspace } = await api.call<{ workspace: SandboxView }>("growTeammate", {
