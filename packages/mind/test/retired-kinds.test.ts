@@ -163,7 +163,7 @@ describe("a log that holds the retired kinds", () => {
       raw.exec("DELETE FROM v_lww WHERE k = 'companion'; PRAGMA user_version = 1;");
       raw.close();
       const upgraded = new MindStore(path);
-      expect(upgraded.schemaVersion()).toBe(3);
+      expect(upgraded.schemaVersion()).toBe(4);
       expect(held(upgraded)).toEqual({ name: "Bors" });
       expect(upgraded.digest()).toBe(digest);
       upgraded.close();

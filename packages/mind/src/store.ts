@@ -63,8 +63,10 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
  *    are the same; a replica that held such events before it knew the kinds applies them once, by a replay.
  * 3: skills (skill.written and the rest; v_skills, v_skill_versions, v_skill_uses), applied the same way
  *    by a replica that held such events before it knew them.
+ * 4: your rules (rule.set, rule.removed; in v_lww as rule:<name>), applied the same way by a replica that held
+ *    them before it knew them.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const MAX_PENDING = 2000;
 
@@ -261,6 +263,9 @@ export class MindStore {
         this.replay();
       } else if (from < 3 && this.db.query("SELECT 1 FROM events WHERE kind LIKE 'skill.%' LIMIT 1").get()) {
         // Skills a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
+        this.replay();
+      } else if (from < 4 && this.db.query("SELECT 1 FROM events WHERE kind IN ('rule.set', 'rule.removed') LIMIT 1").get()) {
+        // Rules a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
         this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -1060,6 +1065,19 @@ export class MindStore {
         this.putLww(`action-decision:${body.action}`, event, { id: body.action, verdict: "approved", order: body.order, note: `standing order: ${order.label}` });
         return null;
       }
+      case "rule.set":
+      case "rule.removed": {
+        // Your rules (core's rules.ts) are your word alone: never an agent's, never a stranger's, never unsaid.
+        if (!isFullNode(signer)) return "only full nodes may record rules";
+        if (event.prov?.trust !== "owner") return "a rule is your word alone";
+        if (event.kind === "rule.removed") {
+          this.putLww(`rule:${bodyOf(event, "rule.removed").name}`, event, null);
+          return null;
+        }
+        const body = bodyOf(event, "rule.set");
+        this.putLww(`rule:${body.name}`, event, { name: body.name, rule: body.rule as Json, ...(event.prov.via ? { via: event.prov.via } : {}) });
+        return null;
+      }
       // The two retired kinds (core's events.ts): folded as they always were, their refusals worded as they always
       // were (a refusal's reason is part of the digest), so a log that holds them gives every replica the same mind.
       case "companion.named": {
@@ -1273,6 +1291,13 @@ export class MindStore {
           .query<MemoryRow, [number]>("SELECT * FROM v_memories WHERE forgotten = 0 ORDER BY hlc DESC LIMIT ?")
           .all(limit);
     return rows.map((row) => ({ ...row, tags: JSON.parse(row.tags) as string[] }));
+  }
+
+  // ---- rules -----------------------------------------------------------------
+
+  /** Your rules in force, by name, each as it was written (open in the log: core's readRule reads it). */
+  rules(): RuleRecord[] {
+    return this.lwwPrefix<{ name: string; rule: Json; via?: string }>("rule:").map((entry) => ({ name: entry.value!.name, rule: entry.value!.rule, hlc: entry.hlc, via: entry.value!.via ?? null }));
   }
 
   // ---- skills ----------------------------------------------------------------
@@ -1502,6 +1527,14 @@ export class MindStore {
     this.stateDigest = { version, digest: sha256B64u(canonical(dump as unknown as Json)) };
     return this.stateDigest.digest;
   }
+}
+
+/** One of your rules as the mind holds it: as written, when it was set and from which device of yours. */
+export interface RuleRecord {
+  name: string;
+  rule: Json;
+  hlc: string;
+  via: string | null;
 }
 
 /** One version of a skill, as the log's event wrote it. Its words (`doc`) are as written: the reader checks them. */
