@@ -320,9 +320,9 @@ await until("Kay's task to end", ended(kept.id));
 const failing = (await admin("createTeamTask", { room: own.gareth, assignee: "gareth", title: "Migrations run on a fresh database", goal: "TASK_FAIL: make every migration run on a fresh database, with a test.", dependsOn: [], gates: ["bun test db/ # gate-fail"] })).task;
 await until("Gareth's task to end", ended(failing.id));
 await admin("postTeamMessage", { room: own.percival, text: "Take your time: what do other agents do about context rot?" });
-// A room of several: Kay and Gareth, answering you there.
+// A room of several: Kay and Gareth, answering you there (named: what names no knight is Galahad's to answer).
 const studio = (await admin("saveTeamRoom", { name: "Release room", members: ["kay", "gareth"], turnBudget: 6 })).room;
-await admin("postTeamMessage", { room: studio.id, text: "Who takes the release notes for 0.4?" });
+await admin("postTeamMessage", { room: studio.id, text: "@kay @gareth Who takes the release notes for 0.4?" });
 await until("the room's replies", async () => (await admin("teamRoom", { id: studio.id })).messages.length >= 3);
 await until("Percival to start thinking", async () => (await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate === "percival" && d.status === "running"));
 
