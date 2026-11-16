@@ -114,9 +114,14 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     void refreshWorkspace(person.id);
   };
 
+  /** The way back to the roster (a phone's; a wide screen has the roster beside it). */
+  const backLink = () => h("a", { class: "btn ghost sm icon-only pane-back", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("chevron-left", { size: 16 }));
+
   function renderHead(): void {
-    if (!room) {
-      replace(head);
+    if (!room || !snapshot) {
+      // While a room is asked for, its header holds its place (the way back, a face's and two lines' places), so the
+      // timeline under it doesn't drop when it arrives. The Roundtable's own page has none.
+      replace(head, ...(roomId ? [backLink(), h("span", { class: "skeleton team-head-face", "aria-hidden": "true" }), h("div", { class: "grow stack snug", "aria-hidden": "true" }, h("div", { class: "skeleton team-head-name" }), h("div", { class: "skeleton sk-line team-head-line" }))] : []));
       return;
     }
     const current = room;
@@ -133,7 +138,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     keepPlace(head, () =>
       replace(
         head,
-        h("a", { class: "btn ghost sm icon-only pane-back", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("chevron-left", { size: 16 })),
+        backLink(),
         person ? avatar(person) : h("span", { class: "avatar" }, icon("hash")),
         h("div", { class: "grow" }, h("h2", {}, person?.name ?? current.name), h("p", { class: "meta ellipsis" }, person ? [person.role, state?.text, madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · "))),
         current.paused ? badge("Paused", "warn") : null,
@@ -511,6 +516,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   scope.add(ctx.live.teamProblem.subscribe((error) => error && failed(error)));
   // The room as it was last read this session, at once (api.peek); the fresh one is drawn only if it differs.
   if (roomId) room = ctx.api.peek<TeamRoomView>("/api/team/room", { id: roomId }) ?? null;
+  // The header's place, at once: until the team and the room are both known, draw() can't say whose it is.
+  renderHead();
   void load();
   draw();
 };
