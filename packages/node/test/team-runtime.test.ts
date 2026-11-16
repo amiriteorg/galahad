@@ -134,6 +134,20 @@ test("a long conversation is kept as a story: its older part is summed up once (
   expect(next.slice(0, head)).toBe(asked.slice(0, head));
 });
 
+test("when a room is summed up, its newest message is said whole however long it is: it is what the knight answers", async () => {
+  let kept: { text: string; through: string } | null = null;
+  const f = fixture([say("The older part, summed up."), say("I read the log.")], {
+    story: () => kept,
+    keepStory: (_where: string, text: string, through: string) => { kept = { text, through }; },
+  });
+  // Past the threshold, with a newest message (a log the owner pasted) longer than what is said whole at most.
+  const history = [...Array.from({ length: 20 }, (_, i) => said(i + 1, i % 2 ? "ada" : "owner", `Message ${i + 1} ${"x".repeat(1000)}`)), said(21, "owner", `Read this log: ${"y".repeat(15_000)} END OF LOG`)];
+  await f.runtime.respond(member, room, history, f.context);
+  expect(kept!.through).toBe("message-20");
+  const asked = f.bodies[1].messages.find((m: any) => m.role === "user").content as string;
+  expect(asked).toContain("END OF LOG");
+});
+
 test("a room's story is a chore: told on the swift role, while the knight's reply stays its own model's", async () => {
   let kept: { text: string; through: string } | null = null;
   const f = fixture([say("Ada drafts the notes."), say("Understood.")], {

@@ -244,9 +244,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     const told = deps.story(room.id);
     const recent = after(history, told?.through);
     if (!deps.keepStory || recent.reduce((sum, message) => sum + sizeOf(message), 0) <= STORY.high) return told;
-    // The newest are said whole, as many as fit in `keep`; what comes before them is summed up.
+    // The newest are said whole, as many as fit in `keep`, and the newest of all however long (it is what is answered);
+    // what comes before them is summed up.
     let kept = 0, cut = recent.length;
-    while (cut > 1 && kept + sizeOf(recent[cut - 1]!) <= STORY.keep) kept += sizeOf(recent[--cut]!);
+    while (cut > 1 && (cut === recent.length || kept + sizeOf(recent[cut - 1]!) <= STORY.keep)) kept += sizeOf(recent[--cut]!);
     const older = recent.slice(0, cut);
     const fence = fenceOf(teammate.id);
     const content = [told ? data("The story so far", told.text, fence) : null, data("Messages to fold into it", older.map(({ speaker, speakerName, text }) => ({ speaker, speakerName, text })), fence)].filter(Boolean).join("\n\n");
