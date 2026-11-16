@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 
 /// Pairing this device, step by step for its screen, as the PWA's pairing page goes (apps/web/src/pair.ts): network
 /// trouble retries, and only a definite answer (declined, unverifiable, expired) ends it.
@@ -26,7 +25,7 @@ import UIKit
     private var task: Task<Void, Never>?
 
     /// What a new device is called until you name it (the PWA calls an installed app the same).
-    static var defaultName: String { "Galahad app on \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")" }
+    static var defaultName: String { "Galahad app on \(ThisDevice.kind)" }
 
     var canAsk: Bool { stage == .entering && !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 

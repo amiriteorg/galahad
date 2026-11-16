@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if os(iOS)
 /// Pairing until this device is in the fleet; the app itself after.
 struct RootView: View {
     @State private var app = AppModel()
@@ -14,13 +15,7 @@ struct RootView: View {
             case .paired(let session):
                 MainView(app: app, session: session)
             case .broken(let why):
-                ContentUnavailableView {
-                    Label("This device's key can't be read", systemImage: "key.slash")
-                } description: {
-                    Text(why)
-                } actions: {
-                    Button("Try again") { app.start() }
-                }
+                KeyUnreadable(why: why) { app.start() }
             }
         }
         .tint(.ink)
@@ -159,6 +154,24 @@ struct SplitPlaces: View {
             place = .roundtable
             route = .galahad
             if let id { await session.chat.open(id, with: session.client) }
+        }
+    }
+}
+
+#endif
+
+/// The Keychain couldn't be read: said as exactly that, never taken for "not paired", which would invite pairing over it.
+struct KeyUnreadable: View {
+    let why: String
+    let retry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("This device's key can't be read", systemImage: "key.slash")
+        } description: {
+            Text(why)
+        } actions: {
+            Button("Try again", action: retry)
         }
     }
 }

@@ -1,6 +1,5 @@
 import Charts
 import SwiftUI
-import UIKit
 import WebKit
 
 extension EnvironmentValues {
@@ -125,13 +124,7 @@ enum Palette {
         pair(0xEDA100, 0xC98500), pair(0xE87BA4, 0xD55181), pair(0x008300, 0x008300),
     ]
 
-    private static func pair(_ light: UInt32, _ dark: UInt32) -> Color {
-        Color(UIColor { $0.userInterfaceStyle == .dark ? rgb(dark) : rgb(light) })
-    }
-
-    private static func rgb(_ hex: UInt32) -> UIColor {
-        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
+    private static func pair(_ light: UInt32, _ dark: UInt32) -> Color { Color(light: light, dark: dark) }
 }
 
 /// Clean round ticks over [lo, hi], about `count` of them (the PWA's niceTicks).
@@ -472,7 +465,7 @@ private struct PageBlock: View {
                     }
                     Button { full = true } label: { Label("Open full screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                     Button {
-                        UIPasteboard.general.string = page
+                        Pasteboard.copy(page)
                         copied = true
                     } label: { Label(copied ? "Copied" : "Copy its HTML", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 } label: {
@@ -512,9 +505,10 @@ private struct PageBlock: View {
                 PageFrame(page: page, run: run, scrolls: true)
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(title)
-                    .navigationBarTitleDisplayMode(.inline)
+                    .inlineTitle()
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { full = false } } }
             }
+            .sheetSize(width: 900, height: 700)
         }
         .task(id: copied) {
             guard copied else { return }
@@ -530,25 +524,33 @@ private struct PageBlock: View {
  * content rule, no window it may open, and no navigation but its own first load. Its scripts run only once you press
  * Run.
  */
-struct PageFrame: UIViewRepresentable {
+struct PageFrame {
     let page: String
     let run: Bool
     /// In the chat the page stays put, so a finger over it scrolls the chat; full screen, it scrolls.
     let scrolls: Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    @MainActor func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> WKWebView {
+    /// The sealed page's view, the same on both platforms (only how SwiftUI holds it differs, below).
+    @MainActor private func make(_ coordinator: Coordinator) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = run
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        #if os(iOS)
         configuration.dataDetectorTypes = []
         let view = WKWebView(frame: .zero, configuration: configuration)
-        view.navigationDelegate = context.coordinator
-        view.uiDelegate = context.coordinator
+        #else
+        let view = PageView(frame: .zero, configuration: configuration)
+        view.scrolls = scrolls
+        #endif
+        view.navigationDelegate = coordinator
+        view.uiDelegate = coordinator
         view.isInspectable = false
+        #if os(iOS)
         view.scrollView.isScrollEnabled = scrolls
+        #endif
         let html = Self.framed(page, run: run)
         // Only once the rule that blocks every web load is in place.
         Task { @MainActor in
@@ -558,8 +560,6 @@ struct PageFrame: UIViewRepresentable {
         }
         return view
     }
-
-    func updateUIView(_ view: WKWebView, context: Context) {}
 
     /// The page's HTML as it's loaded: the PWA's `framed`. Our head comes first, and holds for what follows.
     static func framed(_ page: String, run: Bool) -> String {
@@ -591,3 +591,24 @@ struct PageFrame: UIViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
     }
 }
+
+#if os(iOS)
+extension PageFrame: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateUIView(_ view: WKWebView, context: Context) {}
+}
+#else
+extension PageFrame: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateNSView(_ view: WKWebView, context: Context) {}
+
+    /// A Mac's web view scrolls its page under the pointer whatever it is in; in the chat the page stays put and the
+    /// wheel scrolls the chat, as a finger over it does on an iPhone.
+    final class PageView: WKWebView {
+        var scrolls = true
+        override func scrollWheel(with event: NSEvent) {
+            if scrolls { super.scrollWheel(with: event) } else { nextResponder?.scrollWheel(with: event) }
+        }
+    }
+}
+#endif

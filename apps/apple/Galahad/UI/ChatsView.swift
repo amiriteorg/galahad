@@ -7,6 +7,9 @@ struct ChatsView: View {
     let open: (String) -> Void
     let startNew: () -> Void
     @Environment(\.dismiss) private var dismiss
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
     @State private var chats: [ConversationSummary]?
     @State private var problem: String?
     @State private var query = ""
@@ -38,13 +41,25 @@ struct ChatsView: View {
                                 }
                                 .tint(.ink)
                             }
+                            #if os(macOS)
+                            // A Mac opens a chat in a window of its own, and has the swipes' actions in the row's menu.
+                            .contextMenu {
+                                Button("Open in New Window") {
+                                    openWindow(value: MacWindow.chat(chat.id))
+                                    dismiss()
+                                }
+                                Button(chat.pinned ? "Unpin" : "Pin") { Task { await pin(chat, !chat.pinned) } }
+                                Divider()
+                                Button("Delete…", role: .destructive) { deleting = chat }
+                            }
+                            #endif
                         }
                     }
                 }
             }
             .navigationTitle("Chats")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Chats")
+            .inlineTitle()
+            .searchable(text: $query, placement: .alwaysShown, prompt: "Chats")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
@@ -69,6 +84,7 @@ struct ChatsView: View {
                 Text("“\(chat.title)” is gone for good, on \(session.whoami?.nodeName ?? session.node.nodeName ?? "your node"). If he's working in it, he stops.")
             }
         }
+        .sheetSize(width: 520, height: 640)
     }
 
     private struct Listed: Decodable { let conversations: [ConversationSummary] }

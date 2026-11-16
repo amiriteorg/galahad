@@ -1,0 +1,240 @@
+import SwiftUI
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
+
+/*
+ * What an iPhone or an iPad has that a Mac doesn't, or has otherwise, in one place. On iOS each helper is exactly the
+ * modifier or call it stands for; on the Mac it is what the Mac has, or nothing where a Mac has no such thing: no keyboard
+ * on screen to choose, no capitals added as you type, no navigation bar to size, no tab bar.
+ */
+
+#if os(iOS)
+typealias PlatformImage = UIImage
+#else
+typealias PlatformImage = NSImage
+#endif
+
+extension Image {
+    init(platformImage image: PlatformImage) {
+        #if os(iOS)
+        self.init(uiImage: image)
+        #else
+        self.init(nsImage: image)
+        #endif
+    }
+}
+
+/// What this device is, in its own words: "iPhone", "iPad" or "Mac".
+@MainActor enum ThisDevice {
+    static var kind: String {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        #else
+        "Mac"
+        #endif
+    }
+}
+
+/// The clipboard, as text.
+@MainActor enum Pasteboard {
+    static var text: String? {
+        #if os(iOS)
+        UIPasteboard.general.string
+        #else
+        NSPasteboard.general.string(forType: .string)
+        #endif
+    }
+
+    static func copy(_ text: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = text
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+}
+
+/// A page of grouped rows: an iPhone's or an iPad's list; on a Mac, a grouped form, as its own settings are (a Mac's list
+/// has no grouped style, and cuts a section's footer to one line).
+struct GroupedList<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        #if os(iOS)
+        List { content }
+        #else
+        Form { content }.formStyle(.grouped)
+        #endif
+    }
+}
+
+/// A form's field, its words its placeholder: on iOS the field `TextField(title, text:)` is (a form there shows a field's
+/// title as its placeholder); on a Mac, whose grouped form makes a field's title a label beside it, the same words as its
+/// prompt, with no label (measured on macOS 27.2: hiding the label alone leaves the field blank).
+struct FormField: View {
+    private let label: Text
+    @Binding private var text: String
+    private let axis: Axis
+    /// What is typed isn't shown (a key).
+    private let secure: Bool
+
+    init(_ title: LocalizedStringKey, text: Binding<String>, axis: Axis = .horizontal, secure: Bool = false) {
+        (label, _text, self.axis, self.secure) = (Text(title), text, axis, secure)
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ title: S, text: Binding<String>, axis: Axis = .horizontal, secure: Bool = false) {
+        (label, _text, self.axis, self.secure) = (Text(title), text, axis, secure)
+    }
+
+    var body: some View {
+        #if os(iOS)
+        if secure { SecureField(text: $text) { label } } else { TextField(text: $text, axis: axis) { label } }
+        #else
+        if secure {
+            SecureField(text: $text, prompt: label) { label }.labelsHidden()
+        } else {
+            TextField(text: $text, prompt: label, axis: axis) { label }.labelsHidden()
+        }
+        #endif
+    }
+}
+
+/// The capitals iOS adds as you type (`textInputAutocapitalization`).
+enum Capitals { case never, words }
+
+/// The keyboard iOS shows (`keyboardType`).
+enum Keyboard { case url, decimal }
+
+extension Color {
+    /// One colour on light, another on dark, as the appearance has it (six hex digits each).
+    init(light: UInt32, dark: UInt32) {
+        #if os(iOS)
+        self.init(UIColor { $0.userInterfaceStyle == .dark ? Self.rgb(dark) : Self.rgb(light) })
+        #else
+        self.init(NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? Self.rgb(dark) : Self.rgb(light) })
+        #endif
+    }
+
+    #if os(iOS)
+    private static func rgb(_ hex: UInt32) -> UIColor {
+        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+    #else
+    private static func rgb(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+    #endif
+}
+
+/// What is written on a prominent button, whose ground is the ink.
+enum Prominent {
+    #if os(iOS)
+    /// The ink's own (`Color.onAccent`), or grey while the button can't be pressed (`dimmed`).
+    static func label(dimmed: Bool = false) -> Color { dimmed ? .secondary : .onAccent }
+    #else
+    /// The same; and grey too while its window isn't in front, where a Mac draws the button grey under it.
+    static func label(dimmed: Bool = false) -> Label { Label(dimmed: dimmed) }
+
+    struct Label: ShapeStyle {
+        let dimmed: Bool
+        func resolve(in environment: EnvironmentValues) -> Color {
+            dimmed || environment.controlActiveState == .inactive ? .secondary : .onAccent
+        }
+    }
+    #endif
+}
+
+#if os(iOS)
+extension Color {
+    /// What sits raised on a grouped list: a card of the Roundtable.
+    static var raised: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+    /// A row's own ground, under what is drawn over it (the Leads mark on its ring).
+    static var rowGround: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+    /// The system's hairline.
+    static var hairline: Color { Color(uiColor: .separator) }
+    /// A row's selection on dark, where the ink is cream and white words on it couldn't be read.
+    static var selectionOnDark: Color { Color(uiColor: .systemGray3) }
+}
+
+extension ToolbarItemPlacement {
+    static var barLeading: ToolbarItemPlacement { .topBarLeading }
+    static var barTrailing: ToolbarItemPlacement { .topBarTrailing }
+}
+
+extension SearchFieldPlacement {
+    /// The search field always shown under the title (a sheet's list).
+    static var alwaysShown: SearchFieldPlacement { .navigationBarDrawer(displayMode: .always) }
+}
+
+extension View {
+    func capitals(_ capitals: Capitals) -> some View { textInputAutocapitalization(capitals == .never ? .never : .words) }
+    func keyboard(_ keyboard: Keyboard) -> some View { keyboardType(keyboard == .url ? .URL : .decimalPad) }
+    func inlineTitle() -> some View { navigationBarTitleDisplayMode(.inline) }
+    /// A conversation has the screen to itself, as in Messages.
+    func hidingTabBar() -> some View { toolbar(.hidden, for: .tabBar) }
+    func cover<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+        fullScreenCover(isPresented: isPresented, content: content)
+    }
+    /// A sheet's own size: on an iPhone or an iPad, the system's.
+    func sheetSize(width: CGFloat = 520, height: CGFloat = 600) -> some View { self }
+    /// A conversation's width: an iPhone's or an iPad's whole column.
+    func readingWidth() -> some View { self }
+    /// A field drawn by what holds it (a message box's glass, a quiet fill): an iPhone's field draws nothing of its own.
+    func plainField() -> some View { self }
+}
+#else
+extension EnvironmentValues {
+    /// A new chat was asked for from the Mac's menu (⌘N): Galahad's message box takes the keys, and says so by clearing it.
+    @Entry var composerWanted: Binding<Bool> = .constant(false)
+}
+
+extension Metrics {
+    /// The widest a conversation's lines are on a Mac's wide window (the PWA's reading pages, 760 px).
+    static let readingWidth: CGFloat = 760
+}
+
+extension Color {
+    /// A card on a Mac's list, whose rows lie on the window's own ground: a fill, lighter on dark and darker on light.
+    static var raised: Color { Color(nsColor: .quaternarySystemFill) }
+    static var rowGround: Color { Color(nsColor: .controlBackgroundColor) }
+    static var hairline: Color { Color(nsColor: .separatorColor) }
+    static var selectionOnDark: Color { Color(nsColor: .systemGray) }
+}
+
+extension ToolbarItemPlacement {
+    /// The window's toolbar: its leading end, and where a window's own actions go.
+    static var barLeading: ToolbarItemPlacement { .navigation }
+    static var barTrailing: ToolbarItemPlacement { .primaryAction }
+}
+
+extension SearchFieldPlacement {
+    static var alwaysShown: SearchFieldPlacement { .automatic }
+}
+
+extension View {
+    func capitals(_ capitals: Capitals) -> some View { self }
+    func keyboard(_ keyboard: Keyboard) -> some View { self }
+    func inlineTitle() -> some View { self }
+    func hidingTabBar() -> some View { self }
+    /// What covers an iPhone's screen is a sheet on a Mac.
+    func cover<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+        sheet(isPresented: isPresented, content: content)
+    }
+    /// A sheet on a Mac is as big as what it holds asks; a form asks little, so it is given room.
+    /// A sheet is a window of its own on a Mac, which the main window's grouped forms don't reach.
+    func sheetSize(width: CGFloat = 520, height: CGFloat = 600) -> some View {
+        frame(minWidth: width, idealWidth: width, minHeight: height * 0.6, idealHeight: height).formStyle(.grouped)
+    }
+    /// A conversation keeps to a reading width in the middle of a wide window.
+    func readingWidth() -> some View {
+        frame(maxWidth: Metrics.readingWidth).frame(maxWidth: .infinity)
+    }
+    /// A Mac's field draws its own bezel; inside a message box's glass or a quiet fill, it draws none.
+    func plainField() -> some View { textFieldStyle(.plain) }
+}
+#endif

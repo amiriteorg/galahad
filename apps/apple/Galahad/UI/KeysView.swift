@@ -36,10 +36,10 @@ struct KeysView: View {
     @State private var typed = ""
 
     var body: some View {
-        List {
+        GroupedList {
             Section {
                 Label {
-                    Text("Keys are sealed for your full nodes: never shown again, never seen by a model. The node adds a key to a call itself, and only to the address it's pinned to. A copy stays on this iPhone only when you choose to keep one.")
+                    Text("Keys are sealed for your full nodes: never shown again, never seen by a model. The node adds a key to a call itself, and only to the address it's pinned to.\(PhoneKeys.offered ? " A copy stays on this iPhone only when you choose to keep one." : "")")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } icon: {
@@ -157,13 +157,13 @@ struct KeysView: View {
         .sheet(item: $replacing) { key in AddKeySheet(session: session, providers: providers, replacing: key) { said in notice = said; await load() } }
         .alert("Delete \(deleting?.name ?? "")?", isPresented: .init(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             TextField(deleting?.name ?? "", text: $typed)
-                .textInputAutocapitalization(.never)
+                .capitals(.never)
                 .autocorrectionDisabled()
             Button("Delete key", role: .destructive) { if let key = deleting { Task { await delete(key) } } }
                 .disabled(typed != deleting?.name)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("It's removed from the vault on every node, and what uses it stops working until you add a key again. This doesn't revoke it at its provider: do that there if it may have leaked. A copy on this iPhone stays until you delete it. Type its name to delete it.")
+            Text("It's removed from the vault on every node, and what uses it stops working until you add a key again. This doesn't revoke it at its provider: do that there if it may have leaked. \(PhoneKeys.offered ? "A copy on this iPhone stays until you delete it. " : "")Type its name to delete it.")
         }
     }
 
@@ -319,8 +319,8 @@ private struct AddKeySheet: View {
                 // The key first: it's what you came with, and it stays above the keyboard.
                 Section {
                     // (No password content type: an API key is no password of yours for AutoFill to keep.)
-                    SecureField("Paste the key", text: $value)
-                        .textInputAutocapitalization(.never)
+                    FormField("Paste the key", text: $value, secure: true)
+                        .capitals(.never)
                         .autocorrectionDisabled()
                         .onChange(of: value) { _, _ in recognise() }
                         .accessibilityIdentifier("key-value")
@@ -367,9 +367,9 @@ private struct AddKeySheet: View {
                         }
                         .accessibilityIdentifier("key-provider")
                         if addressShown {
-                            TextField((needsAddress ? "Its address, https://…" : provider == Self.own ? "Only sent to, e.g. https://api.example.com" : "Another address, https://…") as String, text: $address)
-                                .keyboardType(.URL)
-                                .textInputAutocapitalization(.never)
+                            FormField((needsAddress ? "Its address, https://…" : provider == Self.own ? "Only sent to, e.g. https://api.example.com" : "Another address, https://…") as String, text: $address)
+                                .keyboard(.url)
+                                .capitals(.never)
                                 .autocorrectionDisabled()
                         } else if mayGiveAnother {
                             Button("Another address") { another = true }
@@ -390,25 +390,27 @@ private struct AddKeySheet: View {
                         }
                     }
                     Section {
-                        TextField("e.g. anthropic", text: $name).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        FormField("e.g. anthropic", text: $name).font(.body.monospaced()).capitals(.never).autocorrectionDisabled()
                     } header: {
                         Text("Name")
                     } footer: {
                         Text("Letters, digits and . _ : - (a provider's own name ties the key to it).")
                     }
-                    Section("Label") { TextField("e.g. personal account", text: $label) }
+                    Section("Label") { FormField("e.g. personal account", text: $label) }
                 }
-                Section {
-                    Toggle("Keep a copy on this iPhone", isOn: $keepCopy)
-                } footer: {
-                    Text("In this iPhone's Keychain, for this device alone, read back only with Face ID or your passcode: to seal it again where a node lost it.")
+                if PhoneKeys.offered {
+                    Section {
+                        Toggle("Keep a copy on this iPhone", isOn: $keepCopy)
+                    } footer: {
+                        Text("In this iPhone's Keychain, for this device alone, read back only with Face ID or your passcode: to seal it again where a node lost it.")
+                    }
                 }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
                 }
             }
             .navigationTitle(replacing.map { "Replace \($0.name)" } ?? "Add a key")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -417,6 +419,7 @@ private struct AddKeySheet: View {
                 }
             }
         }
+        .sheetSize(width: 560, height: 640)
     }
 
     /// What the key looks like chooses its provider, and its name, until you choose them.

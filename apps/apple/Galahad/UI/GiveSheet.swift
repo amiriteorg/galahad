@@ -33,7 +33,7 @@ struct GiveSheet: View {
             }
             // The PWA's title: the bar of a sheet cut the longer one ("Give the Roundtable a…").
             .navigationTitle(given == nil ? "Give a task" : "Given")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 if given == nil {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -46,23 +46,24 @@ struct GiveSheet: View {
                 }
             }
         }
+        .sheetSize(width: 560, height: 640)
     }
 
     private var form: some View {
         Form {
             Section {
-                TextField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
+                FormField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
             } header: {
                 Text("Goal")
             } footer: {
                 Text("The knight best suited to it takes it: one that's free, with what the work needs.")
             }
-            Section("Title") { TextField("A concrete result (from the goal, if left empty)", text: $title) }
+            Section("Title") { FormField("A concrete result (from the goal, if left empty)", text: $title) }
             Section {
-                TextField("bun run check", text: $gates, axis: .vertical)
+                FormField("bun run check", text: $gates, axis: .vertical)
                     .lineLimit(2...8)
                     .font(.body.monospaced())
-                    .textInputAutocapitalization(.never)
+                    .capitals(.never)
                     .autocorrectionDisabled()
             } header: {
                 Text("Done when these pass")
@@ -70,7 +71,7 @@ struct GiveSheet: View {
                 Text("One shell command a line, up to 16. They run in the knight's workspace.")
             }
             Section {
-                TextField("0.50", text: $budget).keyboardType(.decimalPad).monospacedDigit()
+                FormField("0.50", text: $budget).keyboard(.decimal).monospacedDigit()
             } header: {
                 Text("Budget in US dollars (optional)")
             } footer: {
@@ -78,8 +79,8 @@ struct GiveSheet: View {
             }
             Section("It needs") {
                 Toggle("A desktop (a browser, an app with windows)", isOn: $desktop)
-                TextField("A repository (owner/name or a URL)", text: $repository)
-                    .textInputAutocapitalization(.never)
+                FormField("A repository (owner/name or a URL)", text: $repository)
+                    .capitals(.never)
                     .autocorrectionDisabled()
             }
             if let problem {
@@ -89,7 +90,7 @@ struct GiveSheet: View {
     }
 
     private func taken(_ given: Given) -> some View {
-        List {
+        GroupedList {
             Section {
                 HStack(spacing: Space.s3) {
                     Portrait(drawing: look(given.choice.id, given.choice.name), size: Metrics.rowFace)

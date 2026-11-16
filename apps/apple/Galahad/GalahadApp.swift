@@ -1,3 +1,4 @@
+#if os(iOS)
 import SwiftUI
 import UIKit
 
@@ -17,3 +18,4 @@ struct GalahadApp: App {
         }
     }
 }
+#endif

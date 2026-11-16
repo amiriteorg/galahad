@@ -93,14 +93,14 @@ struct KnightEditor: View {
                 }
 
                 Section {
-                    TextField("e.g. Ada", text: $name)
-                        .textInputAutocapitalization(.words)
+                    FormField("e.g. Ada", text: $name)
+                        .capitals(.words)
                         .onChange(of: name) { _, new in if !handleTyped { handle = Knights.handle(name: new, taken: taken) } }
                         .accessibilityIdentifier("knight-name")
                     if existing == nil {
-                        TextField("handle", text: Binding(get: { handle }, set: { handle = $0; handleTyped = true }))
+                        FormField("handle", text: Binding(get: { handle }, set: { handle = $0; handleTyped = true }))
                             .font(.body.monospaced())
-                            .textInputAutocapitalization(.never)
+                            .capitals(.never)
                             .autocorrectionDisabled()
                             .accessibilityIdentifier("knight-handle")
                     } else {
@@ -118,7 +118,7 @@ struct KnightEditor: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    TextField("Their job, how they work, and when to ask you.", text: $instructions, axis: .vertical)
+                    FormField("Their job, how they work, and when to ask you.", text: $instructions, axis: .vertical)
                         .lineLimit(5...14)
                         .accessibilityIdentifier("knight-job")
                 } header: {
@@ -128,9 +128,9 @@ struct KnightEditor: View {
                 }
 
                 Section {
-                    TextField("https://github.com/owner/repository" as String, text: $repository)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
+                    FormField("https://github.com/owner/repository" as String, text: $repository)
+                        .keyboard(.url)
+                        .capitals(.never)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
                 } header: {
@@ -175,7 +175,7 @@ struct KnightEditor: View {
                 }
             }
             .navigationTitle(existing.map { "Edit \($0.name)" } ?? "New knight")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -185,6 +185,7 @@ struct KnightEditor: View {
             }
             .task { roles = await session.roles() }
         }
+        .sheetSize(width: 600, height: 720)
     }
 
     private func save() async {
@@ -247,7 +248,7 @@ struct RoomEditor: View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField("e.g. Product studio", text: $name).accessibilityIdentifier("room-name")
+                    FormField("e.g. Product studio", text: $name).accessibilityIdentifier("room-name")
                 }
                 Section {
                     ForEach(knights) { knight in
@@ -285,7 +286,7 @@ struct RoomEditor: View {
                 }
             }
             .navigationTitle(existing == nil ? "New room" : "Room settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -294,6 +295,7 @@ struct RoomEditor: View {
                 }
             }
         }
+        .sheetSize(width: 520, height: 600)
     }
 
     private func save() async {

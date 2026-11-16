@@ -7,7 +7,7 @@ struct InboxView: View {
     @State private var open: ActionView?
 
     var body: some View {
-        List {
+        GroupedList {
             if !session.pairings.isEmpty {
                 Section {
                     ForEach(session.pairings) { pairing in
@@ -140,7 +140,7 @@ struct ApprovalSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            GroupedList {
                 Section {
                     Label {
                         VStack(alignment: .leading, spacing: Space.s1) {
@@ -176,7 +176,7 @@ struct ApprovalSheet: View {
                 }
             }
             .navigationTitle(destructive ? "Delete?" : "Send?")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
@@ -193,7 +193,7 @@ struct ApprovalSheet: View {
                             typed = ""
                             confirming = true
                         } label: {
-                            Text(destructive ? "Approve delete…" : "Approve…").fontWeight(.semibold).foregroundStyle(Color.onAccent).frame(maxWidth: .infinity, minHeight: 34)
+                            Text(destructive ? "Approve delete…" : "Approve…").fontWeight(.semibold).foregroundStyle(Prominent.label()).frame(maxWidth: .infinity, minHeight: 34)
                         }
                         .buttonStyle(.glassProminent)
                     }
@@ -204,7 +204,7 @@ struct ApprovalSheet: View {
             .alert(destructive ? "Approve this delete?" : "Approve and send?", isPresented: $confirming) {
                 if destructive {
                     TextField(Approval.deleteName(connector: action.connector, tool: action.tool, target: action.target, args: action.args), text: $typed)
-                        .textInputAutocapitalization(.never)
+                        .capitals(.never)
                         .autocorrectionDisabled()
                 }
                 Button(destructive ? "Approve delete" : "Approve and send", role: destructive ? .destructive : nil) {
@@ -218,6 +218,7 @@ struct ApprovalSheet: View {
                     : "\(node) sends it to \(action.target) once, as soon as you approve. It can't be called back, and if it fails it isn't retried.")
             }
         }
+        .sheetSize(width: 560, height: 600)
     }
 
     private func decide(_ approve: Bool) async {
@@ -253,8 +254,8 @@ struct KeyRequestRow: View {
                 HStack(spacing: Space.s2) {
                     // (No password content type: an API key is no password of yours for AutoFill to keep. iOS still
                     // offers its Passwords bar on any secure field.)
-                    SecureField("Paste the key", text: $value)
-                        .textInputAutocapitalization(.never)
+                    FormField("Paste the key", text: $value, secure: true)
+                        .capitals(.never)
                         .autocorrectionDisabled()
                         .quietField()
                         .submitLabel(.done)
@@ -262,7 +263,7 @@ struct KeyRequestRow: View {
                         .accessibilityIdentifier("key-\(request.name)")
                     Button(action: seal) {
                         Group {
-                            if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(value.isEmpty ? Color.secondary : Color.onAccent) }
+                            if sealing { ProgressView().tint(Color.onAccent) } else { Text("Seal").fontWeight(.semibold).foregroundStyle(Prominent.label(dimmed: value.isEmpty)) }
                         }
                         .frame(maxHeight: .infinity)
                     }
@@ -313,7 +314,7 @@ struct FactRow: View {
                     Button {
                         Task { await act { try await session.keep(fact) } }
                     } label: {
-                        Text("Keep").fontWeight(.semibold).foregroundStyle(Color.onAccent)
+                        Text("Keep").fontWeight(.semibold).foregroundStyle(Prominent.label())
                     }
                     .buttonStyle(.glassProminent)
                     Button("In my words") {
@@ -377,7 +378,7 @@ struct JoinRequestRow: View {
                     Button {
                         confirming = true
                     } label: {
-                        Text("Let it in…").fontWeight(.semibold).foregroundStyle(Color.onAccent)
+                        Text("Let it in…").fontWeight(.semibold).foregroundStyle(Prominent.label())
                     }
                     .buttonStyle(.glassProminent)
                 }

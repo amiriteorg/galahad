@@ -55,6 +55,11 @@ import Observation
         ))
     }
 
+    /// What Galahad's face shows: thinking while he answers here, asking while something waits for you.
+    var galahadExpression: String { chat.answering ? "thinking" : galahad.tone == .warn ? "asking" : "idle" }
+    /// Where he stands at a glance: the ring round his face, and his word.
+    var galahadStanding: Standing { .of(galahad, answering: chat.answering) }
+
     /// Your knights' handles in your order: as you just arranged them while the node is told (less any knight removed
     /// since, and with any seated since after them), else as it lists them.
     var order: [String] {

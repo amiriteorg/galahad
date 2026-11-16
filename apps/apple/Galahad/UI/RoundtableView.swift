@@ -21,11 +21,19 @@ struct RoundtableView: View {
     @State private var giving = false
     @State private var seating = false
     @State private var gathering = false
+    #if os(iOS)
     @State private var editing = EditMode.inactive
+    #endif
     /// A change of yours to the order, or to who leads, that didn't hold: what, and why.
     @State private var refused: (what: String, why: String)?
+    #if os(iOS)
     /// The knights as cards rather than rows, as this device last showed them (an iPad's choice).
     @AppStorage("roundtable.cards") private var asCards = false
+    #else
+    /// On a Mac the Roundtable's own page is its board, every knight a card (the PWA's on a wide screen), until you choose
+    /// its list.
+    @AppStorage("roundtable.cards") private var asCards = true
+    #endif
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -34,6 +42,14 @@ struct RoundtableView: View {
     /// Cards are offered where there is room for them: beside an iPad's detail column.
     private var cardsOffered: Bool { selection != nil }
     private var cards: Bool { cardsOffered && asCards }
+    /// Edit is moving the knights. A Mac has no Edit: its list is put in order by dragging, as its lists are.
+    private var editingRows: Bool {
+        #if os(iOS)
+        editing.isEditing
+        #else
+        false
+        #endif
+    }
 
     /// The head of the table: the one who leads, and Galahad after a knight that does.
     private var head: [String] { Array(session.seats.prefix(session.primary == "galahad" ? 1 : 2)) }
@@ -64,13 +80,15 @@ struct RoundtableView: View {
                 }
             }
         }
+        #if os(iOS)
         .environment(\.editMode, $editing)
+        #endif
         // Who leads, and your order, move the rows to their seats rather than putting them there.
         .animation(reduceMotion ? nil : .default, value: session.seats)
         // An iPad fills the selected row with the tint and writes its words in white: the ink does on light, but on dark
         // the ink is cream, and white on it couldn't be read; there the system's grey holds the selection. (Only the
         // list's own tint: its bar's buttons and its sheets keep the ink.)
-        .tint(scheme == .dark ? Color(uiColor: .systemGray3) : .ink)
+        .tint(scheme == .dark ? Color.selectionOnDark : .ink)
         .navigationTitle("Roundtable")
         .toolbar { bar }
         // Said where you are, however far down the list the change was made; the rows are back as they were.
@@ -126,6 +144,7 @@ struct RoundtableView: View {
     }
 
     @ToolbarContentBuilder private var bar: some ToolbarContent {
+        #if os(iOS)
         ToolbarItem(placement: .topBarLeading) { RoundtableMark(size: 28) }
             .sharedBackgroundVisibility(.hidden)
         if editing.isEditing {
@@ -133,32 +152,40 @@ struct RoundtableView: View {
                 Button("Done") { withAnimation { editing = .inactive } }
             }
         } else {
-            // The Roundtable's own work: given to it, the knight best suited takes it.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { giving = true } label: { Label("Give the Roundtable a task", systemImage: "hammer") }
-                    .disabled(!session.can("fleet:admin") || session.rows.isEmpty)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { seating = true } label: { Label("New knight", systemImage: "person.badge.plus") }
-                    Button { gathering = true } label: { Label("New room", systemImage: "bubble.left.and.bubble.right") }
-                        .disabled(session.rows.isEmpty)
-                } label: {
-                    Label("Add", systemImage: "plus")
-                }
-                .disabled(!session.can("fleet:admin") || session.team == nil)
-            }
-            if cardsOffered {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { asCards.toggle() } label: {
-                        Label(asCards ? "Show as a list" : "Show as cards", systemImage: asCards ? "list.bullet" : "square.grid.2x2")
-                    }
-                }
-            }
+            actions
             if mayArrange, !cards, words.isEmpty, rest.count > 1 {
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { withAnimation { editing = .active } }
+                }
+            }
+        }
+        #else
+        // (On a Mac the mark heads the sidebar, as the PWA's wide screen has it.)
+        actions
+        #endif
+    }
+
+    @ToolbarContentBuilder private var actions: some ToolbarContent {
+        // The Roundtable's own work: given to it, the knight best suited takes it.
+        ToolbarItem(placement: .barTrailing) {
+            Button { giving = true } label: { Label("Give the Roundtable a task", systemImage: "hammer") }
+                .disabled(!session.can("fleet:admin") || session.rows.isEmpty)
+        }
+        ToolbarItem(placement: .barTrailing) {
+            Menu {
+                Button { seating = true } label: { Label("New knight", systemImage: "person.badge.plus") }
+                Button { gathering = true } label: { Label("New room", systemImage: "bubble.left.and.bubble.right") }
+                    .disabled(session.rows.isEmpty)
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .disabled(!session.can("fleet:admin") || session.team == nil)
+        }
+        if cardsOffered {
+            ToolbarItem(placement: .barTrailing) {
+                Button { asCards.toggle() } label: {
+                    Label(asCards ? "Show as a list" : "Show as cards", systemImage: asCards ? "list.bullet" : "square.grid.2x2")
                 }
             }
         }
@@ -189,7 +216,7 @@ struct RoundtableView: View {
 
     /// A row that opens its page; while Edit moves the knights, only the row, with no way on beside its handle.
     @ViewBuilder private func opening<Row: View>(_ route: Route, @ViewBuilder row: () -> Row) -> some View {
-        if editing.isEditing { row() } else { NavigationLink(value: route, label: row) }
+        if editingRows { row() } else { NavigationLink(value: route, label: row) }
     }
 
     /// A seat as a card: the same, with its face large.
@@ -235,9 +262,8 @@ struct RoundtableView: View {
         }
     }
 
-    /// What Galahad's face shows: thinking while he answers, asking while something waits for you.
-    private var galahadExpression: String { session.chat.answering ? "thinking" : session.galahad.tone == .warn ? "asking" : "idle" }
-    private var galahadStanding: Standing { .of(session.galahad, answering: session.chat.answering) }
+    private var galahadExpression: String { session.galahadExpression }
+    private var galahadStanding: Standing { session.galahadStanding }
 
     /// The row the detail column shows, on an iPad.
     private func chosen(_ route: Route) -> Bool { selection?.wrappedValue == route }
@@ -374,7 +400,7 @@ struct SeatCard<Face: View>: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
+        .background(Color.raised, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
         .overlay {
             if selected { RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).strokeBorder(Color.ink, lineWidth: 2) }
         }
@@ -454,7 +480,7 @@ struct StandingRing: View {
         case .paused:
             Circle().strokeBorder(selected ? Color.white : .secondary, style: StrokeStyle(lineWidth: width, dash: [width * 1.5, width * 1.5]))
         case .resting:
-            Circle().strokeBorder(selected ? Color.white.opacity(0.5) : Color(uiColor: .separator), lineWidth: 1)
+            Circle().strokeBorder(selected ? Color.white.opacity(0.5) : Color.hairline, lineWidth: 1)
         }
     }
 }
@@ -480,7 +506,7 @@ struct LeadsMark: View {
             .foregroundStyle(Color.ink)
             .padding(.horizontal, Space.s1)
             .padding(.vertical, Space.line)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .capsule)
+            .background(Color.rowGround, in: .capsule)
             .overlay(Capsule().strokeBorder(Color.ink, lineWidth: 1))
             .fixedSize()
             // No wider than the face it sits on, which keeps its size; the row's words say it too, to VoiceOver.

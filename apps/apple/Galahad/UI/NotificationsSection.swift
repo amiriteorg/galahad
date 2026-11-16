@@ -1,3 +1,4 @@
+#if os(iOS)
 import SwiftUI
 
 /// Notifications on this iPhone: on and off, said plainly, and a test. What he tells you about and when he stays quiet
@@ -79,3 +80,4 @@ struct NotificationsSection: View {
         }
     }
 }
+#endif

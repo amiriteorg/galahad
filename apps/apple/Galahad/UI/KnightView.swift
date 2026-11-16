@@ -61,6 +61,7 @@ struct KnightView: View {
             }
             .padding(.horizontal, Metrics.margin)
             .padding(.vertical, Space.s3)
+            .readingWidth()
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -71,9 +72,19 @@ struct KnightView: View {
             }
         }
         .navigationTitle(name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
+        .inlineTitle()
+        .hidingTabBar()
+        #if os(macOS)
+        // On a Mac, the window's own title and its subtitle; what it is and how its day stands is a button beside them.
+        .navigationSubtitle(row?.line ?? "")
+        #endif
         .toolbar {
+            #if os(macOS)
+            ToolbarItem(placement: .barTrailing) {
+                Button { about = true } label: { Label("About \(name)", systemImage: "info.circle") }
+                    .disabled(knight == nil)
+            }
+            #else
             ToolbarItem(placement: .principal) {
                 // Not a Button: the bar sizes a button by its whole line, which then runs under the bar's own buttons; a
                 // plain title gets the room between them, and ends in an ellipsis there.
@@ -85,9 +96,10 @@ struct KnightView: View {
                     .accessibilityAction { about = true }
                     .accessibilityHint("What \(name) is and how its day stands")
             }
+            #endif
             // Its VM, once it has one: its screen to watch and take over, and a terminal in it.
             if let knight, knight.workspace != nil, session.can("sandbox") {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .barTrailing) {
                     Menu {
                         Button { watching = true } label: { Label("Its screen", systemImage: "display") }
                         Button { inTerminal = true } label: { Label("Its terminal", systemImage: "apple.terminal") }
@@ -96,7 +108,7 @@ struct KnightView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .barTrailing) {
                 Button { giving = true } label: { Label("Give a task", systemImage: "hammer") }
                     .disabled(room.view == nil || knight == nil)
             }
@@ -109,7 +121,7 @@ struct KnightView: View {
         .navigationDestination(isPresented: $watching) {
             if let knight { KnightScreenView(session: session, knight: VMSeat(knight)) }
         }
-        .fullScreenCover(isPresented: $inTerminal) {
+        .cover(isPresented: $inTerminal) {
             if let knight { KnightTerminalView(session: session, knight: VMSeat(knight)) }
         }
         .sheet(isPresented: $about) {
@@ -278,6 +290,7 @@ struct RoomComposer: View {
         GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: Space.s2) {
                 TextField("Message \(name)", text: $room.draft, axis: .vertical)
+                    .plainField()
                     .lineLimit(1...6)
                     .focused(composing)
                     .padding(.horizontal, Space.s4)
@@ -287,7 +300,7 @@ struct RoomComposer: View {
                 Button {
                     Task { await room.send(with: client) }
                 } label: {
-                    Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(empty ? Color.secondary : Color.onAccent).frame(width: 30, height: 30)
+                    Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(Prominent.label(dimmed: empty)).frame(width: 30, height: 30)
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
@@ -297,6 +310,7 @@ struct RoomComposer: View {
         }
         .padding(.horizontal, Metrics.margin)
         .padding(.vertical, Space.s2)
+        .readingWidth()
     }
 }
 
@@ -331,15 +345,15 @@ struct GiveTaskSheet: View {
                         }
                     }
                 }
-                Section("Title") { TextField("A concrete result", text: $title) }
+                Section("Title") { FormField("A concrete result", text: $title) }
                 Section("Goal") {
-                    TextField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
+                    FormField("What should be built or investigated, and what proves it is complete?", text: $goal, axis: .vertical).lineLimit(4...12)
                 }
                 Section {
-                    TextField("bun run check", text: $gates, axis: .vertical)
+                    FormField("bun run check", text: $gates, axis: .vertical)
                         .lineLimit(2...8)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .capitals(.never)
                         .autocorrectionDisabled()
                 } header: {
                     Text("Done when these pass")
@@ -347,7 +361,7 @@ struct GiveTaskSheet: View {
                     Text("One shell command a line, up to 16. They run in \(worker)'s workspace; they and an independent reviewer decide whether the work is verified.")
                 }
                 Section {
-                    TextField("0.50", text: $budget).keyboardType(.decimalPad).monospacedDigit()
+                    FormField("0.50", text: $budget).keyboard(.decimal).monospacedDigit()
                 } header: {
                     Text("Budget in US dollars (optional)")
                 } footer: {
@@ -358,7 +372,7 @@ struct GiveTaskSheet: View {
                 }
             }
             .navigationTitle(members.isEmpty ? "Give \(name) a task" : "Give a task")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -367,6 +381,7 @@ struct GiveTaskSheet: View {
             }
             .onAppear { if assignee.isEmpty { assignee = members.first?.id ?? "" } }
         }
+        .sheetSize(width: 560, height: 640)
     }
 
     private func submit() async {
@@ -408,7 +423,7 @@ private struct KnightAbout: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            GroupedList {
                 if let knight {
                     Section {
                         HStack(spacing: Space.s4) {
@@ -453,7 +468,7 @@ private struct KnightAbout: View {
                 }
             }
             .navigationTitle(knight?.name ?? "Knight")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $editing) {
                 if let knight { KnightEditor(session: session, existing: knight) }
@@ -467,6 +482,7 @@ private struct KnightAbout: View {
                 }
             }
         }
+        .sheetSize(width: 560, height: 640)
     }
 
     private func setWorking(_ on: Bool) async {
@@ -506,9 +522,9 @@ private struct RemoveKnightSheet: View {
                     Section { Label(blocked, systemImage: "lock.fill").foregroundStyle(Color.siege) }
                 } else {
                     Section {
-                        TextField(knight.id, text: $typed)
+                        FormField(knight.id, text: $typed)
                             .font(.body.monospaced())
-                            .textInputAutocapitalization(.never)
+                            .capitals(.never)
                             .autocorrectionDisabled()
                             .accessibilityIdentifier("remove-handle")
                     } header: {
@@ -524,9 +540,10 @@ private struct RemoveKnightSheet: View {
                 }
             }
             .navigationTitle("Remove \(knight.name)?")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
+        .sheetSize(width: 520, height: 480)
     }
 
     private func remove() async {

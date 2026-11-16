@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// His answer as the PWA draws it: paragraphs, headings, lists, quotes, rules, code and tables, in the system's own
 /// type. Words only ever become text; a link is tappable only when it is a web address (`Markdown.safeHref`).
@@ -79,7 +78,7 @@ struct CodeBlock: View {
                 Text(lang.isEmpty ? "Code" : lang).font(.caption.monospaced()).foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    UIPasteboard.general.string = text
+                    Pasteboard.copy(text)
                     copied = true
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").font(.caption)

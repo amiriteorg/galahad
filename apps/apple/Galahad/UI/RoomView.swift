@@ -60,6 +60,7 @@ struct RoomView: View {
             }
             .padding(.horizontal, Metrics.margin)
             .padding(.vertical, Space.s3)
+            .readingWidth()
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -76,13 +77,19 @@ struct RoomView: View {
             }
         }
         .navigationTitle(name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
+        .inlineTitle()
+        .hidingTabBar()
+        #if os(macOS)
+        // On a Mac, the window's own title and its subtitle.
+        .navigationSubtitle(row?.line ?? members.map(\.name).joined(separator: ", "))
+        #endif
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .principal) {
                 TimelineTitle(title: name, line: row?.line ?? members.map(\.name).joined(separator: ", "), needs: row?.needs == true)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            #endif
+            ToolbarItem(placement: .barTrailing) {
                 Menu {
                     Button { giving = true } label: { Label("Give a task", systemImage: "hammer") }
                         .disabled(room.view == nil || members.isEmpty)

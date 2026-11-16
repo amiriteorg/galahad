@@ -4,11 +4,13 @@ import SwiftUI
 struct MoreView: View {
     let app: AppModel
     let session: Session
+    /// Keys and Connectors as places of their own, opened from here (not in a Mac's Settings, where they are tabs).
+    var places = true
     @State private var forgetting = false
     @State private var problem: String?
 
     var body: some View {
-        List {
+        GroupedList {
             Section("This device") {
                 LabeledContent("Name", value: session.node.name)
                 LabeledContent("Device") { Text(String(session.key.device.dropFirst(2).prefix(8))).font(.body.monospaced()) }
@@ -17,10 +19,12 @@ struct MoreView: View {
                     LabeledContent("May") { Text(scopes.joined(separator: ", ")).font(.footnote.monospaced()).multilineTextAlignment(.trailing) }
                 }
             }
+            #if os(iOS)
             if session.can("mind:read") {
                 NotificationsSection(session: session)
             }
-            if session.can("vault:read") {
+            #endif
+            if places, session.can("vault:read") {
                 Section {
                     NavigationLink { KeysView(session: session) } label: {
                         Label("Keys", systemImage: "key")
@@ -29,7 +33,7 @@ struct MoreView: View {
                     Text("Sealed for your full nodes, each pinned to the one address it may go to; no model ever sees one.")
                 }
             }
-            if session.can("mind:read") {
+            if places, session.can("mind:read") {
                 Section {
                     NavigationLink { ConnectorsView(session: session) } label: {
                         Label("Connectors", systemImage: "point.3.connected.trianglepath.dotted")
@@ -55,7 +59,7 @@ struct MoreView: View {
                 LabeledContent("Version", value: Self.version)
             }
         }
-        .navigationTitle("More")
+        .navigationTitle(places ? "More" : "This \(ThisDevice.kind)")
         .confirmationDialog("Forget this device?", isPresented: $forgetting, titleVisibility: .visible) {
             Button("Forget this device", role: .destructive) {
                 do {

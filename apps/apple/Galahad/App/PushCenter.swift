@@ -1,3 +1,4 @@
+#if os(iOS)
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -70,3 +71,4 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         await MainActor.run { PushCenter.shared.opened = destination }
     }
 }
+#endif

@@ -14,7 +14,7 @@ struct ConnectorsView: View {
     private var catalog: [ConnectorView] { (connectors ?? []).filter { !$0.installed } }
 
     var body: some View {
-        List {
+        GroupedList {
             if let problem {
                 Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
             }
@@ -186,7 +186,7 @@ private struct ConnectorDetail: View {
             }
         }
         .navigationTitle(connector?.label ?? "Connector")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
         .confirmationDialog("Remove \(connector?.label ?? "it")?", isPresented: $removing, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { Task { await remove() } }
         } message: {
@@ -208,9 +208,9 @@ private struct ConnectorDetail: View {
         Section {
             if connector.needsOrigin {
                 // A plain string: as a localized key, its address would be made a link drawn in the tint.
-                TextField("Its address, e.g. http://homeassistant.local:8123" as String, text: $origin)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                FormField("Its address, e.g. http://homeassistant.local:8123" as String, text: $origin)
+                    .keyboard(.url)
+                    .capitals(.never)
                     .autocorrectionDisabled()
             }
             Button("Add \(connector.label)") { Task { await install() } }
@@ -223,12 +223,12 @@ private struct ConnectorDetail: View {
     @ViewBuilder private func signIn(_ connector: ConnectorView) -> some View {
         if connector.key == "missing" || connector.key == "wrong-origin" {
             Section {
-                TextField(google ? "1234-abc.apps.googleusercontent.com" : "00000000-0000-0000-0000-000000000000", text: $client)
+                FormField(google ? "1234-abc.apps.googleusercontent.com" : "00000000-0000-0000-0000-000000000000", text: $client)
                     .font(.body.monospaced())
-                    .textInputAutocapitalization(.never)
+                    .capitals(.never)
                     .autocorrectionDisabled()
                 if google {
-                    SecureField("Its client secret", text: $clientSecret).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    FormField("Its client secret", text: $clientSecret, secure: true).capitals(.never).autocorrectionDisabled()
                 }
                 Button("Seal the app") { Task { await sealApp() } }
                     .disabled(working || client.isEmpty || (google && clientSecret.isEmpty) || !session.can("vault:write"))
@@ -260,7 +260,7 @@ private struct ConnectorDetail: View {
                         HStack {
                             Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
                             Spacer()
-                            Button("Copy") { UIPasteboard.general.string = code }.buttonStyle(.bordered).controlSize(.small)
+                            Button("Copy") { Pasteboard.copy(code) }.buttonStyle(.bordered).controlSize(.small)
                             Button("Open") { openURL(url) }.buttonStyle(.bordered).controlSize(.small)
                         }
                     }
@@ -275,7 +275,7 @@ private struct ConnectorDetail: View {
 
     @ViewBuilder private func sealKey(_ connector: ConnectorView) -> some View {
         Section {
-            SecureField("Paste its key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
+            FormField("Paste its key", text: $key, secure: true).capitals(.never).autocorrectionDisabled()
             Button("Seal it") { Task { await seal() } }.disabled(working || key.isEmpty || connector.secret == nil)
         } header: {
             Text("Its key")

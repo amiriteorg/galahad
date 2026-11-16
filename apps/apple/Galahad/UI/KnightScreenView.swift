@@ -10,7 +10,7 @@ struct KnightScreenView: View {
     let session: Session
     let knight: VMSeat
     @State private var shot: DesktopShot?
-    @State private var picture: UIImage?
+    @State private var picture: PlatformImage?
     @State private var status = "Looking…"
     @State private var problem: String?
     @State private var noDesktop = false
@@ -43,8 +43,8 @@ struct KnightScreenView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("\(knight.name)'s screen")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
+        .inlineTitle()
+        .hidingTabBar()
         // Asked again while you're watching, and only then.
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
@@ -60,7 +60,7 @@ struct KnightScreenView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: Metrics.innerRadius, style: .continuous).fill(.black.opacity(0.85))
                 if let picture {
-                    Image(uiImage: picture)
+                    Image(platformImage: picture)
                         .resizable()
                         .interpolation(.medium)
                         .scaledToFit()
@@ -89,8 +89,8 @@ struct KnightScreenView: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             fieldRow {
                 TextField("An address to open", text: $address)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .keyboard(.url)
+                    .capitals(.never)
                     .autocorrectionDisabled()
                     .quietField()
                     .submitLabel(.go)
@@ -106,7 +106,7 @@ struct KnightScreenView: View {
                         TextField("Text to type on \(knight.name)'s screen", text: $typed)
                     }
                 }
-                .textInputAutocapitalization(.never)
+                .capitals(.never)
                 .autocorrectionDisabled()
                 .quietField()
                 .submitLabel(.send)
@@ -180,7 +180,7 @@ struct KnightScreenView: View {
         struct Ask: Encodable { let id: String; let action: DesktopAction? }
         do {
             let next = try await session.client.post("/api/team/desktop", Ask(id: knight.id, action: action), as: DesktopShot.self)
-            guard let data = Desktop.picture(next), let image = UIImage(data: data) else {
+            guard let data = Desktop.picture(next), let image = PlatformImage(data: data) else {
                 problem = "The desktop sent a picture this app doesn't show."
                 return
             }

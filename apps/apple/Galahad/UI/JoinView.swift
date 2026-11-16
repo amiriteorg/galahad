@@ -4,6 +4,8 @@ import SwiftUI
 /// your approval there. It is the PWA's pairing page, in the system's own form.
 struct JoinView: View {
     let app: AppModel
+    /// An invite this device was handed (on a Mac, by a `galahad:` link): put in the link's field, as a paste is.
+    var handed: String? = nil
     @State private var model = PairingModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -14,7 +16,7 @@ struct JoinView: View {
                     VStack(spacing: Space.s3) {
                         AppTile(size: 88)
                         Text("Join your fleet").font(.largeTitle.bold())
-                        Text("This \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone") gets its own key. It can sign, but it can never be read out, not even by this app.")
+                        Text("This \(ThisDevice.kind) gets its own key. It can sign, but it can never be read out, not even by this app.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -35,16 +37,19 @@ struct JoinView: View {
             // Asking turning into waiting for your approval is shown moving, unless the device asks for less motion.
             .animation(reduceMotion ? nil : .default, value: model.stage)
         }
+        .onChange(of: handed, initial: true) { _, link in
+            if let link, model.stage == .entering { model.link = link }
+        }
     }
 
     @ViewBuilder private var asking: some View {
         Section {
-            TextField("Paste the invite link", text: $model.link, axis: .vertical)
+            FormField("Paste the invite link", text: $model.link, axis: .vertical)
                 .lineLimit(2...5)
                 .font(.footnote.monospaced())
-                .textInputAutocapitalization(.never)
+                .capitals(.never)
                 .autocorrectionDisabled()
-                .keyboardType(.URL)
+                .keyboard(.url)
                 .accessibilityIdentifier("invite-link")
             PasteButton(payloadType: String.self) { strings in
                 model.link = strings.first ?? ""
@@ -55,8 +60,8 @@ struct JoinView: View {
             Text("From `galahad invite --client` on your node, or from Invite a device in Galahad on another of your devices.")
         }
         Section {
-            TextField("Name", text: $model.name)
-                .textInputAutocapitalization(.words)
+            FormField("Name", text: $model.name)
+                .capitals(.words)
                 .autocorrectionDisabled()
                 .accessibilityIdentifier("device-name")
         } header: {
@@ -77,7 +82,7 @@ struct JoinView: View {
                     if model.stage == .asking { ProgressView().tint(Color.onAccent) }
                     Text("Ask to join").fontWeight(.semibold)
                 }
-                .foregroundStyle(model.canAsk || model.stage == .asking ? Color.onAccent : Color.secondary)
+                .foregroundStyle(Prominent.label(dimmed: !(model.canAsk || model.stage == .asking)))
                 .frame(maxWidth: .infinity, minHeight: 34)
             }
             .buttonStyle(.glassProminent)

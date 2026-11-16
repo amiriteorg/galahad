@@ -4,13 +4,23 @@ import SwiftUI
 /// keyboard. A new chat keeps the one before it on the node.
 struct ChatView: View {
     let session: Session
+    /// The chat shown, when it isn't the session's (on a Mac, one of his chats in a window of its own).
+    private let shown: ChatModel?
     @FocusState private var composing: Bool
     @State private var listing = false
     /// His own computer, watched from here: its screen, or its terminal.
     @State private var watching = false
     @State private var inTerminal = false
+    #if os(macOS)
+    @Environment(\.composerWanted) private var composerWanted
+    #endif
 
-    private var chat: ChatModel { session.chat }
+    init(session: Session, chat: ChatModel? = nil) {
+        self.session = session
+        shown = chat
+    }
+
+    private var chat: ChatModel { shown ?? session.chat }
     private var latestAnswer: Int? { chat.thread.turns.last { $0.role == .assistant }?.id }
 
     var body: some View {
@@ -35,6 +45,7 @@ struct ChatView: View {
             }
             .padding(.horizontal, Metrics.margin)
             .padding(.vertical, Space.s3)
+            .readingWidth()
         }
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -43,14 +54,20 @@ struct ChatView: View {
             Composer(chat: chat, client: session.client, composing: $composing)
         }
         .navigationTitle("Galahad")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
         // A conversation has the screen to itself, as in Messages.
-        .toolbar(.hidden, for: .tabBar)
+        .hidingTabBar()
+        #if os(macOS)
+        // On a Mac, the window's own title and its subtitle.
+        .navigationSubtitle(chat.title ?? session.galahad.text)
+        #endif
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .principal) {
                 TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn)
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            #endif
+            ToolbarItemGroup(placement: .barTrailing) {
                 // His own computer, once he has one (made from the web app or a terminal, as a knight's VM is).
                 if session.team?.computer != nil && session.can("sandbox") {
                     Menu {
@@ -79,7 +96,7 @@ struct ChatView: View {
         .navigationDestination(isPresented: $watching) {
             if let computer = session.team?.computer { KnightScreenView(session: session, knight: VMSeat(computer: computer)) }
         }
-        .fullScreenCover(isPresented: $inTerminal) {
+        .cover(isPresented: $inTerminal) {
             if let computer = session.team?.computer { KnightTerminalView(session: session, knight: VMSeat(computer: computer)) }
         }
         .sheet(isPresented: $listing) {
@@ -93,6 +110,14 @@ struct ChatView: View {
             }
         }
         .task { await chat.openLatest(with: session.client) }
+        #if os(macOS)
+        // A new chat asked for from the menu (⌘N): the message box takes the keys.
+        .task(id: composerWanted.wrappedValue) {
+            guard composerWanted.wrappedValue else { return }
+            composerWanted.wrappedValue = false
+            composing = true
+        }
+        #endif
     }
 
     private var welcome: some View {
@@ -174,6 +199,7 @@ struct Composer: View {
                 // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
                 // finishing). A new one is empty, and nothing late reaches it.
                 TextField("Message Galahad", text: $chat.draft, axis: .vertical)
+                    .plainField()
                     .id(chat.sent)
                     .lineLimit(1...6)
                     .focused(composing)
@@ -199,7 +225,7 @@ struct Composer: View {
                         // The new box takes the keyboard where the old one had it, so it stays up for the next message.
                         if typing { Task { @MainActor in composing.wrappedValue = true } }
                     } label: {
-                        Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(empty ? Color.secondary : Color.onAccent).frame(width: 30, height: 30)
+                        Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(Prominent.label(dimmed: empty)).frame(width: 30, height: 30)
                     }
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.circle)
@@ -211,5 +237,6 @@ struct Composer: View {
         }
         .padding(.horizontal, Metrics.margin)
         .padding(.vertical, Space.s2)
+        .readingWidth()
     }
 }

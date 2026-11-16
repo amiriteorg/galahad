@@ -51,7 +51,7 @@ struct KnightTerminalView: View {
                                 .controlSize(.small)
                                 .accessibilityLabel(key.name)
                         }
-                        Button { if let text = UIPasteboard.general.string { terminal.type(text) } } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                        Button { if let text = Pasteboard.text { terminal.type(text) } } label: { Label("Paste", systemImage: "doc.on.clipboard") }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
@@ -64,7 +64,7 @@ struct KnightTerminalView: View {
                 }
             }
             .navigationTitle("\(knight.name)'s terminal")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -72,7 +72,7 @@ struct KnightTerminalView: View {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .barLeading) {
                     Menu {
                         // The vendors' own sign-ins, typed for you into this shell: they run in the VM, and keep what they sign in there.
                         Button("Sign Claude Code in") { terminal.type("claude auth login\r") }
@@ -84,6 +84,7 @@ struct KnightTerminalView: View {
                 }
             }
         }
+        .sheetSize(width: 860, height: 600)
         // A terminal is dark whatever the phone's appearance: its bar and keys with it.
         .preferredColorScheme(.dark)
         .task { await terminal.run(with: session.client, on: bridge) }
@@ -133,9 +134,14 @@ struct KnightTerminalView: View {
         let relay = Relay(self)
         for name in ["keys", "size", "ready", "failed"] { configuration.userContentController.add(relay, name: name) }
         webView.navigationDelegate = self
+        #if os(iOS)
         webView.isOpaque = false
         webView.backgroundColor = UIColor(red: 6 / 255, green: 6 / 255, blue: 7 / 255, alpha: 1)
         webView.scrollView.isScrollEnabled = false
+        #else
+        // (A Mac's web view has no scroll view of its own to stop: the page itself never scrolls.)
+        webView.underPageBackgroundColor = NSColor(srgbRed: 6 / 255, green: 6 / 255, blue: 7 / 255, alpha: 1)
+        #endif
         webView.loadHTMLString(Self.page, baseURL: origin)
     }
 
@@ -184,11 +190,19 @@ struct KnightTerminalView: View {
 }
 
 /// The terminal's web view, as SwiftUI shows it.
+#if os(iOS)
 struct TerminalScreen: UIViewRepresentable {
     let bridge: TerminalBridge
     func makeUIView(context: Context) -> WKWebView { bridge.webView }
     func updateUIView(_ view: WKWebView, context: Context) {}
 }
+#else
+struct TerminalScreen: NSViewRepresentable {
+    let bridge: TerminalBridge
+    func makeNSView(context: Context) -> WKWebView { bridge.webView }
+    func updateNSView(_ view: WKWebView, context: Context) {}
+}
+#endif
 
 /// A terminal in a knight's VM, as this app holds it: opened (or the one already open taken up again), watched (and
 /// watched again when that drops), typed into in order, and closed.

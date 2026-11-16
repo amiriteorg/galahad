@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /*
  * Galahad's accents, and nothing more: his red for what needs you and for his seat, the cream ink and the black tile
@@ -71,14 +70,14 @@ extension Color {
 /// The owner's drawings of the knights, from the app's bundle by fixed names (apps/web/src/knights, bundled as they
 /// are). Nothing from the node reaches a file name: a knight's look is one of ten known names.
 @MainActor enum Drawings {
-    private static var kept: [String: UIImage] = [:]
+    private static var kept: [String: PlatformImage] = [:]
     /// The drawings that come at twice the size too, for showing big.
     private static let large: Set<String> = ["galahad", "black-knight"]
 
-    static func image(_ name: String, large wantLarge: Bool) -> UIImage? {
+    static func image(_ name: String, large wantLarge: Bool) -> PlatformImage? {
         let file = wantLarge && large.contains(name) ? "\(name)@2x" : name
         if let image = kept[file] { return image }
-        guard let path = Bundle.main.path(forResource: file, ofType: "webp", inDirectory: "knights"), let image = UIImage(contentsOfFile: path) else { return nil }
+        guard let path = Bundle.main.path(forResource: file, ofType: "webp", inDirectory: "knights"), let image = PlatformImage(contentsOfFile: path) else { return nil }
         kept[file] = image
         return image
     }
@@ -101,7 +100,7 @@ struct Portrait: View {
     var body: some View {
         Group {
             if let image = Drawings.image(drawing, large: size >= 120) {
-                Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
+                Image(platformImage: image).resizable().interpolation(.high).scaledToFit()
                     // Paused, its colour is drained, as on the PWA.
                     .saturation(expression == "resting" ? 0.15 : 1)
                     .opacity(expression == "resting" ? 0.62 : 1)
@@ -243,7 +242,8 @@ extension View {
     /// A field outside a form (a key to seal, text for a knight's screen): the system's quiet fill, the corners of what
     /// sits inside a card, and a thumb's height. Beside a button, the row is made as tall as its tallest, so the two match.
     func quietField() -> some View {
-        padding(.horizontal, Space.s3)
+        plainField()
+            .padding(.horizontal, Space.s3)
             .frame(minHeight: Metrics.touch)
             .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
     }
