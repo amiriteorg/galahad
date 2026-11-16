@@ -1,4 +1,4 @@
-import type { ActionView, LoopDraftView, NoticeView, SelfActionView } from "@galahad/core";
+import type { ActionView, LoopDraftView, NoticeView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
@@ -335,42 +335,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
     renderAllClear();
   };
 
-  // What he fixed himself after his heartbeats (self-action): his own, in the ledger; the switch is on Loops.
-  const fixedRows = h("div", { class: "rows", style: "border-top:1px solid var(--border)" });
-  const fixedSummary = h("span", { class: "small strong" });
-  let fixedSignature = "";
-  async function loadFixed(): Promise<void> {
-    if (!read) return;
-    try {
-      const view = await ctx.api.get<SelfActionView>("/api/self-action", scope.signal);
-      if (scope.disposed) return;
-      const signature = JSON.stringify([view.on, view.recent.map((e) => e.id)]);
-      if (signature === fixedSignature) return;
-      fixedSignature = signature;
-      const recent = view.recent.slice(0, 8);
-      keepPlace(fixedRows, () =>
-        replace(
-          fixedRows,
-          ...recent.map((e) => {
-            const failed = e.reason?.startsWith("Galahad's own fix didn't") ?? false;
-            const at = hlcMs(e.hlc);
-            return h(
-              "div",
-              { class: "item" },
-              h("span", { class: "avatar", "data-tone": failed ? "warn" : "ok" }, icon(failed ? "alert" : "check-circle", { size: 14 })),
-              h("div", { class: "grow" }, h("div", { class: "small strong" }, `${failed ? "Galahad tried" : "Galahad fixed"}: ${e.detail ?? e.target}`), h("div", { class: "meta" }, h("span", { class: "mono" }, e.target), at ? h("span", {}, relativeTime(at)) : null)),
-            );
-          }),
-          h("p", { class: "tiny subtle", style: "padding:8px 12px" }, view.on ? "After each heartbeat he fixes only what's on a short list himself (Loops → Self-action, where you can turn it off); everything else waits here for you." : "Self-action is off: he only reports (Loops → Self-action)."),
-        ),
-      );
-      fixedSummary.textContent = `Fixed by Galahad himself (${view.recent.length})`;
-      fixed.hidden = !view.recent.length;
-    } catch {
-      /* an older node has no self-action: nothing to show */
-    }
-  }
-
   const renderDrafts = () => {
     const drafts = ctx.live.loopDrafts.value;
     replace(draftsBox, ...drafts.map((d) => loopDraftCard(ctx, d)));
@@ -448,7 +412,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
     aboutYouBox,
   );
   const noticesSection = section("Noticed by the heartbeat", { actions: h("a", { href: "#/loops", class: "btn ghost sm" }, "Loops", icon("chevron-right", { size: 14 })) }, noticesBox);
-  const fixed = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), fixedSummary), fixedRows);
   // Kept across re-renders so it stays open while the outbox changes.
   const history = h("details", { class: "card", hidden: true }, h("summary", { class: "card-head", style: "cursor:pointer;border-bottom:0" }, icon("chevron-right", { size: 14 }), historySummary), historyRows);
 
@@ -467,7 +430,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
       aboutYouSection,
       noticesSection,
       read ? history : null,
-      read ? fixed : null,
     ),
   );
 
@@ -487,8 +449,6 @@ export const inboxView: View = (root, ctx, { scope }) => {
   renderActions();
   renderNotices();
   void ctx.live.refreshInbox();
-  void loadFixed();
-  scope.interval(() => void loadFixed(), 15_000);
   scope.interval(() => void ctx.live.refreshInbox(), 2000);
   // Deadlines tick without a re-render (that would lose a half-made decision).
   scope.interval(() => {
