@@ -74,6 +74,18 @@ describe("key headers", () => {
 });
 
 /*
+ * A local runtime's preset is where that runtime listens when it is started with its defaults: Ollama on 11434
+ * (docs.ollama.com/api/openai-compatibility), and llama.cpp's llama-server on 9931 (its tools/server/README.md and
+ * common/common.h; it was 8080 before, which is now only what its Docker examples map).
+ */
+describe("a local runtime is looked for where it listens by default", () => {
+  test("Ollama and llama.cpp's llama-server, each at its own default address", () => {
+    expect(preset("ollama")).toMatchObject({ kind: "openai", baseUrl: "http://127.0.0.1:11434/v1", local: true });
+    expect(preset("llamacpp")).toMatchObject({ kind: "openai", baseUrl: "http://127.0.0.1:9931/v1", local: true });
+  });
+});
+
+/*
  * A key is pinned to the origin it was entered for. A redirect answered by that origin
  * must not carry the key (or the conversation) on to another one: fetch keeps custom
  * headers such as x-api-key and cf-aig-authorization across origins, and resends the body.

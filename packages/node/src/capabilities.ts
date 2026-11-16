@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
+import { preset } from "@galahad/brain";
 import type { Presence } from "@galahad/core";
 import { probeSandbox } from "@galahad/sandbox";
 
@@ -60,14 +61,13 @@ async function gpus(): Promise<Capabilities["gpu"]> {
   return [];
 }
 
+/** The local runtimes asked what they serve: each at the address its preset points to (providers.ts), its /models. */
+export const RUNTIME_PROBES: [string, string][] = ["ollama", "llamacpp"].map((id) => [id, `${preset(id)!.baseUrl}/models`]);
+
 async function localModels(): Promise<Capabilities["localModels"]> {
   const out: Capabilities["localModels"] = [];
-  const probes: [string, string][] = [
-    ["ollama", "http://127.0.0.1:11434/v1/models"],
-    ["llamacpp", "http://127.0.0.1:8080/v1/models"],
-  ];
   await Promise.all(
-    probes.map(async ([runtime, url]) => {
+    RUNTIME_PROBES.map(async ([runtime, url]) => {
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(800) });
         if (!response.ok) return;

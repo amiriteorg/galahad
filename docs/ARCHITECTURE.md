@@ -253,7 +253,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | `ollama-cloud` | openai | `https://ollama.com/v1` (Ollama's cloud models) |
 | `verda` | openai | *Account-specific: pass `--base-url` from the Verda console* |
 | `cloudflare-ai` | openai | *Your gateway: `https://gateway.ai.cloudflare.com/v1/<account id>/<gateway id>/compat`. The key is the gateway's token, sent as `cf-aig-authorization` (never as `Authorization`, so Cloudflare adds the provider keys you stored with it); models are `<provider>/<model>`, e.g. `deepseek/deepseek-chat`* |
-| `ollama`, `llamacpp` | openai (local) | `http://127.0.0.1:11434/v1`, `http://127.0.0.1:8080/v1` |
+| `ollama`, `llamacpp` | openai (local) | `http://127.0.0.1:11434/v1`, `http://127.0.0.1:9931/v1` (llama-server's default port; an older build's 8080, or its Docker image's, takes `--base-url`) |
 
 - **Anthropic** goes through the official SDK with adaptive thinking, explicit effort and streaming. Server-side refusal fallback (`fallbacks: "default"`) is enabled on the models that support it (Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5).
 - **Everything else** uses OpenAI-compatible streaming.

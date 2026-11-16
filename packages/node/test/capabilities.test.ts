@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { type Capabilities, isAlwaysOn, servedOriginFrom } from "../src/capabilities.ts";
+import { preset } from "@galahad/brain";
+import { type Capabilities, isAlwaysOn, RUNTIME_PROBES, servedOriginFrom } from "../src/capabilities.ts";
 import { refreshCapabilities } from "../src/daemon.ts";
+
+describe("the local runtimes a node looks for", () => {
+  test("are asked what they serve where their presets point, so the two never part ways", () => {
+    expect(RUNTIME_PROBES).toEqual([
+      ["ollama", `${preset("ollama")!.baseUrl}/models`],
+      ["llamacpp", `${preset("llamacpp")!.baseUrl}/models`],
+    ]);
+    expect(RUNTIME_PROBES.map(([, url]) => url)).toEqual(["http://127.0.0.1:11434/v1/models", "http://127.0.0.1:9931/v1/models"]);
+  });
+});
 
 /*
  * The node looks at its own body every five minutes, on a timer. Bun ends the process

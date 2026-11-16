@@ -241,7 +241,7 @@ export const PRESETS: ProviderPreset[] = [
     note: "Verda's OpenAI-compatible endpoint is shown in your Verda console; pass it with --base-url",
   },
   { id: "ollama", kind: "openai", baseUrl: "http://127.0.0.1:11434/v1", local: true },
-  { id: "llamacpp", kind: "openai", baseUrl: "http://127.0.0.1:8080/v1", local: true },
+  { id: "llamacpp", kind: "openai", baseUrl: "http://127.0.0.1:9931/v1", local: true, note: "llama.cpp's llama-server on its default address (127.0.0.1:9931). One started with --port, an older build (8080) or its Docker image takes --base-url." },
 ];
 
 export const preset = (id: string): ProviderPreset | undefined => PRESETS.find((p) => p.id === id);
